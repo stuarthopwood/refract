@@ -35,4 +35,5 @@
 - "Git", "worktree", and "agent" are product-domain terms for this developer tool, not implementation choices. The spec names no transport, framework, or protocol; those constraints live in the constitution.
 - "OMP 18.4.4" appears only in Assumptions as the external dependency version.
 - SC-002 (30 s to ready) is set above the ~15 s cold start observed in the transport spike, which was measured under load; re-measure on an idle machine during planning.
+- Revised 2026-09-30 after design grill: decisions recorded in CONTEXT.md and this spec.
 - Scope was fixed with the user: this spec is the core session workspace only. The right pane is a later spec.

@@ -9,8 +9,12 @@
   ACP.
 - Every launch MUST load OMP's full feature set (skills, extensions, MCP servers, rules). Pinion
   MUST NOT pass `--no-extensions`, `--no-skills`, `--no-tools`, `--no-rules`, or `--no-ui`.
-- Every launch MUST pass `--approval-mode=always-ask`, so tool approvals reach the UI whatever
-  the user's global `tools.approvalMode` is.
+- Every launch MUST pass `--approval-mode` explicitly, set from Pinion's global Approval mode
+  setting (Ask = `always-ask`, Edit freely = `write`, Auto = `yolo`), so that OMP's own
+  `tools.approvalMode` never decides. OMP has no RPC command to change the mode on a live
+  process; a change applies when the session is next idle, by restarting the process and
+  reattaching the same saved session per Principle III (OMP `approval-mode.md` and `rpc.md`,
+  read but not probed).
 - Pinion MUST NOT reimplement behaviour OMP exposes over RPC. It supplies natively only the
   commands absent over RPC: `/plan`, `/fork`, `/resume`, `/new`, `/settings`, `/pause`,
   `/plan-review`, and `/btw`. `/new` maps to `new_session`; `/resume` maps to the reattach rule
@@ -110,4 +114,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.2.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
+**Version**: 1.3.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
