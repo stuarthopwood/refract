@@ -151,7 +151,10 @@ export function ChatPane() {
     <div className="flex h-full flex-col overflow-hidden">
       <ChatHeader sessionId={sessionId} />
       {isOpening && (
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+        <div
+          role="status"
+          className="flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground"
+        >
           <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
           Starting the agent…
         </div>

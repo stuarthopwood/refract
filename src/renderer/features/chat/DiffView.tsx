@@ -12,12 +12,12 @@ interface DiffViewProps {
 
 // Line numbers alone don't say whether a row was added or removed; the CSS `::before` markers
 // in diff-view.css are the visible cue, this sr-only text is the same information for AT users.
-function renderGutter({ change, renderDefault }: GutterOptions) {
+function renderGutter({ change, side, renderDefault }: GutterOptions) {
   return (
     <>
       {renderDefault()}
-      {isInsert(change) && <span className="sr-only">Added</span>}
-      {isDelete(change) && <span className="sr-only">Removed</span>}
+      {isInsert(change) && side === 'new' && <span className="sr-only">Added</span>}
+      {isDelete(change) && side === 'old' && <span className="sr-only">Removed</span>}
     </>
   )
 }

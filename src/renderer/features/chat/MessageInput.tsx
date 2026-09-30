@@ -193,12 +193,19 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           ))}
         </div>
       )}
-      {starting && <p className="text-xs text-muted-foreground">Starting the agent…</p>}
+      {starting && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Starting the agent…
+        </p>
+      )}
       {disabled && (
         <span id={stopReasonId} className="sr-only">
           {placeholder}
         </span>
       )}
+      <div role="status" aria-live="polite" className="sr-only">
+        {showSlashMenu && slashMatches.length === 0 ? 'No matching commands' : ''}
+      </div>
       <div className="relative flex items-end gap-2">
         {showSlashMenu && (
           <SlashMenu
@@ -213,8 +220,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           role="combobox"
           aria-label="Message"
           aria-autocomplete="list"
-          aria-expanded={showSlashMenu}
-          aria-controls={showSlashMenu ? slashMenuId : undefined}
+          aria-expanded={showSlashMenu && slashMatches.length > 0}
+          aria-controls={showSlashMenu && slashMatches.length > 0 ? slashMenuId : undefined}
           aria-activedescendant={
             showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashActiveIndex) : undefined
           }

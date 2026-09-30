@@ -47,7 +47,7 @@ export function SlashMenu({ id, commands, activeIndex, onSelect, onActiveIndexCh
   if (commands.length === 0) {
     return (
       <div
-        role="status"
+        aria-hidden="true"
         className="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-popover p-2 text-sm text-muted-foreground shadow-md ring-1 ring-foreground/10"
       >
         No matching commands

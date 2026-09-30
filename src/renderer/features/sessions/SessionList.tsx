@@ -65,8 +65,11 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const isArchived = !!session.archivedAt
   const rowRef = useRef<HTMLLIElement>(null)
+  const openButtonRef = useRef<HTMLButtonElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameRequestedRef = useRef(false)
+  const restoreFocusRef = useRef(false)
+  const listFocusRequestedRef = useRef(false)
 
   // After a row unmounts (archive/restore/delete), focus must not fall back to <body>
   // (WCAG 2.1 AA focus-visibility): send it to the surrounding list.
@@ -88,8 +91,12 @@ function SessionRow({ session }: { session: SessionSummary }) {
 
   function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     event.stopPropagation()
-    if (event.key === 'Enter') void commitRename()
+    if (event.key === 'Enter') {
+      restoreFocusRef.current = true
+      void commitRename()
+    }
     if (event.key === 'Escape') {
+      restoreFocusRef.current = true
       setDraftName(session.name)
       setRenaming(false)
     }
@@ -114,6 +121,17 @@ function SessionRow({ session }: { session: SessionSummary }) {
     return () => cancelAnimationFrame(raf)
   }, [renaming])
 
+  // Enter/Escape unmount the focused rename input and remount the row's open button in its
+  // place; without this, focus falls to <body> (WCAG 2.1 AA focus-visibility). Blur-triggered
+  // commits (focus already moved elsewhere) must not steal focus back, so this only fires when
+  // `restoreFocusRef` was armed by the Enter/Escape handler.
+  useEffect(() => {
+    if (renaming) return
+    if (!restoreFocusRef.current) return
+    restoreFocusRef.current = false
+    openButtonRef.current?.focus()
+  }, [renaming])
+
   return (
     <li ref={rowRef} className="group relative flex w-full items-center gap-2 rounded-md">
       {isVisible && (
@@ -132,6 +150,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
         />
       ) : (
         <button
+          ref={openButtonRef}
           type="button"
           aria-current={isVisible ? 'true' : undefined}
           // A non-visible row only flips visibility: ChatPane's [visibleSessionId] effect is the single
@@ -173,6 +192,10 @@ function SessionRow({ session }: { session: SessionSummary }) {
             if (renameRequestedRef.current) {
               event.preventDefault()
               renameRequestedRef.current = false
+            } else if (listFocusRequestedRef.current) {
+              event.preventDefault()
+              listFocusRequestedRef.current = false
+              focusListContainer()
             }
           }}
         >
@@ -187,7 +210,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
           {isArchived ? (
             <DropdownMenuItem
               onSelect={() => {
-                focusListContainer()
+                listFocusRequestedRef.current = true
                 void restore(session.id)
               }}
             >
@@ -196,7 +219,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
           ) : (
             <DropdownMenuItem
               onSelect={() => {
-                focusListContainer()
+                listFocusRequestedRef.current = true
                 void archive(session.id)
               }}
             >

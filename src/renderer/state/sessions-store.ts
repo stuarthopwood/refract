@@ -25,6 +25,13 @@ interface SessionsState {
 // Module-level, not store state, because it is an internal sequencing detail no component reads.
 let latestOpenToken = 0
 
+// Callers that arrive while an `open(id)` is already in flight JOIN that call instead of getting
+// `null`: without this, A -> B -> A (A cold-starting) left BOTH the second `open(A)` (returns
+// null because `openingIds.has(id)`) and the first (resolves with a now-stale token, also
+// returns null) applying no snapshot at all, so ChatPane's stop-banner/`chat.commands` fetch and
+// MessageInput's send-after-open were silently skipped.
+const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
+
 // The session list (contracts/ipc.md "Sessions") plus which Session the chat pane is showing.
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
@@ -58,10 +65,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       (err: unknown) => console.error('sessions.setVisible threw', err)
     )
   },
-  open: async (id) => {
-    // A second click on a Session already opening is a no-op: the in-flight call owns it (bug
-    // report point 4).
-    if (get().openingIds.has(id)) return null
+  open: (id) => {
+    const existing = openPromises.get(id)
+    if (existing) return existing
     const token = ++latestOpenToken
     const previousVisibleId = get().visibleSessionId
     set({ openingIds: new Set(get().openingIds).add(id) })
@@ -71,21 +77,29 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     // (gated on `openingIds.has(visibleSessionId)`) must be visible for the whole open, not just
     // after it resolves.
     get().setVisibleSessionId(id)
-    try {
-      const result = await window.pinion.sessions.open(id)
-      if (token !== latestOpenToken) return null // a newer open() superseded this one
-      if (!result.ok) {
-        notify(result.error)
-        // Revert the optimistic flip -- but only if nothing newer already took over visibility.
-        if (get().visibleSessionId === id) get().setVisibleSessionId(previousVisibleId)
-        return null
+    const promise = (async () => {
+      try {
+        const result = await window.pinion.sessions.open(id)
+        if (!result.ok) {
+          notify(result.error)
+          // Revert the optimistic flip -- but only if nothing newer already took over visibility.
+          if (get().visibleSessionId === id) get().setVisibleSessionId(previousVisibleId)
+          return null
+        }
+        // A newer open() (for a *different* id) superseded this one: only discard the snapshot
+        // when `id` is no longer the visible Session -- if the user came back to `id` (A -> B ->
+        // A), it is visible again and must still receive its snapshot.
+        if (token !== latestOpenToken && get().visibleSessionId !== id) return null
+        return result.value
+      } finally {
+        const openingIds = new Set(get().openingIds)
+        openingIds.delete(id)
+        set({ openingIds })
+        openPromises.delete(id)
       }
-      return result.value
-    } finally {
-      const openingIds = new Set(get().openingIds)
-      openingIds.delete(id)
-      set({ openingIds })
-    }
+    })()
+    openPromises.set(id, promise)
+    return promise
   },
   rename: async (id, name) => {
     const result = await window.pinion.sessions.rename(id, name)

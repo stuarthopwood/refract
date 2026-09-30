@@ -2,7 +2,7 @@
 // names exactly what a delete loses before it happens. Shared by the SessionList row menu and
 // the ChatPane worktree-missing banner (FR-035), so it takes only the id/name it needs, not a
 // full SessionSummary.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,8 +29,9 @@ export interface DeleteDialogProps {
    * in normal use, where every real caller leaves it unset and the dialog always calls
    * `deleteCheck`. */
   check?: DeleteCheck
-  /** Called after a successful delete, before the dialog closes, so the caller can move focus
-   * off the row it's about to unmount (WCAG 2.1 AA focus-visibility). */
+  /** Called after the dialog finishes closing (its close-autofocus), so the caller can move
+   * focus off the row it's about to unmount (WCAG 2.1 AA focus-visibility) without Radix's
+   * own return-to-trigger focus restoration overriding it. */
   onDeleted?(): void
 }
 
@@ -40,6 +41,7 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted }: 
   const [deleting, setDeleting] = useState(false)
   const [result, setResult] = useState<DeleteCheck | null>(check ?? null)
   const [error, setError] = useState<string | null>(null)
+  const deletedRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
@@ -74,13 +76,21 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted }: 
       setError(response.error.message)
       return
     }
-    onDeleted?.()
+    deletedRef.current = true
     onOpenChange(false)
   }
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent
+        onCloseAutoFocus={(event) => {
+          if (deletedRef.current) {
+            event.preventDefault()
+            deletedRef.current = false
+            onDeleted?.()
+          }
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>Delete Session {session.name}?</AlertDialogTitle>
           <AlertDialogDescription>This removes its worktree, its branch, and its Conversations.</AlertDialogDescription>
