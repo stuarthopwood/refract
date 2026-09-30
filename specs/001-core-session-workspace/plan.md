@@ -12,7 +12,7 @@ Build the first usable slice of Pinion: an Electron desktop app whose left pane 
 
 **Language/Version**: TypeScript (`strict: true`) on Node 24.21.0 as bundled by Electron 44.5.1; React 19.3.0 in the renderer.
 
-**Primary Dependencies**: `electron` 44.5.1, `electron-vite` 5.0.0, `react` 19.3.0, `zustand` 5.0.15, `react-markdown` 10.1.0 + `rehype-sanitize` 6.0.0, `shiki` 4.4.3 (JS engine), `react-diff-view` 3.3.3, `react-virtuoso` 4.18.16, `react-resizable-panels` 4.14.1, `tailwindcss` 4.3.3, `koffi` (Windows Job Object; version chosen at install).
+**Primary Dependencies**: `electron` 44.5.1, `electron-vite` 5.0.0, `react` 19.3.0, `zustand` 5.0.15, `react-markdown` 10.1.0 + `rehype-sanitize` 6.0.0, `shiki` 4.4.3 (JS engine), `react-diff-view` 3.3.3, `react-virtuoso` 4.18.16, `react-resizable-panels` 4.14.1, `tailwindcss` 4.3.3, `shadcn/ui` (CLI `shadcn` 4.21.0; components copied into `src/renderer/components/ui/` and owned by the repository), `koffi` (Windows Job Object; version chosen at install).
 
 **Storage**: three JSON files in `userData` (`registry.json`, `settings.json`, `processes.json`), atomic writes. Conversations are OMP's own files, not copied.
 
