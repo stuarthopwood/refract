@@ -18,7 +18,7 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 |---|---|
 | `readiness.check()` | `{ git: Check; omp: Check; ompSignedIn: Check }`, `Check = { ok: boolean; found?: string; hint?: string }` |
 
-`omp` is ok only when `omp --version` is exactly `18.4.4`. `ompSignedIn` is ok when a probe process started with the user's config reaches `ready` and `get_available_models` returns at least one model (verify the exact signed-in signal during the readiness work; see tasks.md).
+`omp` is ok only when `omp --version` is exactly `18.4.4`. `ompSignedIn` is ok when a probe process started with the user's default profile reaches `ready` and `get_login_providers` returns at least one entry with `authenticated: true` (`docs/spike/signed-in-probe.mjs`, FINDINGS item 14, 2026-09-30). `get_state.model` being present is NOT diagnostic: a process with zero credentials still resolves and reports a `model`. `get_available_models` returning a non-empty list is a corroborating signal only (it already filters to authenticated, non-disabled providers), never the primary check, because it is additionally scoped by the `enabledModels` config pattern and can read `0` for reasons other than sign-in. On failure, `hint` is: "Sign in to OMP: run `omp` once and complete `/login`, then relaunch Pinion."
 
 ### Repositories (FR-001)
 
@@ -42,6 +42,7 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | `sessions.delete(id, { confirmed: true })` | `void` | Removes worktree, branch (only if unmerged work was confirmed), the Session entry, and Conversation files. Refused without `confirmed: true`. |
 | `sessions.recreateWorktree(id)` | `void` | Only when the branch still exists. Error `branch-missing`. |
 | `sessions.recover(id)` | `SessionSnapshot` | Restart and reattach after `agent-exited`. |
+| `sessions.stopAgent(sessionId)` | `void` | Stops the process, leaves the Session listed as `stopped`/`not-started`, keeps its Conversation; reopening reattaches it (FR-038). |
 
 ### Conversations (FR-013, FR-014)
 
@@ -81,6 +82,7 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | `commands:update` | `{ sessionId, commands: SlashCommand[] }` | Slash-command menu. |
 | `settings:changed` | `Settings` | Status bar switch. |
 | `ui:open-session` | `{ sessionId }` | Emitted when the user clicks a Windows notification. |
+| `memory:warning` | `{ low: boolean; freeBytes: number; liveAgents: number }` | Status bar low-memory notice; never stops an agent automatically (FR-037). |
 
 Streaming is off the renderer's critical path: main normalises OMP frames into `TranscriptItem`s (data-model.md) and keeps the full transcript per Session; the renderer receives patches for the visible Session and asks for a full snapshot via `sessions.open` when it switches. A renderer reload therefore loses nothing.
 

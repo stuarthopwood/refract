@@ -12,7 +12,7 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 
 **Alternatives**: `electron-forge` Vite template and `vite-plugin-electron` (more setup for the same result).
 
-**Open**: sandboxed preload must be CommonJS (sourced: electronjs.org sandbox tutorial). First task verifies the electron-vite output for the preload runs with `sandbox: true`.
+**Verified (T003, 2026-09-30)**: electron-vite's default (non-isolated) preload build already runs with `sandbox: true`. A preload exposing one function through `contextBridge.exposeInMainWorld` and calling it from the renderer reported `{ sandboxed: true, contextIsolated: true }` under both `pnpm dev` and a `pnpm build` + `electron .` run, so electron-vite's isolated build mode is not needed.
 
 ## 2. Renderer libraries
 
