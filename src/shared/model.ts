@@ -99,7 +99,15 @@ export type TranscriptItem =
 /** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart. */
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
-  | { kind: 'question'; requestId: string; title: string; options: string[]; optionDetails?: string[]; allowText: boolean };
+  | {
+      kind: 'question';
+      requestId: string;
+      title: string;
+      message?: string;
+      options: string[];
+      optionDetails?: (string | undefined)[];
+      inputKind: 'choice' | 'text' | 'confirm';
+    };
 
 /** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Pinion. */
 export interface ConversationInfo {

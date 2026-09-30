@@ -5,7 +5,7 @@ Pinion drives `omp --mode rpc-ui` over stdio (newline-delimited JSON). This file
 ## Launch
 
 ```
-omp --mode rpc-ui --approval-mode=<always-ask|write|yolo> [--resume <conversation file>]
+omp --mode rpc-ui --approval-mode=<always-ask|write|yolo>
 ```
 
 - `cwd` is the Session's `worktreePath`. This is required: `switch_session` across cwds is cancelled (FINDINGS C16, item 5).
@@ -17,7 +17,7 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo> [--resume <conversatio
 
 1. Wait for the `ready` frame (timeout 60 s, then `stopped`/`start-failed`).
 2. Send `negotiate_protocol` `{protocolVersion: 2}` if `ready.supportedProtocolVersions` includes 2. From then on, reassemble `rpc_chunk` frames (validate `chunkId`, `index`, `count`, `byteLength`; strict UTF-8; reject interleaving; 64 MiB ceiling). Pinion implements its own decoder because OMP's `RpcFrameDecoder` is raw `.ts` and needs Bun (FINDINGS C22b).
-3. `get_state`. If launched with `--resume`, verify per data-model.md ("Reattach verification"). Record `sessionFile`, `messageCount`, and (first time) `sessionDir = dirname(sessionFile)`.
+3. If the Session has a current Conversation, `switch_session` with its `sessionPath` (never `--resume`, FINDINGS item 17), then `get_state` and verify per data-model.md ("Reattach verification"). Record `sessionFile`, `messageCount`, and (first time) `sessionDir = dirname(sessionFile)`. Only record `currentConversation` and `lastMessageCount` once `messageCount > 0` (`get_state` returns a `sessionFile` before the first message is written).
 4. `get_messages` to build the transcript from history (the response can exceed 1 MiB; v2 framing carries it).
 5. Mark the Session `idle`.
 
@@ -88,7 +88,7 @@ Every `select`, `confirm`, `input`, and `editor` request MUST be answered, or th
 ## Approval mode change (FR-020)
 
 1. The user changes `Settings.approvalMode`. Every live Session with a different `launchedMode` gets `pendingMode` set (chip in the chat header).
-2. When that Session reaches `session_settled` with no pending request: stop the process (stdin close, 10 s, then force), spawn with the new `--approval-mode` and `--resume <currentConversation>`, run reattach verification, and reload the transcript.
+2. When that Session is idle with no pending request (at `session_settled`, or immediately if it already is): stop the process (stdin close, 10 s, then force), spawn with the new `--approval-mode`, `switch_session` to `<currentConversation>`, run reattach verification, and reload the transcript.
 3. If reattach verification fails, the Session is `stopped` with the reason and a Recover action.
 4. A Session that is not running simply launches with the current mode the next time it is opened.
 

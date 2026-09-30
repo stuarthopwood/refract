@@ -150,7 +150,7 @@ type PendingRequest =
 
 ## Reattach verification (FR-013, FR-024)
 
-After starting an agent with `--resume <file>` and reading `get_state`:
+After starting an agent, binding it with `switch_session` to the saved Conversation, and reading `get_state`:
 
 1. `sessionFile` must equal `Session.currentConversation` (case-insensitive path compare).
 2. `messageCount` must be `> 0`, and must equal `Session.lastMessageCount` when that is not null.

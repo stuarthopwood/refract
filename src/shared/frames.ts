@@ -121,9 +121,11 @@ export interface ExtensionUiRequestFrame {
   method: ExtensionUiMethod;
   title?: string;
   options?: string[];
-  optionDetails?: string[];
+  optionDetails?: { description?: string }[];
   message?: string;
-  level?: 'info' | 'warning' | 'error';
+  notifyType?: 'info' | 'warning' | 'error';
+  /** Present only on `method: 'cancel'`: the `id` of the dialog being withdrawn. */
+  targetId?: string;
   // setWidget/setStatus/setTitle/set_editor_text/open_url carry method-specific fields
   // this contract does not enumerate; Pinion ignores those methods entirely.
   [key: string]: unknown;
@@ -192,11 +194,15 @@ export interface AgentEndFrame {
 
 export interface MessageStartFrame {
   type: 'message_start';
+  /** Shared by every message_start/message_update/message_end for the same message; unique
+   * within the RPC process (verified against a real capture). */
+  messageId: string;
   message: OmpMessage;
 }
 
 export interface MessageUpdateFrame {
   type: 'message_update';
+  messageId: string;
   assistantMessageEvent: {
     type: string;
     contentIndex?: number;
@@ -207,6 +213,7 @@ export interface MessageUpdateFrame {
 
 export interface MessageEndFrame {
   type: 'message_end';
+  messageId: string;
   message: OmpMessage;
 }
 
@@ -224,8 +231,9 @@ export interface ToolExecutionEndFrame {
   result: {
     content: OmpTextPart[];
     details?: unknown;
-    isError?: boolean;
   };
+  /** Sibling of `result`, not nested under it (verified against a real capture). */
+  isError: boolean;
 }
 
 export interface QueueUpdateFrame {

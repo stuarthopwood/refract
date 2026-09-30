@@ -1,6 +1,7 @@
 // IPC handlers for `conversations.*` (contracts/ipc.md "Conversations", tasks.md T027). Scanning
 // lives in `../conversations.ts`; `startNew`/`open` drive the live process via `SessionAgent`.
 
+import path from 'node:path';
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { Result, SessionSnapshot, SessionRuntimeView } from '../../shared/ipc';
@@ -62,9 +63,18 @@ export function registerConversations(manager: SessionManager): void {
     }
     const session = manager.registry.getSession(sessionId);
     if (!session) return notFound(`Session not found: ${sessionId}`);
+    // Security: `file` is renderer-supplied; only accept a path this Session's own scan already
+    // returned, never an arbitrary filesystem path (another Session's Conversation, or anything
+    // else readable by the process).
+    const ownConversations = await listConversations(session.sessionDir, session.currentConversation);
+    const resolvedFile = path.resolve(file);
+    const match = ownConversations.find((c) => path.resolve(c.file).toLowerCase() === resolvedFile.toLowerCase());
+    if (!match) {
+      return invalidArgument(`${IPC_REQUESTS.CONVERSATIONS_OPEN} file must be one of this Session's own Conversations`);
+    }
     const agent = manager.getOrCreateAgent(sessionId);
     try {
-      await agent.openConversation(file);
+      await agent.openConversation(match.file);
     } catch (err) {
       return mapThrown(err);
     }

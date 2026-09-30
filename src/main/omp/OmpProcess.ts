@@ -14,6 +14,7 @@ import { EventEmitter } from 'node:events'
 import { type ApprovalMode, OMP_APPROVAL_MODE } from '../../shared/model'
 import type { Frame, ReadyFrame, ResponseFrame, RpcChunkFrame, RpcCommand } from '../../shared/frames'
 import { recordProcess, removeProcessRecord } from '../process/pidRecords'
+import { resolveExecutable, taskkillPath } from '../process/executables'
 
 const READY_TIMEOUT_MS = 60_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
@@ -27,7 +28,6 @@ const MAX_REASSEMBLED_BYTES = 64 * 1024 * 1024
 export interface OmpProcessOptions {
   cwd: string
   approvalMode: ApprovalMode
-  resumeFile?: string
   sessionId: string
   ompPath?: string
 }
@@ -78,11 +78,8 @@ export class OmpProcess extends EventEmitter {
       throw new Error('OmpProcess: start() already called')
     }
 
-    const ompPath = this.opts.ompPath ?? 'omp'
+    const ompPath = this.opts.ompPath ?? (await resolveExecutable('omp'))
     const args: string[] = ['--mode', 'rpc-ui', `--approval-mode=${OMP_APPROVAL_MODE[this.opts.approvalMode]}`]
-    if (this.opts.resumeFile) {
-      args.push('--resume', this.opts.resumeFile)
-    }
 
     // stdio omitted: the default ('pipe' for all three streams) is exactly what the
     // contract asks for, and omitting it lets TypeScript pick the
@@ -227,7 +224,7 @@ export class OmpProcess extends EventEmitter {
     if (pid === undefined || this.exited) return
     // Executor form: see start() for why Promise.withResolvers() isn't available here.
     await new Promise<void>((resolve) => {
-      execFile('taskkill', ['/PID', String(pid), '/T', '/F'], () => resolve())
+      execFile(taskkillPath(), ['/PID', String(pid), '/T', '/F'], () => resolve())
     })
     // taskkill /F should be reliable; wait for the 'exit' event it triggers rather than a
     // second timeout, per contract ("resolve after exit").
@@ -421,6 +418,18 @@ export class OmpProcess extends EventEmitter {
       this.handleParsed(JSON.parse(text) as unknown)
     } catch (err) {
       console.error('OmpProcess: dropping malformed rpc_chunk', err)
+      // The chunk's own id has no visible tie to any pending request's id (the real response,
+      // with its id, only exists once reassembly succeeds), so which in-flight request this
+      // corrupted assembly belonged to is unknowable here. A chunked payload is always some
+      // response, so failing every currently pending request now is far better than letting the
+      // real one hang silently until its own timeout.
+      const reason = err instanceof Error ? err.message : String(err)
+      const rejection = new Error(`OmpProcess: request failed: a chunked response failed reassembly (${reason})`)
+      for (const entry of this.pending.values()) {
+        clearTimeout(entry.timer)
+        entry.reject(rejection)
+      }
+      this.pending.clear()
     }
   }
 }

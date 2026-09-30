@@ -11,15 +11,10 @@ const MAX_TARGET_LENGTH = 200;
 /** Answer gathered from the renderer for a pending dialog. */
 export type DialogAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true };
 
-/** Value after a `<label>:` prefix on a detail line, e.g. `byLabel(details, 'Path')` on
- * `"Path: approved.txt"` returns `"approved.txt"`. */
-function byLabel(details: string[], label: string): string | undefined {
-  const prefix = new RegExp(`^${label}:\\s*`, 'i');
-  for (const line of details) {
-    if (prefix.test(line)) return line.replace(prefix, '');
-  }
-  return undefined;
-}
+/** Matches a `Path:`/`File:`/`Command:` label at the START of a single line (not scanned across
+ * lines: security fix -- a later detail line must never spoof the headline target, e.g. a bash
+ * command whose own text happens to contain a line reading `Path: README.md`). */
+const LABEL_RE = /^(?:Path|File|Command):\s*/i;
 
 function parseApprovalTitle(title: string): { tool: string; details: string[] } {
   const lines = title.split('\n');
@@ -31,37 +26,55 @@ function parseApprovalTitle(title: string): { tool: string; details: string[] } 
   return { tool, details };
 }
 
-/** Prefers a `Path:`/`File:` detail line (the approval's real target), then `Command:`, then the
- * first detail line. Labelled lines are matched by prefix, not by any space/slash heuristic, so a
- * single-word path like `approved.txt` is picked over a multi-word `Content:` line. */
-function pickApprovalTarget(details: string[]): string {
-  const candidate = byLabel(details, 'Path') ?? byLabel(details, 'File') ?? byLabel(details, 'Command') ?? details[0] ?? '';
-  return candidate.slice(0, MAX_TARGET_LENGTH);
+/** The approval's headline target: a `Path:`/`File:`/`Command:` label, but ONLY when it starts
+ * the first non-empty detail line; any other first line (or no details at all) falls back to the
+ * tool name alone. `details` is unchanged and kept in full for the expanded view. */
+function pickApprovalTarget(tool: string, details: string[]): string {
+  const first = details[0];
+  if (typeof first === 'string') {
+    const match = LABEL_RE.exec(first);
+    if (match) return first.slice(match[0].length).slice(0, MAX_TARGET_LENGTH);
+  }
+  return tool.slice(0, MAX_TARGET_LENGTH);
 }
 
 /** Classifies a live `extension_ui_request` frame per contracts/omp-usage.md "Dialogs". */
-export function classifyDialog(frame: ExtensionUiRequestFrame): PendingRequest | 'ignore' | { cancel: string } {
+export function classifyDialog(
+  frame: ExtensionUiRequestFrame,
+): PendingRequest | 'ignore' | { cancel: string } | { notify: { message: string; level: 'info' | 'warning' | 'error' } } {
   switch (frame.method) {
     case 'select': {
       const title = frame.title ?? '';
       if (title.startsWith(APPROVAL_PREFIX)) {
         const { tool, details } = parseApprovalTitle(title);
-        const target = pickApprovalTarget(details);
+        const target = pickApprovalTarget(tool, details);
         return { kind: 'approval', requestId: frame.id, tool, target, details };
       }
       const options = frame.options ?? [];
-      return frame.optionDetails
-        ? { kind: 'question', requestId: frame.id, title, options, optionDetails: frame.optionDetails, allowText: false }
-        : { kind: 'question', requestId: frame.id, title, options, allowText: false };
+      const optionDetails = frame.optionDetails?.map((detail) => detail.description);
+      return optionDetails
+        ? { kind: 'question', requestId: frame.id, title, options, optionDetails, inputKind: 'choice' }
+        : { kind: 'question', requestId: frame.id, title, options, inputKind: 'choice' };
     }
     case 'input':
     case 'editor':
-      return { kind: 'question', requestId: frame.id, title: frame.title ?? '', options: [], allowText: true };
+      return { kind: 'question', requestId: frame.id, title: frame.title ?? '', options: [], inputKind: 'text' };
     case 'confirm':
-      return { kind: 'question', requestId: frame.id, title: frame.title ?? '', options: ['Yes', 'No'], allowText: false };
+      return {
+        kind: 'question',
+        requestId: frame.id,
+        title: frame.title ?? '',
+        message: frame.message,
+        options: ['Yes', 'No'],
+        inputKind: 'confirm',
+      };
     case 'cancel':
-      return { cancel: frame.id };
+      // `targetId` names the dialog being withdrawn; the cancel frame's own `id` is unrelated
+      // (rpc-types.ts: `{ id, method: "cancel", targetId }`). Fall back to `id` only as a last
+      // resort so a malformed frame never throws; it then simply matches no pending request.
+      return { cancel: frame.targetId ?? frame.id };
     case 'notify':
+      return { notify: { message: frame.message ?? '', level: frame.notifyType ?? 'info' } };
     case 'setStatus':
     case 'setWidget':
     case 'setTitle':
@@ -83,6 +96,12 @@ export function buildDialogResponse(requestId: string, request: PendingRequest, 
       throw new Error(`expected an approve answer for approval request ${requestId}`);
     }
     return { type: 'extension_ui_response', id: requestId, value: answer.approve ? 'Approve' : 'Deny' };
+  }
+  // Defensive: OMP's `confirm` reads only `confirmed` (rpc-mode.ts), never `value`; accept a
+  // `{ value: 'Yes' | 'No' }` answer for a confirm question and translate it, in case any caller
+  // ever sends the generic select-style shape for a confirm request.
+  if (request.inputKind === 'confirm' && 'value' in answer) {
+    return { type: 'extension_ui_response', id: requestId, confirmed: answer.value === 'Yes' };
   }
   if ('confirmed' in answer) {
     return { type: 'extension_ui_response', id: requestId, confirmed: answer.confirmed };

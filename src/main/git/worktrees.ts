@@ -108,7 +108,7 @@ export async function addWorktree(repo: string, name: string, baseBranch: string
     throw err
   }
 
-  const result = await gitRaw(repo, ['worktree', 'add', '-b', name, worktreePath, baseBranch])
+  const result = await gitRaw(repo, ['worktree', 'add', '-b', name, '--', worktreePath, baseBranch])
   if (result.code !== 0) {
     await cleanupFailedWorktree(repo, name, worktreePath)
     throw mapAddWorktreeError(result.stderr, worktreePath)
@@ -118,14 +118,14 @@ export async function addWorktree(repo: string, name: string, baseBranch: string
 }
 
 async function cleanupFailedWorktree(repo: string, name: string, worktreePath: string): Promise<void> {
-  await gitRaw(repo, ['worktree', 'remove', '--force', worktreePath])
+  await gitRaw(repo, ['worktree', 'remove', '--force', '--', worktreePath])
   try {
     await fs.rm(worktreePath, { recursive: true, force: true })
   } catch {
     // Best effort: leave the directory behind rather than mask the original git failure.
   }
   await gitRaw(repo, ['worktree', 'prune'])
-  await gitRaw(repo, ['branch', '-D', name])
+  await gitRaw(repo, ['branch', '-D', '--', name])
 }
 
 function mapAddWorktreeError(stderr: string, worktreePath: string): GitError {
@@ -158,12 +158,12 @@ export async function removeWorktree(
   branch: string,
   opts: { deleteBranch: boolean }
 ): Promise<void> {
-  const result = await gitRaw(repo, ['worktree', 'remove', '--force', worktreePath])
+  const result = await gitRaw(repo, ['worktree', 'remove', '--force', '--', worktreePath])
   if (result.code !== 0) {
     throw new GitError('worktree-failed', `git worktree remove failed: ${result.stderr.trim() || result.stdout.trim()}`)
   }
   if (opts.deleteBranch) {
-    await git(repo, ['branch', '-D', branch])
+    await git(repo, ['branch', '-D', '--', branch])
   }
 }
 
@@ -203,7 +203,7 @@ export async function recreateWorktree(repo: string, worktreePath: string, branc
     throw err
   }
 
-  const result = await gitRaw(repo, ['worktree', 'add', '-f', worktreePath, branch])
+  const result = await gitRaw(repo, ['worktree', 'add', '-f', '--', worktreePath, branch])
   if (result.code !== 0) {
     if (isPathTooLongError({ message: result.stderr }) || worktreePath.length >= 260) {
       throw new GitError('path-too-long', `Worktree path too long: ${worktreePath}`)

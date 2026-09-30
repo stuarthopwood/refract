@@ -3,6 +3,7 @@
 
 import { execFile, type ExecFileException } from 'node:child_process'
 import path from 'node:path'
+import { resolveExecutable } from '../process/executables'
 
 export type GitErrorCode =
   | 'not-a-repo'
@@ -30,10 +31,19 @@ export interface GitRawResult {
   code: number
 }
 
-/** Runs `git <args>` with no shell in `cwd`. Never rejects; callers branch on `.code`. */
-export function gitRaw(cwd: string, args: string[]): Promise<GitRawResult> {
+/** Runs `git <args>` with no shell in `cwd`. Never rejects; callers branch on `.code`. Resolves
+ * git's absolute path via `resolveExecutable` (security: Windows would otherwise search `cwd`
+ * before PATH for a bare `"git"`, so a repository that commits its own `git.exe` could run
+ * instead of the real one). */
+export async function gitRaw(cwd: string, args: string[]): Promise<GitRawResult> {
+  let gitPath: string
+  try {
+    gitPath = await resolveExecutable('git')
+  } catch (err) {
+    return { stdout: '', stderr: err instanceof Error ? err.message : String(err), code: 1 }
+  }
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, windowsHide: true }, (error: ExecFileException | null, stdout, stderr) => {
+    execFile(gitPath, args, { cwd, windowsHide: true }, (error: ExecFileException | null, stdout, stderr) => {
       if (error === null) {
         resolve({ stdout, stderr, code: 0 })
         return

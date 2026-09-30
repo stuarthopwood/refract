@@ -53,10 +53,12 @@ sessions do not survive a process restart.
   worktree. Pinion passes no `--session-dir` and takes `dirname(sessionFile)` from `get_state`
   (FINDINGS item 11); RPC has no list-sessions command.
 - To reopen a saved session after an app restart, Pinion spawns a fresh process in the session's
-  worktree and binds it by file path: `--resume <sessionFile>` at launch, or `switch_session`
-  with `sessionPath` in a running process (FINDINGS C16). Pinion MUST confirm every reattach by
-  matching `get_state` `sessionFile` and `messageCount` against the saved session, because
-  `switch_session` to a missing path succeeds with an empty session.
+  worktree and binds it with `switch_session` and `sessionPath` (FINDINGS C16). Pinion MUST NOT
+  use `--resume` for reattach: after a worktree is removed and recreated at the same path it
+  reports an empty session and its later exit overwrites the file with a blank one (FINDINGS
+  item 17). Pinion MUST confirm every reattach by matching `get_state` `sessionFile` and
+  `messageCount` against the saved session, because `switch_session` to a missing path succeeds
+  with an empty session.
 - Every OMP process MUST be spawned with the session's own worktree as its cwd. `switch_session`
   to a session recorded under a different cwd is cancelled and leaves the process on an empty
   session (FINDINGS C16, item 5).
@@ -116,4 +118,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.4.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
+**Version**: 1.5.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30

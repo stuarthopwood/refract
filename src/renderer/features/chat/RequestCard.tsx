@@ -100,26 +100,41 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
     <Card size="sm" className="max-w-[60ch]">
       <CardHeader>
         <CardTitle>{request.title}</CardTitle>
+        {request.message && <CardDescription>{request.message}</CardDescription>}
       </CardHeader>
       <CardContent className="space-y-2">
-        <div className="flex flex-wrap gap-2">
-          {request.options.map((option, index) => (
-            <Button
-              key={option}
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              className="h-auto flex-col items-start gap-0 py-1"
-              onClick={() => void answer({ value: option }, 'answered', option)}
-            >
-              <span>{option}</span>
-              {request.optionDetails?.[index] && (
-                <span className="font-normal text-muted-foreground">{request.optionDetails[index]}</span>
-              )}
+        {request.inputKind === 'confirm' && (
+          <div className="flex gap-2">
+            <Button size="sm" disabled={busy} onClick={() => void answer({ confirmed: true }, 'answered', 'Yes')}>
+              Yes
             </Button>
-          ))}
-        </div>
-        {request.allowText && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void answer({ confirmed: false }, 'answered', 'No')}>
+              No
+            </Button>
+          </div>
+        )}
+        {request.inputKind === 'choice' && (
+          <div className="flex flex-wrap gap-2">
+            {request.options.map((option, index) => (
+              <Button
+                key={option}
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                className="h-auto flex-col items-start gap-0 py-1"
+                onClick={() => void answer({ value: option }, 'answered', option)}
+              >
+                <span>{option}</span>
+                {/* `optionDetails` is a plain string (main converts OMP's `{description?}` objects
+                 * before it reaches here) -- rendered as text, never as an object. */}
+                {request.optionDetails?.[index] && (
+                  <span className="font-normal text-muted-foreground">{request.optionDetails[index]}</span>
+                )}
+              </Button>
+            ))}
+          </div>
+        )}
+        {request.inputKind === 'text' && (
           <div className="flex gap-2">
             <Input
               value={text}

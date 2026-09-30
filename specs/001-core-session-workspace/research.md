@@ -39,7 +39,7 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 
 **Decision**: Pinion passes no `--session-dir`. Each Session's agent runs with `cwd = worktreePath`, and OMP's default per-cwd directory holds that Session's Conversations. Pinion learns the directory once from `dirname(get_state.sessionFile)` and stores it as `Session.sessionDir`.
 
-**Rationale (verified, FINDINGS item 11)**: two worktrees of one repository get different directories; `--resume <file>` and `open_session {sessionDir}` both restore history when the cwd matches; a bare relaunch continues nothing; a Conversation's created time is in its file name.
+**Rationale (verified, FINDINGS items 11 and 17)**: two worktrees of one repository get different directories; `switch_session` and `open_session {sessionDir}` restore history when the cwd matches (`--resume` also does in the ordinary case but is not used, item 17); a bare relaunch continues nothing; a Conversation's created time is in its file name.
 
 **Consequence**: Pinion's registry stores only repository path, worktree path, name, and two pointers into OMP's data. It never parses session files beyond the first line and the first 8 KB for a title and preview.
 
@@ -81,7 +81,7 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 
 ## 9. Approval mode changes
 
-**Decision**: restart the Session's agent with the new `--approval-mode` and `--resume` at `session_settled` (constitution I; FINDINGS item 9). OMP has no runtime command for this (sourced: `rpc.md`, read, not probed).
+**Decision**: restart the Session's agent with the new `--approval-mode` and reattach with `switch_session` once the Session is idle (at `session_settled`, or immediately when it is already idle with no pending request; constitution I; FINDINGS item 9). OMP has no runtime command for this (sourced: `rpc.md`, read, not probed).
 
 **Cost**: a restart drops `providerPayload` (FINDINGS item 5) and costs a cold start of about 16 s (item 6) before the Session is usable again; the header chip says so.
 

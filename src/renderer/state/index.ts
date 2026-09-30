@@ -3,7 +3,7 @@ import { notify } from './notify'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { usePendingRequestsStore } from './pending-requests-store'
-import { useQueueStore } from './queue-store'
+import { EMPTY_QUEUE, useQueueStore } from './queue-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
@@ -14,7 +14,7 @@ export { notify }
 export { useCommandsStore }
 export { useMemoryStore }
 export { usePendingRequestsStore }
-export { useQueueStore }
+export { EMPTY_QUEUE, useQueueStore }
 export { useRepositoriesStore }
 export { DEFAULT_SETTINGS, useSettingsStore }
 export { useSessionsStore }

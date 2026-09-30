@@ -129,4 +129,11 @@ export class SessionManager {
   async stopAll(): Promise<void> {
     await Promise.all([...this.agents.values()].map((agent) => agent.shutdown()));
   }
+
+  /** `sessions.delete` calls this once the Session and its live agent are both shut down and
+   * the registry entry is gone, so the deleted id's `SessionAgent` (event listeners and all) is
+   * not kept alive forever in `agents` for a Session that can never be reopened. */
+  removeAgent(sessionId: string): void {
+    this.agents.delete(sessionId);
+  }
 }

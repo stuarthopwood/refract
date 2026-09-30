@@ -50,6 +50,22 @@ export class ReattachFailedError extends Error {
   }
 }
 
+export class AgentNotRunningError extends Error {
+  readonly code = 'agent-not-running' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgentNotRunningError';
+  }
+}
+
+export class PromptFailedError extends Error {
+  readonly code = 'prompt-failed' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'PromptFailedError';
+  }
+}
+
 export interface SessionAgentEvents {
   status: (payload: SessionStatusEvent) => void;
   patch: (payload: { sessionId: string; ops: TranscriptOp[] }) => void;
@@ -96,8 +112,19 @@ export class SessionAgent extends EventEmitter {
   private patchTimer: NodeJS.Timeout | undefined;
   /** True only while `restart()` is tearing down and respawning the process, so `onExit`'s
    * normal agent-exited handling (status flip, notice) is skipped in favour of `restart()`'s own,
-   * quieter transition (FR-020: a mode-change restart must not look like a crash). */
+   * quieter transition (FR-020: a mode-change restart must not look like a crash). While true,
+   * `send()`/`stop()` refuse with a clear error instead of racing the process swap. */
   private restarting = false;
+  /** In-flight `start()`/`restart()` calls, so a second concurrent call (e.g. two rapid
+   * `sessions.open`, or `session_settled` and a late `prompt_result` both trying to restart)
+   * joins the same attempt instead of spawning a second `omp` process. */
+  private startPromise: Promise<void> | undefined;
+  private restartPromise: Promise<void> | undefined;
+  /** Guards the settle sequence (`settleTurnPendingRequests`/`setStatus('idle')`/
+   * `onSessionSettled`) against running twice for one turn end: OMP can deliver both
+   * `prompt_result.sessionSettled:true` and a separate `session_settled` frame for the same
+   * turn. Reset at the next `agent_start`. */
+  private turnSettleHandled = false;
 
   constructor(opts: SessionAgentOptions) {
     super();
@@ -142,11 +169,21 @@ export class SessionAgent extends EventEmitter {
    * Spawns the agent for this Session's worktree and brings it to `idle`. Resolves once the
    * Session is ready for a prompt; rejects (after moving the runtime to `stopped`) on any
    * failure: a missing worktree, a spawn/handshake failure, or a failed reattach verification.
+   * A second concurrent call (e.g. two rapid `sessions.open`) joins the same attempt instead of
+   * spawning a second `omp` process.
    */
   async start(): Promise<void> {
     if (this.process) {
       throw new Error(`SessionAgent ${this.sessionId}: already started`);
     }
+    if (this.startPromise) return this.startPromise;
+    this.startPromise = this.doStart().finally(() => {
+      this.startPromise = undefined;
+    });
+    return this.startPromise;
+  }
+
+  private async doStart(): Promise<void> {
     const session = this.requireSession();
 
     if (!(await fs.stat(session.worktreePath).then(() => true, () => false))) {
@@ -158,7 +195,6 @@ export class SessionAgent extends EventEmitter {
     const proc = new OmpProcess({
       cwd: session.worktreePath,
       approvalMode,
-      resumeFile: session.currentConversation ?? undefined,
       sessionId: session.id,
       ompPath: this.ompPath,
     });
@@ -168,6 +204,9 @@ export class SessionAgent extends EventEmitter {
     try {
       await proc.start();
     } catch (err) {
+      // A failed handshake (ready timeout, negotiate failure, spawn error) must never leave a
+      // child behind: `this.process` was never set, so nothing else will ever stop it.
+      await proc.stop();
       this.recordStartFailure(err instanceof Error ? err.message : String(err));
       throw err;
     }
@@ -175,26 +214,12 @@ export class SessionAgent extends EventEmitter {
 
     let state: GetStateResponseData;
     try {
-      const stateRes = await proc.request({ type: 'get_state', id: '' });
-      if (!stateRes.success) {
-        throw new Error(`get_state failed: ${stateRes.error ?? 'unknown error'}`);
-      }
-      state = stateRes.data as GetStateResponseData;
+      state = await this.attachAndVerify(proc, session);
     } catch (err) {
       await proc.stop();
       this.process = undefined;
       this.recordStartFailure(err instanceof Error ? err.message : String(err));
       throw err;
-    }
-
-    if (session.currentConversation) {
-      const failure = this.verifyReattach(session, state);
-      if (failure) {
-        await proc.stop();
-        this.process = undefined;
-        this.recordStartFailure(failure);
-        throw new Error(failure);
-      }
     }
 
     let transcript: TranscriptItem[] = [];
@@ -216,12 +241,53 @@ export class SessionAgent extends EventEmitter {
       stopDetail: undefined,
       launchedMode: approvalMode,
       pendingMode: null,
-      transcript,
+      transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript),
     };
 
     await this.syncFromState(state);
     this.emitStatus();
     this.emitPatchReset();
+  }
+
+  /**
+   * Attaches `proc` to `session.currentConversation` via `switch_session`, then `get_state` and
+   * the reattach verification; both are skipped when there is no Conversation yet. Deliberately
+   * not `--resume` at launch: proven equally valid for a normal restart (FINDINGS C16), but a
+   * `git worktree remove` followed by `git worktree add` at the same path (T043's
+   * `recreateWorktree`) leaves `--resume` unable to find the real history -- it silently starts
+   * a blank session at that filename and overwrites it there on exit -- while `switch_session`
+   * against the same file, same process, same cwd attaches correctly (verified live,
+   * 2026-09-30). Throws on any failure; the caller stops `proc` and records it.
+   */
+  private async attachAndVerify(proc: OmpProcess, session: Session): Promise<GetStateResponseData> {
+    if (session.currentConversation) {
+      const switchRes = await proc.request({ type: 'switch_session', id: '', sessionPath: session.currentConversation });
+      const cancelled = (switchRes.data as SwitchSessionResponseData | undefined)?.cancelled;
+      if (!switchRes.success || cancelled !== false) {
+        throw new Error(`switch_session failed or was cancelled for ${session.currentConversation}`);
+      }
+    }
+    const stateRes = await proc.request({ type: 'get_state', id: '' });
+    if (!stateRes.success) {
+      throw new Error(`get_state failed: ${stateRes.error ?? 'unknown error'}`);
+    }
+    const state = stateRes.data as GetStateResponseData;
+    if (session.currentConversation) {
+      const failure = this.verifyReattach(session, state);
+      if (failure) throw new Error(failure);
+    }
+    return state;
+  }
+
+  /** `start()`/`restart()`/`openConversation()` each fetch full history with `get_messages` and
+   * would otherwise flat-replace `runtime.transcript` with it, silently dropping anything a live
+   * frame appended (a pending request, or an in-flight tool/message OMP has not yet persisted)
+   * while that round trip was in flight. Keeps every `historyTranscript` item in its persisted
+   * order, then appends any `liveTranscript` item not already present by id. */
+  private mergeLiveTranscript(historyTranscript: TranscriptItem[], liveTranscript: TranscriptItem[]): TranscriptItem[] {
+    const historyIds = new Set(historyTranscript.map((item) => item.id));
+    const extra = liveTranscript.filter((item) => !historyIds.has(item.id));
+    return extra.length === 0 ? historyTranscript : [...historyTranscript, ...extra];
   }
 
   /** Adds an error notice and moves the runtime to `stopped`/`start-failed` (data-model.md
@@ -238,29 +304,49 @@ export class SessionAgent extends EventEmitter {
    * Used by `SessionManager.stopAll()` and the future Stop-agent feature (T040); distinct from
    * `stop()`, which only aborts the running turn and leaves the process alive. */
   async shutdown(): Promise<void> {
+    if (this.startPromise) {
+      await this.startPromise.catch(() => undefined);
+    }
     if (!this.process) return;
     await this.process.stop();
   }
 
   /** `settings.setApprovalMode` (T031, FR-015): marks a live Session whose `launchedMode` differs
-   * from the new mode so it restarts at its own next settle; a no-op once stopped or already on
-   * `mode`. */
+   * so it restarts once idle with no pending request -- immediately, if that is already true now,
+   * otherwise at its next settle (`maybeRestartForPendingMode`). Reverting to the already-running
+   * `launchedMode` before a pending change applied clears it with no restart. A no-op once
+   * stopped. */
   setPendingMode(mode: ApprovalMode): void {
-    if (this.runtime.status === 'stopped' || this.runtime.launchedMode === mode) return;
+    if (this.runtime.status === 'stopped') return;
+    if (this.runtime.launchedMode === mode) {
+      if (this.runtime.pendingMode === null) return;
+      this.runtime = { ...this.runtime, pendingMode: null };
+      this.emitStatus();
+      return;
+    }
     this.runtime = { ...this.runtime, pendingMode: mode };
     this.emitStatus();
+    this.maybeRestartForPendingMode();
   }
 
   /**
    * Restarts the process with the Settings store's current `--approval-mode` (T032, FR-020):
-   * stop via `shutdown()`, respawn with `--resume <currentConversation>`, the same reattach
-   * verification as `start()`, and a full transcript reload. Called once a Session with
-   * `pendingMode` set reaches `session_settled` with no pending request. A failed verification
-   * leaves the Session `stopped`/`start-failed` with an error notice (`recordStartFailure`); a
-   * Session that is not live when the mode changes simply launches with it next time (`start()`
-   * already reads the current Settings, not a captured one).
+   * stop via `shutdown()`, respawn, reattach via `attachAndVerify`, and a full transcript
+   * reload. Called once a Session with `pendingMode` set reaches `session_settled` with no
+   * pending request. A failed verification leaves the Session `stopped`/`start-failed` with an
+   * error notice (`recordStartFailure`); a Session that is not live when the mode changes simply
+   * launches with it next time (`start()` already reads the current Settings, not a captured
+   * one). A second concurrent call joins the same attempt instead of spawning a second process.
    */
   async restart(reason: string): Promise<void> {
+    if (this.restartPromise) return this.restartPromise;
+    this.restartPromise = this.doRestart(reason).finally(() => {
+      this.restartPromise = undefined;
+    });
+    return this.restartPromise;
+  }
+
+  private async doRestart(reason: string): Promise<void> {
     const session = this.requireSession();
     this.restarting = true;
     try {
@@ -270,7 +356,6 @@ export class SessionAgent extends EventEmitter {
       const proc = new OmpProcess({
         cwd: session.worktreePath,
         approvalMode,
-        resumeFile: session.currentConversation ?? undefined,
         sessionId: session.id,
         ompPath: this.ompPath,
       });
@@ -280,6 +365,8 @@ export class SessionAgent extends EventEmitter {
       try {
         await proc.start();
       } catch (err) {
+        // Same leak risk as doStart(): `this.process` was never set here either.
+        await proc.stop();
         this.recordStartFailure(`Restart failed (${reason}): ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
@@ -287,26 +374,12 @@ export class SessionAgent extends EventEmitter {
 
       let state: GetStateResponseData;
       try {
-        const stateRes = await proc.request({ type: 'get_state', id: '' });
-        if (!stateRes.success) {
-          throw new Error(`get_state failed: ${stateRes.error ?? 'unknown error'}`);
-        }
-        state = stateRes.data as GetStateResponseData;
+        state = await this.attachAndVerify(proc, session);
       } catch (err) {
         await proc.stop();
         this.process = undefined;
         this.recordStartFailure(`Restart failed (${reason}): ${err instanceof Error ? err.message : String(err)}`);
         return;
-      }
-
-      if (session.currentConversation) {
-        const failure = this.verifyReattach(session, state);
-        if (failure) {
-          await proc.stop();
-          this.process = undefined;
-          this.recordStartFailure(`Restart failed (${reason}): ${failure}`);
-          return;
-        }
       }
 
       let transcript: TranscriptItem[] = [];
@@ -326,13 +399,16 @@ export class SessionAgent extends EventEmitter {
         stopDetail: undefined,
         launchedMode: approvalMode,
         pendingMode: null,
-        transcript,
+        transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript),
       };
       await this.syncFromState(state);
       this.emitStatus();
       this.emitPatchReset();
     } finally {
       this.restarting = false;
+      // pendingMode may have changed again while this restart was in flight; re-checking here
+      // covers that without a second restart() call racing this one.
+      this.maybeRestartForPendingMode();
     }
   }
 
@@ -348,15 +424,18 @@ export class SessionAgent extends EventEmitter {
    * `streamingBehavior:'followUp'` prompt while a turn is already running becomes a queue chip
    * instead of starting a second turn. `queued` reports which case this was. */
   async send(text: string): Promise<{ queued: boolean }> {
+    if (this.restarting) {
+      throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send, restart in progress`);
+    }
     if (!this.process) {
-      throw new Error(`SessionAgent ${this.sessionId}: cannot send, no live process`);
+      throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send, no live process`);
     }
     const working = this.runtime.status === 'working' || this.runtime.status === 'needs-you';
     const res = working
       ? await this.process.request({ type: 'prompt', id: '', message: text, streamingBehavior: 'followUp' })
       : await this.process.request({ type: 'prompt', id: '', message: text });
     if (!res.success) {
-      throw new Error(`SessionAgent ${this.sessionId}: prompt failed: ${res.error ?? 'unknown error'}`);
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: prompt failed: ${res.error ?? 'unknown error'}`);
     }
     return { queued: working };
   }
@@ -365,10 +444,13 @@ export class SessionAgent extends EventEmitter {
    * settle (any `prompt_result` status, then `session_settled`) before the Session accepts
    * another prompt. A no-op while idle. */
   async stop(): Promise<void> {
+    if (this.restarting) {
+      throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot stop, restart in progress`);
+    }
     if (!this.process || this.runtime.status === 'idle') return;
     const res = await this.process.request({ type: 'abort', id: '' });
     if (!res.success) {
-      console.error(`SessionAgent ${this.sessionId}: abort failed`, res.error);
+      this.appendNotice(`abort failed: ${res.error ?? 'unknown error'}`, 'error');
     }
     await this.waitForIdle(ABORT_SETTLE_TIMEOUT_MS);
   }
@@ -376,7 +458,7 @@ export class SessionAgent extends EventEmitter {
   /** `chat.removeQueued`: hides the chip only when OMP reports `removed: true`. */
   async removeQueued(text: string): Promise<{ removed: boolean }> {
     if (!this.process) {
-      throw new Error(`SessionAgent ${this.sessionId}: cannot remove a queued message, no live process`);
+      throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot remove a queued message, no live process`);
     }
     const res = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue: 'followUp' });
     return { removed: res.success && (res.data as { removed?: boolean } | undefined)?.removed === true };
@@ -386,7 +468,7 @@ export class SessionAgent extends EventEmitter {
    * steers with the same text. If it had already left the queue on its own, does nothing more. */
   async sendNow(text: string): Promise<{ steered: boolean }> {
     if (!this.process) {
-      throw new Error(`SessionAgent ${this.sessionId}: cannot send now, no live process`);
+      throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send now, no live process`);
     }
     const removeRes = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue: 'followUp' });
     if (!(removeRes.success && (removeRes.data as { removed?: boolean } | undefined)?.removed === true)) {
@@ -397,8 +479,9 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same
-   * cwd, same Session; clears the transcript. `currentConversation` updates at the next settle,
-   * once the first message of the new Conversation is written. */
+   * cwd, same Session; clears the transcript. No Conversation is current until the first message
+   * of the new one is written (OMP creates the file lazily), so `currentConversation` is cleared
+   * to `null` here; `syncFromState` sets it to the new file at the next settle. */
   async startNewConversation(): Promise<void> {
     if (this.runtime.status !== 'idle' || !this.process) {
       throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot start a new Conversation while ${this.runtime.status}`);
@@ -406,6 +489,11 @@ export class SessionAgent extends EventEmitter {
     const res = await this.process.request({ type: 'new_session', id: '' });
     if (!res.success) {
       throw new Error(`SessionAgent ${this.sessionId}: new_session failed: ${res.error ?? 'unknown error'}`);
+    }
+    try {
+      await this.registry.updateSession(this.sessionId, { currentConversation: null, lastMessageCount: null });
+    } catch (err) {
+      console.error(`SessionAgent ${this.sessionId}: failed to clear currentConversation after new_session`, err);
     }
     this.runtime = { ...this.runtime, transcript: [] };
     this.emitPatchReset();
@@ -419,26 +507,70 @@ export class SessionAgent extends EventEmitter {
     if (this.runtime.status !== 'idle' || !this.process) {
       throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot open a Conversation while ${this.runtime.status}`);
     }
+    const session = this.requireSession();
+    const previousConversation = session.currentConversation;
+
     const switchRes = await this.process.request({ type: 'switch_session', id: '', sessionPath: file });
     const cancelled = (switchRes.data as SwitchSessionResponseData | undefined)?.cancelled;
     if (!switchRes.success || cancelled !== false) {
+      // switch_session itself failed or was cancelled: OMP never actually rebinds the process in
+      // that case, so it is still on `previousConversation` -- nothing to recover.
       throw new ReattachFailedError(`SessionAgent ${this.sessionId}: switch_session failed or was cancelled for ${file}`);
     }
+
+    // From here the live process IS bound to `file`; any further failure must not leave it there
+    // while the registry still points at `previousConversation` (security fix: the live process
+    // and the registry must never disagree about the current Conversation).
     const stateRes = await this.process.request({ type: 'get_state', id: '' });
-    if (!stateRes.success) {
-      throw new ReattachFailedError(`SessionAgent ${this.sessionId}: get_state after switch_session failed: ${stateRes.error ?? 'unknown error'}`);
-    }
-    const state = stateRes.data as GetStateResponseData;
-    const session = this.requireSession();
-    const failure = this.verifyReattach({ ...session, currentConversation: file, lastMessageCount: null }, state);
+    const failure = !stateRes.success
+      ? `get_state after switch_session failed: ${stateRes.error ?? 'unknown error'}`
+      : this.verifyReattach({ ...session, currentConversation: file, lastMessageCount: null }, stateRes.data as GetStateResponseData);
     if (failure) {
+      await this.recoverFromFailedSwitch(previousConversation, file, failure);
       throw new ReattachFailedError(failure);
     }
+
+    const state = stateRes.data as GetStateResponseData;
     const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
     const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
-    this.runtime = { ...this.runtime, transcript };
+    this.runtime = { ...this.runtime, transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript) };
     await this.syncFromState(state);
     this.emitPatchReset();
+  }
+
+  /** Restores consistency after `openConversation` fails its post-switch verification: the live
+   * process must never stay bound to `attemptedFile` while the registry still points at
+   * `previousConversation`. Tries switching back to the prior Conversation first; if that also
+   * fails to verify (or there was no prior Conversation to return to), stops the process and
+   * marks the Session `stopped`/`start-failed` instead of leaving it silently pointed at the
+   * wrong file. */
+  private async recoverFromFailedSwitch(previousConversation: string | null, attemptedFile: string, reason: string): Promise<void> {
+    if (!this.process) return;
+    if (previousConversation) {
+      try {
+        const backRes = await this.process.request({ type: 'switch_session', id: '', sessionPath: previousConversation });
+        const backCancelled = (backRes.data as SwitchSessionResponseData | undefined)?.cancelled;
+        if (backRes.success && backCancelled === false) {
+          const backStateRes = await this.process.request({ type: 'get_state', id: '' });
+          if (backStateRes.success) {
+            const session = this.requireSession();
+            const backFailure = this.verifyReattach(session, backStateRes.data as GetStateResponseData);
+            if (!backFailure) {
+              const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
+              const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
+              this.runtime = { ...this.runtime, transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript) };
+              this.emitPatchReset();
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`SessionAgent ${this.sessionId}: failed to switch back after a failed openConversation`, err);
+      }
+    }
+    await this.process.stop().catch(() => undefined);
+    this.process = undefined;
+    this.recordStartFailure(`openConversation(${attemptedFile}) failed reattach verification (${reason}), and recovery to the prior Conversation also failed`);
   }
 
   /** `chat.answer` (T028): writes the `extension_ui_response` for a still-pending request and
@@ -476,17 +608,20 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** Runs after the initial `get_state` and after every `session_settled` (data-model.md
-   * "`sessionDir` is learned once ..."). */
+   * "`sessionDir` is learned once ..."). `currentConversation`/`lastMessageCount` stay `null`
+   * until `messageCount > 0`: `get_state` reports a `sessionFile` even before the first message
+   * (OMP creates it lazily), and recording it early would later fail reattach verification's
+   * own "`messageCount` must be > 0" check against a Conversation that never really existed. */
   private async syncFromState(state: GetStateResponseData): Promise<void> {
     const session = this.registry.getSession(this.sessionId);
     if (!session) return;
-    const patch: Partial<Session> = {
-      lastMessageCount: state.messageCount,
-      lastActivityAt: new Date().toISOString(),
-      currentConversation: state.sessionFile,
-    };
+    const patch: Partial<Session> = { lastActivityAt: new Date().toISOString() };
     if (session.sessionDir === null) {
       patch.sessionDir = path.dirname(state.sessionFile);
+    }
+    if (state.messageCount > 0) {
+      patch.lastMessageCount = state.messageCount;
+      patch.currentConversation = state.sessionFile;
     }
     try {
       await this.registry.updateSession(this.sessionId, patch);
@@ -509,6 +644,18 @@ export class SessionAgent extends EventEmitter {
     }
   }
 
+  /** Runs the turn-end settle sequence at most once per turn: OMP can deliver both
+   * `prompt_result.sessionSettled:true` and a separate `session_settled` frame for the same
+   * turn end, and running this twice would double-fire `onSessionSettled`'s registry sync and
+   * `maybeRestartForPendingMode`'s restart check. */
+  private handleTurnSettled(): void {
+    if (this.turnSettleHandled) return;
+    this.turnSettleHandled = true;
+    this.settleTurnPendingRequests('Request withdrawn: the turn ended.');
+    this.setStatus('idle');
+    void this.onSessionSettled().then(() => this.maybeRestartForPendingMode());
+  }
+
   private onExit(info: { code: number | null; requested: boolean }): void {
     this.process = undefined;
     if (this.restarting) return; // restart() owns this transition; see its doc comment.
@@ -528,19 +675,16 @@ export class SessionAgent extends EventEmitter {
   private onFrame(frame: Frame): void {
     switch (frame.type) {
       case 'agent_start':
+        this.turnSettleHandled = false;
         this.setStatus('working');
         return;
       case 'session_settled':
-        this.settleTurnPendingRequests('Request withdrawn: the turn ended.');
-        this.setStatus('idle');
-        void this.onSessionSettled().then(() => this.maybeRestartForPendingMode());
+        this.handleTurnSettled();
         return;
       case 'prompt_result':
         this.applyTranscriptFrame(frame);
         if (frame.sessionSettled === true) {
-          this.settleTurnPendingRequests('Request withdrawn: the turn ended.');
-          this.setStatus('idle');
-          void this.onSessionSettled().then(() => this.maybeRestartForPendingMode());
+          this.handleTurnSettled();
         }
         return;
       case 'queue_update': {
@@ -560,6 +704,10 @@ export class SessionAgent extends EventEmitter {
         const dialogFrame = frame as ExtensionUiRequestFrame;
         const classified = classifyDialog(dialogFrame);
         if (classified === 'ignore') return;
+        if ('notify' in classified) {
+          this.appendNotice(classified.notify.message, classified.notify.level);
+          return;
+        }
         if ('cancel' in classified) {
           if (this.runtime.pending.some((r) => r.requestId === classified.cancel)) {
             this.resolvePendingRequest(classified.cancel, 'cancelled');
@@ -676,8 +824,15 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** Full-snapshot flush, used at the end of `start()`, `startNewConversation()`, and
-   * `openConversation()` (contracts/ipc.md "a final flush when a Session becomes visible"). */
+   * `openConversation()` (contracts/ipc.md "a final flush when a Session becomes visible").
+   * Clears any coalesced patch still pending: those ops are against the pre-reset transcript, so
+   * flushing them afterward would reapply stale operations on top of the fresh snapshot. */
   private emitPatchReset(): void {
+    if (this.patchTimer) {
+      clearTimeout(this.patchTimer);
+      this.patchTimer = undefined;
+    }
+    this.pendingOps = [];
     this.emit('patch', { sessionId: this.sessionId, ops: [{ op: 'reset', items: this.runtime.transcript }] });
   }
 
@@ -693,9 +848,11 @@ export class SessionAgent extends EventEmitter {
     }, PATCH_COALESCE_MS);
   }
 
-  /** Resolves once the Session reaches `idle`, used by `stop()` after sending `abort`. */
+  /** Resolves once the Session reaches `idle` -- or `stopped`, if the process exits mid-abort,
+   * since it will then never reach `idle` and the caller must not wait out the full timeout for
+   * something that has already definitively happened. Used by `stop()` after sending `abort`. */
   private waitForIdle(timeoutMs: number): Promise<void> {
-    if (this.runtime.status === 'idle') return Promise.resolve();
+    if (this.runtime.status === 'idle' || this.runtime.status === 'stopped') return Promise.resolve();
     // Promise.withResolvers() would read cleaner here, but it needs lib "ES2024" and
     // tsconfig.node.json is pinned to "ES2023" (see OmpProcess.ts's start()); executor form kept.
     return new Promise((resolve, reject) => {
@@ -704,7 +861,7 @@ export class SessionAgent extends EventEmitter {
         reject(new Error(`SessionAgent ${this.sessionId}: timed out waiting for idle`));
       }, timeoutMs);
       const onStatus = (payload: SessionStatusEvent): void => {
-        if (payload.status !== 'idle') return;
+        if (payload.status !== 'idle' && payload.status !== 'stopped') return;
         clearTimeout(timer);
         this.off('status', onStatus);
         resolve();

@@ -17,6 +17,7 @@ import { promisify } from 'node:util'
 import * as path from 'node:path'
 import type { ProcessRecord } from '../../shared/model'
 import { readJsonFile, writeJsonFile } from '../store/atomicJson'
+import { resolvePowerShell, taskkillPath } from './executables'
 
 const execFileAsync = promisify(execFile)
 
@@ -53,28 +54,23 @@ interface ProcessInfo {
   imageName: string
 }
 
-const POWERSHELL_CANDIDATES = ['pwsh', 'powershell']
-
-async function runPowerShell(script: string): Promise<string> {
-  let lastError: unknown
-  for (const exe of POWERSHELL_CANDIDATES) {
-    try {
-      const { stdout } = await execFileAsync(exe, ['-NoProfile', '-NonInteractive', '-Command', script], {
-        windowsHide: true
-      })
-      return stdout.trim()
-    } catch (err) {
-      lastError = err
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+/** A pid loaded from `processes.json` is untrusted file content; only a positive safe integer is
+ * ever queried or passed to PowerShell/taskkill (security: never interpolate raw file content
+ * into a shell command). */
+function isValidPid(pid: unknown): pid is number {
+  return typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 0
 }
 
 // Returns undefined when the pid is not currently running (already exited, or reused by a
 // different process whose StartTime will differ from the caller's expectation anyway).
 async function queryProcess(pid: number): Promise<ProcessInfo | undefined> {
+  if (!isValidPid(pid)) return undefined
+  const powerShellPath = await resolvePowerShell()
   const script = `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $p.StartTime.ToUniversalTime().ToString('o') + '|' + $p.Name + '.exe' } else { '' }`
-  const out = await runPowerShell(script)
+  const { stdout } = await execFileAsync(powerShellPath, ['-NoProfile', '-NonInteractive', '-Command', script], {
+    windowsHide: true
+  })
+  const out = stdout.trim()
   if (!out) return undefined
   const sep = out.lastIndexOf('|')
   if (sep < 0) return undefined
@@ -106,21 +102,23 @@ export async function reapStale(): Promise<number> {
   return enqueue(async () => {
     const file = requireFilePath()
     const records = await readJsonFile<ProcessRecord[]>(file, makeDefault)
+    const taskkill = taskkillPath()
     let stopped = 0
     for (const record of records) {
+      if (!isValidPid(record.pid)) continue
       const info = await queryProcess(record.pid)
       const isSameOmpProcess =
         info !== undefined && info.startTime === record.startTime && info.imageName.toLowerCase() === 'omp.exe'
       if (isSameOmpProcess) {
         try {
-          await execFileAsync('taskkill', ['/PID', String(record.pid), '/T', '/F'], { windowsHide: true })
+          await execFileAsync(taskkill, ['/PID', String(record.pid), '/T', '/F'], { windowsHide: true })
           stopped += 1
         } catch {
           // Process exited between the query above and the kill attempt; nothing left to stop.
         }
       }
     }
-    // Every record has now either been stopped or found stale/mismatched; none are worth
+    // Every record has now either been stopped or found stale/mismatched/invalid; none are worth
     // keeping across this reap.
     await writeJsonFile(file, makeDefault())
     return stopped

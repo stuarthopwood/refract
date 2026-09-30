@@ -22,25 +22,6 @@ type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
 
 const MAX_TARGET_LENGTH = 200;
 
-// `message_start` / `message_update` / `message_end` all carry a top-level `messageId` string
-// identifying the message across its lifecycle (contracts/omp-usage.md), but the frames.ts
-// interfaces for those three frame types don't declare it (verified against a real capture,
-// docs/spike/resume-probe.mjs frames/P0-seed.jsonl: `{"type":"message_start",...,"messageId":"msg-4"}`).
-// Named const (not an inline cast) because the real wire shape disagrees with the declared type.
-function readMessageId(frame: unknown): string {
-  const wire = frame as { messageId?: unknown };
-  return typeof wire.messageId === 'string' ? wire.messageId : '';
-}
-
-// `ToolExecutionEndFrame.result.isError` is declared nested under `result`, but a real capture
-// (docs/spike/pinion-edit-diff-probe frames/edit-diff.jsonl) shows `isError` on the frame itself,
-// sibling to `result`. Named const (not an inline cast) because the real wire shape disagrees
-// with the declared type.
-function readToolIsError(frame: ToolExecutionEndFrame): boolean {
-  const wire = frame as unknown as ToolExecutionEndFrame & { isError?: boolean };
-  return wire.isError ?? frame.result.isError ?? false;
-}
-
 function firstStringArg(args: unknown): string {
   if (args && typeof args === 'object') {
     for (const value of Object.values(args as Record<string, unknown>)) {
@@ -238,7 +219,7 @@ function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionSt
 
 function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndFrame): TranscriptItem[] {
   const existing = items.find((item): item is ToolItem => isToolItem(item) && item.toolCallId === frame.toolCallId);
-  const isError = readToolIsError(frame);
+  const isError = frame.isError;
   const output = joinText(frame.result.content);
   const edit = buildEditField(frame.toolName, frame.result.details);
   if (!existing) {
@@ -284,14 +265,14 @@ export function applyFrame(items: TranscriptItem[], frame: Frame): TranscriptIte
   if (!isKnownFrame(frame)) return items;
   switch (frame.type) {
     case 'message_start':
-      return applyMessageSnapshot(items, readMessageId(frame), frame.message, true);
+      return applyMessageSnapshot(items, frame.messageId, frame.message, true);
     case 'message_update': {
       const partial = frame.assistantMessageEvent.partial;
       if (!partial) return items;
-      return applyMessageSnapshot(items, readMessageId(frame), partial, true);
+      return applyMessageSnapshot(items, frame.messageId, partial, true);
     }
     case 'message_end':
-      return applyMessageSnapshot(items, readMessageId(frame), frame.message, false);
+      return applyMessageSnapshot(items, frame.messageId, frame.message, false);
     case 'tool_execution_start':
       return applyToolExecutionStart(items, frame);
     case 'tool_execution_end':

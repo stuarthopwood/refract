@@ -5,6 +5,7 @@ import { cn } from 'cn'
 import type { Highlighter } from 'shiki'
 import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
+import { safeUrl } from '@/lib/safe-url'
 
 // Readable prose width (docs/DESIGN.md "Chat": "Prose keeps a readable maximum line width; code
 // blocks and diffs may span wider"). Applied per block element, not on the container, so fenced
@@ -89,14 +90,32 @@ function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
 }
 
 const components: Components = {
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" className="underline underline-offset-2" />,
+  // Security review: a relative or protocol-relative href (e.g. `/C:/Windows/System32/x.exe`,
+  // `//host/share/x.exe`) resolves against the production renderer's `file://` origin, and
+  // `file:`/`mailto:`/`javascript:`/`data:`/unknown schemes can reach main's
+  // `shell.openExternal` in unintended ways. Only an absolute http(s) URL is ever rendered as a
+  // clickable link; anything else renders as plain text (not an <a> at all, not just one
+  // without an href), so `urlTransform` alone (which can only blank a property) is not enough.
+  a: ({ node: _node, href, children, ...props }) => {
+    const safe = safeUrl(href)
+    if (!safe) return <>{children}</>
+    return (
+      <a {...props} href={safe} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
+        {children}
+      </a>
+    )
+  },
   // Agent-supplied images are never rendered as <img> (constitution V); the alt text becomes a
-  // link to the source instead.
-  img: ({ alt, src }) => (
-    <a href={typeof src === 'string' ? src : undefined} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-      {alt || src || 'image'}
-    </a>
-  ),
+  // link to the source instead, gated by the same http(s)-only rule as `a` above.
+  img: ({ alt, src }) => {
+    const safe = safeUrl(typeof src === 'string' ? src : undefined)
+    if (!safe) return <>{alt || 'image'}</>
+    return (
+      <a href={safe} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
+        {alt || safe}
+      </a>
+    )
+  },
   p: ({ className, ...props }) => <p className={cn(PROSE_WIDTH, className)} {...props} />,
   ul: ({ className, ...props }) => <ul className={cn(PROSE_WIDTH, 'list-disc pl-5', className)} {...props} />,
   ol: ({ className, ...props }) => <ol className={cn(PROSE_WIDTH, 'list-decimal pl-5', className)} {...props} />,
@@ -139,7 +158,7 @@ interface MarkdownProps {
 export function Markdown({ text }: MarkdownProps) {
   return (
     <div className="space-y-2 text-sm leading-relaxed break-words">
-      <ReactMarkdown rehypePlugins={[rehypeSanitize]} components={components}>
+      <ReactMarkdown rehypePlugins={[rehypeSanitize]} components={components} urlTransform={safeUrl}>
         {text}
       </ReactMarkdown>
     </div>

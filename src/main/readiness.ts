@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { resolveExecutable } from './process/executables';
 import { gitRaw } from './git/git';
 import { OmpProcess } from './omp/OmpProcess';
 import type { RpcCommand } from '../shared/frames';
@@ -30,13 +31,16 @@ async function checkGit(): Promise<Check> {
 }
 
 async function checkOmp(): Promise<Check> {
+  let ompPath: string;
+  try {
+    ompPath = await resolveExecutable('omp');
+  } catch {
+    return { ok: false, hint: 'omp not found on PATH. Install omp and relaunch Pinion.' };
+  }
   let stdout: string;
   try {
-    stdout = (await execFileAsync('omp', ['--version'], { windowsHide: true })).stdout;
+    stdout = (await execFileAsync(ompPath, ['--version'], { windowsHide: true })).stdout;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { ok: false, hint: 'omp not found on PATH. Install omp and relaunch Pinion.' };
-    }
     return { ok: false, hint: `omp --version failed: ${err instanceof Error ? err.message : String(err)}` };
   }
   const found = OMP_VERSION_RE.exec(stdout)?.[1] ?? stdout.trim();

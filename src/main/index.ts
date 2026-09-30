@@ -1,5 +1,11 @@
-import { app, BrowserWindow, shell } from 'electron'
+// Windows resolves a bare executable name against the spawning process's cwd before PATH; set
+// this before anything (including a transitively-imported module) could spawn, so Pinion itself
+// never falls into that search order even indirectly (security fix, independent review).
+process.env['NoDefaultCurrentDirectoryInExePath'] = '1'
+
+import { app, BrowserWindow, session, shell } from 'electron'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { joinKillOnCloseJob } from './process/jobObject'
 import { initPidRecords, reapStale } from './process/pidRecords'
 import { RegistryStore } from './store/registry'
@@ -19,6 +25,47 @@ let manager: SessionManager | undefined
 
 function getWindow(): BrowserWindow | undefined {
   return mainWindow
+}
+
+/** Opens `url` in the system browser only when it parses and its protocol is `https:` or
+ * `http:`; every other request (a malformed string, `file:`, a UNC path, `mailto:`, `javascript:`,
+ * ...) is silently dropped. Never logs the URL itself, only whether/why it was dropped. */
+function openExternalSafe(url: string): void {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    console.debug('main: dropped an external open request with an unparsable URL')
+    return
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    console.debug(`main: dropped an external open request with a disallowed protocol (${parsed.protocol})`)
+    return
+  }
+  void shell.openExternal(parsed.href)
+}
+
+/** Exact match only, never a prefix check: in dev, the renderer dev server's own origin; in a
+ * built app, the built `index.html` as a `file:` URL (hash ignored, since the renderer's own
+ * client-side routing may set one). Anything else -- including a same-scheme, different-path
+ * `file:` URL -- is not the app's own origin. */
+function isOwnOrigin(url: string): boolean {
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+  if (isDev && rendererUrl) {
+    try {
+      return new URL(url).origin === new URL(rendererUrl).origin
+    } catch {
+      return false
+    }
+  }
+  const indexHref = pathToFileURL(join(__dirname, '../renderer/index.html')).href
+  try {
+    const target = new URL(url)
+    target.hash = ''
+    return target.href === indexHref
+  } catch {
+    return false
+  }
 }
 
 function createWindow(): void {
@@ -50,20 +97,22 @@ function createWindow(): void {
   // Every window.open()/target=_blank request opens in the system browser, never a second
   // Electron window (constitution V: app windows must not load remote content).
   window.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url)
+    openExternalSafe(details.url)
     return { action: 'deny' }
   })
 
-  // Block in-app navigation away from the renderer's own origin; hand any other URL to the
-  // system browser instead of letting the window navigate to it.
-  window.webContents.on('will-navigate', (event, url) => {
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL']
-    const isOwnOrigin = rendererUrl ? url.startsWith(rendererUrl) : url.startsWith('file://')
-    if (!isOwnOrigin) {
-      event.preventDefault()
-      void shell.openExternal(url)
-    }
-  })
+  // Block in-app navigation away from the renderer's own exact origin (own-origin check, not a
+  // prefix match); hand an allowed external URL to the system browser instead. `will-navigate`
+  // only covers the main frame; `will-frame-navigate` is the same check for every frame
+  // (including one a dropped file or a subframe would target), so neither a same-window
+  // navigation nor a frame navigation can reach an arbitrary URL.
+  const denyForeignNavigation = (event: { preventDefault: () => void }, url: string): void => {
+    if (isOwnOrigin(url)) return
+    event.preventDefault()
+    openExternalSafe(url)
+  }
+  window.webContents.on('will-navigate', (event, url) => denyForeignNavigation(event, url))
+  window.webContents.on('will-frame-navigate', (details) => denyForeignNavigation(details, details.url))
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     void window.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -88,6 +137,11 @@ if (!gotLock) {
     if (!jobResult.ok) {
       console.warn(`main: joinKillOnCloseJob failed, continuing without kill-on-close containment: ${jobResult.error ?? 'unknown reason'}`)
     }
+
+    // Pinion needs no permission the OS/browser sandbox gates (camera, mic, geolocation,
+    // notifications go through the main-process Notification API, not the renderer's).
+    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+    session.defaultSession.setPermissionCheckHandler(() => false)
 
     const userDataDir = app.getPath('userData')
     await initPidRecords(userDataDir)

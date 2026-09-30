@@ -9,7 +9,7 @@ import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { ChatAnswer, Result } from '../../shared/ipc';
 import type { SlashCommandDescriptor } from '../../shared/frames';
-import { ReattachFailedError, SessionNotIdleError } from '../omp/SessionAgent';
+import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from '../omp/SessionAgent';
 import type { SessionManager } from '../SessionManager';
 
 // Constitution I: "Pinion ... supplies natively only the commands absent over RPC: /plan,
@@ -37,6 +37,15 @@ function mapThrown(err: unknown): Result<never> {
   if (err instanceof SessionNotIdleError) return { ok: false, error: { code: err.code, message: err.message } };
   if (err instanceof ReattachFailedError) return { ok: false, error: { code: err.code, message: err.message } };
   return { ok: false, error: { code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) } };
+}
+
+/** `chat.send`/`chat.stop`/`chat.removeQueued`/`chat.sendNow` all drive an already-attached
+ * process (never a Conversation reattach), so their default code is `prompt-failed`, not
+ * `mapThrown`'s `reattach-failed`. */
+function mapChatError(err: unknown): Result<never> {
+  if (err instanceof AgentNotRunningError) return { ok: false, error: { code: err.code, message: err.message } };
+  if (err instanceof PromptFailedError) return { ok: false, error: { code: err.code, message: err.message } };
+  return { ok: false, error: { code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) } };
 }
 
 function collectCommandNames(commands: readonly SlashCommandDescriptor[]): Set<string> {
@@ -93,15 +102,19 @@ export function registerChat(manager: SessionManager): void {
       const result = await agent.send(text);
       return { ok: true, value: result };
     } catch (err) {
-      return { ok: false, error: { code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) } };
+      return mapChatError(err);
     }
   });
 
   ipcMain.handle(IPC_REQUESTS.CHAT_STOP, async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') return invalidArgument(`${IPC_REQUESTS.CHAT_STOP} expects a string sessionId`);
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
-    await manager.getOrCreateAgent(sessionId).stop();
-    return { ok: true, value: undefined };
+    try {
+      await manager.getOrCreateAgent(sessionId).stop();
+      return { ok: true, value: undefined };
+    } catch (err) {
+      return mapChatError(err);
+    }
   });
 
   ipcMain.handle(IPC_REQUESTS.CHAT_REMOVE_QUEUED, async (_event, sessionId: unknown, text: unknown) => {
@@ -109,8 +122,12 @@ export function registerChat(manager: SessionManager): void {
       return invalidArgument(`${IPC_REQUESTS.CHAT_REMOVE_QUEUED} expects (sessionId, text) strings`);
     }
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
-    const result = await manager.getOrCreateAgent(sessionId).removeQueued(text);
-    return { ok: true, value: result };
+    try {
+      const result = await manager.getOrCreateAgent(sessionId).removeQueued(text);
+      return { ok: true, value: result };
+    } catch (err) {
+      return mapChatError(err);
+    }
   });
 
   ipcMain.handle(IPC_REQUESTS.CHAT_SEND_NOW, async (_event, sessionId: unknown, text: unknown) => {
@@ -118,8 +135,12 @@ export function registerChat(manager: SessionManager): void {
       return invalidArgument(`${IPC_REQUESTS.CHAT_SEND_NOW} expects (sessionId, text) strings`);
     }
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
-    const result = await manager.getOrCreateAgent(sessionId).sendNow(text);
-    return { ok: true, value: result };
+    try {
+      const result = await manager.getOrCreateAgent(sessionId).sendNow(text);
+      return { ok: true, value: result };
+    } catch (err) {
+      return mapChatError(err);
+    }
   });
 
   ipcMain.handle(IPC_REQUESTS.CHAT_ANSWER, async (_event, sessionId: unknown, requestId: unknown, answer: unknown) => {

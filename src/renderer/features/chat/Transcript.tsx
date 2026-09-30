@@ -1,6 +1,4 @@
 import * as React from 'react'
-import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from 'lucide-react'
-import { cn } from 'cn'
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -16,18 +14,7 @@ import type { PendingRequest, TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
 import { ToolRow } from './ToolRow'
 import { RequestCard, ResolvedRequestSummary } from './RequestCard'
-
-const NOTICE_ICON = {
-  info: InfoIcon,
-  warning: TriangleAlertIcon,
-  error: CircleAlertIcon
-} as const
-
-const NOTICE_CLASS = {
-  info: 'text-muted-foreground',
-  warning: 'text-state-needs-you',
-  error: 'text-destructive'
-} as const
+import { NoticeRow } from './NoticeRow'
 
 interface TranscriptRowProps {
   item: TranscriptItem
@@ -87,15 +74,8 @@ function TranscriptRow({ item, sessionId, pending }: TranscriptRowProps) {
       return <ResolvedRequestSummary resolved={item.resolved} />
     }
 
-    case 'notice': {
-      const Icon = NOTICE_ICON[item.level]
-      return (
-        <div className={cn('flex items-center gap-1.5 px-2 py-1 text-xs', NOTICE_CLASS[item.level])}>
-          <Icon className="size-3.5 shrink-0" />
-          <span>{item.text}</span>
-        </div>
-      )
-    }
+    case 'notice':
+      return <NoticeRow level={item.level} text={item.text} />
   }
 }
 

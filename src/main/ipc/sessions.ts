@@ -1,16 +1,19 @@
 // IPC handlers for `sessions.*` (contracts/ipc.md "Sessions"). Implemented: `create`/`list`/
-// `rename` (T022), `open`/`recover` (T022/T045, sharing `openOrRecover`), `archive`/`restore`
-// (T041), `deleteCheck`/`delete` (T042), `recreateWorktree` (T043), `stopAgent` (T040), and
-// `setVisible` (T036/T037).
+// `rename` (T022), `open`/`recover` (T022/T045, sharing `attachSnapshot`; `open` only
+// auto-starts a Session that was never wrong -- `canAutoStart` -- `recover` always restarts),
+// `archive`/`restore` (T041), `deleteCheck`/`delete` (T042), `recreateWorktree` (T043),
+// `stopAgent` (T040), and `setVisible` (T036/T037).
 
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { Result, SessionSnapshot, SessionRuntimeView } from '../../shared/ipc';
 import type { Session } from '../../shared/model';
 import { git, GitError } from '../git/git';
-import { addWorktree, branchExists, deleteCheck, generateName, recreateWorktree, removeWorktree } from '../git/worktrees';
+import { addWorktree, branchExists, deleteCheck, generateName, listBranches, recreateWorktree, removeWorktree } from '../git/worktrees';
 import { RegistryError } from '../store/registry';
 import { listConversations } from '../conversations';
 import type { SessionAgent } from '../omp/SessionAgent';
@@ -36,6 +39,45 @@ async function buildSnapshot(agent: SessionAgent, session: Session): Promise<Ses
   return { runtime, conversations };
 }
 
+/** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
+ * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
+ * `fs.rm` an arbitrary path. Only a true descendant of the real OMP sessions root (never the
+ * root itself) is ever touched. */
+function isStrictDescendantOfOmpSessions(dir: string): boolean {
+  const sessionsRoot = path.resolve(os.homedir(), '.omp', 'agent', 'sessions').toLowerCase();
+  const resolved = path.resolve(dir).toLowerCase();
+  return resolved !== sessionsRoot && resolved.startsWith(`${sessionsRoot}${path.sep}`);
+}
+
+/** Deletes only this Session's own Conversation files (`*.jsonl`) and their sibling same-stem
+ * directories (subagent transcripts, data-model.md), then removes `sessionDir` itself only once
+ * it is empty -- never a wholesale recursive `fs.rm(sessionDir)`, which could take unrelated
+ * sibling Conversations or (if `sessionDir` were ever wrong) far more than that. */
+async function deleteSessionConversations(sessionDir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(sessionDir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.toLowerCase().endsWith('.jsonl')) continue;
+    const filePath = path.join(sessionDir, entry);
+    const siblingDir = path.join(sessionDir, entry.slice(0, -'.jsonl'.length));
+    await fs.rm(filePath, { force: true }).catch(() => undefined);
+    await fs.rm(siblingDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+  try {
+    const remaining = await fs.readdir(sessionDir);
+    if (remaining.length === 0) {
+      await fs.rmdir(sessionDir);
+    }
+  } catch {
+    // Not empty (something Pinion didn't create is in there), already gone, or some other
+    // filesystem issue: leave it. Never force-remove a directory that is not provably empty.
+  }
+}
+
 export function registerSessions(manager: SessionManager): void {
   ipcMain.handle(IPC_REQUESTS.SESSIONS_LIST, async () => ({ ok: true, value: manager.summaries() }));
 
@@ -52,6 +94,10 @@ export function registerSessions(manager: SessionManager): void {
       return notFound(`Repository not found: ${repositoryId}`);
     }
     try {
+      const branches = await listBranches(repository.path);
+      if (!branches.includes(baseBranch)) {
+        return { ok: false, error: { code: 'base-missing', message: `Base branch not found: ${baseBranch}` } };
+      }
       const name = await generateName(repository.path);
       const { worktreePath, branch } = await addWorktree(repository.path, name, baseBranch);
       const now = new Date().toISOString();
@@ -90,17 +136,29 @@ export function registerSessions(manager: SessionManager): void {
     }
   });
 
-  /** Shared by `sessions.open` and `sessions.recover`: both start (or restart, after
-   * `agent-exited`) the agent if it is not running and return the resulting snapshot, never an
-   * error Result for a start failure -- `start()` already moves the runtime to `stopped` with
-   * the specific reason (worktree-missing, start-failed with the stderr tail, ...), and that
-   * view IS the documented contract ("or returns the stopped reason"). */
-  async function openOrRecover(id: string): Promise<Result<SessionSnapshot>> {
+  /** `sessions.open` auto-starts a stopped Session only when nothing is wrong with the agent
+   * itself: never started this run, or stopped on request (`SessionAgent.onExit`'s requested
+   * branch uses `stopReason: 'not-started'` for both). `worktree-missing` also still auto-starts
+   * here (unchanged; T043 owns that state's dedicated Recreate/Archive/Delete actions, not this
+   * gate). `agent-exited` and `start-failed` must NOT auto-start (FR-034): the crashed/failed
+   * agent stays visibly stopped, with its `stopReason`/`stopDetail` (including the stderr tail),
+   * until the user explicitly asks `sessions.recover`. */
+  function canAutoStart(stopReason: SessionRuntimeView['stopReason']): boolean {
+    return stopReason === undefined || stopReason === 'not-started' || stopReason === 'worktree-missing';
+  }
+
+  /** Shared by `sessions.open` and `sessions.recover`: both return the resulting snapshot, never
+   * an error Result for a start failure -- `start()` already moves the runtime to `stopped` with
+   * the specific reason (worktree-missing, start-failed with the stderr tail, ...), and that view
+   * IS the documented contract ("or returns the stopped reason"). `forceStart` makes `recover`
+   * restart regardless of reason (including `agent-exited`); `open` only starts when
+   * `canAutoStart` says the Session was never wrong to begin with. */
+  async function attachSnapshot(id: string, forceStart: boolean): Promise<Result<SessionSnapshot>> {
     const session = manager.registry.getSession(id);
     if (!session) return notFound(`Session not found: ${id}`);
     const agent = manager.getOrCreateAgent(id);
     manager.setVisible(id);
-    if (agent.runtimeSnapshot.status === 'stopped') {
+    if (agent.runtimeSnapshot.status === 'stopped' && (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason))) {
       await agent.start().catch(() => undefined);
     }
     const refreshed = manager.registry.getSession(id) ?? session;
@@ -109,7 +167,7 @@ export function registerSessions(manager: SessionManager): void {
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_OPEN, async (_event, id: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_OPEN} expects a string id`);
-    return openOrRecover(id);
+    return attachSnapshot(id, false);
   });
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_ARCHIVE, async (_event, id: unknown) => {
@@ -172,9 +230,14 @@ export function registerSessions(manager: SessionManager): void {
         await git(repository.path, ['branch', '-D', session.branch]);
       }
       if (session.sessionDir) {
-        await fs.rm(session.sessionDir, { recursive: true, force: true });
+        if (isStrictDescendantOfOmpSessions(session.sessionDir)) {
+          await deleteSessionConversations(session.sessionDir);
+        } else {
+          console.warn(`sessions.delete: refusing to delete sessionDir outside ~/.omp/agent/sessions: ${session.sessionDir}`);
+        }
       }
       await manager.registry.removeSession(id);
+      manager.removeAgent(id);
       manager.notifyListChanged();
       return { ok: true, value: undefined };
     } catch (err) {
@@ -202,7 +265,7 @@ export function registerSessions(manager: SessionManager): void {
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_RECOVER, async (_event, id: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_RECOVER} expects a string id`);
-    return openOrRecover(id);
+    return attachSnapshot(id, true);
   });
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_STOP_AGENT, async (_event, sessionId: unknown) => {

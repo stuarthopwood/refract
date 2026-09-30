@@ -51,6 +51,11 @@ export function describeStopReason(reason: StopReason, detail?: string): string 
 export function ChatPane() {
   const visibleSessionId = useSessionsStore((s) => s.visibleSessionId)
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === s.visibleSessionId))
+  // bug report point 4: while `sessions-store.ts`'s `open()` is in flight for this Session (a
+  // fresh click, or a not-started Session cold-starting its agent), show that here too -- not
+  // just as the list row's spinner -- since the transcript would otherwise just read "No
+  // messages yet" for the ~16s a cold start takes.
+  const isOpening = useSessionsStore((s) => s.visibleSessionId !== null && s.openingIds.has(s.visibleSessionId))
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recovering, setRecovering] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -75,10 +80,17 @@ export function ChatPane() {
     setStopInfo({})
     let cancelled = false
     void (async () => {
-      const snapshot = await useSessionsStore.getState().open(visibleSessionId)
-      if (cancelled || !snapshot) return
-      applySnapshot(visibleSessionId, snapshot)
-      setStopInfo({ reason: snapshot.runtime.stopReason, detail: snapshot.runtime.stopDetail })
+      try {
+        const snapshot = await useSessionsStore.getState().open(visibleSessionId)
+        if (cancelled || !snapshot) return
+        applySnapshot(visibleSessionId, snapshot)
+        setStopInfo({ reason: snapshot.runtime.stopReason, detail: snapshot.runtime.stopDetail })
+      } catch (error) {
+        // Defense in depth: a throw here (e.g. a future `sessionsStore.open` regression) must
+        // not silently strand the transcript on "No messages yet" forever, the way the missing
+        // `window.pinion.sessions.setVisible` bridge method did (see sessions-store.ts).
+        if (!cancelled) console.error('[pinion] opening session snapshot failed', error)
+      }
     })()
     return () => {
       cancelled = true
@@ -128,6 +140,12 @@ export function ChatPane() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ChatHeader sessionId={sessionId} />
+      {isOpening && (
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+          <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
+          Starting the agent…
+        </div>
+      )}
       {showBanner && (
         <div className="shrink-0 px-4 pt-3">
           <Alert variant="destructive">

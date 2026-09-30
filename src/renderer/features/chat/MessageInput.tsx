@@ -10,17 +10,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
-import { notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
+import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu } from './SlashMenu'
 
 type StopReason = SessionStatusEvent['stopReason']
 
-// Stable references so the zustand selectors below never return a fresh array when there is no
+// Stable reference so the zustand selector below never returns a fresh array when there is no
 // match; a new `[]` literal every call breaks useSyncExternalStore's snapshot stability and
 // causes an infinite re-render loop.
-const EMPTY_QUEUE: string[] = []
 const EMPTY_COMMANDS: SlashCommand[] = []
 
 interface QueuedChip {
@@ -36,8 +35,7 @@ interface MessageInputProps {
 
 export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
-  const followUp = useQueueStore((s) => (s.sessionId === sessionId ? s.followUp : EMPTY_QUEUE))
-  const steering = useQueueStore((s) => (s.sessionId === sessionId ? s.steering : EMPTY_QUEUE))
+  const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
   const [text, setText] = useState('')
   const [starting, setStarting] = useState(false)

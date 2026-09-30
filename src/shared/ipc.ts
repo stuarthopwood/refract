@@ -24,7 +24,9 @@ export type IpcErrorCode =
   | 'branch-missing'
   | 'not-implemented'
   | 'not-found'
-  | 'invalid-argument';
+  | 'invalid-argument'
+  | 'prompt-failed'
+  | 'agent-not-running';
 
 export interface IpcError {
   code: IpcErrorCode;

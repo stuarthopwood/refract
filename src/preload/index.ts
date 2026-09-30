@@ -45,7 +45,8 @@ const pinion: PinionApi = {
     list: () => request<Repository[]>(IPC_REQUESTS.REPOSITORIES_LIST),
     add: (path) => request<Repository>(IPC_REQUESTS.REPOSITORIES_ADD, path),
     remove: (id) => request<void>(IPC_REQUESTS.REPOSITORIES_REMOVE, id),
-    branches: (id) => request<{ branches: string[]; default: string }>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id)
+    branches: (id) => request<{ branches: string[]; default: string }>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id),
+    pickFolder: () => request<string | null>(IPC_REQUESTS.REPOSITORIES_PICK_FOLDER)
   },
 
   sessions: {
@@ -63,7 +64,8 @@ const pinion: PinionApi = {
     delete: (id, options) => request<void>(IPC_REQUESTS.SESSIONS_DELETE, id, options),
     recreateWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_RECREATE_WORKTREE, id),
     recover: (id) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_RECOVER, id),
-    stopAgent: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_STOP_AGENT, sessionId)
+    stopAgent: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_STOP_AGENT, sessionId),
+    setVisible: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_SET_VISIBLE, sessionId)
   },
 
   conversations: {
