@@ -12,3 +12,12 @@ On 2026-09-30 a worker ran `rm -rf "C:/tmp/a" "C:${unsetVar:-}"`. The variable w
 - Test destructive guards only against a canary you create under the temp dir, never against `.`, `..`, `~`, or a bare drive.
 - Commit verified work after every wave and push. Do not leave hours of work uncommitted.
 - When you delegate, put this list in the brief.
+
+## Commit often (HARD RULE)
+
+Uncommitted work is lost work: the 2026-09-30 wipe destroyed everything made after the last push.
+
+- Commit after every logical change, every finished worker result, and before any risky, destructive, or long-running step. Do not batch a session into one commit.
+- Push after each commit. Work on a branch (for example `rebuild/2026-09-30`) when `main` is gated, but never leave commits unpushed.
+- Never end a turn, hand off, or start a new wave with a dirty tree. Run `git status --short` first and commit what is verified.
+- Every delegation brief tells workers to report changed files so the parent commits them straight away.
