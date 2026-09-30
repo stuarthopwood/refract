@@ -149,6 +149,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - Deleting a session that has neither uncommitted changes nor unpushed commits: confirmation is still required, but without those specific warnings.
 - Two Pinion windows or instances point at the same repository: the second one warns rather than corrupting session state.
 - The agent is not installed or not signed in: Pinion shows an actionable setup message rather than an empty or endlessly loading chat.
+- The machine runs low on free memory while several sessions are live: Pinion warns the user, says how many agents it is running, and lets them stop agents; it does not stop any on its own.
 
 ## Requirements *(mandatory)*
 
@@ -190,6 +191,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-034**: When a session's agent stops unexpectedly, Pinion MUST show the session as stopped with the reason if known, and offer a recover action that reattaches the saved conversation.
 - **FR-035**: When a session's worktree folder is found missing, Pinion MUST show the session as stopped with the missing path, MUST keep its conversations readable, and MUST offer to recreate the worktree from the session's branch (only if that branch still exists), archive the session, or delete it; it MUST NOT offer a recover action, because the agent cannot run without its worktree.
 - **FR-036**: Pinion MUST show an actionable setup message when the agent cannot be started (not installed, not signed in, wrong version).
+- **FR-037**: Pinion MUST warn the user when the machine's free memory falls below a low-memory threshold, stating how many agents Pinion is running, and MUST NOT stop any agent on its own.
+- **FR-038**: Users MUST be able to stop a session's agent without archiving the session; the session stays listed, and reopening it reattaches its current conversation.
 
 ### Key Entities
 
@@ -210,11 +213,12 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **SC-002**: A newly created session is ready to accept its first message within 30 seconds on the reference machine (Windows 11).
 - **SC-003**: After a full app restart, 100% of previously listed non-archived sessions reopen with their conversations intact, and continuing the current conversation with a follow-up that depends on earlier content is answered correctly.
 - **SC-004**: Every approval request and question the agent raises is visible to the user within 1 second of being raised, and answering it resumes the turn within 2 seconds.
-- **SC-005**: With 5 sessions working at once, no message, request, or output appears in the wrong session across a 30-minute run.
+- **SC-005**: With 5 sessions working at once on a machine with enough free memory, no message, request, or output appears in the wrong session across a 30-minute run.
 - **SC-006**: After a normal exit, zero agent processes started by Pinion remain running. After a forced kill, zero remain within 10 seconds, or any that do are stopped at the next start before a session opens.
 - **SC-007**: Pressing stop ends the visible turn within 3 seconds, and the next message sent afterwards is accepted 100% of the time.
 - **SC-008**: A turn with 30 tool calls renders as 30 single-line rows; the developer can read every tool's name and status without expanding any row.
 - **SC-009**: A mid-turn Approval mode change never interrupts the running turn; it takes effect with zero lost conversation messages once the session next goes idle.
+- **SC-010**: The low-memory warning appears within 10 seconds of free memory falling below the threshold, and stopping an agent from it frees that agent's memory without changing the session's saved conversation.
 
 ## Assumptions
 
@@ -224,7 +228,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - Ending a session normally means Archive: it hides the session from the main list while keeping its worktree and conversations, and is reversible from an archived view. Delete is a separate, explicit action that only proceeds after a confirmation naming the uncommitted changes and unpushed commits that will be lost.
 - Model choice, thinking level, and other agent settings come from the agent's own configuration; a settings screen for those is out of scope, though the single Approval mode setting described here is in scope.
 - The right pane (git changes, file browser, side chat), plan mode, forking sessions, image attachments, and subagent progress views are out of scope and get their own specs. Pinion's own git use in this spec is limited to creating and deleting worktrees, listing branches, and reading status to warn before a delete; commit, push, and pull-request controls and the changes pane belong to that later spec, and until then those actions happen only by asking the agent in chat.
-- Sessions are only started when the user opens them, not when Pinion starts.
+- Sessions are only started when the user opens them, not when Pinion starts. A cold start took about 16 seconds to the first answer token on the reference machine (3 runs, 2.2 to 3.9 seconds to ready).
+- Each live session costs roughly 1.1 to 1.7 GB on the reference machine, mostly the developer's own tool servers running under the agent, and about 1.9 GB while answering. Pinion does not limit live agents (a decision by the developer); it warns when memory is low and lets the developer stop agents.
 - Approval mode sits on top of the agent's own per-tool settings: a tool the developer has configured to always prompt (or deny) in the agent's own configuration still prompts (or is denied) even in Auto.
-- A killed Pinion cannot clean up after itself. The transport spike found the agent exits by itself within 2 seconds when its parent is killed, idle or mid-answer, but subprocesses the agent launched for a tool were not checked. The plan must verify that case and cover it with start-up cleanup if it fails.
+- A killed Pinion cannot clean up after itself. The transport spike found that the agent and its tool servers exit within seconds when their parent is killed, but a subprocess the agent launched for a tool keeps running. The plan therefore puts every agent in a kill-on-close process group (a Windows Job Object), which was proven to stop the whole tree.
 - The prototype phase applies (see the constitution): verification is by running the app and exercising the scenarios above, not by an automated suite.

@@ -49,8 +49,9 @@ sessions do not survive a process restart.
 
 ### III. Session and Process Lifecycle
 
-- Pinion lists saved sessions by scanning `*.jsonl` files in the session directory; RPC has no
-  list-sessions command.
+- Pinion lists saved sessions by scanning `*.jsonl` files in the directory OMP uses for that
+  worktree. Pinion passes no `--session-dir` and takes `dirname(sessionFile)` from `get_state`
+  (FINDINGS item 11); RPC has no list-sessions command.
 - To reopen a saved session after an app restart, Pinion spawns a fresh process in the session's
   worktree and binds it by file path: `--resume <sessionFile>` at launch, or `switch_session`
   with `sessionPath` in a running process (FINDINGS C16). Pinion MUST confirm every reattach by
@@ -61,11 +62,12 @@ sessions do not survive a process restart.
   session (FINDINGS C16, item 5).
 - Pinion stops a session by closing its stdin and reading stdout until the process exits, and
   force-stops it with `taskkill /PID <pid> /T /F`. No `omp` process may outlive a normal exit.
-- Pinion MUST record the pid and start time of every process it spawns, and on start MUST stop
-  any recorded process still running from a previous run, after confirming the pid still names
-  the same `omp` process. A force-killed Pinion cannot run `taskkill`; the
-  child exits on its own when its stdin closes (FINDINGS item 10), but that does not cover
-  subprocesses of a running tool.
+- Every `omp` process MUST be assigned to a Windows Job Object with kill-on-close, synchronously
+  right after `spawn` returns and before any `await`, so a force-killed Pinion takes the whole
+  `omp` tree with it, including tool subprocesses, which otherwise survive (FINDINGS items 10
+  and 12). Pinion also records the pid and start time of every `omp` root it spawns, and on
+  start stops any recorded process still running with the same start time and an `omp` image
+  name; this is a fallback for a failed job assignment.
 
 ### IV. Evidence Before Design
 
@@ -114,4 +116,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.3.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
+**Version**: 1.4.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
