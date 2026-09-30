@@ -1,0 +1,8 @@
+{
+  "ai": "omp",
+  "feature_numbering": "sequential",
+  "here": false,
+  "integration": "omp",
+  "script": "ps",
+  "speckit_version": "1.0.14.dev0"
+}

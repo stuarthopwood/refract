@@ -1,0 +1,15 @@
+node_modules/
+dist/
+out/
+release/
+coverage/
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+
+# Agent config folder: keep shared slash commands, ignore everything else
+# (sessions, local settings, or credentials the agent may store here).
+.omp/*
+!.omp/commands/
