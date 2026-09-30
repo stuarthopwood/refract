@@ -30,10 +30,22 @@ export function diffTranscript(prev: TranscriptItem[], next: TranscriptItem[]): 
 /** `start()`/`restart()`/`openConversation()` each fetch full history with `get_messages` and
  * would otherwise flat-replace `runtime.transcript` with it, silently dropping anything a live
  * frame appended (a pending request, or an in-flight tool/message OMP has not yet persisted)
- * while that round trip was in flight. Keeps every `historyTranscript` item in its persisted
- * order, then appends any `liveTranscript` item not already present by id. */
+ * while that round trip was in flight. `messageId` (and the ids `transcript.ts` derives from it)
+ * is only unique within one RPC process (`shared/frames.ts`), so a fresh `fromHistory()` snapshot
+ * after a restart never shares ids with the pre-restart live transcript even when it represents
+ * the exact same persisted conversation: id equality cannot tell "already persisted" from "new".
+ * Instead, keep `historyTranscript` as-is and append only live items history can never contain —
+ * a pending request (never built by `fromHistory`, and dropped anyway once the new process starts,
+ * per data-model.md) or a still-in-flight tool call/streaming message OMP has not persisted yet. */
 export function mergeLiveTranscript(historyTranscript: TranscriptItem[], liveTranscript: TranscriptItem[]): TranscriptItem[] {
   const historyIds = new Set(historyTranscript.map((item) => item.id));
-  const extra = liveTranscript.filter((item) => !historyIds.has(item.id));
+  const isUnpersisted = (item: TranscriptItem): boolean => {
+    if (historyIds.has(item.id)) return false;
+    if (item.kind === 'request') return true;
+    if (item.kind === 'tool') return item.status === 'running';
+    if (item.kind === 'assistant-text' || item.kind === 'thinking') return item.streaming;
+    return false;
+  };
+  const extra = liveTranscript.filter(isUnpersisted);
   return extra.length === 0 ? historyTranscript : [...historyTranscript, ...extra];
 }
