@@ -42,9 +42,9 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 
 ## 4. Killing the whole agent tree when Pinion dies
 
-**Decision**: create one Windows Job Object with `KILL_ON_JOB_CLOSE` at app start (through `koffi`), and assign every `omp` process to it synchronously right after `spawn` returns. Also keep `processes.json` (pid plus start time) and reap matching processes at start as a fallback.
+**Decision**: at app start, before spawning anything, the main process creates one Windows Job Object with `KILL_ON_JOB_CLOSE` (through `koffi`) and assigns itself to it (`AssignProcessToJobObject(job, GetCurrentProcess())`). Every `omp` and every process it starts inherits membership at creation, so there is no assignment race. Also keep `processes.json` (pid plus start time) and reap matching processes at start as a fallback if job creation failed.
 
-**Rationale (verified)**: FINDINGS item 10 proved a tool subprocess survives a force-killed parent. FINDINGS item 12 proved the job, with assignment 38 ms after spawn, killed all 24 descendants within 1 s, and that a 1.5 s late assignment lets an early process escape. `koffi` installed as a prebuilt binary, no compile.
+**Rationale (verified)**: FINDINGS item 10 proved a tool subprocess survives a force-killed parent. FINDINGS item 12 proved the self-join job killed the whole omp tree (19 to 20 descendants including the tool's `ping.exe`) within 1 s with zero escapees, also when Pinion itself was started inside another job (nested jobs), and inside Electron's main process. The alternative, assigning each `omp` pid after `spawn`, worked at 38 to 53 ms but let a pre-existing child (a conhost) escape in 2 of 3 runs, so it is not race-free. `koffi` installed as a prebuilt binary, no compile.
 
 **Alternatives**: start-up reaping alone (cannot find tool subprocesses); a suspended-launch helper (would close the race completely, not built; revisit only if a run shows descendants at assignment time).
 
@@ -98,7 +98,7 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 
 ## 13. Packaging
 
-**Decision**: none. The prototype runs with `pnpm dev` and `pnpm build` (electron-vite). An installer is a later issue.
+**Decision**: none. The prototype runs with `pnpm dev` and `pnpm build` (electron-vite). An installer is a later issue. When packaging is added, `koffi`'s native `.node` binary must be unpacked from the asar archive (electron-builder `asarUnpack`) or it fails to load [INFERENCE: standard Electron native-module behaviour, not tested here].
 
 ## Unknowns that remain, and where they are resolved
 

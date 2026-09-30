@@ -10,7 +10,7 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo> [--resume <conversatio
 
 - `cwd` is the Session's `worktreePath`. This is required: `switch_session` across cwds is cancelled (FINDINGS C16, item 5).
 - No `--model`, no `--session-dir`, no `--no-*` flags. OMP's own default model and default per-cwd session directory apply (session-dir probe, 2026-09-30).
-- `spawn` with `windowsHide: true`, `stdio: 'pipe'`, no shell. Immediately after `spawn` returns, the pid is assigned to Pinion's Job Object (research.md decision 4) and recorded in `processes.json`.
+- `spawn` with `windowsHide: true`, `stdio: 'pipe'`, no shell. The pid is recorded in `processes.json`. No explicit Job Object call is needed per process: Pinion's main process already joined the kill-on-close job at startup, so the child and all its descendants inherit it (research.md decision 4).
 - `--approval-mode` comes from `Settings.approvalMode` at launch time (`ask` = `always-ask`, `edit-freely` = `write`, `auto` = `yolo`).
 
 ## Start-up sequence per Session
@@ -31,7 +31,7 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo> [--resume <conversatio
 | Send a message, working | `{type:'prompt', message, streamingBehavior:'followUp'}` | Becomes a queue chip. Render chips from `queue_update`, not from local state. |
 | Remove a queued chip | `{type:'remove_queued_message', message, queue:'followUp'}` | Hide the chip only when `data.removed === true`. |
 | Send now (steer) | `remove_queued_message` for the chip, then `{type:'steer', message}` | If `removed` is false the message already left the queue; do nothing more. |
-| Stop | `{type:'abort'}` | Then wait for `prompt_result.status === 'aborted'` and `session_settled` before accepting another prompt (constitution II, FINDINGS C5). |
+| Stop | `{type:'abort'}` | Then wait for the running prompt's `prompt_result` with any status (`aborted`, or `completed`/`error` if the turn ended just before the abort landed), then `session_settled`, before accepting another prompt (constitution II, FINDINGS C5). Never wait for `aborted` specifically. |
 | New Conversation | `{type:'new_session'}` | Same process, same cwd, same Session. Requires the Session to be idle. Clears the transcript; `currentConversation` updates when the first message is written. |
 | Open an earlier Conversation | `{type:'switch_session', sessionPath}` | Requires idle. Success is `data.cancelled === false`; then run reattach verification and reload the transcript with `get_messages`. `success:true, cancelled:true` is a failure. |
 | Slash command | `{type:'prompt', message:'/name args'}` | Only names present in the latest `available_commands_update` or Pinion's native set; unknown names are refused locally (FR-033). |

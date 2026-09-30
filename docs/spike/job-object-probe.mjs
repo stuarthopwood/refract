@@ -195,6 +195,7 @@ async function loadWin32(koffiModulePath) {
   const OpenProcess = k32.func("__stdcall", "OpenProcess", "void *", ["uint32", "int", "uint32"]);
   const SetInformationJobObject = k32.func("__stdcall", "SetInformationJobObject", "int", ["void *", "int", "void *", "uint32"]);
   const AssignProcessToJobObject = k32.func("__stdcall", "AssignProcessToJobObject", "int", ["void *", "void *"]);
+  const GetCurrentProcess = k32.func("__stdcall", "GetCurrentProcess", "void *", []);
   const GetLastError = k32.func("__stdcall", "GetLastError", "uint32", []);
   const CreateToolhelp32Snapshot = k32.func("__stdcall", "CreateToolhelp32Snapshot", "void *", ["uint32", "uint32"]);
   const PROCESSENTRY32W = koffi.struct("PROCESSENTRY32W", {
@@ -253,7 +254,26 @@ async function loadWin32(koffiModulePath) {
     return { assignOk, error: assignOk ? undefined : `AssignProcessToJobObject failed, GetLastError=${GetLastError()}` };
   }
 
-  return { listProcesses, createKillOnCloseJob, assignPidToJob };
+  function selfJoinNewJob() {
+    // Creates a fresh KILL_ON_JOB_CLOSE job and assigns THIS process (via the
+    // GetCurrentProcess pseudo-handle) to it, so every process this one spawns
+    // afterward inherits job membership atomically at creation - no post-hoc
+    // AssignProcessToJobObject race window at all.
+    const { hJob, setOk } = createKillOnCloseJob();
+    const hSelf = GetCurrentProcess();
+    const assignOk = !!AssignProcessToJobObject(hJob, hSelf);
+    return { hJob, setOk, assignOk, error: assignOk ? undefined : `AssignProcessToJobObject(self) failed, GetLastError=${GetLastError()}` };
+  }
+
+  function createPlainJob() {
+    // A job with no limit flags set - models a pre-existing job (e.g. a
+    // terminal's own job object) that does not itself kill on close.
+    const hJob = CreateJobObjectW(null, null);
+    if (!hJob) throw new Error(`CreateJobObjectW failed, GetLastError=${GetLastError()}`);
+    return hJob;
+  }
+
+  return { listProcesses, createKillOnCloseJob, createPlainJob, assignPidToJob, selfJoinNewJob };
 }
 
 // ---------------------------------------------------------------------------
@@ -265,8 +285,29 @@ async function runAsParent(config) {
   fs.mkdirSync(path.join(config.root, "frames"), { recursive: true });
 
   const win32 = await loadWin32(config.koffiModulePath);
-  const { hJob, setOk } = win32.createKillOnCloseJob();
-  ctrl("jobCreated", { setOk });
+  const mode = config.mode || "post-assign";
+
+  if (mode === "nested-self-join") {
+    // Wait for the driver's own AssignProcessToJobObject(jobA, thisProcess) to
+    // complete before we join our own job B, so the ordering matches "spawned
+    // already inside a pre-existing job" rather than a race between the two.
+    await new Promise((resolve) => {
+      process.stdin.once("data", (d) => {
+        if (d.toString().includes("GO")) resolve();
+      });
+    });
+  }
+
+  let hJob;
+  if (mode === "self-join" || mode === "nested-self-join") {
+    const { hJob: h, setOk, assignOk, error } = win32.selfJoinNewJob();
+    hJob = h;
+    ctrl("selfJoined", { setOk, assignOk, assignError: error });
+  } else {
+    const { hJob: h, setOk } = win32.createKillOnCloseJob();
+    hJob = h;
+    ctrl("jobCreated", { setOk });
+  }
 
   const spawnMoment = Date.now();
   const link = new OmpLink(
@@ -279,20 +320,34 @@ async function runAsParent(config) {
   link.proc.on("exit", (code) => ctrl("ompExited", { code }));
   ctrl("ompPid", { pid: link.pid });
 
-  if (config.assignDelayMs > 0) await sleep(config.assignDelayMs);
-
-  const assignStart = Date.now();
-  const { assignOk, error: assignError } = win32.assignPidToJob(hJob, link.pid);
-  const assignEnd = Date.now();
-  const descendantsAtAssignment = win32.listProcesses().filter((p) => p.ppid === link.pid);
-  ctrl("assigned", {
-    spawnToAssignStartMs: assignStart - spawnMoment,
-    assignCallMs: assignEnd - assignStart,
-    assignOk,
-    assignError,
-    descendantsAtAssignmentCount: descendantsAtAssignment.length,
-    descendantsAtAssignment,
-  });
+  if (mode === "self-join" || mode === "nested-self-join") {
+    // No explicit assignment of omp's pid: omp inherits job membership at
+    // CreateProcess time because its parent (this process) is already a
+    // member, so there is no post-hoc race window at all.
+    ctrl("assigned", {
+      spawnToAssignStartMs: null,
+      assignCallMs: 0,
+      assignOk: true,
+      assignError: undefined,
+      descendantsAtAssignmentCount: 0,
+      descendantsAtAssignment: [],
+      note: "self-join: omp inherited job membership at creation, no post-hoc assignment performed",
+    });
+  } else {
+    if (config.assignDelayMs > 0) await sleep(config.assignDelayMs);
+    const assignStart = Date.now();
+    const { assignOk, error: assignError } = win32.assignPidToJob(hJob, link.pid);
+    const assignEnd = Date.now();
+    const descendantsAtAssignment = win32.listProcesses().filter((p) => p.ppid === link.pid);
+    ctrl("assigned", {
+      spawnToAssignStartMs: assignStart - spawnMoment,
+      assignCallMs: assignEnd - assignStart,
+      assignOk,
+      assignError,
+      descendantsAtAssignmentCount: descendantsAtAssignment.length,
+      descendantsAtAssignment,
+    });
+  }
 
   try {
     const readyStart = Date.now();
@@ -392,7 +447,8 @@ function attachParentReader(child, onCtrl, onOther) {
 // One end-to-end run: spawn parent, create+assign job, drive bash tool, kill
 // parent (no /T), poll descendant survival.
 // ---------------------------------------------------------------------------
-async function runOnce(root, label, assignDelayMs, koffiModulePath) {
+async function runOnce(root, label, opts, koffiModulePath, driverWin32) {
+  const { mode = "post-assign", assignDelayMs = 0 } = opts;
   const cwd = path.join(root, `wt-${label}`);
   fs.mkdirSync(cwd, { recursive: true });
   fs.writeFileSync(path.join(cwd, "README.md"), `job-object probe worktree (${label})\n`);
@@ -404,6 +460,7 @@ async function runOnce(root, label, assignDelayMs, koffiModulePath) {
     cwd,
     args: ["--mode", "rpc-ui", "--approval-mode=yolo", "--model", MODEL, "--no-session"],
     promptText,
+    mode,
     assignDelayMs,
     koffiModulePath,
   };
@@ -413,7 +470,18 @@ async function runOnce(root, label, assignDelayMs, koffiModulePath) {
   const unexpected = [];
   attachParentReader(parent, (e) => bus.push(e), (line) => unexpected.push(line));
 
-  const result = { label, assignDelayMs, parentPid: P, unexpected };
+  const result = { label, mode, assignDelayMs, parentPid: P, unexpected };
+
+  if (mode === "nested-self-join") {
+    // Simulates a terminal/launcher that already put the parent process into
+    // its own job (job A, no KILL_ON_JOB_CLOSE) before the parent does anything.
+    const outerAssignStart = Date.now();
+    const jobA = driverWin32.createPlainJob();
+    const { assignOk: outerAssignOk, error: outerAssignError } = driverWin32.assignPidToJob(jobA, P);
+    result.outerJobAssignment = { assignOk: outerAssignOk, error: outerAssignError, ms: Date.now() - outerAssignStart };
+    parent.stdin.write("GO\n");
+  }
+
   try {
     const ompPidEv = await bus.waitFor((e) => e.event === "ompPid" || e.event === "error", READY_MS);
     if (ompPidEv.event === "error") throw new Error(`parent error before ompPid: ${JSON.stringify(ompPidEv)}`);
@@ -511,9 +579,10 @@ async function runOnce(root, label, assignDelayMs, koffiModulePath) {
 }
 
 function printResult(r) {
-  console.log(`\n=== ${r.label} (assignDelayMs=${r.assignDelayMs}) ===`);
+  console.log(`\n=== ${r.label} (mode=${r.mode}, assignDelayMs=${r.assignDelayMs}) ===`);
   console.log(`parentPid=${r.parentPid} ompPid=${r.ompPid ?? "?"}`);
   if (r.unexpected.length) console.log("unexpected parent stdout lines:", r.unexpected);
+  if (r.outerJobAssignment) console.log("outer job A assignment (nested-job check):", JSON.stringify(r.outerJobAssignment));
   if (r.error) {
     console.log(`ERROR: ${r.error}`);
     return;
@@ -541,11 +610,111 @@ function tryVersion() {
   }
 }
 
+async function runElectronProof(root) {
+  const proj = path.join(root, "electron-proj");
+  fs.mkdirSync(proj, { recursive: true });
+  const out = { attempted: true };
+  const started = Date.now();
+  try {
+    const npmCli = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+    fs.writeFileSync(path.join(proj, "package.json"), JSON.stringify({ name: "job-object-electron-proof", version: "1.0.0", main: "index.js", type: "commonjs" }, null, 2));
+    execFileSync(process.execPath, [npmCli, "install", "--no-audit", "--no-fund", "electron@44.5.1", "koffi"], { cwd: proj, stdio: "pipe", timeout: 240_000 });
+    // electron's postinstall (binary download) can be blocked by the same
+    // install-scripts gate koffi hits; run it directly if the binary is missing.
+    const electronBin = path.join(proj, "node_modules", "electron", "dist", "electron.exe");
+    if (!fs.existsSync(electronBin)) {
+      execFileSync(process.execPath, [path.join(proj, "node_modules", "electron", "install.js")], { cwd: proj, stdio: "pipe", timeout: 120_000 });
+    }
+    if (!fs.existsSync(electronBin)) throw new Error(`electron binary still missing at ${electronBin} after install.js`);
+    out.electronBin = electronBin;
+    out.installMs = Date.now() - started;
+
+    const mainSource = `const koffi = require("koffi");
+const { spawn } = require("node:child_process");
+const k32 = koffi.load("kernel32.dll");
+const CreateJobObjectW = k32.func("__stdcall", "CreateJobObjectW", "void *", ["void *", "void *"]);
+const GetCurrentProcess = k32.func("__stdcall", "GetCurrentProcess", "void *", []);
+const SetInformationJobObject = k32.func("__stdcall", "SetInformationJobObject", "int", ["void *", "int", "void *", "uint32"]);
+const AssignProcessToJobObject = k32.func("__stdcall", "AssignProcessToJobObject", "int", ["void *", "void *"]);
+const GetLastError = k32.func("__stdcall", "GetLastError", "uint32", []);
+const hJob = CreateJobObjectW(null, null);
+const buf = Buffer.alloc(144);
+buf.writeUInt32LE(0x2000, 16);
+const setOk = SetInformationJobObject(hJob, 9, buf, buf.length);
+const assignOk = AssignProcessToJobObject(hJob, GetCurrentProcess());
+const child = spawn("ping", ["-n", "120", "127.0.0.1"], { windowsHide: true, stdio: "ignore" });
+process.stdout.write("CTRL " + JSON.stringify({ event: "ready", mainPid: process.pid, childPid: child.pid, setOk: !!setOk, assignOk: !!assignOk }) + "\\n");
+setInterval(() => {}, 60000);
+`;
+    fs.writeFileSync(path.join(proj, "index.js"), mainSource);
+
+    const proc = spawn(electronBin, ["."], { cwd: proj, stdio: "pipe", windowsHide: true });
+    let buf = "";
+    let ctrl = null;
+    const unexpected = [];
+    proc.stdout.on("data", (d) => (buf += d.toString("utf8")));
+    proc.stderr.on("data", (d) => unexpected.push(`stderr: ${d.toString("utf8").slice(0, 300)}`));
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("timeout waiting for electron CTRL")), 20_000);
+      const iv = setInterval(() => {
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (line.startsWith("CTRL ")) {
+            clearInterval(iv);
+            clearTimeout(t);
+            ctrl = JSON.parse(line.slice(5));
+            resolve();
+            return;
+          }
+        }
+      }, 100);
+    });
+    out.mainPid = proc.pid;
+    out.childPid = ctrl.childPid;
+    out.setOk = ctrl.setOk;
+    out.assignOk = ctrl.assignOk;
+    out.unexpected = unexpected;
+    await sleep(500);
+    out.beforeKill = { mainAlive: pidAlive(proc.pid), childAlive: pidAlive(ctrl.childPid) };
+    execFileSync("taskkill", ["/PID", String(proc.pid), "/F"], { stdio: "ignore" });
+    const killMoment = Date.now();
+    const timeline = [];
+    for (const off of [1_000, 3_000]) {
+      const wait = killMoment + off - Date.now();
+      if (wait > 0) await sleep(wait);
+      timeline.push({ offsetMs: off, mainAlive: pidAlive(proc.pid), childAlive: pidAlive(ctrl.childPid) });
+    }
+    out.timeline = timeline;
+    out.verified = out.beforeKill.childAlive && timeline.every((r) => !r.mainAlive) && !timeline[timeline.length - 1].childAlive;
+  } catch (e) {
+    out.error = e.message;
+    out.verified = false;
+  }
+  return out;
+}
+
+function pidAlive(pid) {
+  try {
+    const s = execFileSync("pwsh", ["-NoProfile", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Measure-Object).Count`], { encoding: "utf8" }).trim();
+    return s === "1";
+  } catch {
+    return false;
+  }
+}
+
 async function runDriver() {
   const ompVersion = tryVersion();
   const root = path.join(os.tmpdir(), "pinion-job-object-probe", new Date().toISOString().replace(/[:.]/g, "-"));
   fs.mkdirSync(root, { recursive: true });
   console.log(`omp ${ompVersion} | model ${MODEL}\nscratch ${root}\n`);
+
+  const variants = (process.env.PINION_VARIANTS || "immediate-assign,delayed-1500ms-assign,self-join,nested-self-join,electron")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const want = (name) => variants.includes(name);
 
   const koffiProj = path.join(root, "koffi-proj");
   fs.mkdirSync(koffiProj, { recursive: true });
@@ -553,17 +722,35 @@ async function runDriver() {
   execFileSync(process.execPath, [npmCli, "install", "--no-audit", "--no-fund", "koffi"], { cwd: koffiProj, stdio: "pipe", timeout: 120_000 });
   const koffiModulePath = path.join(koffiProj, "node_modules", "koffi", "index.js");
   if (!fs.existsSync(koffiModulePath)) throw new Error(`koffi entry point not found at ${koffiModulePath}`);
+  const driverWin32 = await loadWin32(koffiModulePath);
 
-  const immediate = await runOnce(root, "immediate-assign", 0, koffiModulePath);
-  printResult(immediate);
+  const results = { ompVersion, model: MODEL, scratch: root };
 
-  const delayed = await runOnce(root, "delayed-1500ms-assign", 1500, koffiModulePath);
-  printResult(delayed);
+  if (want("immediate-assign")) {
+    results.immediate = await runOnce(root, "immediate-assign", { mode: "post-assign", assignDelayMs: 0 }, koffiModulePath, driverWin32);
+    printResult(results.immediate);
+  }
+  if (want("delayed-1500ms-assign")) {
+    results.delayed = await runOnce(root, "delayed-1500ms-assign", { mode: "post-assign", assignDelayMs: 1500 }, koffiModulePath, driverWin32);
+    printResult(results.delayed);
+  }
+  if (want("self-join")) {
+    results.selfJoin = await runOnce(root, "self-join", { mode: "self-join" }, koffiModulePath, driverWin32);
+    printResult(results.selfJoin);
+  }
+  if (want("nested-self-join")) {
+    results.nestedSelfJoin = await runOnce(root, "nested-self-join", { mode: "nested-self-join" }, koffiModulePath, driverWin32);
+    printResult(results.nestedSelfJoin);
+  }
+  if (want("electron")) {
+    console.log("\n=== Electron proof: same koffi job-object code inside an Electron main process ===");
+    results.electron = await runElectronProof(root);
+    console.log(JSON.stringify(results.electron, null, 2));
+  }
 
-  fs.writeFileSync(path.join(root, "result.json"), JSON.stringify({ ompVersion, model: MODEL, scratch: root, immediate, delayed }, null, 2));
+  fs.writeFileSync(path.join(root, "result.json"), JSON.stringify(results, null, 2));
   console.log(`\nresult.json written to ${path.join(root, "result.json")}`);
 }
-
 const asParentIdx = process.argv.indexOf("--as-parent");
 if (asParentIdx >= 0) {
   const config = JSON.parse(process.argv[asParentIdx + 1]);

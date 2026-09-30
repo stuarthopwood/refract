@@ -36,7 +36,7 @@ Build the first usable slice of Pinion: an Electron desktop app whose left pane 
 |---|---|---|
 | I. OMP is the engine | Pass | Only `omp --mode rpc-ui` over stdio, one process per Session, full feature set, no forbidden flags. `--approval-mode` is passed explicitly from the global Approval mode ([omp-usage](contracts/omp-usage.md), Launch). Native commands limited to the absent set. |
 | II. RPC wire contract | Pass | `message` field; wait for `session_settled` after `abort`; no literal `/btw`; approvals versus questions by the `Allow tool:` title; every dialog answered; slash commands checked against `available_commands_update`; v2 negotiated with an own chunk decoder (research 5). |
-| III. Session and process lifecycle | Pass | No `--session-dir`; cwd is the worktree; reattach by `--resume` or `switch_session` with `get_state` verification; Job Object at spawn plus pid-and-start-time fallback; stdin close then `taskkill /T /F` (research 3, 4). |
+| III. Session and process lifecycle | Pass | No `--session-dir`; cwd is the worktree; reattach by `--resume` or `switch_session` with `get_state` verification; main process joins a kill-on-close Job Object at start plus pid-and-start-time fallback; stdin close then `taskkill /T /F` (research 3, 4). |
 | IV. Evidence before design | Pass, with named gaps | Every OMP behaviour used is probed (FINDINGS) or labelled unverified in research.md and contracts. Gaps are scheduled as first tasks: edit-diff source, signed-in detection, `koffi` in Electron, sandboxed preload. |
 | V. Electron security baseline | Pass | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`; main owns processes, files, git; typed allowlisted preload API ([ipc](contracts/ipc.md)); markdown through `rehype-sanitize`; no remote content; external links to the system browser. |
 | Platform and Stack | Pass | Windows 11 only; process control isolated in `src/main/process/`; Electron + Vite + React, strict TypeScript. |
@@ -114,7 +114,7 @@ docs/spike/                    # probe scripts and findings (already present)
 ## Design overview
 
 - **Main owns state.** `SessionAgent` per Session holds status, transcript, queue, and pending requests; it is the only code that talks to an `OmpProcess`. The renderer subscribes to patches and calls typed requests.
-- **One process, one Job Object.** `jobObject.ts` creates the job once at start. `OmpProcess` spawns, then calls `assign(pid)` before its first `await`, then records the pid.
+- **One job, joined at start.** `jobObject.ts` creates the kill-on-close job once and assigns Pinion's own main process to it before anything is spawned; every `omp` inherits it. `OmpProcess` only records the pid.
 - **Reattach is always verified.** Every `--resume` or `switch_session` is followed by `get_state` and the data-model checks; a mismatch is a visible stopped state, never a silent empty chat.
 - **Mode changes and restarts share one path.** Approval mode change, Recover, and Stop-agent-then-reopen all go through `SessionAgent.restart()`.
 - **Queue is OMP's queue.** Chips render from `queue_update`; Send now is `remove_queued_message` then `steer`.

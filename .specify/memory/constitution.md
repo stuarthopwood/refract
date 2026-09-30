@@ -62,12 +62,12 @@ sessions do not survive a process restart.
   session (FINDINGS C16, item 5).
 - Pinion stops a session by closing its stdin and reading stdout until the process exits, and
   force-stops it with `taskkill /PID <pid> /T /F`. No `omp` process may outlive a normal exit.
-- Every `omp` process MUST be assigned to a Windows Job Object with kill-on-close, synchronously
-  right after `spawn` returns and before any `await`, so a force-killed Pinion takes the whole
-  `omp` tree with it, including tool subprocesses, which otherwise survive (FINDINGS items 10
-  and 12). Pinion also records the pid and start time of every `omp` root it spawns, and on
-  start stops any recorded process still running with the same start time and an `omp` image
-  name; this is a fallback for a failed job assignment.
+- Pinion's main process MUST join a Windows Job Object with kill-on-close at startup, before it
+  spawns any `omp`, so every child and grandchild inherits membership at creation and a
+  force-killed Pinion takes the whole `omp` tree with it, including tool subprocesses, which
+  otherwise survive (FINDINGS items 10 and 12). Pinion also records the pid and start time of
+  every `omp` root it spawns, and on start stops any recorded process still running with the
+  same start time and an `omp` image name; this is a fallback for a failed job creation.
 
 ### IV. Evidence Before Design
 
