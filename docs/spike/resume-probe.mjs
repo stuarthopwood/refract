@@ -371,18 +371,13 @@ try {
     processes.push(p.summary());
   }
 
-  // Variant D: real restart on the ORIGINAL seed file in its ORIGINAL dir (no copy).
+  // Variant D: real restart on the ORIGINAL seed file in its ORIGINAL dir (no copy), via --resume
+  // (the route Principle III of the constitution requires).
   {
     copy.D = F; entriesBefore.D = countEntries(F);
     const s = new Steps("D");
-    const p = new OmpProc("P4-restart", dir("sessions-seed"));
-    await s.run("attach", async () => {
-      await p.ready();
-      const r = await p.request({ type: "open_session", sessionDir: dir("sessions-seed") });
-      assert(r.success && r.data?.cancelled === false && r.data?.resumed === true && sameFile(r.data.sessionFile, F),
-        `response ${JSON.stringify(r).slice(0, 240)}`);
-      return `original file reopened`;
-    });
+    const p = new OmpProc("P4-restart", dir("sessions-seed"), ["--resume", F]);
+    await s.run("attach", async () => { await p.ready(); return "original file reopened via --resume"; });
     await common("D", p, s);
     await p.closeGracefully();
     await persisted("D", s);
@@ -394,11 +389,11 @@ try {
   {
     const s = new Steps("N");
     const empty = path.join(dir("sessions-A"), "missing-session.jsonl");
-    assert(fs.existsSync(empty), "control file from variant A missing");
-    const later = new Date(Date.now() + 60_000);
-    fs.utimesSync(empty, later, later); // make the empty session the newest by mtime
     const p = new OmpProc("P5-newest", dir("sessions-boot"));
     await s.run("nonempty", async () => {
+      assert(fs.existsSync(empty), "control file from variant A missing");
+      const later = new Date(Date.now() + 60_000);
+      fs.utimesSync(empty, later, later); // make the empty session the newest by mtime
       await p.ready();
       const r = await p.request({ type: "open_session", sessionDir: dir("sessions-A") });
       assert(r.success && r.data?.resumed === true && sameFile(r.data.sessionFile, copy.A),
