@@ -27,9 +27,9 @@ Legend: PASS / FAIL / n-a / unv (unverified).
 | C12 | Available commands | n-a | n-a | PASS (`available_commands_update`) | n-a |
 | C13 | Permission gate | n-a | n-a | PASS (needs explicit `--approval-mode always-ask`; global config here is yolo) | see C8 |
 | C15 | fs bridge | n-a | n-a | PASS: server calls client `fs/write_text_file` (UI can preview/intercept) | n-a |
-| C16 | Resume after restart | PASS via `switch_session sessionPath` / `--resume` | n-a | FAIL: `session/load` and `session/resume` return "ACP session not found" for prior-process sessions despite advertised capability | not tested |
+| C16 | Resume after restart | UNTESTED (only in-process `switch_session` was exercised; see open items) | n-a | FAIL: `session/load` and `session/resume` return "ACP session not found" for prior-process sessions despite advertised capability | not tested |
 | C17/C20 | Event fidelity | rich (RPC events + subagent frames) | same | text, thought, tool_call(+update), plan, usage_update, config/session_info/commands updates | text, thinking, tool_execution, usage/cost, advisor; no subagent stream |
-| C22 | Cold start, first token (median) | ~15.0 s (fresh process) | n-a | not measured | ~8.0 s (warm in-process) |
+| C22 | Cold start, first token (median) | ~15.0 s (fresh process each run) | n-a | not measured | ~8.0 s (warm registry, in-process). NOT comparable: different warm-up, includes model latency, measured under heavy concurrent load. Not evidence for or against the SDK. |
 | C22b | Runs under plain Node | n-a | n-a | n-a | FAIL: package main is raw `.ts` under node_modules; Bun required |
 | C23/C24 | Windows lifecycle | PASS: `taskkill /PID /T /F` clears tree, no orphans; stdin close -> exit 0 in 2.2 s | n-a | PASS: same, exit 0 | PASS (clean dispose) |
 
@@ -61,3 +61,6 @@ Why not the others:
 - `branch` entry id rule.
 - `/wt` behaviour.
 - Cold start on an idle machine.
+- **RPC session resume across an app restart is untested.** Only `switch_session` inside one live process was tried. Before the build plan, start a fresh `omp --mode rpc-ui --session-dir <same dir>` process, open a prior `sessionFile` (via `switch_session` `sessionPath` or `--resume <path>`), and confirm `get_messages` returns the old history and a new prompt continues it. The ACP rejection (C16) is not a reason to prefer RPC until this passes.
+- MCP loading was judged from a cheap model listing its tools. Re-check deterministically with the `/mcp` built-in or a `tool_execution_start` frame for a named MCP tool.
+- Sub-finding to keep: Copilot desktop creates one git worktree per session under `<repo-clone>/../copilot-worktrees/<repo>/<user>-<adjective>-<noun>` (verified on disk), which is the UX Pinion is meant to match.
