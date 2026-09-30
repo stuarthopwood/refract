@@ -8,6 +8,17 @@ Pinion drives OMP through `omp --mode rpc-ui`, one OMP process per session, so s
 
 Pre-implementation. The transport spike is recorded in [`docs/spike/`](docs/spike/FINDINGS.md). Specs are managed with [Spec Kit](https://github.com/github/spec-kit); start with the constitution in `.specify/memory/constitution.md`.
 
+## Where things live
+
+| What | Where |
+|---|---|
+| Vocabulary | [`CONTEXT.md`](CONTEXT.md) |
+| Look, feel, and interaction rules | [`docs/DESIGN.md`](docs/DESIGN.md) |
+| Rules for building Pinion | [`.specify/memory/constitution.md`](.specify/memory/constitution.md) |
+| What OMP does over RPC | [`docs/spike/FINDINGS.md`](docs/spike/FINDINGS.md) |
+| Feature behaviour | [`specs/`](specs/) |
+| Ideas, features, and bugs | [GitHub issues](https://github.com/stuarthopwood/pinion/issues) |
+
 ## Spec workflow
 
 Run these slash commands inside OMP, in this directory:
