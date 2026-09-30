@@ -11,33 +11,12 @@ import path from 'node:path';
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { Result, SessionSnapshot, SessionRuntimeView } from '../../shared/ipc';
-import type { Session } from '../../shared/model';
-import { git, GitError } from '../git/git';
+import { git } from '../git/git';
 import { addWorktree, branchExists, deleteCheck, generateName, listBranches, recreateWorktree, removeWorktree } from '../git/worktrees';
-import { RegistryError } from '../store/registry';
+import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
-import type { SessionAgent } from '../omp/SessionAgent';
 import type { SessionManager } from '../SessionManager';
-
-function invalidArgument(message: string): Result<never> {
-  return { ok: false, error: { code: 'invalid-argument', message } };
-}
-
-function notFound(message: string): Result<never> {
-  return { ok: false, error: { code: 'not-found', message } };
-}
-
-function mapThrown(err: unknown): Result<never> {
-  if (err instanceof GitError) return { ok: false, error: { code: err.code, message: err.message } };
-  if (err instanceof RegistryError) return { ok: false, error: { code: err.code, message: err.message } };
-  return { ok: false, error: { code: 'git-failed', message: err instanceof Error ? err.message : String(err) } };
-}
-
-async function buildSnapshot(agent: SessionAgent, session: Session): Promise<SessionSnapshot> {
-  const runtime: SessionRuntimeView = { ...agent.runtimeSnapshot };
-  const conversations = await listConversations(session.sessionDir, session.currentConversation);
-  return { runtime, conversations };
-}
+import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
  * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
@@ -119,7 +98,7 @@ export function registerSessions(manager: SessionManager): void {
       manager.notifyListChanged();
       return { ok: true, value: session };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -132,7 +111,7 @@ export function registerSessions(manager: SessionManager): void {
       manager.notifyListChanged();
       return { ok: true, value: undefined };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -179,7 +158,7 @@ export function registerSessions(manager: SessionManager): void {
       manager.notifyListChanged();
       return { ok: true, value: undefined };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -191,7 +170,7 @@ export function registerSessions(manager: SessionManager): void {
       manager.notifyListChanged();
       return { ok: true, value: undefined };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -206,7 +185,7 @@ export function registerSessions(manager: SessionManager): void {
     try {
       return { ok: true, value: await deleteCheck(session.worktreePath) };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -241,7 +220,7 @@ export function registerSessions(manager: SessionManager): void {
       manager.notifyListChanged();
       return { ok: true, value: undefined };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -259,7 +238,7 @@ export function registerSessions(manager: SessionManager): void {
       manager.notifyListChanged();
       return { ok: true, value: undefined };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 

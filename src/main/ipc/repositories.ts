@@ -6,26 +6,11 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
-import type { Result } from '../../shared/ipc';
 import type { Repository } from '../../shared/model';
-import { GitError, repoInfo } from '../git/git';
+import { repoInfo } from '../git/git';
 import { defaultBranch, listBranches } from '../git/worktrees';
-import { RegistryError } from '../store/registry';
 import type { SessionManager } from '../SessionManager';
-
-function invalidArgument(message: string): Result<never> {
-  return { ok: false, error: { code: 'invalid-argument', message } };
-}
-
-function notFound(message: string): Result<never> {
-  return { ok: false, error: { code: 'not-found', message } };
-}
-
-function mapThrown(err: unknown): Result<never> {
-  if (err instanceof GitError) return { ok: false, error: { code: err.code, message: err.message } };
-  if (err instanceof RegistryError) return { ok: false, error: { code: err.code, message: err.message } };
-  return { ok: false, error: { code: 'git-failed', message: err instanceof Error ? err.message : String(err) } };
-}
+import { invalidArgument, mapStoreThrown, notFound } from './util';
 
 export function registerRepositories(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => ({ ok: true, value: manager.registry.snapshot().repositories }));
@@ -48,7 +33,7 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       manager.notifyListChanged();
       return { ok: true, value: repository };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -65,7 +50,7 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       manager.notifyListChanged();
       return { ok: true, value: undefined };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 
@@ -81,7 +66,7 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       const branches = await listBranches(repository.path);
       return { ok: true, value: { branches, default: repository.defaultBranch } };
     } catch (err) {
-      return mapThrown(err);
+      return mapStoreThrown(err);
     }
   });
 

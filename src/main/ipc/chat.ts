@@ -9,7 +9,8 @@ import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { ChatAnswer, Result } from '../../shared/ipc';
 import type { SlashCommandDescriptor } from '../../shared/frames';
-import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from '../omp/SessionAgent';
+import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from '../omp/errors';
+import { invalidArgument, mapSessionThrown, notFound } from './util';
 import type { SessionManager } from '../SessionManager';
 
 // Constitution I: "Pinion ... supplies natively only the commands absent over RPC: /plan,
@@ -25,23 +26,9 @@ const NATIVE_COMMANDS: Record<string, true> = {
   btw: true,
 };
 
-function invalidArgument(message: string): Result<never> {
-  return { ok: false, error: { code: 'invalid-argument', message } };
-}
-
-function notFound(message: string): Result<never> {
-  return { ok: false, error: { code: 'not-found', message } };
-}
-
-function mapThrown(err: unknown): Result<never> {
-  if (err instanceof SessionNotIdleError) return { ok: false, error: { code: err.code, message: err.message } };
-  if (err instanceof ReattachFailedError) return { ok: false, error: { code: err.code, message: err.message } };
-  return { ok: false, error: { code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) } };
-}
-
 /** `chat.send`/`chat.stop`/`chat.removeQueued`/`chat.sendNow` all drive an already-attached
  * process (never a Conversation reattach), so their default code is `prompt-failed`, not
- * `mapThrown`'s `reattach-failed`. */
+ * `mapSessionThrown`'s `reattach-failed`. */
 function mapChatError(err: unknown): Result<never> {
   if (err instanceof AgentNotRunningError) return { ok: false, error: { code: err.code, message: err.message } };
   if (err instanceof PromptFailedError) return { ok: false, error: { code: err.code, message: err.message } };
@@ -85,7 +72,7 @@ export function registerChat(manager: SessionManager): void {
           await agent.startNewConversation();
           return { ok: true, value: { queued: false } };
         } catch (err) {
-          return mapThrown(err);
+          return mapSessionThrown(err);
         }
       }
       if (Object.prototype.hasOwnProperty.call(NATIVE_COMMANDS, commandName)) {

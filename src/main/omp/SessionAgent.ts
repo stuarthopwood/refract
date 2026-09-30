@@ -14,6 +14,8 @@ import path from 'node:path';
 import { OmpProcess } from './OmpProcess';
 import { applyFrame, fromHistory } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
+import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
+import { diffTranscript, mergeLiveTranscript } from './transcriptDiff';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
@@ -31,40 +33,6 @@ import type { SettingsStore } from '../store/settings';
 /** At most one `patch` event per Session in this window (contracts/ipc.md `transcript:patch`). */
 const PATCH_COALESCE_MS = 50;
 const ABORT_SETTLE_TIMEOUT_MS = 60_000;
-
-/** `chat.send`/`chat.stop` etc. map to these when the underlying condition fails, so the IPC
- * layer can translate them to the matching `IpcErrorCode` (`not-idle` / `reattach-failed`). */
-export class SessionNotIdleError extends Error {
-  readonly code = 'not-idle' as const;
-  constructor(message: string) {
-    super(message);
-    this.name = 'SessionNotIdleError';
-  }
-}
-
-export class ReattachFailedError extends Error {
-  readonly code = 'reattach-failed' as const;
-  constructor(message: string) {
-    super(message);
-    this.name = 'ReattachFailedError';
-  }
-}
-
-export class AgentNotRunningError extends Error {
-  readonly code = 'agent-not-running' as const;
-  constructor(message: string) {
-    super(message);
-    this.name = 'AgentNotRunningError';
-  }
-}
-
-export class PromptFailedError extends Error {
-  readonly code = 'prompt-failed' as const;
-  constructor(message: string) {
-    super(message);
-    this.name = 'PromptFailedError';
-  }
-}
 
 export interface SessionAgentEvents {
   status: (payload: SessionStatusEvent) => void;
@@ -191,6 +159,14 @@ export class SessionAgent extends EventEmitter {
       throw new Error(`Worktree missing: ${session.worktreePath}`);
     }
 
+    const result = await this.launch(session, '');
+    if (!result.ok) throw result.error;
+  }
+
+  /** Shared spawn/reattach/history-reload sequence for `doStart()` and `doRestart()`: create the
+   * `OmpProcess`, start it, reattach via `attachAndVerify`, reload history, and bring the runtime
+   * to `idle`. `failurePrefix` distinguishes a fresh start's notice text from a restart's. */
+  private async launch(session: Session, failurePrefix: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
     const approvalMode = this.settings.get().approvalMode;
     const proc = new OmpProcess({
       cwd: session.worktreePath,
@@ -207,8 +183,8 @@ export class SessionAgent extends EventEmitter {
       // A failed handshake (ready timeout, negotiate failure, spawn error) must never leave a
       // child behind: `this.process` was never set, so nothing else will ever stop it.
       await proc.stop();
-      this.recordStartFailure(err instanceof Error ? err.message : String(err));
-      throw err;
+      this.recordStartFailure(failurePrefix + (err instanceof Error ? err.message : String(err)));
+      return { ok: false, error: err };
     }
     this.process = proc;
 
@@ -218,8 +194,8 @@ export class SessionAgent extends EventEmitter {
     } catch (err) {
       await proc.stop();
       this.process = undefined;
-      this.recordStartFailure(err instanceof Error ? err.message : String(err));
-      throw err;
+      this.recordStartFailure(failurePrefix + (err instanceof Error ? err.message : String(err)));
+      return { ok: false, error: err };
     }
 
     let transcript: TranscriptItem[] = [];
@@ -241,12 +217,13 @@ export class SessionAgent extends EventEmitter {
       stopDetail: undefined,
       launchedMode: approvalMode,
       pendingMode: null,
-      transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript),
+      transcript: mergeLiveTranscript(transcript, this.runtime.transcript),
     };
 
     await this.syncFromState(state);
     this.emitStatus();
     this.emitPatchReset();
+    return { ok: true };
   }
 
   /**
@@ -277,17 +254,6 @@ export class SessionAgent extends EventEmitter {
       if (failure) throw new Error(failure);
     }
     return state;
-  }
-
-  /** `start()`/`restart()`/`openConversation()` each fetch full history with `get_messages` and
-   * would otherwise flat-replace `runtime.transcript` with it, silently dropping anything a live
-   * frame appended (a pending request, or an in-flight tool/message OMP has not yet persisted)
-   * while that round trip was in flight. Keeps every `historyTranscript` item in its persisted
-   * order, then appends any `liveTranscript` item not already present by id. */
-  private mergeLiveTranscript(historyTranscript: TranscriptItem[], liveTranscript: TranscriptItem[]): TranscriptItem[] {
-    const historyIds = new Set(historyTranscript.map((item) => item.id));
-    const extra = liveTranscript.filter((item) => !historyIds.has(item.id));
-    return extra.length === 0 ? historyTranscript : [...historyTranscript, ...extra];
   }
 
   /** Adds an error notice and moves the runtime to `stopped`/`start-failed` (data-model.md
@@ -352,58 +318,8 @@ export class SessionAgent extends EventEmitter {
     try {
       await this.shutdown();
 
-      const approvalMode = this.settings.get().approvalMode;
-      const proc = new OmpProcess({
-        cwd: session.worktreePath,
-        approvalMode,
-        sessionId: session.id,
-        ompPath: this.ompPath,
-      });
-      proc.on('frame', (frame: Frame) => this.onFrame(frame));
-      proc.on('exit', (info: { code: number | null; requested: boolean }) => this.onExit(info));
-
-      try {
-        await proc.start();
-      } catch (err) {
-        // Same leak risk as doStart(): `this.process` was never set here either.
-        await proc.stop();
-        this.recordStartFailure(`Restart failed (${reason}): ${err instanceof Error ? err.message : String(err)}`);
-        return;
-      }
-      this.process = proc;
-
-      let state: GetStateResponseData;
-      try {
-        state = await this.attachAndVerify(proc, session);
-      } catch (err) {
-        await proc.stop();
-        this.process = undefined;
-        this.recordStartFailure(`Restart failed (${reason}): ${err instanceof Error ? err.message : String(err)}`);
-        return;
-      }
-
-      let transcript: TranscriptItem[] = [];
-      try {
-        const messagesRes = await proc.request({ type: 'get_messages', id: '' });
-        if (messagesRes.success) {
-          transcript = fromHistory((messagesRes.data as GetMessagesResponseData).messages);
-        }
-      } catch (err) {
-        console.error(`SessionAgent ${this.sessionId}: get_messages after restart threw`, err);
-      }
-
-      this.runtime = {
-        ...this.runtime,
-        status: 'idle',
-        stopReason: undefined,
-        stopDetail: undefined,
-        launchedMode: approvalMode,
-        pendingMode: null,
-        transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript),
-      };
-      await this.syncFromState(state);
-      this.emitStatus();
-      this.emitPatchReset();
+      const result = await this.launch(session, `Restart failed (${reason}): `);
+      if (!result.ok) return;
     } finally {
       this.restarting = false;
       // pendingMode may have changed again while this restart was in flight; re-checking here
@@ -435,6 +351,7 @@ export class SessionAgent extends EventEmitter {
       ? await this.process.request({ type: 'prompt', id: '', message: text, streamingBehavior: 'followUp' })
       : await this.process.request({ type: 'prompt', id: '', message: text });
     if (!res.success) {
+      this.appendNotice(`prompt failed: ${res.error ?? 'unknown error'}`, 'error');
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: prompt failed: ${res.error ?? 'unknown error'}`);
     }
     return { queued: working };
@@ -461,6 +378,9 @@ export class SessionAgent extends EventEmitter {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot remove a queued message, no live process`);
     }
     const res = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue: 'followUp' });
+    if (!res.success) {
+      this.appendNotice(`remove_queued_message failed: ${res.error ?? 'unknown error'}`, 'error');
+    }
     return { removed: res.success && (res.data as { removed?: boolean } | undefined)?.removed === true };
   }
 
@@ -471,10 +391,16 @@ export class SessionAgent extends EventEmitter {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send now, no live process`);
     }
     const removeRes = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue: 'followUp' });
+    if (!removeRes.success) {
+      this.appendNotice(`remove_queued_message failed: ${removeRes.error ?? 'unknown error'}`, 'error');
+    }
     if (!(removeRes.success && (removeRes.data as { removed?: boolean } | undefined)?.removed === true)) {
       return { steered: false };
     }
     const steerRes = await this.process.request({ type: 'steer', id: '', message: text });
+    if (!steerRes.success) {
+      this.appendNotice(`steer failed: ${steerRes.error ?? 'unknown error'}`, 'error');
+    }
     return { steered: steerRes.success };
   }
 
@@ -533,7 +459,7 @@ export class SessionAgent extends EventEmitter {
     const state = stateRes.data as GetStateResponseData;
     const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
     const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
-    this.runtime = { ...this.runtime, transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript) };
+    this.runtime = { ...this.runtime, transcript: mergeLiveTranscript(transcript, this.runtime.transcript) };
     await this.syncFromState(state);
     this.emitPatchReset();
   }
@@ -558,7 +484,7 @@ export class SessionAgent extends EventEmitter {
             if (!backFailure) {
               const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
               const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
-              this.runtime = { ...this.runtime, transcript: this.mergeLiveTranscript(transcript, this.runtime.transcript) };
+              this.runtime = { ...this.runtime, transcript: mergeLiveTranscript(transcript, this.runtime.transcript) };
               this.emitPatchReset();
               return;
             }
@@ -869,30 +795,4 @@ export class SessionAgent extends EventEmitter {
       this.on('status', onStatus);
     });
   }
-}
-
-/**
- * Builds the `TranscriptOp[]` to bring a subscriber from `prev` to `next`. `transcript.ts`
- * preserves object identity for items it did not touch (see `replaceMessageItems`), so an
- * unchanged item is the same reference in both arrays; anything new or changed is a fresh object
- * and becomes an `upsert`. If any item present in `prev` is gone from `next` (no `TranscriptOp`
- * models deletion), the whole snapshot is resent as a `reset`.
- */
-function diffTranscript(prev: TranscriptItem[], next: TranscriptItem[]): TranscriptOp[] {
-  if (prev.length === 0) {
-    return next.length === 0 ? [] : [{ op: 'reset', items: next }];
-  }
-  const nextIds = new Set(next.map((item) => item.id));
-  const anyRemoved = prev.some((item) => !nextIds.has(item.id));
-  if (anyRemoved) {
-    return [{ op: 'reset', items: next }];
-  }
-  const ops: TranscriptOp[] = [];
-  for (const item of next) {
-    const before = prev.find((candidate) => candidate.id === item.id);
-    if (!before || before !== item) {
-      ops.push({ op: 'upsert', item });
-    }
-  }
-  return ops;
 }

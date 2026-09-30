@@ -222,7 +222,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 
 ## Assumptions
 
-- The user is one developer on Windows 11 with git and the agent (OMP 18.4.4) installed and signed in; other platforms, other agent versions, and multi-user use are out of scope.
+- The user is one developer on Windows 11 with git and the agent (OMP 18.4.x) installed and signed in; other platforms, other agent versions, and multi-user use are out of scope.
 - The user's existing agent skills, extensions, and MCP servers apply to every session unchanged.
 - Worktrees are created in a folder next to the repository (`<repo>/../pinion-worktrees/<repo>/<generated-name>`), following the one-worktree-per-session convention of GitHub Copilot desktop; the same generated name is used for the session's branch. The user does not choose either name at creation, only the Base branch and, afterward, the session's display label.
 - Ending a session normally means Archive: it hides the session from the main list while keeping its worktree and conversations, and is reversible from an archived view. Delete is a separate, explicit action that only proceeds after a confirmation naming the uncommitted changes and unpushed commits that will be lost.

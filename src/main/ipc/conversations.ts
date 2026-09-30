@@ -4,32 +4,9 @@
 import path from 'node:path';
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
-import type { Result, SessionSnapshot, SessionRuntimeView } from '../../shared/ipc';
-import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
-import { ReattachFailedError, SessionNotIdleError } from '../omp/SessionAgent';
-import type { SessionAgent } from '../omp/SessionAgent';
 import type { SessionManager } from '../SessionManager';
-
-function invalidArgument(message: string): Result<never> {
-  return { ok: false, error: { code: 'invalid-argument', message } };
-}
-
-function notFound(message: string): Result<never> {
-  return { ok: false, error: { code: 'not-found', message } };
-}
-
-function mapThrown(err: unknown): Result<never> {
-  if (err instanceof SessionNotIdleError) return { ok: false, error: { code: err.code, message: err.message } };
-  if (err instanceof ReattachFailedError) return { ok: false, error: { code: err.code, message: err.message } };
-  return { ok: false, error: { code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) } };
-}
-
-async function buildSnapshot(agent: SessionAgent, session: Session): Promise<SessionSnapshot> {
-  const runtime: SessionRuntimeView = { ...agent.runtimeSnapshot };
-  const conversations = await listConversations(session.sessionDir, session.currentConversation);
-  return { runtime, conversations };
-}
+import { buildSnapshot, invalidArgument, mapSessionThrown, notFound } from './util';
 
 export function registerConversations(manager: SessionManager): void {
   ipcMain.handle(IPC_REQUESTS.CONVERSATIONS_LIST, async (_event, sessionId: unknown) => {
@@ -51,7 +28,7 @@ export function registerConversations(manager: SessionManager): void {
     try {
       await agent.startNewConversation();
     } catch (err) {
-      return mapThrown(err);
+      return mapSessionThrown(err);
     }
     const refreshed = manager.registry.getSession(sessionId) ?? session;
     return { ok: true, value: await buildSnapshot(agent, refreshed) };
@@ -76,7 +53,7 @@ export function registerConversations(manager: SessionManager): void {
     try {
       await agent.openConversation(match.file);
     } catch (err) {
-      return mapThrown(err);
+      return mapSessionThrown(err);
     }
     const refreshed = manager.registry.getSession(sessionId) ?? session;
     return { ok: true, value: await buildSnapshot(agent, refreshed) };

@@ -69,7 +69,7 @@ Every other frame type is ignored (recorded frames also include `turn_start`, `t
 ### Tool row fields
 
 - `tool` = `toolName`. `target` = the tool's primary argument: `path` for `read`, `edit`, `write`; `command` for `bash`; `pattern` for `grep`, `glob`; otherwise the first string argument, else empty. Truncate to 200 characters.
-- `diff` for an `edit` row: `tool_execution_end` `result.details.oldText` and `.newText` carry the full before/after file text (present and verified); build a unified diff from them client-side for react-diff-view. Do not use `result.details.diff` (a non-unified, line-numbered summary string, e.g. `" 1|line\n-2|old\n+2|new"`) or expect a unified diff anywhere over RPC. For a `write` row: `result.details` carries only `resolvedPath`, no old content, so seed a per-path last-known-content cache from this session's earlier `read`/`edit` `result.details` and diff `args.content` against the cached entry (no cached entry = new-file diff, old text empty). `edit` needs a snapshot tag from a prior `read` of the same path in the same session; without one it fails (`isError:true`, `details: {}`, message `Missing hashline snapshot tag ...`). `git diff` in the worktree after the call is not a reliable per-call fallback: it is cumulative since the last commit, not attributable to a single call when several calls touch the same file in a turn (`edit-diff-probe.mjs`, 2026-09-30, FINDINGS item 14).
+- `diff` for an `edit` row: `tool_execution_end` `result.details.oldText` and `.newText` carry the full before/after file text (present and verified); build a unified diff from them client-side for react-diff-view. Do not use `result.details.diff` (a non-unified, line-numbered summary string, e.g. `" 1|line\n-2|old\n+2|new"`) or expect a unified diff anywhere over RPC. For a `write` row: it shows `args.content` as plain text labelled `"Wrote N lines to <path>"`; `result.details` carries only `resolvedPath` and the text is `"Successfully wrote N bytes"`, so created vs overwritten is unknown over RPC, and there is no per-path content cache. `edit` needs a snapshot tag from a prior `read` of the same path in the same session; without one it fails (`isE…
 
 ## Dialogs (`extension_ui_request`)
 
@@ -100,5 +100,5 @@ Every `select`, `confirm`, `input`, and `editor` request MUST be answered, or th
 | Unparseable stdout line | Log it and continue (never crash the reader) |
 | Chunk validation error | Fail the current request, log, keep the process |
 | `success:false` response | Add an error `notice` naming the command; do not change status |
-| `omp --version` is not `18.4.4` | Readiness check fails and names the version found (FR-036). Supporting another version is a constitution amendment after the probes are rerun (Principle IV). |
+| `omp --version` is not `18.4.x` | Readiness check fails and names the version found (FR-036). Supporting another minor/major version is a constitution amendment after the probes are rerun (Principle IV). |
 | Worktree folder missing at open | `stopped`, `worktree-missing`, offer Recreate, Archive, Delete (FR-035); the agent is not started |

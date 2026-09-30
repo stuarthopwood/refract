@@ -18,7 +18,7 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 |---|---|
 | `readiness.check()` | `{ git: Check; omp: Check; ompSignedIn: Check }`, `Check = { ok: boolean; found?: string; hint?: string }` |
 
-`omp` is ok only when `omp --version` is exactly `18.4.4`. `ompSignedIn` is ok when a probe process started with the user's default profile reaches `ready` and `get_login_providers` returns at least one entry with `authenticated: true` (`docs/spike/signed-in-probe.mjs`, FINDINGS item 14, 2026-09-30). `get_state.model` being present is NOT diagnostic: a process with zero credentials still resolves and reports a `model`. `get_available_models` returning a non-empty list is a corroborating signal only (it already filters to authenticated, non-disabled providers), never the primary check, because it is additionally scoped by the `enabledModels` config pattern and can read `0` for reasons other than sign-in. On failure, `hint` is: "Sign in to OMP: run `omp` once and complete `/login`, then relaunch Pinion."
+`omp` is ok only when `omp --version` matches `18.4.x`. `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also appears in `get_available_models` (`docs/spike/signed-in-probe.mjs`, FINDINGS item 15, 2026-09-30): that checks the default model can actually run, not merely that some credential is authenticated. `get_login_providers` is used only to build the failure hint, never as the primary check. On failure, `hint` is `"Run omp, complete /login, then Re-check."`, optionally followed by `" Not signed in: <provider ids>."` when `get_login_providers` names unauthenticated providers.
 
 ### Repositories (FR-001)
 
@@ -64,6 +64,8 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | `chat.sendNow(sessionId, text)` | `{ steered: boolean }` | |
 | `chat.answer(sessionId, requestId, answer)` | `void` | `answer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true }`. |
 | `chat.commands(sessionId)` | `SlashCommand[]` | Latest list; also pushed as an event. |
+
+A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue command) or `agent-not-running` (no live process); a chat error is never reported as `reattach-failed` (that code is `conversations.open`-only, see above).
 
 ### Settings (FR-015, FR-020)
 

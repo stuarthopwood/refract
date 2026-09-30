@@ -5,7 +5,7 @@ Pinion is a prototype with no automated tests. Each check below is a manual run 
 ## Prerequisites
 
 - Windows 11, Git for Windows, Node 24 or newer, `pnpm`.
-- `omp` 18.4.4 on `PATH` and signed in (`omp --version` prints `omp/18.4.4`).
+- `omp` 18.4.x on `PATH` and signed in (`omp --version` prints `omp/18.4.x`).
 - A scratch git repository with at least one commit and a `main` branch:
   `git init scratch && cd scratch && git commit --allow-empty -m init`.
 - Budget memory: each live Session uses about 1.1 to 1.9 GB (FINDINGS item 13). Close other heavy `omp` sessions before the multi-session checks.
@@ -23,7 +23,7 @@ pnpm build        # must pass before a change lands on main
 
 **Story 1: start a session and chat (FR-001 to FR-012)**
 
-1. First launch shows the readiness checklist; **Add repository** is enabled only when git, `omp` 18.4.4, and sign-in all pass.
+1. First launch shows the readiness checklist; **Add repository** is enabled only when git, `omp` 18.4.x, and sign-in all pass.
 2. Add the scratch repository. Create a Session with Base branch `main`. Expect: a folder under `<scratch>/../pinion-worktrees/scratch/<name>`, a branch of the same name, and the Session in the list with a generated name.
 3. Send "List the files in this repo". Expect: text streams in, tool calls appear as one compact row each, and the Session returns to idle.
 4. Send a long request, press **Ctrl+Shift+X**. Expect: the turn ends within 3 s and the next message is accepted with no "already processing" error.

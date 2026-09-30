@@ -29,10 +29,20 @@ interface ToolRowProps {
 export function ToolRow({ item }: ToolRowProps) {
   const [open, setOpen] = React.useState(false)
   const [showAllOutput, setShowAllOutput] = React.useState(false)
+  const [showAllWrite, setShowAllWrite] = React.useState(false)
 
   const outputLines = React.useMemo(() => item.output?.split('\n') ?? [], [item.output])
   const truncated = !showAllOutput && outputLines.length > OUTPUT_LINE_CAP
   const visibleOutput = truncated ? outputLines.slice(0, OUTPUT_LINE_CAP) : outputLines
+
+  const writeLines = React.useMemo(() => {
+    const content = item.write?.content ?? ''
+    const lines = content.split('\n')
+    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+    return lines
+  }, [item.write])
+  const writeTruncated = !showAllWrite && writeLines.length > OUTPUT_LINE_CAP
+  const visibleWrite = writeTruncated ? writeLines.slice(0, OUTPUT_LINE_CAP) : writeLines
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="rounded-md border border-transparent hover:border-border">
@@ -49,7 +59,21 @@ export function ToolRow({ item }: ToolRowProps) {
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-2 px-2 pb-2 pt-1">
         {item.edit && <DiffView path={item.edit.path} oldText={item.edit.oldText} newText={item.edit.newText} />}
-        {item.write && <DiffView path={item.write.path} oldText="" newText={item.write.content} />}
+        {item.write && (
+          <div>
+            <div className="mb-1 text-xs font-medium text-muted-foreground">
+              Wrote {writeLines.length} {writeLines.length === 1 ? 'line' : 'lines'} to {item.write.path}
+            </div>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
+              <code>{visibleWrite.join('\n')}</code>
+            </pre>
+            {writeTruncated && (
+              <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAllWrite(true)}>
+                Show all ({writeLines.length} lines)
+              </Button>
+            )}
+          </div>
+        )}
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">Arguments</div>
           <pre className="max-h-64 overflow-auto rounded-md bg-muted p-2 text-xs">

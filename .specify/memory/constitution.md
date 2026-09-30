@@ -77,9 +77,9 @@ sessions do not survive a process restart.
   and recorded in `docs/spike/FINDINGS.md`, or labelled unverified in the spec that relies on it.
 - Features MUST NOT be designed around a FINDINGS open item, such as the `branch` entry id rule
   or `/wt` behaviour, until a probe resolves it.
-- The supported OMP version is 18.4.4. Raising it requires rerunning
-  `docs/spike/resume-probe.mjs` on the new version and rechecking the FINDINGS rows Pinion
-  relies on.
+- The supported OMP versions are 18.4.x (verified on 18.4.4 and 18.4.5). Raising the minor or
+  major version requires rerunning `docs/spike/resume-probe.mjs` and rechecking the FINDINGS
+  rows Pinion relies on.
 
 ### V. Electron Security Baseline
 
@@ -118,4 +118,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.5.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
+**Version**: 1.6.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30

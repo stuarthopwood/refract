@@ -47,26 +47,16 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       notify(result.error)
     }
   },
-  // The one place that tells main which Session is visible (contracts/ipc.md
-  // `sessions.setVisible`), so every caller (here, `open` below, and `onUiOpenSession` in
-  // init-stores.ts) goes through it instead of writing `visibleSessionId` directly.
-  //
-  // Bug (found live in the built app): `window.pinion.sessions.setVisible` threw synchronously
-  // when the bridge/main side of this channel wasn't wired up yet. Since `open()` below calls
-  // this synchronously right before returning its snapshot, that throw turned `open()`'s promise
-  // into a rejection, so `ChatPane`'s `await ... open(...)` threw too and `applySnapshot` (the
-  // only thing that calls `transcriptStore.reset`) never ran -- the transcript stayed empty
-  // forever, even once real `transcript:patch` events started arriving, because
-  // `transcript-store.ts`'s `applyOps` refuses ops for a session it never got a matching
-  // `reset` for. This call is best-effort notification only and must never throw or reject into
-  // its caller.
+  // The one place that tells main which Session is visible (contracts/ipc.md `sessions.setVisible`),
+  // so every caller (here, `open` below, and `onUiOpenSession` in init-stores.ts) goes through it.
   setVisibleSessionId: (id) => {
     set({ visibleSessionId: id })
-    try {
-      void window.pinion.sessions.setVisible(id).catch(() => {})
-    } catch {
-      // ignore: see the bug note above
-    }
+    window.pinion.sessions.setVisible(id).then(
+      (result) => {
+        if (!result.ok) console.error('sessions.setVisible failed', result.error)
+      },
+      (err: unknown) => console.error('sessions.setVisible threw', err)
+    )
   },
   open: async (id) => {
     // A second click on a Session already opening is a no-op: the in-flight call owns it (bug

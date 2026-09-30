@@ -15,12 +15,14 @@ import type { Check, Readiness } from '../shared/ipc';
 
 const execFileAsync = promisify(execFile);
 
-const SUPPORTED_OMP_VERSION = '18.4.4';
+// contracts/omp-usage.md's version rule: any 18.4.x patch is supported (FINDINGS item 15
+// covers 18.4.4 and 18.4.5); only the major.minor pair is pinned.
+const OMP_VERSION_SUPPORTED_RE = /^18\.4\.\d+$/;
 const OMP_VERSION_RE = /(\d+\.\d+\.\d+)/;
 
 // contracts/ipc.md "Readiness": the fixed hint shown whenever the sign-in probe cannot confirm
-// an authenticated provider, whatever the underlying reason.
-const SIGNED_IN_HINT = 'Sign in to OMP: run `omp` once and complete `/login`, then relaunch Pinion.';
+// that OMP's default model is actually usable, whatever the underlying reason.
+const SIGNED_IN_HINT = 'Run omp, complete /login, then Re-check.';
 
 async function checkGit(): Promise<Check> {
   const result = await gitRaw(os.tmpdir(), ['--version']);
@@ -44,36 +46,62 @@ async function checkOmp(): Promise<Check> {
     return { ok: false, hint: `omp --version failed: ${err instanceof Error ? err.message : String(err)}` };
   }
   const found = OMP_VERSION_RE.exec(stdout)?.[1] ?? stdout.trim();
-  if (found === SUPPORTED_OMP_VERSION) {
+  if (OMP_VERSION_SUPPORTED_RE.test(found)) {
     return { ok: true, found };
   }
-  return { ok: false, found, hint: `Expected omp ${SUPPORTED_OMP_VERSION}, found ${found}. Install the supported version and relaunch Pinion.` };
+  return { ok: false, found, hint: `Expected omp 18.4.x, found ${found}. Install a supported version and relaunch Pinion.` };
 }
 
-// contracts/ipc.md: `ompSignedIn` is ok when `get_login_providers` returns at least one entry
-// with `authenticated: true` (docs/spike/signed-in-probe.mjs, FINDINGS item 15). `get_state.model`
-// and `get_available_models` are NOT used here: per the contract they are not diagnostic (a
-// zero-credential process still resolves a model) or only a corroborating signal.
+// contracts/ipc.md: `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also
+// appears in `get_available_models` (docs/spike/signed-in-probe.mjs, FINDINGS item 15): that
+// checks the default model can actually run, not merely that some credential is authenticated.
+// `get_login_providers` is used only to enrich the failure hint below.
 async function checkOmpSignedIn(): Promise<Check> {
   const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pinion-readiness-'));
   const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe' });
   try {
     await proc.start();
-    // `get_login_providers` is not part of the app's normal turn-based command set
+    const stateRes = await proc.request({ type: 'get_state', id: '' });
+    // `get_available_models` is not part of the app's normal turn-based command set
     // (src/shared/frames.ts's `RpcCommand` union), so it is not declared there; this readiness
     // probe is the one caller. The cast documents that narrowing, not an actual `any`.
-    const res = await proc.request({ type: 'get_login_providers', id: '' } as unknown as RpcCommand);
-    if (!res.success) {
-      return { ok: false, hint: SIGNED_IN_HINT };
+    const modelsRes = await proc.request({ type: 'get_available_models', id: '' } as unknown as RpcCommand);
+    if (stateRes.success && modelsRes.success) {
+      const model = (stateRes.data as { model?: { provider: string; id: string } } | undefined)?.model;
+      const models = (modelsRes.data as { models?: Array<{ provider: string; id: string }> } | undefined)?.models ?? [];
+      if (model && models.some((m) => m.provider === model.provider && m.id === model.id)) {
+        return { ok: true };
+      }
     }
-    const providers = (res.data as { providers?: Array<{ authenticated?: boolean }> } | undefined)?.providers ?? [];
-    return providers.some((provider) => provider.authenticated === true) ? { ok: true } : { ok: false, hint: SIGNED_IN_HINT };
+    return { ok: false, hint: await signedInFailureHint(proc) };
   } catch {
-    return { ok: false, hint: SIGNED_IN_HINT };
+    return { ok: false, hint: await signedInFailureHint(proc) };
   } finally {
     await proc.stop().catch(() => undefined);
     await fs.rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+// Enriches SIGNED_IN_HINT with unauthenticated provider ids, when available. This is the one
+// remaining use of `get_login_providers`; failures here are swallowed since the base hint is
+// already correct without it.
+async function signedInFailureHint(proc: OmpProcess): Promise<string> {
+  try {
+    // `get_login_providers` is not part of the app's normal turn-based command set
+    // (src/shared/frames.ts's `RpcCommand` union), so it is not declared there; this is the
+    // one caller. The cast documents that narrowing, not an actual `any`.
+    const res = await proc.request({ type: 'get_login_providers', id: '' } as unknown as RpcCommand);
+    if (res.success) {
+      const providers = (res.data as { providers?: Array<{ id: string; authenticated?: boolean }> } | undefined)?.providers ?? [];
+      const ids = providers.filter((p) => p.authenticated !== true).map((p) => p.id);
+      if (ids.length > 0) {
+        return `${SIGNED_IN_HINT} Not signed in: ${ids.slice(0, 5).join(', ')}.`;
+      }
+    }
+  } catch {
+    // fall through to the base hint
+  }
+  return SIGNED_IN_HINT;
 }
 
 export async function readinessCheck(): Promise<Readiness> {

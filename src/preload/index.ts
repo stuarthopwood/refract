@@ -15,7 +15,6 @@ import type {
   Unsubscribe
 } from '../shared/ipc'
 import type { ConversationInfo, PendingRequest, Repository, Session, Settings } from '../shared/model'
-import type { PinionScaffoldCheckApi } from './api'
 
 // window.pinion: the sole renderer-to-main bridge (contracts/ipc.md). The renderer never sees
 // ipcRenderer or a raw channel string; every method below is a fixed, typed call.
@@ -106,15 +105,3 @@ const pinion: PinionApi = {
 
 contextBridge.exposeInMainWorld('pinion', pinion)
 
-// Scaffold-verification API for the T003 sandbox gate: proves the preload script actually runs
-// sandboxed and that contextBridge crosses the isolated world into the renderer. Kept until the
-// parent task removes it.
-const pinionScaffoldCheck: PinionScaffoldCheckApi = {
-  ping: () => ({
-    message: 'pong',
-    sandboxed: process.sandboxed,
-    contextIsolated: process.contextIsolated
-  })
-}
-
-contextBridge.exposeInMainWorld('pinionScaffoldCheck', pinionScaffoldCheck)
