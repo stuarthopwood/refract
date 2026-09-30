@@ -16,6 +16,8 @@ import { applyFrame, fromHistory } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
 import { diffTranscript, mergeLiveTranscript } from './transcriptDiff';
+import { bailIfStopRequested, stopIfRunning } from './launchStopGuard';
+import { verifyReattach } from './reattachVerification';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
@@ -88,6 +90,7 @@ export class SessionAgent extends EventEmitter {
    * joins the same attempt instead of spawning a second `omp` process. */
   private startPromise: Promise<void> | undefined;
   private restartPromise: Promise<void> | undefined;
+  private stopRequested = false;
   /** Guards the settle sequence (`settleTurnPendingRequests`/`setStatus('idle')`/
    * `onSessionSettled`) against running twice for one turn end: OMP can deliver both
    * `prompt_result.sessionSettled:true` and a separate `session_settled` frame for the same
@@ -145,6 +148,7 @@ export class SessionAgent extends EventEmitter {
       throw new Error(`SessionAgent ${this.sessionId}: already started`);
     }
     if (this.startPromise) return this.startPromise;
+    if (this.runtime.status === 'stopped') this.stopRequested = false;
     this.startPromise = this.doStart().finally(() => {
       this.startPromise = undefined;
     });
@@ -187,7 +191,11 @@ export class SessionAgent extends EventEmitter {
       return { ok: false, error: err };
     }
     this.process = proc;
-
+    const bail1 = await bailIfStopRequested(this.stopRequested, proc, () => {
+      this.process = undefined;
+      this.setStatus('stopped', { stopReason: 'not-started' });
+    });
+    if (bail1) return bail1;
     let state: GetStateResponseData;
     try {
       state = await this.attachAndVerify(proc, session);
@@ -197,7 +205,11 @@ export class SessionAgent extends EventEmitter {
       this.recordStartFailure(failurePrefix + (err instanceof Error ? err.message : String(err)));
       return { ok: false, error: err };
     }
-
+    const bail2 = await bailIfStopRequested(this.stopRequested, proc, () => {
+      this.process = undefined;
+      this.setStatus('stopped', { stopReason: 'not-started' });
+    });
+    if (bail2) return bail2;
     let transcript: TranscriptItem[] = [];
     try {
       const messagesRes = await proc.request({ type: 'get_messages', id: '' });
@@ -250,7 +262,7 @@ export class SessionAgent extends EventEmitter {
     }
     const state = stateRes.data as GetStateResponseData;
     if (session.currentConversation) {
-      const failure = this.verifyReattach(session, state);
+      const failure = verifyReattach(session, state);
       if (failure) throw new Error(failure);
     }
     return state;
@@ -267,14 +279,14 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** Stops the whole agent process: idempotent, a no-op once already exited or never started.
-   * Used by `SessionManager.stopAll()` and the future Stop-agent feature (T040); distinct from
-   * `stop()`, which only aborts the running turn and leaves the process alive. */
+   * Marks `stopRequested` and drains any in-flight `start()`/`restart()` before stopping the
+   * process (`launchStopGuard.ts`); distinct from `stop()`, which only aborts the running turn. */
   async shutdown(): Promise<void> {
-    if (this.startPromise) {
-      await this.startPromise.catch(() => undefined);
+    this.stopRequested = true;
+    while (this.startPromise || this.restartPromise) {
+      await (this.startPromise ?? this.restartPromise)?.catch(() => undefined);
     }
-    if (!this.process) return;
-    await this.process.stop();
+    await stopIfRunning(this.process);
   }
 
   /** `settings.setApprovalMode` (T031, FR-015): marks a live Session whose `launchedMode` differs
@@ -297,7 +309,7 @@ export class SessionAgent extends EventEmitter {
 
   /**
    * Restarts the process with the Settings store's current `--approval-mode` (T032, FR-020):
-   * stop via `shutdown()`, respawn, reattach via `attachAndVerify`, and a full transcript
+   * stop via an internal `stopIfRunning`, respawn, reattach via `attachAndVerify`, and a full
    * reload. Called once a Session with `pendingMode` set reaches `session_settled` with no
    * pending request. A failed verification leaves the Session `stopped`/`start-failed` with an
    * error notice (`recordStartFailure`); a Session that is not live when the mode changes simply
@@ -306,6 +318,7 @@ export class SessionAgent extends EventEmitter {
    */
   async restart(reason: string): Promise<void> {
     if (this.restartPromise) return this.restartPromise;
+    if (this.runtime.status === 'stopped') this.stopRequested = false;
     this.restartPromise = this.doRestart(reason).finally(() => {
       this.restartPromise = undefined;
     });
@@ -316,7 +329,7 @@ export class SessionAgent extends EventEmitter {
     const session = this.requireSession();
     this.restarting = true;
     try {
-      await this.shutdown();
+      await stopIfRunning(this.process);
 
       const result = await this.launch(session, `Restart failed (${reason}): `);
       if (!result.ok) return;
@@ -427,8 +440,11 @@ export class SessionAgent extends EventEmitter {
 
   /** `conversations.open` (contracts/omp-usage.md "Open an earlier Conversation"): `cancelled`
    * must be `false`, then the same reattach verification as `start()`, reloading history with
-   * `get_messages`. Verified against `file`, not the registry's current Conversation; no expected
-   * message count is tracked per historical file, so that one check is skipped. */
+   * `get_messages` and using it AS-IS, not merged with the old live transcript -- this switches
+   * to a DIFFERENT Conversation (only possible while idle, so nothing is pending to carry over),
+   * and merging would wrongly drag resolved cards from the PRIOR Conversation into this one.
+   * Verified against `file`, not the registry's current Conversation; no expected message count
+   * is tracked per historical file, so that one check is skipped. */
   async openConversation(file: string): Promise<void> {
     if (this.runtime.status !== 'idle' || !this.process) {
       throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot open a Conversation while ${this.runtime.status}`);
@@ -450,7 +466,7 @@ export class SessionAgent extends EventEmitter {
     const stateRes = await this.process.request({ type: 'get_state', id: '' });
     const failure = !stateRes.success
       ? `get_state after switch_session failed: ${stateRes.error ?? 'unknown error'}`
-      : this.verifyReattach({ ...session, currentConversation: file, lastMessageCount: null }, stateRes.data as GetStateResponseData);
+      : verifyReattach({ ...session, currentConversation: file, lastMessageCount: null }, stateRes.data as GetStateResponseData);
     if (failure) {
       await this.recoverFromFailedSwitch(previousConversation, file, failure);
       throw new ReattachFailedError(failure);
@@ -459,17 +475,17 @@ export class SessionAgent extends EventEmitter {
     const state = stateRes.data as GetStateResponseData;
     const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
     const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
-    this.runtime = { ...this.runtime, transcript: mergeLiveTranscript(transcript, this.runtime.transcript) };
+    this.runtime = { ...this.runtime, transcript };
     await this.syncFromState(state);
     this.emitPatchReset();
   }
 
   /** Restores consistency after `openConversation` fails its post-switch verification: the live
    * process must never stay bound to `attemptedFile` while the registry still points at
-   * `previousConversation`. Tries switching back to the prior Conversation first; if that also
-   * fails to verify (or there was no prior Conversation to return to), stops the process and
-   * marks the Session `stopped`/`start-failed` instead of leaving it silently pointed at the
-   * wrong file. */
+   * `previousConversation`. Tries switching back to the prior Conversation first -- reloading its
+   * history as-is, not merged with the old live transcript (same reasoning as `openConversation`)
+   * -- if that also fails to verify (or there was no prior Conversation), stops the process and
+   * marks the Session `stopped`/`start-failed` instead of leaving it pointed at the wrong file. */
   private async recoverFromFailedSwitch(previousConversation: string | null, attemptedFile: string, reason: string): Promise<void> {
     if (!this.process) return;
     if (previousConversation) {
@@ -480,11 +496,11 @@ export class SessionAgent extends EventEmitter {
           const backStateRes = await this.process.request({ type: 'get_state', id: '' });
           if (backStateRes.success) {
             const session = this.requireSession();
-            const backFailure = this.verifyReattach(session, backStateRes.data as GetStateResponseData);
+            const backFailure = verifyReattach(session, backStateRes.data as GetStateResponseData);
             if (!backFailure) {
               const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
               const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
-              this.runtime = { ...this.runtime, transcript: mergeLiveTranscript(transcript, this.runtime.transcript) };
+              this.runtime = { ...this.runtime, transcript };
               this.emitPatchReset();
               return;
             }
@@ -517,20 +533,6 @@ export class SessionAgent extends EventEmitter {
     if (this.runtime.pending.length === 0 && this.runtime.status === 'needs-you') {
       this.setStatus('working');
     }
-  }
-
-  /** data-model.md "Reattach verification (FR-013, FR-024)"; only called when resuming. */
-  private verifyReattach(session: Session, state: GetStateResponseData): string | undefined {
-    if (path.resolve(state.sessionFile).toLowerCase() !== path.resolve(session.currentConversation!).toLowerCase()) {
-      return `Reattach verification failed: sessionFile mismatch (expected ${session.currentConversation}, got ${state.sessionFile})`;
-    }
-    if (!(state.messageCount > 0)) {
-      return `Reattach verification failed: messageCount is ${state.messageCount}, expected greater than 0`;
-    }
-    if (session.lastMessageCount !== null && state.messageCount !== session.lastMessageCount) {
-      return `Reattach verification failed: messageCount ${state.messageCount} does not match last known ${session.lastMessageCount}`;
-    }
-    return undefined;
   }
 
   /** Runs after the initial `get_state` and after every `session_settled` (data-model.md

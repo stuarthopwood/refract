@@ -84,8 +84,14 @@ function TranscriptRow({ item, sessionId, pending }: TranscriptRowProps) {
 // (research.md decision 2: kept after a 30-tool-row streaming smoke test, see that paragraph for
 // the evidence; react-virtuoso was the specced fallback if it had not held up).
 export function Transcript() {
-  const items = useTranscriptStore((state) => state.items)
+  const trackedSessionId = useTranscriptStore((state) => state.sessionId)
+  const storeItems = useTranscriptStore((state) => state.items)
   const visibleSessionId = useSessionsStore((state) => state.visibleSessionId)
+  // The store may have adopted a `reset` for a Session that is not (yet) the visible one
+  // (transcript-store.ts's defense-in-depth path for a dropped/failed `sessions.setVisible`
+  // call): never render those items over the visible Session's own transcript (bug report
+  // point 5's "old Session B's header/input sit over A's empty transcript").
+  const items = trackedSessionId === visibleSessionId ? storeItems : []
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = visibleSessionId ? (pendingBySession[visibleSessionId] ?? []) : []
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { BellRingIcon, ChevronRightIcon, CircleIcon, EllipsisVerticalIcon, LoaderCircleIcon, PlusIcon, SquareIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -55,6 +55,7 @@ function StateIcon({ status }: { status: SessionStatus }) {
 function SessionRow({ session }: { session: SessionSummary }) {
   const isVisible = useSessionsStore((state) => state.visibleSessionId === session.id)
   const open = useSessionsStore((state) => state.open)
+  const setVisibleSessionId = useSessionsStore((state) => state.setVisibleSessionId)
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -63,6 +64,14 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const isArchived = !!session.archivedAt
+  const rowRef = useRef<HTMLLIElement>(null)
+  const renameRequestedRef = useRef(false)
+
+  // After a row unmounts (archive/restore/delete), focus must not fall back to <body>
+  // (WCAG 2.1 AA focus-visibility): send it to the surrounding list.
+  function focusListContainer(): void {
+    rowRef.current?.closest('ul')?.focus()
+  }
 
   function startRenaming(): void {
     setDraftName(session.name)
@@ -85,80 +94,116 @@ function SessionRow({ session }: { session: SessionSummary }) {
     }
   }
 
+  function handleOpenButtonKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key === 'F2') {
+      event.preventDefault()
+      startRenaming()
+    }
+  }
+
   return (
-    <li>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-current={isVisible ? 'true' : undefined}
-        onClick={() => {
-          if (!renaming) void open(session.id)
-        }}
-        onDoubleClick={startRenaming}
-        onKeyDown={(event) => {
-          if (!renaming && (event.key === 'Enter' || event.key === ' ')) {
-            event.preventDefault()
-            void open(session.id)
-          }
-        }}
-        className={cn(
-          'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
-          isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
-        )}
-      >
-        <StateIcon status={session.status} />
-        <span className="sr-only">{STATUS_LABEL[session.status]}</span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          {renaming ? (
-            <input
-              autoFocus
-              value={draftName}
-              onChange={(event) => setDraftName(event.target.value)}
-              onBlur={() => void commitRename()}
-              onKeyDown={handleNameKeyDown}
-              onClick={(event) => event.stopPropagation()}
-              aria-label="Session name"
-              className="w-full rounded border border-ring bg-transparent px-1 py-0.5 text-sm outline-none"
-            />
-          ) : (
-            <span className="truncate font-medium">{session.name}</span>
+    <li ref={rowRef} className="group relative flex w-full items-center gap-2 rounded-md">
+      {isVisible && (
+        <span aria-hidden className="absolute inset-y-0.5 left-0 w-0.5 rounded-full bg-sidebar-primary" />
+      )}
+      {renaming ? (
+        <input
+          autoFocus
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          onBlur={() => void commitRename()}
+          onKeyDown={handleNameKeyDown}
+          aria-label="Session name"
+          className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1.5 text-sm outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          aria-current={isVisible ? 'true' : undefined}
+          // A non-visible row only flips visibility: ChatPane's [visibleSessionId] effect is the single
+          // opener and applies the snapshot (transcript, queue, pending requests, stop banner). The
+          // visible row has no such effect to fire, so clicking it (waking an asleep Session) opens directly.
+          onClick={() => (isVisible ? void open(session.id) : setVisibleSessionId(session.id))}
+          onDoubleClick={startRenaming}
+          onKeyDown={handleOpenButtonKeyDown}
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+            isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
           )}
-          <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
-        {session.unread && (
-          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
-        )}
-        {session.unread && <span className="sr-only">Unread</span>}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={`${session.name} actions`}
-              onClick={(event) => event.stopPropagation()}
-              className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100"
+        >
+          <StateIcon status={session.status} />
+          <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-medium">{session.name}</span>
+            <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
+          {session.unread && (
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
+          )}
+          {session.unread && <span className="sr-only">Unread</span>}
+        </button>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${session.name} actions`}
+            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 aria-expanded:opacity-100"
+          >
+            <EllipsisVerticalIcon aria-hidden className="size-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          onCloseAutoFocus={(event) => {
+            if (renameRequestedRef.current) {
+              event.preventDefault()
+              renameRequestedRef.current = false
+            }
+          }}
+        >
+          <DropdownMenuItem
+            onSelect={() => {
+              renameRequestedRef.current = true
+              startRenaming()
+            }}
+          >
+            Rename
+          </DropdownMenuItem>
+          {isArchived ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                focusListContainer()
+                void restore(session.id)
+              }}
             >
-              <EllipsisVerticalIcon aria-hidden className="size-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent onClick={(event) => event.stopPropagation()}>
-            <DropdownMenuItem onSelect={startRenaming}>Rename</DropdownMenuItem>
-            {isArchived ? (
-              <DropdownMenuItem onSelect={() => void restore(session.id)}>Restore</DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem onSelect={() => void archive(session.id)}>Archive</DropdownMenuItem>
-            )}
-            {session.status !== 'stopped' && (
-              <DropdownMenuItem onSelect={() => void stopAgent(session.id)}>Stop agent</DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
-              Delete…
+              Restore
             </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <DeleteDialog session={session} open={deleteOpen} onOpenChange={setDeleteOpen} />
+          ) : (
+            <DropdownMenuItem
+              onSelect={() => {
+                focusListContainer()
+                void archive(session.id)
+              }}
+            >
+              Archive
+            </DropdownMenuItem>
+          )}
+          {session.status !== 'stopped' && (
+            <DropdownMenuItem onSelect={() => void stopAgent(session.id)}>Stop agent</DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
+            Delete…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DeleteDialog
+        session={session}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={focusListContainer}
+      />
     </li>
   )
 }
@@ -170,7 +215,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
     <div className="flex flex-col">
       <Collapsible defaultOpen>
         <div className="flex items-center gap-1 px-1">
-          <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent">
+          <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
             <span className="truncate">{repository.name}</span>
           </CollapsibleTrigger>
@@ -189,7 +234,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
           />
         </div>
         <CollapsibleContent>
-          <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
+          <ul tabIndex={-1} aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1 outline-none">
             {active.map((session) => (
               <SessionRow key={session.id} session={session} />
             ))}
@@ -198,12 +243,12 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
       </Collapsible>
       {archived.length > 0 && (
         <Collapsible>
-          <CollapsibleTrigger className="group/trigger flex items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent">
+          <CollapsibleTrigger className="group/trigger flex items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
             <span>Archived ({archived.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <ul aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1">
+            <ul tabIndex={-1} aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1 outline-none">
               {archived.map((session) => (
                 <SessionRow key={session.id} session={session} />
               ))}

@@ -136,7 +136,13 @@ export function registerSessions(manager: SessionManager): void {
     const session = manager.registry.getSession(id);
     if (!session) return notFound(`Session not found: ${id}`);
     const agent = manager.getOrCreateAgent(id);
-    manager.setVisible(id);
+    // Visibility is NOT set here. It is set solely by the explicit `sessions.setVisible` IPC
+    // (sessions-store.ts `setVisibleSessionId`, fired by the renderer before this call even
+    // starts -- see its `open()`). Calling `manager.setVisible(id)` here too used to run
+    // synchronously ahead of `agent.start()` resolving (~16s on a cold start) while the
+    // renderer's own visible-Session state did not flip until this whole IPC round-trip
+    // returned: main and the renderer disagreed about which Session was visible for the entire
+    // cold start (bug report point 5).
     if (agent.runtimeSnapshot.status === 'stopped' && (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason))) {
       await agent.start().catch(() => undefined);
     }

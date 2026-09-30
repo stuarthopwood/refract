@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
-import { filterSlashCommands, parseSlashQuery, SlashMenu } from './SlashMenu'
+import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -41,6 +41,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
   const [starting, setStarting] = useState(false)
   const [slashActiveIndex, setSlashActiveIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
+  const stopReasonId = `${sessionId}-stop-reason`
+  const slashMenuId = `${sessionId}-slash-menu`
 
   const statusRef = useRef(status)
   statusRef.current = status
@@ -173,15 +175,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
               </span>
               <button
                 type="button"
-                className="rounded-full px-1 text-[0.7rem] font-medium text-muted-foreground hover:text-foreground"
+                aria-label={`Send now: ${chip.text}`}
+                className="rounded-full px-1 text-[0.7rem] font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 onClick={() => void handleSendNow(chip.text)}
               >
                 Send now
               </button>
               <button
                 type="button"
-                aria-label="Remove queued message"
-                className="rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                aria-label={`Remove queued message: ${chip.text}`}
+                className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 onClick={() => void handleRemoveQueued(chip.text)}
               >
                 <XIcon className="size-3" />
@@ -191,9 +194,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
         </div>
       )}
       {starting && <p className="text-xs text-muted-foreground">Starting the agent…</p>}
+      {disabled && (
+        <span id={stopReasonId} className="sr-only">
+          {placeholder}
+        </span>
+      )}
       <div className="relative flex items-end gap-2">
         {showSlashMenu && (
           <SlashMenu
+            id={slashMenuId}
             commands={slashMatches}
             activeIndex={slashActiveIndex}
             onSelect={completeSlashCommand}
@@ -201,6 +210,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           />
         )}
         <Textarea
+          role="combobox"
+          aria-label="Message"
+          aria-autocomplete="list"
+          aria-expanded={showSlashMenu}
+          aria-controls={showSlashMenu ? slashMenuId : undefined}
+          aria-activedescendant={
+            showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashActiveIndex) : undefined
+          }
+          aria-describedby={disabled ? stopReasonId : undefined}
           value={text}
           onChange={(event) => {
             setText(event.target.value)

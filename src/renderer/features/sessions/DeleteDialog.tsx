@@ -29,9 +29,13 @@ export interface DeleteDialogProps {
    * in normal use, where every real caller leaves it unset and the dialog always calls
    * `deleteCheck`. */
   check?: DeleteCheck
+  /** Called after a successful delete, before the dialog closes, so the caller can move focus
+   * off the row it's about to unmount (WCAG 2.1 AA focus-visibility). */
+  onDeleted?(): void
 }
 
-export function DeleteDialog({ session, open, onOpenChange, check }: DeleteDialogProps) {
+export function DeleteDialog({ session, open, onOpenChange, check, onDeleted }: DeleteDialogProps) {
+
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [result, setResult] = useState<DeleteCheck | null>(check ?? null)
@@ -70,6 +74,7 @@ export function DeleteDialog({ session, open, onOpenChange, check }: DeleteDialo
       setError(response.error.message)
       return
     }
+    onDeleted?.()
     onOpenChange(false)
   }
 

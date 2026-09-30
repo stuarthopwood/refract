@@ -24,13 +24,20 @@ export function filterSlashCommands(query: string, commands: SlashCommand[]): Sl
 }
 
 export interface SlashMenuProps {
+  id: string
   commands: SlashCommand[]
   activeIndex: number
   onSelect(command: SlashCommand): void
   onActiveIndexChange(index: number): void
 }
 
-export function SlashMenu({ commands, activeIndex, onSelect, onActiveIndexChange }: SlashMenuProps) {
+/** Stable id for a given option, shared with MessageInput so it can set `aria-activedescendant`
+ * without either side guessing the other's id scheme. */
+export function slashOptionId(menuId: string, index: number): string {
+  return `${menuId}-option-${index}`
+}
+
+export function SlashMenu({ id, commands, activeIndex, onSelect, onActiveIndexChange }: SlashMenuProps) {
   const listRef = useRef<HTMLUListElement>(null)
 
   useEffect(() => {
@@ -40,8 +47,7 @@ export function SlashMenu({ commands, activeIndex, onSelect, onActiveIndexChange
   if (commands.length === 0) {
     return (
       <div
-        role="listbox"
-        aria-label="Slash commands"
+        role="status"
         className="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-popover p-2 text-sm text-muted-foreground shadow-md ring-1 ring-foreground/10"
       >
         No matching commands
@@ -52,6 +58,7 @@ export function SlashMenu({ commands, activeIndex, onSelect, onActiveIndexChange
   return (
     <ul
       ref={listRef}
+      id={id}
       role="listbox"
       aria-label="Slash commands"
       className="absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10"
@@ -59,6 +66,7 @@ export function SlashMenu({ commands, activeIndex, onSelect, onActiveIndexChange
       {commands.map((command, index) => (
         <li
           key={command.name}
+          id={slashOptionId(id, index)}
           role="option"
           aria-selected={index === activeIndex}
           data-active={index === activeIndex}
@@ -69,8 +77,8 @@ export function SlashMenu({ commands, activeIndex, onSelect, onActiveIndexChange
             onSelect(command)
           }}
           className={cn(
-            'flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-1.5',
-            index === activeIndex && 'bg-accent text-accent-foreground'
+            'flex cursor-default items-center justify-between gap-3 rounded-md border-l-2 border-transparent px-2 py-1.5',
+            index === activeIndex && 'border-l-primary bg-accent text-accent-foreground'
           )}
         >
           <span className="shrink-0 font-medium">/{command.name}</span>

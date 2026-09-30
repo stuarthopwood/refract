@@ -81,7 +81,7 @@
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: oklch(0.65 0 0);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -152,7 +152,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
 
   body {
@@ -166,5 +166,19 @@
   kbd {
     @apply font-code;
     font-variant-ligatures: normal;
+  }
+}
+
+/* WCAG 2.1 AA 2.3.3 / user preference: collapse animations and transitions to near-zero
+ * duration instead of disabling motion feedback outright (spinners/carets keep their icon
+ * and sr-only text, owned elsewhere). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -15,9 +15,15 @@ function formatDuration(ms: number): string {
 }
 
 function StatusIcon({ status }: { status: ToolItem['status'] }) {
-  if (status === 'running') return <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
-  if (status === 'error') return <XIcon className="size-3.5 shrink-0 text-destructive" />
-  return <CheckIcon className="size-3.5 shrink-0 text-state-working" />
+  const label = status === 'running' ? 'Running' : status === 'error' ? 'Failed' : 'Done'
+  return (
+    <>
+      {status === 'running' && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />}
+      {status === 'error' && <XIcon className="size-3.5 shrink-0 text-destructive" />}
+      {status !== 'running' && status !== 'error' && <CheckIcon className="size-3.5 shrink-0 text-state-working" />}
+      <span className="sr-only">{label}</span>
+    </>
+  )
 }
 
 interface ToolRowProps {
@@ -46,7 +52,7 @@ export function ToolRow({ item }: ToolRowProps) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="rounded-md border border-transparent hover:border-border">
-      <CollapsibleTrigger className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted">
+      <CollapsibleTrigger className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         <StatusIcon status={item.status} />
         <span className="shrink-0 font-medium">{item.tool}</span>
         <span className="min-w-0 flex-1 truncate text-muted-foreground" title={item.target}>

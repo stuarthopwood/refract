@@ -27,21 +27,26 @@ export function diffTranscript(prev: TranscriptItem[], next: TranscriptItem[]): 
   return ops;
 }
 
-/** `start()`/`restart()`/`openConversation()` each fetch full history with `get_messages` and
- * would otherwise flat-replace `runtime.transcript` with it, silently dropping anything a live
- * frame appended (a pending request, or an in-flight tool/message OMP has not yet persisted)
- * while that round trip was in flight. `messageId` (and the ids `transcript.ts` derives from it)
- * is only unique within one RPC process (`shared/frames.ts`), so a fresh `fromHistory()` snapshot
+/** `start()`/`restart()` each fetch full history with `get_messages` and would otherwise
+ * flat-replace `runtime.transcript` with it, silently dropping anything a live frame appended
+ * (a pending request, or an in-flight tool/streaming message OMP has not yet persisted) while
+ * that round trip was in flight. `messageId` (and the ids `transcript.ts` derives from it) is
+ * only unique within one RPC process (`shared/frames.ts`), so a fresh `fromHistory()` snapshot
  * after a restart never shares ids with the pre-restart live transcript even when it represents
  * the exact same persisted conversation: id equality cannot tell "already persisted" from "new".
- * Instead, keep `historyTranscript` as-is and append only live items history can never contain —
- * a pending request (never built by `fromHistory`, and dropped anyway once the new process starts,
- * per data-model.md) or a still-in-flight tool call/streaming message OMP has not persisted yet. */
+ * Instead, keep `historyTranscript` as-is and append only live items history can never contain --
+ * an UNRESOLVED request (never built by `fromHistory`; a RESOLVED one belongs to a turn that has
+ * already ended and must never resurface -- including in a different Conversation after
+ * `openConversation`/`recoverFromFailedSwitch`, or at the bottom of a reloaded transcript after a
+ * mode-change restart) or a still-in-flight tool call/streaming message OMP has not persisted
+ * yet. `openConversation()`/`recoverFromFailedSwitch()` do not call this at all: they switch to a
+ * DIFFERENT Conversation (only possible while idle, so there is no pending request to carry
+ * over), so the freshly fetched history is the whole answer. */
 export function mergeLiveTranscript(historyTranscript: TranscriptItem[], liveTranscript: TranscriptItem[]): TranscriptItem[] {
   const historyIds = new Set(historyTranscript.map((item) => item.id));
   const isUnpersisted = (item: TranscriptItem): boolean => {
     if (historyIds.has(item.id)) return false;
-    if (item.kind === 'request') return true;
+    if (item.kind === 'request') return !item.resolved;
     if (item.kind === 'tool') return item.status === 'running';
     if (item.kind === 'assistant-text' || item.kind === 'thinking') return item.streaming;
     return false;

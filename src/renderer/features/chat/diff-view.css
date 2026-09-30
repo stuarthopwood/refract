@@ -38,6 +38,19 @@
   --diff-omit-gutter-line-color: var(--border);
 }
 
+/* Non-colour cue for insert/delete rows (WCAG 1.4.1): a leading marker in addition to the tint. */
+.diff-view .diff-code-insert::before {
+  content: '+ ';
+  color: var(--state-working);
+  font-weight: 600;
+}
+
+.diff-view .diff-code-delete::before {
+  content: '\2212 ';
+  color: var(--destructive);
+  font-weight: 600;
+}
+
 .diff-view .diff {
   font-size: 0.75rem;
 }

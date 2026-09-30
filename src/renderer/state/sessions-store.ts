@@ -63,15 +63,23 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     // report point 4).
     if (get().openingIds.has(id)) return null
     const token = ++latestOpenToken
+    const previousVisibleId = get().visibleSessionId
     set({ openingIds: new Set(get().openingIds).add(id) })
+    // Flip visibility together with `openingIds`, before the IPC resolves (bug report point 5):
+    // main's visible Session (set by the `sessions.setVisible` call inside `setVisibleSessionId`)
+    // and the renderer's own `visibleSessionId` must never disagree, and "Starting the agent..."
+    // (gated on `openingIds.has(visibleSessionId)`) must be visible for the whole open, not just
+    // after it resolves.
+    get().setVisibleSessionId(id)
     try {
       const result = await window.pinion.sessions.open(id)
       if (token !== latestOpenToken) return null // a newer open() superseded this one
       if (!result.ok) {
         notify(result.error)
+        // Revert the optimistic flip -- but only if nothing newer already took over visibility.
+        if (get().visibleSessionId === id) get().setVisibleSessionId(previousVisibleId)
         return null
       }
-      get().setVisibleSessionId(id)
       return result.value
     } finally {
       const openingIds = new Set(get().openingIds)
