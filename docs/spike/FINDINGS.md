@@ -5,6 +5,7 @@
 - bun 1.4.0, node v26.10.0. Model `@smol` resolved to `gpt-5.6-luna` via github-copilot.
 - Fixtures: `wtA` (README "worktree A"), `wtB` (README "worktree B").
 - The raw frame logs and per-transport result files stay in the local scratch dir of the person who ran the spike (they contain personal skill names and chat text); this document is the shareable summary. `btw-ext.ts` next to this file is the proven side-chat extension.
+- `resume-probe.mjs` next to this file reproduces C16 for RPC: `node docs/spike/resume-probe.mjs` (Node 22+, `omp` on PATH or `PINION_OMP`). Raw frames stay in a temp scratch dir.
 - Caveat: three probes ran concurrently on the same machine, so timing numbers (C22) are inflated and only comparable relative to each other, not absolute.
 
 ## Matrix
@@ -27,7 +28,7 @@ Legend: PASS / FAIL / n-a / unv (unverified).
 | C12 | Available commands | n-a | n-a | PASS (`available_commands_update`) | n-a |
 | C13 | Permission gate | n-a | n-a | PASS (needs explicit `--approval-mode always-ask`; global config here is yolo) | see C8 |
 | C15 | fs bridge | n-a | n-a | PASS: server calls client `fs/write_text_file` (UI can preview/intercept) | n-a |
-| C16 | Resume after restart | UNTESTED (only in-process `switch_session` was exercised; see open items) | n-a | FAIL: `session/load` and `session/resume` return "ACP session not found" for prior-process sessions despite advertised capability | not tested |
+| C16 | Resume after restart | PASS: a fresh process reattaches a prior-process session (killed with `taskkill /T /F`) via `switch_session`, `--resume <file>`, and `open_session`; history intact (message count and codeword match), the next prompt continues it and appends to the same file (`resume-probe.mjs`, 2026-09-30, omp 18.4.4) | n-a | FAIL: `session/load` and `session/resume` return "ACP session not found" for prior-process sessions despite advertised capability | not tested |
 | C17/C20 | Event fidelity | rich (RPC events + subagent frames) | same | text, thought, tool_call(+update), plan, usage_update, config/session_info/commands updates | text, thinking, tool_execution, usage/cost, advisor; no subagent stream |
 | C22 | Cold start, first token (median) | ~15.0 s (fresh process each run) | n-a | not measured | ~8.0 s (warm registry, in-process). NOT comparable: different warm-up, includes model latency, measured under heavy concurrent load. Not evidence for or against the SDK. |
 | C22b | Runs under plain Node | n-a | n-a | n-a | FAIL: package main is raw `.ts` under node_modules; Bun required |
@@ -50,7 +51,7 @@ Why not the others:
    - After `abort`, wait for `session_settled` before sending another prompt, else "Agent is already processing".
    - Unknown `/foo` text is not rejected; it goes to the model as a normal prompt.
    - `branch` needs an entry id contract that was not resolved.
-5. **Left pane:** RPC has no list-sessions command in the frames observed; list sessions by scanning JSONL files in the session dir and reattach with `switch_session {sessionPath}` or `open_session {sessionDir}`. Kill process trees with `taskkill /PID <pid> /T /F`.
+5. **Left pane:** RPC has no list-sessions command in the frames observed; list sessions by scanning JSONL files in the session dir and reattach with `--resume <sessionFile>` at spawn, `switch_session {sessionPath}`, or `open_session {sessionDir}` (all three passed C16). `switch_session` to a missing path returns `success: true, cancelled: false` and starts an empty session (`messageCount: 0`), so confirm every reattach with `get_state` `sessionFile` and `messageCount`. OMP rewrites the session file on load (byte size can shrink), so do not detect changes by file size. Kill process trees with `taskkill /PID <pid> /T /F`.
 6. **Cold start:** ~15 s to first token from a fresh full-feature process (inflated by concurrent load). The app should spawn one process per session ahead of use and keep it warm; verify the number on an idle machine before designing around it.
 7. **Config note:** the test machine's global `tools.approvalMode` was yolo; an app that wants an approval UI must pass `--approval-mode=always-ask` explicitly.
 8. **Bun requirement:** rpc-ui needs no Bun in the app (child process over stdio); only the SDK path would.
@@ -61,6 +62,5 @@ Why not the others:
 - `branch` entry id rule.
 - `/wt` behaviour.
 - Cold start on an idle machine.
-- **RPC session resume across an app restart is untested.** Only `switch_session` inside one live process was tried. Before the build plan, start a fresh `omp --mode rpc-ui --session-dir <same dir>` process, open a prior `sessionFile` (via `switch_session` `sessionPath` or `--resume <path>`), and confirm `get_messages` returns the old history and a new prompt continues it. The ACP rejection (C16) is not a reason to prefer RPC until this passes.
 - MCP loading was judged from a cheap model listing its tools. Re-check deterministically with the `/mcp` built-in or a `tool_execution_start` frame for a named MCP tool.
 - Sub-finding to keep: Copilot desktop creates one git worktree per session under `<repo-clone>/../copilot-worktrees/<repo>/<user>-<adjective>-<noun>` (verified on disk), which is the UX Pinion is meant to match.
