@@ -58,7 +58,7 @@ The developer quits Pinion, or it crashes, and reopens it later. Their repositor
 1. **Given** sessions existed when Pinion closed, **When** Pinion starts, **Then** every repository and session is listed, and no agent is running for any of them yet.
 2. **Given** a session listed from a previous run, **When** the developer opens it, **Then** its full conversation history is shown and a follow-up message continues that same conversation.
 3. **Given** a session's stored conversation cannot be found or is empty, **When** the developer opens it, **Then** Pinion says so plainly instead of silently showing an empty new conversation.
-4. **Given** Pinion is closed normally or force-closed, **When** the developer looks at running processes, **Then** no agent process from Pinion remains running.
+4. **Given** Pinion is closed normally, **When** the developer looks at running processes, **Then** no agent process from Pinion remains running; **Given** Pinion was force-killed, **When** it is next started, **Then** any agent process left over from the killed run is stopped before new sessions start.
 
 ---
 
@@ -124,7 +124,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-013**: Pinion MUST confirm that a reopened session is really the saved conversation and MUST tell the user if it is missing or empty, rather than presenting a blank conversation as if it were the saved one.
 - **FR-014**: Each session's agent MUST run inside that session's own worktree.
 - **FR-015**: Several sessions MUST be able to work at the same time without their messages, requests, or output mixing.
-- **FR-016**: Closing Pinion, normally or by force, MUST NOT leave agent processes running.
+- **FR-016**: Closing Pinion normally MUST NOT leave agent processes running. After Pinion is force-killed, agent processes left over MUST be stopped no later than the next Pinion start.
 - **FR-017**: When the user types `/`, Pinion MUST list the slash commands the agent currently offers and MUST run the chosen one.
 - **FR-018**: Pinion MUST NOT send unknown slash-command text to the agent as ordinary chat; it MUST warn the user.
 - **FR-019**: When a session's agent stops unexpectedly, Pinion MUST show the session as stopped and offer a recover action that reattaches the saved conversation.
@@ -148,7 +148,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **SC-003**: After a full app restart, 100% of previously listed sessions reopen with their complete conversation, and a follow-up that depends on earlier content is answered correctly.
 - **SC-004**: Every approval request and question the agent raises is visible to the user within 1 second of being raised, and answering it resumes the turn within 2 seconds.
 - **SC-005**: With 5 sessions working at once, no message, request, or output appears in the wrong session across a 30-minute run.
-- **SC-006**: After Pinion exits, either normally or by being killed, zero agent processes started by it remain running.
+- **SC-006**: After a normal exit, zero agent processes started by Pinion remain running. After a forced kill, zero remain within 10 seconds, or any that do are stopped at the next start before a session opens.
 - **SC-007**: Pressing stop ends the visible turn within 3 seconds, and the next message sent afterwards is accepted 100% of the time.
 
 ## Assumptions
@@ -160,4 +160,5 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - Model choice, thinking level, and other agent settings come from the agent's own configuration; a settings screen is out of scope.
 - The right pane (git changes, file browser, side chat), plan mode, forking sessions, image attachments, and subagent progress views are out of scope and get their own specs.
 - Sessions are only started when the user opens them, not when Pinion starts.
+- A killed Pinion cannot clean up after itself. The transport spike found the agent exits by itself within 2 seconds when its parent is killed, idle or mid-answer, but subprocesses the agent launched for a tool were not checked. The plan must verify that case and cover it with start-up cleanup if it fails.
 - The prototype phase applies (see the constitution): verification is by running the app and exercising the scenarios above, not by an automated suite.

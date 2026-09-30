@@ -61,6 +61,7 @@ Why not the others:
 6. **Cold start:** ~15 s to first token from a fresh full-feature process (inflated by concurrent load). The app should spawn one process per session ahead of use and keep it warm; verify the number on an idle machine before designing around it.
 7. **Config note:** the test machine's global `tools.approvalMode` was yolo; an app that wants an approval UI must pass `--approval-mode=always-ask` explicitly.
 8. **Bun requirement:** rpc-ui needs no Bun in the app (child process over stdio); only the SDK path would.
+9. **Parent death (Windows):** when the parent process was killed with `taskkill /F` (no `/T`), `omp --mode rpc-ui` exited by itself within 2 s, both idle and mid-answer (probe: throwaway script, 2026-09-30). The case of a running tool's subprocess (for example `bash` running `ping`) was not resolved: other `omp` processes on the machine polluted the process listing. Treat leftover tool subprocesses as unverified and do not rely on this for cleanup; record spawned pids and reap on next start.
 
 ## Open items not covered by the spike
 - MCP over ACP unverified (RPC listed the tools).

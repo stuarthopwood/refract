@@ -56,7 +56,12 @@ sessions do not survive a process restart.
   to a session recorded under a different cwd is cancelled and leaves the process on an empty
   session (FINDINGS C16, item 5).
 - Pinion stops a session by closing its stdin and reading stdout until the process exits, and
-  force-stops it with `taskkill /PID <pid> /T /F`. No `omp` process may outlive the app.
+  force-stops it with `taskkill /PID <pid> /T /F`. No `omp` process may outlive a normal exit.
+- Pinion MUST record the pid and start time of every process it spawns, and on start MUST stop
+  any recorded process still running from a previous run, after confirming the pid still names
+  the same `omp` process. A force-killed Pinion cannot run `taskkill`; the
+  child exits on its own when its stdin closes (FINDINGS item 9), but that does not cover
+  subprocesses of a running tool.
 
 ### IV. Evidence Before Design
 
@@ -105,4 +110,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
+**Version**: 1.2.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
