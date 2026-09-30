@@ -141,7 +141,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - The chosen folder is not a git repository, has no commits, or the chosen Base branch no longer exists: Pinion refuses to create a session and says why.
 - The worktree cannot be created (name clash, disk full, path too long on Windows): no half-created session is left in the list, and the reason is shown.
 - The agent's answer is very long or contains extremely large tool output: the chat stays responsive and scrolls smoothly.
-- A session's worktree folder was deleted or moved outside Pinion: it shows as stopped, with the missing path as the reason, not silently dropped.
+- A session's worktree folder was deleted or moved outside Pinion: it shows as stopped with the missing path as the reason, offers to recreate the worktree from its branch (only if that branch still exists), archive, or delete, and keeps its conversations readable; it is not silently dropped.
 - A queued follow-up chip is removed before the running turn ends: nothing is sent for it.
 - Renaming a session while it is working: the display name changes immediately without affecting the running turn, its branch, or its folder.
 - An approval or question is pending and the developer closes Pinion: on the next start the request is gone, and the session shows as needing a new turn rather than pretending to still wait.
@@ -173,7 +173,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-017**: Users MUST be able to approve or deny each tool request that is shown; a denial MUST be reported back to the agent.
 - **FR-018**: When the agent asks a question (choice or free text), Pinion MUST show it and return the user's answer or cancellation; no request may be left unanswered without the user being able to see it.
 - **FR-019**: Pending approvals and questions MUST stay visible and answerable for as long as the session lives, including while the user is viewing a different session.
-- **FR-020**: Changing the app's Approval mode while a session is mid-turn MUST show the new mode as pending on that session; the change MUST take effect only when that session's turn, and any pending approval or question, finish, at which point Pinion restarts that session's agent behind the scenes and reattaches the same conversation; an in-flight turn or a pending prompt MUST NOT be interrupted by a mode change.
+- **FR-020**: Changing the app's Approval mode while a session is mid-turn MUST show the new mode as pending on that session; the change MUST take effect only once that session is idle (its turn, any background work, and any pending approval or question have all finished), at which point Pinion restarts that session's agent behind the scenes and reattaches the same conversation; an in-flight turn or a pending prompt MUST NOT be interrupted by a mode change.
 - **FR-021**: Agent-produced text, tool output, and file contents MUST be displayed as inert content and never executed or loaded as active content.
 - **FR-022**: Pinion MUST remember repositories and non-archived sessions across restarts and list them on the next start without starting an agent for each.
 - **FR-023**: Opening a previously used session MUST restore its conversations, resume the one that was current, and allow it to continue.
@@ -187,8 +187,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-031**: Closing Pinion normally MUST NOT leave agent processes running. After Pinion is force-killed, agent processes left over MUST be stopped no later than the next Pinion start.
 - **FR-032**: When the user types `/`, Pinion MUST list the slash commands the agent currently offers and MUST run the chosen one.
 - **FR-033**: Pinion MUST NOT send unknown slash-command text to the agent as ordinary chat; it MUST warn the user.
-- **FR-034**: When a session's agent stops unexpectedly, or its worktree folder is found missing, Pinion MUST show the session as stopped with the reason if known, and offer a recover action that reattaches the saved conversation.
-- **FR-035**: Pinion MUST show an actionable setup message when the agent cannot be started (not installed, not signed in, wrong version).
+- **FR-034**: When a session's agent stops unexpectedly, Pinion MUST show the session as stopped with the reason if known, and offer a recover action that reattaches the saved conversation.
+- **FR-035**: When a session's worktree folder is found missing, Pinion MUST show the session as stopped with the missing path, MUST keep its conversations readable, and MUST offer to recreate the worktree from the session's branch (only if that branch still exists), archive the session, or delete it; it MUST NOT offer a recover action, because the agent cannot run without its worktree.
+- **FR-036**: Pinion MUST show an actionable setup message when the agent cannot be started (not installed, not signed in, wrong version).
 
 ### Key Entities
 
@@ -224,5 +225,6 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - Model choice, thinking level, and other agent settings come from the agent's own configuration; a settings screen for those is out of scope, though the single Approval mode setting described here is in scope.
 - The right pane (git changes, file browser, side chat), plan mode, forking sessions, image attachments, and subagent progress views are out of scope and get their own specs. Pinion's own git use in this spec is limited to creating and deleting worktrees, listing branches, and reading status to warn before a delete; commit, push, and pull-request controls and the changes pane belong to that later spec, and until then those actions happen only by asking the agent in chat.
 - Sessions are only started when the user opens them, not when Pinion starts.
+- Approval mode sits on top of the agent's own per-tool settings: a tool the developer has configured to always prompt (or deny) in the agent's own configuration still prompts (or is denied) even in Auto.
 - A killed Pinion cannot clean up after itself. The transport spike found the agent exits by itself within 2 seconds when its parent is killed, idle or mid-answer, but subprocesses the agent launched for a tool were not checked. The plan must verify that case and cover it with start-up cleanup if it fails.
 - The prototype phase applies (see the constitution): verification is by running the app and exercising the scenarios above, not by an automated suite.

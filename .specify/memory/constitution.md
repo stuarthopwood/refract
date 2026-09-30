@@ -12,9 +12,9 @@
 - Every launch MUST pass `--approval-mode` explicitly, set from Pinion's global Approval mode
   setting (Ask = `always-ask`, Edit freely = `write`, Auto = `yolo`), so that OMP's own
   `tools.approvalMode` never decides. OMP has no RPC command to change the mode on a live
-  process; a change applies when the session is next idle, by restarting the process and
-  reattaching the same saved session per Principle III (OMP `approval-mode.md` and `rpc.md`,
-  read but not probed).
+  process; a change applies once the session is idle (`session_settled`, not just `prompt_result`,
+  because background jobs can wake the agent after it yields), by restarting the process and
+  reattaching the same saved session per Principle III (FINDINGS item 9).
 - Pinion MUST NOT reimplement behaviour OMP exposes over RPC. It supplies natively only the
   commands absent over RPC: `/plan`, `/fork`, `/resume`, `/new`, `/settings`, `/pause`,
   `/plan-review`, and `/btw`. `/new` maps to `new_session`; `/resume` maps to the reattach rule
@@ -64,7 +64,7 @@ sessions do not survive a process restart.
 - Pinion MUST record the pid and start time of every process it spawns, and on start MUST stop
   any recorded process still running from a previous run, after confirming the pid still names
   the same `omp` process. A force-killed Pinion cannot run `taskkill`; the
-  child exits on its own when its stdin closes (FINDINGS item 9), but that does not cover
+  child exits on its own when its stdin closes (FINDINGS item 10), but that does not cover
   subprocesses of a running tool.
 
 ### IV. Evidence Before Design
