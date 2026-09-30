@@ -51,3 +51,32 @@ E. Docs: constitution v1.5.0 (Principle III: MUST NOT use `--resume`; bind via `
 1. Build, typecheck, tests, then E2E smoke on the built app (CDP over `electron.exe . --remote-debugging-port --user-data-dir`).
 2. Tick T016-T045 in `specs/*/tasks.md`; close issues #34-#63 and #22 when verified.
 3. Re-run the quality gate (`skill://quality-gate`): SecAudit and CodeReview both returned FAIL before the wipe (1 Critical `openExternal`, 1 High cwd exe search, 7 High from CodeReview).
+
+## Review findings to fold into the rebuild
+
+Process:
+- Quality gate is a HARD RULE (`skill://quality-gate`). Run it at every phase checkpoint before pushing: build/typecheck, lint, and ONE parallel batch of `code-reviewer`, `security-auditor`, and `accessibility-auditor` (Pinion is entirely UI). Report the `VERDICT` lines. "No automated tests" only empties the test-suite step.
+- Memory: 16 GB box. Keep to one live `omp` probe plus one Electron instance at a time. Do not run dev server, Chromium, and `omp` together (OOMs and crashes OMP).
+- If parallel agents each run Electron, give each a distinct `--remoteDebuggingPort` (9223, 9224, 9225), a fresh `--user-data-dir`, and confirm the attached window by a per-agent marker before verifying anything.
+- Timebox: check in at 2x the estimate. Usual hangs: an interactive `shadcn init` prompt, or a `pnpm dev`/Electron window that never exits.
+- When checking exit codes through a pipe, use `set -o pipefail` or `${PIPESTATUS[0]}`, not the exit code of `tail`.
+- Concurrent writers overwrote shared files (preload, `App.tsx`, `sessions-store.ts`, `ChatPane.tsx`, `MessageInput.tsx`, `shared/ipc.ts`). Give each file one owner per wave, and diff against each worker's reported changes before the gate.
+- Add `*.tsbuildinfo` to `.gitignore` before the first commit.
+- E2E hygiene: write Conversations only under a scratch `--session-dir` or clean up every `~/.omp/agent/sessions/-AppData-Local-Temp-pinion-e2e-*` directory afterwards, delete the scratch repo and worktrees by literal path, and confirm no e2e `omp` or Electron processes are left.
+- Do not mark T004 `[X]` or close #22: the `shell.openExternal` breakaway check was never run. Run it before T017 wires `openExternal`, or split it into its own issue (`spike`, `transport`, `p1`).
+
+Design and bug items:
+1. `currentConversation` and `sessionDir` are persisted only once a settled turn reports `messageCount > 0`; start without resume while null (data-model.md). Otherwise a healthy empty Session fails reattach after a restart.
+2. Idle mode change applies immediately: restart any idle Session with no pending request at once (FR-020 defers only mid-turn). After `startNew`, mark only the new unsaved conversation as current.
+3. `--resume` destroys Conversations (after the worktree is removed and re-added at the same path it reports `messageCount: 0` and overwrites the file on exit). Use `switch_session` only. Add a FINDINGS item with repro and before/after file evidence, qualify the C16 `--resume` PASS, bump the constitution (Principle III cites FINDINGS), update `contracts/omp-usage.md` "Launch" and "Start-up sequence", and save the lesson to Skippy-Brain.
+4. Readiness: ready when `get_available_models` contains `get_state.model` (same provider and id). Keep `get_login_providers` only for the failure hint. Update `contracts/ipc.md` before T020. Hint text: "Run `omp`, complete `/login`, then re-check." (`omp auth login` does not exist.)
+5. `write` tool rows show the written content or "created / overwrote N lines". Build a diff only for `edit`, from `details.oldText`/`newText`. No per-path last-known-content cache. Record this in `omp-usage.md` before T025. The `edit` row target comes from `result.details.path` or the `[path#tag]` header of `args.input`.
+6. Fix `src/shared/frames.ts` centrally: add `messageId` to message frames and put `isError` on `tool_execution_end` (not under `result`). Delete the `readMessageId`/`readToolIsError` casts.
+7. `pidRecords.recordProcess` must not await PowerShell on spawn (1-4 s). Make it fire-and-forget, or add `GetProcessTimes`/`QueryFullProcessImageNameW` to `jobObject.ts` so no child process is needed.
+8. Preload: declare `const api: PinionApi = {...}` (or `satisfies PinionApi`) so an unbridged channel fails the build. Drop the `setVisible?.()` guard and silent `.catch`; log failures.
+9. `RequestCard` shows a pending state on click and resolves only on `chat.answer` `ok` or the `request:resolved` event; on failure restore the card with the error (FR-018/FR-019).
+10. `/new` routes to `conversations.startNew`; keep `/btw`, `/fork`, `/plan` and the rest refused locally.
+11. Registry and settings writes: one promise queue per file with read-modify-write inside it, and unique temp names (`.tmp-<pid>-<n>`), in `atomicJson.ts`/`RegistryStore`. This fixes the rename ENOENT and lost updates.
+12. After adding a repository through the real **Add repository** dialog from a fresh `--user-data-dir`, the workspace must replace Readiness without a reload. If not, the store is not refreshed on add.
+13. Unread test: start a slow turn in Session A, click Session B, wait for A to go idle, then read A's row. For crash detection subscribe to `session:status` before killing `omp`.
+14. Check the dev `userData` `registry.json` is clean (or use a fresh `--user-data-dir`) before any integration run.
