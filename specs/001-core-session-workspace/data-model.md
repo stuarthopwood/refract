@@ -32,7 +32,7 @@ interface Session {
   worktreePath: string;        // absolute; also the agent's cwd
   sessionDir: string | null;   // OMP's session directory for that cwd; null until first learned (see below)
   currentConversation: string | null; // absolute path of the current Conversation's file; null before the first message
-  lastMessageCount: number | null;    // messageCount at the last settle; used to verify a reattach
+  lastMessageCount: number | null;    // messageCount at the last settle; reattach requires messageCount >= this
   createdAt: string;
   lastActivityAt: string;
   archivedAt: string | null;   // non-null = archived
@@ -153,5 +153,5 @@ type PendingRequest =
 After starting an agent, binding it with `switch_session` to the saved Conversation, and reading `get_state`:
 
 1. `sessionFile` must equal `Session.currentConversation` (case-insensitive path compare).
-2. `messageCount` must be `> 0`, and must equal `Session.lastMessageCount` when that is not null.
+2. `messageCount` must be `> 0`, and must be `>= Session.lastMessageCount` when that is not null. It may be higher: OMP appends messages (advisor, hooks, background notices) outside the turn and `session_settled` flow Pinion counts, so exact equality would fail a healthy Session after a Stop or Recover. A lower count means a truncated or different file and fails.
 3. If either fails, the Session becomes `stopped` with a notice saying which check failed. The empty session OMP created is left unused and no message can be sent until the user chooses recover or another Conversation.

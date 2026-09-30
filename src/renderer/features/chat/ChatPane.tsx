@@ -8,7 +8,7 @@ import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
-import { notify, usePendingRequestsStore, useQueueStore, useSessionsStore, useTranscriptStore } from '@/state'
+import { notify, useCommandsStore, usePendingRequestsStore, useQueueStore, useSessionsStore, useTranscriptStore } from '@/state'
 import type { SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -38,7 +38,7 @@ export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): voi
 export function describeStopReason(reason: StopReason, detail?: string): string {
   switch (reason) {
     case 'agent-exited':
-      return `The agent stopped (exit code ${detail ?? 'unknown'}).`
+      return `The agent stopped (${detail ?? 'unknown exit code'}).`
     case 'worktree-missing':
       return `Worktree missing: ${detail ?? 'the worktree folder is gone'}`
     case 'start-failed':
@@ -85,6 +85,16 @@ export function ChatPane() {
         if (cancelled || !snapshot) return
         applySnapshot(visibleSessionId, snapshot)
         setStopInfo({ reason: snapshot.runtime.stopReason, detail: snapshot.runtime.stopDetail })
+        // `commands:update` only pushes on the next `available_commands_update` frame from
+        // OMP (SessionAgent.ts), which may not arrive again for a Session that was already
+        // running before this pane (re)mounted -- e.g. a warm switch back, or a renderer
+        // reload while the agent stayed up. Without this, the slash menu's `aria-controls`
+        // points at a listbox that never renders (SlashMenu.tsx renders no id when the
+        // command list is empty), and typing `/` shows "No matching commands" forever.
+        const commandsResult = await window.pinion.chat.commands(visibleSessionId)
+        if (!cancelled && commandsResult.ok) {
+          useCommandsStore.getState().setForSession(visibleSessionId, commandsResult.value)
+        }
       } catch (error) {
         // Defense in depth: a throw here (e.g. a future `sessionsStore.open` regression) must
         // not silently strand the transcript on "No messages yet" forever, the way the missing

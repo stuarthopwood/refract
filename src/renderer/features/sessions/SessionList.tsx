@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { BellRingIcon, ChevronRightIcon, CircleIcon, EllipsisVerticalIcon, LoaderCircleIcon, PlusIcon, SquareIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -65,6 +65,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const isArchived = !!session.archivedAt
   const rowRef = useRef<HTMLLIElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const renameRequestedRef = useRef(false)
 
   // After a row unmounts (archive/restore/delete), focus must not fall back to <body>
@@ -101,6 +102,18 @@ function SessionRow({ session }: { session: SessionSummary }) {
     }
   }
 
+  // `autoFocus` alone races Radix's dropdown-close focus handling: Radix restores focus (to
+  // the removed menu item's former place, landing on <body>) via its own post-paint cleanup,
+  // which runs after this render commits and steals focus back before a same-tick `autoFocus`
+  // or effect can win (WCAG 2.1 AA focus-visibility). Deferring to the next animation frame
+  // runs after that cleanup, so this is the last one to move focus; `onCloseAutoFocus` below
+  // still stops Radix's own return-to-trigger on top of this.
+  useEffect(() => {
+    if (!renaming) return
+    const raf = requestAnimationFrame(() => renameInputRef.current?.focus())
+    return () => cancelAnimationFrame(raf)
+  }, [renaming])
+
   return (
     <li ref={rowRef} className="group relative flex w-full items-center gap-2 rounded-md">
       {isVisible && (
@@ -108,6 +121,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
       )}
       {renaming ? (
         <input
+          ref={renameInputRef}
           autoFocus
           value={draftName}
           onChange={(event) => setDraftName(event.target.value)}
