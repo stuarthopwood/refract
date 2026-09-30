@@ -54,3 +54,26 @@ export function mergeLiveTranscript(historyTranscript: TranscriptItem[], liveTra
   const extra = liveTranscript.filter(isUnpersisted);
   return extra.length === 0 ? historyTranscript : [...historyTranscript, ...extra];
 }
+
+/** Settles any item the process that was updating it will now never finish: a still-`running`
+ * tool call becomes `status:'error'`, and streaming assistant-text/thinking becomes
+ * `streaming:false`. Without this, a crash, a `stop()`, or a mode-change `restart()` leaves
+ * those items spinning in the UI forever -- and, worse, `mergeLiveTranscript`'s `isUnpersisted`
+ * check would keep mistaking them for still-live and re-append them (under their
+ * process-scoped, now-meaningless `messageId`-derived ids) onto every later `launch()`'s fresh
+ * history, forever. Returns the same array reference when there is nothing to finalize. */
+export function finalizeLiveTranscript(transcript: TranscriptItem[]): TranscriptItem[] {
+  let changed = false;
+  const next = transcript.map((item) => {
+    if (item.kind === 'tool' && item.status === 'running') {
+      changed = true;
+      return { ...item, status: 'error' as const };
+    }
+    if ((item.kind === 'assistant-text' || item.kind === 'thinking') && item.streaming) {
+      changed = true;
+      return { ...item, streaming: false };
+    }
+    return item;
+  });
+  return changed ? next : transcript;
+}

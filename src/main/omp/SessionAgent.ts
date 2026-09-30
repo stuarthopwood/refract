@@ -15,8 +15,9 @@ import { OmpProcess } from './OmpProcess';
 import { applyFrame, fromHistory } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
-import { diffTranscript, mergeLiveTranscript } from './transcriptDiff';
+import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './transcriptDiff';
 import { bailIfStopRequested, stopIfRunning } from './launchStopGuard';
+import { PatchCoalescer } from './patchCoalescer';
 import { verifyReattach } from './reattachVerification';
 import type {
   AvailableCommandsUpdateFrame,
@@ -32,8 +33,6 @@ import type { ChatAnswer, SessionStatusEvent, SlashCommand, TranscriptOp } from 
 import type { RegistryStore } from '../store/registry';
 import type { SettingsStore } from '../store/settings';
 
-/** At most one `patch` event per Session in this window (contracts/ipc.md `transcript:patch`). */
-const PATCH_COALESCE_MS = 50;
 const ABORT_SETTLE_TIMEOUT_MS = 60_000;
 
 export interface SessionAgentEvents {
@@ -78,8 +77,7 @@ export class SessionAgent extends EventEmitter {
   private runtime: SessionRuntime;
   private commands: SlashCommand[] = [];
 
-  private pendingOps: TranscriptOp[] = [];
-  private patchTimer: NodeJS.Timeout | undefined;
+  private readonly patches = new PatchCoalescer((ops) => this.emit('patch', { sessionId: this.sessionId, ops }));
   /** True only while `restart()` is tearing down and respawning the process, so `onExit`'s
    * normal agent-exited handling (status flip, notice) is skipped in favour of `restart()`'s own,
    * quieter transition (FR-020: a mode-change restart must not look like a crash). While true,
@@ -222,19 +220,21 @@ export class SessionAgent extends EventEmitter {
       console.error(`SessionAgent ${this.sessionId}: get_messages threw`, err);
     }
 
+    const currentMode = this.settings.get().approvalMode;
     this.runtime = {
       ...this.runtime,
       status: 'idle',
       stopReason: undefined,
       stopDetail: undefined,
       launchedMode: approvalMode,
-      pendingMode: null,
+      pendingMode: currentMode === approvalMode ? null : currentMode,
       transcript: mergeLiveTranscript(transcript, this.runtime.transcript),
     };
 
     await this.syncFromState(state);
     this.emitStatus();
     this.emitPatchReset();
+    this.maybeRestartForPendingMode();
     return { ok: true };
   }
 
@@ -586,6 +586,7 @@ export class SessionAgent extends EventEmitter {
 
   private onExit(info: { code: number | null; requested: boolean }): void {
     this.process = undefined;
+    this.finalizeLiveItems();
     if (this.restarting) return; // restart() owns this transition; see its doc comment.
     this.settleTurnPendingRequests('Request withdrawn: the agent process exited.');
     if (info.requested) {
@@ -704,6 +705,16 @@ export class SessionAgent extends EventEmitter {
     this.appendNotice(reason);
   }
 
+  /** Settles any tool/streaming item the just-ended process can never finish -- see
+   * `finalizeLiveTranscript`'s doc comment for why this matters to `mergeLiveTranscript`. */
+  private finalizeLiveItems(): void {
+    const next = finalizeLiveTranscript(this.runtime.transcript);
+    if (next === this.runtime.transcript) return;
+    const ops = diffTranscript(this.runtime.transcript, next);
+    this.runtime = { ...this.runtime, transcript: next };
+    this.queuePatch(ops);
+  }
+
   private upsertTranscriptItem(item: TranscriptItem): void {
     const exists = this.runtime.transcript.some((existing) => existing.id === item.id);
     const transcript = exists
@@ -753,27 +764,13 @@ export class SessionAgent extends EventEmitter {
 
   /** Full-snapshot flush, used at the end of `start()`, `startNewConversation()`, and
    * `openConversation()` (contracts/ipc.md "a final flush when a Session becomes visible").
-   * Clears any coalesced patch still pending: those ops are against the pre-reset transcript, so
-   * flushing them afterward would reapply stale operations on top of the fresh snapshot. */
+   * See `PatchCoalescer.reset` for why any still-pending coalesced ops are dropped first. */
   private emitPatchReset(): void {
-    if (this.patchTimer) {
-      clearTimeout(this.patchTimer);
-      this.patchTimer = undefined;
-    }
-    this.pendingOps = [];
-    this.emit('patch', { sessionId: this.sessionId, ops: [{ op: 'reset', items: this.runtime.transcript }] });
+    this.patches.reset(this.runtime.transcript);
   }
 
   private queuePatch(ops: TranscriptOp[]): void {
-    this.pendingOps.push(...ops);
-    if (this.patchTimer) return;
-    this.patchTimer = setTimeout(() => {
-      this.patchTimer = undefined;
-      const flushed = this.pendingOps;
-      this.pendingOps = [];
-      if (flushed.length === 0) return;
-      this.emit('patch', { sessionId: this.sessionId, ops: flushed });
-    }, PATCH_COALESCE_MS);
+    this.patches.queue(ops);
   }
 
   /** Resolves once the Session reaches `idle` -- or `stopped`, if the process exits mid-abort,
