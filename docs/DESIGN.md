@@ -80,7 +80,7 @@ Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reser
 Ideas and features live in the GitHub issue log for `stuarthopwood/pinion`. Labels:
 
 - **Type**: `idea` (the inbox), `feature`, `bug`, `spike`, `chore`.
-- **Area**: `session-list`, `chat`, `approvals`, `worktree`, `transport`, `notifications`, `settings`, `design`, `right-pane`.
+- **Area**: `session-list`, `chat`, `approvals`, `worktree`, `transport`, `notifications`, `settings`, `design`, `right-pane`, `build`.
 - **Priority**: `p1`, `p2`, `p3`.
 - **Spec link**: `spec:NNN` when an issue has been shaped into `specs/NNN-...`.
 
