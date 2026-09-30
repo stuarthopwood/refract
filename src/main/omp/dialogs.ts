@@ -11,10 +11,14 @@ const MAX_TARGET_LENGTH = 200;
 /** Answer gathered from the renderer for a pending dialog. */
 export type DialogAnswer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true };
 
-/** Best-effort: does this detail line read as a filesystem path or a shell command? */
-function looksLikePathOrCommand(line: string): boolean {
-  const value = line.replace(/^[A-Za-z][A-Za-z ]*:\s*/, '');
-  return /[\\/]/.test(value) || /^[\w.-]+\s+\S/.test(value);
+/** Value after a `<label>:` prefix on a detail line, e.g. `byLabel(details, 'Path')` on
+ * `"Path: approved.txt"` returns `"approved.txt"`. */
+function byLabel(details: string[], label: string): string | undefined {
+  const prefix = new RegExp(`^${label}:\\s*`, 'i');
+  for (const line of details) {
+    if (prefix.test(line)) return line.replace(prefix, '');
+  }
+  return undefined;
 }
 
 function parseApprovalTitle(title: string): { tool: string; details: string[] } {
@@ -27,8 +31,11 @@ function parseApprovalTitle(title: string): { tool: string; details: string[] } 
   return { tool, details };
 }
 
+/** Prefers a `Path:`/`File:` detail line (the approval's real target), then `Command:`, then the
+ * first detail line. Labelled lines are matched by prefix, not by any space/slash heuristic, so a
+ * single-word path like `approved.txt` is picked over a multi-word `Content:` line. */
 function pickApprovalTarget(details: string[]): string {
-  const candidate = details.find(looksLikePathOrCommand) ?? details[0] ?? '';
+  const candidate = byLabel(details, 'Path') ?? byLabel(details, 'File') ?? byLabel(details, 'Command') ?? details[0] ?? '';
   return candidate.slice(0, MAX_TARGET_LENGTH);
 }
 

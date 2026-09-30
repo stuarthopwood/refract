@@ -92,6 +92,8 @@ export type OmpMessage =
 export interface SlashCommandDescriptor {
   name: string;
   description: string;
+  /** Other names that invoke the same command (observed on the real wire, e.g. `model`'s `models`). */
+  aliases?: string[];
   input?: { hint: string };
   subcommands?: SlashCommandDescriptor[];
 }

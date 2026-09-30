@@ -1,0 +1,239 @@
+import { useState } from 'react'
+import type { KeyboardEvent } from 'react'
+import { BellRingIcon, ChevronRightIcon, CircleIcon, EllipsisVerticalIcon, LoaderCircleIcon, PlusIcon, SquareIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
+import { DeleteDialog } from '@/features/sessions/DeleteDialog'
+import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
+import { useRepositoriesStore, useSessionsStore } from '@/state'
+import type { SessionSummary } from '../../../shared/ipc'
+import type { Repository, SessionStatus } from '../../../shared/model'
+
+const STATUS_LABEL: Record<SessionStatus, string> = {
+  working: 'Working',
+  idle: 'Idle',
+  'needs-you': 'Needs you',
+  stopped: 'Stopped'
+}
+
+// ISO timestamps sort and compare lexically, so no Date parsing is needed until formatting.
+function formatRelativeTime(iso: string): string {
+  const deltaMs = Date.now() - new Date(iso).getTime()
+  const minutes = Math.round(deltaMs / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  return `${days}d ago`
+}
+
+// A distinct icon per Session state, never colour alone (docs/DESIGN.md "Look and feel").
+function StateIcon({ status }: { status: SessionStatus }) {
+  const className = 'size-4 shrink-0'
+  switch (status) {
+    case 'working':
+      return <LoaderCircleIcon aria-hidden className={cn(className, 'animate-spin text-state-working')} />
+    case 'idle':
+      return <CircleIcon aria-hidden className={cn(className, 'text-state-idle')} />
+    case 'needs-you':
+      return <BellRingIcon aria-hidden className={cn(className, 'text-state-needs-you')} />
+    case 'stopped':
+      return <SquareIcon aria-hidden className={cn(className, 'text-state-stopped')} />
+  }
+}
+
+function SessionRow({ session }: { session: SessionSummary }) {
+  const isVisible = useSessionsStore((state) => state.visibleSessionId === session.id)
+  const open = useSessionsStore((state) => state.open)
+  const rename = useSessionsStore((state) => state.rename)
+  const archive = useSessionsStore((state) => state.archive)
+  const restore = useSessionsStore((state) => state.restore)
+  const stopAgent = useSessionsStore((state) => state.stopAgent)
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState(session.name)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const isArchived = !!session.archivedAt
+
+  function startRenaming(): void {
+    setDraftName(session.name)
+    setRenaming(true)
+  }
+
+  async function commitRename(): Promise<void> {
+    const name = draftName.trim()
+    setRenaming(false)
+    if (name && name !== session.name) await rename(session.id, name)
+    else setDraftName(session.name)
+  }
+
+  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    event.stopPropagation()
+    if (event.key === 'Enter') void commitRename()
+    if (event.key === 'Escape') {
+      setDraftName(session.name)
+      setRenaming(false)
+    }
+  }
+
+  return (
+    <li>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-current={isVisible ? 'true' : undefined}
+        onClick={() => {
+          if (!renaming) void open(session.id)
+        }}
+        onDoubleClick={startRenaming}
+        onKeyDown={(event) => {
+          if (!renaming && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault()
+            void open(session.id)
+          }
+        }}
+        className={cn(
+          'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+          isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
+        )}
+      >
+        <StateIcon status={session.status} />
+        <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          {renaming ? (
+            <input
+              autoFocus
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+              onBlur={() => void commitRename()}
+              onKeyDown={handleNameKeyDown}
+              onClick={(event) => event.stopPropagation()}
+              aria-label="Session name"
+              className="w-full rounded border border-ring bg-transparent px-1 py-0.5 text-sm outline-none"
+            />
+          ) : (
+            <span className="truncate font-medium">{session.name}</span>
+          )}
+          <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
+        {session.unread && (
+          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
+        )}
+        {session.unread && <span className="sr-only">Unread</span>}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={`${session.name} actions`}
+              onClick={(event) => event.stopPropagation()}
+              className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100"
+            >
+              <EllipsisVerticalIcon aria-hidden className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent onClick={(event) => event.stopPropagation()}>
+            <DropdownMenuItem onSelect={startRenaming}>Rename</DropdownMenuItem>
+            {isArchived ? (
+              <DropdownMenuItem onSelect={() => void restore(session.id)}>Restore</DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onSelect={() => void archive(session.id)}>Archive</DropdownMenuItem>
+            )}
+            {session.status !== 'stopped' && (
+              <DropdownMenuItem onSelect={() => void stopAgent(session.id)}>Stop agent</DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
+              Delete…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <DeleteDialog session={session} open={deleteOpen} onOpenChange={setDeleteOpen} />
+    </li>
+  )
+}
+
+function RepositoryGroup({ repository, sessions }: { repository: Repository; sessions: SessionSummary[] }) {
+  const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+  const archived = sessions.filter((session) => session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+  return (
+    <div className="flex flex-col">
+      <Collapsible defaultOpen>
+        <div className="flex items-center gap-1 px-1">
+          <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent">
+            <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+            <span className="truncate">{repository.name}</span>
+          </CollapsibleTrigger>
+          <NewSessionDialog
+            repository={repository}
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`New session in ${repository.name}`}
+                title="New session"
+              >
+                <PlusIcon aria-hidden />
+              </Button>
+            }
+          />
+        </div>
+        <CollapsibleContent>
+          <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
+            {active.map((session) => (
+              <SessionRow key={session.id} session={session} />
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
+      {archived.length > 0 && (
+        <Collapsible>
+          <CollapsibleTrigger className="group/trigger flex items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent">
+            <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+            <span>Archived ({archived.length})</span>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <ul aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1">
+              {archived.map((session) => (
+                <SessionRow key={session.id} session={session} />
+              ))}
+            </ul>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+    </div>
+  )
+}
+
+// The session list (docs/DESIGN.md "Layout"): a collapsible group per Repository, Sessions
+// sorted by most recent activity, and a collapsed Archived group at the bottom of each group.
+export function SessionList() {
+  const repositories = useRepositoriesStore((state) => state.repositories)
+  const sessions = useSessionsStore((state) => state.sessions)
+
+  return (
+    <nav aria-label="Sessions" className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="flex flex-col gap-3 p-2">
+          {repositories.map((repository) => (
+            <RepositoryGroup
+              key={repository.id}
+              repository={repository}
+              sessions={sessions.filter((session) => session.repositoryId === repository.id)}
+            />
+          ))}
+        </div>
+      </ScrollArea>
+    </nav>
+  )
+}

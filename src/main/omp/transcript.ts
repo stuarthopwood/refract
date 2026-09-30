@@ -50,11 +50,25 @@ function firstStringArg(args: unknown): string {
   return '';
 }
 
+/** The hashline patch's first `[<path>#<TAG>]` header line; `<path>` is the edit target, never the
+ * patch body (a `write`/`read`/`bash`/`grep` argument, by contrast, is already a plain string). */
+const EDIT_HEADER_PATH_RE = /\[(.+?)#[0-9A-Fa-f]{4}\]/;
+
+function extractEditTarget(input: unknown): string {
+  if (typeof input !== 'string') return '';
+  const match = EDIT_HEADER_PATH_RE.exec(input);
+  return match ? match[1]! : '';
+}
+
 /** Tool row fields: target = the tool's primary argument. */
 function extractTarget(tool: string, args: unknown): string {
   const record = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
   let raw: string;
-  if (tool === 'read' || tool === 'edit' || tool === 'write') {
+  if (tool === 'edit') {
+    // `edit`'s `args` is `{ input: '[<path>#<tag>]\nPUT ...' }` (a hashline patch): the target is
+    // the path in the first header line, not the patch body.
+    raw = extractEditTarget(record.input) || firstStringArg(args);
+  } else if (tool === 'read' || tool === 'write') {
     raw = typeof record.path === 'string' ? record.path : firstStringArg(args);
   } else if (tool === 'bash') {
     raw = typeof record.command === 'string' ? record.command : firstStringArg(args);

@@ -1,0 +1,43 @@
+/* DiffView theme (T025): react-diff-view ships `node_modules/react-diff-view/style/index.css`,
+ * which sets its colours as CSS custom properties on `:root` with light-mode defaults. Rather
+ * than fork that stylesheet, this file re-declares the same variables scoped to `.diff-view`
+ * (closer in specificity than `:root`), pointed at Pinion's own theme tokens
+ * (src/renderer/styles/globals.css) so the diff repaints for free whenever `.dark` is toggled.
+ *
+ * `color-mix` runs `in oklab`, not `in oklch`: globals.css writes grays as `oklch(L 0 0)` (a
+ * literal zero hue, not the `none` keyword), and oklch's polar hue interpolation skews toward
+ * that stray 0deg (red) even at a 0-chroma stop. oklab's a/b axes make an achromatic colour
+ * (0, 0) regardless of the hue digit, so the insert/delete tint keeps its own hue. */
+
+.diff-view {
+  --diff-font-family: var(--font-code);
+  --diff-background-color: var(--card);
+  --diff-text-color: var(--card-foreground);
+  --diff-selection-background-color: var(--accent);
+  --diff-selection-text-color: var(--accent-foreground);
+
+  --diff-gutter-insert-background-color: color-mix(in oklab, var(--state-working) 20%, var(--card));
+  --diff-gutter-insert-text-color: var(--card-foreground);
+  --diff-gutter-delete-background-color: color-mix(in oklab, var(--destructive) 20%, var(--card));
+  --diff-gutter-delete-text-color: var(--card-foreground);
+  --diff-gutter-selected-background-color: var(--accent);
+  --diff-gutter-selected-text-color: var(--accent-foreground);
+
+  --diff-code-insert-background-color: color-mix(in oklab, var(--state-working) 12%, var(--card));
+  --diff-code-insert-text-color: var(--card-foreground);
+  --diff-code-insert-edit-background-color: color-mix(in oklab, var(--state-working) 32%, var(--card));
+  --diff-code-insert-edit-text-color: var(--card-foreground);
+
+  --diff-code-delete-background-color: color-mix(in oklab, var(--destructive) 12%, var(--card));
+  --diff-code-delete-text-color: var(--card-foreground);
+  --diff-code-delete-edit-background-color: color-mix(in oklab, var(--destructive) 32%, var(--card));
+  --diff-code-delete-edit-text-color: var(--card-foreground);
+
+  --diff-code-selected-background-color: var(--accent);
+  --diff-code-selected-text-color: var(--accent-foreground);
+  --diff-omit-gutter-line-color: var(--border);
+}
+
+.diff-view .diff {
+  font-size: 0.75rem;
+}

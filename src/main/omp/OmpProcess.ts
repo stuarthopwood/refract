@@ -11,7 +11,7 @@
 
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { ApprovalMode, OMP_APPROVAL_MODE } from '../../shared/model'
+import { type ApprovalMode, OMP_APPROVAL_MODE } from '../../shared/model'
 import type { Frame, ReadyFrame, ResponseFrame, RpcChunkFrame, RpcCommand } from '../../shared/frames'
 import { recordProcess, removeProcessRecord } from '../process/pidRecords'
 

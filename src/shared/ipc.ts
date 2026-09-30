@@ -52,6 +52,9 @@ export interface Readiness {
 /** `sessions.list()` row: a Session plus its live-runtime view. */
 export interface SessionSummary extends Session {
   status: SessionStatus;
+  /** T043: surfaces `worktree-missing`/`not-started` in the list row itself, so a missing
+   * worktree shows a distinct badge without opening the Session. */
+  stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   unread: boolean;
   pendingMode: ApprovalMode | null;
 }
@@ -107,6 +110,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_ADD: 'repositories.add',
   REPOSITORIES_REMOVE: 'repositories.remove',
   REPOSITORIES_BRANCHES: 'repositories.branches',
+  REPOSITORIES_PICK_FOLDER: 'repositories.pickFolder',
   SESSIONS_LIST: 'sessions.list',
   SESSIONS_CREATE: 'sessions.create',
   SESSIONS_RENAME: 'sessions.rename',
@@ -118,6 +122,7 @@ export const IPC_REQUESTS = {
   SESSIONS_RECREATE_WORKTREE: 'sessions.recreateWorktree',
   SESSIONS_RECOVER: 'sessions.recover',
   SESSIONS_STOP_AGENT: 'sessions.stopAgent',
+  SESSIONS_SET_VISIBLE: 'sessions.setVisible',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
@@ -161,6 +166,7 @@ export interface PinionApi {
     add(path: string): Promise<Result<Repository>>;
     remove(id: string): Promise<Result<void>>;
     branches(id: string): Promise<Result<{ branches: string[]; default: string }>>;
+    pickFolder(): Promise<Result<string | null>>;
   };
 
   sessions: {
@@ -175,6 +181,7 @@ export interface PinionApi {
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;
     stopAgent(sessionId: string): Promise<Result<void>>;
+    setVisible(sessionId: string | null): Promise<Result<void>>;
   };
 
   conversations: {

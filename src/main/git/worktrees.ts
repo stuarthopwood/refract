@@ -186,3 +186,28 @@ export async function deleteCheck(worktreePath: string): Promise<DeleteCheck> {
 
   return { uncommittedFiles, unpushedCommits, hasUpstream }
 }
+
+/**
+ * Recreates a worktree at its original path, attaching the existing `branch` (no `-b`): used
+ * when the worktree folder has disappeared but the branch is intact (tasks.md T043). Callers
+ * check `branchExists` first; this only maps the `git worktree add` failure itself. `-f` is
+ * required here (not merely permissive): git still has the original worktree registered under
+ * `.git/worktrees/<name>/` even though its directory is gone, and a plain `add` refuses with
+ * "is a missing but already registered worktree" until `-f`, `prune`, or `remove` clears it.
+ */
+export async function recreateWorktree(repo: string, worktreePath: string, branch: string): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(worktreePath), { recursive: true })
+  } catch (err) {
+    if (isPathTooLongError(err)) throw new GitError('path-too-long', `Worktree path too long: ${worktreePath}`)
+    throw err
+  }
+
+  const result = await gitRaw(repo, ['worktree', 'add', '-f', worktreePath, branch])
+  if (result.code !== 0) {
+    if (isPathTooLongError({ message: result.stderr }) || worktreePath.length >= 260) {
+      throw new GitError('path-too-long', `Worktree path too long: ${worktreePath}`)
+    }
+    throw new GitError('worktree-failed', result.stderr.trim() || `git worktree add failed for ${worktreePath}`)
+  }
+}

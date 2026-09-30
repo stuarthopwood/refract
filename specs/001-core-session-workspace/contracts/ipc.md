@@ -28,21 +28,23 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | `repositories.add(path)` | `Repository` | `not-a-repo`, `no-commits`, `duplicate` |
 | `repositories.remove(id)` | `void` | `session-running` |
 | `repositories.branches(id)` | `{ branches: string[]; default: string }` | `git-failed` |
+| `repositories.pickFolder()` | `string \| null` | Opens a native folder-picker dialog on the main window (`properties: ['openDirectory']`); `null` when the user cancels. Added to support the renderer's Browse button. |
 
 ### Sessions (FR-002 to FR-006, FR-013, FR-028, FR-029, FR-035)
 
 | Method | Returns | Notes |
 |---|---|---|
-| `sessions.list()` | `SessionSummary[]` | Non-archived and archived; carries `status`, `unread`, `pendingMode`. |
+| `sessions.list()` | `SessionSummary[]` | Non-archived and archived; carries `status`, `stopReason?` (detects a missing worktree at list time, T043), `unread`, `pendingMode`. |
 | `sessions.create({ repositoryId, baseBranch })` | `Session` | Generates the name, runs `git worktree add -b <name> <path> <baseBranch>`. Never leaves a half-created Session: on any failure the worktree and branch it created are removed. Errors: `worktree-failed`, `base-missing`, `path-too-long`. |
 | `sessions.rename(id, name)` | `void` | Label only. |
 | `sessions.open(id)` | `SessionSnapshot` | Starts and reattaches the agent if it is not running (or returns the stopped reason). `SessionSnapshot = { runtime: SessionRuntimeView; conversations: ConversationInfo[] }`. |
 | `sessions.archive(id)` / `sessions.restore(id)` | `void` | Stops the agent first if it runs. |
 | `sessions.deleteCheck(id)` | `{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }` | Feeds the confirmation text. |
 | `sessions.delete(id, { confirmed: true })` | `void` | Removes worktree, branch (only if unmerged work was confirmed), the Session entry, and Conversation files. Refused without `confirmed: true`. |
-| `sessions.recreateWorktree(id)` | `void` | Only when the branch still exists. Error `branch-missing`. |
+| `sessions.recreateWorktree(id)` | `void` | Only when the branch still exists; runs `git worktree add <path> <branch>` (no `-b`, attaches the existing branch). Error `branch-missing`. |
 | `sessions.recover(id)` | `SessionSnapshot` | Restart and reattach after `agent-exited`. |
 | `sessions.stopAgent(sessionId)` | `void` | Stops the process, leaves the Session listed as `stopped`/`not-started`, keeps its Conversation; reopening reattaches it (FR-038). |
+| `sessions.setVisible(sessionId \| null)` | `void` | Selects which Session's `transcript:patch` events are forwarded (FR-026); `sessions.open` calls this too. Also clears that Session's `unread` and flushes a full transcript snapshot (`transcript:patch` `reset`). `null` when no Session is shown. |
 
 ### Conversations (FR-013, FR-014)
 

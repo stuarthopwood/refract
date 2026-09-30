@@ -1,0 +1,75 @@
+import type { Repository } from '../../shared/model'
+import type { Result, SessionSummary } from '../../shared/ipc'
+import { useCommandsStore } from './commands-store'
+import { useMemoryStore } from './memory-store'
+import { usePendingRequestsStore } from './pending-requests-store'
+import { useQueueStore } from './queue-store'
+import { useRepositoriesStore } from './repositories-store'
+import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
+import { useSessionsStore } from './sessions-store'
+import { useTranscriptStore } from './transcript-store'
+
+// Awaits an initial-load request. Main's handlers are still landing (tasks T017-T045): a
+// `not-implemented` error and a rejected invoke (no handler registered yet) both fall back to
+// an empty/default value, logged at debug, instead of a toast on every cold start.
+async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: string): Promise<T> {
+  try {
+    const result = await request
+    if (result.ok) return result.value
+    if (result.error.code === 'not-implemented') {
+      console.debug(`[pinion] ${label}: not implemented yet`)
+      return fallback
+    }
+    console.error(`[pinion] ${label}: ${result.error.code} ${result.error.message}`)
+    return fallback
+  } catch (error) {
+    console.debug(`[pinion] ${label}: invoke failed (handler not registered yet)`, error)
+    return fallback
+  }
+}
+
+// Subscribes every store to its `window.pinion` event once, and loads initial data
+// (`sessions.list`, `settings.get`, `repositories.list`). Call once from main.tsx.
+export function initStores(): void {
+  window.pinion.onSessionStatus((event) => {
+    useSessionsStore.getState().applyStatus(event)
+  })
+  window.pinion.onSessionListChanged(() => {
+    void useSessionsStore.getState().refresh()
+  })
+  window.pinion.onTranscriptPatch(({ sessionId, ops }) => {
+    useTranscriptStore.getState().applyOps(sessionId, ops)
+  })
+  window.pinion.onQueueUpdate(({ sessionId, followUp, steering }) => {
+    useQueueStore.getState().apply(sessionId, followUp, steering)
+  })
+  window.pinion.onRequestPending(({ sessionId, request }) => {
+    usePendingRequestsStore.getState().add(sessionId, request)
+  })
+  window.pinion.onRequestResolved(({ sessionId, requestId }) => {
+    usePendingRequestsStore.getState().resolve(sessionId, requestId)
+  })
+  window.pinion.onCommandsUpdate(({ sessionId, commands }) => {
+    useCommandsStore.getState().setForSession(sessionId, commands)
+  })
+  window.pinion.onSettingsChanged((settings) => {
+    useSettingsStore.getState().setSettings(settings)
+  })
+  window.pinion.onUiOpenSession(({ sessionId }) => {
+    useSessionsStore.getState().setVisibleSessionId(sessionId)
+  })
+  window.pinion.onMemoryWarning((warning) => {
+    useMemoryStore.getState().setWarning(warning)
+  })
+
+  void (async () => {
+    const [sessions, settings, repositories] = await Promise.all([
+      loadInitial(window.pinion.sessions.list(), [] as SessionSummary[], 'sessions.list'),
+      loadInitial(window.pinion.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
+      loadInitial(window.pinion.repositories.list(), [] as Repository[], 'repositories.list')
+    ])
+    useSessionsStore.getState().setSessions(sessions)
+    useSettingsStore.getState().setSettings(settings)
+    useRepositoriesStore.getState().setRepositories(repositories)
+  })()
+}
