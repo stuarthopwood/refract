@@ -30,19 +30,21 @@ const EXIT_MS = 30_000;
 const T0 = Date.now();
 const ROOT = path.join(os.tmpdir(), "pinion-resume-probe", new Date().toISOString().replace(/[:.]/g, "-"));
 const dir = (name) => path.join(ROOT, name);
-for (const d of ["wt", "frames", "sessions-seed", "sessions-A", "sessions-B", "sessions-C", "sessions-boot"]) {
+for (const d of ["wt", "wt2", "frames", "sessions-seed", "sessions-A", "sessions-B", "sessions-C", "sessions-E", "sessions-boot"]) {
   fs.mkdirSync(dir(d), { recursive: true });
 }
 fs.writeFileSync(path.join(dir("wt"), "README.md"), "resume probe worktree\n");
+fs.writeFileSync(path.join(dir("wt2"), "README.md"), "resume probe other worktree\n");
 
 const CODE = "PINION-" + crypto.randomBytes(3).toString("hex").toUpperCase();
 const SEED = `Remember this codeword for later in this conversation: ${CODE}. Do not use any tools. Reply with exactly: STORED`;
 const RECALL = "Without using any tools, reply with only the codeword I asked you to remember earlier in this conversation.";
 
 const sameFile = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+const countJsonl = (d) => fs.readdirSync(d).filter((f) => f.endsWith(".jsonl")).length;
 
 class OmpProc {
-  constructor(label, sessionDir, extra = []) {
+  constructor(label, sessionDir, extra = [], cwd = dir("wt")) {
     this.label = label;
     this.frames = [];
     this.waiters = [];
@@ -63,7 +65,7 @@ class OmpProc {
       ...extra,
     ];
     this.startedAt = Date.now();
-    this.child = spawn(OMP, args, { cwd: dir("wt"), stdio: "pipe", windowsHide: true });
+    this.child = spawn(OMP, args, { cwd, stdio: "pipe", windowsHide: true });
     this.exitPromise = new Promise((resolve) => {
       this.child.on("exit", (code) => { this.exited = true; this.exitCode ??= code; resolve(); });
     });
@@ -267,7 +269,7 @@ try {
   const copy = {}; const entriesBefore = {};
   // OMP rewrites the file on load (byte size can shrink), so growth is measured in entries.
   const countEntries = (f) => fs.readFileSync(f, "utf8").split("\n").filter(Boolean).length;
-  for (const X of ["A", "B", "C"]) {
+  for (const X of ["A", "B", "C", "E"]) {
     const dst = dir(`sessions-${X}`);
     copy[X] = path.join(dst, path.basename(F));
     fs.copyFileSync(F, copy[X]);
@@ -311,13 +313,17 @@ try {
   // Variant A: switch_session in a fresh process.
   {
     const s = new Steps("A");
+    const f0 = countJsonl(dir("sessions-A"));
     const p = new OmpProc("P1-switch", dir("sessions-A"));
+    let fReady;
     await s.run("attach", async () => {
       await p.ready();
+      fReady = countJsonl(dir("sessions-A"));
       const r = await p.request({ type: "switch_session", sessionPath: copy.A });
       assert(r.success === true && r.data?.cancelled === false, `response ${JSON.stringify(r).slice(0, 200)}`);
       return `ready ${p.readyMs}ms`;
     });
+    record("A", "files", "INFO", `*.jsonl in session dir: spawn ${f0}, after ready ${fReady}, after attach ${countJsonl(dir("sessions-A"))}`);
     await common("A", p, s);
     {
       try { // INFO control: does a missing path silently start an empty session?
@@ -335,8 +341,10 @@ try {
   // Variant B: --resume <file> at spawn.
   {
     const s = new Steps("B");
+    const f0 = countJsonl(dir("sessions-B"));
     const p = new OmpProc("P2-resume", dir("sessions-B"), ["--resume", copy.B]);
     await s.run("attach", async () => { await p.ready(); return `ready ${p.readyMs}ms`; });
+    record("B", "files", "INFO", `*.jsonl in session dir: spawn ${f0}, after ready ${countJsonl(dir("sessions-B"))}`);
     await common("B", p, s);
     await p.hardKill();
     await persisted("B", s);
@@ -347,16 +355,70 @@ try {
   {
     const s = new Steps("C");
     const p = new OmpProc("P3-open", dir("sessions-boot"));
+    let fReady;
     await s.run("attach", async () => {
       await p.ready();
+      fReady = countJsonl(dir("sessions-boot"));
       const r = await p.request({ type: "open_session", sessionDir: dir("sessions-C") });
       assert(r.success && r.data?.cancelled === false && r.data?.resumed === true && sameFile(r.data.sessionFile, copy.C),
         `response ${JSON.stringify(r).slice(0, 240)}`);
       return `ready ${p.readyMs}ms`;
     });
+    record("C", "files", "INFO", `*.jsonl: boot dir after ready ${fReady}, target dir ${countJsonl(dir("sessions-C"))}, boot dir after attach ${countJsonl(dir("sessions-boot"))}`);
     await common("C", p, s);
     await p.closeGracefully();
     await persisted("C", s);
+    processes.push(p.summary());
+  }
+
+  // Variant D: real restart on the ORIGINAL seed file in its ORIGINAL dir (no copy).
+  {
+    copy.D = F; entriesBefore.D = countEntries(F);
+    const s = new Steps("D");
+    const p = new OmpProc("P4-restart", dir("sessions-seed"));
+    await s.run("attach", async () => {
+      await p.ready();
+      const r = await p.request({ type: "open_session", sessionDir: dir("sessions-seed") });
+      assert(r.success && r.data?.cancelled === false && r.data?.resumed === true && sameFile(r.data.sessionFile, F),
+        `response ${JSON.stringify(r).slice(0, 240)}`);
+      return `original file reopened`;
+    });
+    await common("D", p, s);
+    await p.closeGracefully();
+    await persisted("D", s);
+    record("D", "files", "INFO", `*.jsonl in seed dir after restart: ${countJsonl(dir("sessions-seed"))}`);
+    processes.push(p.summary());
+  }
+
+  // Variant N: does open_session pick the newest NON-EMPTY session when a newer empty one exists?
+  {
+    const s = new Steps("N");
+    const empty = path.join(dir("sessions-A"), "missing-session.jsonl");
+    assert(fs.existsSync(empty), "control file from variant A missing");
+    const later = new Date(Date.now() + 60_000);
+    fs.utimesSync(empty, later, later); // make the empty session the newest by mtime
+    const p = new OmpProc("P5-newest", dir("sessions-boot"));
+    await s.run("nonempty", async () => {
+      await p.ready();
+      const r = await p.request({ type: "open_session", sessionDir: dir("sessions-A") });
+      assert(r.success && r.data?.resumed === true && sameFile(r.data.sessionFile, copy.A),
+        `picked ${r.data?.sessionFile} (resumed:${r.data?.resumed}), expected ${copy.A}`);
+      return `skipped newer empty session, picked ${path.basename(r.data.sessionFile)}`;
+    });
+    await p.closeGracefully();
+    processes.push(p.summary());
+  }
+
+  // Variant E: negative control. Process cwd differs from the session's recorded cwd (wt).
+  {
+    const p = new OmpProc("P6-othercwd", dir("sessions-E"), [], dir("wt2"));
+    try {
+      await p.ready();
+      const r = await p.request({ type: "switch_session", sessionPath: copy.E });
+      const st = await p.getState();
+      record("E", "othercwd", "INFO", `switch_session success:${r.success} cancelled:${r.data?.cancelled} error:${r.error ?? "-"} messageCount:${st.messageCount} sessionFile:${path.basename(st.sessionFile ?? "")}`);
+    } catch (e) { record("E", "othercwd", "INFO", `errored: ${e.message}`); }
+    await p.closeGracefully();
     processes.push(p.summary());
   }
 

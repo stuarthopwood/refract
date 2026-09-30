@@ -52,6 +52,9 @@ sessions do not survive a process restart.
   with `sessionPath` in a running process (FINDINGS C16). Pinion MUST confirm every reattach by
   matching `get_state` `sessionFile` and `messageCount` against the saved session, because
   `switch_session` to a missing path succeeds with an empty session.
+- Every OMP process MUST be spawned with the session's own worktree as its cwd. `switch_session`
+  to a session recorded under a different cwd is cancelled and leaves the process on an empty
+  session (FINDINGS C16, item 5).
 - Pinion stops a session by closing its stdin and reading stdout until the process exits, and
   force-stops it with `taskkill /PID <pid> /T /F`. No `omp` process may outlive the app.
 
@@ -102,4 +105,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
+**Version**: 1.1.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-09-30
