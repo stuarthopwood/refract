@@ -74,10 +74,11 @@ Why not the others:
 19. **omp 18.4.5 re-probe (2026-09-30):** the box upgraded to `omp` 18.4.5, so the three probes Pinion's contracts rely on were rerun there. `resume-probe.mjs`: every check PASS (attach by `switch_session`, `open_session`, `--resume` on the original file in the ordinary case; history, continuation, append, and persistence all match; `open_session` still skips a newer empty session). `signed-in-probe.mjs`: the signed-in profile returns 67 models and two authenticated providers (`authenticatedCount: 2`); the empty `--profile pinion-probe-empty` process returns 0 models and 0 authenticated providers, still reports a `get_state.model`, and a prompt fails with "No API key found", so the readiness rule (`get_state.model` contained in `get_available_models`) discriminates on 18.4.5. `edit-diff-probe.mjs`: `edit` results still carry `details.oldText` and `details.newText`; `write` results still carry only `details.resolvedPath` and the text `Successfully wrote N bytes`. No FINDINGS row Pinion relies on changed, so the supported range is 18.4.x (constitution 1.6.0).
 
 ## Open items not covered by the spike
-- MCP over ACP unverified (RPC listed the tools).
-- `ask` cancellation in ACP tried with `@smol` only.
-- `branch` entry id rule.
-- `/wt` behaviour.
 - Cold start on an idle machine (item 6 was measured under load).
 - MCP loading was judged from a cheap model listing its tools. Re-check deterministically with the `/mcp` built-in or a `tool_execution_start` frame for a named MCP tool.
-- Sub-finding to keep: Copilot desktop creates one git worktree per session under `<repo-clone>/../copilot-worktrees/<repo>/<user>-<adjective>-<noun>` (verified on disk), which is the UX Pinion is meant to match.
+
+## Resolved since the spike
+- MCP over ACP, and `ask` cancellation in ACP (tried with `@smol` only): moot. The selected transport is `omp --mode rpc-ui` (see "Selected transport" above), never ACP, so these ACP-specific gaps do not apply to Pinion.
+- `branch` entry id rule: moot. `contracts/omp-usage.md` lists `branch` among the commands this spec does not use.
+- `/wt` behaviour: moot. Pinion never calls OMP's `/wt`; worktree creation, removal, and recreation are its own direct `git worktree` calls (`src/main/git/worktrees.ts`), built and tested without it.
+- Copilot-desktop worktree-naming sub-finding: adopted. Pinion's `generateName()` (`src/main/git/worktrees.ts`) picks a readable adjective-noun name unique against local branches and existing worktree folders, matching the pattern this finding recorded.

@@ -11,13 +11,15 @@ import path from 'node:path';
 
 const cache = new Map<string, string>();
 
-/** PATH entries only, in order; never `process.cwd()` or any spawn's `cwd`. */
+/** PATH entries only, in order; never `process.cwd()` or any spawn's `cwd`. Relative entries (`.`,
+ * `bin`) are dropped: joined with a bare name they would resolve against the spawn's cwd, which is
+ * the repository or worktree and is exactly the lookup this module exists to prevent. */
 function pathDirectories(): string[] {
   const raw = process.env['PATH'] ?? process.env['Path'] ?? '';
   return raw
     .split(path.delimiter)
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+    .map((entry) => entry.trim().replace(/^"(.*)"$/, '$1'))
+    .filter((entry) => entry.length > 0 && path.isAbsolute(entry));
 }
 
 function candidateExtensions(): string[] {

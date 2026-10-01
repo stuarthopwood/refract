@@ -75,6 +75,17 @@ Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reser
 - Approval mode (also on the status bar).
 - Theme, UI font, code font (family, ligatures, size): wanted, but not in spec 001, which uses defaults; tracked as an issue.
 
+## Confirmed in implementation
+
+- **Opening a Session**: clicking a non-visible row only flips `visibleSessionId`; `ChatPane`'s effect on that id change is the single place that asks for a snapshot (`sessions.open`) and applies it (transcript, queue, pending requests, stop banner). Clicking the already-visible row (waking a `not-started` Session) calls `open` directly instead, since there is no visibility change to trigger that effect.
+- **Approval mode switch**: changing the status-bar mode persists immediately, but a live Session only restarts into it once it is idle with nothing pending (`pendingMode` on the runtime view); the chat header shows "<mode> after this turn" while a restart is pending. A Session that is not live simply launches in the new mode next time.
+- **Reattaching a live process to a Conversation** (`switch_session`, used by both session-open and the mode-change restart) is verified, not assumed: after the RPC call reports `cancelled: false`, Pinion calls `get_state` and checks its `messageCount` is at least the Conversation's last known `lastMessageCount` before trusting the reattach; a failed check rolls back to the previous Conversation where possible.
+- **Readiness ("OMP signed in")**: `get_state`'s current model must also appear in `get_available_models`; a resolved `{provider, id}` from `get_state` alone is not diagnostic of sign-in (disabled or uncredentialled providers can still show up there), so the model-presence check is the actual signal. `get_login_providers` is used only to enrich the failure hint with the unauthenticated provider ids.
+- **Tool rows**: a `write` result shows "Wrote N lines to `<path>`"; an `edit` result shows a diff built from the tool's own `details.oldText`/`details.newText` (not a general-purpose git diff, which is unreliable per-call once several edits touch the same file in one turn).
+- **Session list keyboard and focus model**: each row is one button (open/wake) plus an `⋮` menu trigger (rename, archive/restore, stop agent, delete). F2 on the focused row button starts renaming; Enter/Escape commit or cancel it. Archive/restore/delete can unmount the focused row (sometimes its whole group), so every such action captures a fallback chain before acting -- next row, then previous row, then the Repository's own collapsible trigger, then the Sessions nav root -- so focus never lands on `<body>` (WCAG 2.1 AA).
+- **Motion**: a `prefers-reduced-motion: reduce` media query disables animation globally (spinners, transitions), leaving colour, icon, and `sr-only` state text as the non-motion signal.
+- **State icons**: each Session state (`working`, `idle`, `needs-you`, `stopped`) pairs a distinct Lucide icon and colour with an `sr-only` text label (`STATUS_LABEL`), so colour is never the only signal, including for screen readers.
+
 ## Backlog
 
 Ideas and features live in the GitHub issue log for `stuarthopwood/pinion`. Labels:

@@ -8,6 +8,40 @@ Pinion drives OMP through `omp --mode rpc-ui`, one OMP process per session, so s
 
 Pre-implementation. The transport spike is recorded in [`docs/spike/`](docs/spike/FINDINGS.md). Specs are managed with [Spec Kit](https://github.com/github/spec-kit); start with the constitution in `.specify/memory/constitution.md`.
 
+## Prerequisites
+
+- Windows 11.
+- Node 24 or newer, with `pnpm`.
+- Git for Windows.
+- `omp` 18.4.x on `PATH`, signed in (`omp --version` prints `omp/18.4.x`).
+
+## Running
+
+```
+pnpm install
+pnpm dev          # Electron with hot reload (electron-vite dev)
+pnpm build        # production build (electron-vite build), output in out/
+pnpm typecheck    # tsc --noEmit over the main and web projects
+```
+
+There is no packaged installer yet. After `pnpm build`, launch the built app directly:
+
+```
+node_modules/electron/dist/electron.exe .
+```
+
+## Where state lives
+
+Pinion keeps no state in the repo. Everything is under Electron's `userData` directory (`app.getPath('userData')`; on Windows, `%APPDATA%/pinion` in a packaged build, a dev-specific path under `electron-vite`/Electron's default in `pnpm dev`):
+
+| File | Holds |
+|---|---|
+| `registry.json` | Every Repository and Session Pinion knows about (`src/main/store/registry.ts`). |
+| `settings.json` | The single app-wide Settings row, currently just Approval mode (`src/main/store/settings.ts`). |
+| `processes.json` | pids of live `omp` root processes, used to detect and reap orphans left by a crash (`src/main/process/pidRecords.ts`). |
+
+A Session's worktree lives next to the Repository it belongs to, not under `userData`: `<repo>/../pinion-worktrees/<repoName>/<name>` (`src/main/git/worktrees.ts`).
+
 ## Where things live
 
 | What | Where |
