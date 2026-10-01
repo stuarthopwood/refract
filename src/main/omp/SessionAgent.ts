@@ -142,13 +142,12 @@ export class SessionAgent extends EventEmitter {
    * spawning a second `omp` process.
    */
   async start(): Promise<void> {
-    if (this.process) {
-      throw new Error(`SessionAgent ${this.sessionId}: already started`);
-    }
     if (this.startPromise) return this.startPromise;
+    if (this.process) throw new Error(`SessionAgent ${this.sessionId}: already started`);
     if (this.runtime.status === 'stopped') this.stopRequested = false;
     this.startPromise = this.doStart().finally(() => {
       this.startPromise = undefined;
+      this.maybeRestartForPendingMode();
     });
     return this.startPromise;
   }
@@ -209,15 +208,22 @@ export class SessionAgent extends EventEmitter {
     });
     if (bail2) return bail2;
     let transcript: TranscriptItem[] = [];
+    let messagesOk = false;
     try {
       const messagesRes = await proc.request({ type: 'get_messages', id: '' });
       if (messagesRes.success) {
         transcript = fromHistory((messagesRes.data as GetMessagesResponseData).messages);
+        messagesOk = true;
       } else {
         console.error(`SessionAgent ${this.sessionId}: get_messages failed`, messagesRes.error);
       }
     } catch (err) {
       console.error(`SessionAgent ${this.sessionId}: get_messages threw`, err);
+    }
+    if (this.process !== proc) {
+      const detail = failurePrefix + 'agent exited during start';
+      this.recordStartFailure(detail);
+      return { ok: false, error: new Error(detail) };
     }
 
     const currentMode = this.settings.get().approvalMode;
@@ -228,7 +234,7 @@ export class SessionAgent extends EventEmitter {
       stopDetail: undefined,
       launchedMode: approvalMode,
       pendingMode: currentMode === approvalMode ? null : currentMode,
-      transcript: mergeLiveTranscript(transcript, this.runtime.transcript),
+      transcript: messagesOk ? mergeLiveTranscript(transcript, this.runtime.transcript) : this.runtime.transcript,
     };
 
     await this.syncFromState(state);
@@ -321,6 +327,7 @@ export class SessionAgent extends EventEmitter {
     if (this.runtime.status === 'stopped') this.stopRequested = false;
     this.restartPromise = this.doRestart(reason).finally(() => {
       this.restartPromise = undefined;
+      this.maybeRestartForPendingMode();
     });
     return this.restartPromise;
   }
@@ -330,14 +337,10 @@ export class SessionAgent extends EventEmitter {
     this.restarting = true;
     try {
       await stopIfRunning(this.process);
-
       const result = await this.launch(session, `Restart failed (${reason}): `);
       if (!result.ok) return;
     } finally {
       this.restarting = false;
-      // pendingMode may have changed again while this restart was in flight; re-checking here
-      // covers that without a second restart() call racing this one.
-      this.maybeRestartForPendingMode();
     }
   }
 
