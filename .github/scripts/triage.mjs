@@ -297,7 +297,7 @@ export function renderPickupPlan(c, featureDirectory) {
   bug: "Reproduce with a failing test first, then fix.",
   documentation: "Edit docs only.",
   design: "Pick up directly: implement the requested visual/asset change.",
-  chore: "Pick up directly: no design decision needed.",
+  chore: "Pick up directly: make the change and verify it builds and tests pass.",
   spike: "Investigate and report findings in a comment.",
   question: "Answer directly in a comment; no code change expected.",
  };
