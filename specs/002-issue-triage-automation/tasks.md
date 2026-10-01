@@ -259,11 +259,10 @@ classification provider (GitHub Copilot CLI) ahead of the existing Anthropic fal
 - [x] T043 [P] Updated `spec.md` (FR-026 through FR-030, the Classification Key Entity, and
       SC-004) and `plan.md` (Summary, Primary Dependencies, Testing, Constraints) to describe the
       model-summary separation, the `ready-for-human`+`none` fix, and the Copilot provider.
-- [ ] T044 Live-test: with `COPILOT_GITHUB_TOKEN` configured as a real secret, dispatch the
-      workflow against a throwaway issue and confirm the comment discloses `provider: copilot`
-      with correctly classified labels and no fallback to Anthropic/heuristic. Not yet run — no
-      such secret/PAT exists in the repository, and the real `copilot` binary has never been
-      invoked by this suite (only its argv-building and the fallthrough logic are unit-tested).
+- [x] T044 Live-test: with `COPILOT_GITHUB_TOKEN` configured as a real secret, dispatched the
+      workflow against #90 and #91 (runs 36894308861 and 36894315221) and confirmed the comment
+      header reads "Copilot classification", the log shows `"provider": "copilot"`, and both issues
+      route `specify` with a pickup plan. The CLI was installed pinned at 1.0.90 on the runner.
 - [x] T045 [P] Added unit tests to `triage.test.mjs` (38 → 49 total): the `ready-for-human`+`none`
       and +`specify` pickup-plan cases, `renderComment`'s model-summary/pickup-plan separation,
       `renderComment`'s provider-label header, `heuristicClassify`/`normalise`'s `provider` field,
