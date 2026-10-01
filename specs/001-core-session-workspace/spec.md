@@ -16,6 +16,9 @@
 - Q: After the one-click New session button creates a session, does Pinion select and open it? → A: Yes. The new session is selected and its agent starts opening, so the chat pane is ready for a first message. Creating through the branch picker behaves the same way.
 - Q: How should the base-branch picker show the branches Pinion created for sessions (for example `fond-puffin`)? → A: In two groups, Branches (default branch first) and Sessions, each with its own icon. A session's entry shows the session's current display name (so a rename is reflected) with its branch id as secondary text.
 - Q: Should branches of archived sessions appear in the picker? → A: Yes, in the Sessions group with an Archived tag.
+- Q: When a session is renamed, what does "synced everywhere" cover? → A: The display name only. Every place that shows a session name reads that one value. The git branch and the worktree folder keep their original generated names for the life of the session, because OMP files conversations by the worktree folder path.
+- Q: What is a new session's display name before it is renamed? → A: The generated adjective-noun, as a starting label that is independent of the branch and folder from then on (no auto-titling from the first message; that stays backlog issue #11).
+- Q: Which lines does a session's hover tooltip show? → A: Status, time since last activity, repository, and branch; plus the model and thinking level while the agent is running, read live from the agent and not stored.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -110,6 +113,7 @@ The developer runs a long task in one session, switches to another to start a se
 3. **Given** the developer switches between sessions, **When** they return to a session, **Then** its scroll position, in-progress text, and pending requests are as they left them.
 4. **Given** a session finishes while the developer is viewing a different session, **When** they return to the list, **Then** that session shows an unread marker, which clears once they open it.
 5. **Given** Pinion is not the focused window, **When** a session starts needing the developer or finishes, **Then** a Windows notification appears; clicking it opens that session. **Given** any other change happens in a session, **Then** no notification fires.
+6. **Given** a session in the list, **When** the developer hovers over it or focuses it with the keyboard, **Then** a tooltip shows its status, the time since its last activity, its repository, and its branch, plus the model and thinking level when its agent is running, and the tooltip stays readable and dismissible without moving the pointer.
 
 ---
 
@@ -167,8 +171,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
 
 - **FR-001**: Users MUST be able to add a local git repository to Pinion and remove it from Pinion without deleting the repository.
 - **FR-002**: Users MUST be able to create a session for a repository in one click from the repository's default branch, or by choosing another Base branch in a picker opened by a separate button, with the repository's default branch preselected there; the session's worktree MUST get a new branch created from that Base branch, and uncommitted edits in the developer's main checkout MUST NOT carry over into it. The picker MUST open below its field without covering it and MUST group branches as Branches and Sessions with distinct icons; a session's entry MUST show its current display name (so a rename is reflected), its branch id as secondary text, and an Archived tag when the session is archived. The new session MUST be selected and opened. Both buttons MUST have accessible names and tooltips, a failure MUST show its reason and leave no half-created session, and a second click while a one-click creation is in progress MUST NOT create a second session.
-- **FR-003**: Each new session MUST be given an automatically generated, readable adjective-noun display name; that same name MUST be used to name its worktree's branch and folder.
-- **FR-004**: Users MUST be able to rename a session's display name at any time; renaming MUST NOT change its branch or its worktree's folder.
+- **FR-003**: Each new session MUST be given an automatically generated, readable adjective-noun display name; that name is the session's initial display name and also names its worktree's branch and folder, but from creation on the display name and the branch and folder name are independent values: the display name is never derived from or kept in step with the branch or folder.
+- **FR-004**: Users MUST be able to rename a session's display name at any time; renaming MUST NOT change its branch or its worktree's folder, which keep their original generated names for the life of the session. A rename MUST show immediately everywhere the session is shown (the session list, chat header, branch picker, hover tooltip, delete confirmation, notifications, and low-memory warning), all of which read the one display name.
 - **FR-005**: The session list MUST show, per repository, every non-archived session with its display name and a status of working, idle, needs you, or stopped.
 - **FR-006**: Pinion MUST mark a session as unread when it finishes work while the developer is viewing a different session or a different app window, and MUST clear that marker the next time the developer opens the session.
 - **FR-007**: Users MUST be able to send a message in a session and see the agent's reply appear progressively, including which tools the agent is running.
@@ -203,6 +207,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-036**: Pinion MUST show an actionable setup message when the agent cannot be started (not installed, not signed in, wrong version).
 - **FR-037**: Pinion MUST warn the user when the machine's free memory falls below a low-memory threshold, stating how many agents Pinion is running, and MUST NOT stop any agent on its own.
 - **FR-038**: Users MUST be able to stop a session's agent without archiving the session; the session stays listed, and reopening it reattaches its current conversation.
+- **FR-039**: The session list MUST show a tooltip for a session, on hover and on keyboard focus, with its status, time since last activity, repository, and branch, and, while the session's agent is running, the model and thinking level the agent reports; Pinion MUST NOT store the model or thinking level.
 
 ### Key Entities
 
@@ -234,7 +239,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 
 - The user is one developer on Windows 11 with git and the agent (OMP 18.4.x) installed and signed in; other platforms, other agent versions, and multi-user use are out of scope.
 - The user's existing agent skills, extensions, and MCP servers apply to every session unchanged.
-- Worktrees are created in a folder next to the repository (`<repo>/../pinion-worktrees/<repo>/<generated-name>`), following the one-worktree-per-session convention of GitHub Copilot desktop; the same generated name is used for the session's branch. The user does not choose either name at creation, only the Base branch and, afterward, the session's display label.
+- Worktrees are created in a folder next to the repository (`<repo>/../pinion-worktrees/<repo>/<generated-name>`), following the one-worktree-per-session convention of GitHub Copilot desktop; the same generated name is used for the session's branch and as its initial display name. The user does not choose either name at creation, only the Base branch; afterward the display name is theirs to change, and the branch and folder never change.
 - Ending a session normally means Archive: it hides the session from the main list while keeping its worktree and conversations, and is reversible from an archived view. Delete is a separate, explicit action that only proceeds after a confirmation naming the uncommitted changes and unpushed commits that will be lost.
 - Model choice, thinking level, and other agent settings come from the agent's own configuration; a settings screen for those is out of scope, though the single Approval mode setting described here is in scope.
 - The right pane (git changes, file browser, side chat), plan mode, forking sessions, image attachments, and subagent progress views are out of scope and get their own specs. Pinion's own git use in this spec is limited to creating and deleting worktrees, listing branches, and reading status to warn before a delete; commit, push, and pull-request controls and the changes pane belong to that later spec, and until then those actions happen only by asking the agent in chat.
