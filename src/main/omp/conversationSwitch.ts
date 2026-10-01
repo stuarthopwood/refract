@@ -26,6 +26,9 @@ export async function startStoppedSessionOnConversation(
   sessionId: string,
   file: string | null,
 ): Promise<void> {
+  // Set when the registry write inside `prepare` itself fails: `doStart` never ran, so no notice
+  // was recorded and swallowing it would hide the failure behind an unchanged `stopped` snapshot.
+  let prepareError: unknown;
   try {
     await agent.startWith(async () => {
       // Skip the registry write when the worktree is missing: there is nothing to reattach to,
@@ -34,13 +37,20 @@ export async function startStoppedSessionOnConversation(
       const session = registry.getSession(sessionId);
       const worktreeExists = session ? await fs.stat(session.worktreePath).then(() => true, () => false) : false;
       if (!worktreeExists) return;
-      await registry.updateSession(sessionId, { currentConversation: file, lastMessageCount: null });
+      try {
+        await registry.updateSession(sessionId, { currentConversation: file, lastMessageCount: null });
+      } catch (err) {
+        prepareError = err;
+        throw err;
+      }
     });
   } catch (err) {
     // A failed start (missing worktree, spawn/reattach failure) already landed the Session in
     // `stopped` with its own notice -- swallow it, same as the old `.catch(() => undefined)`.
     // A `SessionNotIdleError` means `startWith` refused to even attempt it (already starting, or
-    // somehow already live): that must surface so the handler maps it to `not-idle`.
+    // somehow already live): that must surface so the handler maps it to `not-idle`. A failed
+    // registry write must surface too (the handler maps it through `mapSessionThrown`).
     if (err instanceof SessionNotIdleError) throw err;
+    if (prepareError !== undefined) throw prepareError;
   }
 }
