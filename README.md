@@ -32,7 +32,7 @@ node_modules/electron/dist/electron.exe .
 
 ## Where state lives
 
-Refract keeps no state in the repo. Everything is under Electron's `userData` directory (`app.getPath('userData')`; on Windows, `%APPDATA%/refract` in a packaged build, a dev-specific path under `electron-vite`/Electron's default in `pnpm dev`):
+Refract keeps no state in the repo. Everything is under Electron's `userData` directory, which `src/main/index.ts` pins to `%APPDATA%/pinion` (the folder keeps the app's former name, Pinion, so state from before the rename carries over). `pnpm dev` and built runs share it:
 
 | File | Holds |
 |---|---|
@@ -40,7 +40,7 @@ Refract keeps no state in the repo. Everything is under Electron's `userData` di
 | `settings.json` | The single app-wide Settings row, currently just Approval mode (`src/main/store/settings.ts`). |
 | `processes.json` | pids of live `omp` root processes, used to detect and reap orphans left by a crash (`src/main/process/pidRecords.ts`). |
 
-A Session's worktree lives next to the Repository it belongs to, not under `userData`: `<repo>/../pinion-worktrees/<repoName>/<name>` (`src/main/git/worktrees.ts`).
+A Session's worktree lives next to the Repository it belongs to, not under `userData`: `<repo>/../pinion-worktrees/<repoName>/<name>` (`src/main/git/worktrees.ts`; the folder also keeps the former name).
 
 ## Where things live
 

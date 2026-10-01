@@ -4,6 +4,7 @@
 process.env['NoDefaultCurrentDirectoryInExePath'] = '1'
 
 import { app, BrowserWindow, session, shell } from 'electron'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { joinKillOnCloseJob } from './process/jobObject'
@@ -16,6 +17,16 @@ import { registerNotifications } from './notifications'
 import { startMemoryMonitor } from './memory'
 
 const isDev = !app.isPackaged
+
+// Renamed from Pinion to Refract (issue #90). Electron derives the default userData folder from
+// package.json "name", so pin it to the pre-rename folder: registry.json, settings.json, and
+// processes.json stay put, and the single-instance lock (keyed on this folder) is shared with any
+// older Pinion build, so the two can never drive the same Sessions at once. Must run before
+// requestSingleInstanceLock() and 'ready'; setPath throws if the folder does not exist.
+const PINNED_USER_DATA_DIR = join(app.getPath('appData'), 'pinion')
+mkdirSync(PINNED_USER_DATA_DIR, { recursive: true })
+app.setPath('userData', PINNED_USER_DATA_DIR)
+
 // Stop-all cap on quit (tasks.md T017): every agent gets this long to exit stdin-first before
 // Refract quits anyway; the Job Object (jobObject.ts) is the backstop if a process wedges.
 const BEFORE_QUIT_STOP_ALL_TIMEOUT_MS = 10_000
