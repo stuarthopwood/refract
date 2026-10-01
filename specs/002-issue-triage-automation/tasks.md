@@ -376,6 +376,55 @@ round 2 FRs (FR-039 to FR-045) and `docs/issue-triage.md`'s Security notes.
 the unit suite, a manual git smoke test, or `actionlint`; only the live end-to-end run (T057)
 remains, pending the `ANTHROPIC_API_KEY` secret.
 
+## Phase 10: Hardening round 3
+
+**Purpose**: A third independent security and code review found one Critical defect that had been
+in `publish` since the very first split (it had gone unnoticed only because stage 2 has never run
+live), one High regression the Phase 9 label-removal generalisation introduced, and a handful of
+High/Medium/Low findings. See spec.md's Hardening round 3 FRs (FR-046 to FR-052) and
+`docs/issue-triage.md`'s Security notes.
+
+- [x] T067 Fixed the git credential header key from `http.https://github.com/${GITHUB_REPOSITORY}.git.extraheader`
+      (never matches `actions/checkout`'s no-`.git`-suffix origin URL, so every `publish` push was
+      silently unauthenticated) to `http.${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.extraheader`, a
+      path prefix of both URL forms. Confirmed via `git config --get-urlmatch` against both key
+      forms in a real scratch repo (depends on T044).
+- [x] T068 `gh pr list --head "$BRANCH"` now additionally filters `isCrossRepository==false` and
+      `author.login=="github-actions[bot]"`, so a fork's PR of a same-named branch can no longer
+      be endorsed on the trusted issue in place of the real pushed branch (depends on T045).
+- [x] T069 Before force-pushing to an existing `triage/issue-<N>` branch, `publish` now checks
+      `git log --format=%ae HEAD..origin/<branch>` (after unshallowing if needed, so shared
+      history with the default branch is never mistaken for foreign commits) for any author other
+      than `github-actions[bot]`; if found, it publishes to `triage/issue-<N>-<run-id>` instead,
+      leaving the original branch and any PR on it untouched, and says so in the issue
+      comment/PR body. Verified against a real scratch repo: a human commit on the branch
+      redirects the push and is never overwritten; a bot-only branch still takes the normal
+      force-with-lease path (depends on T058).
+- [x] T070 `mergeWithExisting` now honours a maintainer-set state label the same way as
+      type/area/priority (`existingState`, included in `maintainerOwned`, applied before the
+      `ready-for-agent` route gate), fixing a regression where the bot's own state label could sit
+      next to a maintainer's. Added a test using the review's exact repro (depends on T063).
+- [x] T071 `notify-failure`'s `if:` now also matches `triage`'s own result, so a failure in a later
+      `triage` step (export/upload) after `prep: true` was already output still gets reported
+      (depends on T065).
+- [x] T072 `prep-guard.mjs export` now refuses (comments why, then fails the step) a `converge` run
+      whose feature directory cannot be resolved, instead of letting the agent run with no target
+      or silently producing no changes (depends on T060).
+- [x] T073 [P] The base64 git credential header value is now explicitly masked (`::add-mask::`)
+      before use, since Actions only auto-masks the raw token it was derived from, not the encoded
+      form; the `git ls-remote` pattern is now the exact ref `refs/heads/$BRANCH`, not a `--heads
+      <name>` suffix pattern that could also match an unrelated ref ending in the same path
+      (depends on T058).
+- [x] T074 Updated `docs/issue-triage.md` and this feature's `spec.md`/`plan.md`/`tasks.md` to
+      describe the fixed credential header, the fork-PR exclusion, the human-commit protection and
+      run-scoped fallback branch, maintainer-state honouring, the broadened `notify-failure`
+      condition, and the converge-feature-missing refusal; documented the raw-dispatch-input
+      concurrency-key limitation as an intentionally accepted residual gap (depends on T067-T073).
+
+**Checkpoint**: Every Hardening round 3 finding has a corresponding fix in place, covered by the
+unit suite, `actionlint`, or a manual git smoke test against a real scratch repo; only the live
+end-to-end run (T057) remains, pending the `ANTHROPIC_API_KEY` secret.
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -393,6 +442,8 @@ remains, pending the `ANTHROPIC_API_KEY` secret.
   `prep` job (replacing it with `prep-agent`/`publish`/`notify-failure`) and User Story 1's
   trust/routing logic before stage 2's first live run.
 - **Hardening round 2 (Phase 9)**: Depends on Phase 8 being complete; a second review of that same
+  redesign before stage 2's first live run.
+- **Hardening round 3 (Phase 10)**: Depends on Phase 9 being complete; a third review of that same
   redesign before stage 2's first live run.
 
 ### User Story Dependencies
@@ -445,6 +496,9 @@ remains, pending the `ANTHROPIC_API_KEY` secret.
    end-to-end run (T057) remains, the same pending gap T033 always had.
 8. Hardening round 2 (T058-T066) implemented and covered by the unit suite, a manual git smoke
    test of the always-fresh force-with-lease push, and `actionlint` → T057 remains the only gap.
+9. Hardening round 3 (T067-T074) implemented and covered by the unit suite, `actionlint`, and
+   manual git smoke tests of the credential-header fix and the human-commit protection against
+   real scratch repos → T057 remains the only gap.
 
 Each phase adds value without breaking the previous ones: US1 alone is already useful; US2 adds
 recoverability; US3 adds the draft-PR automation; US4 hardens US3 against untrusted/unready input.

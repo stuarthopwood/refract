@@ -227,27 +227,52 @@ jobs:
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -m "Spec prep for #${ISSUE_NUMBER} (/speckit.${ROUTE})"
 
+          AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$AUTH"
           export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0="http.https://github.com/${GITHUB_REPOSITORY}.git.extraheader"
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          # A path prefix of both the "https://github.com/owner/repo" form
+          # actions/checkout leaves as origin's URL and the ".../repo.git"
+          # form some tools use, so the header actually matches and is sent
+          # either way. A ".git"-suffixed key here (what this used to be)
+          # never matches checkout's URL, so git silently never attaches the
+          # header and every push fails unauthenticated.
+          export GIT_CONFIG_KEY_0="http.${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $AUTH"
 
-          # ls-remote first so the push is a compare-and-swap
-          # (force-with-lease) against the branch's actual current tip,
-          # never a blind force push: exit 0 = branch exists (lease against
-          # its sha, fetched just before); exit 2 = branch absent (plain
-          # push, nothing to race); any other exit is a real ls-remote
-          # failure and must stop the step rather than silently fall
-          # through.
+          # The exact ref, not a `--heads <name>` suffix pattern: the latter
+          # would also match an unrelated ref merely ending in "/$BRANCH".
           set +e
-          LS_OUT="$(git ls-remote --exit-code --heads origin "$BRANCH" 2>&1)"
+          LS_OUT="$(git ls-remote --exit-code origin "refs/heads/$BRANCH" 2>&1)"
           LS_RC=$?
           set -e
           if [ "$LS_RC" -eq 0 ]; then
             REMOTE_SHA="$(printf '%s' "$LS_OUT" | awk '{print $1}')"
-            git fetch --depth=1 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
-            git -c core.hooksPath=/dev/null push --force-with-lease="refs/heads/$BRANCH:${REMOTE_SHA}" origin "HEAD:refs/heads/$BRANCH"
+            # Full history, not the shallow depth-1 this job's checkout has:
+            # a shallow clone can't tell that an older commit the existing
+            # branch shares with HEAD is shared rather than foreign, which
+            # would make the authorship check below misfire on every push.
+            if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+              git fetch --unshallow origin
+            fi
+            git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+            FOREIGN="$(git log --format='%ae' "HEAD..refs/remotes/origin/$BRANCH" | grep -v -F -x "41898282+github-actions[bot]@users.noreply.github.com" || true)"
+            if [ -n "$FOREIGN" ]; then
+              # A human (for example review fixes) committed to the existing
+              # branch: never force-overwrite those. Publish this run under
+              # a new, run-scoped branch name instead, leaving the original
+              # branch (and any PR on it) untouched; $GITHUB_ENV updates
+              # $BRANCH for every later step, including the PR/comment one.
+              BRANCH="${BRANCH}-${GITHUB_RUN_ID}"
+              echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+              echo "fresh_branch=true" >> "$GITHUB_OUTPUT"
+              git push origin "HEAD:refs/heads/$BRANCH"
+            else
+              git push --force-with-lease="refs/heads/$BRANCH:${REMOTE_SHA}" origin "HEAD:refs/heads/$BRANCH"
+              echo "fresh_branch=false" >> "$GITHUB_OUTPUT"
+            fi
           elif [ "$LS_RC" -eq 2 ]; then
-            git -c core.hooksPath=/dev/null push origin "HEAD:refs/heads/$BRANCH"
+            git push origin "HEAD:refs/heads/$BRANCH"
+            echo "fresh_branch=false" >> "$GITHUB_OUTPUT"
           else
             echo "::error::git ls-remote failed unexpectedly (exit $LS_RC) while checking for an existing $BRANCH" >&2
             echo "$LS_OUT" >&2
@@ -258,6 +283,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHANGED: ${{ steps.push.outputs.changed }}
+          FRESH_BRANCH: ${{ steps.push.outputs.fresh_branch }}
         run: |
           set -e
           if [ "$CHANGED" != "true" ]; then
@@ -266,23 +292,31 @@ jobs:
           Spec prep (\`/speckit.${ROUTE}\`) finished without producing any spec changes."
             exit 0
           fi
-          EXISTING_URL="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url -q '.[0].url' 2>/dev/null || true)"
+          NOTE=""
+          if [ "$FRESH_BRANCH" = "true" ]; then
+            NOTE=" (a previous \`triage/issue-${ISSUE_NUMBER}\` branch already has commits that are not the bot's own — likely review feedback — so this run was pushed to \`$BRANCH\` instead, leaving that branch untouched)"
+          fi
+          # Only a same-repo PR authored by this workflow's own token counts:
+          # `--head` alone also matches a fork's PR of a branch with the same
+          # name, which would let an attacker's arbitrary-code PR be endorsed
+          # here instead of the real one this run just pushed.
+          EXISTING_URL="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url,isCrossRepository,author -q '[.[] | select(.isCrossRepository==false and .author.login=="github-actions[bot]")][0].url // empty' 2>/dev/null || true)"
           if [ -n "$EXISTING_URL" ]; then
-            RESULT="Spec prep is ready for review: $EXISTING_URL"
+            RESULT="Spec prep is ready for review: ${EXISTING_URL}${NOTE}"
           else
             BODY="Spec artifacts prepared by the issue triage workflow for #${ISSUE_NUMBER} (route: \`${ROUTE}\`). Spec, plan, and tasks only. No application code. Review before merging; assumed clarification answers are flagged in the spec.
 
           Refs #${ISSUE_NUMBER}"
             PR_STDERR="$RUNNER_TEMP/pr-create.stderr"
             if PR_URL="$(gh pr create --draft --base "$DEFAULT_BRANCH" --head "$BRANCH" --repo "$GITHUB_REPOSITORY" --title "Spec prep for #${ISSUE_NUMBER}" --body "$BODY" 2>"$PR_STDERR")"; then
-              RESULT="Spec prep is ready for review: $PR_URL"
+              RESULT="Spec prep is ready for review: ${PR_URL}${NOTE}"
             else
               STDERR_TEXT="$(cat "$PR_STDERR" 2>/dev/null || true)"
               RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
               if echo "$STDERR_TEXT" | grep -qi "not permitted to create or approve pull requests"; then
-                RESULT="Spec prep was pushed to branch \`$BRANCH\`, but the workflow cannot open a pull request (the repository setting **Allow GitHub Actions to create and approve pull requests** is off). Open one: https://github.com/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${BRANCH}?expand=1"
+                RESULT="Spec prep was pushed to branch \`$BRANCH\`, but the workflow cannot open a pull request (the repository setting **Allow GitHub Actions to create and approve pull requests** is off). Open one: https://github.com/${GITHUB_REPOSITORY}/compare/${DEFAULT_BRANCH}...${BRANCH}?expand=1${NOTE}"
               else
-                RESULT="Spec prep was pushed to branch \`$BRANCH\`, but opening a pull request failed. See the run for details: $RUN_URL"
+                RESULT="Spec prep was pushed to branch \`$BRANCH\`, but opening a pull request failed. See the run for details: ${RUN_URL}${NOTE}"
               fi
             fi
           fi
@@ -296,7 +330,8 @@ jobs:
     if: >-
       always() &&
       needs.triage.outputs.prep == 'true' &&
-      (contains(fromJSON('["failure","cancelled"]'), needs.prep-agent.result) ||
+      (contains(fromJSON('["failure","cancelled"]'), needs.triage.result) ||
+       contains(fromJSON('["failure","cancelled"]'), needs.prep-agent.result) ||
        contains(fromJSON('["failure","cancelled"]'), needs.publish.result))
     runs-on: ubuntu-latest
     timeout-minutes: 5

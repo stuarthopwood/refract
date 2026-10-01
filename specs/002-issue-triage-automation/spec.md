@@ -294,6 +294,31 @@ hardening above, still before stage 2's first live run)
   a stale route value; a model classification's own route MUST stand, since only the model read
   the issue body to judge scope.
 
+**Hardening round 3** (added after a third independent security and code review, still before
+stage 2's first live run)
+
+- **FR-046**: `publish`'s step-scoped git credential header MUST use a key that actually matches
+  the remote URL `actions/checkout` leaves on `origin` (no `.git` suffix); a key that never matches
+  silently leaves every push unauthenticated instead of failing loudly.
+- **FR-047**: `publish` MUST NOT reuse or endorse a pull request for the `triage/issue-<N>` branch
+  from a different repository (a fork); only a same-repository PR authored by the workflow's own
+  identity counts as the existing PR to reuse.
+- **FR-048**: Before force-pushing to an existing `triage/issue-<N>` branch, System MUST NOT
+  overwrite any commit not authored by the bot's own identity (for example a maintainer's review
+  fixes); when such a commit exists, System MUST publish to a new, run-scoped branch instead and
+  say so in the issue comment, leaving the original branch and any PR on it untouched.
+- **FR-049**: A maintainer-set state label MUST be honoured exactly like a maintainer-set type,
+  area, or priority label — never left in place alongside a different state the bot adds for the
+  same run, since the four state labels are mutually exclusive.
+- **FR-050**: `notify-failure` MUST also fire when the `triage` job itself fails or is cancelled
+  after already outputting `prep: true`, not only when `prep-agent` or `publish` fails or cancels.
+- **FR-051**: A `converge` run whose feature directory cannot be resolved (no `spec:NNN` label and
+  no default feature to fall back to) MUST refuse to proceed and comment why, rather than letting
+  the agent run with no target or silently producing no changes.
+- **FR-052**: The base64-encoded git credential header value MUST be explicitly masked in workflow
+  logs, since GitHub Actions only auto-masks the raw secret it was derived from, not its encoded
+  form.
+
 ### Key Entities
 
 - **Issue**: A GitHub issue with a number, title, body, existing labels, and author association;

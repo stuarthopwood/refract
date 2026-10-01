@@ -156,6 +156,14 @@ test("maintainer label matching is case-insensitive but removal keeps the real l
   assert.deepEqual(m.labelsToRemove, ["Needs-Info"]);
 });
 
+test("a maintainer-set state label is honoured like type/area/priority, not left alongside the bot's stale guess", () => {
+  const classification = { type: "chore", area: null, priority: "p1", state: "ready-for-human", route: "specify", source: "model" };
+  const m = mergeWithExisting(classification, ["chore", "p1", "triaged", "ready-for-agent"], { botLabels: ["triaged"] });
+  assert.equal(m.state, "ready-for-agent");
+  assert.ok(!m.labelsToAdd.includes("ready-for-human"));
+  assert.deepEqual(m.labelsToRemove, []);
+});
+
 test("rationale is rendered as a code span so links, images, and auto-references are neutralised", () => {
   const c = {
     type: "bug", area: null, priority: "p2", state: "ready-for-agent", route: "none",

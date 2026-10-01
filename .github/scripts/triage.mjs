@@ -140,14 +140,17 @@ export function normalise(raw, fallback, openNumbers) {
 
 /**
  * Existing maintainer labels win; the classifier only fills missing dimensions.
+ * A maintainer-set type, area, priority, *or state* label always overrides the
+ * classifier's own guess for that dimension.
  *
  * `options.botLabels` is the bot's own label set recorded in a prior marker
  * comment (see `renderMarker`/`parseMarker`): labels in there are never
  * mistaken for maintainer intent, so a `force` re-triage can correct the
- * bot's own earlier type/area/priority choice instead of treating it as
- * permanently pinned. `options.specRelated` reuses the heuristic's
- * spec-relatedness check to re-derive the route when a maintainer's type
- * override makes the model's route choice wrong.
+ * bot's own earlier type/area/priority/state choice instead of treating it
+ * as permanently pinned — and the bot-owned-only removal below never
+ * removes a label a maintainer actually set. `options.specRelated` reuses
+ * the heuristic's spec-relatedness check to re-derive the route when a
+ * maintainer's type override makes the model's route choice wrong.
  */
 export function mergeWithExisting(classification, existingLabels, options = {}) {
  const { botLabels = [], specRelated = false } = options;
@@ -161,9 +164,16 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
  const existingType = TYPES.find((t) => maintainerByLower.has(t));
  const existingArea = AREAS.find((a) => maintainerByLower.has(a));
  const existingPriority = PRIORITIES.find((p) => maintainerByLower.has(p));
+ const existingState = STATES.find((s) => maintainerByLower.has(s));
  if (existingType) result.type = existingType;
  if (existingArea) result.area = existingArea;
  if (existingPriority) result.priority = existingPriority;
+ // Honoured the same way as type/area/priority: without this, a
+ // maintainer-relabelled state (for example ready-for-human -> ready-for-agent)
+ // would leave the bot's own stale guess sitting next to it instead of being
+ // replaced, since the bot-owned-only removal below only drops labels the
+ // bot itself applied.
+ if (existingState) result.state = existingState;
 
  // A maintainer-chosen type can make the route wrong; re-derive it. Docs,
  // questions and spikes never need a spec. A model classification has read
@@ -198,9 +208,9 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
   .filter((v) => botLower.has(v) && existingByLower.has(v) && !wantedLower.has(v))
   .map((v) => existingByLower.get(v));
  // Record only the labels this run actually attributes to the bot: type/area/
- // priority inherited from a maintainer override are explicitly excluded so
- // a future run keeps recognising them as maintainer-owned.
- const maintainerOwned = new Set([existingType, existingArea, existingPriority].filter(Boolean));
+ // priority/state inherited from a maintainer override are explicitly
+ // excluded so a future run keeps recognising them as maintainer-owned.
+ const maintainerOwned = new Set([existingType, existingArea, existingPriority, existingState].filter(Boolean));
  result.botLabels = wanted.filter((l) => !maintainerOwned.has(l));
 
  return result;
