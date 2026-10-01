@@ -158,8 +158,8 @@
 
 ## Phase 10: Polish and cross-cutting
 
-- [ ] T046 [P] Security pass against constitution V: confirm `contextIsolation`, `nodeIntegration`, `sandbox`, no remote content, external links in the system browser, sanitiser on every markdown surface, preload exposes only the contract channels.
-- [ ] T047 [P] Update `README.md` (how to run), `docs/DESIGN.md` (anything decided while building), and FINDINGS (any new probe result); move resolved items out of "Open items".
+- [X] T046 [P] Security pass against constitution V: confirm `contextIsolation`, `nodeIntegration`, `sandbox`, no remote content, external links in the system browser, sanitiser on every markdown surface, preload exposes only the contract channels.
+- [X] T047 [P] Update `README.md` (how to run), `docs/DESIGN.md` (anything decided while building), and FINDINGS (any new probe result); move resolved items out of "Open items".
 - [ ] T048 Run all of [quickstart.md](quickstart.md) once, top to bottom, on the reference machine; note failures as issues with labels (`bug`, area, priority) and close the ones this feature settles (#14, #7 if the readiness checklist is complete).
 - [ ] T049 `pnpm typecheck` and `pnpm build` pass; commit and push to `main`.
 
