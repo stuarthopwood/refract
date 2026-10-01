@@ -1,10 +1,14 @@
 // IPC handlers for `conversations.*` (contracts/ipc.md "Conversations", tasks.md T027). Scanning
 // lives in `../conversations.ts`; `startNew`/`open` drive the live process via `SessionAgent`.
+// For a Session that is `stopped` (no live process) both instead go through
+// `startStoppedSessionOnConversation` (issue #69): `SessionAgent.startNewConversation`/
+// `openConversation` require an already-idle live process, which a stopped Session never has.
 
 import path from 'node:path';
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import { listConversations } from '../conversations';
+import { startStoppedSessionOnConversation } from '../omp/conversationSwitch';
 import type { SessionManager } from '../SessionManager';
 import { buildSnapshot, invalidArgument, mapSessionThrown, notFound } from './util';
 
@@ -26,7 +30,11 @@ export function registerConversations(manager: SessionManager): void {
     if (!session) return notFound(`Session not found: ${sessionId}`);
     const agent = manager.getOrCreateAgent(sessionId);
     try {
-      await agent.startNewConversation();
+      if (agent.runtimeSnapshot.status === 'stopped') {
+        await startStoppedSessionOnConversation(manager.registry, agent, sessionId, null);
+      } else {
+        await agent.startNewConversation();
+      }
     } catch (err) {
       return mapSessionThrown(err);
     }
@@ -51,7 +59,11 @@ export function registerConversations(manager: SessionManager): void {
     }
     const agent = manager.getOrCreateAgent(sessionId);
     try {
-      await agent.openConversation(match.file);
+      if (agent.runtimeSnapshot.status === 'stopped') {
+        await startStoppedSessionOnConversation(manager.registry, agent, sessionId, match.file);
+      } else {
+        await agent.openConversation(match.file);
+      }
     } catch (err) {
       return mapSessionThrown(err);
     }

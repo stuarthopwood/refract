@@ -1,6 +1,16 @@
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { GetStateResponseData } from '../../shared/frames';
 import type { Session } from '../../shared/model';
+
+/** Issue #69 / FR-024: a missing current-Conversation file must be reported as exactly that --
+ * naming the path -- not left to surface as the far more confusing "messageCount is 0" notice
+ * `verifyReattach` produces once `switch_session` binds to OMP's fresh empty replacement file
+ * instead. Checked by `attachAndVerify` before it ever calls `switch_session`. */
+export async function assertConversationFileExists(file: string): Promise<void> {
+  const exists = await fs.stat(file).then(() => true, () => false);
+  if (!exists) throw new Error(`Conversation file missing: ${file}`);
+}
 
 /** data-model.md "Reattach verification (FR-013, FR-024)"; only called when resuming.
  * `messageCount` may only grow past `lastMessageCount`: OMP (its advisor, hooks and background

@@ -18,7 +18,7 @@ import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNo
 import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './transcriptDiff';
 import { bailIfStopRequested, exitedDuringStart, stopIfRunning } from './launchStopGuard';
 import { PatchCoalescer } from './patchCoalescer';
-import { verifyReattach } from './reattachVerification';
+import { assertConversationFileExists, verifyReattach } from './reattachVerification';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
@@ -254,6 +254,7 @@ export class SessionAgent extends EventEmitter {
    */
   private async attachAndVerify(proc: OmpProcess, session: Session): Promise<GetStateResponseData> {
     if (session.currentConversation) {
+      await assertConversationFileExists(session.currentConversation);
       const switchRes = await proc.request({ type: 'switch_session', id: '', sessionPath: session.currentConversation });
       const cancelled = (switchRes.data as SwitchSessionResponseData | undefined)?.cancelled;
       if (!switchRes.success || cancelled !== false) {

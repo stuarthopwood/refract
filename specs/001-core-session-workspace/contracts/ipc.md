@@ -51,8 +51,8 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | Method | Returns |
 |---|---|
 | `conversations.list(sessionId)` | `ConversationInfo[]` (`file`, `createdAt`, `title`, `preview`, `isCurrent`) |
-| `conversations.startNew(sessionId)` | `SessionSnapshot` (Session must be idle; error `not-idle`) |
-| `conversations.open(sessionId, file)` | `SessionSnapshot` (Session must be idle; error `not-idle`, or `reattach-failed`) |
+| `conversations.startNew(sessionId)` | `SessionSnapshot` (Session must be idle or stopped without a live process; error `not-idle`) |
+| `conversations.open(sessionId, file)` | `SessionSnapshot` (Session must be idle or stopped without a live process; error `not-idle`, or `reattach-failed`) |
 
 ### Chat (FR-007 to FR-012, FR-017 to FR-019, FR-032, FR-033)
 

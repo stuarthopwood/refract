@@ -1,7 +1,10 @@
 // New conversation + Conversation history (docs/DESIGN.md "Layout": "a Conversation switcher
 // (history of that Session's Conversations)"; contracts/ipc.md "Conversations"). Both actions
-// require the Session to be idle; opening a history entry applies the returned SessionSnapshot
-// through ChatPane's `applySnapshot` so the transcript, queue, and pending requests reload.
+// are available whenever the Session has no live process running a turn -- idle, or stopped
+// after a failed reattach (issue #69, data-model.md "Reattach verification": "no message can be
+// sent until the user chooses recover or another Conversation") -- never while working or
+// needing the user. Opening a history entry applies the returned SessionSnapshot through
+// ChatPane's `applySnapshot` so the transcript, queue, and pending requests reload.
 import { useState } from 'react'
 import { HistoryIcon, PlusIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -13,7 +16,7 @@ import { applySnapshot } from './ChatPane'
 
 export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
-  const idle = status === 'idle'
+  const canSwitch = status === 'idle' || status === 'stopped'
   const [creating, setCreating] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -55,7 +58,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <Button variant="outline" size="sm" disabled={!idle || creating} onClick={() => void handleNewConversation()}>
+      <Button variant="outline" size="sm" disabled={!canSwitch || creating} onClick={() => void handleNewConversation()}>
         <PlusIcon />
         New conversation
       </Button>
@@ -79,7 +82,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                 <li key={conversation.file}>
                   <button
                     type="button"
-                    disabled={!idle || conversation.isCurrent}
+                    disabled={!canSwitch || conversation.isCurrent}
                     aria-current={conversation.isCurrent}
                     onClick={() => void handleOpenConversation(conversation.file)}
                     className="flex w-full flex-col gap-0.5 rounded-lg border border-transparent px-2.5 py-2 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 aria-[current=true]:border-border aria-[current=true]:bg-muted"
