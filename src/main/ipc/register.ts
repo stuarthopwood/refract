@@ -20,7 +20,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerSessions(manager);
   registerConversations(manager);
   registerChat(manager);
-  registerSettings(manager);
+  registerSettings(manager, getWindow);
 
   manager.onEvent((event) => forwardEvent(event, getWindow));
 }

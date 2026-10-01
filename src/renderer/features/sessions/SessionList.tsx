@@ -70,11 +70,17 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
   const listFocusRequestedRef = useRef(false)
+  // Archive/restore/delete unmount this row asynchronously (the store update that moves it
+  // out of the active/archived bucket can land before `onCloseAutoFocus` fires), so by the time
+  // that handler runs, `rowRef.current` is already null and `closest('ul')` finds nothing --
+  // focus falls to <body> (WCAG 2.1 AA focus-visibility). Captured synchronously in each
+  // action's `onSelect`, while the row is still mounted, this outlives the unmount.
+  const focusFallbackRef = useRef<HTMLUListElement | null>(null)
 
   // After a row unmounts (archive/restore/delete), focus must not fall back to <body>
   // (WCAG 2.1 AA focus-visibility): send it to the surrounding list.
   function focusListContainer(): void {
-    rowRef.current?.closest('ul')?.focus()
+    focusFallbackRef.current?.focus()
   }
 
   function startRenaming(): void {
@@ -211,6 +217,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
             <DropdownMenuItem
               onSelect={() => {
                 listFocusRequestedRef.current = true
+                focusFallbackRef.current = rowRef.current?.closest('ul') ?? null
                 void restore(session.id)
               }}
             >
@@ -220,6 +227,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
             <DropdownMenuItem
               onSelect={() => {
                 listFocusRequestedRef.current = true
+                focusFallbackRef.current = rowRef.current?.closest('ul') ?? null
                 void archive(session.id)
               }}
             >
@@ -230,7 +238,13 @@ function SessionRow({ session }: { session: SessionSummary }) {
             <DropdownMenuItem onSelect={() => void stopAgent(session.id)}>Stop agent</DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() => {
+              focusFallbackRef.current = rowRef.current?.closest('ul') ?? null
+              setDeleteOpen(true)
+            }}
+          >
             Delete…
           </DropdownMenuItem>
         </DropdownMenuContent>
