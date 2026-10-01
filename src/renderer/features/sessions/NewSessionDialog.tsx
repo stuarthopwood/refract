@@ -11,6 +11,7 @@ import {
   DialogTrigger
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/state'
 import type { Repository } from '../../../shared/model'
 
@@ -104,11 +105,9 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
               </SelectContent>
             </Select>
           </div>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
+          <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+            {error ?? ''}
+          </p>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel

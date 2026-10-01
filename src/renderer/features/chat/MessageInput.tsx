@@ -203,9 +203,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           ))}
         </div>
       )}
-      <p role="status" className={cn('text-xs text-muted-foreground', !starting && 'sr-only')}>
-        {starting ? 'Starting the agent…' : ''}
-      </p>
       {disabled && (
         <span id={stopReasonId} className="sr-only">
           {placeholder}

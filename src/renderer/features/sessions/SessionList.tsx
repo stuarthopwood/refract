@@ -67,6 +67,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const isArchived = !!session.archivedAt
   const rowRef = useRef<HTMLLIElement>(null)
   const openButtonRef = useRef<HTMLButtonElement>(null)
+  const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
@@ -209,6 +210,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            ref={menuTriggerRef}
             type="button"
             aria-label={`${session.name} actions`}
             className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 aria-expanded:opacity-100"
@@ -277,6 +279,11 @@ function SessionRow({ session }: { session: SessionSummary }) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         onDeleted={focusListContainer}
+        onCancelled={() => {
+          if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+          else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+          else focusSessionsNav()
+        }}
       />
     </li>
   )

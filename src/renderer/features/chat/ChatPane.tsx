@@ -61,6 +61,7 @@ export function ChatPane() {
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recovering, setRecovering] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
   const visibleSessionIdRef = useRef(visibleSessionId)
   visibleSessionIdRef.current = visibleSessionId
 
@@ -80,6 +81,7 @@ export function ChatPane() {
   useEffect(() => {
     if (!visibleSessionId) return
     setStopInfo({})
+    setRecovering(false)
     let cancelled = false
     void (async () => {
       try {
@@ -186,7 +188,12 @@ export function ChatPane() {
                 <Button size="sm" variant="outline" onClick={() => void handleArchive()}>
                   Archive
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
+                <Button
+                  ref={deleteBannerButtonRef}
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
                   Delete
                 </Button>
               </div>
@@ -194,11 +201,20 @@ export function ChatPane() {
           </Alert>
         </div>
       )}
-      <DeleteDialog session={session} open={deleteOpen} onOpenChange={setDeleteOpen} onDeleted={focusSessionsNav} />
+      <DeleteDialog
+        session={session}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={focusSessionsNav}
+        onCancelled={() => {
+          if (deleteBannerButtonRef.current?.isConnected) deleteBannerButtonRef.current.focus()
+          else focusSessionsNav()
+        }}
+      />
       <div className="min-h-0 flex-1 overflow-hidden">
         <Transcript />
       </div>
-      <MessageInput sessionId={sessionId} stopReason={stopInfo.reason} stopDetail={stopInfo.detail} />
+      <MessageInput key={sessionId} sessionId={sessionId} stopReason={stopInfo.reason} stopDetail={stopInfo.detail} />
     </div>
   )
 }

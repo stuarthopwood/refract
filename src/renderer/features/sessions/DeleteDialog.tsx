@@ -30,13 +30,16 @@ export interface DeleteDialogProps {
    * in normal use, where every real caller leaves it unset and the dialog always calls
    * `deleteCheck`. */
   check?: DeleteCheck
-  /** Called after the dialog finishes closing (its close-autofocus), so the caller can move
-   * focus off the row it's about to unmount (WCAG 2.1 AA focus-visibility) without Radix's
-   * own return-to-trigger focus restoration overriding it. */
   onDeleted?(): void
+  /** Called after the dialog finishes closing without deleting (Cancel, Escape, or
+   * Cancel-after-error), so the caller can move focus off whatever element the dialog is about
+   * to leave behind (WCAG 2.1 AA focus-visibility). Radix's own close-autofocus would normally
+   * return focus to the AlertDialogTrigger, but neither caller renders one (both open via
+   * `open={deleteOpen}`), so its `triggerRef` is always null and focus would otherwise fall to
+   * `<body>`. */
+  onCancelled?(): void
 }
-
-export function DeleteDialog({ session, open, onOpenChange, check, onDeleted }: DeleteDialogProps) {
+export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, onCancelled }: DeleteDialogProps) {
 
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -85,10 +88,12 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted }: 
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
         onCloseAutoFocus={(event) => {
+          event.preventDefault()
           if (deletedRef.current) {
-            event.preventDefault()
             deletedRef.current = false
             onDeleted?.()
+          } else {
+            onCancelled?.()
           }
         }}
       >
@@ -116,12 +121,16 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted }: 
           {error ?? ''}
         </p>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel aria-disabled={deleting} className="aria-disabled:pointer-events-none aria-disabled:opacity-50">
+            Cancel
+          </AlertDialogCancel>
           <AlertDialogAction
             variant="destructive"
-            disabled={loading || deleting}
+            aria-disabled={loading || deleting}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={(event) => {
               event.preventDefault()
+              if (loading || deleting) return
               void handleDelete()
             }}
           >
