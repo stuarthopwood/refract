@@ -14,6 +14,8 @@
 
 - Q: On a repository's one-click New session button, what does "main" mean? → A: The repository's detected default branch (the same branch the picker preselects), not a branch literally named `main`.
 - Q: After the one-click New session button creates a session, does Pinion select and open it? → A: Yes. The new session is selected and its agent starts opening, so the chat pane is ready for a first message. Creating through the branch picker behaves the same way.
+- Q: How should the base-branch picker show the branches Pinion created for sessions (for example `fond-puffin`)? → A: In two groups, Branches (default branch first) and Sessions, each with its own icon. A session's entry shows the session's current display name (so a rename is reflected) with its branch id as secondary text.
+- Q: Should branches of archived sessions appear in the picker? → A: Yes, in the Sessions group with an Archived tag.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -36,7 +38,7 @@ A developer opens Pinion, points it at a git repository, and creates a session, 
 7. **Given** an open session with a conversation, **When** the developer starts a new conversation, **Then** the same session and worktree are kept, the previous conversation is added to that session's history, and the new one becomes current.
 8. **Given** a session's conversation history, **When** the developer opens an earlier conversation, **Then** it becomes the current conversation and the developer can continue it.
 9. **Given** the agent's reply contains markdown or code, **When** it is displayed, **Then** it renders as formatted text and code blocks and never as executable content.
-10. **Given** a repository in the session list, **When** the developer uses the branch button next to the New session button, **Then** a picker lists the repository's branches with the default branch preselected, and confirming creates a session on a new branch from the chosen Base branch, selected and opened exactly as in scenario 1; cancelling creates nothing. **Given** a one-click creation is already in progress for that repository, **When** the developer clicks New session again, **Then** no second session is created.
+10. **Given** a repository in the session list, **When** the developer uses the branch button next to the New session button, **Then** a picker opens below its field without covering it and lists the repository's branches in two groups, **Branches** (the default branch first and preselected) and **Sessions** (branches Pinion created for sessions, each shown with the session's current display name, its branch id as secondary text, and an Archived tag when the session is archived), each group with its own icon, and confirming creates a session on a new branch from the chosen Base branch, selected and opened exactly as in scenario 1; cancelling creates nothing. **Given** a one-click creation is already in progress for that repository, **When** the developer clicks New session again, **Then** no second session is created.
 
 ---
 
@@ -164,7 +166,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 ### Functional Requirements
 
 - **FR-001**: Users MUST be able to add a local git repository to Pinion and remove it from Pinion without deleting the repository.
-- **FR-002**: Users MUST be able to create a session for a repository in one click from the repository's default branch, or by choosing another Base branch in a picker opened by a separate button, with the repository's default branch preselected there; the session's worktree MUST get a new branch created from that Base branch, and uncommitted edits in the developer's main checkout MUST NOT carry over into it. The new session MUST be selected and opened. Both buttons MUST have accessible names and tooltips, a failure MUST show its reason and leave no half-created session, and a second click while a one-click creation is in progress MUST NOT create a second session.
+- **FR-002**: Users MUST be able to create a session for a repository in one click from the repository's default branch, or by choosing another Base branch in a picker opened by a separate button, with the repository's default branch preselected there; the session's worktree MUST get a new branch created from that Base branch, and uncommitted edits in the developer's main checkout MUST NOT carry over into it. The picker MUST open below its field without covering it and MUST group branches as Branches and Sessions with distinct icons; a session's entry MUST show its current display name (so a rename is reflected), its branch id as secondary text, and an Archived tag when the session is archived. The new session MUST be selected and opened. Both buttons MUST have accessible names and tooltips, a failure MUST show its reason and leave no half-created session, and a second click while a one-click creation is in progress MUST NOT create a second session.
 - **FR-003**: Each new session MUST be given an automatically generated, readable adjective-noun display name; that same name MUST be used to name its worktree's branch and folder.
 - **FR-004**: Users MUST be able to rename a session's display name at any time; renaming MUST NOT change its branch or its worktree's folder.
 - **FR-005**: The session list MUST show, per repository, every non-archived session with its display name and a status of working, idle, needs you, or stopped.
@@ -207,7 +209,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **Repository**: A local git repository registered with Pinion; has a path and owns zero or more sessions.
 - **Session**: One worktree together with the conversations held in it; has a display name (renamed independently of its branch and folder), a status of working, idle, needs you, or stopped, and an archive state of active or archived. A repository has many sessions; a session has exactly one worktree.
 - **Worktree**: The isolated checkout created for a session; has a folder path, a branch name, and the base branch it was created from.
-- **Base branch**: The branch a new session's worktree branches from, chosen at creation; one-click creation uses the repository's default branch, and the picker preselects it.
+- **Base branch**: The branch a new session's worktree branches from, chosen at creation; one-click creation uses the repository's default branch, and the picker preselects it; any local branch may be chosen, including the branch of an existing (even archived) session.
 - **Conversation**: One continuous exchange with the agent inside a session; a session has many conversations, one of which is current, and earlier ones stay reachable as history; stored so it survives restarts.
 - **Approval mode**: The single app-wide setting controlling how much the agent may do without asking — Ask, Edit freely, or Auto; applies to every session; a change made mid-turn is pending on that session until its turn ends.
 - **Approval request**: A pending request from the agent to run a tool, raised only when the current Approval mode requires it; shows the tool and target and has an Approve and Deny outcome.
