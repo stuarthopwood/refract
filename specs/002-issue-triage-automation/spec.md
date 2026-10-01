@@ -319,6 +319,27 @@ stage 2's first live run)
   logs, since GitHub Actions only auto-masks the raw secret it was derived from, not its encoded
   form.
 
+**Hardening round 4 & live-proof mode** (small fixes from a fourth review, plus a
+no-`ANTHROPIC_API_KEY` way to exercise `prep-agent`/`publish` end-to-end)
+
+- **FR-053**: `publish` MUST treat a `gh pr list` failure as a run failure, never as "no existing
+  PR"; the PR-reuse filter MUST match the login `gh pr list` reports for the default token's own
+  PRs (`app/github-actions`), not the `github-actions[bot]` login format used for issue/PR
+  comments.
+- **FR-054**: The run-scoped fallback branch name (FR-048) MUST include both the run id and the
+  run attempt, so re-running failed jobs on the same run id does not collide with its own prior
+  attempt's push.
+- **FR-055**: The foreign-commit check before a force-with-lease push (FR-048) MUST examine both
+  author and committer email, so a human `git commit --amend` of a bot commit — which can retain
+  the original author while changing only the committer — is still caught.
+- **FR-056**: System MUST support a `fixture` `workflow_dispatch` input that exercises
+  `prep-agent`/`publish` end-to-end without `ANTHROPIC_API_KEY`: for a trusted author it forces
+  `prep: true` and `route: specify` regardless of the issue's real key/state/route, without
+  changing any label or the classification comment table (one line is appended stating fixture
+  mode is active); `prep-agent` MUST skip the agent step and instead write a small, fixed,
+  non-untrusted canned spec file that flows through the normal upload/guard/publish path
+  unchanged.
+
 ### Key Entities
 
 - **Issue**: A GitHub issue with a number, title, body, existing labels, and author association;

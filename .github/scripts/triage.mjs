@@ -9,6 +9,10 @@
 //   GITHUB_REPOSITORY   owner/name
 //   ISSUE_NUMBER        issue to triage
 //   FORCE               "true" re-triages an issue that already has `triaged`
+//   FIXTURE              "true" only on a `workflow_dispatch` run with the `fixture` input set;
+//                        live-proof mode — forces prep=true/route=specify for a trusted author
+//                        regardless of key/state/route, without changing labels or the
+//                        classification comment (one line is appended instead)
 //   DRY_RUN             "true" classifies and prints, writes nothing
 //   TRIAGE_MODEL        optional Anthropic model id (default claude-haiku-4-5)
 //   GITHUB_OUTPUT       set by Actions; receives route/prep/issue_number outputs
@@ -355,11 +359,32 @@ async function hasWriteAccess(api, login, isOwner) {
  }
 }
 
+/**
+ * Decides the final `prep`/`route` outputs, including live-proof `fixture`
+ * mode. Pure: takes the already-merged classification plus the three gate
+ * inputs, so it is unit-testable without any network call. Normal (non-
+ * fixture) behaviour is unchanged: `prep` requires a routable, ready-for-
+ * agent, trusted classification with a configured model key. In fixture
+ * mode, a trusted author alone is enough — `route`/`state`/the key are
+ * never consulted — and `route` is forced to `specify` for the output only;
+ * the merged classification object itself (and therefore every label) is
+ * never touched.
+ */
+export function computePrepGate(merged, { trusted, apiKey, isFixture }) {
+ const fixtureActive = Boolean(isFixture) && Boolean(trusted);
+ const prep = fixtureActive
+  ? true
+  : merged.route !== "none" && merged.state === "ready-for-agent" && Boolean(trusted) && Boolean(apiKey);
+ const routeForOutput = fixtureActive ? "specify" : merged.route;
+ return { prep, routeForOutput, fixtureActive };
+}
+
 async function main() {
  const token = process.env.GITHUB_TOKEN;
  const repo = process.env.GITHUB_REPOSITORY;
  const number = Number(process.env.ISSUE_NUMBER);
  const force = process.env.FORCE === "true";
+ const isFixture = process.env.FIXTURE === "true";
  const dryRun = process.env.DRY_RUN === "true";
  if (!token || !repo || !Number.isInteger(number) || number <= 0) {
   throw new Error("GITHUB_TOKEN, GITHUB_REPOSITORY and a positive integer ISSUE_NUMBER are required");
@@ -433,9 +458,17 @@ async function main() {
   }
  }
  const merged = mergeWithExisting(classification, existingLabels, { botLabels, specRelated: isSpecRelated(issue) });
- const prep = merged.route !== "none" && merged.state === "ready-for-agent" && trusted && Boolean(apiKey);
- const comment = renderComment(merged, issue, { trusted, hasKey: Boolean(apiKey), prep });
- console.log(JSON.stringify({ ...merged, trusted, prep }, null, 2));
+ // Live-proof mode: exercises the real prep-agent/publish pipeline without
+ // ANTHROPIC_API_KEY or a genuinely routable issue. Only ever active for a
+ // trusted author (the real write-access check above, unchanged), and never
+ // touches labels or the classification table — it only forces the two
+ // downstream gate outputs and appends one line to the comment.
+ const { prep, routeForOutput, fixtureActive } = computePrepGate(merged, { trusted, apiKey, isFixture });
+ let comment = renderComment(merged, issue, { trusted, hasKey: Boolean(apiKey), prep });
+ if (fixtureActive) {
+  comment += "\n\nFixture mode: the agent is skipped and a canned spec is published to exercise the publish job.";
+ }
+ console.log(JSON.stringify({ ...merged, trusted, prep, fixtureActive }, null, 2));
 
  if (!dryRun) {
   const known = new Set((await paginate(`/labels`)).map((l) => l.name.toLowerCase()));
@@ -454,7 +487,7 @@ async function main() {
  }
 
  setOutputs({
-  route: merged.route,
+  route: routeForOutput,
   trusted,
   triaged: "true",
   prep: String(prep),

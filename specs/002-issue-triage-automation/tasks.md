@@ -425,6 +425,60 @@ High/Medium/Low findings. See spec.md's Hardening round 3 FRs (FR-046 to FR-052)
 unit suite, `actionlint`, or a manual git smoke test against a real scratch repo; only the live
 end-to-end run (T057) remains, pending the `ANTHROPIC_API_KEY` secret.
 
+## Phase 11: Hardening round 4 and live-proof mode
+
+**Purpose**: Small fixes requested inline from a fourth review (no new review round), plus a
+`fixture` `workflow_dispatch` mode that exercises `prep-agent`/`publish` end-to-end without
+`ANTHROPIC_API_KEY`. See spec.md's FR-053 to FR-056 and `docs/issue-triage.md`'s Security notes
+and new "Live-proof mode" subsection.
+
+- [x] T075 Fixed `publish`'s PR-reuse filter to match `app/github-actions` (the login `gh pr list`
+      reports for the default token's own PRs), not `github-actions[bot]` (the comment-login
+      format); `gh pr list`'s own failure is now captured and reported (`::error::` plus the
+      captured stderr, then `exit 1`) instead of being swallowed by `2>/dev/null || true` and
+      silently treated as "no existing PR" (depends on T068).
+- [x] T076 The run-scoped fallback branch name now includes `${GITHUB_RUN_ATTEMPT}` as well as
+      `${GITHUB_RUN_ID}` (`triage/issue-<N>-<run-id>-<run-attempt>`), so re-running failed jobs on
+      the same run id cannot collide with its own prior attempt's push (depends on T069).
+- [x] T077 The foreign-commit check before a force-with-lease push now examines both author and
+      committer email (`git log --format='%ae%n%ce'`), not author alone, so a human `git commit
+      --amend` of a bot commit — which keeps the original author but changes only the committer —
+      is still caught. Verified against a real scratch repo: the old author-only check missed the
+      amend; the new check catches it (depends on T069).
+- [x] T078 Fixed the credential-header comment, which incorrectly claimed the key matches both the
+      `.git`-suffixed and `.git`-less URL forms: it only ever matches the `.git`-less form
+      `actions/checkout` actually leaves on `origin` (and paths under it). Confirmed with `git
+      config --get-urlmatch` against both forms in a real scratch repo (depends on T067).
+- [x] T079 [P] Added `computePrepGate`, an exported pure function factoring the `prep`/`route`
+      output decision (including the new fixture-mode override) out of `main()` so it is
+      unit-testable; added tests for fixture-active, fixture-inactive-when-untrusted, and
+      unchanged non-fixture gating (depends on T051). Noted in plan.md that the `gh`/`jq`-based
+      PR-reuse author filter and `gh pr list` error path are not unit-testable in JS and are
+      covered only by `actionlint` and manual review.
+- [x] T080 Added the `fixture` boolean `workflow_dispatch` input (default `false`) and the
+      `FIXTURE` env var it maps to in `triage.mjs`'s classify step (`'true'` only when
+      `inputs.fixture` is checked on a dispatch, empty otherwise) (depends on T016).
+- [x] T081 In `triage.mjs`, fixture mode (`FIXTURE=="true"` and the author is trusted) forces
+      `prep: true` and the `route` output to `specify` regardless of key/state/route, changes no
+      label, and appends exactly one line to the otherwise-unchanged classification comment
+      ("Fixture mode: the agent is skipped and a canned spec is published to exercise the publish
+      job.") (depends on T079).
+- [x] T082 In `prep-agent`, the `claude-code-action` step now runs only `if: inputs.fixture !=
+      true`; a new step, `if: inputs.fixture == true`, writes a small, fixed,
+      non-untrusted-text `specs/900-triage-fixture/spec.md` naming only the issue number, which
+      flows through the existing upload/download/`prep-guard.mjs apply`/branch/commit/push/
+      PR-or-compare-link path unchanged. `ANTHROPIC_API_KEY` is never required in fixture mode
+      since the only step that references it is skipped entirely (depends on T080).
+- [x] T083 Documented live-proof mode in `docs/issue-triage.md` (how to run it, what it publishes,
+      that the throwaway branch/PR should be deleted afterwards) and this feature's
+      `spec.md`/`plan.md`/`tasks.md` (FR-056; depends on T081, T082).
+
+**Checkpoint**: Every Hardening round 4 finding and the live-proof mode are implemented and
+covered by the unit suite, `actionlint`, or a manual git smoke test; T057 (the real agent's live
+end-to-end run, pending `ANTHROPIC_API_KEY`) remains the only unchecked item — live-proof mode
+verifies everything downstream of the agent without needing that secret, but does not replace
+T057 itself, since it never exercises `claude-code-action`.
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -445,6 +499,9 @@ end-to-end run (T057) remains, pending the `ANTHROPIC_API_KEY` secret.
   redesign before stage 2's first live run.
 - **Hardening round 3 (Phase 10)**: Depends on Phase 9 being complete; a third review of that same
   redesign before stage 2's first live run.
+- **Hardening round 4 and live-proof mode (Phase 11)**: Depends on Phase 10 being complete; small
+  fixes from a fourth review plus a `fixture` mode to verify `prep-agent`/`publish` without the
+  secret.
 
 ### User Story Dependencies
 
@@ -499,6 +556,10 @@ end-to-end run (T057) remains, pending the `ANTHROPIC_API_KEY` secret.
 9. Hardening round 3 (T067-T074) implemented and covered by the unit suite, `actionlint`, and
    manual git smoke tests of the credential-header fix and the human-commit protection against
    real scratch repos → T057 remains the only gap.
+10. Hardening round 4 and live-proof mode (T075-T083) implemented and covered by the unit suite,
+    `actionlint`, and manual git smoke tests of the author-or-committer check and the
+    credential-header URL-match behaviour → T057 (the real agent's live run) remains the only
+    gap; `fixture: true` can now verify everything downstream of it without the secret.
 
 Each phase adds value without breaking the previous ones: US1 alone is already useful; US2 adds
 recoverability; US3 adds the draft-PR automation; US4 hardens US3 against untrusted/unready input.

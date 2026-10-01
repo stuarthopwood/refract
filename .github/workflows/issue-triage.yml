@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
         default: false
+      fixture:
+        description: Test the publish job with a canned spec instead of running the agent
+        required: false
+        type: boolean
+        default: false
 
 # Least privilege by default; each job grants only what it needs.
 permissions: {}
@@ -56,6 +61,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
           FORCE: ${{ inputs.force }}
+          # Live-proof mode: only ever "true" on a workflow_dispatch run with
+          # the `fixture` input checked; empty on every other trigger.
+          FIXTURE: ${{ inputs.fixture && 'true' || '' }}
           # Optional: without it the deterministic keyword heuristic classifies the issue.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TRIAGE_MODEL: ${{ vars.TRIAGE_MODEL }}
@@ -118,6 +126,7 @@ jobs:
           name: issue-export
           path: .triage
       - name: Run Spec Kit prep
+        if: inputs.fixture != true
         uses: anthropics/claude-code-action@12dd8d74c712f5f3669365b2369b558c495b1104 # v1
         env:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
@@ -148,6 +157,27 @@ jobs:
           claude_args: >-
             --max-turns 80
             --allowedTools "Read(./**),Glob,Grep,Edit(specs/**),Edit(docs/**),Bash(pwsh .specify/scripts/powershell/create-new-feature.ps1 *),Bash(pwsh .specify/scripts/powershell/setup-plan.ps1 *),Bash(pwsh .specify/scripts/powershell/setup-tasks.ps1 *),Bash(pwsh .specify/scripts/powershell/check-prerequisites.ps1 *),Bash(pwsh .specify/scripts/powershell/resolve-template.ps1 *)"
+      # Live-proof mode: skips the agent (and so never needs
+      # ANTHROPIC_API_KEY) and writes a small, fixed, non-untrusted file
+      # instead, so the real upload -> download -> `prep-guard.mjs apply` ->
+      # branch/commit/push -> PR-or-compare-link path in `publish` can be
+      # exercised end-to-end without the secret or a model call.
+      - name: Write the fixture spec (live-proof mode)
+        if: inputs.fixture == true
+        env:
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+        run: |
+          mkdir -p specs/900-triage-fixture
+          {
+            echo "# Fixture: triage workflow live-proof"
+            echo
+            echo "This file was written by the \`prep-agent\` job's fixture step, not the agent,"
+            echo "to exercise the \`publish\` job's guard/branch/PR path end-to-end without"
+            echo "needing \`ANTHROPIC_API_KEY\`. It is not a real specification; delete this"
+            echo "directory once the test run has been reviewed."
+            echo
+            echo "Source issue: #${ISSUE_NUMBER}"
+          } > specs/900-triage-fixture/spec.md
       # Uploads the whole specs/+docs/ tree, not a diff: this job has no git,
       # so it cannot compute one. `publish`'s guard (prep-guard.mjs apply)
       # tolerates that by only treating a file as in scope if it is new or
@@ -230,12 +260,12 @@ jobs:
           AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           echo "::add-mask::$AUTH"
           export GIT_CONFIG_COUNT=1
-          # A path prefix of both the "https://github.com/owner/repo" form
-          # actions/checkout leaves as origin's URL and the ".../repo.git"
-          # form some tools use, so the header actually matches and is sent
-          # either way. A ".git"-suffixed key here (what this used to be)
-          # never matches checkout's URL, so git silently never attaches the
-          # header and every push fails unauthenticated.
+          # Matches the exact ".git"-less URL form `actions/checkout` always
+          # leaves on `origin` (and paths under it, which is all git's smart
+          # HTTP protocol ever requests) — not a coincidental match of both
+          # URL forms. A ".git"-suffixed key here (what this used to be)
+          # never matches that URL at all, so git silently never attaches
+          # the header and every push fails unauthenticated.
           export GIT_CONFIG_KEY_0="http.${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.extraheader"
           export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $AUTH"
 
@@ -255,14 +285,18 @@ jobs:
               git fetch --unshallow origin
             fi
             git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
-            FOREIGN="$(git log --format='%ae' "HEAD..refs/remotes/origin/$BRANCH" | grep -v -F -x "41898282+github-actions[bot]@users.noreply.github.com" || true)"
+            # Both author and committer: a human `git commit --amend` of a
+            # bot commit changes the committer but can retain the original
+            # author (or vice versa with `--reset-author`), so checking only
+            # one would miss it.
+            FOREIGN="$(git log --format='%ae%n%ce' "HEAD..refs/remotes/origin/$BRANCH" | grep -v -F -x "41898282+github-actions[bot]@users.noreply.github.com" || true)"
             if [ -n "$FOREIGN" ]; then
               # A human (for example review fixes) committed to the existing
               # branch: never force-overwrite those. Publish this run under
               # a new, run-scoped branch name instead, leaving the original
               # branch (and any PR on it) untouched; $GITHUB_ENV updates
               # $BRANCH for every later step, including the PR/comment one.
-              BRANCH="${BRANCH}-${GITHUB_RUN_ID}"
+              BRANCH="${BRANCH}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
               echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
               echo "fresh_branch=true" >> "$GITHUB_OUTPUT"
               git push origin "HEAD:refs/heads/$BRANCH"
@@ -299,8 +333,19 @@ jobs:
           # Only a same-repo PR authored by this workflow's own token counts:
           # `--head` alone also matches a fork's PR of a branch with the same
           # name, which would let an attacker's arbitrary-code PR be endorsed
-          # here instead of the real one this run just pushed.
-          EXISTING_URL="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url,isCrossRepository,author -q '[.[] | select(.isCrossRepository==false and .author.login=="github-actions[bot]")][0].url // empty' 2>/dev/null || true)"
+          # here instead of the real one this run just pushed. `gh pr list`
+          # reports the default `GITHUB_TOKEN`'s PR authorship as
+          # `app/github-actions`, not `github-actions[bot]` (that form is
+          # only used for issue/PR comments). A `gh` failure here is a real
+          # error, not "no existing PR" — it must not be swallowed, or a
+          # transient API error would make this duplicate-create a PR (or
+          # worse, silently skip reporting a real problem).
+          PR_LIST_STDERR="$RUNNER_TEMP/pr-list.stderr"
+          if ! EXISTING_URL="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json url,isCrossRepository,author -q '[.[] | select(.isCrossRepository==false and .author.login=="app/github-actions")][0].url // empty' 2>"$PR_LIST_STDERR")"; then
+            echo "::error::gh pr list failed while checking for an existing PR on $BRANCH:" >&2
+            cat "$PR_LIST_STDERR" >&2
+            exit 1
+          fi
           if [ -n "$EXISTING_URL" ]; then
             RESULT="Spec prep is ready for review: ${EXISTING_URL}${NOTE}"
           else

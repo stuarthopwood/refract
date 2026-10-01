@@ -24,18 +24,25 @@ before any branch exists, commits only the files that pass, then **always create
 `triage/issue-<N>` fresh** from that checkout (never by switching onto a previous run's branch
 tip, which would make a plain `git switch` try to reconcile the guard's output against whatever
 that branch already had and abort on a second run). Before pushing it checks whether the existing
-remote branch (if any) carries any commit not authored by `github-actions[bot]`; if so it leaves
-that branch and its PR untouched and publishes to a run-scoped `triage/issue-<N>-<run-id>` branch
-instead, otherwise it pushes with a compare-and-swap (`git push --force-with-lease`, leased
-against the branch's real remote SHA from an exact-ref, non-shallow `git ls-remote`), opening (or
-reusing — same-repository and bot-authored only, never a fork's PR of the same branch name) a
-draft PR, or commenting a compare link if PR creation is disabled. A `notify-failure` job comments
-a link to the run if `triage`, `prep-agent`, or `publish` fails or is cancelled (job outputs set by
-an earlier, successful step survive a later step's failure in the same job). `trusted` requires
-both `author_association` and a live collaborator-permission check, failing closed on error. All
-three checkouts pin `ref:` to the repository's actual default branch rather than the triggering
-event's ref. The git credential header key matches the exact URL form `actions/checkout` leaves on
-`origin` (no `.git` suffix), and its base64 value is explicitly masked in logs.
+remote branch (if any) carries any commit whose author *or* committer email is not the bot's own
+(catching a human `git commit --amend` of a bot commit, which can retain the original author while
+changing only the committer); if so it leaves that branch and its PR untouched and publishes to a
+run-scoped `triage/issue-<N>-<run-id>-<run-attempt>` branch instead (the run-attempt suffix avoids
+colliding with "Re-run failed jobs" on the same run id), otherwise it pushes with a
+compare-and-swap (`git push --force-with-lease`, leased against the branch's real remote SHA from
+an exact-ref, non-shallow `git ls-remote`), opening (or reusing — same-repository and authored by
+`app/github-actions` only, never a fork's PR of the same branch name; a `gh pr list` failure is
+reported as a run failure, never treated as "no existing PR") a draft PR, or commenting a compare
+link if PR creation is disabled. A `notify-failure` job comments a link to the run if `triage`,
+`prep-agent`, or `publish` fails or is cancelled (job outputs set by an earlier, successful step
+survive a later step's failure in the same job). `trusted` requires both `author_association` and
+a live collaborator-permission check, failing closed on error. All three checkouts pin `ref:` to
+the repository's actual default branch rather than the triggering event's ref. The git credential
+header key matches the exact URL form `actions/checkout` leaves on `origin` (no `.git` suffix,
+which the key does not also match), and its base64 value is explicitly masked in logs. A `fixture`
+`workflow_dispatch` input exercises `prep-agent`/`publish` end-to-end without
+`ANTHROPIC_API_KEY`: `prep-agent` skips the agent and writes a small canned spec file instead,
+which flows through the normal artifact/guard/publish path unchanged.
 
 ## Technical Context
 
@@ -56,22 +63,28 @@ requests) plus two short-lived (`retention-days: 1`) workflow artifacts (`issue-
 persisted beyond a run.
 
 **Testing**: `actionlint` against `issue-triage.yml` (exit 0); `node --test
-.github/scripts/triage.test.mjs` (37 deterministic unit tests covering the classifier, the
+.github/scripts/triage.test.mjs` (40 deterministic unit tests covering the classifier, the
 maintainer/bot-label merge logic including multi-run label convergence and maintainer-set state
-honouring, the marker JSON helpers, rationale sanitising, `resolveFeatureDirectory`, and the
-guard's `classifyEntry`/`findViolations`); a manual smoke run of `prep-guard.mjs apply` against a
-scratch directory simulating an unchanged pre-existing non-markdown file (silently skipped) and a
-modified one (rejected); manual smoke runs of the `publish` job's branch/push logic against real
-throwaway git remotes, confirming: a first run's plain push; a second run's `git
-ls-remote`-leased `--force-with-lease` push cleanly replacing the first run's commit even when
-both touch the same file; a genuine `ls-remote` failure distinguished from "branch absent"; the
-fixed credential-header key actually matching `actions/checkout`'s URL form where the old,
-`.git`-suffixed key never did; and a human commit on the existing branch correctly redirecting the
-push to a run-scoped branch while leaving the human's commit and the original branch untouched.
+honouring, the marker JSON helpers, rationale sanitising, `resolveFeatureDirectory`,
+`computePrepGate`'s fixture-mode gating, and the guard's `classifyEntry`/`findViolations`); a
+manual smoke run of `prep-guard.mjs apply` against a scratch directory simulating an unchanged
+pre-existing non-markdown file (silently skipped) and a modified one (rejected); manual smoke runs
+of the `publish` job's branch/push logic against real throwaway git remotes, confirming: a first
+run's plain push; a second run's `git ls-remote`-leased `--force-with-lease` push cleanly
+replacing the first run's commit even when both touch the same file; a genuine `ls-remote` failure
+distinguished from "branch absent"; the fixed credential-header key actually matching
+`actions/checkout`'s URL form where the old, `.git`-suffixed key never did; a human commit on the
+existing branch correctly redirecting the push to a run-scoped branch while leaving the human's
+commit and the original branch untouched; and a human `--amend` of a bot commit (same author,
+different committer) being caught by the author-or-committer check where an author-only check
+would have missed it. The `gh`/`jq` logic for the PR-reuse author filter and `gh pr list`
+error-reporting is not unit-testable in JS; it is covered only by `actionlint` and manual review.
 Live `workflow_dispatch` dispatch of the heuristic path against throwaway issue #90 for stage 1
-(the model-path run and issue #91 are still pending). Stage 2 cannot be exercised live until
-`ANTHROPIC_API_KEY` is added as a repository secret, so for now it is verified only by
-`actionlint`, the unit tests, and the smoke runs above — it must be correct by construction.
+(the model-path run and issue #91 are still pending). Stage 2's agent path cannot be exercised
+live until `ANTHROPIC_API_KEY` is added as a repository secret, but the `prep-agent`→`publish`
+pipeline itself can now be live-proofed via `fixture: true` without the secret; for now it is
+verified only by `actionlint`, the unit tests, and the smoke runs above — it must be correct by
+construction.
 
 **Target Platform**: GitHub Actions `ubuntu-latest` hosted runner.
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyEntry, findViolations, resolveFeatureDirectory } from "./prep-guard.mjs";
 import {
+  computePrepGate,
   heuristicClassify,
   isSpecRelated,
   mergeWithExisting,
@@ -280,4 +281,29 @@ test("resolveFeatureDirectory falls back to the default feature when no spec:NNN
 
 test("resolveFeatureDirectory returns null when there is no label and no default feature to fall back to", () => {
   assert.equal(resolveFeatureDirectory("converge", [], ["002-issue-triage-automation"]), null);
+});
+
+test("computePrepGate: fixture mode forces prep=true/route=specify for a trusted author regardless of key/state/route", () => {
+  const merged = { route: "none", state: "needs-info", type: "documentation" };
+  const gate = computePrepGate(merged, { trusted: true, apiKey: undefined, isFixture: true });
+  assert.deepEqual(gate, { prep: true, routeForOutput: "specify", fixtureActive: true });
+});
+
+test("computePrepGate: fixture mode never activates for an untrusted author", () => {
+  const merged = { route: "specify", state: "ready-for-agent" };
+  const gate = computePrepGate(merged, { trusted: false, apiKey: "k", isFixture: true });
+  assert.equal(gate.fixtureActive, false);
+  assert.equal(gate.prep, false);
+  assert.equal(gate.routeForOutput, "specify");
+});
+
+test("computePrepGate: non-fixture behaviour is unchanged (route/state/key/trust all required)", () => {
+  const ready = { route: "specify", state: "ready-for-agent" };
+  assert.equal(computePrepGate(ready, { trusted: true, apiKey: "k", isFixture: false }).prep, true);
+  assert.equal(computePrepGate(ready, { trusted: true, apiKey: undefined, isFixture: false }).prep, false);
+  assert.equal(computePrepGate(ready, { trusted: false, apiKey: "k", isFixture: false }).prep, false);
+  assert.equal(computePrepGate({ route: "none", state: "ready-for-agent" }, { trusted: true, apiKey: "k", isFixture: false }).prep, false);
+  assert.equal(computePrepGate({ route: "specify", state: "needs-info" }, { trusted: true, apiKey: "k", isFixture: false }).prep, false);
+  // route output passes through untouched outside fixture mode.
+  assert.equal(computePrepGate(ready, { trusted: true, apiKey: "k", isFixture: false }).routeForOutput, "specify");
 });
