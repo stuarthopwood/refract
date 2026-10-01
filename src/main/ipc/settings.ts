@@ -30,7 +30,13 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
     const value = await manager.settings.setApprovalMode(mode as ApprovalMode);
     manager.applyPendingModeChange(value.approvalMode);
     const window = getWindow();
-    if (window && !window.isDestroyed()) window.webContents.send(IPC_EVENTS.SETTINGS_CHANGED, value);
+    if (window && !window.isDestroyed()) {
+      try {
+        window.webContents.send(IPC_EVENTS.SETTINGS_CHANGED, value);
+      } catch (err) {
+        console.error('settings: failed to broadcast settings:changed', err);
+      }
+    }
     return { ok: true, value };
   });
 }

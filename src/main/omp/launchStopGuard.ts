@@ -32,3 +32,17 @@ export async function stopIfRunning(proc: OmpProcess | undefined): Promise<void>
   if (!proc) return;
   await proc.stop();
 }
+
+/** `launch()` guard: fires `onFail` and builds the failure result when a concurrent exit cleared
+ * `this.process` out from under an in-flight launch attempt (the running turn no longer owns a
+ * live process). `stillCurrent` is the caller's `this.process === proc` check. */
+export function exitedDuringStart(
+  stillCurrent: boolean,
+  failurePrefix: string,
+  onFail: (detail: string) => void,
+): { ok: false; error: unknown } | undefined {
+  if (stillCurrent) return undefined;
+  const detail = failurePrefix + 'agent exited during start';
+  onFail(detail);
+  return { ok: false, error: new Error(detail) };
+}

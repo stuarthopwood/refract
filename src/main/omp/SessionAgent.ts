@@ -16,7 +16,7 @@ import { applyFrame, fromHistory } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
 import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './transcriptDiff';
-import { bailIfStopRequested, stopIfRunning } from './launchStopGuard';
+import { bailIfStopRequested, exitedDuringStart, stopIfRunning } from './launchStopGuard';
 import { PatchCoalescer } from './patchCoalescer';
 import { verifyReattach } from './reattachVerification';
 import type {
@@ -220,11 +220,8 @@ export class SessionAgent extends EventEmitter {
     } catch (err) {
       console.error(`SessionAgent ${this.sessionId}: get_messages threw`, err);
     }
-    if (this.process !== proc) {
-      const detail = failurePrefix + 'agent exited during start';
-      this.recordStartFailure(detail);
-      return { ok: false, error: new Error(detail) };
-    }
+    const exitedDuringStart1 = exitedDuringStart(this.process === proc, failurePrefix, (d) => this.recordStartFailure(d));
+    if (exitedDuringStart1) return exitedDuringStart1;
 
     const currentMode = this.settings.get().approvalMode;
     this.runtime = {
@@ -238,9 +235,10 @@ export class SessionAgent extends EventEmitter {
     };
 
     await this.syncFromState(state);
+    const exitedDuringStart2 = exitedDuringStart(this.process === proc, failurePrefix, (d) => this.recordStartFailure(d));
+    if (exitedDuringStart2) return exitedDuringStart2;
     this.emitStatus();
     this.emitPatchReset();
-    this.maybeRestartForPendingMode();
     return { ok: true };
   }
 
@@ -347,7 +345,7 @@ export class SessionAgent extends EventEmitter {
   /** data-model.md "session_settled ... If pendingMode is set, run the mode-change restart."
    * Only once the turn is fully idle with nothing left answerable. */
   private maybeRestartForPendingMode(): void {
-    if (this.runtime.pendingMode !== null && this.runtime.pending.length === 0 && this.runtime.status === 'idle') {
+    if (!this.stopRequested && this.runtime.pendingMode !== null && this.runtime.pending.length === 0 && this.runtime.status === 'idle') {
       void this.restart('approval mode change');
     }
   }
@@ -590,7 +588,7 @@ export class SessionAgent extends EventEmitter {
   private onExit(info: { code: number | null; requested: boolean }): void {
     this.process = undefined;
     this.finalizeLiveItems();
-    if (this.restarting) return; // restart() owns this transition; see its doc comment.
+    if (this.restarting && info.requested) return; // restart() owns this transition; see its doc comment.
     this.settleTurnPendingRequests('Request withdrawn: the agent process exited.');
     if (info.requested) {
       this.setStatus('stopped', { stopReason: 'not-started' });
