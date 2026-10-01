@@ -165,10 +165,20 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
  if (existingArea) result.area = existingArea;
  if (existingPriority) result.priority = existingPriority;
 
- // A maintainer-chosen type can make the model's route wrong; re-derive it.
- if (["documentation", "question", "design", "spike"].includes(result.type)) {
+ // A maintainer-chosen type can make the route wrong; re-derive it. Docs,
+ // questions and spikes never need a spec. For bug/chore/design the model has
+ // read the body and can tell a multi-file rename or an icon set wired into the
+ // Electron build (spec work) from a one-line fix, so its route stands; the
+ // keyword heuristic cannot tell, so it stays conservative unless the text
+ // references the spec.
+ if (["documentation", "question", "spike"].includes(result.type)) {
   result.route = "none";
- } else if (existingType && ["bug", "chore"].includes(existingType) && result.route === "specify" && !specRelated) {
+ } else if (
+  result.source !== "model" &&
+  ["bug", "chore", "design"].includes(result.type) &&
+  result.route === "specify" &&
+  !specRelated
+ ) {
   result.route = "none";
  }
  // Prep only ever runs for a ready-for-agent issue; never advertise or route
@@ -244,9 +254,9 @@ function buildPrompt(issue, openIssues) {
   `type: one of ${TYPES.join("|")}.`,
   `area: one of ${AREAS.join("|")} or null.`,
   "priority: p1 = blocks core use, security, data loss, or a named near-term milestone; p2 = normal planned work; p3 = polish or nice-to-have.",
-  `state: ready-for-agent (well specified, implementable), ready-for-human (needs a human decision/design/manual work), needs-info (too vague), needs-triage (unsure or possible duplicate).`,
+  `state: ready-for-agent (the request is clear enough that an agent can write a spec/plan/tasks for it, even if it has open design choices an agent can assume), ready-for-human (needs a real-world decision, external account, purchase, or manual work that a spec cannot settle), needs-info (too vague), needs-triage (unsure or possible duplicate).`,
   "duplicate_of: number of an open issue in <open_issues> that is clearly the same request, else null.",
-  "speckit_route: specify = a new user-facing capability needing a new spec; converge = a change to behaviour already covered by an existing spec (specs/001-core-session-workspace) so the spec and tasks must be amended; none = no spec work (docs, design assets, questions, spikes, tiny chores).",
+  "speckit_route: route on SCOPE, not on type. specify = needs a new spec: a new user-facing capability, OR a change spanning many files or app-wide behaviour (for example renaming the product across code and packaging, or an icon set wired into the Electron build and window config); converge = a change to behaviour already covered by an existing spec (specs/001-core-session-workspace) so the spec and tasks must be amended; none = no spec work (docs, questions, spikes, pure asset requests with no code wiring, tiny one-file fixes).",
   "rationale: one or two plain sentences, no @mentions.",
  ].join("\n");
  const open = openIssues.map((i) => `#${i.number}: ${i.title}`).join("\n") || "(none)";

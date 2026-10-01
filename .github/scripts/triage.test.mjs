@@ -94,6 +94,18 @@ test("a maintainer-set bug/chore type cancels a specify route unless the text is
   assert.equal(mergeWithExisting(model, ["bug"], { specRelated: true }).route, "specify");
 });
 
+test("a model-chosen specify route survives a maintainer chore/design type; the heuristic's does not", () => {
+  const base = { area: null, priority: "p1", state: "ready-for-agent", route: "specify" };
+  for (const label of ["chore", "design", "bug"]) {
+    const fromModel = mergeWithExisting({ ...base, type: "enhancement", source: "model" }, [label], { specRelated: false });
+    assert.equal(fromModel.route, "specify", `model route kept for ${label}`);
+    const fromHeuristic = mergeWithExisting({ ...base, type: "enhancement", source: "heuristic" }, [label], { specRelated: false });
+    assert.equal(fromHeuristic.route, "none", `heuristic route dropped for ${label}`);
+  }
+  const docs = mergeWithExisting({ ...base, type: "enhancement", source: "model" }, ["documentation"]);
+  assert.equal(docs.route, "none");
+});
+
 test("force re-triage ignores the bot's own prior labels and clears the stale state label", () => {
   const priorBotLabels = ["bug", "p1", "ready-for-human", "triaged"];
   const existingLabels = [...priorBotLabels];
