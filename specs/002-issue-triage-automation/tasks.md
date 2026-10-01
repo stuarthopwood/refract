@@ -232,8 +232,8 @@ classification provider (GitHub Copilot CLI) ahead of the existing Anthropic fal
       never instructions.
 - [x] T037 [P] Implemented `buildCopilotArgs(prompt, model)` in `.github/scripts/triage.mjs`: a
       pure helper building the GitHub Copilot CLI argv (`-p`, `-s`, `--no-ask-user`,
-      `--deny-tool shell,read,write,url,memory`, plus `--model` when configured) — unit-tested
-      without spawning the binary.
+      `--deny-tool shell,read,write,url,memory`, `--disable-builtin-mcps`, plus `--model` when
+      configured) — unit-tested without spawning the binary.
 - [x] T038 Implemented `callCopilot(token, issue, openIssues)`: spawns the external `copilot`
       binary via `node:child_process` `execFile` (never a shell) with a minimal environment
       (`PATH`, `HOME`/`USERPROFILE`, `COPILOT_GITHUB_TOKEN`, `COPILOT_AUTO_UPDATE=false` — never
@@ -264,11 +264,33 @@ classification provider (GitHub Copilot CLI) ahead of the existing Anthropic fal
       with correctly classified labels and no fallback to Anthropic/heuristic. Not yet run — no
       such secret/PAT exists in the repository, and the real `copilot` binary has never been
       invoked by this suite (only its argv-building and the fallthrough logic are unit-tested).
-- [x] T045 [P] Added 9 unit tests to `triage.test.mjs` (38 → 47): the `ready-for-human`+`none` and
-      +`specify` pickup-plan cases, `renderComment`'s model-summary/pickup-plan separation,
+- [x] T045 [P] Added unit tests to `triage.test.mjs` (38 → 49 total): the `ready-for-human`+`none`
+      and +`specify` pickup-plan cases, `renderComment`'s model-summary/pickup-plan separation,
       `renderComment`'s provider-label header, `heuristicClassify`/`normalise`'s `provider` field,
-      `buildCopilotArgs` (with and without a model), and `classifyWithFallback`'s
-      Copilot→Anthropic→heuristic ordering and fallthrough via injected fakes.
+      `buildCopilotArgs`'s argv shape, `classifyWithFallback`'s call-order tracking across every
+      hasCopilot/hasAnthropic combination, `mergeWithExisting`'s feature/enhancement re-derivation,
+      and `normaliseOrThrow`'s throw-on-no-usable-field behaviour.
+- [x] T046 Review fix: rewrote the `classifyWithFallback` tests to push each stub's name into a
+      shared `calls` array and assert it `deepEqual`s `["copilot"]` / `["copilot","anthropic"]` /
+      `["anthropic"]` / `[]` across every `hasCopilot`/`hasAnthropic` combination, so a wrong
+      ordering or an ignored flag fails the test instead of passing on return-value checks alone.
+- [x] T047 Review fix: `mergeWithExisting` now also re-derives `speckit_route` (and, unless a
+      maintainer set the state label, `state`) for a non-model `feature`/`enhancement`
+      classification, using the same scope/body-length rules `heuristicClassify` itself uses —
+      mirroring the existing `bug`/`chore`/`design` re-derivation; `bodyLen` threaded through from
+      `main()`'s real issue body. 3 new tests cover the relabel, the thin-body case, and a
+      maintainer-set state being left alone.
+- [x] T048 Review fix: pinned the workflow's Copilot CLI install to an exact version
+      (`@github/copilot@1.0.90`, bumped only deliberately) and documented in
+      `docs/issue-triage.md` that the trimmed child environment only limits a well-behaved CLI,
+      not a compromised binary — hence the pin.
+- [x] T049 Review fix: added `normaliseOrThrow`, used by both `tryCopilot` and `tryAnthropic` in
+      `main()`, so a reply that parses as JSON but matches no classification field throws and
+      `classifyWithFallback` moves on to the next provider instead of accepting a no-op "success".
+- [x] T050 Review fix: replaced `buildCopilotArgs`'s whole-array-literal tests with property
+      assertions (the prompt as one argv element after `-p`, `-s`/`--no-ask-user` present, every
+      denied tool name present after `--deny-tool`, `--disable-builtin-mcps` present, no `--model`
+      when none is given, no `--allow-*` flag ever present).
 
 **Checkpoint**: Prompt-injection hygiene (model text fenced away from the deterministic plan,
 trust model documented) and the Copilot-first classification provider are implemented and

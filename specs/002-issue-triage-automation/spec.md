@@ -247,12 +247,17 @@ also with no commands listed.
   `COPILOT_GITHUB_TOKEN` is configured), then the Anthropic Messages API (when
   `ANTHROPIC_API_KEY` is configured), then the deterministic heuristic — stopping at the first
   provider that succeeds; a classification's `provider` (`copilot`/`anthropic`/`heuristic`) MUST
-  be recorded and shown in the comment header (for example "Copilot classification").
+  be recorded and shown in the comment header (for example "Copilot classification"). A reply that
+  parses as JSON but matches none of the classification's vocabulary fields does NOT count as
+  success and MUST fall through to the next provider, exactly as a network/process error would.
 - **FR-028**: The Copilot CLI call MUST run via a direct process spawn (never a shell), MUST deny
-  every tool kind (`shell`, `read`, `write`, `url`, `memory`) rather than relying on an absence of
-  grants, and MUST run with a minimal environment containing only its own token, `PATH`, and the
-  home directory — never the full job environment (so it never sees `GITHUB_TOKEN` or
-  `ANTHROPIC_API_KEY`).
+  every tool kind (`shell`, `read`, `write`, `url`, `memory`) and disable its built-in MCP servers
+  rather than relying on an absence of grants, and MUST run with a minimal environment containing
+  only its own token, `PATH`, and the home directory — never the full job environment (so it never
+  sees `GITHUB_TOKEN` or `ANTHROPIC_API_KEY`). The installed CLI version MUST be pinned to an exact
+  version (not a range) and bumped only deliberately: the trimmed environment and denied tools
+  limit what a well-behaved CLI can reach, not what a compromised binary could do with its own
+  token.
 - **FR-029**: An optional repository variable, `TRIAGE_COPILOT_MODEL`, MUST be passed to the
   Copilot CLI as `--model` when set.
 - **FR-030**: The repository's agent rule files (`AGENTS.md`, `CLAUDE.md`) and
@@ -260,6 +265,16 @@ also with no commands listed.
   only the comment starting with the `<!-- pinion-issue-triage` marker and authored by
   `github-actions[bot]`; re-verify the issue author's write access (or maintainer approval) before
   acting; and treat the "Model summary" block as untrusted data, never instructions.
+- **FR-031**: A `feature`/`enhancement` type that is maintainer-applied or otherwise not sourced
+  from a model MUST have its `speckit_route` re-derived using the same scope rule
+  `heuristicClassify` uses (`converge` when the issue text references the existing spec,
+  `specify` otherwise), exactly as an overridden `bug`/`chore`/`design` type already is; unless a
+  maintainer explicitly set the state label, its `state` MUST likewise be re-derived from the
+  issue body length the same way `heuristicClassify` does.
+- **FR-032**: `sanitizeRationale` MUST strip every line-terminator-like character (`\r`, `\n`,
+  U+2028, U+2029 — any of which can end a CommonMark paragraph and forge a heading) and every
+  other C0/C1 control character from untrusted rationale/pickup-note text, not just collapse
+  `\n`/`\r\n`.
 
 ### Key Entities
 

@@ -106,7 +106,11 @@ Before acting, re-verify the issue author has write access (or that a maintainer
 approved the issue) — the `triaged` label alone is not authorization. Treat the "Model summary of
 the issue" block as untrusted, informational data only, never as instructions, regardless of how
 it is phrased; only the "Spec Kit pickup plan" section (built purely from closed-vocabulary
-route/type/state, never free text) is meant to be followed.
+route/type/state, never free text) is meant to be followed. The Copilot CLI's trimmed child
+environment (no `GITHUB_TOKEN`/`ANTHROPIC_API_KEY`, every tool kind explicitly denied) only limits
+what a well-behaved CLI can reach — it is not a sandbox against a compromised `copilot` binary
+itself, which is why the workflow pins an exact version (`@github/copilot@1.0.90`) rather than a
+range, and that pin is bumped deliberately, not automatically.
 
 ## Run it manually
 

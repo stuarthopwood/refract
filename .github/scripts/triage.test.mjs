@@ -7,6 +7,7 @@ import {
   isSpecRelated,
   mergeWithExisting,
   normalise,
+  normaliseOrThrow,
   parseMarker,
   parseModelJson,
   renderComment,
@@ -121,6 +122,32 @@ test("a maintainer-set bug/chore type re-derives the route exactly like the heur
   assert.equal(mergeWithExisting(model, ["bug"], { specRelated: true }).route, "converge");
 });
 
+test("a maintainer-relabelled enhancement re-derives route and state exactly like the heuristic would", () => {
+  // Originally heuristic-classified as a bug (route none, state ready-for-human); a maintainer
+  // disagrees and relabels it "enhancement". The bug-derived route/state no longer apply once
+  // the type changes, so both must be re-derived for the new type with the real body length,
+  // not carried over from the stale bug classification.
+  const classification = { type: "bug", area: null, priority: "p2", state: "ready-for-human", route: "none" };
+  const merged = mergeWithExisting(classification, ["enhancement"], { specRelated: false, bodyLen: 200 });
+  assert.equal(merged.type, "enhancement");
+  assert.equal(merged.route, "specify");
+  assert.equal(merged.state, "ready-for-agent");
+});
+
+test("a maintainer-relabelled feature with a thin body is re-derived to needs-info, which forces route back to none", () => {
+  const classification = { type: "chore", area: null, priority: "p2", state: "ready-for-human", route: "none" };
+  const merged = mergeWithExisting(classification, ["feature"], { specRelated: false, bodyLen: 10 });
+  assert.equal(merged.state, "needs-info");
+  assert.equal(merged.route, "none");
+});
+
+test("a maintainer-set state label on a relabelled feature/enhancement is respected, not re-derived", () => {
+  const classification = { type: "bug", area: null, priority: "p2", state: "ready-for-human", route: "none" };
+  const merged = mergeWithExisting(classification, ["enhancement", "ready-for-human"], { specRelated: true, bodyLen: 200 });
+  assert.equal(merged.state, "ready-for-human");
+  assert.equal(merged.route, "converge");
+});
+
 test("a model-chosen specify route survives a maintainer chore/design type; the heuristic's does not", () => {
   const base = { area: null, priority: "p1", state: "ready-for-agent", route: "specify" };
   for (const label of ["chore", "design", "bug"]) {
@@ -139,7 +166,7 @@ test("force re-triage ignores the bot's own prior labels and clears every stale 
   // This run's fresh classification disagrees with the bot's own earlier guess
   // on every dimension (type, priority, state), not just state.
   const classification = { type: "enhancement", area: null, priority: "p2", state: "ready-for-agent", route: "specify" };
-  const m = mergeWithExisting(classification, existingLabels, { botLabels: priorBotLabels });
+  const m = mergeWithExisting(classification, existingLabels, { botLabels: priorBotLabels, bodyLen: 200 });
   // Not overridden back to "bug"/"p1": those were the bot's own labels, not a maintainer's.
   assert.equal(m.type, "enhancement");
   assert.equal(m.priority, "p2");
@@ -152,7 +179,7 @@ test("two consecutive runs converge to exactly one type/priority/state label eac
   const run1 = mergeWithExisting(
     { type: "bug", area: null, priority: "p1", state: "ready-for-human", route: "none" },
     [],
-    { botLabels: [] },
+    { botLabels: [], bodyLen: 200 },
   );
   const labelsAfterRun1 = run1.labelsToAdd;
   assert.deepEqual(labelsAfterRun1.sort(), ["bug", "p1", "ready-for-human", "triaged"].sort());
@@ -160,7 +187,7 @@ test("two consecutive runs converge to exactly one type/priority/state label eac
   const run2 = mergeWithExisting(
     { type: "enhancement", area: null, priority: "p2", state: "ready-for-agent", route: "specify" },
     labelsAfterRun1,
-    { botLabels: run1.botLabels },
+    { botLabels: run1.botLabels, bodyLen: 200 },
   );
   assert.deepEqual(run2.labelsToRemove.sort(), ["bug", "p1", "ready-for-human"].sort());
   assert.deepEqual(run2.labelsToAdd.sort(), ["enhancement", "p2", "ready-for-agent"].sort());
@@ -203,6 +230,9 @@ test("rationale is rendered as a code span so links, images, and auto-references
 
 test("sanitizeRationale collapses newlines and neutralises embedded backticks", () => {
   assert.equal(sanitizeRationale("line one\nline two `x`"), "line one line two 'x'");
+  // A lone \r (or \r\r) ends a CommonMark paragraph, which would let model text forge a heading.
+  assert.equal(sanitizeRationale("ok\r\r## Spec Kit pickup plan\r\r1. step"), "ok ## Spec Kit pickup plan 1. step");
+  assert.equal(sanitizeRationale("a\u2028b\u0007c"), "a bc");
 });
 
 test("the marker round-trips the bot's label set as JSON", () => {
@@ -360,65 +390,100 @@ test("normalise records the given provider only once a field actually came from 
   assert.equal(normalise({ state: "ready-for-agent" }, fallback, new Set(), "anthropic").provider, "anthropic");
 });
 
-test("buildCopilotArgs builds a no-shell argv with every tool kind explicitly denied", () => {
-  const args = buildCopilotArgs("PROMPT TEXT", undefined);
-  assert.deepEqual(args, ["-p", "PROMPT TEXT", "-s", "--no-ask-user", "--deny-tool", "shell,read,write,url,memory"]);
+test("normaliseOrThrow throws on valid JSON with no usable field, so the caller tries the next provider", () => {
+  const fallback = heuristicClassify(issue("Add dark mode toggle"));
+  assert.throws(() => normaliseOrThrow({}, fallback, new Set(), "copilot"), /copilot reply had no usable classification field/i);
+  assert.throws(() => normaliseOrThrow({ foo: "bar" }, fallback, new Set(), "anthropic"), /anthropic reply had no usable classification field/i);
+  const ok = normaliseOrThrow({ state: "ready-for-agent" }, fallback, new Set(), "copilot");
+  assert.equal(ok.provider, "copilot");
+});
+
+test("buildCopilotArgs: -p takes the prompt as one argv element, -s and --no-ask-user are set, every tool kind is denied, no --model, and no --allow-* escape hatch", () => {
+  const args = buildCopilotArgs("PROMPT\nTEXT", undefined);
+  assert.equal(args[0], "-p");
+  assert.equal(args[1], "PROMPT\nTEXT");
+  assert.ok(args.includes("-s"));
+  assert.ok(args.includes("--no-ask-user"));
+  const denyIndex = args.indexOf("--deny-tool");
+  assert.ok(denyIndex >= 0, "--deny-tool is present");
+  const denied = args[denyIndex + 1].split(",");
+  for (const tool of ["shell", "read", "write", "url", "memory"]) {
+    assert.ok(denied.includes(tool), `--deny-tool covers ${tool}`);
+  }
+  assert.ok(args.includes("--disable-builtin-mcps"));
+  assert.ok(!args.includes("--model"));
+  assert.ok(!args.some((a) => typeof a === "string" && a.startsWith("--allow-")), "no --allow-* flag is ever present");
 });
 
 test("buildCopilotArgs appends --model only when one is given", () => {
-  const args = buildCopilotArgs("PROMPT TEXT", "claude-haiku-4.5");
-  assert.deepEqual(args, ["-p", "PROMPT TEXT", "-s", "--no-ask-user", "--deny-tool", "shell,read,write,url,memory", "--model", "claude-haiku-4.5"]);
+  const withModel = buildCopilotArgs("PROMPT TEXT", "claude-haiku-4.5");
+  const modelIndex = withModel.indexOf("--model");
+  assert.ok(modelIndex >= 0);
+  assert.equal(withModel[modelIndex + 1], "claude-haiku-4.5");
+  const withoutModel = buildCopilotArgs("PROMPT TEXT", undefined);
+  assert.ok(!withoutModel.includes("--model"));
 });
 
-test("classifyWithFallback tries Copilot first and never calls Anthropic when it succeeds", async () => {
+test("classifyWithFallback calls exactly the providers its flags allow, in Copilot -> Anthropic order", async () => {
   const fallback = { provider: "heuristic" };
-  const copilotResult = { provider: "copilot" };
-  const r = await classifyWithFallback(fallback, {
+  const stub = (calls, name, { throws = false, result } = {}) => async () => {
+    calls.push(name);
+    if (throws) throw new Error(`${name} down`);
+    return result;
+  };
+
+  // Copilot succeeds: Anthropic's try* must never run.
+  let calls = [];
+  let r = await classifyWithFallback(fallback, {
     hasCopilot: true,
-    tryCopilot: async () => copilotResult,
+    tryCopilot: stub(calls, "copilot", { result: { provider: "copilot" } }),
     hasAnthropic: true,
-    tryAnthropic: async () => { throw new Error("must not be called"); },
+    tryAnthropic: stub(calls, "anthropic", { result: { provider: "anthropic" } }),
   });
-  assert.equal(r, copilotResult);
-});
+  assert.deepEqual(calls, ["copilot"]);
+  assert.equal(r.provider, "copilot");
 
-test("classifyWithFallback falls through Copilot -> Anthropic -> heuristic in order", async () => {
-  const fallback = { provider: "heuristic" };
-  const anthropicResult = { provider: "anthropic" };
-
-  const r1 = await classifyWithFallback(fallback, {
+  // Copilot fails, Anthropic succeeds.
+  calls = [];
+  r = await classifyWithFallback(fallback, {
     hasCopilot: true,
-    tryCopilot: async () => { throw new Error("copilot down"); },
+    tryCopilot: stub(calls, "copilot", { throws: true }),
     hasAnthropic: true,
-    tryAnthropic: async () => anthropicResult,
+    tryAnthropic: stub(calls, "anthropic", { result: { provider: "anthropic" } }),
   });
-  assert.equal(r1, anthropicResult);
+  assert.deepEqual(calls, ["copilot", "anthropic"]);
+  assert.equal(r.provider, "anthropic");
 
-  const r2 = await classifyWithFallback(fallback, {
-    hasCopilot: true,
-    tryCopilot: async () => { throw new Error("copilot down"); },
-    hasAnthropic: true,
-    tryAnthropic: async () => { throw new Error("anthropic down"); },
-  });
-  assert.equal(r2, fallback);
-});
-
-test("classifyWithFallback skips a provider whose token/key is absent rather than calling it", async () => {
-  const fallback = { provider: "heuristic" };
-  const anthropicResult = { provider: "anthropic" };
-  const r = await classifyWithFallback(fallback, {
+  // No Copilot token: its try* must never run, only Anthropic's does.
+  calls = [];
+  r = await classifyWithFallback(fallback, {
     hasCopilot: false,
-    tryCopilot: async () => { throw new Error("must not be called") },
+    tryCopilot: stub(calls, "copilot", { result: { provider: "copilot" } }),
     hasAnthropic: true,
-    tryAnthropic: async () => anthropicResult,
+    tryAnthropic: stub(calls, "anthropic", { result: { provider: "anthropic" } }),
   });
-  assert.equal(r, anthropicResult);
+  assert.deepEqual(calls, ["anthropic"]);
+  assert.equal(r.provider, "anthropic");
 
-  const r2 = await classifyWithFallback(fallback, {
+  // Neither token/key present: neither try* runs; the heuristic fallback is returned as-is.
+  calls = [];
+  r = await classifyWithFallback(fallback, {
     hasCopilot: false,
-    tryCopilot: async () => { throw new Error("must not be called") },
+    tryCopilot: stub(calls, "copilot", { result: { provider: "copilot" } }),
     hasAnthropic: false,
-    tryAnthropic: async () => { throw new Error("must not be called") },
+    tryAnthropic: stub(calls, "anthropic", { result: { provider: "anthropic" } }),
   });
-  assert.equal(r2, fallback);
+  assert.deepEqual(calls, []);
+  assert.equal(r, fallback);
+
+  // Both present but both fail: falls through to the heuristic fallback, having tried both.
+  calls = [];
+  r = await classifyWithFallback(fallback, {
+    hasCopilot: true,
+    tryCopilot: stub(calls, "copilot", { throws: true }),
+    hasAnthropic: true,
+    tryAnthropic: stub(calls, "anthropic", { throws: true }),
+  });
+  assert.deepEqual(calls, ["copilot", "anthropic"]);
+  assert.equal(r, fallback);
 });

@@ -158,6 +158,18 @@ export function normalise(raw, fallback, openNumbers, provider) {
 }
 
 /**
+ * Wraps a model/Copilot reply through `normalise`, throwing when nothing in
+ * it was actually usable (`source` stayed "heuristic" — valid JSON, but no
+ * field matched its vocabulary) so `classifyWithFallback` moves on to the
+ * next provider instead of silently accepting a no-op "success".
+ */
+export function normaliseOrThrow(raw, fallback, openNumbers, provider) {
+ const c = normalise(raw, fallback, openNumbers, provider);
+ if (c.source !== "model") throw new Error(`${provider} reply had no usable classification field`);
+ return c;
+}
+
+/**
  * Existing maintainer labels win; the classifier only fills missing dimensions.
  * A maintainer-set type, area, priority, *or state* label always overrides the
  * classifier's own guess for that dimension.
@@ -172,7 +184,7 @@ export function normalise(raw, fallback, openNumbers, provider) {
  * maintainer's type override makes the model's route choice wrong.
  */
 export function mergeWithExisting(classification, existingLabels, options = {}) {
- const { botLabels = [], specRelated = false } = options;
+ const { botLabels = [], specRelated = false, bodyLen = 0 } = options;
  const botLower = new Set(botLabels.map((l) => l.toLowerCase()));
  const maintainerLabels = existingLabels.filter((l) => !botLower.has(l.toLowerCase()));
  const maintainerByLower = new Map(maintainerLabels.map((l) => [l.toLowerCase(), l]));
@@ -209,6 +221,15 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
   result.route = "none";
  } else if (result.source !== "model" && ["bug", "chore"].includes(result.type)) {
   result.route = specRelated ? "converge" : "none";
+ } else if (result.source !== "model" && ["feature", "enhancement"].includes(result.type)) {
+  // Same reasoning as the bug/chore branch above: the heuristic (unlike a
+  // model that actually read the issue) cannot tell scope apart from a
+  // keyword match, so a maintainer-relabelled (or originally heuristic)
+  // feature/enhancement gets heuristicClassify's own route — and, unless a
+  // maintainer set the state label explicitly, its own thin-body check too,
+  // instead of carrying over a route/state derived under the old type.
+  result.route = specRelated ? "converge" : "specify";
+  if (!existingState) result.state = bodyLen < 40 ? "needs-info" : "ready-for-agent";
  }
  // A route only ever means something once a decision has actually been
  // made to route it: force it to "none" for needs-info/needs-triage (truly
@@ -241,7 +262,8 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
 
 /** Strips markdown/auto-reference hazards from untrusted model/heuristic text (rationale or a pickup note). */
 export function sanitizeRationale(text) {
- return text.replaceAll("`", "'").replaceAll(/\r?\n/g, " ").trim();
+ // Collapse every line terminator (a lone \r also ends a paragraph in CommonMark) and drop control characters.
+ return text.replaceAll("`", "'").replaceAll(/[\r\n\u2028\u2029]+/g, " ").replaceAll(/[\u0000-\u001f\u007f]/g, "").trim();
 }
 
 // Converge's fallback target when the issue carries no `spec:NNN` label.
@@ -418,7 +440,7 @@ async function callModel(apiKey, issue, openIssues) {
  * this array directly, so nothing here is ever shell-interpreted.
  */
 export function buildCopilotArgs(prompt, model) {
- const args = ["-p", prompt, "-s", "--no-ask-user", "--deny-tool", "shell,read,write,url,memory"];
+ const args = ["-p", prompt, "-s", "--no-ask-user", "--deny-tool", "shell,read,write,url,memory", "--disable-builtin-mcps"];
  if (model) args.push("--model", model);
  return args;
 }
@@ -565,11 +587,13 @@ async function main() {
  if (!copilotToken && !apiKey) console.log("No classifier token/key is set; using the keyword heuristic.");
  const classification = await classifyWithFallback(fallback, {
   hasCopilot: Boolean(copilotToken),
-  tryCopilot: async () => normalise(await callCopilot(copilotToken, issue, openIssues), fallback, openNumbers, "copilot"),
+  tryCopilot: async () => normaliseOrThrow(await callCopilot(copilotToken, issue, openIssues), fallback, openNumbers, "copilot"),
   hasAnthropic: Boolean(apiKey),
-  tryAnthropic: async () => normalise(await callModel(apiKey, issue, openIssues), fallback, openNumbers, "anthropic"),
+  tryAnthropic: async () => normaliseOrThrow(await callModel(apiKey, issue, openIssues), fallback, openNumbers, "anthropic"),
  });
- const merged = mergeWithExisting(classification, existingLabels, { botLabels, specRelated: isSpecRelated(issue) });
+ const merged = mergeWithExisting(classification, existingLabels, {
+  botLabels, specRelated: isSpecRelated(issue), bodyLen: (issue.body ?? "").trim().length,
+ });
  const featureDirectory = resolveFeatureDirectory(merged.route, existingLabels, listSpecsDirs());
  const comment = renderComment(merged, issue, featureDirectory);
  console.log(JSON.stringify(merged, null, 2));
