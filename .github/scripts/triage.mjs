@@ -166,20 +166,20 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
  if (existingPriority) result.priority = existingPriority;
 
  // A maintainer-chosen type can make the route wrong; re-derive it. Docs,
- // questions and spikes never need a spec. For bug/chore/design the model has
- // read the body and can tell a multi-file rename or an icon set wired into the
- // Electron build (spec work) from a one-line fix, so its route stands; the
- // keyword heuristic cannot tell, so it stays conservative unless the text
- // references the spec.
+ // questions and spikes never need a spec. A model classification has read
+ // the issue body and can tell a multi-file rename or an icon set wired
+ // into the Electron build (spec work) from a one-line fix, so a
+ // model-sourced route stands even under a maintainer-overridden
+ // bug/chore/design type. The keyword heuristic cannot make that judgment
+ // call, so a non-model classification is re-derived exactly as
+ // heuristicClassify itself would: design never gets spec work; bug/chore
+ // go converge when the text references the existing spec, none otherwise.
  if (["documentation", "question", "spike"].includes(result.type)) {
   result.route = "none";
- } else if (
-  result.source !== "model" &&
-  ["bug", "chore", "design"].includes(result.type) &&
-  result.route === "specify" &&
-  !specRelated
- ) {
+ } else if (result.source !== "model" && result.type === "design") {
   result.route = "none";
+ } else if (result.source !== "model" && ["bug", "chore"].includes(result.type)) {
+  result.route = specRelated ? "converge" : "none";
  }
  // Prep only ever runs for a ready-for-agent issue; never advertise or route
  // spec work for anything else (needs-info, needs-triage, ready-for-human).
@@ -187,9 +187,16 @@ export function mergeWithExisting(classification, existingLabels, options = {}) 
 
  const wanted = [result.type, result.area, result.priority, result.state, TRIAGED_LABEL].filter(Boolean);
  result.labelsToAdd = wanted.filter((l) => !existingByLower.has(l.toLowerCase()));
- // State labels are mutually exclusive: drop any other state label still on
- // the issue from an earlier run (preserving its real casing for removal).
- result.labelsToRemove = STATES.filter((s) => s !== result.state && existingByLower.has(s)).map((s) => existingByLower.get(s));
+ // Every classification dimension is exclusive (one type, one area, one
+ // priority, one state): drop any other vocabulary label still on the
+ // issue from an earlier run, but only when the bot itself applied it —
+ // never a label a maintainer set, which stays untouched even if it
+ // disagrees with this run's result (preserving its real casing for
+ // removal).
+ const wantedLower = new Set(wanted.map((l) => l.toLowerCase()));
+ result.labelsToRemove = [...TYPES, ...AREAS, ...PRIORITIES, ...STATES]
+  .filter((v) => botLower.has(v) && existingByLower.has(v) && !wantedLower.has(v))
+  .map((v) => existingByLower.get(v));
  // Record only the labels this run actually attributes to the bot: type/area/
  // priority inherited from a maintainer override are explicitly excluded so
  // a future run keeps recognising them as maintainer-owned.

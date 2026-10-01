@@ -241,9 +241,10 @@ first live run)
   invocations.
 - **FR-032**: The guard MUST reject, independent of git state (which the agent's own checkout
   could have manipulated): any symlink; any path containing a `..` segment or a leading `/`; any
-  file over 1 MiB; more than 300 total files; and anything that is not a regular file matching
-  `specs/<NNN-kebab-name>/**/*.md` or `docs/**/*.md` — closing the gap where a bare `docs/**`
-  allowlist would have covered runnable code (`docs/spike/*.mjs`, `*.ts`).
+  file over 1 MiB; more than 2000 total entries (the whole specs/+docs/ tree is uploaded, not a
+  diff); and anything that is not a regular file matching `specs/<NNN-kebab-name>/**/*.md` or
+  `docs/**/*.md` — closing the gap where a bare `docs/**` allowlist would have covered runnable
+  code (`docs/spike/*.mjs`, `*.ts`).
 - **FR-033**: `trusted` MUST require both the issue author's `author_association` being one of
   `OWNER`/`MEMBER`/`COLLABORATOR` *and* a live repository-permission check reporting
   `admin`/`maintain`/`write` (an `OWNER` author is exempt from the live check); any error from that
@@ -254,8 +255,9 @@ first live run)
   every gating condition in FR-018/FR-033 actually holds.
 - **FR-035**: A `force` re-triage MUST distinguish labels the bot itself previously applied (from a
   hidden JSON marker in its own comment) from maintainer-set labels, never treating its own prior
-  output as a maintainer's pin; and MUST remove a stale state label when the state changes, since
-  the four state labels are mutually exclusive.
+  output as a maintainer's pin; and MUST remove every other bot-owned label in a dimension
+  (type/area/priority/state) that the new result disagrees with, not only a stale state label,
+  since every dimension is mutually exclusive.
 - **FR-036**: Issue title/body text exported for the prep agent MUST be wrapped between two
   randomly-nonced fence marker lines and explicitly labelled as untrusted data, and MUST NOT be
   passed as a literal shell argument to any Spec Kit script.
@@ -264,6 +266,33 @@ first live run)
   plain command-line argument.
 - **FR-038**: Every third-party GitHub Action this workflow uses MUST be pinned to a full commit
   SHA, not a moving tag, kept current by a Dependabot `github-actions` ecosystem configuration.
+
+**Hardening round 2** (added after a second independent security and code review of the round-1
+hardening above, still before stage 2's first live run)
+
+- **FR-039**: `publish` MUST always create the `triage/issue-<N>` branch fresh from the default
+  branch it just checked out, MUST NOT reuse a previous run's branch tip as the working tree (a
+  plain `git switch` to that tip aborts whenever a second run's guarded output touches the same
+  lines the previous run's commit did), and MUST push with a compare-and-swap
+  (`git push --force-with-lease`) leased against the branch's actual current remote SHA.
+- **FR-040**: The resolved converge feature directory MUST be delivered to the prep agent through
+  its own prompt text, not only an environment variable, since the agent's shell access cannot
+  read its own process environment.
+- **FR-041**: When a converge-routed issue carries no `spec:NNN` label, System MUST fall back to
+  `specs/001-core-session-workspace` if that directory exists, else leave the feature directory
+  unresolved rather than guessing one.
+- **FR-042**: The resolved feature directory MUST only ever be computed and emitted for
+  `speckit_route: converge`; a `specify` run MUST NOT receive one.
+- **FR-043**: All three `actions/checkout` steps MUST pin `ref:` to the repository's actual default
+  branch, so a `workflow_dispatch` invoked from a non-default ref cannot substitute an untrusted
+  reference tree.
+- **FR-044**: `notify-failure` MUST also fire when `prep-agent` or `publish` is cancelled, not only
+  when either fails.
+- **FR-045**: When a maintainer overrides the type to `bug` or `chore` on a non-model
+  classification, System MUST re-derive `speckit_route` exactly as the deterministic heuristic
+  itself would (`converge` if the issue text is spec-related, `none` otherwise) rather than leaving
+  a stale route value; a model classification's own route MUST stand, since only the model read
+  the issue body to judge scope.
 
 ### Key Entities
 

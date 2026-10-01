@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyEntry, findViolations } from "./prep-guard.mjs";
+import { classifyEntry, findViolations, resolveFeatureDirectory } from "./prep-guard.mjs";
 import {
   heuristicClassify,
   isSpecRelated,
@@ -8,9 +8,12 @@ import {
   normalise,
   parseMarker,
   parseModelJson,
+  PRIORITIES,
   renderComment,
   renderMarker,
   sanitizeRationale,
+  STATES,
+  TYPES,
 } from "./triage.mjs";
 
 const issue = (title, body = "A sufficiently long description of the requested change goes here.", extra = {}) => ({
@@ -88,10 +91,10 @@ test("needs-info always forces route to none even when the model suggested one",
   assert.equal(mergeWithExisting(model, []).route, "none");
 });
 
-test("a maintainer-set bug/chore type cancels a specify route unless the text is spec-related", () => {
+test("a maintainer-set bug/chore type re-derives the route exactly like the heuristic would (converge if spec-related, none otherwise)", () => {
   const model = { type: "enhancement", area: null, priority: "p2", state: "ready-for-agent", route: "specify" };
   assert.equal(mergeWithExisting(model, ["bug"], { specRelated: false }).route, "none");
-  assert.equal(mergeWithExisting(model, ["bug"], { specRelated: true }).route, "specify");
+  assert.equal(mergeWithExisting(model, ["bug"], { specRelated: true }).route, "converge");
 });
 
 test("a model-chosen specify route survives a maintainer chore/design type; the heuristic's does not", () => {
@@ -106,23 +109,49 @@ test("a model-chosen specify route survives a maintainer chore/design type; the 
   assert.equal(docs.route, "none");
 });
 
-test("force re-triage ignores the bot's own prior labels and clears the stale state label", () => {
+test("force re-triage ignores the bot's own prior labels and clears every stale bot-owned label", () => {
   const priorBotLabels = ["bug", "p1", "ready-for-human", "triaged"];
   const existingLabels = [...priorBotLabels];
-  // This run's fresh classification disagrees with the bot's own earlier guess.
+  // This run's fresh classification disagrees with the bot's own earlier guess
+  // on every dimension (type, priority, state), not just state.
   const classification = { type: "enhancement", area: null, priority: "p2", state: "ready-for-agent", route: "specify" };
   const m = mergeWithExisting(classification, existingLabels, { botLabels: priorBotLabels });
   // Not overridden back to "bug"/"p1": those were the bot's own labels, not a maintainer's.
   assert.equal(m.type, "enhancement");
   assert.equal(m.priority, "p2");
-  // The stale state label is queued for removal since state labels are exclusive.
-  assert.deepEqual(m.labelsToRemove, ["ready-for-human"]);
+  // Every stale bot-owned label this run disagrees with is queued for removal.
+  assert.deepEqual(m.labelsToRemove.sort(), ["bug", "p1", "ready-for-human"].sort());
   assert.ok(m.labelsToAdd.includes("ready-for-agent"));
+});
+
+test("two consecutive runs converge to exactly one type/priority/state label each", () => {
+  const run1 = mergeWithExisting(
+    { type: "bug", area: null, priority: "p1", state: "ready-for-human", route: "none" },
+    [],
+    { botLabels: [] },
+  );
+  const labelsAfterRun1 = run1.labelsToAdd;
+  assert.deepEqual(labelsAfterRun1.sort(), ["bug", "p1", "ready-for-human", "triaged"].sort());
+
+  const run2 = mergeWithExisting(
+    { type: "enhancement", area: null, priority: "p2", state: "ready-for-agent", route: "specify" },
+    labelsAfterRun1,
+    { botLabels: run1.botLabels },
+  );
+  assert.deepEqual(run2.labelsToRemove.sort(), ["bug", "p1", "ready-for-human"].sort());
+  assert.deepEqual(run2.labelsToAdd.sort(), ["enhancement", "p2", "ready-for-agent"].sort());
+
+  const finalLabels = new Set([...labelsAfterRun1, ...run2.labelsToAdd].filter((l) => !run2.labelsToRemove.includes(l)));
+  assert.equal([...finalLabels].filter((l) => TYPES.includes(l)).length, 1);
+  assert.equal([...finalLabels].filter((l) => PRIORITIES.includes(l)).length, 1);
+  assert.equal([...finalLabels].filter((l) => STATES.includes(l)).length, 1);
 });
 
 test("maintainer label matching is case-insensitive but removal keeps the real label casing", () => {
   const classification = { type: "enhancement", area: null, priority: "p2", state: "needs-triage", route: "none" };
-  const m = mergeWithExisting(classification, ["Bug", "Needs-Info"]);
+  // "Needs-Info" is bot-owned (from a prior marker); "Bug" is not, so it wins
+  // as a maintainer override and is never queued for removal.
+  const m = mergeWithExisting(classification, ["Bug", "Needs-Info"], { botLabels: ["needs-info"] });
   assert.equal(m.type, "bug");
   assert.deepEqual(m.labelsToRemove, ["Needs-Info"]);
 });
@@ -216,4 +245,31 @@ test("findViolations rejects code, workflows, traversal, and absolute paths", ()
 
 test("findViolations accepts spec and docs markdown changes", () => {
   assert.deepEqual(findViolations(["specs/002-issue-triage-automation/spec.md", "docs/a.md"]), []);
+});
+
+test("resolveFeatureDirectory only ever resolves for the converge route", () => {
+  assert.equal(resolveFeatureDirectory("specify", ["spec:002"], ["002-issue-triage-automation"]), null);
+  assert.equal(resolveFeatureDirectory("none", [], ["001-core-session-workspace"]), null);
+});
+
+test("resolveFeatureDirectory maps a spec:NNN label to its existing directory", () => {
+  assert.equal(
+    resolveFeatureDirectory("converge", ["spec:002"], ["001-core-session-workspace", "002-issue-triage-automation"]),
+    "specs/002-issue-triage-automation",
+  );
+});
+
+test("resolveFeatureDirectory returns null for a spec:NNN label with no matching directory", () => {
+  assert.equal(resolveFeatureDirectory("converge", ["spec:999"], ["001-core-session-workspace"]), null);
+});
+
+test("resolveFeatureDirectory falls back to the default feature when no spec:NNN label is present", () => {
+  assert.equal(
+    resolveFeatureDirectory("converge", ["bug"], ["001-core-session-workspace", "002-issue-triage-automation"]),
+    "specs/001-core-session-workspace",
+  );
+});
+
+test("resolveFeatureDirectory returns null when there is no label and no default feature to fall back to", () => {
+  assert.equal(resolveFeatureDirectory("converge", [], ["002-issue-triage-automation"]), null);
 });

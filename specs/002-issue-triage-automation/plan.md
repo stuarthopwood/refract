@@ -20,11 +20,16 @@ holds a write-capable token: `prep-agent` (`contents: read` only, no git, no `GH
 script rules, and uploads the resulting `specs/`+`docs/` tree as an artifact; `publish`
 (`contents: write`, `issues: write`, `pull-requests: write`) downloads that artifact, runs the
 deterministic guard (`prep-guard.mjs apply`) against a fresh, known-good default-branch checkout
-*before* switching branches, commits only the files that pass, pushes to `triage/issue-<N>` using a
-step-scoped git credential, and opens (or reuses) a draft PR — or comments a compare link if PR
-creation is disabled. A `notify-failure` job comments a link to the run if `prep-agent` or
-`publish` fails. `trusted` requires both `author_association` and a live collaborator-permission
-check, failing closed on error.
+before any branch exists, commits only the files that pass, then **always creates
+`triage/issue-<N>` fresh** from that checkout (never by switching onto a previous run's branch
+tip, which would make a plain `git switch` try to reconcile the guard's output against whatever
+that branch already had and abort on a second run) and pushes with a compare-and-swap
+(`git push --force-with-lease`, leased against the branch's real remote SHA), opening (or reusing)
+a draft PR — or commenting a compare link if PR creation is disabled. A `notify-failure` job
+comments a link to the run if `prep-agent` or `publish` fails or is cancelled. `trusted` requires
+both `author_association` and a live collaborator-permission check, failing closed on error. All
+three checkouts pin `ref:` to the repository's actual default branch rather than the triggering
+event's ref.
 
 ## Technical Context
 
@@ -45,15 +50,19 @@ requests) plus two short-lived (`retention-days: 1`) workflow artifacts (`issue-
 persisted beyond a run.
 
 **Testing**: `actionlint` against `issue-triage.yml` (exit 0); `node --test
-.github/scripts/triage.test.mjs` (29 deterministic unit tests covering the classifier, the
-maintainer/bot-label merge logic, the marker JSON helpers, rationale sanitising, and the guard's
-`classifyEntry`/`findViolations`); a manual smoke run of `prep-guard.mjs apply` against a scratch
-directory simulating an unchanged pre-existing non-markdown file (silently skipped) and a modified
-one (rejected). Live `workflow_dispatch` dispatch of the heuristic path against throwaway issue #90
-for stage 1 (the model-path run and issue #91 are still pending). Stage 2 cannot be exercised live
-until `ANTHROPIC_API_KEY` is added as a repository secret, so for now it is verified only by
-`actionlint`, the unit tests, and the `prep-guard.mjs apply` smoke run — it must be correct by
-construction.
+.github/scripts/triage.test.mjs` (36 deterministic unit tests covering the classifier, the
+maintainer/bot-label merge logic including multi-run label convergence, the marker JSON helpers,
+rationale sanitising, `resolveFeatureDirectory`, and the guard's `classifyEntry`/`findViolations`);
+a manual smoke run of `prep-guard.mjs apply` against a scratch directory simulating an unchanged
+pre-existing non-markdown file (silently skipped) and a modified one (rejected); a manual smoke
+run of the `publish` job's branch/push logic against a real throwaway git remote, confirming a
+first run's plain push, a second run's `git ls-remote`-leased `--force-with-lease` push cleanly
+replacing the first run's commit even when both touch the same file, and a genuine `ls-remote`
+failure being distinguished from "branch absent". Live `workflow_dispatch` dispatch of the
+heuristic path against throwaway issue #90 for stage 1 (the model-path run and issue #91 are still
+pending). Stage 2 cannot be exercised live until `ANTHROPIC_API_KEY` is added as a repository
+secret, so for now it is verified only by `actionlint`, the unit tests, and the smoke runs above —
+it must be correct by construction.
 
 **Target Platform**: GitHub Actions `ubuntu-latest` hosted runner.
 

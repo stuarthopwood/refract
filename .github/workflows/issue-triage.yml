@@ -36,10 +36,13 @@ jobs:
       issue_number: ${{ steps.triage.outputs.issue_number }}
       feature_directory: ${{ steps.export.outputs.feature_directory }}
     steps:
-      # Issue events run on the default branch, so the scripts below are the
-      # reviewed ones, never something an agent run could have altered.
+      # Issue events normally run on the default branch, but `workflow_dispatch`
+      # can be invoked from any ref, so the default-branch ref is pinned
+      # explicitly rather than assumed — this is the trusted reference tree
+      # every script below is reviewed against.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -67,6 +70,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ steps.triage.outputs.issue_number }}
+          # Gates feature_directory resolution: only a converge run ever gets
+          # one (a specify run creates its own new feature and must not).
+          ROUTE: ${{ steps.triage.outputs.route }}
         run: node .github/scripts/prep-guard.mjs export
       - name: Upload the issue export
         if: steps.triage.outputs.prep == 'true'
@@ -94,13 +100,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      # No `ref:` — on `issues`/`workflow_dispatch` this checks out the
-      # default branch. It never starts from an existing triage/issue-<N>
-      # branch, whose .omp/commands, .specify/scripts, CLAUDE.md, or
-      # .claude/settings.json a previous (agent-influenced) run could have
-      # rewritten.
+      # The default-branch ref is pinned explicitly (not assumed from the
+      # trigger event), and this never starts from an existing
+      # triage/issue-<N> branch, whose .omp/commands, .specify/scripts,
+      # CLAUDE.md, or .claude/settings.json a previous (agent-influenced) run
+      # could have rewritten.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -114,14 +121,17 @@ jobs:
         uses: anthropics/claude-code-action@12dd8d74c712f5f3669365b2369b558c495b1104 # v1
         env:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
-          # Only meaningful for the converge route: names the existing
-          # feature directory (resolved in the triage job from the issue's
-          # `spec:NNN` label) so Spec Kit's scripts find it without ever
-          # committing the gitignored .specify/feature.json. The specify
-          # route needs nothing here: create-new-feature.ps1 writes
-          # .specify/feature.json itself for the rest of this job's own
-          # Spec Kit script invocations; it is never part of what gets
-          # uploaded or published (see docs/issue-triage.md).
+          # Only meaningful for the converge route, and only for the
+          # underlying Spec Kit PowerShell scripts (common.ps1's own
+          # explicit-override resolution) — the agent itself cannot read
+          # this env var (its shell access is limited to specific script
+          # invocations, not a general shell), so the same value is also
+          # given to it directly as FEATURE_DIRECTORY in the prompt text
+          # below. Either way this never commits the gitignored
+          # .specify/feature.json: for specify, create-new-feature.ps1
+          # writes that file itself for the rest of this job's own Spec Kit
+          # script invocations, and it is never part of what gets uploaded
+          # or published (see docs/issue-triage.md).
           SPECIFY_FEATURE_DIRECTORY: ${{ needs.triage.outputs.feature_directory }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -134,6 +144,7 @@ jobs:
             Read .github/triage/prompt.md and follow it exactly.
             ROUTE=${{ needs.triage.outputs.route }}
             ISSUE_FILE=.triage/issue-${{ needs.triage.outputs.issue_number }}.md
+            FEATURE_DIRECTORY=${{ needs.triage.outputs.feature_directory }}
           claude_args: >-
             --max-turns 80
             --allowedTools "Read(./**),Glob,Grep,Edit(specs/**),Edit(docs/**),Bash(pwsh .specify/scripts/powershell/create-new-feature.ps1 *),Bash(pwsh .specify/scripts/powershell/setup-plan.ps1 *),Bash(pwsh .specify/scripts/powershell/setup-tasks.ps1 *),Bash(pwsh .specify/scripts/powershell/check-prerequisites.ps1 *),Bash(pwsh .specify/scripts/powershell/resolve-template.ps1 *)"
@@ -169,11 +180,12 @@ jobs:
       BRANCH: triage/issue-${{ needs.triage.outputs.issue_number }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      # A fresh checkout of the default branch — trusted scripts, and the
-      # reference tree the guard below diffs against. Never the agent's own
-      # checkout from `prep-agent`.
+      # A fresh checkout of the default branch (ref pinned explicitly, not
+      # assumed) — trusted scripts, and the reference tree the guard below
+      # diffs against. Never the agent's own checkout from `prep-agent`.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -183,35 +195,24 @@ jobs:
         with:
           name: prep-output
           path: ${{ runner.temp }}/prep-output
-      # Validates and copies into the working tree *before* any branch
-      # switch, while the tree is still the known-good default branch. This
-      # has to happen in this order: if an existing triage/issue-<N> branch
-      # were checked out first, the guard's "is this file unchanged from a
-      # trusted copy" check (which lets the whole-tree upload above through)
-      # would be comparing against that branch's own tree — which a prior,
-      # agent-influenced run could have tampered with — instead of main's.
+      # Validates and copies into the working tree while it is still the
+      # known-good default-branch checkout, before any branch is created:
+      # the guard's "is this file unchanged from a trusted copy" check
+      # (which lets the whole-tree upload above through) must compare
+      # against this tree, never one a prior, agent-influenced run could
+      # have tampered with.
       - name: Apply the guarded prep output
         run: node .github/scripts/prep-guard.mjs apply "${{ runner.temp }}/prep-output"
-      - name: Create or switch to the prep branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0="http.https://github.com/${GITHUB_REPOSITORY}.git.extraheader"
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          git fetch --depth=1 origin "$BRANCH" || true
-          if git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" > /dev/null; then
-            # Reuses the existing branch so a second prep run for the same
-            # issue adds to it rather than starting over. The guard output
-            # already applied above carries forward as working-tree changes;
-            # if the same lines were also touched on a previous run for this
-            # issue, git reports a merge conflict here and the step fails
-            # loudly instead of silently discarding either version.
-            git switch -c "$BRANCH" "origin/$BRANCH"
-          else
-            git switch -c "$BRANCH"
-          fi
+      # Always branches fresh from the default-branch checkout above, never
+      # from a previous run's triage/issue-<N> tip: reusing that tip via
+      # `git switch -c "$BRANCH" "origin/$BRANCH"` does not work, because
+      # `git switch` does a checkout, not a merge, and aborts whenever the
+      # already-applied guard output and the remote tip touch the same
+      # lines — which a second run for the same issue does by construction.
+      # Each run instead regenerates the branch from scratch and replaces
+      # whatever was pushed before (see the force-with-lease push below).
+      - name: Create the prep branch
+        run: git switch -c "$BRANCH"
       - name: Commit and push the prep branch
         id: push
         env:
@@ -225,10 +226,33 @@ jobs:
           fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -m "Spec prep for #${ISSUE_NUMBER} (/speckit.${ROUTE})"
+
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0="http.https://github.com/${GITHUB_REPOSITORY}.git.extraheader"
           export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          git -c core.hooksPath=/dev/null push origin "HEAD:refs/heads/$BRANCH"
+
+          # ls-remote first so the push is a compare-and-swap
+          # (force-with-lease) against the branch's actual current tip,
+          # never a blind force push: exit 0 = branch exists (lease against
+          # its sha, fetched just before); exit 2 = branch absent (plain
+          # push, nothing to race); any other exit is a real ls-remote
+          # failure and must stop the step rather than silently fall
+          # through.
+          set +e
+          LS_OUT="$(git ls-remote --exit-code --heads origin "$BRANCH" 2>&1)"
+          LS_RC=$?
+          set -e
+          if [ "$LS_RC" -eq 0 ]; then
+            REMOTE_SHA="$(printf '%s' "$LS_OUT" | awk '{print $1}')"
+            git fetch --depth=1 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+            git -c core.hooksPath=/dev/null push --force-with-lease="refs/heads/$BRANCH:${REMOTE_SHA}" origin "HEAD:refs/heads/$BRANCH"
+          elif [ "$LS_RC" -eq 2 ]; then
+            git -c core.hooksPath=/dev/null push origin "HEAD:refs/heads/$BRANCH"
+          else
+            echo "::error::git ls-remote failed unexpectedly (exit $LS_RC) while checking for an existing $BRANCH" >&2
+            echo "$LS_OUT" >&2
+            exit 1
+          fi
           echo "changed=true" >> "$GITHUB_OUTPUT"
       - name: Open a draft pull request and report
         env:
@@ -272,7 +296,8 @@ jobs:
     if: >-
       always() &&
       needs.triage.outputs.prep == 'true' &&
-      (needs.prep-agent.result == 'failure' || needs.publish.result == 'failure')
+      (contains(fromJSON('["failure","cancelled"]'), needs.prep-agent.result) ||
+       contains(fromJSON('["failure","cancelled"]'), needs.publish.result))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

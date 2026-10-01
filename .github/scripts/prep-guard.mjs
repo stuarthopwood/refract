@@ -1,8 +1,10 @@
 // Helpers for the triage `prep-agent` / `publish` jobs.
 //
-//   node prep-guard.mjs export        writes .triage/issue-<N>.md (untrusted issue
-//                                      text, nonce-fenced as data) plus a
-//                                      `feature_directory` GITHUB_OUTPUT for converge
+//   node prep-guard.mjs export        reads GITHUB_TOKEN/GITHUB_REPOSITORY/
+//                                      ISSUE_NUMBER/ROUTE; writes .triage/issue-<N>.md
+//                                      (untrusted issue text, nonce-fenced as data) plus
+//                                      a `feature_directory` GITHUB_OUTPUT, resolved
+//                                      only when ROUTE is "converge" (see FR-042)
 //   node prep-guard.mjs apply <dir>   validates <dir> (a downloaded `prep-output`
 //                                      artifact containing the agent's specs/+docs/
 //                                      tree) and copies only the files that are both
@@ -149,14 +151,27 @@ async function applyPrep(dir) {
  console.log(`Applied ${copied} changed file(s) out of ${entries.length} scanned.`);
 }
 
-/** Finds the `spec:NNN` label (if any) and maps it to an existing specs/NNN-* directory. */
-function resolveFeatureDirectory(labels) {
+// Converge's fallback target when the issue carries no `spec:NNN` label.
+const DEFAULT_CONVERGE_FEATURE = "001-core-session-workspace";
+
+/**
+ * Resolves the converge route's target feature directory. Pure and
+ * filesystem-free: `existingDirs` is the caller's directory listing, so this
+ * is unit-testable without touching disk. Returns `null` for anything other
+ * than `route === "converge"` (a specify run creates its own feature and
+ * must never be pointed at an existing one — see FR-042), when a
+ * `spec:NNN` label names a directory that does not exist, or when there is
+ * neither a label nor the default feature to fall back to.
+ */
+export function resolveFeatureDirectory(route, labels, existingDirs) {
+ if (route !== "converge") return null;
  const match = labels.map((l) => /^spec:(\d{3})$/.exec(l)).find(Boolean);
- if (!match) return null;
- const num = match[1];
- if (!existsSync("specs")) return null;
- const dir = readdirSync("specs", { withFileTypes: true }).find((d) => d.isDirectory() && d.name.startsWith(`${num}-`));
- return dir ? `specs/${dir.name}` : null;
+ if (match) {
+  const num = match[1];
+  const dir = existingDirs.find((d) => d.startsWith(`${num}-`));
+  return dir ? `specs/${dir}` : null;
+ }
+ return existingDirs.includes(DEFAULT_CONVERGE_FEATURE) ? `specs/${DEFAULT_CONVERGE_FEATURE}` : null;
 }
 
 async function exportIssue() {
@@ -201,7 +216,14 @@ async function exportIssue() {
 
  const outFile = process.env.GITHUB_OUTPUT;
  if (outFile) {
-  const featureDirectory = resolveFeatureDirectory(labels) ?? "";
+  const existingDirs = existsSync("specs")
+   ? readdirSync("specs", { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+   : [];
+  let featureDirectory = resolveFeatureDirectory(process.env.ROUTE, labels, existingDirs) ?? "";
+  // Defence in depth: this value flows into a workflow output and then into
+  // the agent's own prompt text, so re-validate its shape even though it is
+  // only ever derived from the real specs/ listing above.
+  if (featureDirectory && !/^specs\/\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(featureDirectory)) featureDirectory = "";
   appendFileSync(outFile, `feature_directory=${featureDirectory}\n`);
   console.log(`feature_directory=${featureDirectory}`);
  }

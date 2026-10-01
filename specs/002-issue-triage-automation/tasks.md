@@ -319,11 +319,62 @@ rationale behind each item.
       check (depends on T040-T055).
 - [ ] T057 Live-test: once `ANTHROPIC_API_KEY` is configured, run the corrected `prep-agent`/
       `publish`/`notify-failure` jobs end-to-end against a trusted, routable issue and confirm the
-      guard, branch reuse, and draft PR all behave as designed (depends on T044, T045, T046, T051).
+      guard, fresh branch creation, and draft PR all behave as designed (depends on T044, T045,
+      T046, T051).
 
-**Checkpoint**: Every Hardening finding has a corresponding fix in place and covered by the unit
-suite or `actionlint`; only the live end-to-end run (T057) remains, pending the
-`ANTHROPIC_API_KEY` secret — the same gap that already existed for T033.
+## Phase 9: Hardening round 2
+
+**Purpose**: A second independent security and code review of the Phase 8 hardening above found
+further issues before stage 2's first live run. This phase corrects them. See spec.md's Hardening
+round 2 FRs (FR-039 to FR-045) and `docs/issue-triage.md`'s Security notes.
+
+- [x] T058 `publish` always creates `triage/issue-<N>` fresh from its own default-branch checkout
+      (`git switch -c "$BRANCH"` with no start-point, never `"origin/$BRANCH"`) instead of
+      switching onto a previous run's branch tip, which aborted whenever the guard's freshly
+      applied output and the remote tip touched the same lines — a second run for the same issue
+      does that by construction. The push becomes a compare-and-swap: `git ls-remote --exit-code
+      --heads origin "$BRANCH"` first (exit 0 = exists, lease against its fetched SHA via `git
+      push --force-with-lease`; exit 2 = absent, plain push; any other exit stops the step with a
+      clear error instead of silently falling through) (depends on T044).
+- [x] T059 The resolved converge feature directory is passed to the prep agent through its own
+      `claude_args`/`prompt:` text (`FEATURE_DIRECTORY=...`), not only the `SPECIFY_FEATURE_DIRECTORY`
+      environment variable, since the agent's shell access is limited to specific script
+      invocations and it has no way to read its own process environment (depends on T042).
+- [x] T060 `prep-guard.mjs`'s feature-directory resolution becomes an exported pure function
+      `resolveFeatureDirectory(route, labels, existingDirs)`: `null` for anything but
+      `route === "converge"`; falls back to `specs/001-core-session-workspace` when no `spec:NNN`
+      label resolves and that directory exists; the triage job's export step gates it on `ROUTE`
+      and re-validates the result's shape before it ever reaches a workflow output (depends on
+      T027).
+- [x] T061 `.github/triage/prompt.md`'s `specify` route gives the exact
+      `create-new-feature.ps1 -Json -ShortName ... "..."` invocation and states the agent must not
+      `mkdir` or write `.specify/feature.json` itself; its `converge` route references
+      `FEATURE_DIRECTORY` directly instead of the unreadable environment variable (depends on
+      T004, T059).
+- [x] T062 All three `actions/checkout` steps pin `ref: ${{ github.event.repository.default_branch
+      }}` explicitly, so a `workflow_dispatch` invoked from a non-default ref cannot substitute an
+      untrusted reference tree (depends on T001, T041).
+- [x] T063 `mergeWithExisting`'s `labelsToRemove` spans every vocabulary category (type, area,
+      priority, state), not only state: any bot-owned label the new result disagrees with is
+      removed, while a maintainer-set label is always left alone. A two-run test confirms the
+      issue converges to exactly one label per dimension after a second, disagreeing run (depends
+      on T049).
+- [x] T064 A maintainer-set `bug`/`chore` type on a non-model classification re-derives
+      `speckit_route` to `converge` when the text is spec-related (previously it incorrectly left
+      the route unchanged at whatever the model had originally guessed); a model classification's
+      own route still stands untouched. Fixed the test that asserted the old, inconsistent
+      behaviour (depends on T048).
+- [x] T065 `notify-failure`'s `if:` also matches `cancelled`, not only `failure`, for both
+      `prep-agent` and `publish` (depends on T046).
+- [x] T066 Updated `docs/issue-triage.md` and this feature's `spec.md`/`plan.md`/`tasks.md` to
+      describe always-fresh force-with-lease publishing (replacing branch-tip reuse), the
+      `FEATURE_DIRECTORY` prompt-text delivery and default-feature fallback, the default-branch
+      `ref:` pin, and the generalised label-removal and route re-derivation rules (depends on
+      T058-T065).
+
+**Checkpoint**: Every Hardening round 2 finding has a corresponding fix in place and covered by
+the unit suite, a manual git smoke test, or `actionlint`; only the live end-to-end run (T057)
+remains, pending the `ANTHROPIC_API_KEY` secret.
 
 ## Dependencies & Execution Order
 
@@ -341,6 +392,8 @@ suite or `actionlint`; only the live end-to-end run (T057) remains, pending the
 - **Hardening (Phase 8)**: Depends on Polish (Phase 7) being complete; it corrects User Story 3's
   `prep` job (replacing it with `prep-agent`/`publish`/`notify-failure`) and User Story 1's
   trust/routing logic before stage 2's first live run.
+- **Hardening round 2 (Phase 9)**: Depends on Phase 8 being complete; a second review of that same
+  redesign before stage 2's first live run.
 
 ### User Story Dependencies
 
@@ -390,6 +443,8 @@ suite or `actionlint`; only the live end-to-end run (T057) remains, pending the
 6. Polish: `docs/issue-triage.md` written and `actionlint` passing (T037, T038); T039 remains.
 7. Hardening (T040-T056) implemented and covered by the unit suite and `actionlint` → the live
    end-to-end run (T057) remains, the same pending gap T033 always had.
+8. Hardening round 2 (T058-T066) implemented and covered by the unit suite, a manual git smoke
+   test of the always-fresh force-with-lease push, and `actionlint` → T057 remains the only gap.
 
 Each phase adds value without breaking the previous ones: US1 alone is already useful; US2 adds
 recoverability; US3 adds the draft-PR automation; US4 hardens US3 against untrusted/unready input.
