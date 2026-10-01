@@ -19,6 +19,8 @@
 - Q: When a session is renamed, what does "synced everywhere" cover? → A: The display name only. Every place that shows a session name reads that one value. The git branch and the worktree folder keep their original generated names for the life of the session, because OMP files conversations by the worktree folder path.
 - Q: What is a new session's display name before it is renamed? → A: The generated adjective-noun, as a starting label that is independent of the branch and folder from then on (no auto-titling from the first message; that stays backlog issue #11).
 - Q: Which lines does a session's hover tooltip show? → A: Status, time since last activity, repository, and branch; plus the model and thinking level while the agent is running, read live from the agent and not stored.
+- Q: Should Ctrl+Shift+X keep stopping the turn when its badges are removed from the Stop button? → A: Yes. Only the Ctrl, Shift, and X badges are removed; the shortcut keeps working.
+- Q: Settings and the command palette do not exist yet, so where can someone look the chord up in the meantime? → A: In a tooltip on the Stop button, shown on hover and on keyboard focus (no visual badge). The settings screen and command palette will list all shortcuts when they are built (backlog #4, #5, #6).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -178,7 +180,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-007**: Users MUST be able to send a message in a session and see the agent's reply appear progressively, including which tools the agent is running.
 - **FR-008**: Each tool call MUST render as one compact row naming the tool, its target, status, and duration; expanding a row MUST reveal its arguments and output, and a file-edit tool call's expanded row MUST show a diff of the change.
 - **FR-009**: The agent's reasoning MUST be hidden behind a collapsed "Thinking" row that the developer can expand; it MUST NOT be shown inline with the visible answer.
-- **FR-010**: Users MUST be able to stop a running turn, and MUST be able to send the next message as soon as the stop has taken effect.
+- **FR-010**: Users MUST be able to stop a running turn, and MUST be able to send the next message as soon as the stop has taken effect. The Stop button MUST NOT show the keyboard chord beside it; the chord (Ctrl+Shift+X) MUST keep stopping the turn, MUST be named in the Stop button's tooltip on hover and on keyboard focus, and MUST be listed in the settings screen and the command palette when those exist.
 - **FR-011**: Sending a message while a turn is running MUST queue it as a removable chip shown under the running turn; the queued message MUST be sent as the next turn once the running turn ends, unless the developer removes it first.
 - **FR-012**: A queued follow-up chip MUST offer a "Send now" action that steers the currently running turn with that message instead of waiting for the turn to end.
 - **FR-013**: Users MUST be able to start a new conversation in an open session; doing so MUST keep the same session and worktree, add the conversation that was current to that session's history, and make the new one current.
