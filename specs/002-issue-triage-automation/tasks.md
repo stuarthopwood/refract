@@ -112,7 +112,7 @@ correct labels and exactly one disclosure comment within the triggering run.
 - [ ] T018 [US1] Live-test (model path): with `ANTHROPIC_API_KEY` configured as a repository
       secret, dispatch against an eligible issue and confirm the Anthropic-classified labels and
       comment appear without disclosing a fallback (depends on T016).
-- [ ] T019 [US1] Live-test: dispatch the workflow against throwaway issue #91 ("logo/icon design")
+- [x] T019 [US1] Live-test: dispatch the workflow against throwaway issue #91 ("logo/icon design")
       and confirm it lands `design`/`p2` plus a state label and the disclosure comment (depends on
       T016).
 
@@ -135,7 +135,7 @@ updated in place.
 - [x] T021 [US2] In `.github/scripts/triage.mjs`, fail loudly (non-zero exit, readable error) when
       the resolved `ISSUE_NUMBER` does not resolve to an existing issue, via the issue loader's
       REST error handling (depends on T006).
-- [ ] T022 [US2] Live-test: re-dispatch the workflow against issue #90 or #91 (already triaged by
+- [x] T022 [US2] Live-test: re-dispatch the workflow against issue #90 or #91 (already triaged by
       T017/T019) with no `force` and confirm the triage comment is unchanged; re-dispatch with
       `force: true` and confirm that same comment updates (depends on T020, T017, T019).
 
