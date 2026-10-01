@@ -57,7 +57,7 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
     setResult(null)
     setLoading(true)
     let cancelled = false
-    void window.pinion.sessions.deleteCheck(session.id).then((response) => {
+    void window.refract.sessions.deleteCheck(session.id).then((response) => {
       if (cancelled) return
       setLoading(false)
       if (!response.ok) {
@@ -74,7 +74,7 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
   async function handleDelete(): Promise<void> {
     setDeleting(true)
     setError(null)
-    const response = await window.pinion.sessions.delete(session.id, { confirmed: true })
+    const response = await window.refract.sessions.delete(session.id, { confirmed: true })
     setDeleting(false)
     if (!response.ok) {
       setError(response.error.message)

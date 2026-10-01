@@ -1,6 +1,6 @@
 # Quickstart: verifying the core session workspace
 
-Pinion is a prototype with no automated tests. Each check below is a manual run of the app. Requirement and story numbers refer to [spec.md](spec.md); data and protocol details are in [data-model.md](data-model.md) and [contracts/](contracts/).
+Refract is a prototype with no automated tests. Each check below is a manual run of the app. Requirement and story numbers refer to [spec.md](spec.md); data and protocol details are in [data-model.md](data-model.md) and [contracts/](contracts/).
 
 ## Prerequisites
 
@@ -43,8 +43,8 @@ pnpm build        # must pass before a change lands on main
 
 **Story 4: restart the app (FR-022 to FR-024, SC-003, SC-006)**
 
-1. Have a two-message conversation, then kill Pinion from Task Manager (End task on the Pinion process).
-2. Expect: within 10 s no `omp.exe` started by Pinion remains (Job Object; check with `Get-Process omp`, ignoring your other sessions by parent pid).
+1. Have a two-message conversation, then kill Refract from Task Manager (End task on the Refract process).
+2. Expect: within 10 s no `omp.exe` started by Refract remains (Job Object; check with `Get-Process omp`, ignoring your other sessions by parent pid).
 3. Relaunch. Expect: the Session is listed and no agent is running. Open it: both messages are shown, and a follow-up that depends on them is answered correctly.
 4. Delete the Session's conversation file on disk, reopen the Session. Expect: a clear "conversation missing" message, not a blank chat.
 
@@ -72,7 +72,7 @@ pnpm build        # must pass before a change lands on main
 
 These OMP or platform facts are unverified and are checked before the work that depends on them:
 
-- `koffi` loads in Electron's main process and the Job Object kills a spawned child when Pinion is force-killed.
+- `koffi` loads in Electron's main process and the Job Object kills a spawned child when Refract is force-killed.
 - electron-vite's preload output runs with `sandbox: true`.
 - The `result.details` of a real `edit` tool call, to choose the diff source.
 - The signal for "OMP is signed in".

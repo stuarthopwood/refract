@@ -17,56 +17,56 @@ async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: s
     const result = await request
     if (result.ok) return result.value
     if (result.error.code === 'not-implemented') {
-      console.debug(`[pinion] ${label}: not implemented yet`)
+      console.debug(`[refract] ${label}: not implemented yet`)
       return fallback
     }
-    console.error(`[pinion] ${label}: ${result.error.code} ${result.error.message}`)
+    console.error(`[refract] ${label}: ${result.error.code} ${result.error.message}`)
     return fallback
   } catch (error) {
-    console.debug(`[pinion] ${label}: invoke failed (handler not registered yet)`, error)
+    console.debug(`[refract] ${label}: invoke failed (handler not registered yet)`, error)
     return fallback
   }
 }
 
-// Subscribes every store to its `window.pinion` event once, and loads initial data
+// Subscribes every store to its `window.refract` event once, and loads initial data
 // (`sessions.list`, `settings.get`, `repositories.list`). Call once from main.tsx.
 export function initStores(): void {
-  window.pinion.onSessionStatus((event) => {
+  window.refract.onSessionStatus((event) => {
     useSessionsStore.getState().applyStatus(event)
   })
-  window.pinion.onSessionListChanged(() => {
+  window.refract.onSessionListChanged(() => {
     void useSessionsStore.getState().refresh()
   })
-  window.pinion.onTranscriptPatch(({ sessionId, ops }) => {
+  window.refract.onTranscriptPatch(({ sessionId, ops }) => {
     useTranscriptStore.getState().applyOps(sessionId, ops)
   })
-  window.pinion.onQueueUpdate(({ sessionId, followUp, steering }) => {
+  window.refract.onQueueUpdate(({ sessionId, followUp, steering }) => {
     useQueueStore.getState().apply(sessionId, followUp, steering)
   })
-  window.pinion.onRequestPending(({ sessionId, request }) => {
+  window.refract.onRequestPending(({ sessionId, request }) => {
     usePendingRequestsStore.getState().add(sessionId, request)
   })
-  window.pinion.onRequestResolved(({ sessionId, requestId }) => {
+  window.refract.onRequestResolved(({ sessionId, requestId }) => {
     usePendingRequestsStore.getState().resolve(sessionId, requestId)
   })
-  window.pinion.onCommandsUpdate(({ sessionId, commands }) => {
+  window.refract.onCommandsUpdate(({ sessionId, commands }) => {
     useCommandsStore.getState().setForSession(sessionId, commands)
   })
-  window.pinion.onSettingsChanged((settings) => {
+  window.refract.onSettingsChanged((settings) => {
     useSettingsStore.getState().setSettings(settings)
   })
-  window.pinion.onUiOpenSession(({ sessionId }) => {
+  window.refract.onUiOpenSession(({ sessionId }) => {
     useSessionsStore.getState().setVisibleSessionId(sessionId)
   })
-  window.pinion.onMemoryWarning((warning) => {
+  window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })
 
   void (async () => {
     const [sessions, settings, repositories] = await Promise.all([
-      loadInitial(window.pinion.sessions.list(), [] as SessionSummary[], 'sessions.list'),
-      loadInitial(window.pinion.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
-      loadInitial(window.pinion.repositories.list(), [] as Repository[], 'repositories.list')
+      loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
+      loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
+      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
     ])
     useSessionsStore.getState().setSessions(sessions)
     useSettingsStore.getState().setSettings(settings)

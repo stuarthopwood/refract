@@ -1,4 +1,4 @@
-// Holds `registry.json`: every Repository and Session Pinion knows about (data-model.md
+// Holds `registry.json`: every Repository and Session Refract knows about (data-model.md
 // "registry.json"). Enforces the two uniqueness rules from data-model.md: `worktreePath` is
 // unique across all Sessions, and `branch` is unique within a Repository.
 

@@ -1,8 +1,8 @@
-// Tracks pids of running `omp` root processes across an app restart, so a fresh Pinion
+// Tracks pids of running `omp` root processes across an app restart, so a fresh Refract
 // process can detect and force-kill processes orphaned by a previous crash before it starts
 // spawning new ones. The Job Object in ./jobObject.ts is the primary line of defence (it kills
-// every descendant the instant Pinion's own process dies); this file is the fallback for the
-// case where Pinion itself was force-killed too abruptly for even that to run its course, or
+// every descendant the instant Refract's own process dies); this file is the fallback for the
+// case where Refract itself was force-killed too abruptly for even that to run its course, or
 // where the record simply predates a machine restart.
 //
 // No Windows FFI lives here (see jobObject.ts): process creation time, image name, and process

@@ -6,7 +6,7 @@
 
 ## Summary
 
-Build the first usable slice of Pinion: an Electron desktop app whose left pane lists Repositories and their Sessions (one git worktree each) and whose centre pane chats with the OMP coding agent. Each Session runs its own `omp --mode rpc-ui` child process in its worktree; Pinion normalises OMP's frame stream into a transcript, answers approvals and questions, queues follow-ups, reattaches saved Conversations after restarts, and keeps every agent inside a kill-on-close Windows Job Object. Design rationale and probe results are in [research.md](research.md); the two interface contracts are in [contracts/](contracts/).
+Build the first usable slice of Refract: an Electron desktop app whose left pane lists Repositories and their Sessions (one git worktree each) and whose centre pane chats with the OMP coding agent. Each Session runs its own `omp --mode rpc-ui` child process in its worktree; Refract normalises OMP's frame stream into a transcript, answers approvals and questions, queues follow-ups, reattaches saved Conversations after restarts, and keeps every agent inside a kill-on-close Windows Job Object. Design rationale and probe results are in [research.md](research.md); the two interface contracts are in [contracts/](contracts/).
 
 ## Technical Context
 
@@ -16,7 +16,7 @@ Build the first usable slice of Pinion: an Electron desktop app whose left pane 
 
 **Storage**: three JSON files in `userData` (`registry.json`, `settings.json`, `processes.json`), atomic writes. Conversations are OMP's own files, not copied.
 
-**Testing**: none. Pinion is a prototype (constitution, Development Workflow); each story is verified by running the app per [quickstart.md](quickstart.md). Typecheck and production build must pass before a change lands on `main`.
+**Testing**: none. Refract is a prototype (constitution, Development Workflow); each story is verified by running the app per [quickstart.md](quickstart.md). Typecheck and production build must pass before a change lands on `main`.
 
 **Target Platform**: Windows 11 only.
 
@@ -56,7 +56,7 @@ specs/001-core-session-workspace/
 ├── data-model.md        # stored files, derived data, state machine
 ├── quickstart.md        # how to run and verify each story
 ├── contracts/
-│   ├── omp-usage.md     # how Pinion uses OMP's RPC
+│   ├── omp-usage.md     # how Refract uses OMP's RPC
 │   └── ipc.md           # renderer to main API
 ├── checklists/requirements.md
 └── tasks.md             # produced by /speckit.tasks
@@ -72,7 +72,7 @@ src/
 ├── shared/
 │   ├── ipc.ts                 # request and event types (contracts/ipc.md)
 │   ├── model.ts               # Repository, Session, TranscriptItem, PendingRequest (data-model.md)
-│   └── frames.ts              # the subset of OMP frame types Pinion reads
+│   └── frames.ts              # the subset of OMP frame types Refract reads
 ├── main/
 │   ├── index.ts               # app lifecycle, window, ipc registration, notifications
 │   ├── omp/
@@ -94,7 +94,7 @@ src/
 │   ├── readiness.ts           # git, omp version, signed in
 │   └── memory.ts              # free-memory sampling and warning
 ├── preload/
-│   └── index.ts               # contextBridge: window.pinion
+│   └── index.ts               # contextBridge: window.refract
 └── renderer/
     ├── index.html
     ├── main.tsx
@@ -114,7 +114,7 @@ docs/spike/                    # probe scripts and findings (already present)
 ## Design overview
 
 - **Main owns state.** `SessionAgent` per Session holds status, transcript, queue, and pending requests; it is the only code that talks to an `OmpProcess`. The renderer subscribes to patches and calls typed requests.
-- **One job, joined at start.** `jobObject.ts` creates the kill-on-close job once and assigns Pinion's own main process to it before anything is spawned; every `omp` inherits it. `OmpProcess` only records the pid.
+- **One job, joined at start.** `jobObject.ts` creates the kill-on-close job once and assigns Refract's own main process to it before anything is spawned; every `omp` inherits it. `OmpProcess` only records the pid.
 - **Reattach is always verified.** Every `switch_session` is followed by `get_state` and the data-model checks; a mismatch is a visible stopped state, never a silent empty chat.
 - **Mode changes and restarts share one path.** Approval mode change, Recover, and Stop-agent-then-reopen all go through `SessionAgent.restart()`.
 - **Queue is OMP's queue.** Chips render from `queue_update`; Send now is `remove_queued_message` then `steer`.

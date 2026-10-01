@@ -20,8 +20,8 @@ export { DEFAULT_SETTINGS, useSettingsStore }
 export { useSessionsStore }
 export { useTranscriptStore }
 
-/** The zustand store hooks exposed on `window.__pinionStores` in dev builds. */
-export interface PinionDevStores {
+/** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
+export interface RefractDevStores {
   commands: typeof useCommandsStore
   memory: typeof useMemoryStore
   pendingRequests: typeof usePendingRequestsStore
@@ -34,15 +34,15 @@ export interface PinionDevStores {
 
 declare global {
   interface Window {
-    __pinionStores?: PinionDevStores
+    __refractStores?: RefractDevStores
   }
 }
 
-// DEV-only: lets verification scripts inject store state through CDP (`window.__pinionStores`)
+// DEV-only: lets verification scripts inject store state through CDP (`window.__refractStores`)
 // without a working main process, since main's handlers land in parallel with the renderer.
 // Never referenced by production code.
 if (import.meta.env.DEV) {
-  window.__pinionStores = {
+  window.__refractStores = {
     commands: useCommandsStore,
     memory: useMemoryStore,
     pendingRequests: usePendingRequestsStore,

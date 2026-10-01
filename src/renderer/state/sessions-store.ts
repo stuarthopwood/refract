@@ -47,7 +47,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       )
     }),
   refresh: async () => {
-    const result = await window.pinion.sessions.list()
+    const result = await window.refract.sessions.list()
     if (result.ok) {
       set({ sessions: result.value })
     } else {
@@ -58,7 +58,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   // so every caller (here, `open` below, and `onUiOpenSession` in init-stores.ts) goes through it.
   setVisibleSessionId: (id) => {
     set({ visibleSessionId: id })
-    window.pinion.sessions.setVisible(id).then(
+    window.refract.sessions.setVisible(id).then(
       (result) => {
         if (!result.ok) console.error('sessions.setVisible failed', result.error)
       },
@@ -79,7 +79,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     get().setVisibleSessionId(id)
     const promise = (async () => {
       try {
-        const result = await window.pinion.sessions.open(id)
+        const result = await window.refract.sessions.open(id)
         if (!result.ok) {
           notify(result.error)
           // Revert the optimistic flip -- but only if nothing newer already took over visibility.
@@ -102,19 +102,19 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     return promise
   },
   rename: async (id, name) => {
-    const result = await window.pinion.sessions.rename(id, name)
+    const result = await window.refract.sessions.rename(id, name)
     if (!result.ok) notify(result.error)
   },
   archive: async (id) => {
-    const result = await window.pinion.sessions.archive(id)
+    const result = await window.refract.sessions.archive(id)
     if (!result.ok) notify(result.error)
   },
   restore: async (id) => {
-    const result = await window.pinion.sessions.restore(id)
+    const result = await window.refract.sessions.restore(id)
     if (!result.ok) notify(result.error)
   },
   stopAgent: async (id) => {
-    const result = await window.pinion.sessions.stopAgent(id)
+    const result = await window.refract.sessions.stopAgent(id)
     if (!result.ok) notify(result.error)
   }
 }))

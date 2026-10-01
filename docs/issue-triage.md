@@ -3,7 +3,7 @@
 The **Issue triage** workflow (`.github/workflows/issue-triage.yml`) classifies every new GitHub
 issue, labels it, and posts one comment telling whoever picks it up — a human, or an AI agent
 running the Spec Kit commands in `.omp/commands/` — exactly which Spec Kit steps to run next. It
-lives outside the Pinion app and never runs an agent or touches application code itself.
+lives outside the Refract app and never runs an agent or touches application code itself.
 
 ## What it does
 

@@ -82,7 +82,7 @@ GitHub Actions' default per-ref concurrency behavior.
 
 | Principle | Status | How the design meets it |
 |---|---|---|
-| I. OMP Is the Engine, Pinion Is the Host | N/A | This feature has no Electron process and drives no `omp` child process, and (after this redesign) no agent process of any kind. |
+| I. OMP Is the Engine, Refract Is the Host | N/A | This feature has no Electron process and drives no `omp` child process, and (after this redesign) no agent process of any kind. |
 | II. RPC Wire Contract | N/A | No RPC is involved. The job calls the GitHub REST API and the Anthropic Messages API directly. |
 | III. Session and Process Lifecycle | N/A | There is no `omp` process, worktree, or session registry. The only "session" is the ephemeral GitHub Actions job runner, which GitHub itself manages. |
 | IV. Evidence Before Design | Pass | Live `workflow_dispatch` runs against throwaway issues #90 and #91 (and a force re-dispatch of #90) verified the classification/labeling/commenting behaviour before this redesign; the Spec Kit pickup plan is deterministic and fully covered by the unit suite. |

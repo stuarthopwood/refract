@@ -1,6 +1,6 @@
 // Builds the renderer-facing TranscriptItem[] from OMP's own message history (`fromHistory`)
 // and from live rpc-ui frames (`applyFrame`), per
-// specs/001-core-session-workspace/contracts/omp-usage.md ("Frames Pinion consumes",
+// specs/001-core-session-workspace/contracts/omp-usage.md ("Frames Refract consumes",
 // "Message parts", "Tool row fields") and docs/spike/FINDINGS.md item 14 (edit-diff-probe).
 // Pure: no I/O, no Electron imports. `applyFrame` never mutates its `items` argument; it
 // returns a new array, replacing only the items that changed, so callers can diff by identity.
@@ -260,7 +260,7 @@ function applyPromptResultNotice(items: TranscriptItem[], frame: PromptResultFra
 }
 
 /** Applies one live rpc-ui frame to the current transcript. Ignores every frame type not listed
- * in contracts/omp-usage.md "Frames Pinion consumes" without throwing. */
+ * in contracts/omp-usage.md "Frames Refract consumes" without throwing. */
 export function applyFrame(items: TranscriptItem[], frame: Frame): TranscriptItem[] {
   if (!isKnownFrame(frame)) return items;
   switch (frame.type) {

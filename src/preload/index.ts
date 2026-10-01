@@ -4,7 +4,7 @@ import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import type {
   ChatAnswer,
   LowMemoryWarning,
-  PinionApi,
+  RefractApi,
   Readiness,
   Result,
   SessionSnapshot,
@@ -16,7 +16,7 @@ import type {
 } from '../shared/ipc'
 import type { ConversationInfo, PendingRequest, Repository, Session, Settings } from '../shared/model'
 
-// window.pinion: the sole renderer-to-main bridge (contracts/ipc.md). The renderer never sees
+// window.refract: the sole renderer-to-main bridge (contracts/ipc.md). The renderer never sees
 // ipcRenderer or a raw channel string; every method below is a fixed, typed call.
 
 // Every request channel answers with a Result<T>; main is trusted to shape it correctly, so the
@@ -35,7 +35,7 @@ function on<T>(channel: string, handler: (payload: T) => void): Unsubscribe {
   }
 }
 
-const pinion: PinionApi = {
+const refract: RefractApi = {
   readiness: {
     check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK)
   },
@@ -103,5 +103,5 @@ const pinion: PinionApi = {
   onMemoryWarning: (handler) => on<LowMemoryWarning>(IPC_EVENTS.MEMORY_WARNING, handler)
 }
 
-contextBridge.exposeInMainWorld('pinion', pinion)
+contextBridge.exposeInMainWorld('refract', refract)
 

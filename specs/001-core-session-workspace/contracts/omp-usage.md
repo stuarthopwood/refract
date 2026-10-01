@@ -1,6 +1,6 @@
-# Contract: how Pinion uses OMP
+# Contract: how Refract uses OMP
 
-Pinion drives `omp --mode rpc-ui` over stdio (newline-delimited JSON). This file lists exactly what Pinion sends and consumes. OMP behaviour cited here comes from [FINDINGS](../../../docs/spike/FINDINGS.md) (probed on omp 18.4.4) or `omp://rpc.md` (read, not probed, and labelled so).
+Refract drives `omp --mode rpc-ui` over stdio (newline-delimited JSON). This file lists exactly what Refract sends and consumes. OMP behaviour cited here comes from [FINDINGS](../../../docs/spike/FINDINGS.md) (probed on omp 18.4.4) or `omp://rpc.md` (read, not probed, and labelled so).
 
 ## Launch
 
@@ -10,20 +10,20 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo>
 
 - `cwd` is the Session's `worktreePath`. This is required: `switch_session` across cwds is cancelled (FINDINGS C16, item 5).
 - No `--model`, no `--session-dir`, no `--no-*` flags. OMP's own default model and default per-cwd session directory apply (session-dir probe, 2026-09-30).
-- `spawn` with `windowsHide: true`, `stdio: 'pipe'`, no shell. The pid is recorded in `processes.json`. No explicit Job Object call is needed per process: Pinion's main process already joined the kill-on-close job at startup, so the child and all its descendants inherit it (research.md decision 4).
+- `spawn` with `windowsHide: true`, `stdio: 'pipe'`, no shell. The pid is recorded in `processes.json`. No explicit Job Object call is needed per process: Refract's main process already joined the kill-on-close job at startup, so the child and all its descendants inherit it (research.md decision 4).
 - `--approval-mode` comes from `Settings.approvalMode` at launch time (`ask` = `always-ask`, `edit-freely` = `write`, `auto` = `yolo`).
 
 ## Start-up sequence per Session
 
 1. Wait for the `ready` frame (timeout 60 s, then `stopped`/`start-failed`).
-2. Send `negotiate_protocol` `{protocolVersion: 2}` if `ready.supportedProtocolVersions` includes 2. From then on, reassemble `rpc_chunk` frames (validate `chunkId`, `index`, `count`, `byteLength`; strict UTF-8; reject interleaving; 64 MiB ceiling). Pinion implements its own decoder because OMP's `RpcFrameDecoder` is raw `.ts` and needs Bun (FINDINGS C22b).
+2. Send `negotiate_protocol` `{protocolVersion: 2}` if `ready.supportedProtocolVersions` includes 2. From then on, reassemble `rpc_chunk` frames (validate `chunkId`, `index`, `count`, `byteLength`; strict UTF-8; reject interleaving; 64 MiB ceiling). Refract implements its own decoder because OMP's `RpcFrameDecoder` is raw `.ts` and needs Bun (FINDINGS C22b).
 3. If the Session has a current Conversation, `switch_session` with its `sessionPath` (never `--resume`, FINDINGS item 17), then `get_state` and verify per data-model.md ("Reattach verification"). Record `sessionFile`, `messageCount`, and (first time) `sessionDir = dirname(sessionFile)`. Only record `currentConversation` and `lastMessageCount` once `messageCount > 0` (`get_state` returns a `sessionFile` before the first message is written).
 4. `get_messages` to build the transcript from history (the response can exceed 1 MiB; v2 framing carries it).
 5. Mark the Session `idle`.
 
-`available_commands_update` frames arrive at startup and later; Pinion keeps the latest list per Session for the slash-command menu.
+`available_commands_update` frames arrive at startup and later; Refract keeps the latest list per Session for the slash-command menu.
 
-## Commands Pinion sends
+## Commands Refract sends
 
 | Purpose | Frame | Notes |
 |---|---|---|
@@ -34,13 +34,13 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo>
 | Stop | `{type:'abort'}` | Then wait for the running prompt's `prompt_result` with any status (`aborted`, or `completed`/`error` if the turn ended just before the abort landed), then `session_settled`, before accepting another prompt (constitution II, FINDINGS C5). Never wait for `aborted` specifically. |
 | New Conversation | `{type:'new_session'}` | Same process, same cwd, same Session. Requires the Session to be idle. Clears the transcript; `currentConversation` updates when the first message is written. |
 | Open an earlier Conversation | `{type:'switch_session', sessionPath}` | Requires idle. Success is `data.cancelled === false`; then run reattach verification and reload the transcript with `get_messages`. `success:true, cancelled:true` is a failure. |
-| Slash command | `{type:'prompt', message:'/name args'}` | Only names present in the latest `available_commands_update` or Pinion's native set; unknown names are refused locally (FR-033). |
+| Slash command | `{type:'prompt', message:'/name args'}` | Only names present in the latest `available_commands_update` or Refract's native set; unknown names are refused locally (FR-033). |
 | Answer a dialog | `{type:'extension_ui_response', id, value}` or `{..., confirmed}` or `{..., cancelled:true}` | See "Dialogs". |
 | Shut down | close stdin, keep reading stdout until exit; after 10 s `taskkill /PID <pid> /T /F` | |
 
 Not used in this spec: `set_model`, thinking-level commands, `compact`, `handoff`, `branch`, `set_subagent_subscription` (stays `off`), host tools, `set_event_filter` (left `null`; unknown events are ignored).
 
-## Frames Pinion consumes
+## Frames Refract consumes
 
 | Frame | Effect |
 |---|---|
@@ -55,7 +55,7 @@ Not used in this spec: `set_model`, thinking-level commands, `compact`, `handoff
 | `available_commands_update` | Replace the Session's command list. |
 | `command_output` | Add an info `notice` (local slash command output; can arrive before or after its acknowledgement). |
 | `notice` | Add a `notice` with the given level. |
-| process `exit` | If Pinion did not ask for it: status `stopped`, `stopReason: 'agent-exited'`, with the exit code. |
+| process `exit` | If Refract did not ask for it: status `stopped`, `stopReason: 'agent-exited'`, with the exit code. |
 
 Every other frame type is ignored (recorded frames also include `turn_start`, `turn_end`, `advisor_cost_changed`, `thinking_level_changed`, `todo_reminder`).
 
@@ -73,7 +73,7 @@ Every other frame type is ignored (recorded frames also include `turn_start`, `t
 
 ## Dialogs (`extension_ui_request`)
 
-| Frame | Pinion treats it as | Answer |
+| Frame | Refract treats it as | Answer |
 |---|---|---|
 | `method:'select'`, `title` starts `Allow tool:` | Approval. First line is the tool name; later lines are details (origin, reason, command, path). Options `Approve`, `Deny`. | `{value:'Approve'}` or `{value:'Deny'}` |
 | `method:'select'`, any other title | Question with options (`options`, optional aligned `optionDetails`) | `{value: <chosen option>}` or `{cancelled:true}` |

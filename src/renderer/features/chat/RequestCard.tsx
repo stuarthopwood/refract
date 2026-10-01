@@ -46,7 +46,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {
     setBusy(true)
     setError(null)
-    const result = await window.pinion.chat.answer(sessionId, request.requestId, value)
+    const result = await window.refract.chat.answer(sessionId, request.requestId, value)
     setBusy(false)
     if (!result.ok) {
       setError(result.error.message)

@@ -23,7 +23,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error('[pinion] render error', error, info.componentStack)
+    console.error('[refract] render error', error, info.componentStack)
   }
 
   private reload = (): void => {

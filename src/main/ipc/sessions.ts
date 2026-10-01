@@ -52,7 +52,7 @@ async function deleteSessionConversations(sessionDir: string): Promise<void> {
       await fs.rmdir(sessionDir);
     }
   } catch {
-    // Not empty (something Pinion didn't create is in there), already gone, or some other
+    // Not empty (something Refract didn't create is in there), already gone, or some other
     // filesystem issue: leave it. Never force-remove a directory that is not provably empty.
   }
 }

@@ -152,13 +152,13 @@ export const IPC_EVENTS = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// window.pinion
+// window.refract
 // ---------------------------------------------------------------------------
 
 /** An unsubscribe function returned by every `on*` event subscription. */
 export type Unsubscribe = () => void;
 
-export interface PinionApi {
+export interface RefractApi {
   readiness: {
     check(): Promise<Result<Readiness>>;
   };
@@ -220,6 +220,6 @@ export interface PinionApi {
 
 declare global {
   interface Window {
-    pinion: PinionApi;
+    refract: RefractApi;
   }
 }

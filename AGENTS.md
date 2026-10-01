@@ -1,4 +1,4 @@
-# Pinion agent rules
+# Refract agent rules
 
 ## Destructive operations (HARD RULE)
 

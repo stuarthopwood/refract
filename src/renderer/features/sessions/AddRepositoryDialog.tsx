@@ -34,7 +34,7 @@ export function AddRepositoryDialog({ trigger }: AddRepositoryDialogProps) {
   }
   async function handleBrowse(): Promise<void> {
     setBrowsing(true)
-    const result = await window.pinion.repositories.pickFolder()
+    const result = await window.refract.repositories.pickFolder()
     setBrowsing(false)
     if (!result.ok) {
       notify(result.error)

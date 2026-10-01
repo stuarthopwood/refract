@@ -1,11 +1,11 @@
-# Pinion
+# Refract
 
-Pinion is a desktop app for working with a coding agent, one isolated copy of a project per unit of work. This file is the shared vocabulary for specs, plans, and code.
+Refract is a desktop app for working with a coding agent, one isolated copy of a project per unit of work. This file is the shared vocabulary for specs, plans, and code.
 
 ## Language
 
 **Repository**:
-A local git project the developer has added to Pinion. Owns zero or more **Sessions**.
+A local git project the developer has added to Refract. Owns zero or more **Sessions**.
 _Avoid_: Project, workspace
 
 **Session**:
@@ -21,7 +21,7 @@ Permanently remove a **Session**, its **Worktree**, and its **Conversations**, o
 _Avoid_: Remove, discard
 
 **Worktree**:
-The isolated checkout of a **Repository** that a **Session** works in. Created by Pinion when the **Session** is created.
+The isolated checkout of a **Repository** that a **Session** works in. Created by Refract when the **Session** is created.
 _Avoid_: Branch, folder, clone
 
 **Base branch**:
@@ -38,7 +38,7 @@ _Avoid_: Session (in the agent's own sense), transcript
 
 ## Flagged ambiguities
 
-- The agent (OMP) uses "session" for what Pinion calls a **Conversation**. In Pinion, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
+- The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
 - The current spec (`specs/001-core-session-workspace/spec.md`) defines Session as "one conversation with the agent bound to one worktree". That contradicts the resolution above and must be corrected when the spec is next amended.
 
 ## Example dialogue
@@ -46,4 +46,4 @@ _Avoid_: Session (in the agent's own sense), transcript
 > **Dev:** I started a fresh chat in my "login-fix" **Session**. Did I just make a second **Session**?
 > **Expert:** No. "login-fix" is still one **Session** with the same **Worktree**. You now have a second **Conversation** in it, and the first one is still there as history.
 > **Dev:** And if I want a separate copy of the repo to try something else?
-> **Expert:** That is a new **Session**, and Pinion creates a new **Worktree** for it.
+> **Expert:** That is a new **Session**, and Refract creates a new **Worktree** for it.

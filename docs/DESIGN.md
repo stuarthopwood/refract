@@ -1,4 +1,4 @@
-# Pinion design
+# Refract design
 
 Look, feel, and interaction rules shared by every spec. Vocabulary is in [CONTEXT.md](../CONTEXT.md); behaviour is in `specs/`; rules are in the [constitution](../.specify/memory/constitution.md). Ideas and features are tracked as GitHub issues (see [Backlog](#backlog)).
 
@@ -10,7 +10,7 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
 - A dense turn stays readable: many tool calls must not bury the answer.
 - Every action has a visible button; shortcuts are a second way, never the only way.
 - Destructive actions name what will be lost before they happen.
-- The agent does the work; Pinion is the place to watch, steer, and approve it.
+- The agent does the work; Refract is the place to watch, steer, and approve it.
 
 ## Layout
 
@@ -27,7 +27,7 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
 - **Fonts**: two independent, user-customisable settings.
   - **UI font** for the app chrome.
   - **Code font** for code blocks, tool output, diffs, and the message box: monospaced, with Nerd Font glyph support and a ligatures on/off choice, and a size setting.
-  - **(default)** Pinion uses fonts installed on the system and does not bundle any; glyphs missing from the chosen font fall back to another installed font.
+  - **(default)** Refract uses fonts installed on the system and does not bundle any; glyphs missing from the chosen font fall back to another installed font.
 - **State colour roles** **(default)**: working (accent), idle (muted), needs you (warning), stopped (error). Every state also has a distinct icon, so colour is never the only signal.
 
 ## Chat
@@ -68,7 +68,7 @@ Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reser
 
 - Problems belonging to one Session (agent stopped, worktree missing) show as a persistent banner in that Session's chat and a stopped state in the list.
 - Transient app-level problems (a branch list failed to load) show as a toast.
-- A Windows notification fires only for **needs you** and **finished**, and only when Pinion is not the focused window; clicking it opens that Session.
+- A Windows notification fires only for **needs you** and **finished**, and only when Refract is not the focused window; clicking it opens that Session.
 
 ## Settings in the first build
 
@@ -79,7 +79,7 @@ Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reser
 
 - **Opening a Session**: clicking a non-visible row only flips `visibleSessionId`; `ChatPane`'s effect on that id change is the single place that asks for a snapshot (`sessions.open`) and applies it (transcript, queue, pending requests, stop banner). Clicking the already-visible row (waking a `not-started` Session) calls `open` directly instead, since there is no visibility change to trigger that effect.
 - **Approval mode switch**: changing the status-bar mode persists immediately, but a live Session only restarts into it once it is idle with nothing pending (`pendingMode` on the runtime view); the chat header shows "<mode> after this turn" while a restart is pending. A Session that is not live simply launches in the new mode next time.
-- **Reattaching a live process to a Conversation** (`switch_session`, used by both session-open and the mode-change restart) is verified, not assumed: after the RPC call reports `cancelled: false`, Pinion calls `get_state` and checks its `messageCount` is at least the Conversation's last known `lastMessageCount` before trusting the reattach; a failed check rolls back to the previous Conversation where possible.
+- **Reattaching a live process to a Conversation** (`switch_session`, used by both session-open and the mode-change restart) is verified, not assumed: after the RPC call reports `cancelled: false`, Refract calls `get_state` and checks its `messageCount` is at least the Conversation's last known `lastMessageCount` before trusting the reattach; a failed check rolls back to the previous Conversation where possible.
 - **Readiness ("OMP signed in")**: `get_state`'s current model must also appear in `get_available_models`; a resolved `{provider, id}` from `get_state` alone is not diagnostic of sign-in (disabled or uncredentialled providers can still show up there), so the model-presence check is the actual signal. `get_login_providers` is used only to enrich the failure hint with the unauthenticated provider ids.
 - **Tool rows**: a `write` result shows "Wrote N lines to `<path>`"; an `edit` result shows a diff built from the tool's own `details.oldText`/`details.newText` (not a general-purpose git diff, which is unreliable per-call once several edits touch the same file in one turn).
 - **Session list keyboard and focus model**: each row is one button (open/wake) plus an `⋮` menu trigger (rename, archive/restore, stop agent, delete). F2 on the focused row button starts renaming; Enter/Escape commit or cancel it. Archive/restore/delete can unmount the focused row (sometimes its whole group), so every such action captures a fallback chain before acting -- next row, then previous row, then the Repository's own collapsible trigger, then the Sessions nav root -- so focus never lands on `<body>` (WCAG 2.1 AA).
@@ -88,7 +88,7 @@ Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reser
 
 ## Backlog
 
-Ideas and features live in the GitHub issue log for `stuarthopwood/pinion`. Labels:
+Ideas and features live in the GitHub issue log for `stuarthopwood/refract`. Labels:
 
 - **Type**: `idea` (the inbox), `feature`, `bug`, `spike`, `chore`.
 - **Area**: `session-list`, `chat`, `approvals`, `worktree`, `transport`, `notifications`, `settings`, `design`, `right-pane`, `build`.

@@ -93,7 +93,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (!event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== 'x') return
       event.preventDefault()
       if (statusRef.current !== 'working') return
-      void window.pinion.chat.stop(sessionIdRef.current).then((result) => {
+      void window.refract.chat.stop(sessionIdRef.current).then((result) => {
         if (!result.ok) notify(result.error)
       })
     }
@@ -118,7 +118,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); notify below
     // shows it as a toast, same as any other IPC error.
-    const result = await window.pinion.chat.send(sessionId, message)
+    const result = await window.refract.chat.send(sessionId, message)
     if (!result.ok) {
       notify(result.error)
       return
@@ -169,17 +169,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }
 
   async function handleStop() {
-    const result = await window.pinion.chat.stop(sessionId)
+    const result = await window.refract.chat.stop(sessionId)
     if (!result.ok) notify(result.error)
   }
 
   async function handleRemoveQueued(queuedText: string) {
-    const result = await window.pinion.chat.removeQueued(sessionId, queuedText)
+    const result = await window.refract.chat.removeQueued(sessionId, queuedText)
     if (!result.ok) notify(result.error)
   }
 
   async function handleSendNow(queuedText: string) {
-    const result = await window.pinion.chat.sendNow(sessionId, queuedText)
+    const result = await window.refract.chat.sendNow(sessionId, queuedText)
     if (!result.ok) notify(result.error)
   }
 

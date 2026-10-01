@@ -1,6 +1,6 @@
 // Atomic JSON file store: write-then-rename so a crash never leaves a torn file, and a file
 // that fails to parse is quarantined instead of blocking launch (data-model.md "Stored by
-// Pinion").
+// Refract").
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'

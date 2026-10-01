@@ -1,7 +1,7 @@
-// Windows-only process containment: joins Pinion's own process to a Job Object with
+// Windows-only process containment: joins Refract's own process to a Job Object with
 // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE so every child `omp` process (and its own descendants,
-// since Job Object membership is inherited) is force-killed by Windows itself if Pinion's main
-// process dies or is killed, without Pinion having to track and clean up every descendant pid.
+// since Job Object membership is inherited) is force-killed by Windows itself if Refract's main
+// process dies or is killed, without Refract having to track and clean up every descendant pid.
 //
 // This is the ONLY file in the codebase that touches Windows FFI (koffi / kernel32.dll). Struct
 // layout and offsets are copied from the verified spike probe at docs/spike/job-object-probe.mjs.

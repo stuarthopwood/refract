@@ -28,7 +28,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
     setCreating(true)
     setSwitching(true)
     try {
-      const result = await window.pinion.conversations.startNew(sessionId)
+      const result = await window.refract.conversations.startNew(sessionId)
       if (!result.ok) {
         notify(result.error)
         return
@@ -44,7 +44,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
     setHistoryOpen(open)
     if (!open) return
     setLoadingHistory(true)
-    const result = await window.pinion.conversations.list(sessionId)
+    const result = await window.refract.conversations.list(sessionId)
     setLoadingHistory(false)
     if (!result.ok) {
       notify(result.error)
@@ -56,7 +56,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   async function handleOpenConversation(file: string) {
     setSwitching(true)
     try {
-      const result = await window.pinion.conversations.open(sessionId, file)
+      const result = await window.refract.conversations.open(sessionId, file)
       if (!result.ok) {
         notify(result.error)
         return

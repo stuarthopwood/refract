@@ -1,7 +1,7 @@
-// Data stored or held by Pinion, and the shapes Pinion derives from OMP.
+// Data stored or held by Refract, and the shapes Refract derives from OMP.
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
-/** A local git project the developer has added to Pinion. Owns zero or more Sessions. */
+/** A local git project the developer has added to Refract. Owns zero or more Sessions. */
 export interface Repository {
   id: string; // uuid
   path: string; // absolute path of the main checkout
@@ -109,7 +109,7 @@ export type PendingRequest =
       inputKind: 'choice' | 'text' | 'confirm';
     };
 
-/** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Pinion. */
+/** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Refract. */
 export interface ConversationInfo {
   file: string; // absolute path
   id: string; // the UUID suffix of the file name

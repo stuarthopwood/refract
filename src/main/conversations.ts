@@ -1,5 +1,5 @@
 // Scans an OMP session directory's `*.jsonl` Conversation files (tasks.md T027, data-model.md
-// "Derived from OMP (not stored by Pinion) > Conversation"). Pure file reads: no RPC. The real
+// "Derived from OMP (not stored by Refract) > Conversation"). Pure file reads: no RPC. The real
 // `new_session` / `switch_session` traffic lives in `SessionAgent.startNewConversation` /
 // `SessionAgent.openConversation`, since those need the live process.
 

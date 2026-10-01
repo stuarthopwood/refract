@@ -1,6 +1,6 @@
 # Contract: renderer to main (typed IPC)
 
-The renderer never touches processes, the file system, or git (constitution V). It calls the `window.pinion` API that the preload exposes with `contextBridge`. Types live in one shared file, `src/shared/ipc.ts`, imported by main, preload, and renderer. There are two shapes: **requests** (renderer calls, main answers, via `ipcRenderer.invoke`) and **events** (main pushes, renderer subscribes). The preload passes only the named channels below and validates nothing else through.
+The renderer never touches processes, the file system, or git (constitution V). It calls the `window.refract` API that the preload exposes with `contextBridge`. Types live in one shared file, `src/shared/ipc.ts`, imported by main, preload, and renderer. There are two shapes: **requests** (renderer calls, main answers, via `ipcRenderer.invoke`) and **events** (main pushes, renderer subscribes). The preload passes only the named channels below and validates nothing else through.
 
 Every request returns `Result<T>`:
 
@@ -94,4 +94,4 @@ Streaming is off the renderer's critical path: main normalises OMP frames into `
 
 ## Windows notifications (FR-027)
 
-Main sends a notification when a Session becomes `needs-you` or finishes (`working` to `idle`) and no Pinion window is focused. Clicking it focuses the window and emits `ui:open-session`. Nothing else notifies. Dev mode calls `app.setAppUserModelId(process.execPath)` first, or notifications may not show.
+Main sends a notification when a Session becomes `needs-you` or finishes (`working` to `idle`) and no Refract window is focused. Clicking it focuses the window and emits `ui:open-session`. Nothing else notifies. Dev mode calls `app.setAppUserModelId(process.execPath)` first, or notifications may not show.

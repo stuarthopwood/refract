@@ -1,11 +1,11 @@
-// The subset of OMP's rpc-ui wire protocol Pinion reads and writes, per
-// specs/001-core-session-workspace/contracts/omp-usage.md ("Frames Pinion consumes",
+// The subset of OMP's rpc-ui wire protocol Refract reads and writes, per
+// specs/001-core-session-workspace/contracts/omp-usage.md ("Frames Refract consumes",
 // "Message parts", "Dialogs") and specs/001-core-session-workspace/contracts/ipc.md.
 // Shapes not pinned down by those docs were cross-checked against real recorded frames
 // from docs/spike/resume-probe.mjs (see the ambiguity notes below).
 
 // ---------------------------------------------------------------------------
-// Message content parts (the pieces Pinion reads out of OMP's own messages)
+// Message content parts (the pieces Refract reads out of OMP's own messages)
 // ---------------------------------------------------------------------------
 
 export interface OmpTextPart {
@@ -45,7 +45,7 @@ export interface OmpAssistantMessage {
   role: 'assistant';
   content: OmpMessageContentPart[];
   timestamp?: number;
-  // Provider bookkeeping (model, usage, stopReason, providerPayload, ...) Pinion does not read.
+  // Provider bookkeeping (model, usage, stopReason, providerPayload, ...) Refract does not read.
   [key: string]: unknown;
 }
 
@@ -127,7 +127,7 @@ export interface ExtensionUiRequestFrame {
   /** Present only on `method: 'cancel'`: the `id` of the dialog being withdrawn. */
   targetId?: string;
   // setWidget/setStatus/setTitle/set_editor_text/open_url carry method-specific fields
-  // this contract does not enumerate; Pinion ignores those methods entirely.
+  // this contract does not enumerate; Refract ignores those methods entirely.
   [key: string]: unknown;
 }
 
@@ -139,7 +139,7 @@ export interface ExtensionUiResponseCommand {
 }
 
 // ---------------------------------------------------------------------------
-// Response payloads Pinion depends on for reattach verification (data-model.md)
+// Response payloads Refract depends on for reattach verification (data-model.md)
 // ---------------------------------------------------------------------------
 
 export interface GetStateResponseData {
@@ -163,7 +163,7 @@ export interface GetAvailableCommandsResponseData {
 }
 
 // ---------------------------------------------------------------------------
-// Frames Pinion consumes
+// Frames Refract consumes
 // ---------------------------------------------------------------------------
 
 export interface ReadyFrame {
@@ -282,7 +282,7 @@ export interface NoticeFrame {
 /**
  * v1 frames are capped at maxFrameBytes; a payload larger than that (e.g. get_state's
  * systemPrompt/dumpTools) arrives split across rpc_chunk frames sharing a chunkId.
- * Pinion buffers each `index` (base64-decoded), and once all `count` parts are present,
+ * Refract buffers each `index` (base64-decoded), and once all `count` parts are present,
  * concatenates and validates the result against `byteLength` before parsing it as the
  * real frame.
  */
@@ -314,7 +314,7 @@ export type KnownFrame =
   | NoticeFrame
   | RpcChunkFrame;
 
-/** Anything OMP sends whose `type` Pinion does not recognise. Never throw on it. */
+/** Anything OMP sends whose `type` Refract does not recognise. Never throw on it. */
 export interface UnknownFrame {
   type: string;
   [key: string]: unknown;
@@ -347,7 +347,7 @@ export function isKnownFrame(frame: Frame): frame is KnownFrame {
 }
 
 // ---------------------------------------------------------------------------
-// Commands Pinion sends, per "Commands Pinion sends"
+// Commands Refract sends, per "Commands Refract sends"
 // ---------------------------------------------------------------------------
 
 export interface PromptCommand {

@@ -1,6 +1,6 @@
 // Drives one `omp --mode rpc-ui` child process for a single Session's worktree.
 // Wire contract: specs/001-core-session-workspace/contracts/omp-usage.md ("Launch",
-// "Start-up sequence", "Frames Pinion consumes", "Commands Pinion sends"). Frame and
+// "Start-up sequence", "Frames Refract consumes", "Commands Refract sends"). Frame and
 // command shapes: src/shared/frames.ts.
 //
 // Events:
@@ -177,7 +177,7 @@ export class OmpProcess extends EventEmitter {
     if (this.exited) {
       throw new Error('OmpProcess: process has exited')
     }
-    const id = `pinion-${++this.requestCounter}`
+    const id = `refract-${++this.requestCounter}`
     const withId: RpcCommand = { ...cmd, id }
 
     // Executor form: see start() for why Promise.withResolvers() isn't available here.

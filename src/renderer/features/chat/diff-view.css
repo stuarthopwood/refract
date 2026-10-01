@@ -1,7 +1,7 @@
 /* DiffView theme (T025): react-diff-view ships `node_modules/react-diff-view/style/index.css`,
  * which sets its colours as CSS custom properties on `:root` with light-mode defaults. Rather
  * than fork that stylesheet, this file re-declares the same variables scoped to `.diff-view`
- * (closer in specificity than `:root`), pointed at Pinion's own theme tokens
+ * (closer in specificity than `:root`), pointed at Refract's own theme tokens
  * (src/renderer/styles/globals.css) so the diff repaints for free whenever `.dark` is toggled.
  *
  * `color-mix` runs `in oklab`, not `in oklch`: globals.css writes grays as `oklch(L 0 0)` (a

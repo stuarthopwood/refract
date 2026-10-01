@@ -2,7 +2,7 @@
 // mode, then fans `pendingMode` out to every live Session via
 // `SessionManager.applyPendingModeChange` (T031); each restarts at its own next settle
 // (`SessionAgent.restart`, T032). Also broadcasts `settings:changed` so the renderer's store
-// stays in sync even when a caller reaches `window.pinion.settings.setApprovalMode` directly
+// stays in sync even when a caller reaches `window.refract.settings.setApprovalMode` directly
 // instead of through the store's own action (that action already self-updates from the IPC
 // call's return value, but the broadcast is the only sync path for every other caller).
 

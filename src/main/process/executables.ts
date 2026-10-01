@@ -42,7 +42,7 @@ async function fileExists(candidate: string): Promise<boolean> {
 
 /**
  * Searches PATH for `name`, honouring PATHEXT when `name` has no extension of its own. Caches a
- * successful resolution (a fresh install replacing the binary mid-run is not a case Pinion needs
+ * successful resolution (a fresh install replacing the binary mid-run is not a case Refract needs
  * to handle). Throws a clear `Error` if nothing is found; callers must not fall back to the bare
  * name.
  */
@@ -63,7 +63,7 @@ export async function resolveExecutable(name: string): Promise<string> {
       }
     }
   }
-  throw new Error(`Could not resolve "${name}" on PATH. Install it and make sure it is on PATH, then relaunch Pinion.`);
+  throw new Error(`Could not resolve "${name}" on PATH. Install it and make sure it is on PATH, then relaunch Refract.`);
 }
 
 /** `%SystemRoot%\System32\taskkill.exe`: a fixed system path, never a PATH/cwd search. */

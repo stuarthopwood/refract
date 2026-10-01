@@ -62,7 +62,7 @@ export interface SessionAgentOptions {
   /** T037: whether this Session is the one currently shown in the renderer; owned by
    * `SessionManager`, which knows the visible-session selection. */
   isVisible: () => boolean;
-  /** T037: whether any Pinion window currently has OS focus; owned by `SessionManager`. */
+  /** T037: whether any Refract window currently has OS focus; owned by `SessionManager`. */
   isWindowFocused: () => boolean;
 }
 
@@ -678,7 +678,7 @@ export class SessionAgent extends EventEmitter {
         this.applyTranscriptFrame(frame);
         return;
       default:
-        // agent_end (Pinion tracks history incrementally, not from the final snapshot),
+        // agent_end (Refract tracks history incrementally, not from the final snapshot),
         // rpc_chunk/response (consumed inside OmpProcess and never emitted as 'frame'), and
         // unrecognised frame types: no-op.
         return;
@@ -747,7 +747,7 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** T037: a Session that finishes (`working` -> `idle`) while it is not the visible Session, or
-   * no Pinion window is focused, becomes `unread`; cleared by `clearUnread()` when it becomes
+   * no Refract window is focused, becomes `unread`; cleared by `clearUnread()` when it becomes
    * visible. */
   private setStatus(status: SessionStatus, extra?: { stopReason?: SessionRuntime['stopReason']; stopDetail?: string }): void {
     const becameUnread = this.runtime.status === 'working' && status === 'idle' && (!this.isVisible() || !this.isWindowFocused());

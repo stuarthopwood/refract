@@ -71,7 +71,7 @@ export function StatusBar() {
           <PopoverContent align="end">
             <p className="font-medium text-foreground">Free up memory</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Pinion never stops an agent on its own (FR-037). Stop one below to free memory.
+              Refract never stops an agent on its own (FR-037). Stop one below to free memory.
             </p>
             {liveSessions.length === 0 ? (
               <p className="mt-3 text-xs text-muted-foreground">No running agents.</p>

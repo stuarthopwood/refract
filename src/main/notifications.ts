@@ -1,4 +1,4 @@
-// Windows notifications (tasks.md T038, FR-027): a Notification only when no Pinion window has
+// Windows notifications (tasks.md T038, FR-027): a Notification only when no Refract window has
 // OS focus and only when a Session becomes `needs-you`, or finishes (`working` -> `idle`).
 // Clicking focuses the window and emits `ui:open-session`. Nothing else notifies. Dev mode must
 // call `app.setAppUserModelId` first (already done in `index.ts`) or notifications may not show.
@@ -25,7 +25,7 @@ export function registerNotifications(manager: SessionManager, getWindow: () => 
     if (!becameNeedsYou && !finished) return;
 
     const notification = new Notification({
-      title: 'Pinion',
+      title: 'Refract',
       body: becameNeedsYou ? 'A Session needs your input.' : 'A Session finished.',
     });
     notification.on('click', () => {

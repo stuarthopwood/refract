@@ -1,5 +1,5 @@
 {
-  "name": "pinion",
+  "name": "refract",
   "version": "0.1.0",
   "private": true,
   "description": "Desktop workspace that drives omp --mode rpc-ui, one process per session worktree.",

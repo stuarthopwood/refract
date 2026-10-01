@@ -1,5 +1,5 @@
 // Windows resolves a bare executable name against the spawning process's cwd before PATH; set
-// this before anything (including a transitively-imported module) could spawn, so Pinion itself
+// this before anything (including a transitively-imported module) could spawn, so Refract itself
 // never falls into that search order even indirectly (security fix, independent review).
 process.env['NoDefaultCurrentDirectoryInExePath'] = '1'
 
@@ -17,7 +17,7 @@ import { startMemoryMonitor } from './memory'
 
 const isDev = !app.isPackaged
 // Stop-all cap on quit (tasks.md T017): every agent gets this long to exit stdin-first before
-// Pinion quits anyway; the Job Object (jobObject.ts) is the backstop if a process wedges.
+// Refract quits anyway; the Job Object (jobObject.ts) is the backstop if a process wedges.
 const BEFORE_QUIT_STOP_ALL_TIMEOUT_MS = 10_000
 
 let mainWindow: BrowserWindow | undefined
@@ -138,7 +138,7 @@ if (!gotLock) {
       console.warn(`main: joinKillOnCloseJob failed, continuing without kill-on-close containment: ${jobResult.error ?? 'unknown reason'}`)
     }
 
-    // Pinion needs no permission the OS/browser sandbox gates (camera, mic, geolocation,
+    // Refract needs no permission the OS/browser sandbox gates (camera, mic, geolocation,
     // notifications go through the main-process Notification API, not the renderer's).
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
     session.defaultSession.setPermissionCheckHandler(() => false)
@@ -157,7 +157,7 @@ if (!gotLock) {
     if (isDev) {
       // Windows would otherwise group the dev binary under Electron's own shared
       // AppUserModelID; pin it to the running executable so taskbar grouping and
-      // notifications are Pinion's own, not electron.exe's.
+      // notifications are Refract's own, not electron.exe's.
       app.setAppUserModelId(process.execPath)
     }
 
@@ -174,7 +174,7 @@ if (!gotLock) {
     }
   })
 
-  // Stops every live `omp` process before the app actually exits, so none outlives Pinion
+  // Stops every live `omp` process before the app actually exits, so none outlives Refract
   // (constitution III). Re-entrant: the `app.quit()` this triggers fires `before-quit` again,
   // and `quitInFlight` lets that second pass through.
   let quitInFlight = false

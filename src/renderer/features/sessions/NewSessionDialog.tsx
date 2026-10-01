@@ -23,7 +23,7 @@ export interface NewSessionDialogProps {
 
 // New session creation (docs/DESIGN.md "First run and empty states", CONTEXT.md "Base branch"):
 // picks the Base branch, preselecting the repository's default branch, then hands off to
-// `sessions.create`. Pinion generates the Session's name and branch; this dialog never asks for
+// `sessions.create`. Refract generates the Session's name and branch; this dialog never asks for
 // them.
 export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps) {
   const [open, setOpen] = useState(false)
@@ -39,7 +39,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
     setLoadingBranches(true)
     let cancelled = false
     void (async () => {
-      const result = await window.pinion.repositories.branches(repository.id)
+      const result = await window.refract.repositories.branches(repository.id)
       if (cancelled) return
       if (result.ok) {
         setBranches(result.value.branches)
@@ -67,7 +67,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
     event.preventDefault()
     setSubmitting(true)
     setError(null)
-    const result = await window.pinion.sessions.create({ repositoryId: repository.id, baseBranch })
+    const result = await window.refract.sessions.create({ repositoryId: repository.id, baseBranch })
     setSubmitting(false)
     if (result.ok) {
       await useSessionsStore.getState().refresh()
@@ -85,7 +85,7 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New session in {repository.name}</DialogTitle>
-          <DialogDescription>Pinion names the Session and its branch automatically.</DialogDescription>
+          <DialogDescription>Refract names the Session and its branch automatically.</DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-3" onSubmit={(event) => void handleSubmit(event)}>
           <div className="flex flex-col gap-1.5">

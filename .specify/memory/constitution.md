@@ -1,21 +1,21 @@
-# Pinion Constitution
+# Refract Constitution
 
 ## Core Principles
 
-### I. OMP Is the Engine, Pinion Is the Host
+### I. OMP Is the Engine, Refract Is the Host
 
-- Pinion MUST drive OMP only through `omp --mode rpc-ui` over stdio: one OMP child process per
-  session, one session per git worktree. Pinion MUST NOT embed the OMP SDK, require Bun, or use
+- Refract MUST drive OMP only through `omp --mode rpc-ui` over stdio: one OMP child process per
+  session, one session per git worktree. Refract MUST NOT embed the OMP SDK, require Bun, or use
   ACP.
-- Every launch MUST load OMP's full feature set (skills, extensions, MCP servers, rules). Pinion
+- Every launch MUST load OMP's full feature set (skills, extensions, MCP servers, rules). Refract
   MUST NOT pass `--no-extensions`, `--no-skills`, `--no-tools`, `--no-rules`, or `--no-ui`.
-- Every launch MUST pass `--approval-mode` explicitly, set from Pinion's global Approval mode
+- Every launch MUST pass `--approval-mode` explicitly, set from Refract's global Approval mode
   setting (Ask = `always-ask`, Edit freely = `write`, Auto = `yolo`), so that OMP's own
   `tools.approvalMode` never decides. OMP has no RPC command to change the mode on a live
   process; a change applies once the session is idle (`session_settled`, not just `prompt_result`,
   because background jobs can wake the agent after it yields), by restarting the process and
   reattaching the same saved session per Principle III (FINDINGS item 9).
-- Pinion MUST NOT reimplement behaviour OMP exposes over RPC. It supplies natively only the
+- Refract MUST NOT reimplement behaviour OMP exposes over RPC. It supplies natively only the
   commands absent over RPC: `/plan`, `/fork`, `/resume`, `/new`, `/settings`, `/pause`,
   `/plan-review`, and `/btw`. `/new` maps to `new_session`; `/resume` maps to the reattach rule
   in Principle III.
@@ -26,62 +26,62 @@ sessions do not survive a process restart.
 
 ### II. RPC Wire Contract
 
-- The prompt payload field is `message`. Pinion MUST NOT send `text`; OMP accepts it silently
+- The prompt payload field is `message`. Refract MUST NOT send `text`; OMP accepts it silently
   and fails with an opaque TypeError.
-- After `abort`, Pinion MUST wait for `session_settled` (or `get_state` `isSettled: true`)
+- After `abort`, Refract MUST wait for `session_settled` (or `get_state` `isSettled: true`)
   before sending another prompt. The abort acknowledgement does not mean idle.
-- Pinion MUST NEVER forward literal `/btw ...` text; OMP runs it as a normal, persisted turn.
+- Refract MUST NEVER forward literal `/btw ...` text; OMP runs it as a normal, persisted turn.
   Side chat MUST go through the bundled extension built on `ctx.runEphemeralTurn`
   (`docs/spike/btw-ext.ts`).
 - Tool approvals and `ask` both arrive as `extension_ui_request` with `method: "select"`. A
   title starting with `Allow tool:` is a tool approval (options `Approve` and `Deny`); every
   other `select` is an `ask` question. `ask` loses headers, previews, notes, and images over RPC.
-- Pinion MUST answer every `select`, `confirm`, `input`, and `editor` request, with a value or
+- Refract MUST answer every `select`, `confirm`, `input`, and `editor` request, with a value or
   `cancelled: true`. An unanswered dialog stalls the turn.
-- Pinion MUST send only slash commands listed in the latest `available_commands_update` or in
+- Refract MUST send only slash commands listed in the latest `available_commands_update` or in
   the native set of Principle I. OMP does not reject unknown `/foo` text; it sends it to the
   model.
 - Local-only commands (`agentInvoked: false`) emit no `prompt_result`, and their
   `command_output` can arrive before or after the acknowledgement.
 - A turn's answer is final at its `prompt_result`; the session is finished only at
   `session_settled`.
-- After the `ready` frame, Pinion MUST negotiate protocol v2 and reassemble `rpc_chunk` frames.
+- After the `ready` frame, Refract MUST negotiate protocol v2 and reassemble `rpc_chunk` frames.
 
 ### III. Session and Process Lifecycle
 
-- Pinion lists saved sessions by scanning `*.jsonl` files in the directory OMP uses for that
-  worktree. Pinion passes no `--session-dir` and takes `dirname(sessionFile)` from `get_state`
+- Refract lists saved sessions by scanning `*.jsonl` files in the directory OMP uses for that
+  worktree. Refract passes no `--session-dir` and takes `dirname(sessionFile)` from `get_state`
   (FINDINGS item 11); RPC has no list-sessions command.
-- To reopen a saved session after an app restart, Pinion spawns a fresh process in the session's
-  worktree and binds it with `switch_session` and `sessionPath` (FINDINGS C16). Pinion MUST NOT
+- To reopen a saved session after an app restart, Refract spawns a fresh process in the session's
+  worktree and binds it with `switch_session` and `sessionPath` (FINDINGS C16). Refract MUST NOT
   use `--resume` for reattach: after a worktree is removed and recreated at the same path it
   reports an empty session and its later exit overwrites the file with a blank one (FINDINGS
-  item 17). Pinion MUST confirm every reattach: `get_state` `sessionFile` must equal the saved
+  item 17). Refract MUST confirm every reattach: `get_state` `sessionFile` must equal the saved
   session's file, and `messageCount` must be non-zero and not below the saved count, because
-  OMP can append messages outside Pinion's settle flow (FINDINGS item 20; data-model.md
+  OMP can append messages outside Refract's settle flow (FINDINGS item 20; data-model.md
   "Reattach verification", FR-013). A missing file is reported as such, because
   `switch_session` to a missing path succeeds with an empty session.
 - Every OMP process MUST be spawned with the session's own worktree as its cwd. `switch_session`
   to a session recorded under a different cwd is cancelled and leaves the process on an empty
   session (FINDINGS C16, item 5).
-- Pinion stops a session by closing its stdin and reading stdout until the process exits, and
+- Refract stops a session by closing its stdin and reading stdout until the process exits, and
   force-stops it with `taskkill /PID <pid> /T /F`. No `omp` process may outlive a normal exit.
-- Pinion's main process MUST join a Windows Job Object with kill-on-close at startup, before it
+- Refract's main process MUST join a Windows Job Object with kill-on-close at startup, before it
   spawns any `omp`, so every child and grandchild inherits membership at creation and a
-  force-killed Pinion takes the whole `omp` tree with it, including tool subprocesses, which
-  otherwise survive (FINDINGS items 10 and 12). Pinion also records the pid and start time of
+  force-killed Refract takes the whole `omp` tree with it, including tool subprocesses, which
+  otherwise survive (FINDINGS items 10 and 12). Refract also records the pid and start time of
   every `omp` root it spawns, and on start stops any recorded process still running with the
   same start time and an `omp` image name; this is a fallback for a failed job creation.
 
 ### IV. Evidence Before Design
 
-- Every OMP behaviour a Pinion feature depends on MUST be verified on the supported OMP version
+- Every OMP behaviour a Refract feature depends on MUST be verified on the supported OMP version
   and recorded in `docs/spike/FINDINGS.md`, or labelled unverified in the spec that relies on it.
 - Features MUST NOT be designed around a FINDINGS open item, such as the `branch` entry id rule
   or `/wt` behaviour, until a probe resolves it.
 - The supported OMP versions are 18.4.x (verified on 18.4.4 and 18.4.5). Raising the minor or
   major version requires rerunning `docs/spike/resume-probe.mjs` and rechecking the FINDINGS
-  rows Pinion relies on.
+  rows Refract relies on.
 
 ### V. Electron Security Baseline
 
@@ -106,7 +106,7 @@ sessions do not survive a process restart.
 
 - Features flow through Spec Kit: `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`,
   `/speckit.implement`, then `/speckit.converge`.
-- Pinion is a prototype: speed of development comes first, and automated tests are not
+- Refract is a prototype: speed of development comes first, and automated tests are not
   required. A feature is verified by running the app and exercising the changed path.
 - Typecheck and production build MUST pass before a change lands on `main`.
 

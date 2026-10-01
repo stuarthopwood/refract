@@ -1,4 +1,4 @@
-# Pinion agent rules
+# Refract agent rules
 
 See AGENTS.md in this directory. The rules below are repeated because subagents read CLAUDE.md and not AGENTS.md.
 

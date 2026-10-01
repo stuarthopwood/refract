@@ -15,7 +15,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   settings: DEFAULT_SETTINGS,
   setSettings: (settings) => set({ settings }),
   setApprovalMode: async (mode) => {
-    const result = await window.pinion.settings.setApprovalMode(mode)
+    const result = await window.refract.settings.setApprovalMode(mode)
     if (result.ok) {
       set({ settings: result.value })
     } else {

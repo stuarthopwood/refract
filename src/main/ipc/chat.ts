@@ -1,6 +1,6 @@
 // IPC handlers for `chat.*` (contracts/ipc.md "Chat", tasks.md T024 + T028's `chat.answer`).
 // `chat.send` validates a leading `/name` against the Session's latest `available_commands_update`
-// list plus Pinion's native set (constitution I); unknown names are refused locally and nothing
+// list plus Refract's native set (constitution I); unknown names are refused locally and nothing
 // is sent. `/new` is the one native command implemented so far, mapped to
 // `SessionAgent.startNewConversation` (the same RPC `new_session` T027 uses); every other native
 // command is recognised (not `unknown-command`) but not yet implemented.
@@ -13,7 +13,7 @@ import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNo
 import { invalidArgument, mapSessionThrown, notFound } from './util';
 import type { SessionManager } from '../SessionManager';
 
-// Constitution I: "Pinion ... supplies natively only the commands absent over RPC: /plan,
+// Constitution I: "Refract ... supplies natively only the commands absent over RPC: /plan,
 // /fork, /resume, /new, /settings, /pause, /plan-review, and /btw."
 const NATIVE_COMMANDS: Record<string, true> = {
   new: true,

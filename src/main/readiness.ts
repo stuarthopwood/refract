@@ -27,7 +27,7 @@ const SIGNED_IN_HINT = 'Run omp, complete /login, then Re-check.';
 async function checkGit(): Promise<Check> {
   const result = await gitRaw(os.tmpdir(), ['--version']);
   if (result.code !== 0) {
-    return { ok: false, hint: 'Git not found on PATH. Install Git for Windows and relaunch Pinion.' };
+    return { ok: false, hint: 'Git not found on PATH. Install Git for Windows and relaunch Refract.' };
   }
   return { ok: true, found: result.stdout.trim() };
 }
@@ -37,7 +37,7 @@ async function checkOmp(): Promise<Check> {
   try {
     ompPath = await resolveExecutable('omp');
   } catch {
-    return { ok: false, hint: 'omp not found on PATH. Install omp and relaunch Pinion.' };
+    return { ok: false, hint: 'omp not found on PATH. Install omp and relaunch Refract.' };
   }
   let stdout: string;
   try {
@@ -49,7 +49,7 @@ async function checkOmp(): Promise<Check> {
   if (OMP_VERSION_SUPPORTED_RE.test(found)) {
     return { ok: true, found };
   }
-  return { ok: false, found, hint: `Expected omp 18.4.x, found ${found}. Install a supported version and relaunch Pinion.` };
+  return { ok: false, found, hint: `Expected omp 18.4.x, found ${found}. Install a supported version and relaunch Refract.` };
 }
 
 // contracts/ipc.md: `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also
@@ -57,7 +57,7 @@ async function checkOmp(): Promise<Check> {
 // checks the default model can actually run, not merely that some credential is authenticated.
 // `get_login_providers` is used only to enrich the failure hint below.
 async function checkOmpSignedIn(): Promise<Check> {
-  const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pinion-readiness-'));
+  const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), 'refract-readiness-'));
   const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe' });
   try {
     await proc.start();

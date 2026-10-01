@@ -28,7 +28,7 @@ export class SessionManager {
   /** T036: the Session currently shown in the renderer; `transcript:patch` is only forwarded for
    * this one (contracts/ipc.md). `null` when no Session is open (e.g. the readiness/empty view). */
   private visibleSessionId: string | null = null;
-  /** T037: whether any Pinion window currently has OS focus; set by `index.ts` on focus/blur. */
+  /** T037: whether any Refract window currently has OS focus; set by `index.ts` on focus/blur. */
   private windowFocused = true;
 
   constructor(

@@ -14,7 +14,7 @@ export async function assertConversationFileExists(file: string): Promise<void> 
 
 /** data-model.md "Reattach verification (FR-013, FR-024)"; only called when resuming.
  * `messageCount` may only grow past `lastMessageCount`: OMP (its advisor, hooks and background
- * notices) appends messages to a Conversation outside the turn and `session_settled` flow Pinion
+ * notices) appends messages to a Conversation outside the turn and `session_settled` flow Refract
  * counts, so strict equality would fail a healthy Session after any Stop or Recover. A count
  * BELOW the last known one still fails: that is a truncated or different file. */
 export function verifyReattach(session: Session, state: GetStateResponseData): string | undefined {

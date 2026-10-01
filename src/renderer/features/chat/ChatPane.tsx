@@ -86,7 +86,7 @@ export function ChatPane() {
   // Live updates to the visible Session's stop reason (e.g. the agent exits while it is open).
   useEffect(
     () =>
-      window.pinion.onSessionStatus((event) => {
+      window.refract.onSessionStatus((event) => {
         if (event.sessionId !== visibleSessionIdRef.current) return
         setStopInfo({ reason: event.stopReason, detail: event.stopDetail })
       }),
@@ -112,15 +112,15 @@ export function ChatPane() {
         // reload while the agent stayed up. Without this, the slash menu's `aria-controls`
         // points at a listbox that never renders (SlashMenu.tsx renders no id when the
         // command list is empty), and typing `/` shows "No matching commands" forever.
-        const commandsResult = await window.pinion.chat.commands(visibleSessionId)
+        const commandsResult = await window.refract.chat.commands(visibleSessionId)
         if (!cancelled && commandsResult.ok) {
           useCommandsStore.getState().setForSession(visibleSessionId, commandsResult.value)
         }
       } catch (error) {
         // Defense in depth: a throw here (e.g. a future `sessionsStore.open` regression) must
         // not silently strand the transcript on "No messages yet" forever, the way the missing
-        // `window.pinion.sessions.setVisible` bridge method did (see sessions-store.ts).
-        if (!cancelled) console.error('[pinion] opening session snapshot failed', error)
+        // `window.refract.sessions.setVisible` bridge method did (see sessions-store.ts).
+        if (!cancelled) console.error('[refract] opening session snapshot failed', error)
       }
     })()
     return () => {
@@ -158,7 +158,7 @@ export function ChatPane() {
   async function handleRecover() {
     const recoveringFor = sessionId
     setRecoveringId(recoveringFor)
-    const result = await window.pinion.sessions.recover(recoveringFor)
+    const result = await window.refract.sessions.recover(recoveringFor)
     setRecoveringId(null)
     if (!result.ok) {
       notify(result.error)
@@ -171,12 +171,12 @@ export function ChatPane() {
   }
 
   async function handleRecreateWorktree() {
-    const result = await window.pinion.sessions.recreateWorktree(sessionId)
+    const result = await window.refract.sessions.recreateWorktree(sessionId)
     if (!result.ok) notify(result.error)
   }
 
   async function handleArchive() {
-    const result = await window.pinion.sessions.archive(sessionId)
+    const result = await window.refract.sessions.archive(sessionId)
     if (!result.ok) notify(result.error)
   }
 

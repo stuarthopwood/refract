@@ -1,10 +1,10 @@
 # Data model: Core session workspace
 
-Terms follow [CONTEXT.md](../../CONTEXT.md). Two kinds of data exist: what Pinion stores (small JSON files) and what OMP already stores (Conversations). Pinion never copies Conversation content.
+Terms follow [CONTEXT.md](../../CONTEXT.md). Two kinds of data exist: what Refract stores (small JSON files) and what OMP already stores (Conversations). Refract never copies Conversation content.
 
-## Stored by Pinion
+## Stored by Refract
 
-All files live in Electron's `userData` directory (`app.getPath('userData')`) and are written atomically: write `<name>.json.tmp`, flush, then rename over `<name>.json`. A file that fails to parse is renamed `<name>.json.corrupt-<timestamp>` and Pinion starts with an empty one, so a bad file never blocks launch.
+All files live in Electron's `userData` directory (`app.getPath('userData')`) and are written atomically: write `<name>.json.tmp`, flush, then rename over `<name>.json`. A file that fails to parse is renamed `<name>.json.corrupt-<timestamp>` and Refract starts with an empty one, so a bad file never blocks launch.
 
 ### `registry.json`
 
@@ -42,9 +42,9 @@ interface Session {
 Rules:
 
 - `worktreePath` is unique across all Sessions. `branch` is unique within a Repository.
-- `sessionDir` is learned once: after the first agent process for a Session reports `get_state`, take `dirname(sessionFile)`. Pinion does not compute OMP's directory-name encoding itself. Until the first message is sent, no file exists (OMP creates it lazily), so `sessionDir` is set when the first `sessionFile` is observed on a settled turn.
+- `sessionDir` is learned once: after the first agent process for a Session reports `get_state`, take `dirname(sessionFile)`. Refract does not compute OMP's directory-name encoding itself. Until the first message is sent, no file exists (OMP creates it lazily), so `sessionDir` is set when the first `sessionFile` is observed on a settled turn.
 - Deleting a Session removes its entry and its worktree; the `sessionDir` files are deleted only when the user confirmed Delete.
-- Removing a Repository from Pinion removes the Repository and its Session entries, and never touches disk. It is refused while any of its Sessions has a running agent.
+- Removing a Repository from Refract removes the Repository and its Session entries, and never touches disk. It is refused while any of its Sessions has a running agent.
 
 ### `settings.json`
 
@@ -65,7 +65,7 @@ interface ProcessRecord { pid: number; startTime: string; sessionId: string }
 
 One record per running `omp` root process, written when it starts and removed when it exits. `startTime` is the process creation time as read from Windows. At app start, every record whose pid is still running with the same creation time and an `omp` image name is stopped (`taskkill /T /F`); every other record is discarded. This is the fallback for a run where job-object assignment failed (see research.md decision 4).
 
-## Derived from OMP (not stored by Pinion)
+## Derived from OMP (not stored by Refract)
 
 ### Conversation
 
@@ -143,7 +143,7 @@ type PendingRequest =
 | `working` | an approval or question arrives | `needs-you` |
 | `needs-you` | the request is answered and the turn continues | `working` |
 | `working` | `session_settled` | `idle` |
-| any live | process exits without Pinion asking it to | `stopped` (`agent-exited`) |
+| any live | process exits without Refract asking it to | `stopped` (`agent-exited`) |
 | `idle` with `pendingMode` set | restart with the new mode and reattach succeeds | `idle` |
 
 `unread` becomes true when a Session reaches `idle` after `working` while it is not the visible Session or the window is not focused. It clears when the user opens that Session.
@@ -153,5 +153,5 @@ type PendingRequest =
 After starting an agent, binding it with `switch_session` to the saved Conversation, and reading `get_state`:
 
 1. `sessionFile` must equal `Session.currentConversation` (case-insensitive path compare).
-2. `messageCount` must be `> 0`, and must be `>= Session.lastMessageCount` when that is not null. It may be higher: OMP appends messages (advisor, hooks, background notices) outside the turn and `session_settled` flow Pinion counts, so exact equality would fail a healthy Session after a Stop or Recover. A lower count means a truncated or different file and fails.
+2. `messageCount` must be `> 0`, and must be `>= Session.lastMessageCount` when that is not null. It may be higher: OMP appends messages (advisor, hooks, background notices) outside the turn and `session_settled` flow Refract counts, so exact equality would fail a healthy Session after a Stop or Recover. A lower count means a truncated or different file and fails.
 3. If either fails, the Session becomes `stopped` with a notice saying which check failed. The empty session OMP created is left unused and no message can be sent until the user chooses recover or another Conversation.
