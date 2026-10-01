@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { heuristicClassify, mergeWithExisting, normalise } from "./triage.mjs";
 import { findViolations, parsePorcelain } from "./prep-guard.mjs";
+import { heuristicClassify, mergeWithExisting, normalise, parseModelJson } from "./triage.mjs";
 
 const issue = (title, body = "A sufficiently long description of the requested change goes here.") => ({ title, body });
 
@@ -65,4 +65,9 @@ test("porcelain parser reads untracked, modified, and renamed entries", () => {
   const out = " M specs/a.md\0?? docs/b.md\0R  specs/new.md\0src/old.ts\0";
   assert.deepEqual(parsePorcelain(out), ["specs/a.md", "docs/b.md", "specs/new.md", "src/old.ts"]);
   assert.deepEqual(findViolations(parsePorcelain(out)), ["src/old.ts"]);
+});
+
+test("model JSON is extracted from fenced or chatty replies and rejected when absent", () => {
+  assert.deepEqual(parseModelJson('Sure:\n```json\n{"type":"bug","duplicate_of":null}\n```'), { type: "bug", duplicate_of: null });
+  assert.throws(() => parseModelJson("I cannot classify this."));
 });

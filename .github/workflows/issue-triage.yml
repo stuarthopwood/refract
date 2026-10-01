@@ -30,7 +30,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-      models: read
     outputs:
       route: ${{ steps.triage.outputs.route }}
       trusted: ${{ steps.triage.outputs.trusted }}
@@ -53,6 +52,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
           FORCE: ${{ inputs.force }}
+          # Optional: without it the deterministic keyword heuristic classifies the issue.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node .github/scripts/triage.mjs
 
   prep:

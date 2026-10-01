@@ -4,12 +4,13 @@
 // Zero dependencies; requires Node 22+ (global fetch). Configuration comes from
 // the environment so no untrusted issue text is ever interpolated into a shell.
 //
-//   GITHUB_TOKEN        token with issues:write and models:read
+//   GITHUB_TOKEN        token with issues:write
+//   ANTHROPIC_API_KEY   optional; without it the keyword heuristic classifies the issue
 //   GITHUB_REPOSITORY   owner/name
 //   ISSUE_NUMBER        issue to triage
 //   FORCE               "true" re-triages an issue that already has `triaged`
 //   DRY_RUN             "true" classifies and prints, writes nothing
-//   TRIAGE_MODEL        optional model id (default openai/gpt-4.1)
+//   TRIAGE_MODEL        optional Anthropic model id (default claude-haiku-4-5)
 //   GITHUB_OUTPUT       set by Actions; receives route/trusted/triaged outputs
 
 import { appendFileSync } from "node:fs";
@@ -66,7 +67,7 @@ export function heuristicClassify(issue) {
   return {
     type, area, priority, state, route,
     duplicate_of: null,
-    rationale: "Keyword heuristic (the model call was unavailable).",
+    rationale: "Keyword heuristic (no model classification was available).",
     source: "heuristic",
   };
 }
@@ -151,23 +152,32 @@ function buildPrompt(issue, openIssues) {
   return { system, user };
 }
 
-async function callModel(token, issue, openIssues) {
+/** Extracts the first JSON object from model text (models sometimes wrap it in prose or fences). */
+export function parseModelJson(text) {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("model reply contained no JSON object");
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+async function callModel(apiKey, issue, openIssues) {
   const { system, user } = buildPrompt(issue, openIssues);
-  const res = await fetch("https://models.github.ai/inference/chat/completions", {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
-      model: process.env.TRIAGE_MODEL || "openai/gpt-4.1",
+      model: process.env.TRIAGE_MODEL || "claude-haiku-4-5",
+      max_tokens: 700,
       temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      system,
+      messages: [{ role: "user", content: user }],
     }),
   });
-  if (!res.ok) throw new Error(`models API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("models API returned no content");
-  return JSON.parse(content);
+  const text = data.content?.find((b) => b.type === "text")?.text;
+  if (!text) throw new Error("Anthropic API returned no text");
+  return parseModelJson(text);
 }
 
 function setOutputs(outputs) {
@@ -223,12 +233,16 @@ async function main() {
   const openNumbers = new Set(openIssues.map((i) => i.number));
 
   const fallback = heuristicClassify(issue);
-  let classification;
-  try {
-    classification = normalise(await callModel(token, issue, openIssues), fallback, openNumbers);
-  } catch (err) {
-    console.warn(`Model classification failed, using heuristic: ${err.message}`);
-    classification = fallback;
+  let classification = fallback;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.log("ANTHROPIC_API_KEY is not set; using the keyword heuristic.");
+  } else {
+    try {
+      classification = normalise(await callModel(apiKey, issue, openIssues), fallback, openNumbers);
+    } catch (err) {
+      console.warn(`Model classification failed, using heuristic: ${err.message}`);
+    }
   }
   const merged = mergeWithExisting(classification, existingLabels);
   const comment = renderComment(merged, issue);
