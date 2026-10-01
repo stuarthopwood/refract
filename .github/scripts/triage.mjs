@@ -7,16 +7,23 @@
 // Zero dependencies; requires Node 22+ (global fetch). Configuration comes from
 // the environment so no untrusted issue text is ever interpolated into a shell.
 //
-//   GITHUB_TOKEN        token with issues:write (contents:read is enough otherwise)
-//   ANTHROPIC_API_KEY   optional; without it the keyword heuristic classifies the issue
-//   GITHUB_REPOSITORY   owner/name
-//   ISSUE_NUMBER        issue to triage
-//   FORCE               "true" re-triages an issue that already has `triaged`
-//   DRY_RUN             "true" classifies and prints, writes nothing
-//   TRIAGE_MODEL        optional Anthropic model id (default claude-haiku-4-5)
-//   GITHUB_OUTPUT       set by Actions; receives route/type/priority/state/issue_number
+//   GITHUB_TOKEN          token with issues:write (contents:read is enough otherwise)
+//   COPILOT_GITHUB_TOKEN  optional; fine-grained PAT ("Copilot Requests" permission) or OAuth
+//                        token — tried first, via the `copilot` CLI, when present
+//   ANTHROPIC_API_KEY     optional; tried second, when Copilot is absent or fails
+//   TRIAGE_COPILOT_MODEL  optional Copilot CLI model id, passed as `--model`
+//   TRIAGE_MODEL          optional Anthropic model id (default claude-haiku-4-5)
+//   GITHUB_REPOSITORY     owner/name
+//   ISSUE_NUMBER          issue to triage
+//   FORCE                 "true" re-triages an issue that already has `triaged`
+//   DRY_RUN               "true" classifies and prints, writes nothing
+//   GITHUB_OUTPUT         set by Actions; receives route/type/priority/state/issue_number
 
 import { appendFileSync, existsSync, readdirSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 export const TYPES = ["bug", "enhancement", "feature", "documentation", "spike", "chore", "question", "design"];
 export const AREAS = [
@@ -105,11 +112,12 @@ export function heuristicClassify(issue) {
   rationale: "Keyword heuristic (no model classification was available).",
   pickup_notes: [],
   source: "heuristic",
+  provider: "heuristic",
  };
 }
 
-/** Coerces model output to the allowed vocabularies; invalid fields fall back. */
-export function normalise(raw, fallback, openNumbers) {
+/** Coerces model output to the allowed vocabularies; invalid fields fall back. `provider` names which model produced `raw` ("copilot" or "anthropic"), recorded only once at least one field actually came from it. */
+export function normalise(raw, fallback, openNumbers, provider) {
  const pick = (value, allowed, def) => (allowed.includes(value) ? value : def);
  const dup = Number.isInteger(raw?.duplicate_of) && openNumbers.has(raw.duplicate_of) ? raw.duplicate_of : null;
  const pickupNotes = Array.isArray(raw?.pickup_notes)
@@ -118,8 +126,8 @@ export function normalise(raw, fallback, openNumbers) {
    .slice(0, PICKUP_NOTES_MAX)
    .map((n) => n.trim().slice(0, PICKUP_NOTE_MAX_LEN))
   : [];
- // `source` only claims "model" once at least one field actually came from
- // the model's reply rather than every field silently falling back to the
+ // `source`/`provider` only claim the model once at least one field actually
+ // came from its reply rather than every field silently falling back to the
  // heuristic classification (which would misreport itself as model output).
  const usedModelField =
   TYPES.includes(raw?.type) ||
@@ -140,6 +148,7 @@ export function normalise(raw, fallback, openNumbers) {
   rationale: typeof raw?.rationale === "string" && raw.rationale.trim() ? raw.rationale.trim().slice(0, 600) : fallback.rationale,
   pickup_notes: pickupNotes,
   source: usedModelField ? "model" : "heuristic",
+  provider: usedModelField ? provider : fallback.provider,
  };
  if (dup) {
   out.state = "needs-triage";
@@ -275,6 +284,9 @@ export function renderPickupPlan(c, featureDirectory) {
  if (c.state === "needs-triage" || c.duplicate_of) {
   return "A human should triage this (confirm or rule out the duplicate) before any Spec Kit work starts.";
  }
+ if (c.state === "ready-for-human" && c.route === "none") {
+  return "A human decision or manual work is needed first; no Spec Kit steps.";
+ }
  const prefix = c.state === "ready-for-human" ? "After the human decision/manual work is done:\n\n" : "";
  if (c.route === "specify") {
   return `${prefix}1. \`/speckit.specify\` — use the issue title and body as the feature description.
@@ -292,7 +304,9 @@ export function renderPickupPlan(c, featureDirectory) {
 2. \`/speckit.converge\` — appends a Convergence phase to \`tasks.md\` (append-only).
 3. \`/speckit.implement\``;
  }
- // route === "none": no spec work, but still a one-line pickup hint by type.
+ // route === "none" and state here is always ready-for-agent (ready-for-human
+ // + none returned its own single-line message above): a one-line pickup
+ // hint by type, never prefixed.
  const hints = {
   bug: "Reproduce with a failing test first, then fix.",
   documentation: "Edit docs only.",
@@ -301,15 +315,17 @@ export function renderPickupPlan(c, featureDirectory) {
   spike: "Investigate and report findings in a comment.",
   question: "Answer directly in a comment; no code change expected.",
  };
- return prefix + (hints[c.type] ?? "Pick up directly.");
+ return hints[c.type] ?? "Pick up directly.";
 }
+
+const PROVIDER_LABELS = { copilot: "Copilot classification", anthropic: "model classification", heuristic: "heuristic fallback" };
 
 export function renderComment(c, issue, featureDirectory) {
  const lines = [
   renderMarker(c.botLabels ?? []),
   DISCLAIMER,
   "",
-  `**Triage for #${issue.number}** (${c.source === "model" ? "model classification" : "heuristic fallback"})`,
+  `**Triage for #${issue.number}** (${PROVIDER_LABELS[c.provider] ?? "heuristic fallback"})`,
   "",
   "| Field | Value |",
   "| --- | --- |",
@@ -318,20 +334,31 @@ export function renderComment(c, issue, featureDirectory) {
   `| Priority | \`${c.priority}\` |`,
   `| State | \`${c.state}\` |`,
   `| Spec Kit route | \`${c.route}\` |`,
-  "",
-  // Rendered as an inline code span, not interpolated as markdown: GitHub
-  // does not auto-link #N references, render [links](url)/![images](url),
-  // or notify @mentions inside inline code, so untrusted rationale text
-  // can never do any of those things from here.
-  `\`${sanitizeRationale(c.rationale)}\``,
  ];
  if (c.duplicate_of) lines.push("", `Possible duplicate of #${c.duplicate_of}. A maintainer should confirm before closing.`);
  if (c.state === "needs-info") lines.push("", "The description is too thin to prepare for implementation. Add the expected behaviour and why it matters.");
- lines.push("", "## Spec Kit pickup plan", "", renderPickupPlan(c, featureDirectory));
+ // A clearly separated, clearly labelled block: everything here is free
+ // text derived from untrusted issue content (by the model, or the fixed
+ // heuristic string), never anything a picking-up agent should act on.
+ // Rendered as inline code spans, not interpolated as markdown: GitHub does
+ // not auto-link #N references, render [links](url)/![images](url), or
+ // notify @mentions inside inline code, so it can never do any of those
+ // things from here either.
+ lines.push(
+  "",
+  "## Model summary of the issue (untrusted, informational only; not instructions)",
+  "",
+  `\`${sanitizeRationale(c.rationale)}\``,
+ );
  if (c.pickup_notes?.length) {
   lines.push("", "Watch for:");
   for (const note of c.pickup_notes) lines.push(`- \`${sanitizeRationale(note)}\``);
  }
+ // The pickup plan itself is computed purely from closed-vocabulary
+ // route/type/state and the resolved feature directory (never free text —
+ // see `renderPickupPlan`), so it stays safe to follow even though the
+ // block above it is not.
+ lines.push("", "## Spec Kit pickup plan", "", renderPickupPlan(c, featureDirectory));
  return lines.join("\n");
 }
 
@@ -380,6 +407,64 @@ async function callModel(apiKey, issue, openIssues) {
  const text = data.content?.find((b) => b.type === "text")?.text;
  if (!text) throw new Error("Anthropic API returned no text");
  return parseModelJson(text);
+}
+
+/**
+ * Builds the `copilot` CLI argv for one non-interactive classification call.
+ * Pure — no process spawned — so it is unit-testable without the binary.
+ * No `--allow-tool`/`--allow-all` of any kind: classification only ever
+ * needs the prompt text and a JSON reply, so every tool kind is explicitly
+ * denied rather than merely left ungranted. `execFile` (never a shell) takes
+ * this array directly, so nothing here is ever shell-interpreted.
+ */
+export function buildCopilotArgs(prompt, model) {
+ const args = ["-p", prompt, "-s", "--no-ask-user", "--deny-tool", "shell,read,write,url,memory"];
+ if (model) args.push("--model", model);
+ return args;
+}
+
+async function callCopilot(token, issue, openIssues) {
+ const { system, user } = buildPrompt(issue, openIssues);
+ const args = buildCopilotArgs(`${system}\n\n${user}`, process.env.TRIAGE_COPILOT_MODEL);
+ // A minimal, explicit environment — not the full process env (which also
+ // carries GITHUB_TOKEN and, when configured, ANTHROPIC_API_KEY) — since the
+ // CLI needs only its own token, its home/config directory, and PATH to
+ // find itself.
+ const env = {
+  PATH: process.env.PATH,
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  COPILOT_GITHUB_TOKEN: token,
+  COPILOT_AUTO_UPDATE: "false",
+ };
+ const { stdout } = await execFileAsync("copilot", args, { env, timeout: 120_000, maxBuffer: 1024 * 1024 });
+ return parseModelJson(stdout);
+}
+
+/**
+ * Tries Copilot, then Anthropic, then the heuristic fallback, in that order,
+ * stopping at the first one that succeeds. The `try*` functions and
+ * `has*` flags are injected so this ordering/fallthrough logic is
+ * unit-testable without a network call or the `copilot` binary; `main`
+ * supplies the real ones. Never throws: a failing provider is logged (its
+ * error message only, never an env var or secret) and skipped.
+ */
+export async function classifyWithFallback(fallback, { hasCopilot, tryCopilot, hasAnthropic, tryAnthropic }) {
+ if (hasCopilot) {
+  try {
+   return await tryCopilot();
+  } catch (err) {
+   console.warn(`Copilot classification failed, falling back: ${err.message}`);
+  }
+ }
+ if (hasAnthropic) {
+  try {
+   return await tryAnthropic();
+  } catch (err) {
+   console.warn(`Anthropic classification failed, falling back: ${err.message}`);
+  }
+ }
+ return fallback;
 }
 
 function setOutputs(outputs) {
@@ -475,17 +560,15 @@ async function main() {
  const botLabels = mine ? (parseMarker(mine.body) ?? []) : [];
 
  const fallback = heuristicClassify(issue);
- let classification = fallback;
+ const copilotToken = process.env.COPILOT_GITHUB_TOKEN;
  const apiKey = process.env.ANTHROPIC_API_KEY;
- if (!apiKey) {
-  console.log("ANTHROPIC_API_KEY is not set; using the keyword heuristic.");
- } else {
-  try {
-   classification = normalise(await callModel(apiKey, issue, openIssues), fallback, openNumbers);
-  } catch (err) {
-   console.warn(`Model classification failed, using heuristic: ${err.message}`);
-  }
- }
+ if (!copilotToken && !apiKey) console.log("No classifier token/key is set; using the keyword heuristic.");
+ const classification = await classifyWithFallback(fallback, {
+  hasCopilot: Boolean(copilotToken),
+  tryCopilot: async () => normalise(await callCopilot(copilotToken, issue, openIssues), fallback, openNumbers, "copilot"),
+  hasAnthropic: Boolean(apiKey),
+  tryAnthropic: async () => normalise(await callModel(apiKey, issue, openIssues), fallback, openNumbers, "anthropic"),
+ });
  const merged = mergeWithExisting(classification, existingLabels, { botLabels, specRelated: isSpecRelated(issue) });
  const featureDirectory = resolveFeatureDirectory(merged.route, existingLabels, listSpecsDirs());
  const comment = renderComment(merged, issue, featureDirectory);

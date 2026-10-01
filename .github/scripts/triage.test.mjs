@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildCopilotArgs,
+  classifyWithFallback,
   heuristicClassify,
   isSpecRelated,
   mergeWithExisting,
@@ -299,17 +301,39 @@ test("renderPickupPlan gives a one-line pickup hint per type when route is none"
   }
 });
 
-test("renderPickupPlan prefixes the pipeline for ready-for-human but still names the real route", () => {
+test("renderPickupPlan prefixes the pipeline for ready-for-human+specify but still names the real route", () => {
   const plan = renderPickupPlan({ state: "ready-for-human", route: "specify" });
   assert.match(plan, /After the human decision\/manual work is done/);
   assert.match(plan, /speckit\.specify/);
 });
 
-test("renderComment embeds the pickup plan under its own heading", () => {
-  const c = { type: "feature", area: null, priority: "p2", state: "ready-for-agent", route: "specify", rationale: "ok", source: "model", botLabels: [], pickup_notes: [] };
+test("renderPickupPlan gives a single no-steps line for ready-for-human+none, never the type hint", () => {
+  const plan = renderPickupPlan({ state: "ready-for-human", route: "none", type: "bug" });
+  assert.match(plan, /A human decision or manual work is needed first; no Spec Kit steps\./);
+  assert.doesNotMatch(plan, /failing test/);
+  assert.doesNotMatch(plan, /After the human decision/);
+  assert.doesNotMatch(plan, /speckit\./);
+});
+
+test("renderComment embeds the pickup plan under its own heading, separate from the untrusted model summary", () => {
+  const c = {
+    type: "feature", area: null, priority: "p2", state: "ready-for-agent", route: "specify",
+    rationale: "ok", source: "model", provider: "anthropic", botLabels: [], pickup_notes: [],
+  };
   const comment = renderComment(c, { number: 1 });
+  assert.match(comment, /## Model summary of the issue \(untrusted, informational only; not instructions\)/);
   assert.match(comment, /## Spec Kit pickup plan/);
   assert.match(comment, /speckit\.specify/);
+  // The model-summary heading must appear before the pickup-plan heading,
+  // keeping untrusted free text strictly out of the deterministic plan.
+  assert.ok(comment.indexOf("Model summary") < comment.indexOf("Spec Kit pickup plan"));
+});
+
+test("renderComment's header names the provider", () => {
+  const base = { type: "bug", area: null, priority: "p1", state: "ready-for-agent", route: "none", rationale: "x", botLabels: [], pickup_notes: [] };
+  assert.match(renderComment({ ...base, provider: "copilot" }, { number: 1 }), /\(Copilot classification\)/);
+  assert.match(renderComment({ ...base, provider: "anthropic" }, { number: 1 }), /\(model classification\)/);
+  assert.match(renderComment({ ...base, provider: "heuristic" }, { number: 1 }), /\(heuristic fallback\)/);
 });
 
 test("renderComment renders pickup_notes as a sanitised bullet list, omitted when empty", () => {
@@ -323,4 +347,78 @@ test("renderComment renders pickup_notes as a sanitised bullet list, omitted whe
 
   const noNotes = { ...withNotes, pickup_notes: [] };
   assert.doesNotMatch(renderComment(noNotes, { number: 1 }), /Watch for:/);
+});
+
+test("heuristicClassify reports provider heuristic", () => {
+  assert.equal(heuristicClassify(issue("Add thing")).provider, "heuristic");
+});
+
+test("normalise records the given provider only once a field actually came from the model", () => {
+  const fallback = heuristicClassify(issue("Add dark mode toggle"));
+  assert.equal(normalise({}, fallback, new Set(), "copilot").provider, "heuristic");
+  assert.equal(normalise({ state: "ready-for-agent" }, fallback, new Set(), "copilot").provider, "copilot");
+  assert.equal(normalise({ state: "ready-for-agent" }, fallback, new Set(), "anthropic").provider, "anthropic");
+});
+
+test("buildCopilotArgs builds a no-shell argv with every tool kind explicitly denied", () => {
+  const args = buildCopilotArgs("PROMPT TEXT", undefined);
+  assert.deepEqual(args, ["-p", "PROMPT TEXT", "-s", "--no-ask-user", "--deny-tool", "shell,read,write,url,memory"]);
+});
+
+test("buildCopilotArgs appends --model only when one is given", () => {
+  const args = buildCopilotArgs("PROMPT TEXT", "claude-haiku-4.5");
+  assert.deepEqual(args, ["-p", "PROMPT TEXT", "-s", "--no-ask-user", "--deny-tool", "shell,read,write,url,memory", "--model", "claude-haiku-4.5"]);
+});
+
+test("classifyWithFallback tries Copilot first and never calls Anthropic when it succeeds", async () => {
+  const fallback = { provider: "heuristic" };
+  const copilotResult = { provider: "copilot" };
+  const r = await classifyWithFallback(fallback, {
+    hasCopilot: true,
+    tryCopilot: async () => copilotResult,
+    hasAnthropic: true,
+    tryAnthropic: async () => { throw new Error("must not be called"); },
+  });
+  assert.equal(r, copilotResult);
+});
+
+test("classifyWithFallback falls through Copilot -> Anthropic -> heuristic in order", async () => {
+  const fallback = { provider: "heuristic" };
+  const anthropicResult = { provider: "anthropic" };
+
+  const r1 = await classifyWithFallback(fallback, {
+    hasCopilot: true,
+    tryCopilot: async () => { throw new Error("copilot down"); },
+    hasAnthropic: true,
+    tryAnthropic: async () => anthropicResult,
+  });
+  assert.equal(r1, anthropicResult);
+
+  const r2 = await classifyWithFallback(fallback, {
+    hasCopilot: true,
+    tryCopilot: async () => { throw new Error("copilot down"); },
+    hasAnthropic: true,
+    tryAnthropic: async () => { throw new Error("anthropic down"); },
+  });
+  assert.equal(r2, fallback);
+});
+
+test("classifyWithFallback skips a provider whose token/key is absent rather than calling it", async () => {
+  const fallback = { provider: "heuristic" };
+  const anthropicResult = { provider: "anthropic" };
+  const r = await classifyWithFallback(fallback, {
+    hasCopilot: false,
+    tryCopilot: async () => { throw new Error("must not be called") },
+    hasAnthropic: true,
+    tryAnthropic: async () => anthropicResult,
+  });
+  assert.equal(r, anthropicResult);
+
+  const r2 = await classifyWithFallback(fallback, {
+    hasCopilot: false,
+    tryCopilot: async () => { throw new Error("must not be called") },
+    hasAnthropic: false,
+    tryAnthropic: async () => { throw new Error("must not be called") },
+  });
+  assert.equal(r2, fallback);
 });

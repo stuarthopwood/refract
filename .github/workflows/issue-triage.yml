@@ -42,6 +42,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
+      # Secrets can't be referenced directly in a step `if:` condition, so
+      # the presence check is computed here (in `env:`, which secrets are
+      # always fine in) and read back from this step's own output.
+      - name: Check for a Copilot CLI token
+        id: copilot_check
+        env:
+          HAS_COPILOT: ${{ secrets.COPILOT_GITHUB_TOKEN != '' }}
+        run: echo "present=$HAS_COPILOT" >> "$GITHUB_OUTPUT"
+      - name: Install GitHub Copilot CLI
+        if: steps.copilot_check.outputs.present == 'true'
+        run: npm install -g @github/copilot
       - name: Run script tests
         run: node --test .github/scripts/triage.test.mjs
       - name: Classify the issue
@@ -50,7 +61,12 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
           FORCE: ${{ inputs.force }}
-          # Optional: without it the deterministic keyword heuristic classifies the issue.
+          # Optional, tried first via the `copilot` CLI (installed above only
+          # when this secret is set); falls through to Anthropic, then the
+          # heuristic, on any failure.
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          TRIAGE_COPILOT_MODEL: ${{ vars.TRIAGE_COPILOT_MODEL }}
+          # Optional: without either key above, the deterministic keyword heuristic classifies the issue.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TRIAGE_MODEL: ${{ vars.TRIAGE_MODEL }}
         run: node .github/scripts/triage.mjs
