@@ -54,6 +54,8 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | `conversations.startNew(sessionId)` | `SessionSnapshot` (Session must be idle or stopped without a live process; error `not-idle`) |
 | `conversations.open(sessionId, file)` | `SessionSnapshot` (Session must be idle or stopped without a live process; error `not-idle`, or `reattach-failed`) |
 
+For a `stopped` Session, both start a fresh reattach against the chosen Conversation (issue #69); the returned snapshot is that attempt's result, which may itself still be `stopped` (with its own notice, e.g. a missing worktree or a failed reattach) rather than `idle` -- this is not reported as an IPC error. `not-idle` instead means the Session was not actually `stopped`: a start was already in flight, or a live process exists (including one left over from a start that raced this call) -- the chosen Conversation was never attempted in that case.
+
 ### Chat (FR-007 to FR-012, FR-017 to FR-019, FR-032, FR-033)
 
 | Method | Returns | Notes |

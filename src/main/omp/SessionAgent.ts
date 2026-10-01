@@ -19,6 +19,8 @@ import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './t
 import { bailIfStopRequested, exitedDuringStart, stopIfRunning } from './launchStopGuard';
 import { PatchCoalescer } from './patchCoalescer';
 import { assertConversationFileExists, verifyReattach } from './reattachVerification';
+import { recoverFromFailedSwitch } from './switchRecovery';
+import { waitForIdleStatus } from './statusWait';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
@@ -149,6 +151,27 @@ export class SessionAgent extends EventEmitter {
       this.startPromise = undefined;
       this.maybeRestartForPendingMode();
     });
+    return this.startPromise;
+  }
+
+  /** `conversationSwitch.ts`'s `startStoppedSessionOnConversation` (issue #69 fix): starts a
+   * `stopped` Session that is about to be pointed at a different Conversation, running `prepare`
+   * (the registry write choosing that Conversation) INSIDE the same in-flight attempt `start()`
+   * guards with, before `doStart()`'s `requireSession()` reads it back -- so a `start()` already
+   * in flight (or a live process, or any non-`stopped` status) can never silently join this
+   * attempt and reattach the OLD Conversation instead. The synchronous check below runs before
+   * any `await`, so two rapid calls can never both pass it. */
+  async startWith(prepare: () => Promise<void>): Promise<void> {
+    if (this.startPromise || this.restartPromise || this.process || this.runtime.status !== 'stopped') {
+      throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot start while not idle`);
+    }
+    this.stopRequested = false;
+    this.startPromise = prepare()
+      .then(() => this.doStart())
+      .finally(() => {
+        this.startPromise = undefined;
+        this.maybeRestartForPendingMode();
+      });
     return this.startPromise;
   }
 
@@ -384,7 +407,7 @@ export class SessionAgent extends EventEmitter {
     if (!res.success) {
       this.appendNotice(`abort failed: ${res.error ?? 'unknown error'}`, 'error');
     }
-    await this.waitForIdle(ABORT_SETTLE_TIMEOUT_MS);
+    await waitForIdleStatus(this, this.runtime.status, ABORT_SETTLE_TIMEOUT_MS, this.sessionId);
   }
 
   /** `chat.removeQueued`: hides the chip only when OMP reports `removed: true`. */
@@ -490,31 +513,24 @@ export class SessionAgent extends EventEmitter {
    * marks the Session `stopped`/`start-failed` instead of leaving it pointed at the wrong file. */
   private async recoverFromFailedSwitch(previousConversation: string | null, attemptedFile: string, reason: string): Promise<void> {
     if (!this.process) return;
-    if (previousConversation) {
-      try {
-        const backRes = await this.process.request({ type: 'switch_session', id: '', sessionPath: previousConversation });
-        const backCancelled = (backRes.data as SwitchSessionResponseData | undefined)?.cancelled;
-        if (backRes.success && backCancelled === false) {
-          const backStateRes = await this.process.request({ type: 'get_state', id: '' });
-          if (backStateRes.success) {
-            const session = this.requireSession();
-            const backFailure = verifyReattach(session, backStateRes.data as GetStateResponseData);
-            if (!backFailure) {
-              const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
-              const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
-              this.runtime = { ...this.runtime, transcript };
-              this.emitPatchReset();
-              return;
-            }
-          }
-        }
-      } catch (err) {
-        console.error(`SessionAgent ${this.sessionId}: failed to switch back after a failed openConversation`, err);
-      }
-    }
-    await this.process.stop().catch(() => undefined);
-    this.process = undefined;
-    this.recordStartFailure(`openConversation(${attemptedFile}) failed reattach verification (${reason}), and recovery to the prior Conversation also failed`);
+    await recoverFromFailedSwitch(
+      {
+        process: this.process,
+        sessionId: this.sessionId,
+        requireSession: () => this.requireSession(),
+        applyTranscript: (transcript) => {
+          this.runtime = { ...this.runtime, transcript };
+          this.emitPatchReset();
+        },
+        onUnrecoverable: (detail) => {
+          this.process = undefined;
+          this.recordStartFailure(detail);
+        },
+      },
+      previousConversation,
+      attemptedFile,
+      reason,
+    );
   }
 
   /** `chat.answer` (T028): writes the `extension_ui_response` for a still-pending request and
@@ -775,25 +791,4 @@ export class SessionAgent extends EventEmitter {
     this.patches.queue(ops);
   }
 
-  /** Resolves once the Session reaches `idle` -- or `stopped`, if the process exits mid-abort,
-   * since it will then never reach `idle` and the caller must not wait out the full timeout for
-   * something that has already definitively happened. Used by `stop()` after sending `abort`. */
-  private waitForIdle(timeoutMs: number): Promise<void> {
-    if (this.runtime.status === 'idle' || this.runtime.status === 'stopped') return Promise.resolve();
-    // Promise.withResolvers() would read cleaner here, but it needs lib "ES2024" and
-    // tsconfig.node.json is pinned to "ES2023" (see OmpProcess.ts's start()); executor form kept.
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.off('status', onStatus);
-        reject(new Error(`SessionAgent ${this.sessionId}: timed out waiting for idle`));
-      }, timeoutMs);
-      const onStatus = (payload: SessionStatusEvent): void => {
-        if (payload.status !== 'idle' && payload.status !== 'stopped') return;
-        clearTimeout(timer);
-        this.off('status', onStatus);
-        resolve();
-      };
-      this.on('status', onStatus);
-    });
-  }
 }

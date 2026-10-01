@@ -16,21 +16,28 @@ import { applySnapshot } from './ChatPane'
 
 export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
-  const canSwitch = status === 'idle' || status === 'stopped'
+  const opening = useSessionsStore((s) => s.openingIds.has(sessionId))
+  const canSwitch = (status === 'idle' || status === 'stopped') && !opening
   const [creating, setCreating] = useState(false)
+  const [switching, setSwitching] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [conversations, setConversations] = useState<ConversationInfo[]>([])
 
   async function handleNewConversation() {
     setCreating(true)
-    const result = await window.pinion.conversations.startNew(sessionId)
-    setCreating(false)
-    if (!result.ok) {
-      notify(result.error)
-      return
+    setSwitching(true)
+    try {
+      const result = await window.pinion.conversations.startNew(sessionId)
+      if (!result.ok) {
+        notify(result.error)
+        return
+      }
+      applySnapshot(sessionId, result.value)
+    } finally {
+      setCreating(false)
+      setSwitching(false)
     }
-    applySnapshot(sessionId, result.value)
   }
 
   async function handleOpenChange(open: boolean) {
@@ -47,18 +54,23 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   }
 
   async function handleOpenConversation(file: string) {
-    const result = await window.pinion.conversations.open(sessionId, file)
-    if (!result.ok) {
-      notify(result.error)
-      return
+    setSwitching(true)
+    try {
+      const result = await window.pinion.conversations.open(sessionId, file)
+      if (!result.ok) {
+        notify(result.error)
+        return
+      }
+      applySnapshot(sessionId, result.value)
+      setHistoryOpen(false)
+    } finally {
+      setSwitching(false)
     }
-    applySnapshot(sessionId, result.value)
-    setHistoryOpen(false)
   }
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <Button variant="outline" size="sm" disabled={!canSwitch || creating} onClick={() => void handleNewConversation()}>
+      <Button variant="outline" size="sm" disabled={!canSwitch || creating || switching} onClick={() => void handleNewConversation()}>
         <PlusIcon />
         New conversation
       </Button>
@@ -82,7 +94,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                 <li key={conversation.file}>
                   <button
                     type="button"
-                    disabled={!canSwitch || conversation.isCurrent}
+                    disabled={!canSwitch || switching || conversation.isCurrent}
                     aria-current={conversation.isCurrent}
                     onClick={() => void handleOpenConversation(conversation.file)}
                     className="flex w-full flex-col gap-0.5 rounded-lg border border-transparent px-2.5 py-2 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 aria-[current=true]:border-border aria-[current=true]:bg-muted"
