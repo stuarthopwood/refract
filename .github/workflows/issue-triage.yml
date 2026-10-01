@@ -45,7 +45,7 @@ jobs:
         with:
           node-version: 22
       - name: Run script tests
-        run: node --test .github/scripts/
+        run: node --test .github/scripts/triage.test.mjs
       - name: Classify the issue
         id: triage
         env:
