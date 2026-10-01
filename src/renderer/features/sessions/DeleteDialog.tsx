@@ -3,6 +3,7 @@
 // the ChatPane worktree-missing banner (FR-035), so it takes only the id/name it needs, not a
 // full SessionSummary.
 import { useEffect, useRef, useState } from 'react'
+import { cn } from '@/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,7 +112,9 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted }: 
             {!result.hasUpstream && <li>This branch has no upstream</li>}
           </ul>
         )}
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+          {error ?? ''}
+        </p>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
           <AlertDialogAction

@@ -13,6 +13,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
+import { focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { useRepositoriesStore, useSessionsStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
@@ -71,16 +72,38 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const restoreFocusRef = useRef(false)
   const listFocusRequestedRef = useRef(false)
   // Archive/restore/delete unmount this row asynchronously (the store update that moves it
-  // out of the active/archived bucket can land before `onCloseAutoFocus` fires), so by the time
-  // that handler runs, `rowRef.current` is already null and `closest('ul')` finds nothing --
-  // focus falls to <body> (WCAG 2.1 AA focus-visibility). Captured synchronously in each
-  // action's `onSelect`, while the row is still mounted, this outlives the unmount.
-  const focusFallbackRef = useRef<HTMLUListElement | null>(null)
+  // out of the active/archived bucket can land before `onCloseAutoFocus` fires), and sometimes
+  // the whole surrounding group unmounts with it (restoring the last archived Session also
+  // collapses the Archived <Collapsible>). A plain `closest('ul')` captured once can therefore
+  // itself be gone by the time focus needs to move, landing on <body> (WCAG 2.1 AA
+  // focus-visibility). Instead this captures, synchronously in each action's `onSelect` while
+  // the row is still mounted, a chain of fallback *elements* (next row, previous row, this
+  // Repository's always-present active-group trigger) and resolves it lazily against
+  // `isConnected`, falling back to the Sessions nav root, which always outlives every row.
+  const focusFallbackRef = useRef<() => void>(focusSessionsNav)
+
+  // Captures the next still-connected place for focus to land after this row unmounts.
+  function captureFocusFallback(): void {
+    const li = rowRef.current
+    const nextButton =
+      (li?.nextElementSibling as HTMLElement | null)?.querySelector<HTMLButtonElement>('.session-open-button') ?? null
+    const prevButton =
+      (li?.previousElementSibling as HTMLElement | null)?.querySelector<HTMLButtonElement>('.session-open-button') ??
+      null
+    const groupRoot = li?.closest<HTMLElement>('[data-repository-id]') ?? null
+    const trigger = groupRoot?.querySelector<HTMLButtonElement>('[data-slot="collapsible-trigger"]') ?? null
+    focusFallbackRef.current = () => {
+      if (nextButton?.isConnected) nextButton.focus()
+      else if (prevButton?.isConnected) prevButton.focus()
+      else if (trigger?.isConnected) trigger.focus()
+      else focusSessionsNav()
+    }
+  }
 
   // After a row unmounts (archive/restore/delete), focus must not fall back to <body>
-  // (WCAG 2.1 AA focus-visibility): send it to the surrounding list.
+  // (WCAG 2.1 AA focus-visibility): send it to the captured fallback.
   function focusListContainer(): void {
-    focusFallbackRef.current?.focus()
+    focusFallbackRef.current()
   }
 
   function startRenaming(): void {
@@ -166,7 +189,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
           onDoubleClick={startRenaming}
           onKeyDown={handleOpenButtonKeyDown}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+            'session-open-button flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
             isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
           )}
         >
@@ -217,7 +240,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
             <DropdownMenuItem
               onSelect={() => {
                 listFocusRequestedRef.current = true
-                focusFallbackRef.current = rowRef.current?.closest('ul') ?? null
+                captureFocusFallback()
                 void restore(session.id)
               }}
             >
@@ -227,7 +250,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
             <DropdownMenuItem
               onSelect={() => {
                 listFocusRequestedRef.current = true
-                focusFallbackRef.current = rowRef.current?.closest('ul') ?? null
+                captureFocusFallback()
                 void archive(session.id)
               }}
             >
@@ -241,7 +264,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
           <DropdownMenuItem
             variant="destructive"
             onSelect={() => {
-              focusFallbackRef.current = rowRef.current?.closest('ul') ?? null
+              captureFocusFallback()
               setDeleteOpen(true)
             }}
           >
@@ -263,7 +286,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   const archived = sessions.filter((session) => session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
         <div className="flex items-center gap-1 px-1">
           <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
@@ -285,7 +308,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
           />
         </div>
         <CollapsibleContent>
-          <ul tabIndex={-1} aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1 outline-none">
+          <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
             {active.map((session) => (
               <SessionRow key={session.id} session={session} />
             ))}
@@ -299,7 +322,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
             <span>Archived ({archived.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <ul tabIndex={-1} aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1 outline-none">
+            <ul aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1">
               {archived.map((session) => (
                 <SessionRow key={session.id} session={session} />
               ))}
@@ -318,7 +341,11 @@ export function SessionList() {
   const sessions = useSessionsStore((state) => state.sessions)
 
   return (
-    <nav aria-label="Sessions" className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+    <nav
+      aria-label="Sessions"
+      tabIndex={-1}
+      className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+    >
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-2">
           {repositories.map((repository) => (

@@ -8,6 +8,8 @@ import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
+import { cn } from '@/lib/utils'
+import { focusSessionsNav } from '@/lib/focus'
 import { notify, useCommandsStore, usePendingRequestsStore, useQueueStore, useSessionsStore, useTranscriptStore } from '@/state'
 import type { SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { ChatHeader } from './ChatHeader'
@@ -150,15 +152,20 @@ export function ChatPane() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ChatHeader sessionId={sessionId} />
-      {isOpening && (
-        <div
-          role="status"
-          className="flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground"
-        >
-          <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
-          Starting the agent…
-        </div>
-      )}
+      <div
+        role="status"
+        className={cn(
+          'flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground',
+          !isOpening && 'sr-only'
+        )}
+      >
+        {isOpening && (
+          <>
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
+            Starting the agent…
+          </>
+        )}
+      </div>
       {showBanner && (
         <div className="shrink-0 px-4 pt-3">
           <Alert variant="destructive">
@@ -187,7 +194,7 @@ export function ChatPane() {
           </Alert>
         </div>
       )}
-      <DeleteDialog session={session} open={deleteOpen} onOpenChange={setDeleteOpen} />
+      <DeleteDialog session={session} open={deleteOpen} onOpenChange={setDeleteOpen} onDeleted={focusSessionsNav} />
       <div className="min-h-0 flex-1 overflow-hidden">
         <Transcript />
       </div>

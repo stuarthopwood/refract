@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
@@ -56,6 +57,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
   const slashQuery = parseSlashQuery(text)
   const slashMatches = slashQuery !== null ? filterSlashCommands(slashQuery, commands) : EMPTY_COMMANDS
   const showSlashMenu = slashQuery !== null && !slashDismissed
+  // `slashActiveIndex` is reset to 0 by the post-commit effect below, but for the one commit in
+  // between a shorter filtered list and that effect running, it can still reference a row past
+  // the end -- clamp at render so `aria-activedescendant` and the highlighted option never
+  // point at a row that no longer exists.
+  const clampedSlashActiveIndex = slashMatches.length > 0 ? Math.min(slashActiveIndex, slashMatches.length - 1) : 0
 
   const chips: QueuedChip[] = [
     ...followUp.map((chipText, index) => ({ key: `followUp-${index}-${chipText}`, text: chipText })),
@@ -87,9 +93,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
     const message = text
     if (!message.trim()) return
     if (notStarted) {
-      setStarting(true)
-      const snapshot = await useSessionsStore.getState().open(sessionId)
-      setStarting(false)
+      let snapshot
+      try {
+        setStarting(true)
+        snapshot = await useSessionsStore.getState().open(sessionId)
+      } finally {
+        setStarting(false)
+      }
       if (!snapshot) return
       applySnapshot(sessionId, snapshot)
     }
@@ -193,11 +203,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           ))}
         </div>
       )}
-      {starting && (
-        <p role="status" className="text-xs text-muted-foreground">
-          Starting the agent…
-        </p>
-      )}
+      <p role="status" className={cn('text-xs text-muted-foreground', !starting && 'sr-only')}>
+        {starting ? 'Starting the agent…' : ''}
+      </p>
       {disabled && (
         <span id={stopReasonId} className="sr-only">
           {placeholder}
@@ -211,7 +219,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           <SlashMenu
             id={slashMenuId}
             commands={slashMatches}
-            activeIndex={slashActiveIndex}
+            activeIndex={clampedSlashActiveIndex}
             onSelect={completeSlashCommand}
             onActiveIndexChange={setSlashActiveIndex}
           />
@@ -223,7 +231,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           aria-expanded={showSlashMenu && slashMatches.length > 0}
           aria-controls={showSlashMenu && slashMatches.length > 0 ? slashMenuId : undefined}
           aria-activedescendant={
-            showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashActiveIndex) : undefined
+            showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, clampedSlashActiveIndex) : undefined
           }
           aria-describedby={disabled ? stopReasonId : undefined}
           value={text}
