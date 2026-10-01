@@ -70,7 +70,16 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <Button variant="outline" size="sm" disabled={!canSwitch || creating || switching} onClick={() => void handleNewConversation()}>
+      <Button
+        variant="outline"
+        size="sm"
+        aria-disabled={!canSwitch || creating || switching}
+        className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+        onClick={() => {
+          if (!canSwitch || creating || switching) return
+          void handleNewConversation()
+        }}
+      >
         <PlusIcon />
         New conversation
       </Button>
@@ -94,10 +103,13 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                 <li key={conversation.file}>
                   <button
                     type="button"
-                    disabled={!canSwitch || switching || conversation.isCurrent}
+                    aria-disabled={!canSwitch || switching || conversation.isCurrent}
                     aria-current={conversation.isCurrent}
-                    onClick={() => void handleOpenConversation(conversation.file)}
-                    className="flex w-full flex-col gap-0.5 rounded-lg border border-transparent px-2.5 py-2 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 aria-[current=true]:border-border aria-[current=true]:bg-muted"
+                    onClick={() => {
+                      if (!canSwitch || switching || conversation.isCurrent) return
+                      void handleOpenConversation(conversation.file)
+                    }}
+                    className="flex w-full flex-col gap-0.5 rounded-lg border border-transparent px-2.5 py-2 text-left hover:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-border aria-[current=true]:bg-muted"
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
                       <span className="truncate">{conversation.title || 'Untitled conversation'}</span>
