@@ -1,20 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyEntry, findViolations, resolveFeatureDirectory } from "./prep-guard.mjs";
 import {
-  computePrepGate,
   heuristicClassify,
   isSpecRelated,
   mergeWithExisting,
   normalise,
   parseMarker,
   parseModelJson,
-  PRIORITIES,
   renderComment,
   renderMarker,
+  renderPickupPlan,
+  resolveFeatureDirectory,
   sanitizeRationale,
-  STATES,
-  TYPES,
 } from "./triage.mjs";
 
 const issue = (title, body = "A sufficiently long description of the requested change goes here.", extra = {}) => ({
@@ -39,6 +36,10 @@ test("heuristic routes spec-related changes to converge and new features to spec
   assert.equal(heuristicClassify(issue("Add dark mode toggle", "Update FR-012 in the spec so the toggle is persisted properly.")).route, "converge");
 });
 
+test("heuristicClassify always returns an empty pickup_notes array", () => {
+  assert.deepEqual(heuristicClassify(issue("Add thing")).pickup_notes, []);
+});
+
 test("isSpecRelated matches spec/FR/task references and plain text does not", () => {
   assert.equal(isSpecRelated(issue("x", "see FR-012")), true);
   assert.equal(isSpecRelated(issue("x", "spec:002 follow-up")), true);
@@ -54,7 +55,7 @@ test("normalise replaces out-of-vocabulary model fields with the fallback", () =
   assert.equal(c.state, "ready-for-agent");
 });
 
-test("normalise ignores a duplicate_of that is not an open issue and blocks prep for real duplicates", () => {
+test("normalise ignores a duplicate_of that is not an open issue and blocks the route for real duplicates", () => {
   const fallback = heuristicClassify(issue("Add dark mode toggle"));
   assert.equal(normalise({ duplicate_of: 7 }, fallback, new Set()).duplicate_of, null);
   const dup = normalise({ duplicate_of: 7, speckit_route: "specify", state: "ready-for-agent" }, fallback, new Set([7]));
@@ -74,6 +75,21 @@ test("normalise reports model as the source once at least one field matched the 
   assert.equal(c.source, "model");
 });
 
+test("normalise caps pickup_notes at 4 entries of at most 160 characters each, dropping non-strings and blanks", () => {
+  const fallback = heuristicClassify(issue("Add dark mode toggle"));
+  const longNote = "x".repeat(200);
+  const raw = { pickup_notes: ["a", 42, "", "  ", "b", "c", "d", "e", longNote] };
+  const c = normalise(raw, fallback, new Set());
+  assert.deepEqual(c.pickup_notes, ["a", "b", "c", "d"]);
+  assert.ok(c.pickup_notes.every((n) => n.length <= 160));
+});
+
+test("normalise defaults pickup_notes to an empty array when absent or malformed", () => {
+  const fallback = heuristicClassify(issue("Add dark mode toggle"));
+  assert.deepEqual(normalise({}, fallback, new Set()).pickup_notes, []);
+  assert.deepEqual(normalise({ pickup_notes: "not an array" }, fallback, new Set()).pickup_notes, []);
+});
+
 test("maintainer-set labels win and are never re-added", () => {
   const model = { type: "enhancement", area: "chat", priority: "p3", state: "ready-for-agent", route: "specify" };
   const m = mergeWithExisting(model, ["chore", "p1"]);
@@ -82,7 +98,7 @@ test("maintainer-set labels win and are never re-added", () => {
   assert.deepEqual(m.labelsToAdd.sort(), ["chat", "ready-for-agent", "triaged"]);
 });
 
-test("a maintainer-chosen documentation type cancels spec prep", () => {
+test("a maintainer-chosen documentation type cancels the Spec Kit route", () => {
   const model = { type: "feature", area: null, priority: "p2", state: "ready-for-agent", route: "specify" };
   assert.equal(mergeWithExisting(model, ["documentation"]).route, "none");
 });
@@ -90,6 +106,11 @@ test("a maintainer-chosen documentation type cancels spec prep", () => {
 test("needs-info always forces route to none even when the model suggested one", () => {
   const model = { type: "bug", area: null, priority: "p1", state: "needs-info", route: "specify" };
   assert.equal(mergeWithExisting(model, []).route, "none");
+});
+
+test("ready-for-human keeps its real route instead of being forced to none", () => {
+  const model = { type: "enhancement", area: null, priority: "p2", state: "ready-for-human", route: "specify", source: "model" };
+  assert.equal(mergeWithExisting(model, []).route, "specify");
 });
 
 test("a maintainer-set bug/chore type re-derives the route exactly like the heuristic would (converge if spec-related, none otherwise)", () => {
@@ -143,9 +164,12 @@ test("two consecutive runs converge to exactly one type/priority/state label eac
   assert.deepEqual(run2.labelsToAdd.sort(), ["enhancement", "p2", "ready-for-agent"].sort());
 
   const finalLabels = new Set([...labelsAfterRun1, ...run2.labelsToAdd].filter((l) => !run2.labelsToRemove.includes(l)));
-  assert.equal([...finalLabels].filter((l) => TYPES.includes(l)).length, 1);
-  assert.equal([...finalLabels].filter((l) => PRIORITIES.includes(l)).length, 1);
-  assert.equal([...finalLabels].filter((l) => STATES.includes(l)).length, 1);
+  const TYPES_SET = ["bug", "enhancement", "feature", "documentation", "spike", "chore", "question", "design"];
+  const PRIORITIES_SET = ["p1", "p2", "p3"];
+  const STATES_SET = ["ready-for-agent", "ready-for-human", "needs-info", "needs-triage"];
+  assert.equal([...finalLabels].filter((l) => TYPES_SET.includes(l)).length, 1);
+  assert.equal([...finalLabels].filter((l) => PRIORITIES_SET.includes(l)).length, 1);
+  assert.equal([...finalLabels].filter((l) => STATES_SET.includes(l)).length, 1);
 });
 
 test("maintainer label matching is case-insensitive but removal keeps the real label casing", () => {
@@ -169,7 +193,7 @@ test("rationale is rendered as a code span so links, images, and auto-references
   const c = {
     type: "bug", area: null, priority: "p2", state: "ready-for-agent", route: "none",
     rationale: "See #42 and [click](http://evil) ![img](http://evil.example/x.png) `inject`",
-    source: "heuristic", botLabels: ["bug", "p2", "ready-for-agent", "triaged"],
+    source: "heuristic", botLabels: ["bug", "p2", "ready-for-agent", "triaged"], pickup_notes: [],
   };
   const comment = renderComment(c, { number: 9 });
   assert.ok(comment.includes("`See #42 and [click](http://evil) ![img](http://evil.example/x.png) 'inject'`"));
@@ -177,19 +201,6 @@ test("rationale is rendered as a code span so links, images, and auto-references
 
 test("sanitizeRationale collapses newlines and neutralises embedded backticks", () => {
   assert.equal(sanitizeRationale("line one\nline two `x`"), "line one line two 'x'");
-});
-
-test("renderComment only promises prep will run when prep is actually gated true", () => {
-  const c = { type: "feature", area: null, priority: "p2", state: "ready-for-agent", route: "specify", rationale: "ok", source: "model", botLabels: [] };
-  const ready = renderComment(c, { number: 1 }, { trusted: true, hasKey: true, prep: true });
-  assert.match(ready, /Next: the `prep-agent` job will run/);
-
-  const noKey = renderComment(c, { number: 1 }, { trusted: true, hasKey: false, prep: false });
-  assert.match(noKey, /ANTHROPIC_API_KEY.*not configured/);
-  assert.doesNotMatch(noKey, /Next: the `prep-agent` job will run/);
-
-  const untrusted = renderComment(c, { number: 1 }, { trusted: false, hasKey: true, prep: false });
-  assert.match(untrusted, /not a repository collaborator with write access/);
 });
 
 test("the marker round-trips the bot's label set as JSON", () => {
@@ -207,53 +218,6 @@ test("parseMarker returns null for a missing or corrupt marker", () => {
 test("model JSON is extracted from fenced or chatty replies and rejected when absent", () => {
   assert.deepEqual(parseModelJson('Sure:\n```json\n{"type":"bug","duplicate_of":null}\n```'), { type: "bug", duplicate_of: null });
   assert.throws(() => parseModelJson("I cannot classify this."));
-});
-
-test("classifyEntry accepts a markdown file inside a numbered spec directory and inside docs", () => {
-  assert.deepEqual(classifyEntry({ path: "specs/001-core-session-workspace/spec.md", isFile: true, isSymlink: false, size: 10 }), { ok: true });
-  assert.deepEqual(classifyEntry({ path: "docs/issue-triage.md", isFile: true, isSymlink: false, size: 10 }), { ok: true });
-});
-
-test("classifyEntry rejects a symlink even when the path otherwise matches", () => {
-  const r = classifyEntry({ path: "specs/001-core-session-workspace/spec.md", isFile: false, isSymlink: true, size: 0 });
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /symlink/);
-});
-
-test("classifyEntry rejects runnable code under docs/", () => {
-  const r = classifyEntry({ path: "docs/spike/probe.mjs", isFile: true, isSymlink: false, size: 10 });
-  assert.equal(r.ok, false);
-});
-
-test("classifyEntry rejects a non-markdown file inside a spec directory", () => {
-  const r = classifyEntry({ path: "specs/002-issue-triage-automation/feature.json", isFile: true, isSymlink: false, size: 10 });
-  assert.equal(r.ok, false);
-});
-
-test("classifyEntry rejects a root-level file", () => {
-  const r = classifyEntry({ path: "package.json", isFile: true, isSymlink: false, size: 10 });
-  assert.equal(r.ok, false);
-});
-
-test("classifyEntry rejects a path traversal segment even nested inside an allowed prefix", () => {
-  const r = classifyEntry({ path: "specs/001-core-session-workspace/../../etc/passwd", isFile: true, isSymlink: false, size: 10 });
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /escapes/);
-});
-
-test("classifyEntry rejects a file over the size limit", () => {
-  const r = classifyEntry({ path: "docs/big.md", isFile: true, isSymlink: false, size: 2 * 1024 * 1024 });
-  assert.equal(r.ok, false);
-  assert.match(r.reason, /exceeds/);
-});
-
-test("findViolations rejects code, workflows, traversal, and absolute paths", () => {
-  const bad = ["src/main/index.ts", ".github/workflows/issue-triage.yml", "specs/../package.json", "/etc/passwd", "specs-evil/x.md", "package.json"];
-  assert.deepEqual(findViolations(bad), bad);
-});
-
-test("findViolations accepts spec and docs markdown changes", () => {
-  assert.deepEqual(findViolations(["specs/002-issue-triage-automation/spec.md", "docs/a.md"]), []);
 });
 
 test("resolveFeatureDirectory only ever resolves for the converge route", () => {
@@ -283,27 +247,80 @@ test("resolveFeatureDirectory returns null when there is no label and no default
   assert.equal(resolveFeatureDirectory("converge", [], ["002-issue-triage-automation"]), null);
 });
 
-test("computePrepGate: fixture mode forces prep=true/route=specify for a trusted author regardless of key/state/route", () => {
-  const merged = { route: "none", state: "needs-info", type: "documentation" };
-  const gate = computePrepGate(merged, { trusted: true, apiKey: undefined, isFixture: true });
-  assert.deepEqual(gate, { prep: true, routeForOutput: "specify", fixtureActive: true });
+test("renderPickupPlan lists no pipeline for needs-info or needs-triage/duplicate states", () => {
+  const info = renderPickupPlan({ state: "needs-info", route: "none" });
+  assert.match(info, /Clarification is needed/);
+  assert.doesNotMatch(info, /speckit\./);
+
+  const triage = renderPickupPlan({ state: "needs-triage", route: "none" });
+  assert.match(triage, /A human should triage/);
+  assert.doesNotMatch(triage, /speckit\./);
+
+  const duplicate = renderPickupPlan({ state: "ready-for-agent", route: "specify", duplicate_of: 5 });
+  assert.match(duplicate, /A human should triage/);
+  assert.doesNotMatch(duplicate, /speckit\./);
 });
 
-test("computePrepGate: fixture mode never activates for an untrusted author", () => {
-  const merged = { route: "specify", state: "ready-for-agent" };
-  const gate = computePrepGate(merged, { trusted: false, apiKey: "k", isFixture: true });
-  assert.equal(gate.fixtureActive, false);
-  assert.equal(gate.prep, false);
-  assert.equal(gate.routeForOutput, "specify");
+test("renderPickupPlan lists the full specify pipeline in order for a ready-for-agent issue", () => {
+  const plan = renderPickupPlan({ state: "ready-for-agent", route: "specify" });
+  const order = ["/speckit.specify", "/speckit.clarify", "/speckit.plan", "/speckit.tasks", "/speckit.analyze", "/speckit.implement"];
+  let lastIndex = -1;
+  for (const step of order) {
+    const i = plan.indexOf(step);
+    assert.ok(i > lastIndex, `${step} should appear after the previous step`);
+    lastIndex = i;
+  }
+  assert.match(plan, /taskstoissues.*optional/i);
 });
 
-test("computePrepGate: non-fixture behaviour is unchanged (route/state/key/trust all required)", () => {
-  const ready = { route: "specify", state: "ready-for-agent" };
-  assert.equal(computePrepGate(ready, { trusted: true, apiKey: "k", isFixture: false }).prep, true);
-  assert.equal(computePrepGate(ready, { trusted: true, apiKey: undefined, isFixture: false }).prep, false);
-  assert.equal(computePrepGate(ready, { trusted: false, apiKey: "k", isFixture: false }).prep, false);
-  assert.equal(computePrepGate({ route: "none", state: "ready-for-agent" }, { trusted: true, apiKey: "k", isFixture: false }).prep, false);
-  assert.equal(computePrepGate({ route: "specify", state: "needs-info" }, { trusted: true, apiKey: "k", isFixture: false }).prep, false);
-  // route output passes through untouched outside fixture mode.
-  assert.equal(computePrepGate(ready, { trusted: true, apiKey: "k", isFixture: false }).routeForOutput, "specify");
+test("renderPickupPlan names the resolved converge feature directory, or a generic fallback", () => {
+  const named = renderPickupPlan({ state: "ready-for-agent", route: "converge" }, "specs/002-issue-triage-automation");
+  assert.match(named, /`specs\/002-issue-triage-automation`/);
+  assert.match(named, /speckit\.converge/);
+  assert.match(named, /speckit\.implement/);
+
+  const fallback = renderPickupPlan({ state: "ready-for-agent", route: "converge" }, null);
+  assert.match(fallback, /the relevant existing feature directory/);
+});
+
+test("renderPickupPlan gives a one-line pickup hint per type when route is none", () => {
+  const cases = [
+    ["bug", /failing test/],
+    ["documentation", /Edit docs only/],
+    ["design", /Pick up directly/],
+    ["chore", /Pick up directly/],
+    ["spike", /Investigate/],
+    ["question", /Answer directly/],
+  ];
+  for (const [type, phrase] of cases) {
+    const plan = renderPickupPlan({ state: "ready-for-agent", route: "none", type });
+    assert.match(plan, phrase, `type ${type}`);
+    assert.doesNotMatch(plan, /speckit\./, `type ${type} lists no Spec Kit command`);
+  }
+});
+
+test("renderPickupPlan prefixes the pipeline for ready-for-human but still names the real route", () => {
+  const plan = renderPickupPlan({ state: "ready-for-human", route: "specify" });
+  assert.match(plan, /After the human decision\/manual work is done/);
+  assert.match(plan, /speckit\.specify/);
+});
+
+test("renderComment embeds the pickup plan under its own heading", () => {
+  const c = { type: "feature", area: null, priority: "p2", state: "ready-for-agent", route: "specify", rationale: "ok", source: "model", botLabels: [], pickup_notes: [] };
+  const comment = renderComment(c, { number: 1 });
+  assert.match(comment, /## Spec Kit pickup plan/);
+  assert.match(comment, /speckit\.specify/);
+});
+
+test("renderComment renders pickup_notes as a sanitised bullet list, omitted when empty", () => {
+  const withNotes = {
+    type: "bug", area: null, priority: "p1", state: "ready-for-agent", route: "specify", rationale: "x",
+    source: "model", botLabels: [], pickup_notes: ["Touches #42 and @someone's code `here`"],
+  };
+  const comment = renderComment(withNotes, { number: 1 });
+  assert.match(comment, /Watch for:/);
+  assert.match(comment, /`Touches #42 and @someone's code 'here'`/);
+
+  const noNotes = { ...withNotes, pickup_notes: [] };
+  assert.doesNotMatch(renderComment(noNotes, { number: 1 }), /Watch for:/);
 });

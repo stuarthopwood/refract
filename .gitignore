@@ -10,9 +10,6 @@ coverage/
 .DS_Store
 Thumbs.db
 
-# Issue triage prep scratch output (written by .github/scripts/prep-guard.mjs)
-.triage/
-
 # Agent config folder: keep shared slash commands, ignore everything else
 # (sessions, local settings, or credentials the agent may store here).
 .omp/*

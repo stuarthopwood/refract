@@ -6,105 +6,56 @@
 
 ## Summary
 
-Add a GitHub Actions workflow, entirely outside the Electron app, that triages every issue and
-drafts Spec Kit work for the ones that warrant it. Stage 1 (`triage.mjs`, job `triage`) reads the
-issue via the REST API, classifies it with an Anthropic Messages API call when
-`ANTHROPIC_API_KEY` is configured (falling back to a deterministic keyword heuristic — which never
-sets `area` — when the key is absent or the call fails), labels the issue without overriding
-maintainer-set labels (distinguishing its own prior labels from a maintainer's via a hidden JSON
-marker), and posts one disclosure comment that only ever promises prep will run when it actually
-will. Stage 2 is split into three jobs so the agent that ever sees untrusted issue content never
-holds a write-capable token: `prep-agent` (`contents: read` only, no git, no `GH_TOKEN`) runs
-`anthropics/claude-code-action` against a fresh default-branch checkout, scoped to
-`Read(./**)`/`Edit(specs/**)`/`Edit(docs/**)`/`Glob`/`Grep` plus five pinned Spec Kit PowerShell
-script rules, and uploads the resulting `specs/`+`docs/` tree as an artifact; `publish`
-(`contents: write`, `issues: write`, `pull-requests: write`) downloads that artifact, runs the
-deterministic guard (`prep-guard.mjs apply`) against a fresh, known-good default-branch checkout
-before any branch exists, commits only the files that pass, then **always creates
-`triage/issue-<N>` fresh** from that checkout (never by switching onto a previous run's branch
-tip, which would make a plain `git switch` try to reconcile the guard's output against whatever
-that branch already had and abort on a second run). Before pushing it checks whether the existing
-remote branch (if any) carries any commit whose author *or* committer email is not the bot's own
-(catching a human `git commit --amend` of a bot commit, which can retain the original author while
-changing only the committer); if so it leaves that branch and its PR untouched and publishes to a
-run-scoped `triage/issue-<N>-<run-id>-<run-attempt>` branch instead (the run-attempt suffix avoids
-colliding with "Re-run failed jobs" on the same run id), otherwise it pushes with a
-compare-and-swap (`git push --force-with-lease`, leased against the branch's real remote SHA from
-an exact-ref, non-shallow `git ls-remote`), opening (or reusing — same-repository and authored by
-`app/github-actions` only, never a fork's PR of the same branch name; a `gh pr list` failure is
-reported as a run failure, never treated as "no existing PR") a draft PR, or commenting a compare
-link if PR creation is disabled. A `notify-failure` job comments a link to the run if `triage`,
-`prep-agent`, or `publish` fails or is cancelled (job outputs set by an earlier, successful step
-survive a later step's failure in the same job). `trusted` requires both `author_association` and
-a live collaborator-permission check, failing closed on error. All three checkouts pin `ref:` to
-the repository's actual default branch rather than the triggering event's ref. The git credential
-header key matches the exact URL form `actions/checkout` leaves on `origin` (no `.git` suffix,
-which the key does not also match), and its base64 value is explicitly masked in logs. A `fixture`
-`workflow_dispatch` input exercises `prep-agent`/`publish` end-to-end without
-`ANTHROPIC_API_KEY`: `prep-agent` skips the agent and writes a small canned spec file instead,
-which flows through the normal artifact/guard/publish path unchanged.
+Add a single-job GitHub Actions workflow, entirely outside the Electron app, that triages every
+issue and tells whoever picks it up which Spec Kit commands to run. `triage.mjs` reads the issue
+via the REST API, classifies it with an Anthropic Messages API call when `ANTHROPIC_API_KEY` is
+configured (falling back to a deterministic keyword heuristic — which never sets `area` or
+`pickup_notes` — when the key is absent or the call fails), labels the issue without overriding
+any maintainer-set label (type, area, priority, *or state*), and posts one comment that discloses
+the classification and ends with a deterministic "Spec Kit pickup plan": the exact ordered
+`/speckit.*` commands for a `specify` or `converge` route, a one-line hint by type when the route
+is `none`, or a short "not ready yet" note (no commands) when the state is `needs-info` or
+`needs-triage`. A `force` re-triage uses a hidden JSON marker recording the bot's own previously
+applied labels to tell them apart from a maintainer's, so it can correct its own earlier guess
+across every dimension without ever touching a label a maintainer set. The job holds only
+`contents: read` and `issues: write` — no agent runs, no artifact is produced, no branch or pull
+request is ever created.
 
 ## Technical Context
 
 **Language/Version**: Node.js 22, as the `ubuntu-latest` GitHub-hosted runner's expected toolchain
 (pinned explicitly via `actions/setup-node@v4` rather than relying on the runner image's default).
 
-**Primary Dependencies**: None at runtime for `.github/scripts/triage.mjs` and
-`.github/scripts/prep-guard.mjs` — both are zero-npm-dependency ESM scripts using Node's built-in
-`fetch` and `node:crypto` (a random nonce for the untrusted-issue export fence).
-`anthropics/claude-code-action` is a third-party GitHub Action (not an npm dependency) that drives
-`prep-agent`. `actionlint` is a dev-time-only workflow linter, not a runtime dependency. Every
-third-party Action is pinned to a full commit SHA (FR-038), kept current via
-`.github/dependabot.yml`.
+**Primary Dependencies**: None at runtime — `.github/scripts/triage.mjs` is a zero-npm-dependency
+ESM script using Node's built-in `fetch`. `actionlint` is a dev-time-only workflow linter, not a
+runtime dependency. `actions/checkout` and `actions/setup-node` are pinned to full commit SHAs,
+kept current via `.github/dependabot.yml`.
 
-**Storage**: N/A. All state lives in GitHub itself (issue labels, comments, branches, pull
-requests) plus two short-lived (`retention-days: 1`) workflow artifacts (`issue-export`,
-`prep-output`) that carry data between the `triage`/`prep-agent`/`publish` jobs. Nothing is
-persisted beyond a run.
+**Storage**: N/A. All state lives in GitHub itself (issue labels and the single triage comment).
+Nothing is persisted beyond a run; no artifact, branch, or pull request is ever created.
 
 **Testing**: `actionlint` against `issue-triage.yml` (exit 0); `node --test
-.github/scripts/triage.test.mjs` (40 deterministic unit tests covering the classifier, the
-maintainer/bot-label merge logic including multi-run label convergence and maintainer-set state
-honouring, the marker JSON helpers, rationale sanitising, `resolveFeatureDirectory`,
-`computePrepGate`'s fixture-mode gating, and the guard's `classifyEntry`/`findViolations`); a
-manual smoke run of `prep-guard.mjs apply` against a scratch directory simulating an unchanged
-pre-existing non-markdown file (silently skipped) and a modified one (rejected); manual smoke runs
-of the `publish` job's branch/push logic against real throwaway git remotes, confirming: a first
-run's plain push; a second run's `git ls-remote`-leased `--force-with-lease` push cleanly
-replacing the first run's commit even when both touch the same file; a genuine `ls-remote` failure
-distinguished from "branch absent"; the fixed credential-header key actually matching
-`actions/checkout`'s URL form where the old, `.git`-suffixed key never did; a human commit on the
-existing branch correctly redirecting the push to a run-scoped branch while leaving the human's
-commit and the original branch untouched; and a human `--amend` of a bot commit (same author,
-different committer) being caught by the author-or-committer check where an author-only check
-would have missed it. The `gh`/`jq` logic for the PR-reuse author filter and `gh pr list`
-error-reporting is not unit-testable in JS; it is covered only by `actionlint` and manual review.
-Live `workflow_dispatch` dispatch of the heuristic path against throwaway issue #90 for stage 1
-(the model-path run and issue #91 are still pending). Stage 2's agent path cannot be exercised
-live until `ANTHROPIC_API_KEY` is added as a repository secret, but the `prep-agent`→`publish`
-pipeline itself can now be live-proofed via `fixture: true` without the secret; for now it is
-verified only by `actionlint`, the unit tests, and the smoke runs above — it must be correct by
-construction.
+.github/scripts/triage.test.mjs` (38 deterministic unit tests covering the classifier, the
+maintainer/bot-label merge logic across all four label dimensions, the marker JSON helpers,
+rationale/pickup-note sanitising, `resolveFeatureDirectory`, and the Spec Kit pickup plan's
+rendering for every route/state/type combination). Live `workflow_dispatch` dispatch of the
+heuristic path against throwaway issues #90 and #91, and a force re-dispatch of #90, are already
+verified; the model path needs `ANTHROPIC_API_KEY` as a repository secret, which does not exist
+yet, so it remains the one unverified path.
 
 **Target Platform**: GitHub Actions `ubuntu-latest` hosted runner.
 
 **Project Type**: CI/CD automation under `.github/`, outside the Electron application; no changes
 to `src/`.
 
-**Performance Goals**: The triage job completes classification, labeling, and commenting within a
-single workflow run, well inside GitHub Actions' default job timeout. There is no near-real-time
+**Performance Goals**: The job completes classification, labeling, and commenting within a single
+workflow run, well inside GitHub Actions' default job timeout. There is no near-real-time
 requirement, since issue creation is already asynchronous from a contributor's perspective.
 
-**Constraints**: `triage.mjs` and `prep-guard.mjs` MUST stay zero-npm-dependency. Untrusted issue
-title/body text MUST NEVER be interpolated into a `run:` shell step. Published changes MUST be
-confined to regular, non-symlink, non-oversized files matching `specs/<NNN-kebab-name>/**/*.md` or
-`docs/**/*.md` (FR-032), validated against the default branch's own tree, never against git state
-inside a job the agent could influence. Publishing MUST commit only to `triage/issue-<N>` branches,
-never to `main`. The `triage` job MUST run with only `contents: read`, `issues: write`; the
-`prep-agent` job MUST run with `contents: read` only, no job-level `GH_TOKEN`/`GITHUB_TOKEN`, and
-no git commands (FR-029); `publish` holds the only write-capable permissions
-(`contents: write`, `issues: write`, `pull-requests: write`). No `models: read` anywhere, since
-GitHub Models is retired and classification uses the Anthropic Messages API instead.
+**Constraints**: `triage.mjs` MUST stay zero-npm-dependency. Untrusted issue title/body text MUST
+NEVER be interpolated into a `run:` shell step. The job MUST run with only `contents: read`,
+`issues: write` — no `models: read` (GitHub Models is retired), no `contents: write`, no
+`pull-requests: write`, and no third-party agent Action of any kind.
 
 **Scale/Scope**: Single private repository; one issue per run; no concurrent-run concerns beyond
 GitHub Actions' default per-ref concurrency behavior.
@@ -115,25 +66,25 @@ GitHub Actions' default per-ref concurrency behavior.
 
 | Principle | Status | How the design meets it |
 |---|---|---|
-| I. OMP Is the Engine, Pinion Is the Host | N/A | This feature has no Electron process and drives no `omp` child process. Stage 2's agent is `anthropics/claude-code-action` (Claude Code), invoked directly by GitHub Actions — not the Pinion desktop app, and not OMP. |
-| II. RPC Wire Contract | N/A | No RPC is involved. Stage 1 calls the GitHub REST API and the Anthropic Messages API directly; stage 2 is driven by Claude Code Action following its own prompt, not by the `rpc-ui` protocol this principle governs. |
+| I. OMP Is the Engine, Pinion Is the Host | N/A | This feature has no Electron process and drives no `omp` child process, and (after this redesign) no agent process of any kind. |
+| II. RPC Wire Contract | N/A | No RPC is involved. The job calls the GitHub REST API and the Anthropic Messages API directly. |
 | III. Session and Process Lifecycle | N/A | There is no `omp` process, worktree, or session registry. The only "session" is the ephemeral GitHub Actions job runner, which GitHub itself manages. |
-| IV. Evidence Before Design | Pass | The underlying rule — do not design around unverified external behavior — is honored even though its examples are OMP-specific: stage 1's classification and labeling behavior was exercised live on throwaway issues #90 and #91 (see spec.md SC-006) before stage 2 was finalized. Stage 2 remains verified only by `actionlint` and a `prep-guard.mjs` dry run pending the `ANTHROPIC_API_KEY` secret; that gap is recorded here and in tasks.md rather than assumed away. |
-| V. Electron Security Baseline | N/A | No `BrowserWindow` or renderer is involved. The analogous risk this principle addresses — untrusted content crossing a trust boundary unsafely — is handled by FR-020: issue text is written to a file and read as data by the prep agent, never interpolated into a `run:` shell step. |
+| IV. Evidence Before Design | Pass | Live `workflow_dispatch` runs against throwaway issues #90 and #91 (and a force re-dispatch of #90) verified the classification/labeling/commenting behaviour before this redesign; the Spec Kit pickup plan is deterministic and fully covered by the unit suite. |
+| V. Electron Security Baseline | N/A | No `BrowserWindow` or renderer is involved. The analogous risk this principle addresses — untrusted content crossing a trust boundary unsafely — is handled by FR-023: issue text is read over the REST API and passed to the classifier as data, never interpolated into a `run:` shell step. |
 
 Development Workflow (constitution §Development Workflow):
 
 - "Features flow through Spec Kit": met — this plan, its spec, and its tasks are produced through
   Spec Kit, even though the feature's implementation is CI configuration rather than app code.
 - "automated tests not required... verified by running the app and exercising the changed path":
-  adapted — there is no app to run. The equivalent verification is live `workflow_dispatch` runs
-  against real throwaway issues (#90, #91) for stage 1, `actionlint`, the unit test suite, and a
-  manual `prep-guard.mjs apply` smoke run for stage 2, pending the secret.
+  adapted — there is no app to run. The equivalent verification is the live `workflow_dispatch`
+  runs noted above, plus `actionlint` and the unit test suite for everything the live runs did not
+  exercise (the model path, and the Spec Kit pickup plan's deterministic rendering).
 - "Typecheck and production build MUST pass before a change lands on main": N/A for this feature's
   files — `.github/scripts/*.mjs` and `.github/workflows/*.yml` fall outside both
   `tsconfig.node.json`'s and `tsconfig.web.json`'s `include` globs and outside the `electron-vite
-  build` script, so this gate does not cover them. The scripts are kept zero-dependency precisely
-  to avoid needing a second build step.
+  build` script, so this gate does not cover them. The script is kept zero-dependency precisely to
+  avoid needing a second build step.
 
 ## Project Structure
 
@@ -142,8 +93,8 @@ Development Workflow (constitution §Development Workflow):
 ```text
 specs/002-issue-triage-automation/
 ├── spec.md              # Feature specification (this plan's input)
-└── plan.md              # This file
-# tasks.md is produced alongside this plan (normally a separate /speckit.tasks step)
+├── plan.md              # This file
+└── tasks.md             # Task list
 ```
 
 `research.md`, `data-model.md`, `quickstart.md`, and `contracts/` are intentionally not produced:
@@ -156,22 +107,19 @@ question or API contract to document beyond what spec.md and this plan already c
 ```text
 .github/
 ├── workflows/
-│   └── issue-triage.yml       # triggers, permissions, the triage/prep-agent/publish/notify-failure jobs
+│   └── issue-triage.yml       # single `triage` job: checkout, setup-node, tests, classify
 ├── scripts/
-│   ├── triage.mjs             # stage 1: load issue, classify, label, comment
-│   ├── prep-guard.mjs         # stage 2: export (nonce-fenced issue), apply (guarded copy)
-│   └── triage.test.mjs        # unit tests for both scripts' pure helpers
-├── triage/
-│   └── prompt.md              # brief handed to the prep agent via claude-code-action
+│   ├── triage.mjs             # classify, label, resolve the pickup plan, post the comment
+│   └── triage.test.mjs        # unit tests for triage.mjs's pure helpers
 └── dependabot.yml             # weekly github-actions ecosystem updates
 
 docs/
-└── issue-triage.md            # maintainer-facing reference: triggers, labels, prerequisites
+└── issue-triage.md            # maintainer-facing reference: triggers, labels, pickup plan, setup
 ```
 
-**Structure Decision**: Everything lives under `.github/` (workflow, scripts, agent brief) plus one
-maintainer doc under `docs/`. No `src/` directory is touched, no new project/package is created,
-and no option from the template's single-project/web-app/mobile-app layouts applies — this is CI
+**Structure Decision**: Everything lives under `.github/` (workflow, script) plus one maintainer
+doc under `docs/`. No `src/` directory is touched, no new project/package is created, and no
+option from the template's single-project/web-app/mobile-app layouts applies — this is CI
 configuration alongside, not inside, the existing Electron project.
 
 ## Complexity Tracking
