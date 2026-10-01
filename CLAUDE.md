@@ -22,3 +22,12 @@ Uncommitted work is lost work: the 2026-09-30 wipe destroyed everything made aft
 - Push after each commit. Work on a branch (for example `rebuild/2026-09-30`) when `main` is gated, but never leave commits unpushed.
 - Never end a turn, hand off, or start a new wave with a dirty tree. Run `git status --short` first and commit what is verified.
 - Every delegation brief tells workers to report changed files so the parent commits them straight away.
+
+## Answer the user's question first (HARD RULE)
+
+On 2026-10-01 the user asked a direct question and the final message of the turn answered only injected advisories, so the question went unanswered.
+
+- The first words of every reply answer the user's latest question or report the result of their latest prompt. Nothing precedes it.
+- The final message of a turn stands alone and contains the answer itself, even if it was written earlier in the turn.
+- Advisories, reminders, and system notices are never the subject of a reply. Verify them silently, act on the valid ones, and mention them after the answer in a short trailing block, only if they change the user's next action.
+- Put this rule in every delegation brief.
