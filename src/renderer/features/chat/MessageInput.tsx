@@ -32,9 +32,13 @@ interface MessageInputProps {
   sessionId: string
   stopReason?: StopReason
   stopDetail?: string
+  /** Focus the textarea once on mount. Set only by ChatPane when this session's MessageInput
+   * instance is a fresh remount (`key={sessionId}`) replacing one that had focus (e.g. a
+   * notification reopening the Session the user was typing in); never on first load. */
+  autoFocusOnMount?: boolean
 }
 
-export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInputProps) {
+export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
@@ -49,6 +53,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
   statusRef.current = status
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (autoFocusOnMount) textareaRef.current?.focus()
+    // Runs once per mount only: this component remounts (`key={sessionId}`) whenever the
+    // visible Session changes, so re-running on prop changes would steal focus back after the
+    // user deliberately moves it elsewhere.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const isWorking = status === 'working'
   const notStarted = status === 'stopped' && stopReason === 'not-started'
@@ -222,6 +235,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail }: MessageInput
           />
         )}
         <Textarea
+          ref={textareaRef}
           role="combobox"
           aria-label="Message"
           aria-autocomplete="list"

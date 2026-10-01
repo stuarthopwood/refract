@@ -345,7 +345,7 @@ export class SessionAgent extends EventEmitter {
   /** data-model.md "session_settled ... If pendingMode is set, run the mode-change restart."
    * Only once the turn is fully idle with nothing left answerable. */
   private maybeRestartForPendingMode(): void {
-    if (!this.stopRequested && this.runtime.pendingMode !== null && this.runtime.pending.length === 0 && this.runtime.status === 'idle') {
+    if (!this.stopRequested && this.startPromise === undefined && this.runtime.pendingMode !== null && this.runtime.pending.length === 0 && this.runtime.status === 'idle') {
       void this.restart('approval mode change');
     }
   }

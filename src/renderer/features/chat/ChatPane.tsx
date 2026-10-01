@@ -59,11 +59,29 @@ export function ChatPane() {
   // messages yet" for the ~16s a cold start takes.
   const isOpening = useSessionsStore((s) => s.visibleSessionId !== null && s.openingIds.has(s.visibleSessionId))
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
-  const [recovering, setRecovering] = useState(false)
+  const [recoveringId, setRecoveringId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
   const visibleSessionIdRef = useRef(visibleSessionId)
   visibleSessionIdRef.current = visibleSessionId
+  // Tracks whether focus is currently somewhere inside the chat pane (the message textarea,
+  // most often), kept live via a document-wide `focusin` listener rather than read at the
+  // moment `sessionId` changes: by the time a session switch re-renders this component, the
+  // outgoing MessageInput (`key={sessionId}`) may already be mid-unmount, and a removed
+  // element's forced blur reads as `<body>`, not the pane. Used only to decide whether a
+  // remounted MessageInput should reclaim focus (see `autoFocusRef` below).
+  const chatPaneRef = useRef<HTMLDivElement>(null)
+  const chatHadFocusRef = useRef(false)
+  useEffect(() => {
+    const updateFocusFlag = () => {
+      chatHadFocusRef.current = !!chatPaneRef.current?.contains(document.activeElement)
+    }
+    updateFocusFlag()
+    document.addEventListener('focusin', updateFocusFlag)
+    return () => document.removeEventListener('focusin', updateFocusFlag)
+  }, [])
+  const prevSessionIdRef = useRef<string | null>(null)
+  const autoFocusRef = useRef(false)
 
   // Live updates to the visible Session's stop reason (e.g. the agent exits while it is open).
   useEffect(
@@ -81,7 +99,6 @@ export function ChatPane() {
   useEffect(() => {
     if (!visibleSessionId) return
     setStopInfo({})
-    setRecovering(false)
     let cancelled = false
     void (async () => {
       try {
@@ -126,19 +143,31 @@ export function ChatPane() {
   }
 
   const sessionId = session.id
+  const recovering = recoveringId === sessionId
   // `not-started` is idle-and-asleep, not an error (data-model.md); it gets no banner.
   const showBanner = session.status === 'stopped' && !!stopInfo.reason && stopInfo.reason !== 'not-started'
+  // `key={sessionId}` below remounts MessageInput on every session switch, dropping its
+  // textarea's focus. Reclaim it only when the switch happened while focus was already inside
+  // this pane (e.g. a notification reopening the Session the user was typing in), never on
+  // first load or when focus was elsewhere (session list, a dialog).
+  if (prevSessionIdRef.current !== sessionId) {
+    autoFocusRef.current = prevSessionIdRef.current !== null && chatHadFocusRef.current
+    prevSessionIdRef.current = sessionId
+  }
 
   async function handleRecover() {
-    setRecovering(true)
-    const result = await window.pinion.sessions.recover(sessionId)
-    setRecovering(false)
+    const recoveringFor = sessionId
+    setRecoveringId(recoveringFor)
+    const result = await window.pinion.sessions.recover(recoveringFor)
+    setRecoveringId(null)
     if (!result.ok) {
       notify(result.error)
       return
     }
-    applySnapshot(sessionId, result.value)
-    setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+    applySnapshot(recoveringFor, result.value)
+    if (visibleSessionIdRef.current === recoveringFor) {
+      setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+    }
   }
 
   async function handleRecreateWorktree() {
@@ -152,7 +181,7 @@ export function ChatPane() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div ref={chatPaneRef} className="flex h-full flex-col overflow-hidden">
       <ChatHeader sessionId={sessionId} />
       <div
         role="status"
@@ -214,7 +243,13 @@ export function ChatPane() {
       <div className="min-h-0 flex-1 overflow-hidden">
         <Transcript />
       </div>
-      <MessageInput key={sessionId} sessionId={sessionId} stopReason={stopInfo.reason} stopDetail={stopInfo.detail} />
+      <MessageInput
+        key={sessionId}
+        sessionId={sessionId}
+        stopReason={stopInfo.reason}
+        stopDetail={stopInfo.detail}
+        autoFocusOnMount={autoFocusRef.current}
+      />
     </div>
   )
 }

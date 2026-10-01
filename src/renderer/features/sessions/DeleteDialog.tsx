@@ -96,6 +96,9 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
             onCancelled?.()
           }
         }}
+        onEscapeKeyDown={(event) => {
+          if (deleting) event.preventDefault()
+        }}
       >
         <AlertDialogHeader>
           <AlertDialogTitle>Delete Session {session.name}?</AlertDialogTitle>
@@ -121,7 +124,13 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
           {error ?? ''}
         </p>
         <AlertDialogFooter>
-          <AlertDialogCancel aria-disabled={deleting} className="aria-disabled:pointer-events-none aria-disabled:opacity-50">
+          <AlertDialogCancel
+            aria-disabled={deleting}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            onClick={(event) => {
+              if (deleting) event.preventDefault()
+            }}
+          >
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
