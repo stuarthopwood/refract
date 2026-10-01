@@ -8,19 +8,26 @@
 
 **Input**: User description: "Core session workspace: the first usable slice of Pinion. A left-hand session list where every session is its own git worktree (create, open, resume after an app restart), and an agent chat pane (streaming turns, stop, tool approvals, agent questions, slash commands). The right pane (git changes, files, side chat) is a later spec."
 
+## Clarifications
+
+### Session 2026-10-01
+
+- Q: On a repository's one-click New session button, what does "main" mean? → A: The repository's detected default branch (the same branch the picker preselects), not a branch literally named `main`.
+- Q: After the one-click New session button creates a session, does Pinion select and open it? → A: Yes. The new session is selected and its agent starts opening, so the chat pane is ready for a first message. Creating through the branch picker behaves the same way.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
 
-A developer opens Pinion, points it at a git repository, and creates a session, picking the Base branch it starts from. Pinion gives the session its own isolated worktree of that repository. The developer types a request, watches the agent's answer stream in, and can stop a turn that is going the wrong way. Later, they start a fresh conversation in the same session without losing the earlier one, and can reopen it.
+A developer opens Pinion, points it at a git repository, and creates a session, either in one click from the repository's default branch or by picking another Base branch from a picker. Pinion gives the session its own isolated worktree of that repository. The developer types a request, watches the agent's answer stream in, and can stop a turn that is going the wrong way. Later, they start a fresh conversation in the same session without losing the earlier one, and can reopen it.
 
 **Why this priority**: This is the product. Without a session that holds a live conversation with the agent in its own worktree, nothing else has any value.
 
-**Independent Test**: Add one repository, create one session (choosing the preselected default branch as the Base branch), send "list the files in this repo", and see the streamed answer, with each tool call the agent ran shown as a compact row. Send a long request, press stop, and confirm the turn ends and a follow-up message is accepted. Start a new conversation, confirm the earlier one is still reachable as history, and reopen it.
+**Independent Test**: Add one repository, create one session with the one-click New session button (its Base branch is the repository's default branch), send "list the files in this repo", and see the streamed answer, with each tool call the agent ran shown as a compact row. Send a long request, press stop, and confirm the turn ends and a follow-up message is accepted. Start a new conversation, confirm the earlier one is still reachable as history, and reopen it. Then create a second session through the branch picker and choose a different Base branch.
 
 **Acceptance Scenarios**:
 
-1. **Given** Pinion has no sessions, **When** the developer adds a git repository and creates a session, choosing a Base branch (the repository's default branch preselected), **Then** a new worktree exists on disk on a new branch created from that Base branch, the session appears in the session list under an automatically generated name, and the chat pane is ready for a first message.
+1. **Given** Pinion has no sessions, **When** the developer adds a git repository and creates a session with the one-click New session button, **Then** a new worktree exists on disk on a new branch created from the repository's default branch, the session appears in the session list under an automatically generated name and is selected, and the chat pane is ready for a first message.
 2. **Given** an open session that is idle, **When** the developer sends a message, **Then** the agent's reply appears progressively as it is produced, along with visible indication of the tools the agent is running, and the session shows as idle again when the turn is finished.
 3. **Given** the agent runs one or more tools during a turn, **When** they appear in the chat pane, **Then** each is one compact row naming the tool, its target, status, and duration; expanding a row reveals its arguments and output, and a file-edit row's expanded view shows a diff of the change.
 4. **Given** the agent produces reasoning before its visible answer, **When** the turn is shown, **Then** the reasoning is hidden behind a collapsed "Thinking" row that the developer can expand.
@@ -29,6 +36,7 @@ A developer opens Pinion, points it at a git repository, and creates a session, 
 7. **Given** an open session with a conversation, **When** the developer starts a new conversation, **Then** the same session and worktree are kept, the previous conversation is added to that session's history, and the new one becomes current.
 8. **Given** a session's conversation history, **When** the developer opens an earlier conversation, **Then** it becomes the current conversation and the developer can continue it.
 9. **Given** the agent's reply contains markdown or code, **When** it is displayed, **Then** it renders as formatted text and code blocks and never as executable content.
+10. **Given** a repository in the session list, **When** the developer uses the branch button next to the New session button, **Then** a picker lists the repository's branches with the default branch preselected, and confirming creates a session on a new branch from the chosen Base branch, selected and opened exactly as in scenario 1; cancelling creates nothing. **Given** a one-click creation is already in progress for that repository, **When** the developer clicks New session again, **Then** no second session is created.
 
 ---
 
@@ -138,7 +146,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 
 ### Edge Cases
 
-- The chosen folder is not a git repository, has no commits, or the chosen Base branch no longer exists: Pinion refuses to create a session and says why.
+- The chosen folder is not a git repository, has no commits, or the chosen Base branch (including the default branch used by one-click creation) no longer exists: Pinion refuses to create a session and says why.
 - The worktree cannot be created (name clash, disk full, path too long on Windows): no half-created session is left in the list, and the reason is shown.
 - The agent's answer is very long or contains extremely large tool output: the chat stays responsive and scrolls smoothly.
 - A session's worktree folder was deleted or moved outside Pinion: it shows as stopped with the missing path as the reason, offers to recreate the worktree from its branch (only if that branch still exists), archive, or delete, and keeps its conversations readable; it is not silently dropped.
@@ -156,7 +164,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 ### Functional Requirements
 
 - **FR-001**: Users MUST be able to add a local git repository to Pinion and remove it from Pinion without deleting the repository.
-- **FR-002**: Users MUST be able to create a session for a repository by choosing a Base branch, with the repository's default branch preselected; the session's worktree MUST get a new branch created from that Base branch, and uncommitted edits in the developer's main checkout MUST NOT carry over into it.
+- **FR-002**: Users MUST be able to create a session for a repository in one click from the repository's default branch, or by choosing another Base branch in a picker opened by a separate button, with the repository's default branch preselected there; the session's worktree MUST get a new branch created from that Base branch, and uncommitted edits in the developer's main checkout MUST NOT carry over into it. The new session MUST be selected and opened. Both buttons MUST have accessible names and tooltips, a failure MUST show its reason and leave no half-created session, and a second click while a one-click creation is in progress MUST NOT create a second session.
 - **FR-003**: Each new session MUST be given an automatically generated, readable adjective-noun display name; that same name MUST be used to name its worktree's branch and folder.
 - **FR-004**: Users MUST be able to rename a session's display name at any time; renaming MUST NOT change its branch or its worktree's folder.
 - **FR-005**: The session list MUST show, per repository, every non-archived session with its display name and a status of working, idle, needs you, or stopped.
@@ -199,7 +207,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **Repository**: A local git repository registered with Pinion; has a path and owns zero or more sessions.
 - **Session**: One worktree together with the conversations held in it; has a display name (renamed independently of its branch and folder), a status of working, idle, needs you, or stopped, and an archive state of active or archived. A repository has many sessions; a session has exactly one worktree.
 - **Worktree**: The isolated checkout created for a session; has a folder path, a branch name, and the base branch it was created from.
-- **Base branch**: The branch a new session's worktree branches from, chosen at creation; the repository's default branch is preselected.
+- **Base branch**: The branch a new session's worktree branches from, chosen at creation; one-click creation uses the repository's default branch, and the picker preselects it.
 - **Conversation**: One continuous exchange with the agent inside a session; a session has many conversations, one of which is current, and earlier ones stay reachable as history; stored so it survives restarts.
 - **Approval mode**: The single app-wide setting controlling how much the agent may do without asking — Ask, Edit freely, or Auto; applies to every session; a change made mid-turn is pending on that session until its turn ends.
 - **Approval request**: A pending request from the agent to run a tool, raised only when the current Approval mode requires it; shows the tool and target and has an Approve and Deny outcome.
