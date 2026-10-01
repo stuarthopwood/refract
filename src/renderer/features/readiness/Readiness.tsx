@@ -67,7 +67,8 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
     <div className="flex h-full items-center justify-center overflow-y-auto p-6">
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-card-foreground">
         <h1 className="text-base font-medium">Get Refract ready</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
+        <p className="mt-0.5 text-sm italic text-muted-foreground">One Pi, every angle.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
         <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-3">
           {CHECK_ORDER.map((key) => {
             const check = checks?.[key]

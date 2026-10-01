@@ -60,6 +60,7 @@ Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reser
 ## First run and empty states
 
 - With nothing configured, the window shows a readiness checklist: git found, OMP found and on the supported version, OMP signed in. Each failing item has a fix hint.
+- The checklist card's title is **Get Refract ready**, with the tagline *One Pi, every angle.* under it.
 - One primary action, **Add repository**, is disabled until the checklist passes. After that, the same area is the empty state for "no Sessions yet" with a **New session** button.
 
 ## Feedback and errors
