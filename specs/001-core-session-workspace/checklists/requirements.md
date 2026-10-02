@@ -37,3 +37,4 @@
 - SC-002 (30 s to ready) is set above the ~15 s cold start observed in the transport spike, which was measured under load; re-measure on an idle machine during planning.
 - Revised 2026-09-30 after design grill: decisions recorded in CONTEXT.md and this spec.
 - Scope was fixed with the user: this spec is the core session workspace only. The right pane is a later spec.
+- Validation pass 2 (2026-10-02), after the amendments FR-032 to FR-057 and SC-011: re-read every new or changed requirement. Testable and unambiguous: yes (each names its observable result). No [NEEDS CLARIFICATION] markers: yes. Implementation detail: FR-051 and FR-052 name OMP's `<advisory>` notes and `todo` tool, FR-050 names "JSON", and FR-057 names the Alt key; these are product-domain terms of the agent and the platform, not implementation choices, and are accepted. No scope was changed by this pass.

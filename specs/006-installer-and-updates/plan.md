@@ -127,6 +127,7 @@ and `.github/workflows/`, where `issue-triage.yml` already lives.
   OMP's, Refract's own update) is run with the most unattended, least-privileged flag set research
   could find; where a vendor's own installer might still elevate, FR-011 already allows it and the
   UI never pretends Refract itself asked.
+- **Build order: the status bar is going away.** Spec 001 FR-056 removes the status bar and spec 001 T099 deletes `StatusBar.tsx`. The update badge built here in `StatusBar.tsx` is therefore an interim home: T099 must move it, together with the memory warning, to the update entry of spec 008's profile menu (spec 008 FR-021) before deleting the bar, so the update entry is never lost and T099 is never blocked. Neither T022 nor T099 may land without the other's move being planned.
 - **One badge today, two homes tomorrow.** The update badge is built once, against the `updates.*`
   API, and rendered from the one surface that exists today (`StatusBar.tsx`); spec 004's Settings
   screen and spec 008's profile menu are cross-spec dependencies that add their own entries against

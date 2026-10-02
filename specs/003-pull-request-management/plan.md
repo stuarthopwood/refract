@@ -94,9 +94,8 @@ src/
     │                               #           decision 7)
     └── features/
         ├── sessions/
-        │   └── SessionList.tsx     # EXTENDED: a "Pull requests" toggle button in each
-        │                           #           RepositoryGroup header, beside the existing +
-        │                           #           and branch buttons
+        │   └── SessionList.tsx     # EXTENDED: a "Pull requests" entry at the top of the
+        │                           #           left nav, above the repository groups
         └── pull-requests/           # NEW feature folder
             ├── PullRequestsView.tsx     # top-level view: list + detail, mounted in App.tsx in
             │                           # place of ChatPane while view-store's `view` is
@@ -113,7 +112,7 @@ src/
 docs/spike/                          # probe scripts and findings (already present, spec 001)
 ```
 
-**Structure Decision**: this feature extends spec 001's single Electron project; no new source root. The reference screenshot's "left nav" (a persistent rail of named views) does not exist in the code yet — specs 004, 007, and 008 are the ones that build it (Settings entry, theme switcher, profile item). Building a left-nav shell here would duplicate work those specs own and create a second convention before the first one lands. Instead, this feature's entry point is a small, repository-scoped toggle added to the per-repository header `SessionList.tsx` already renders (where the existing "new session" and "branch picker" buttons live), which calls the shared `view-store.ts`'s `openPullRequests(repositoryId)` to swap `App.tsx`'s main pane between `ChatPane` and `PullRequestsView` for that repository — the same scoping Sessions already use, and the same shared store specs 004 and 008 extend with their own views (`'settings'`, `'manage-sessions'`) rather than each spec inventing its own switch state. When the real left nav lands, only this toggle's mount point moves; `PullRequestsView` itself does not change. This is recorded as research.md decision 7, not a constitution violation (no principle requires a left nav; FR-001 only requires "the left nav MUST include a 'Pull requests' entry" once such a nav exists, and today's equivalent surface is the per-repository header).
+**Structure Decision**: this feature extends spec 001's single Electron project; no new source root. Stuart's answer was a left-nav view like the reference screenshot, so the entry point is a "Pull requests" entry at the top of the left nav (the session list column, above the repository groups); selecting it swaps the main area to `PullRequestsView`, which has its own repository dropdown (the repository defaults to the one of the selected Session). No new rail or shell is built; specs 004, 007, and 008 add their own entries later against the same shared `view-store.ts`.
 
 ## Design overview
 
