@@ -64,7 +64,7 @@ signed in, a scratch repository) since this feature reuses that app shell.
 5. Turn on a screen reader and repeat check 1's theme switches. Expect: nothing beyond the
    picker's own selection-state text change is announced for the repaint itself.
 
-**Story 4: the theme survives and applies everywhere (FR-011 to FR-013)**
+**Story 4: the theme survives and applies everywhere (FR-011 to FR-013, FR-019)**
 
 1. Save a specific theme, fully restart Refract. Expect: the correct theme is shown from the
    window's very first paint — no flash of another appearance first.

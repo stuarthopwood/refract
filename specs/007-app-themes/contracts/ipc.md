@@ -11,7 +11,7 @@ this spec adds or changes.
 |---|---|---|
 | `theme:bootstrap` (`ipcRenderer.sendSync`, wrapped as `window.refract.themeBootstrap()`) | `{ theme: ThemeId }` | Called once, in the first lines of `main.tsx`, before React mounts and before any class is set on `<html>` — replaces today's hardcoded `document.documentElement.classList.add('dark')`. Blocking by design: nothing paints in the renderer until it returns, which is how FR-012/SC-003 avoid a flash of the wrong theme (research.md decision 4). `theme` comes straight from the already-loaded `SettingsStore`, synchronous in main. This is the one channel in the app that is not `Result<T>`-shaped: there is nothing to fail, and it must return a plain value with no …
 
-## Theme (FR-001 to FR-017)
+## Theme (FR-001 to FR-019)
 
 | Method | Returns | Errors | Notes |
 |---|---|---|---|

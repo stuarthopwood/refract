@@ -161,9 +161,9 @@ src/
   defined that IPC contract. This spec's task implements the menu item against the shape
   documented in contracts/ipc.md ("Update state (owned by spec 006)") and is blocked on spec 006
   shipping it; until then the entry can be built and visually checked but not end-to-end verified.
-- **Depends on spec 007 (App themes)**: the profile menu's Theme submenu (FR-019) and its "More
-  themes" entry depend on spec 007's theme setter and its `view-store.ts` `settingsSection:
-  'appearance'` value. Same blocked-until-lands relationship as the update entry.
+- **Depends on spec 007 (App themes)**: the profile menu's Theme submenu (FR-019) and its
+  "Appearance settings" entry depend on spec 007's theme setter and its `view-store.ts`
+  `settingsSection: 'appearance'` value. Same blocked-until-lands relationship as the update entry.
 - **spec 001 T099 depends on this spec**: spec 001's existing task T099 ("move the low-memory
   warning from the status bar to the profile item", FR-056, FR-037) is already written in spec
   001's own `tasks.md` and explicitly waits for this spec's profile item (FR-029) to exist; it is
