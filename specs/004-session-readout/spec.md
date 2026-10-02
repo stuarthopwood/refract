@@ -139,8 +139,8 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 
 ### Edge Cases
 
-- No readout is currently meaningful for a Session: the chip row is hidden entirely; it is never
-  shown as an empty bar.
+- No readout is currently meaningful for a Session: the row still shows the Approval mode pill
+  alone (spec 001 FR-056) and nothing else; it is never an empty bar.
 - The agent is not running: Changes and Pull request keep their last read values, because both
   come from git and GitHub rather than from the agent; Context window usage shows its last known
   reading; Turn time and Subagents are hidden, because both only mean something for a turn in
@@ -171,9 +171,10 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 
 ### Functional Requirements
 
-- **FR-001**: An open Session MUST show a chip row directly above the message box, containing
-  only the readouts that are both enabled in Settings and currently meaningful for that Session;
-  when none are meaningful, the row MUST be hidden rather than shown empty.
+- **FR-001**: An open Session MUST show a chip row directly above the message box. It always
+  contains the Approval mode pill (spec 001 FR-056) as its first item, followed by only the
+  readouts that are both enabled in Settings and currently meaningful for that Session; when no
+  readout is meaningful the row holds the pill alone.
 - **FR-002**: The Changes chip MUST show the number of files changed and the total lines added
   and removed for the Session's worktree against its Base branch, counting committed edits,
   uncommitted edits, and new untracked files — the same figure the Session details card shows
