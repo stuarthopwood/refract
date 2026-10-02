@@ -351,12 +351,18 @@ draft, are never offered as an update by User Story 3's check.
   SmartScreen is expected to warn on first run of an unsigned installer; whether and how to sign
   it is an open question, not a [NEEDS CLARIFICATION] item, because the feature can ship
   unsigned and be revisited later.
-- How OMP is installed at a pinned 18.4.x version, from where, and whether a specific version can
-  be requested from its own installer are unverified. Per the constitution's "Evidence before
-  design" principle (IV), this must be probed on a clean profile and recorded in
-  `docs/spike/FINDINGS.md` before the plan relies on it. Today OMP lives as a standalone
-  executable under the user's local AppData, installed by hand; this spec does not assume that
-  installation path continues unchanged.
+- Stuart installed OMP with OMP's own PowerShell install script (`irm https://omp.sh/install.ps1
+  | iex`), which leaves a standalone executable under the user's local AppData. Whether that
+  script can install a specific version, which version it installs by default, and whether it
+  can run without prompts are unverified. Per the constitution's "Evidence before design"
+  principle (IV), this must be probed on a clean profile and recorded in
+  `docs/spike/FINDINGS.md` before the plan relies on it.
+- Refract's install and update actions MUST keep OMP inside the supported 18.4.x range: Refract
+  never runs OMP's own self-update to the latest version, and never leaves the developer on an
+  unsupported OMP without saying so on the readiness screen (the app stays blocked until a
+  supported version is present, as spec 001 FR-036 requires). OMP's sign-in (`omp login`) needs
+  the developer, so the Install action ends by handing off to the readiness screen's sign-in
+  step.
 - Marking the GitHub CLI optional on the readiness checklist, and scoping it to updates and
   pull request access, is a reading of Stuart's answer, not a separately confirmed design. The
   GitHub CLI is not currently a listed Refract prerequisite in `README.md` (only Git and OMP are
