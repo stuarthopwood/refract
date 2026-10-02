@@ -21,11 +21,15 @@ const isDev = !app.isPackaged
 // Renamed from Pinion to Refract (issue #90). Electron derives the default userData folder from
 // package.json "name", so pin it to the pre-rename folder: registry.json, settings.json, and
 // processes.json stay put, and the single-instance lock (keyed on this folder) is shared with any
-// older Pinion build, so the two can never drive the same Sessions at once. Must run before
-// requestSingleInstanceLock() and 'ready'; setPath throws if the folder does not exist.
-const PINNED_USER_DATA_DIR = join(app.getPath('appData'), 'pinion')
-mkdirSync(PINNED_USER_DATA_DIR, { recursive: true })
-app.setPath('userData', PINNED_USER_DATA_DIR)
+// older Pinion build, so the two can never drive the same Sessions at once. An explicit
+// --user-data-dir (an isolated verification or side-by-side test instance) wins over the pin.
+// Must run before requestSingleInstanceLock() and 'ready'; setPath throws if the folder does not
+// exist.
+if (!app.commandLine.hasSwitch('user-data-dir')) {
+  const pinnedUserDataDir = join(app.getPath('appData'), 'pinion')
+  mkdirSync(pinnedUserDataDir, { recursive: true })
+  app.setPath('userData', pinnedUserDataDir)
+}
 
 // Stop-all cap on quit (tasks.md T017): every agent gets this long to exit stdin-first before
 // Refract quits anyway; the Job Object (jobObject.ts) is the backstop if a process wedges.
