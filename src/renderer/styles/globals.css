@@ -2,6 +2,18 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Brand display font (Archivo Black, SIL OFL-1.1, see src/renderer/assets/fonts/OFL.txt): the
+ * one bundled font, used only for the "Refract" wordmark and app icon glyph (docs/DESIGN.md
+ * "Look and feel"). Never used for app chrome or code, which stay on the user's installed-font
+ * settings. */
+@font-face {
+  font-family: 'Archivo Black';
+  src: url('../assets/fonts/ArchivoBlack-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -55,10 +67,12 @@
 
 /* Font family roles (docs/DESIGN.md "Look and feel"): theme-independent, so declared once as
  * real Tailwind theme values rather than through the light/dark indirection above. Generates
- * the `font-ui` and `font-code` utility classes. */
+ * the `font-ui`, `font-code`, and `font-brand` utility classes. `font-brand` is the one
+ * exception to the no-bundled-fonts default: the "Refract" wordmark and app icon glyph only. */
 @theme {
   --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-code: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+  --font-brand: 'Archivo Black', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
 }
 
 :root {

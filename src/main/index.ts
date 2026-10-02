@@ -89,6 +89,14 @@ function createWindow(): void {
     width: 1280,
     height: 800,
     show: false,
+    // The dev-time window icon: `build/icon.ico` resolves relative to `out/main`, so this path
+    // only exists when running unpackaged. A packaged build (spec 006, electron-builder) reads
+    // its icon from the exe's own embedded resource instead -- the same build/icon.ico, wired
+    // through electron-builder's config at packaging time, not through this `icon:` option. The
+    // .ico already carries a bitmap per size, a simplified design for 16-32px and the full
+    // mark from 48px up (resources/brand/README.md), so Windows picks the right one for the
+    // taskbar/Alt-tab/title bar without re-scaling one image.
+    icon: join(__dirname, '../../build/icon.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

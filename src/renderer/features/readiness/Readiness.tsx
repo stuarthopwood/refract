@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { RefractMark } from '@/components/brand/RefractMark'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import type { Check, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
 
@@ -59,10 +60,16 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
   }, [allPass, onReadyChange])
 
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto p-6">
+    <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
+      <div className="flex items-center gap-3">
+        <RefractMark aria-hidden className="h-14 w-14 shrink-0" />
+        <div className="flex flex-col">
+          <span className="font-brand text-2xl leading-none text-foreground">Refract</span>
+          <span className="font-brand text-xs leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>
+        </div>
+      </div>
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-card-foreground">
         <h1 className="text-base font-medium">Get Refract ready</h1>
-        <p className="mt-0.5 text-sm italic text-muted-foreground">One Pi, every angle.</p>
         <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
         <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-3">
           {CHECK_ORDER.map((key) => {
