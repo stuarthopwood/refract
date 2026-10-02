@@ -42,7 +42,8 @@
 - Q: What is the rule for any other chat output? → A: Any chat output follows the same single-line theme as a baseline, with extra functionality added case by case.
 - Q: Should chat text keep a narrower readable line width? → A: No. All text needs to fill the width of its parent container. (This reverses the "prose keeps a readable maximum line width" rule in docs/DESIGN.md.)
 - Q: How should code be shown in the chat? → A: Formatted and syntax highlighted, with a language indicator.
-- Q: The agent's `todo` calls showed up as tool rows with raw JSON; what should happen to them? → A: Hide them.
+- Q: The agent's `todo` calls showed up as tool rows with raw JSON; what should happen to them? → A: Hide them. (Their progress shows as the Todo chip in spec 004.)
+- Q: How should scrollbars look? → A: Better, darker styling; the default light scrollbars on the dark app are wrong.
 - Q: How should advisory blocks (the `<advisory>` notes OMP adds to the conversation) be shown? → A: Parsed and displayed according to their severity, for example a blocker in red.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -250,6 +251,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-050**: Every code block in the chat (a fenced block in markdown, and the arguments and output of a tool call) MUST show a language indicator in a small header: the language's name, or "text" when none is known. The code MUST be syntax highlighted when its language is known, JSON arguments and JSON output MUST be shown pretty-printed, and an unknown or failed language MUST fall back to plain text under the "text" label without an error. The indicator MUST be readable text and meet WCAG AA contrast. Code is displayed as inert text (FR-021).
 - **FR-051**: Advisory notes that OMP adds to the conversation (`<advisory>` elements with a severity of nit, concern, or blocker, and optionally an advisor name, a turns-ago marker, and guidance) MUST be parsed and shown as baseline lines (FR-047) styled by severity: a blocker in the error colour, a concern in the warning colour, and a nit muted, each also with an icon and the severity word so colour is never the only cue. A line MUST show the advisor name and the turns-ago marker when present and a one-line preview of the note, and expanding it MUST show the full note and its guidance as inert text. One message that carries several advisories MUST show one line each, and raw tag text MUST NOT be shown when parsing succeeds; text that cannot be parsed MUST show as a generic baseline line instead.
 - **FR-052**: The agent's own bookkeeping tool calls MUST NOT be shown in the chat. The list is fixed in one place and starts with `todo`; a hidden call that fails MUST still surface as an error notice, and hidden calls MUST NOT break up a group of consecutive calls to another tool (FR-008). This is the only exception to FR-008 and FR-047.
+- **FR-053**: Every scrollbar in the app (the transcript, tool arguments and output, code blocks, the session list, dialogs, menus, and panels) MUST be thin and use the active theme's colours instead of the system's default light scrollbar, so on a dark theme it is dark, with a thumb that keeps at least 3:1 contrast against its track and the page and is easier to see on hover and while dragging; scrolling with the keyboard, the wheel, and touch MUST behave as before.
 
 ### Key Entities
 

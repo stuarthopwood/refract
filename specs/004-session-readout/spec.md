@@ -70,6 +70,9 @@ and that the row updates as the turn progresses.
 10. **Given** the agent is working, **When** any readout's underlying value changes, **Then** its
     chip updates without the developer refreshing or reopening the Session, and the developer can
     keep typing in the message box throughout.
+11. **Given** the agent keeps a task list for the current work, **When** the developer looks at the
+    chip row, **Then** a Todo chip shows how many of its tasks are done out of the total (for
+    example "Todo 2/5"); **Given** the agent has no task list, **Then** the chip is not shown.
 
 ---
 
@@ -200,10 +203,10 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   phrase describing its current value; no chip's status MUST be conveyed by color alone.
 - **FR-011**: The left nav MUST include a "Settings" entry that opens a Settings screen.
 - **FR-012**: The Settings screen MUST include one section, "Session readout", listing Changes,
-  Context window usage, Turn time, Current time, Pull request, and Subagents, each with its own
-  control to show or hide it.
+  Context window usage, Turn time, Current time, Pull request, Subagents, and Todo progress, each
+  with its own control to show or hide it.
 - **FR-013**: The Session readout section's defaults MUST be: Changes, Context window usage, Turn
-  time, Pull request, and Subagents shown; Current time hidden.
+  time, Pull request, Subagents, and Todo progress shown; Current time hidden.
 - **FR-014**: A readout's show-or-hide choice MUST apply across the whole app, MUST persist
   across Refract restarts, and MUST apply to every open Session's chip row immediately, without
   reopening the Session or restarting Refract.
@@ -220,11 +223,16 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   unchanged.
 - **FR-020**: A subagent finishing while its stream is open in the panel MUST update that
   subagent's shown state without closing the panel.
+- **FR-021**: The Todo progress chip MUST show how many of the agent's current tasks are done out
+  of the total (for example "Todo 2/5"), MUST be hidden when the agent has no task list, and MUST
+  be readable by assistive technology as one phrase (for example "Todo: 2 of 5 tasks done"). It
+  replaces the chat's own task-list rows, which are hidden (spec 001 FR-052), so the agent's plan
+  progress stays visible.
 
 ### Key Entities
 
 - **Readout chip**: one chip in the row, for one readout kind (Changes, Context window usage,
-  Turn time, Current time, Pull request, Subagents), shown only while that readout is enabled and
+  Turn time, Current time, Pull request, Subagents, Todo progress), shown only while that readout is enabled and
   meaningful for the Session, and clickable only for Pull request and Subagents.
 - **Session readout settings**: the app-wide record of which readouts are shown or hidden, with
   the defaults in FR-013, persisted across restarts and applied to every open Session.
@@ -260,9 +268,14 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   [NEEDS CLARIFICATION] item, because the chip is simply dropped from this spec rather than
   blocking it.
 - Other OMP statistics that Stuart did not choose for this spec — generation speed, cost and
-  token totals, todo progress, and fast-mode or compaction state — are candidates for a later
+  token totals, and fast-mode or compaction state — are candidates for a later
   addition to the Session readout section; FR-015's extensible structure is written so they can
   be added without redesigning the screen.
+- The Todo progress readout is included because spec 001 FR-052 hides the agent's task-list calls
+  from the chat (Stuart chose "Hide them" when the option said progress would show only as a
+  chip). Its source, the agent's reported task phases in the session state, is unverified on OMP
+  18.4.x and must be probed and recorded in `docs/spike/FINDINGS.md` before the plan relies on
+  it (constitution IV).
 - Both a turn timer and a clock are included because Stuart first said "time" and then separately
   said "Current Time as well" when asked to name the readouts. This reading (elapsed turn time
   plus the wall clock, rather than either alone) is a reasonable interpretation of what he said,
