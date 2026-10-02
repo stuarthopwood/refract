@@ -46,6 +46,7 @@
 - Q: How should scrollbars look? → A: Better, darker styling; the default light scrollbars on the dark app are wrong.
 - Q: Which elements lose their rounded corners? → A: Items that show a choice or the active item: options in pickers and menus (including the slash menu), the selected session row, tabs, and toggle segments. Buttons, inputs, popups, dialogs, cards, and chips keep their rounding.
 - Q: How should advisory blocks (the `<advisory>` notes OMP adds to the conversation) be shown? → A: Parsed and displayed according to their severity, for example a blocker in red.
+- Q: Which slash commands should the menu list? → A: All of them must work; any that cannot work in Refract are removed from the list.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -173,7 +174,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 
 **Acceptance Scenarios**:
 
-1. **Given** an open session, **When** the developer types `/`, **Then** the commands the agent currently offers are listed and choosing one runs it.
+1. **Given** an open session, **When** the developer types `/`, **Then** the commands the agent currently offers that Refract can run are listed, and choosing one runs it and shows its result; a command that cannot work in Refract is not listed.
 2. **Given** the developer types a slash command the agent does not offer, **When** they send it, **Then** Refract warns that the command is unknown and does not send it as ordinary chat text.
 3. **Given** a session's agent stops unexpectedly, **When** it happens, **Then** the session shows a stopped state with the reason if known, and a recover action reattaches the saved conversation.
 
@@ -231,8 +232,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-029**: Users MUST be able to delete a session only after an explicit confirmation that names what will be lost — its uncommitted changes and unpushed commits — after which its worktree and conversations are permanently removed.
 - **FR-030**: Refract's own git use MUST be limited to creating and deleting worktrees, listing branches, reading enough status to warn before a delete, and reading change counts (files changed, lines added and removed, read-only, never staging or altering anything), and reading the configured `user.name` (resolved in the main process, per repository), for the session details card (FR-039) and, in spec 004, the session readout; committing and pushing MUST be done by the user asking the agent in chat, not through dedicated Refract controls, and pull request browsing and review belong to spec 003.
 - **FR-031**: Closing Refract normally MUST NOT leave agent processes running. After Refract is force-killed, agent processes left over MUST be stopped no later than the next Refract start.
-- **FR-032**: When the user types `/`, Refract MUST list the slash commands the agent currently offers and MUST run the chosen one.
-- **FR-033**: Refract MUST NOT send unknown slash-command text to the agent as ordinary chat; it MUST warn the user.
+- **FR-032**: When the user types `/`, Refract MUST list the slash commands the agent currently offers that Refract is verified to run, and MUST run the chosen one to a visible result (its output, its effect, or the question or approval it raises) without leaving the session stuck. A command that cannot work in Refract, including one OMP offers only for its own terminal interface and one that Refract has not verified on the supported OMP version, MUST NOT be listed. A native command that Refract has not built yet MUST NOT be listed either.
+- **FR-033**: Refract MUST NOT send unknown slash-command text to the agent as ordinary chat; it MUST warn the user. A command that is hidden under FR-032 counts as unknown when typed by hand.
 - **FR-034**: When a session's agent stops unexpectedly, Refract MUST show the session as stopped with the reason if known, and offer a recover action that reattaches the saved conversation.
 - **FR-035**: When a session's worktree folder is found missing, Refract MUST show the session as stopped with the missing path, MUST keep its conversations readable, and MUST offer to recreate the worktree from the session's branch (only if that branch still exists), archive the session, or delete it; it MUST NOT offer a recover action, because the agent cannot run without its worktree.
 - **FR-036**: Refract MUST show an actionable setup message when the agent cannot be started (not installed, not signed in, wrong version).
@@ -280,6 +281,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **SC-008**: A turn with 30 tool calls renders only single-line rows, collapsed by default and grouped where the same tool runs consecutively; the developer can read every tool's name and status without expanding any row.
 - **SC-009**: A mid-turn Approval mode change never interrupts the running turn; it takes effect with zero lost conversation messages once the session next goes idle.
 - **SC-010**: The low-memory warning appears within 10 seconds of free memory falling below the threshold, and stopping an agent from it frees that agent's memory without changing the session's saved conversation.
+- **SC-011**: Every command shown in the slash menu runs to a visible result and leaves its session able to take the next message, 100% of the time on the supported OMP version.
 
 ## Assumptions
 
