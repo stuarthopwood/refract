@@ -22,10 +22,11 @@ const isDev = !app.isPackaged
 // package.json "name", so pin it to the pre-rename folder: registry.json, settings.json, and
 // processes.json stay put, and the single-instance lock (keyed on this folder) is shared with any
 // older Pinion build, so the two can never drive the same Sessions at once. An explicit
-// --user-data-dir (an isolated verification or side-by-side test instance) wins over the pin.
+// --user-data-dir (an isolated verification or side-by-side test instance) wins over the pin; an
+// empty one does not, since Electron ignores it and would fall back to the post-rename folder.
 // Must run before requestSingleInstanceLock() and 'ready'; setPath throws if the folder does not
 // exist.
-if (!app.commandLine.hasSwitch('user-data-dir')) {
+if (app.commandLine.getSwitchValue('user-data-dir') === '') {
   const pinnedUserDataDir = join(app.getPath('appData'), 'pinion')
   mkdirSync(pinnedUserDataDir, { recursive: true })
   app.setPath('userData', pinnedUserDataDir)
