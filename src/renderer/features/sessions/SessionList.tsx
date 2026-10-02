@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { BellRingIcon, ChevronRightIcon, CircleIcon, EllipsisVerticalIcon, LoaderCircleIcon, PlusIcon, SquareIcon } from 'lucide-react'
+import { BellRingIcon, ChevronRightIcon, CircleIcon, EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon, SquareIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -11,11 +11,12 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
-import { useRepositoriesStore, useSessionsStore } from '@/state'
+import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository, SessionStatus } from '../../../shared/model'
 
@@ -290,6 +291,26 @@ function SessionRow({ session }: { session: SessionSummary }) {
 }
 
 function RepositoryGroup({ repository, sessions }: { repository: Repository; sessions: SessionSummary[] }) {
+  const createSession = useSessionsStore((state) => state.create)
+  // Per-repository in-flight guard: the ref blocks a second click before React re-renders (a
+  // double-click), the state drives aria-disabled and the spinner. aria-disabled, not disabled,
+  // so keyboard focus stays on the button.
+  const creatingRef = useRef(false)
+  const [creating, setCreating] = useState(false)
+
+  async function handleQuickCreate(): Promise<void> {
+    if (creatingRef.current) return
+    creatingRef.current = true
+    setCreating(true)
+    try {
+      const result = await createSession(repository.id, repository.defaultBranch)
+      if (!result.ok) notify(result.error)
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
+    }
+  }
+
   const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   const archived = sessions.filter((session) => session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   return (
@@ -300,19 +321,34 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
             <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
             <span className="truncate">{repository.name}</span>
           </CollapsibleTrigger>
-          <NewSessionDialog
-            repository={repository}
-            trigger={
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon-xs"
-                aria-label={`New session in ${repository.name}`}
-                title="New session"
+                aria-label={`New session from ${repository.defaultBranch} in ${repository.name}`}
+                aria-disabled={creating || undefined}
+                className="aria-disabled:opacity-50"
+                onClick={() => void handleQuickCreate()}
               >
-                <PlusIcon aria-hidden />
+                {creating ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <PlusIcon aria-hidden />}
               </Button>
-            }
-          />
+            </TooltipTrigger>
+            <TooltipContent>New session from {repository.defaultBranch}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <NewSessionDialog
+              repository={repository}
+              trigger={
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon-xs" aria-label={`New session from a branch in ${repository.name}`}>
+                    <GitBranchPlusIcon aria-hidden />
+                  </Button>
+                </TooltipTrigger>
+              }
+            />
+            <TooltipContent>New session from a branch…</TooltipContent>
+          </Tooltip>
         </div>
         <CollapsibleContent>
           <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
