@@ -213,7 +213,10 @@ alone.
   either pane.
 - **FR-014**: Refract MUST restore, after a restart, the same two sessions in a split, the
   divider's position, and which pane was focused, provided both sessions still exist and are not
-  archived.
+  archived. Restoring a split MUST NOT start any agent: each restored pane MUST show its session
+  in the same not-started state a single, unsplit chat shows for a session that has not been
+  opened (spec 001 Assumptions: sessions start only when the user opens them), and an agent MUST
+  start only when the developer opens that pane's session.
 - **FR-015**: If a session that was part of a saved split no longer exists or is archived at
   restart, it MUST be dropped from the split, and the remaining session's pane MUST take the
   full chat area.
@@ -274,6 +277,9 @@ alone.
 
 ## Assumptions
 
+- Restoring a split does not start the agents of its two sessions, because each live agent costs
+  roughly 1.1 to 1.7 GB and a cold start takes about 16 seconds (spec 001 Assumptions); this is a
+  reading to confirm.
 - At most two panes are shown at once, per Stuart's own wording ("two sessions"); a third pane is
   out of scope.
 - The split is side by side only, per Stuart's answer; a stacked (top and bottom) layout is out
