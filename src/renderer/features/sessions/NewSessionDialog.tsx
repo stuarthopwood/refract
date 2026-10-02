@@ -21,10 +21,10 @@ export interface NewSessionDialogProps {
   trigger: ReactNode
 }
 
-// New session creation (docs/DESIGN.md "First run and empty states", CONTEXT.md "Base branch"):
-// picks the Base branch, preselecting the repository's default branch, then hands off to
-// `sessions.create`. Refract generates the Session's name and branch; this dialog never asks for
-// them.
+// New session creation from the Base branch picker (docs/DESIGN.md "Layout", CONTEXT.md "Base
+// branch"): preselects the repository's default branch, then hands off to the sessions store's
+// `create`, which also selects and opens the new Session. Refract generates the Session's name
+// and branch; this dialog never asks for them.
 export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps) {
   const [open, setOpen] = useState(false)
   const [branches, setBranches] = useState<string[] | null>(null)
@@ -67,10 +67,9 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
     event.preventDefault()
     setSubmitting(true)
     setError(null)
-    const result = await window.refract.sessions.create({ repositoryId: repository.id, baseBranch })
+    const result = await useSessionsStore.getState().create(repository.id, baseBranch)
     setSubmitting(false)
     if (result.ok) {
-      await useSessionsStore.getState().refresh()
       handleOpenChange(false)
     } else {
       setError(result.error.message)

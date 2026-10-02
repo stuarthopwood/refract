@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { SessionSnapshot, SessionStatusEvent, SessionSummary } from '../../shared/ipc'
+import type { Result, SessionSnapshot, SessionStatusEvent, SessionSummary } from '../../shared/ipc'
+import type { Session } from '../../shared/model'
 import { notify } from './notify'
 
 interface SessionsState {
@@ -13,6 +14,7 @@ interface SessionsState {
   refresh(): Promise<void>
   setVisibleSessionId(id: string | null): void
   open(id: string): Promise<SessionSnapshot | null>
+  create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
   archive(id: string): Promise<void>
   restore(id: string): Promise<void>
@@ -100,6 +102,18 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     })()
     openPromises.set(id, promise)
     return promise
+  },
+  // The one create path for every entry point (the header's one-click + and the Base branch
+  // picker): creates the Session, refreshes the list so its row exists, then makes it visible,
+  // which ChatPane's [visibleSessionId] effect turns into an open. Returns the result so each
+  // caller reports a failure its own way (a toast for one-click, inline text in the picker).
+  create: async (repositoryId, baseBranch) => {
+    const result = await window.refract.sessions.create({ repositoryId, baseBranch })
+    if (result.ok) {
+      await get().refresh()
+      get().setVisibleSessionId(result.value.id)
+    }
+    return result
   },
   rename: async (id, name) => {
     const result = await window.refract.sessions.rename(id, name)
