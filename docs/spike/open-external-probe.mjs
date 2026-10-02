@@ -31,7 +31,9 @@ const BROWSER = process.env.REFRACT_PROBE_BROWSER ?? "firefox.exe";
 const SYSTEM32 = path.join(process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows", "System32");
 
 const CDP_WAIT_MS = 30_000;
-const HIT_WAIT_MS = 30_000;
+// A cold browser start that restores a large session can take well over 30 s to request the
+// new tab's URL (first run, 2026-10-02: Firefox got the URL but fetched it after a 30 s window).
+const HIT_WAIT_MS = 120_000;
 const AFTER_KILL_MS = 5_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -141,9 +143,11 @@ async function main() {
     process.exit(1);
   }
 
+  const openedAt = Date.now();
   await evaluate(page.webSocketDebuggerUrl, `window.open(${JSON.stringify(probeUrl)}); true`);
 
   const hit = await waitForHit(hits);
+  const hitAfterMs = hit === null ? null : Date.now() - openedAt;
   const pidsAtHit = browserPids();
 
   forceKill(electronPid);
@@ -155,6 +159,7 @@ async function main() {
       label,
       electronPid,
       hit,
+      hitAfterMs,
       commaIntact: hit !== null && hit.startsWith("/probe?a=1,2&"),
       spaceIntact: hit !== null && hit.includes("b=x%20y"),
       // A browser may percent-encode the literal `%`; either form proves nothing expanded it.
