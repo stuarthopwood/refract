@@ -311,3 +311,4 @@ side panel and confirm both show the same theme.
 - Windows 11 is the only supported platform, consistent with the constitution; "OS reduced-motion
   setting" and "Windows light-or-dark setting" both mean the corresponding Windows 11 setting.
 - No remote content or downloaded themes: every built-in theme ships with the app.
+- The profile menu (spec 008) has a Theme submenu (System, Light, Dark, and a "More themes" entry that opens the Appearance section); choosing from it follows the same keep-the-choice rules as the Appearance picker.

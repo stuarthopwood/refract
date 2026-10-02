@@ -312,3 +312,4 @@ creation rules from spec 001.
   for that pull request; the app does not invent a method GitHub would refuse.
 - "Review" and "Checks running" in the detail view's header surface the same submit-review action
   and check status covered by User Stories 2 and 3; they are not a separate feature.
+- Access to GitHub is the active GitHub account of the profile menu (spec 008); switching account applies to the next request.

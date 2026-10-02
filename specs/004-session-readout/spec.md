@@ -201,7 +201,7 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-010**: Every clickable chip MUST be a keyboard-operable control with an accessible name
   stating what it opens; every non-clickable chip MUST be readable by assistive technology as one
   phrase describing its current value; no chip's status MUST be conveyed by color alone.
-- **FR-011**: The left nav MUST include a "Settings" entry that opens a Settings screen.
+- **FR-011**: The app MUST provide a way to open a Settings screen from the left nav: the cog on the profile item at the bottom of the left nav (spec 008).
 - **FR-012**: The Settings screen MUST include one section, "Session readout", listing Changes,
   Context window usage, Turn time, Current time, Pull request, Subagents, and Todo progress, each
   with its own control to show or hide it.

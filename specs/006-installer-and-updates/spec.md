@@ -388,3 +388,4 @@ draft, are never offered as an update by User Story 3's check.
 - This spec does not redesign the first-run readiness checklist's existing items (git found, OMP
   found and on the supported version, OMP signed in, from `docs/DESIGN.md`); it adds an Install
   action to the checklist that already exists.
+- The update entry is also offered in the profile menu (spec 008): "Restart to update" with the new version while an update waits for the next quit, "Check for updates" otherwise. The update controls in Settings and the profile menu act on the same update.
