@@ -29,12 +29,14 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
   - **Code font** for code blocks, tool output, diffs, and the message box: monospaced, with Nerd Font glyph support and a ligatures on/off choice, and a size setting.
   - **(default)** Refract uses fonts installed on the system and does not bundle any; glyphs missing from the chosen font fall back to another installed font.
 - **State colour roles** **(default)**: working (accent), idle (muted), needs you (warning), stopped (error). Every state also has a distinct icon, so colour is never the only signal.
+- **Scrollbars**: thin, drawn from theme colours (`--scrollbar-thumb`, `--scrollbar-thumb-hover`, `--scrollbar-track`), and `color-scheme` follows the theme so no default light scrollbar appears on dark.
+- **Square choice items**: options in pickers and menus, tabs, toggle segments, the selected session row, and conversation rows have square corners (one rule in `globals.css`); buttons, inputs, popups, dialogs, cards, and chips keep their rounding.
 
 ## Chat
 
 - Full-width transcript, no bubbles. Your messages are a subtly tinted block with a small "You" label; the agent's text sits plain on the background.
 - Each tool call is one compact row: tool, target, status, duration. Expanding shows arguments and output; a file edit shows a diff. Reasoning is a collapsed "Thinking" row.
-- Prose keeps a readable maximum line width; code blocks and diffs may span wider.
+- Chat text fills the full width of the transcript column; code blocks, diffs, and tables scroll sideways only when their content is wider.
 - Sending while a turn runs queues a removable chip under the turn; "Send now" on the chip steers the running turn.
 - Approval requests and agent questions appear inline in the transcript at the point they arise, with Approve / Deny or the answer controls, and mark the Session as needs you.
 - Agent text, tool output, and file contents are always shown as inert content.
@@ -57,11 +59,14 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
 
 Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reserves them (Start menu and Task Manager), so the app may never receive them.
 
+The Stop button names the chord in a tooltip on hover and keyboard focus; the chord is not drawn beside the button.
+
 ## First run and empty states
 
 - With nothing configured, the window shows a readiness checklist: git found, OMP found and on the supported version, OMP signed in. Each failing item has a fix hint.
 - The checklist card's title is **Get Refract ready**, with the tagline *One Pi, every angle.* under it.
 - One primary action, **Add repository**, is disabled until the checklist passes. After that, Sessions are created from the Repository header buttons in the session list; with no Session selected, the chat pane reads "No Session selected".
+- UI text uses the product's own terms and never refers to requirements, tasks, stories, specs, or build state; `pnpm check:ui-text` enforces it on the built bundles.
 
 ## Feedback and errors
 

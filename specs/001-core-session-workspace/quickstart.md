@@ -26,7 +26,7 @@ pnpm build        # must pass before a change lands on main
 1. First launch shows the readiness checklist; **Add repository** is enabled only when git, `omp` 18.4.x, and sign-in all pass.
 2. Add the scratch repository and click its **+** button. Expect: a folder under `<scratch>/../pinion-worktrees/scratch/<name>` on a new branch of the same name created from the default branch, and the Session in the list under a generated name, selected and open. Double-click **+**: exactly one more Session. Click the branch button, pick another Base branch, and choose **Create session**: the new Session starts from that branch and is selected and open; **Cancel** creates nothing and returns focus to the branch button. Rename the default branch in the scratch repository (`git branch -m main trunk`) and click **+**: a toast says `Base branch not found: main` and no Session is added.
 3. Send "List the files in this repo". Expect: text streams in, tool calls appear as one compact row each, and the Session returns to idle.
-4. Send a long request, press **Ctrl+Shift+X**. Expect: the turn ends within 3 s and the next message is accepted with no "already processing" error.
+4. Send a long request, press **Ctrl+Shift+X**. Expect: the turn ends within 3 s and the next message is accepted with no "already processing" error. The Stop button shows no key badges; hovering or focusing it shows the tooltip "Stop (Ctrl+Shift+X)".
 5. While a turn runs, type a second message and press Enter. Expect: a chip under the turn; **Send now** steers the turn; removing the chip before the turn ends sends nothing.
 6. Run `/new`. Expect: same Session and worktree, empty transcript; the earlier Conversation is in the history and opens and continues.
 

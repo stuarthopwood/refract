@@ -92,6 +92,32 @@ Every `select`, `confirm`, `input`, and `editor` request MUST be answered, or th
 3. If reattach verification fails, the Session is `stopped` with the reason and a Recover action.
 4. A Session that is not running simply launches with the current mode the next time it is opened.
 
+## Model readout (T061)
+
+A probe of the read-only RPC surface (`get_state`, `get_available_models`, `get_available_thinking_levels`, `get_available_commands`; FINDINGS item 21) found no `role`/`modelRole`/`roleId` field anywhere: `get_state.model` and `get_available_models` entries carry only provider/id plus capability/cost metadata. Config-side **model roles** (`default`, `smol`, `slow`, `vision`, `plan`, `commit`, `tiny`, `task`, `advisor`, per `omp://models.md`) pick which model answers a request but are never reported back for the live session. The message-box readout shows **provider, model, and effort/thinking-level only**.
+
+## Chat line wire shapes (T071)
+
+Probed with `chat-lines-probe.mjs` (FINDINGS item 22):
+
+- A multiple-choice `ask` answer is read from the resulting `toolResult.details.selectedOptions` (or `content[0].text`); no correlation with the `extension_ui_request` dialog is needed once history is loaded.
+- Free-text `ask` is two dialogs in sequence (`select` offering "Other (type your own)", then `method: "editor"`); the rendered answer is still `toolResult.details.customInput`.
+- A cancelled `ask` is `toolResult.isError: true` with a fixed sentence and an empty `details` (no `question`/`options`) — render from the error text, not from `details`.
+- `todo` progress is available per call (`toolResult.details.phases`) and as live session state (`get_state().todoPhases`, same shape).
+- A batch `task()` call's own `tool_execution_end` completes almost immediately with `details.progress[]` stuck at `"pending"`; the authoritative per-subagent completion is a later `custom`/`async-result` message's `details.jobs[]` (`jobId`/`label`/`durationMs`/`schema.data`). `agent_start`/`agent_end` frames carry no subagent id and cannot be correlated to one. `set_subagent_subscription` does not exist in `get_available_commands` on 18.4.10.
+
+## Slash command classification (T092)
+
+`slash-commands-probe.mjs` (FINDINGS item 23) sent every command from `get_available_commands` through an isolated, credential-free profile and classified each by observed behaviour:
+
+| Class | Meaning | Count |
+|---|---|---|
+| `works-local` | Completes synchronously (`agentInvoked:false`) or completes a local turn without leaving the session unsettled | 80 |
+| `starts-agent-turn` | Dispatches a real idle agent turn; needs a signed-in profile to confirm | 3 (`/ratchet`, `/green`, `/init`) |
+| `needs-decision` | Denylisted (config/credential/model/plugin/destructive-shaped); never sent | 105 |
+
+The 80 `works-local` commands are the proposed supported set for T093.
+
 ## Failure handling
 
 | Failure | Handling |
