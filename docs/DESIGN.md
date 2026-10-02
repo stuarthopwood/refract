@@ -22,7 +22,7 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
 
 ## Look and feel
 
-- **Theme**: dark by default, with a light option. **(default)** No follow-system setting in the first build.
+- **Theme**: dark only (Stuart, 2026-10-02: "I don't think I want a light mode"). Built-in dark presets only, no light theme and no OS light/dark follow -- see spec 007 for the picker.
 - **Density**: medium. Neither terminal-tight nor roomy chat-app.
 - **Fonts**: two independent, user-customisable settings.
   - **UI font** for the app chrome.
