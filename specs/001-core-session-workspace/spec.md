@@ -47,6 +47,7 @@
 - Q: Which elements lose their rounded corners? → A: Items that show a choice or the active item: options in pickers and menus (including the slash menu), the selected session row, tabs, and toggle segments. Buttons, inputs, popups, dialogs, cards, and chips keep their rounding.
 - Q: How should advisory blocks (the `<advisory>` notes OMP adds to the conversation) be shown? → A: Parsed and displayed according to their severity, for example a blocker in red.
 - Q: Which slash commands should the menu list? → A: All of them must work; any that cannot work in Refract are removed from the list.
+- Q: Should the app's text refer to requirements, stories, or tasks? → A: No. There should be no references to stories, tasks, or other project terminology.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -255,6 +256,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-052**: The agent's own bookkeeping tool calls MUST NOT be shown in the chat. The list is fixed in one place and starts with `todo`; a hidden call that fails MUST still surface as an error notice, and hidden calls MUST NOT break up a group of consecutive calls to another tool (FR-008). This is the only exception to FR-008 and FR-047.
 - **FR-053**: Every scrollbar in the app (the transcript, tool arguments and output, code blocks, the session list, dialogs, menus, and panels) MUST be thin and use the active theme's colours instead of the system's default light scrollbar, so on a dark theme it is dark, with a thumb that keeps at least 3:1 contrast against its track and the page and is easier to see on hover and while dragging; scrolling with the keyboard, the wheel, and touch MUST behave as before. A list that has no reason to scroll sideways (the slash menu, pickers, and menus) MUST NOT show a horizontal scrollbar: long text truncates with an ellipsis instead.
 - **FR-054**: Items that show a choice or the active item MUST have square corners: the options in pickers and menus (including the slash menu), their hover, highlight, and checked states, the selected session row, selected tabs, and toggle segments. Buttons, inputs, popups, dialogs, cards, and chips keep their rounded corners. One shared rule MUST apply this, so a new picker or menu is square without extra work.
+- **FR-055**: Nothing the user can read in the app (labels, buttons, tooltips, menus, toasts, notices, errors, empty states, dialogs, notifications, and the window title) MAY refer to project terminology: requirement or task numbers (such as "FR-037" or "T040"), user stories, specs, issues, repository files, the constitution, or build state (such as "not implemented", "lands in a later task", or "wired up"). Text MUST use the product's own terms (Session, Repository, Conversation, Base branch). A feature that is not available MUST NOT be shown, or MUST say plainly in terms of what the user wants to do that it is not available. Code comments and developer documentation are not covered.
 
 ### Key Entities
 
