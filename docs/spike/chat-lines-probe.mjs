@@ -17,9 +17,10 @@
 //     and (f) approve the `task` tool's own "Allow tool: task" gate (see
 //     `approveTaskOnly` below) so batch-subagent frame shapes can be
 //     observed at all; denying it too would make those scenarios unable to
-//     run. Every OTHER "Allow tool:" dialog -- including any tool a spawned
-//     subagent itself tries to run -- still falls through to the default
-//     deny-everything handler.
+//     run. Every OTHER "Allow tool:" dialog still falls through to the
+//     default deny-everything handler -- EXCEPT that a tool call a spawned
+//     subagent itself makes is NOT gated at all once `task` is approved (see
+//     the SAFETY NOTE below).
 //   - SAFETY NOTE FOR ANYONE RERUNNING THIS SCRIPT: because `task` is
 //     approved, a malicious or buggy prompt in a scenario could trigger an
 //     UNGATED subagent tool call (no approval dialog stands between the
@@ -385,8 +386,9 @@ function makeAskAnswerer(answer) {
 
   // Approves ONLY the task tool's own "Allow tool: task" gate (orchestration,
   // not an executor) so batch-subagent frame shapes can be observed; every
-  // other "Allow tool:" dialog (anything a subagent tries to run) still
-  // falls through to the default deny-everything logic.
+  // other "Allow tool:" dialog still falls through to the default
+  // deny-everything logic -- but a tool call a spawned subagent itself makes
+  // is NOT gated at all (see the SAFETY NOTE above).
   function approveTaskOnly(frame, proc) {
     const title = frame.data?.title ?? frame.title ?? "";
     if (frame.method === "select" && /^Allow tool: task\b/.test(title)) {

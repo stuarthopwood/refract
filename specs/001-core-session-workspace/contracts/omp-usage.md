@@ -116,7 +116,7 @@ Probed with `chat-lines-probe.mjs` (FINDINGS item 22):
 | `starts-agent-turn` | Dispatches a real idle agent turn; needs a signed-in profile to confirm | 3 (`/ratchet`, `/green`, `/init`) |
 | `needs-decision` | Denylisted (config/credential/model/plugin/destructive-shaped); never sent | 105 |
 
-The 80 `works-local` commands are the proposed supported set for T093.
+**Stale classification, do not build T093 from this table as-is:** this run used the script's EARLIER, narrower denylist, before `copy`, `edit`, `import`, `stats`, `trace`, `review`, `security`, `wt`, `move`, `ssh`, `pin`, `browser`, and `computer` were added to it. The script's own header comment documents that this same run really did overwrite Stuart's clipboard (`/todo copy`) and really did start local dashboards/servers (`/stats`, `/trace`) on his desktop, alongside `/todo edit`/`import`, `/review`, `/security scan`/`import`/`disposition`, `/wt`, `/move`, `/ssh add`/`remove`, `/session pin`, `/browser visible`, and `/computer on`. Every one of those command names is denylisted (`needs-decision`) under the current, fixed denylist and so is NOT in the 80 figure above as a safe command -- it was classified `works-local` only because the denylist had not yet been fixed. Any T093 supported set drawn from this run MUST still exclude every one of those names (and their parent command where the whole family is now denylisted: `todo`, `stats`, `trace`, `review`, `security`, `wt`, `move`, `ssh`, `session`, `browser`, `computer`). A rerun of `slash-commands-probe.mjs` with the current denylist is needed to get an accurate `works-local` count and set.
 
 ## Failure handling
 

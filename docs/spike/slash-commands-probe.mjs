@@ -11,10 +11,19 @@
 //     dir, and a scratch cwd;
 //   - the child environment has every credential-shaped var removed
 //     (sanitizedEnv(), copied from docs/spike/signed-in-probe.mjs);
-//   - before sending any command this script snapshots the name + mtime (NOT
-//     contents) of every top-level entry directly under ~/.omp/agent; after
-//     the whole run it snapshots again; any difference prints
-//     "ISOLATION BREACH" and exits 3 immediately;
+//   - before sending any command, a pre-flight check (assertIsolatedProfile)
+//     asserts that the first live process's `get_state.model` resolves to
+//     the `probe-fake`/`probe-fake-model` provider ensureFakeModel() seeded
+//     only under the isolated profile's own agent directory; if it does not,
+//     the script prints "ABORT: not running against the isolated profile"
+//     and exits non-zero before sending anything;
+//   - separately, as an after-the-fact net (not a pre-flight check), this
+//     script snapshots the name + mtime (NOT contents) of every top-level
+//     entry directly under ~/.omp/agent exactly twice: once before the run
+//     starts and once after the whole run completes (never per-command); a
+//     changed mtime on four known host-session churn files (agent.db,
+//     agent.db-wal, models.db, models.db-wal) is expected and ignored, any
+//     OTHER difference prints "ISOLATION BREACH" and exits 3;
 //   - this script never deletes anything -- the integrator removes the
 //     ~/.omp/profiles/pinion-probe-slash directory by hand afterward.
 //
@@ -36,6 +45,10 @@ import os from "node:os";
 
 const OMP = process.env.PINION_OMP || "omp";
 const PROFILE = "pinion-probe-slash";
+// Single source of truth for OMP's config-dir root so the isolation
+// snapshot (snapshotAgentDir) and the seeded-profile writer (ensureFakeModel)
+// can never silently diverge onto two different directories.
+const CONFIG_DIR_NAME = process.env.PI_CONFIG_DIR || ".omp";
 const READY_MS = 120_000;
 const REQUEST_MS = 60_000;
 const OBSERVE_MS = 20_000;
@@ -70,7 +83,7 @@ const DENYLIST =
 // to an ambient env-var API key. PATH/HOME/USERPROFILE/SystemRoot/etc. are
 // left alone -- they are needed to spawn the process at all on Windows.
 function sanitizedEnv() {
-  const credentialPattern = /API_KEY|OAUTH|TOKEN|SECRET|CREDENTIAL/i;
+  const credentialPattern = /API_KEY|OAUTH|TOKEN|SECRET|CREDENTIAL|PASSWORD|_PAT\b|AUTH|_KEY\b/i;
   const out = { ...process.env };
   for (const key of Object.keys(out)) {
     if (credentialPattern.test(key)) delete out[key];
@@ -85,7 +98,7 @@ function sanitizedEnv() {
 // processes. A clean (non-BREACH) report is evidence of "no top-level churn
 // beyond the known host-session files" -- not a full isolation proof.
 function snapshotAgentDir() {
-  const agentDir = path.join(os.homedir(), ".omp", "agent");
+  const agentDir = path.join(os.homedir(), CONFIG_DIR_NAME, "agent");
   let entries;
   try {
     entries = fs.readdirSync(agentDir);
@@ -300,8 +313,7 @@ function flattenCommands(list, prefix = "") {
 // Any prompt actually routed to this model simply fails to connect, which is
 // fine -- an unsigned-in profile is expected to be unable to run a real turn.
 function ensureFakeModel() {
-  const configDirName = process.env.PI_CONFIG_DIR || ".omp";
-  const agentDir = path.join(os.homedir(), configDirName, "profiles", PROFILE, "agent");
+  const agentDir = path.join(os.homedir(), CONFIG_DIR_NAME, "profiles", PROFILE, "agent");
   fs.mkdirSync(agentDir, { recursive: true });
   const yml = [
     "providers:",
@@ -318,6 +330,27 @@ function ensureFakeModel() {
     "",
   ].join("\n");
   fs.writeFileSync(path.join(agentDir, "models.yml"), yml);
+}
+
+// ---- pre-flight isolation guard ----
+// ensureFakeModel() is the ONLY place that defines a provider named
+// "probe-fake" with model "probe-fake-model", and it writes that definition
+// solely under the isolated profile's own agent directory
+// (~/<CONFIG_DIR_NAME>/profiles/pinion-probe-slash/agent/models.yml). A real,
+// previously-used profile (including the developer's default one) has no
+// such provider, so if the live process's own `get_state.model` reports
+// back exactly {provider: "probe-fake", id: "probe-fake-model"}, that is
+// direct proof the process read its config from the isolated profile --
+// not merely that we *asked* it to with --profile. If it reports anything
+// else (a real model, or none at all), the process did not resolve against
+// the isolated profile and this script must not send it any command.
+async function assertIsolatedProfile(proc) {
+  const state = await proc.request({ type: "get_state" }).catch((e) => ({ success: false, error: e.message }));
+  const model = state?.data?.model;
+  if (model?.provider !== "probe-fake" || model?.id !== "probe-fake-model") {
+    console.error(`ABORT: not running against the isolated profile (get_state.model=${JSON.stringify(model)}, expected provider "probe-fake" / id "probe-fake-model" seeded under ~/${CONFIG_DIR_NAME}/profiles/${PROFILE}/agent/models.yml)`);
+    process.exit(1);
+  }
 }
 
 // ---- main ----
@@ -347,6 +380,7 @@ let scriptFailed = false;
 
 try {
   let proc = await startProc();
+  await assertIsolatedProfile(proc);
   const cmdsResp = await proc.request({ type: "get_available_commands" });
   if (!cmdsResp.success) throw new Error(`get_available_commands failed: ${JSON.stringify(cmdsResp.error)}`);
   const commands = flattenCommands(cmdsResp.data?.commands ?? cmdsResp.data ?? []);

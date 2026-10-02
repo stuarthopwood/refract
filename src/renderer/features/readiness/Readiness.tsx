@@ -13,8 +13,6 @@ const CHECK_LABELS: Record<(typeof CHECK_ORDER)[number], string> = {
   ompSignedIn: 'OMP signed in'
 }
 
-const NOT_READY: Check = { ok: false }
-
 function checksFromError(error: IpcError): ReadinessChecks {
   const failed: Check = { ok: false, hint: error.message }
   return { git: failed, omp: failed, ompSignedIn: failed }
@@ -40,8 +38,9 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
       const result = await window.refract.readiness.check()
       setChecks(result.ok ? result.value : checksFromError(result.error))
     } catch (error) {
-      console.debug('[refract] readiness.check: invoke failed (handler not registered yet)', error)
-      setChecks({ git: NOT_READY, omp: NOT_READY, ompSignedIn: NOT_READY })
+      console.debug('[refract] readiness.check: invoke failed', error)
+      const failed: Check = { ok: false, hint: 'The check could not run. Try Re-check.' }
+      setChecks({ git: failed, omp: failed, ompSignedIn: failed })
     } finally {
       setChecking(false)
     }
