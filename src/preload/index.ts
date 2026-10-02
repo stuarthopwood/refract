@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import type {
+  BranchEntry,
   ChatAnswer,
   LowMemoryWarning,
   RefractApi,
@@ -44,7 +45,7 @@ const refract: RefractApi = {
     list: () => request<Repository[]>(IPC_REQUESTS.REPOSITORIES_LIST),
     add: (path) => request<Repository>(IPC_REQUESTS.REPOSITORIES_ADD, path),
     remove: (id) => request<void>(IPC_REQUESTS.REPOSITORIES_REMOVE, id),
-    branches: (id) => request<{ branches: string[]; default: string }>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id),
+    branches: (id) => request<BranchEntry[]>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id),
     pickFolder: () => request<string | null>(IPC_REQUESTS.REPOSITORIES_PICK_FOLDER)
   },
 

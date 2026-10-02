@@ -6,11 +6,34 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
-import type { Repository } from '../../shared/model';
+import type { BranchEntry } from '../../shared/ipc';
+import type { Repository, Session } from '../../shared/model';
 import { repoInfo } from '../git/git';
 import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
+
+/** Base branch picker entries (FR-002, contracts/ipc.md `repositories.branches`): the default
+ * branch first (when it still exists), then plain branches in git order, then branches owned by
+ * one of this repository's Sessions, labelled with that Session's live display name and sorted
+ * by it, so a rename shows the next time the picker opens. */
+function branchEntries(branches: string[], defaultName: string, sessions: Session[]): BranchEntry[] {
+  const owners = new Map(sessions.map((session) => [session.branch, session]));
+  const entries: BranchEntry[] = [];
+  if (branches.includes(defaultName)) entries.push({ name: defaultName, kind: 'default' });
+  const sessionEntries: BranchEntry[] = [];
+  for (const name of branches) {
+    if (name === defaultName) continue;
+    const owner = owners.get(name);
+    if (owner) {
+      sessionEntries.push({ name, kind: 'session', sessionName: owner.name, archived: owner.archivedAt !== null });
+    } else {
+      entries.push({ name, kind: 'branch' });
+    }
+  }
+  sessionEntries.sort((a, b) => (a.sessionName ?? '').localeCompare(b.sessionName ?? '', undefined, { sensitivity: 'base' }));
+  return [...entries, ...sessionEntries];
+}
 
 export function registerRepositories(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => ({ ok: true, value: manager.registry.snapshot().repositories }));
@@ -64,7 +87,8 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     }
     try {
       const branches = await listBranches(repository.path);
-      return { ok: true, value: { branches, default: repository.defaultBranch } };
+      const sessions = manager.registry.snapshot().sessions.filter((session) => session.repositoryId === repository.id);
+      return { ok: true, value: branchEntries(branches, repository.defaultBranch, sessions) };
     } catch (err) {
       return mapStoreThrown(err);
     }

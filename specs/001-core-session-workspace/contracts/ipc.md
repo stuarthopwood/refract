@@ -27,7 +27,7 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | `repositories.list()` | `Repository[]` | |
 | `repositories.add(path)` | `Repository` | `not-a-repo`, `no-commits`, `duplicate` |
 | `repositories.remove(id)` | `void` | `session-running` |
-| `repositories.branches(id)` | `{ branches: string[]; default: string }` | `git-failed` |
+| `repositories.branches(id)` | `BranchEntry[]`, where `BranchEntry` is `{ name: string; kind: 'default' \| 'branch' \| 'session'; sessionName?: string; archived?: boolean }`: the default branch first (when it still exists), then other branches in git order, then branches owned by a Session of this repository sorted by display name, with that Session's live `name` as `sessionName` and `archived: true` when it is archived. `name` is the value `sessions.create` takes as `baseBranch`. | `git-failed` |
 | `repositories.pickFolder()` | `string \| null` | Opens a native folder-picker dialog on the main window (`properties: ['openDirectory']`); `null` when the user cancels. Added to support the renderer's Browse button. |
 
 ### Sessions (FR-002 to FR-006, FR-013, FR-028, FR-029, FR-035)

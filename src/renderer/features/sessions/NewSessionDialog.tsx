@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
+import { FolderGit2Icon, GitBranchIcon } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,9 +12,19 @@ import {
   DialogTitle,
   DialogTrigger
 } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/state'
+import type { BranchEntry } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 
 export interface NewSessionDialogProps {
@@ -27,7 +39,7 @@ export interface NewSessionDialogProps {
 // and branch; this dialog never asks for them.
 export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps) {
   const [open, setOpen] = useState(false)
-  const [branches, setBranches] = useState<string[] | null>(null)
+  const [entries, setEntries] = useState<BranchEntry[] | null>(null)
   const [baseBranch, setBaseBranch] = useState(repository.defaultBranch)
   const [loadingBranches, setLoadingBranches] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -42,10 +54,10 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
       const result = await window.refract.repositories.branches(repository.id)
       if (cancelled) return
       if (result.ok) {
-        setBranches(result.value.branches)
-        setBaseBranch(result.value.default)
+        setEntries(result.value)
+        setBaseBranch(result.value.find((entry) => entry.kind === 'default')?.name ?? repository.defaultBranch)
       } else {
-        setBranches(null)
+        setEntries(null)
         setError(result.error.message)
       }
       setLoadingBranches(false)
@@ -76,7 +88,9 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
     }
   }
 
-  const branchOptions = branches ?? [repository.defaultBranch]
+  const options: BranchEntry[] = entries ?? [{ name: repository.defaultBranch, kind: 'default' }]
+  const branchOptions = options.filter((entry) => entry.kind !== 'session')
+  const sessionOptions = options.filter((entry) => entry.kind === 'session')
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -95,12 +109,36 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
               <SelectTrigger id="base-branch" className="w-full">
                 <SelectValue placeholder="Select a branch" />
               </SelectTrigger>
-              <SelectContent>
-                {branchOptions.map((branch) => (
-                  <SelectItem key={branch} value={branch}>
-                    {branch}
-                  </SelectItem>
-                ))}
+              <SelectContent position="popper" side="bottom" sideOffset={4}>
+                <SelectGroup>
+                  <SelectLabel className="flex items-center gap-1.5">
+                    <GitBranchIcon aria-hidden className="size-3.5" />
+                    Branches
+                  </SelectLabel>
+                  {branchOptions.map((entry) => (
+                    <SelectItem key={entry.name} value={entry.name}>
+                      {entry.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                {sessionOptions.length > 0 && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel className="flex items-center gap-1.5">
+                        <FolderGit2Icon aria-hidden className="size-3.5" />
+                        Sessions
+                      </SelectLabel>
+                      {sessionOptions.map((entry) => (
+                        <SelectItem key={entry.name} value={entry.name} textValue={entry.sessionName}>
+                          <span className="min-w-0 truncate">{entry.sessionName}</span>
+                          <span className="text-xs text-muted-foreground">{entry.name}</span>
+                          {entry.archived && <Badge variant="secondary">Archived</Badge>}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>

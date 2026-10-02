@@ -75,6 +75,16 @@ export interface SessionRuntimeView {
   pending: PendingRequest[];
 }
 
+/** One `repositories.branches` entry for the Base branch picker (FR-002). `name` is the git branch
+ * and the value `sessions.create` takes as `baseBranch`; `sessionName` and `archived` are set only
+ * for `kind: 'session'`, from the owning Session's live `name` and `archivedAt`. */
+export interface BranchEntry {
+  name: string;
+  kind: 'default' | 'branch' | 'session';
+  sessionName?: string;
+  archived?: boolean;
+}
+
 /** Returned by `sessions.open`, `sessions.recover`, `conversations.startNew`, `conversations.open`. */
 export interface SessionSnapshot {
   runtime: SessionRuntimeView;
@@ -167,7 +177,7 @@ export interface RefractApi {
     list(): Promise<Result<Repository[]>>;
     add(path: string): Promise<Result<Repository>>;
     remove(id: string): Promise<Result<void>>;
-    branches(id: string): Promise<Result<{ branches: string[]; default: string }>>;
+    branches(id: string): Promise<Result<BranchEntry[]>>;
     pickFolder(): Promise<Result<string | null>>;
   };
 
