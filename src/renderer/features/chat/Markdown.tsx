@@ -7,11 +7,6 @@ import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import { safeUrl } from '@/lib/safe-url'
 
-// Readable prose width (docs/DESIGN.md "Chat": "Prose keeps a readable maximum line width; code
-// blocks and diffs may span wider"). Applied per block element, not on the container, so fenced
-// code blocks and DiffView (rendered outside Markdown, in ToolRow) are unaffected.
-const PROSE_WIDTH = 'max-w-[72ch]'
-
 // One Shiki highlighter for the whole renderer, created lazily on first code block and reused.
 // `createJavaScriptRegexEngine` avoids loading the WASM oniguruma engine in the sandboxed
 // renderer (research.md decision 2, "Not verified": chosen for that reason, not benchmarked).
@@ -85,7 +80,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string | null }) {
 
 function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
   return function Heading({ className, ...props }: React.ComponentProps<typeof Tag> & ExtraProps) {
-    return <Tag className={cn(PROSE_WIDTH, 'font-semibold', className)} {...props} />
+    return <Tag className={cn('font-semibold', className)} {...props} />
   }
 }
 
@@ -116,13 +111,13 @@ const components: Components = {
       </a>
     )
   },
-  p: ({ className, ...props }) => <p className={cn(PROSE_WIDTH, className)} {...props} />,
-  ul: ({ className, ...props }) => <ul className={cn(PROSE_WIDTH, 'list-disc pl-5', className)} {...props} />,
-  ol: ({ className, ...props }) => <ol className={cn(PROSE_WIDTH, 'list-decimal pl-5', className)} {...props} />,
+  p: ({ className, ...props }) => <p className={className} {...props} />,
+  ul: ({ className, ...props }) => <ul className={cn('list-disc pl-5', className)} {...props} />,
+  ol: ({ className, ...props }) => <ol className={cn('list-decimal pl-5', className)} {...props} />,
   blockquote: ({ className, ...props }) => (
-    <blockquote className={cn(PROSE_WIDTH, 'border-l-2 border-border pl-3 text-muted-foreground', className)} {...props} />
+    <blockquote className={cn('border-l-2 border-border pl-3 text-muted-foreground', className)} {...props} />
   ),
-  hr: ({ className, ...props }) => <hr className={cn(PROSE_WIDTH, 'border-border', className)} {...props} />,
+  hr: ({ className, ...props }) => <hr className={cn('border-border', className)} {...props} />,
   h1: heading('h1'),
   h2: heading('h2'),
   h3: heading('h3'),

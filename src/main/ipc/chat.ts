@@ -76,7 +76,7 @@ export function registerChat(manager: SessionManager): void {
         }
       }
       if (Object.prototype.hasOwnProperty.call(NATIVE_COMMANDS, commandName)) {
-        return { ok: false, error: { code: 'not-implemented', message: `/${commandName} lands in a later task` } };
+        return { ok: false, error: { code: 'unknown-command', message: `Unknown command: /${commandName}` } };
       }
       if (!collectCommandNames(agent.availableCommands).has(commandName)) {
         return { ok: false, error: { code: 'unknown-command', message: `Unknown command: /${commandName}` } };

@@ -22,7 +22,6 @@ export type IpcErrorCode =
   | 'reattach-failed'
   | 'unknown-command'
   | 'branch-missing'
-  | 'not-implemented'
   | 'not-found'
   | 'invalid-argument'
   | 'prompt-failed'

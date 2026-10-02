@@ -15,12 +15,8 @@ const CHECK_LABELS: Record<(typeof CHECK_ORDER)[number], string> = {
 
 const NOT_READY: Check = { ok: false }
 
-// `readiness.check` can answer `not-implemented` while main's handler is still landing
-// (AGENTS: "tolerate that"); that is not a real failure, so it gets a calmer hint than a genuine
-// error message.
 function checksFromError(error: IpcError): ReadinessChecks {
-  const hint = error.code === 'not-implemented' ? 'Waiting for the readiness check to be wired up.' : error.message
-  const failed: Check = { ok: false, hint }
+  const failed: Check = { ok: false, hint: error.message }
   return { git: failed, omp: failed, ompSignedIn: failed }
 }
 

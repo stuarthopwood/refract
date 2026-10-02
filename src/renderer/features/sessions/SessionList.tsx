@@ -190,8 +190,9 @@ function SessionRow({ session }: { session: SessionSummary }) {
           onClick={() => (isVisible ? void open(session.id) : setVisibleSessionId(session.id))}
           onDoubleClick={startRenaming}
           onKeyDown={handleOpenButtonKeyDown}
+          data-choice-item
           className={cn(
-            'session-open-button flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+            'session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
             isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
           )}
         >

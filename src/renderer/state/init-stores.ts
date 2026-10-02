@@ -9,17 +9,12 @@ import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 
-// Awaits an initial-load request. Main's handlers are still landing (tasks T017-T045): a
-// `not-implemented` error and a rejected invoke (no handler registered yet) both fall back to
-// an empty/default value, logged at debug, instead of a toast on every cold start.
+// Awaits an initial-load request; an error or a rejected invoke falls back to an empty/default
+// value instead of a toast on every cold start.
 async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: string): Promise<T> {
   try {
     const result = await request
     if (result.ok) return result.value
-    if (result.error.code === 'not-implemented') {
-      console.debug(`[refract] ${label}: not implemented yet`)
-      return fallback
-    }
     console.error(`[refract] ${label}: ${result.error.code} ${result.error.message}`)
     return fallback
   } catch (error) {

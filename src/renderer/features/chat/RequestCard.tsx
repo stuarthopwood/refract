@@ -61,7 +61,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
 
   if (request.kind === 'approval') {
     return (
-      <Card size="sm" className="max-w-[60ch]">
+      <Card size="sm">
         <CardHeader>
           <CardTitle>Allow tool: {request.tool}</CardTitle>
           <CardDescription className="truncate" title={request.target}>
@@ -97,7 +97,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   const trimmedText = text.trim()
 
   return (
-    <Card size="sm" className="max-w-[60ch]">
+    <Card size="sm">
       <CardHeader>
         <CardTitle>{request.title}</CardTitle>
         {request.message && <CardDescription>{request.message}</CardDescription>}

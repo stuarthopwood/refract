@@ -61,7 +61,7 @@ export function SlashMenu({ id, commands, activeIndex, onSelect, onActiveIndexCh
       id={id}
       role="listbox"
       aria-label="Slash commands"
-      className="absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10"
+      className="absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10"
     >
       {commands.map((command, index) => (
         <li
@@ -77,12 +77,12 @@ export function SlashMenu({ id, commands, activeIndex, onSelect, onActiveIndexCh
             onSelect(command)
           }}
           className={cn(
-            'flex cursor-default items-center justify-between gap-3 rounded-md border-l-2 border-transparent px-2 py-1.5',
+            'flex cursor-default items-center justify-between gap-3 border-l-2 border-transparent px-2 py-1.5',
             index === activeIndex && 'border-l-primary bg-accent text-accent-foreground'
           )}
         >
           <span className="shrink-0 font-medium">/{command.name}</span>
-          <span className="truncate text-xs text-muted-foreground">{command.description}</span>
+          <span className="min-w-0 truncate text-xs text-muted-foreground">{command.description}</span>
         </li>
       ))}
     </ul>

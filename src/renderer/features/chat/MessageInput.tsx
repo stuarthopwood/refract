@@ -8,8 +8,8 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { SendIcon, SquareIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
@@ -258,15 +258,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           {isWorking && (
             <div className="flex items-center gap-1.5">
-              <KbdGroup className="text-muted-foreground">
-                <Kbd>Ctrl</Kbd>
-                <Kbd>Shift</Kbd>
-                <Kbd>X</Kbd>
-              </KbdGroup>
-              <Button type="button" variant="outline" size="sm" onClick={() => void handleStop()}>
-                <SquareIcon />
-                Stop
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-keyshortcuts="Control+Shift+X"
+                    onClick={() => void handleStop()}
+                  >
+                    <SquareIcon />
+                    Stop
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Stop (Ctrl+Shift+X)</TooltipContent>
+              </Tooltip>
             </div>
           )}
           <Button type="button" size="sm" disabled={disabled || starting || !text.trim()} onClick={() => void handleSend()}>
