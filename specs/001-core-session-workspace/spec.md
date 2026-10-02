@@ -40,6 +40,7 @@
 - Q: How should subagents appear in the chat? → A: As a single collapsed line for each subagent too. (The Subagents chip and its right side panel are in spec 004.)
 - Q: Do the messages between subagents and the main agent (IRC) get lines as well? → A: Yes.
 - Q: What is the rule for any other chat output? → A: Any chat output follows the same single-line theme as a baseline, with extra functionality added case by case.
+- Q: Should chat text keep a narrower readable line width? → A: No. All text needs to fill the width of its parent container. (This reverses the "prose keeps a readable maximum line width" rule in docs/DESIGN.md.)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -242,6 +243,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-046**: Each turn's activity block MUST end with a muted single line showing the turn's total elapsed time (for example "28s" or "1m 14s"); while the turn runs it MUST update without being announced to assistive technology on every tick. When a reopened conversation does not carry the timing needed for a turn, the line MUST be omitted for that turn rather than show a guess.
 - **FR-047**: Every kind of chat output other than the user's own messages, the agent's visible answer text, and a request still waiting for the user (FR-018) MUST render by the same baseline: one single line with an icon, a short label, and a one-line summary (plus a status or duration where the output has one), collapsed by default, expandable to the full detail as inert text. Tool calls, tool groups, thinking, answered questions, decided approvals, subagents, messages between agents (FR-048), notices, and command output all follow it, and each kind adds only the extras it needs (a diff for edits, a count for groups, an answer line for questions). Any new kind of output MUST start from this baseline. A warning or error line MUST show its message text in the collapsed line, with an icon or text cue and never colour alone.
 - **FR-048**: Each message exchanged between a subagent and the main agent, or between subagents, MUST show as its own single collapsed line naming the sender and the recipient with a one-line preview, expandable to the full message as plain text. Messages MUST NOT be grouped or hidden.
+- **FR-049**: All text in the chat transcript (the agent's answer, the user's messages, thinking text, notices, and the question and approval cards) MUST fill the full width of the transcript column, with no narrower reading width of its own; code blocks, diffs, and tables use the same width and scroll sideways only when their content is wider.
 
 ### Key Entities
 
