@@ -2,7 +2,8 @@
 // Scans built renderer/main/preload bundles for leaked project terminology (requirement/task
 // numbers, user-story numbers, or phrases like "later task"/"wired up"/"not implemented") that
 // should never reach a user-visible string. Usage: node scripts/check-ui-text.mjs [rootDir]
-// (default: <repoRoot>/out). Exits 1 if any match is found, 0 otherwise.
+// (default: <repoRoot>/out). Exits 1 if any match is found, 2 if no bundle files were scanned,
+// 0 otherwise.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -11,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
-const LEAK_PATTERN = /\b(?:FR|SC)-\d{3}\b|\bT\d{3}\b|\bUS\d\b|later task|wired up|User Story|not implemented/;
+const LEAK_PATTERN = /\b(?:FR|SC)-\d{3}\b|\bT\d{3}\b|\bUS\d\b|later task|wired up|User Story|not implemented/g;
 
 // Exact matched substrings known to come from third-party bundled text, not Refract's own UI
 // copy. Add an entry here (never loosen the regex above) if a real false positive shows up.
@@ -46,31 +47,36 @@ function isDirectory(p) {
 }
 
 let leakCount = 0;
+let fileCount = 0;
 
 for (const subdir of SUBDIRS) {
   const dir = path.join(root, subdir);
   if (!isDirectory(dir)) continue;
   for (const file of walk(dir)) {
+    fileCount++;
     const content = readFileSync(file, 'utf-8');
     const lines = content.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const match = LEAK_PATTERN.exec(line);
-      if (!match) continue;
-      if (ALLOWED.includes(match[0])) continue;
-      const relative = path.relative(root, file);
-      const start = Math.max(0, match.index - 40);
-      const context = line.slice(start, start + 80).trim();
-      console.log(`${relative}:${i + 1} ${context}`);
-      leakCount++;
+      for (const match of line.matchAll(LEAK_PATTERN)) {
+        if (ALLOWED.includes(match[0])) continue;
+        const relative = path.relative(root, file);
+        const start = Math.max(0, match.index - 40);
+        const context = line.slice(start, start + 80).trim();
+        console.log(`${relative}:${i + 1} ${context}`);
+        leakCount++;
+      }
     }
   }
 }
 
-if (leakCount > 0) {
-  console.log(`${leakCount} leak${leakCount === 1 ? '' : 's'} found`);
+if (fileCount === 0) {
+  console.log(`no built bundles found under ${root} -- did you run pnpm build first?`);
+  process.exit(2);
+} else if (leakCount > 0) {
+  console.log(`${leakCount} leak${leakCount === 1 ? '' : 's'} found across ${fileCount} file${fileCount === 1 ? '' : 's'}`);
   process.exit(1);
 } else {
-  console.log('no leaks found');
+  console.log(`0 leaks found across ${fileCount} file${fileCount === 1 ? '' : 's'}`);
   process.exit(0);
 }

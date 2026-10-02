@@ -12,10 +12,24 @@
 //     session history under ~/.omp/agent/sessions is never written to.
 //   - cwd is a brand-new scratch git repo, never his real working trees.
 //   - `--approval-mode=always-ask` plus a deny-everything dialog handler
-//     means no tool call (bash, fs write, etc.) is ever actually executed;
-//     only the ask/todo/task tool's own extension_ui_request (which is not an
-//     "Allow tool:" approval, it IS the tool's question) gets a scenario
-//     answer.
+//     means no tool call (bash, fs write, etc.) is ever actually executed --
+//     WITH ONE DELIBERATE EXCEPTION: scenarios (e), (e_task_batch_subscribed),
+//     and (f) approve the `task` tool's own "Allow tool: task" gate (see
+//     `approveTaskOnly` below) so batch-subagent frame shapes can be
+//     observed at all; denying it too would make those scenarios unable to
+//     run. Every OTHER "Allow tool:" dialog -- including any tool a spawned
+//     subagent itself tries to run -- still falls through to the default
+//     deny-everything handler.
+//   - SAFETY NOTE FOR ANYONE RERUNNING THIS SCRIPT: because `task` is
+//     approved, a malicious or buggy prompt in a scenario could trigger an
+//     UNGATED subagent tool call (no approval dialog stands between the
+//     subagent and e.g. bash/fs write) under your real, signed-in
+//     credentials. Only rerun this with the scratch, throwaway prompts
+//     already in the script below -- never with untrusted or user-supplied
+//     input.
+//   - For scenarios (a)-(d), only the ask/todo tool's own
+//     extension_ui_request (which is not an "Allow tool:" approval, it IS
+//     the tool's question) gets a scenario answer.
 //   - No `/login` command and no config-changing command is ever sent.
 //
 // This script NEVER reads, prints, or modifies anything under the default

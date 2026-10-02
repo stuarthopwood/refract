@@ -3,7 +3,10 @@
 // list plus Refract's native set (constitution I); unknown names are refused locally and nothing
 // is sent. `/new` is the one native command implemented so far, mapped to
 // `SessionAgent.startNewConversation` (the same RPC `new_session` T027 uses); every other native
-// command is recognised (not `unknown-command`) but not yet implemented.
+// command name is refused with `unknown-command` so it is never silently forwarded to OMP. These
+// names are kept in their own list specifically so they are refused even if a future OMP version
+// adds a real `/plan`, `/fork`, `/btw`, etc. to its own `available_commands` (constitution I/II --
+// these must stay client-side native behaviors, never forwarded).
 
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
@@ -75,10 +78,13 @@ export function registerChat(manager: SessionManager): void {
           return mapSessionThrown(err);
         }
       }
-      if (Object.prototype.hasOwnProperty.call(NATIVE_COMMANDS, commandName)) {
-        return { ok: false, error: { code: 'unknown-command', message: `Unknown command: /${commandName}` } };
-      }
-      if (!collectCommandNames(agent.availableCommands).has(commandName)) {
+      // Refuse the command locally, without forwarding anything to OMP, when either: the name
+      // is one of Refract's own native/reserved commands (never forwarded even if OMP later
+      // recognizes it), or OMP genuinely doesn't recognize it either.
+      if (
+        Object.prototype.hasOwnProperty.call(NATIVE_COMMANDS, commandName) ||
+        !collectCommandNames(agent.availableCommands).has(commandName)
+      ) {
         return { ok: false, error: { code: 'unknown-command', message: `Unknown command: /${commandName}` } };
       }
       // A real OMP-side command (from available_commands_update): fall through and forward it

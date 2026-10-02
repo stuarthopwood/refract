@@ -50,8 +50,21 @@ for (const d of ["wt", "frames", "sessions"]) {
 }
 fs.writeFileSync(path.join(dir("wt"), "README.md"), "slash-commands probe scratch worktree\n");
 
+// NOT exhaustive: this is a known-dangerous-name blocklist, not a
+// verified-safe allowlist. The "send if not denied" default below fails
+// open for any command name not yet listed here. A prior run of this
+// script actually executed several commands with real side effects on
+// Stuart's desktop before these names were added: `/todo copy` (overwrote
+// the real clipboard), `/todo edit`/`import` (opens $EDITOR / reads files),
+// `/stats`/`/trace` (started local dashboards/servers), `/review`,
+// `/security scan`/`import`/`disposition`, `/wt`, `/move`, `/ssh add`/
+// `remove`, `/session pin`, `/browser visible`, `/computer on`. After any
+// OMP version bump, treat every newly-discovered command name with the
+// same suspicion before trusting the default -- grep its own
+// description/help text for side-effect verbs before assuming it is safe
+// to send with no arguments.
 const DENYLIST =
-  /login|logout|settings|config|model|advisor|plugin|skill|mcp|marketplace|update|exit|quit|share|export|delete|drop|reset|memory|theme|setup|handoff|compact|loop|vibe|collab|new|resume|fork|plan|btw/i;
+  /login|logout|settings|config|model|advisor|plugin|skill|mcp|marketplace|update|exit|quit|share|export|delete|drop|reset|memory|theme|setup|handoff|compact|loop|vibe|collab|new|resume|fork|plan|btw|copy|edit|import|stats|trace|review|security|wt|move|ssh|pin|browser|computer|disposition/i;
 
 // Strip anything credential-shaped so the isolated profile cannot fall back
 // to an ambient env-var API key. PATH/HOME/USERPROFILE/SystemRoot/etc. are
@@ -66,6 +79,11 @@ function sanitizedEnv() {
 }
 
 // ---- isolation snapshot of ~/.omp/agent (name + mtime only, never content) ----
+// This only ever looks at the TOP-LEVEL entries of ~/.omp/agent by name and
+// mtime; it does not see changes inside subdirectories (e.g. a file rewritten
+// in place under an existing folder), the clipboard, open ports, or spawned
+// processes. A clean (non-BREACH) report is evidence of "no top-level churn
+// beyond the known host-session files" -- not a full isolation proof.
 function snapshotAgentDir() {
   const agentDir = path.join(os.homedir(), ".omp", "agent");
   let entries;
@@ -86,9 +104,17 @@ function snapshotAgentDir() {
   return snap;
 }
 
+// These four files churn from ordinary host-session activity (e.g. this
+// very OMP session's own agent.db/-wal and models.db/-wal mtimes change just
+// from running concurrently), so mtime changes to exactly these names are
+// NOT treated as a breach. A changed mtime on any OTHER top-level file or
+// directory, or any top-level entry added or removed, still is.
+const KNOWN_LIVE_CHURN_FILES = new Set(["agent.db", "agent.db-wal", "models.db", "models.db-wal"]);
+
 function snapshotsEqual(a, b) {
   const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const k of keys) {
+    if (KNOWN_LIVE_CHURN_FILES.has(k)) continue;
     if (a[k] !== b[k]) return false;
   }
   return true;
