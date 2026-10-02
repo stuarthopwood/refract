@@ -244,8 +244,8 @@ async function main() {
 
   const hits = [];
   const server = await startServer(hits);
-  // detached keeps Electron out of libuv's own kill-on-close job (which allows silent breakaway),
-  // so Refract's self-joined job is its only job, exactly as in a shortcut or Start-Process launch.
+  // detached keeps Electron out of Node's own kill-on-close spawn job (libuv's, which allows silent
+  // breakaway), closer to a shortcut or Start-Process launch.
   // The finally block below still kills it on every path.
   const child = spawn(ELECTRON, [".", `--user-data-dir=${USER_DATA_DIR}`, `--remote-debugging-port=${CDP_PORT}`], {
     cwd: REPO_ROOT,
