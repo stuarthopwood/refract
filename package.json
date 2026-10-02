@@ -9,8 +9,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "check:ui-text": "node scripts/check-ui-text.mjs",
-    "build:icon": "electron resources/brand/build-icons.mjs"
+    "check:ui-text": "node scripts/check-ui-text.mjs"
   },
   "dependencies": {
     "@shadcn/react": "0.3.1",
