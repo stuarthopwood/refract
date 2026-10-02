@@ -77,7 +77,7 @@ package.json                  # + "package" script, electron-builder devDependen
 electron-builder.yml           # NSIS target config (research.md decision 1)
 build/
 ├── installer.nsh              # customUnInstall (keep/delete data) + customUnInit (close-first guard)
-└── icon.ico                   # placeholder pending issue #91 (research.md decision 12)
+└── icon.ico                   # real app icon landed (issue #91); T006 wires electron-builder's win.icon at it (research.md decision 12)
 .github/workflows/
 └── release.yml                 # maintainer publish action (research.md decision 8)
 src/

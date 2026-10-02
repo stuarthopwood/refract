@@ -65,7 +65,7 @@ The Stop button names the chord in a tooltip on hover and keyboard focus; the ch
 ## First run and empty states
 
 - With nothing configured, the window shows a readiness checklist: git found, OMP found and on the supported version, OMP signed in. Each failing item has a fix hint.
-- The checklist card's title is **Get Refract ready**, with the tagline *One Pi, every angle.* under it.
+- Above the checklist card sits a brand header with the hero icon, the bold **Refract** wordmark, and the tagline *One Pi, every angle.* in a lighter-weight Geist font (no longer italic); the checklist card itself keeps only its own title, **Get Refract ready**, with no tagline inside the card.
 - One primary action, **Add repository**, is disabled until the checklist passes. After that, Sessions are created from the Repository header buttons in the session list; with no Session selected, the chat pane reads "No Session selected".
 - UI text uses the product's own terms and never refers to requirements, tasks, stories, specs, or build state; `pnpm check:ui-text` enforces it on the built bundles.
 

@@ -260,10 +260,10 @@ the Acceptance section of `plan.md`.
 
 ## 12. Icon
 
-**Decision**: `build/icon.ico` is a placeholder dependency on issue #91 ("Design a logo and app
-icon for Refract"), not designed by this plan. The packaging task (T006) wires whatever `.ico`
-file that issue delivers into `nsis`'s (and the `BrowserWindow`'s, already set elsewhere) icon
-option; until #91 lands, the task notes the dependency rather than fabricating a design.
+**Decision**: `build/icon.ico` is the real app icon delivered by issue #91 ("Design a logo and app
+icon for Refract"); it has already landed in the repository, not designed by this plan. The
+packaging task (T006) just wires this existing `.ico` file into `nsis`'s (and the `BrowserWindow`'s,
+already set elsewhere) icon option -- no placeholder remains to replace.
 
 ## Unknowns that remain, and where they are resolved
 
