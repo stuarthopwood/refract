@@ -12,11 +12,13 @@
 //   - the child environment has every credential-shaped var removed
 //     (sanitizedEnv(), copied from docs/spike/signed-in-probe.mjs);
 //   - before sending any command, a pre-flight check (assertIsolatedProfile)
-//     asserts that the first live process's `get_state.model` resolves to
-//     the `probe-fake`/`probe-fake-model` provider ensureFakeModel() seeded
-//     only under the isolated profile's own agent directory; if it does not,
-//     the script prints "ABORT: not running against the isolated profile"
-//     and exits non-zero before sending anything;
+//     asserts the first live process's `get_state.model` resolves to the
+//     `probe-fake`/`probe-fake-model` provider, AND that `get_available_models`
+//     reports that model's `contextWindow` as exactly 8000 -- both values
+//     only exist if ensureFakeModel()'s seeded models.yml, written solely
+//     under the isolated profile's own agent directory, was actually read;
+//     if either check fails, the script prints "ABORT: not running against
+//     the isolated profile" and exits non-zero before sending anything;
 //   - separately, as an after-the-fact net (not a pre-flight check), this
 //     script snapshots the name + mtime (NOT contents) of every top-level
 //     entry directly under ~/.omp/agent exactly twice: once before the run
@@ -340,15 +342,33 @@ function ensureFakeModel() {
 // previously-used profile (including the developer's default one) has no
 // such provider, so if the live process's own `get_state.model` reports
 // back exactly {provider: "probe-fake", id: "probe-fake-model"}, that is
-// direct proof the process read its config from the isolated profile --
-// not merely that we *asked* it to with --profile. If it reports anything
-// else (a real model, or none at all), the process did not resolve against
-// the isolated profile and this script must not send it any command.
+// strong evidence the process read its config from the isolated profile --
+// not merely that we *asked* it to with --profile. On its own this check has
+// one gap: `get_state.model` carries only {provider, id}, and this script
+// also passes `--model probe-fake/probe-fake-model` on the command line, so
+// in principle an omp build that echoed an unresolved CLI selector back
+// without ever reading a config file could produce the same {provider, id}
+// pair. To close that gap, this also checks `get_available_models` for an
+// entry whose `contextWindow` is exactly 8000 -- a value chosen to be
+// implausible to collide with any real provider's model, and one that only
+// exists if the actual seeded models.yml file was parsed (a bare CLI model
+// selector carries no contextWindow at all). Both checks must pass.
 async function assertIsolatedProfile(proc) {
   const state = await proc.request({ type: "get_state" }).catch((e) => ({ success: false, error: e.message }));
   const model = state?.data?.model;
   if (model?.provider !== "probe-fake" || model?.id !== "probe-fake-model") {
     console.error(`ABORT: not running against the isolated profile (get_state.model=${JSON.stringify(model)}, expected provider "probe-fake" / id "probe-fake-model" seeded under ~/${CONFIG_DIR_NAME}/profiles/${PROFILE}/agent/models.yml)`);
+    await proc.close();
+    process.exit(1);
+  }
+  const modelsResp = await proc.request({ type: "get_available_models" }).catch((e) => ({ success: false, error: e.message }));
+  const available = modelsResp?.data?.models ?? modelsResp?.data ?? [];
+  const fakeEntry = Array.isArray(available)
+    ? available.find((m) => m?.provider === "probe-fake" || m?.id === "probe-fake-model")
+    : undefined;
+  if (fakeEntry?.contextWindow !== 8000) {
+    console.error(`ABORT: not running against the isolated profile (get_available_models has no probe-fake-model entry with contextWindow=8000: ${JSON.stringify(fakeEntry)}) -- the seeded models.yml under the isolated profile was not actually read`);
+    await proc.close();
     process.exit(1);
   }
 }

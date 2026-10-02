@@ -82,8 +82,10 @@ try {
 // and request() pattern, generalized with an optional per-scenario dialog
 // answer override (`onDialog`) that runs BEFORE the default deny-everything
 // fallback, so an ask/todo/task tool's own extension_ui_request can be
-// answered with the scenario's real answer while every "Allow tool:" (or any
-// other) approval dialog still gets denied.
+// answered with the scenario's real answer while every other "Allow tool:"
+// (or any other) approval dialog still gets denied -- unless the scenario's
+// own `onDialog` override approves it, as scenarios (e)/(e-subscribed)/(f)
+// deliberately do for the `task` tool's own gate (see the SAFETY NOTE above).
 class OmpProc {
   constructor(label, { sessionDir, cwd, onDialog } = {}) {
     this.label = label;
