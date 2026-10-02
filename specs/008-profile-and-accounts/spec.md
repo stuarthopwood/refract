@@ -10,7 +10,7 @@ Logout and Login process, manage accounts (Github OAuth?). Use Github profile in
 API?" Reference screenshots: `Screenshot 2026-10-01 103039.png` (a bottom-left bar: round avatar
 photo, the user's name, a feedback icon, and a cog) and `Screenshot 2026-10-02 150514.png` (the
 GitHub Copilot desktop app's profile menu: a header with an avatar, the `@handle`, and a usage
-line; Manage accounts; Manage sessions; a Theme submenu with a check on System, Light, Dark, and
+line; Manage accounts; Manage sessions; a Theme submenu with a check on the active preset, and
 "Make it yours"; Keyboard shortcuts with a `?` hint; "Restart to update" with a version badge;
 Health check; What's new; About; Help center; and Sign out in red).
 
@@ -179,7 +179,7 @@ confirm a list appears; open and close the menu, and move through it, using only
    shortcuts, the update entry, Health check, What's new, and Sign out, with Sign out visually set
    apart from the rest.
 2. **Given** the menu is open, **When** the developer points at or selects Theme, **Then** a
-   submenu opens listing System, Light, and Dark, the currently active one marked with both a
+   submenu opens listing every built-in dark preset, the currently active one marked with both a
    check and text, and a "More themes" entry that opens the Settings screen's Appearance section
    (spec 007).
 3. **Given** the menu is open, **When** the developer selects Keyboard shortcuts, **Then** a
@@ -311,7 +311,7 @@ a session, confirming each action's confirmation names what will be lost.
 - **FR-018**: The profile menu MUST list its items in this fixed order: the account header,
   Manage accounts, Manage sessions, Theme, Keyboard shortcuts, the update entry, Health check,
   What's new, and Sign out, with Sign out visually set apart from the rest.
-- **FR-019**: The Theme item MUST open a submenu listing System, Light, and Dark, marking the
+- **FR-019**: The Theme item MUST open a submenu listing every built-in dark preset, marking the
   currently active one with both a check and text, plus a "More themes" entry that opens the
   Settings screen's Appearance section (spec 007).
 - **FR-020**: The Keyboard shortcuts item MUST open a read-only list of Refract's current keyboard

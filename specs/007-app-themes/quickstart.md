@@ -8,8 +8,7 @@ signed in, a scratch repository) since this feature reuses that app shell.
 
 ## Prerequisites
 
-- Windows 11, with access to Settings > Personalization > Colors > "Choose your mode" (to toggle
-  the OS light/dark setting live) and, separately, a way to turn on a reduced-motion setting.
+- Windows 11, with a way to turn on a reduced-motion setting.
 - Spec 004's Settings screen built (hosts the Appearance section, User Story 2) and spec 001 T100
   (hidden title bar / `titleBarOverlay`) landed (window-chrome checks in Story 2 and 4). Where a
   dependency has not landed yet, run every other check and note which ones were skipped and why.
@@ -17,48 +16,43 @@ signed in, a scratch repository) since this feature reuses that app shell.
 
 ## Checks per story
 
-**Story 1: follow the OS by default (FR-001, FR-002, FR-008, FR-016)**
+**Story 1: opens in a sensible default preset on first launch (FR-001, FR-013)**
 
-1. Delete `settings.json` (or use a fresh `--user-data-dir`), set Windows to Light, launch
-   Refract. Expect: the app opens in its Light built-in theme, with no theme ever chosen yet.
-   Relaunch after switching Windows to Dark first: the app opens in Dark.
-2. With no theme chosen (System mode), switch Windows' light-or-dark setting while Refract is
-   open. Expect: the whole app repaints within about 2 seconds, with no restart of Refract or any
-   Session.
-3. Hand-edit `settings.json` to set `"theme"` to a value that is not `"system"` and not one of
-   `light`/`dark`/`high-contrast` (simulating a theme an app update removed), then relaunch.
-   Expect: Refract falls back to following the OS (System mode), not a blank or stale appearance.
+1. Delete `settings.json` (or use a fresh `--user-data-dir`), launch Refract. Expect: the app
+   opens in its default dark preset, with no theme ever chosen yet.
+2. Open Settings and confirm the theme picker marks the default preset as the currently selected
+   entry.
+3. Hand-edit `settings.json` to set `"theme"` to a value that is not one of the built-in preset
+   ids (simulating a theme an app update removed), then relaunch. Expect: Refract falls back to
+   the default preset, not a blank or stale appearance.
 
-**Story 2: pick a theme in Settings with a live preview (FR-003 to FR-007, FR-009, FR-020 to
-FR-022)**
+**Story 2: pick a theme in Settings with a live preview (FR-002 to FR-006)**
 
-1. Open Settings (spec 004) and find the Appearance section. Expect: a picker listing "System"
-   first, then every built-in theme, each with a name and a small colour swatch; the entry
-   matching the currently active theme is marked, both in text and by colour.
+1. Open Settings (spec 004) and find the Appearance section. Expect: a picker listing every
+   built-in theme, each with a name and a small colour swatch; the entry matching the currently
+   active theme is marked, both in text and by colour.
 2. Choose a different entry. Expect: the whole app repaints immediately to that theme's colours —
    check a pane outside Settings (for example the session list or an open chat), not only a
    sample swatch inside Settings itself.
-3. With an unsaved choice previewed, press Esc. Expect: the app reverts to whichever theme (a
-   saved theme, or System) was active before the picker was opened. Repeat using Cancel, and
-   again by navigating to another screen without saving: both behave the same as Esc.
+3. With an unsaved choice previewed, press Esc. Expect: the app reverts to whichever theme was
+   active before the picker was opened. Repeat using Cancel, and again by navigating to another
+   screen without saving: both behave the same as Esc.
 4. Choose a different entry and click Save. Expect: that theme becomes the app's persisted
    choice; restart Refract and confirm it is still active.
-5. Choose "System" and Save. Expect: any previously saved specific theme is cleared and the app
-   resumes following the OS live (Story 1, check 2).
-6. Using only the keyboard: Tab to the picker, use arrow keys to move between entries (each
+5. Using only the keyboard: Tab to the picker, use arrow keys to move between entries (each
    showing a visible focus indicator), and press Enter on a non-active entry. Expect: the same
    repaint as a pointer choice, and the same entry is now marked active.
 
-**Story 3: everything follows the theme (FR-010 to FR-013, FR-017 to FR-019)**
+**Story 3: everything follows the theme (FR-007 to FR-010, FR-014 to FR-016)**
 
-1. Switch through System, Light, Dark, and High contrast one at a time (an open Session with
-   transcript history helps). For each, check: the chat transcript and its tool rows, a code
-   block (including one in a language with no syntax-colour entry — expect it still renders using
+1. Switch through every built-in dark preset one at a time (an open Session with transcript
+   history helps). For each, check: the chat transcript and its tool rows, a code block
+   (including one in a language with no syntax-colour entry — expect it still renders using
    that theme's base text/background colours, no error), a diff, the session list (and its four
    state icons/colours — confirm Working, Idle, Needs you, and Stopped stay distinguishable by
    icon and text, not only colour), a dialog, a menu, a toast, a tooltip or hover card, the chip
    row, scrollbars, a focus ring, and the Settings screen itself. None should keep a hard-coded
-   light or dark colour regardless of the active theme.
+   colour regardless of the active theme.
 2. Turn on the OS reduced-motion setting, then switch themes again. Expect: no animated
    transition between the old and new colours (this was already true with reduced motion off).
 3. Run `node scripts/check-theme-contrast.mjs` (or the equivalent built during the Polish task).
@@ -70,26 +64,23 @@ FR-022)**
 5. Turn on a screen reader and repeat check 1's theme switches. Expect: nothing beyond the
    picker's own selection-state text change is announced for the repaint itself.
 
-**Story 4: the theme survives and applies everywhere (FR-014 to FR-016)**
+**Story 4: the theme survives and applies everywhere (FR-011 to FR-013)**
 
 1. Save a specific theme, fully restart Refract. Expect: the correct theme is shown from the
    window's very first paint — no flash of another appearance first.
 2. Open a split chat pane (spec 005) or a second window, once available. Expect: it shows the
    same active theme as the rest of the app immediately.
 3. Start an unsaved preview in Settings, then end the Refract process from Task Manager (not a
-   normal quit). Relaunch. Expect: the previously saved theme (or System), never the preview, is
-   what shows.
+   normal quit). Relaunch. Expect: the previously saved theme, never the preview, is what shows.
 4. Delete the Settings screen's current theme and relaunch with an unknown saved value (Story 1,
    check 3) while a Session worktree is open in a second window. Expect: every window falls back
-   to System consistently, not just the one that happened to read the file first.
+   to the default preset consistently, not just the one that happened to read the file first.
 
 ## First-task gates
 
 These Electron/Windows facts are unverified and are checked before the work that depends on them
 (constitution IV):
 
-- `nativeTheme.updated` fires reliably on a real Windows 11 light/dark toggle while Refract runs,
-  with no restart or focus change needed (research.md decision 5).
 - A synchronous `ipcRenderer.sendSync` bootstrap call works end to end under this app's
   `sandbox: true` + `contextIsolation: true` preload build, with no observable flash in practice
   (research.md decision 4).

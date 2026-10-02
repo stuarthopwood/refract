@@ -6,53 +6,54 @@ in `docs/spike/FINDINGS.md` (constitution IV).
 
 ## 1. Built-in theme list for this spec
 
-**Decision**: Ship exactly three built-in themes for v1 — Light, Dark, and High contrast — plus
-System mode (which only ever picks between Light and Dark). This is the FR-013 minimum ("at
-least one dedicated high-contrast theme in addition to Light and Dark") and nothing more.
+**Decision**: Dark only, presets only. Stuart's explicit 2026-10-02 instruction overrides this
+spec's original Light/Dark/High-contrast/System design: "I don't think I want a light mode, the
+icon doesn't look right with it. Dark only, dark theme presets only." Every built-in theme is a
+dark-toned preset; there is no light theme and no OS-follow/System mode. Ship the existing single
+dark theme as one named preset, plus at least one more dark preset, reasonably including a
+dedicated high-contrast dark variant to preserve the accessibility intent of the old FR-013. This
+is a direct instruction, not a planning inference — unlike the exact count and names of presets
+beyond those two, which remains a flagged, unresolved assumption (spec.md Assumptions) to confirm
+with Stuart later, the same way the original "Presets only" decision was flagged. `ThemeId` is an
+open string-literal union with no `'light'` member, so adding a further built-in preset later is
+additive, not a breaking change to any contract here.
 
-**Rationale**: The spec's Assumptions section flags a broader reading ("at least one further dark
-and one further light variant... the exact list and names are decided in planning and should be
-confirmed with Stuart") as explicitly unresolved and not asserted by any FR. No functional
-requirement or acceptance scenario asks for more than three built-in themes. Stuart's own
-"Presets only" clarification bounds this spec to a fixed list, not an open-ended one, so the
-conservative choice is the smallest list that satisfies every FR, leaving room to add variants
-later. `ThemeId` is an open string-literal union (`'light' | 'dark' | 'high-contrast'`), so adding
-a fourth or fifth built-in theme later is additive, not a breaking change to any contract here.
+**Rationale**: Stuart's instruction is unambiguous and direct: no light mode, dark presets only.
+Preserving the old FR-013 high-contrast-variant intent (rather than dropping it) keeps the
+accessibility guarantee the original spec made, now scoped to the all-dark preset list instead of
+"in addition to Light and Dark."
 
-**Alternatives considered**: Shipping 5 themes (Light, Dark, a second light variant, a second
-dark variant, High contrast) now, matching the Assumption's broader reading — rejected because it
-roughly doubles the per-theme contrast-audit (T019), swatch, and syntax-theme work for a count no
-FR requires, and Stuart has not actually picked names for a second light/dark variant; shipping
-that speculative work risks building themes he would rather name or tune himself. This decision
-was made without asking Stuart, per the planning brief; flagged in the handback report.
+**Alternatives considered**: Keeping a light theme as an optional, unlisted preset for a future
+spec to surface — rejected: Stuart's instruction is "dark only," not "dark by default"; there is
+nothing provisional about it. Picking exact names/count for the second-and-later dark presets now
+— rejected as not Stuart's to delegate to this document; flagged as an open question instead, per
+the planning brief.
 
 ## 2. Theme tokens live in CSS; metadata lives in `src/shared/themes.ts`
 
 **Decision**: A new `src/shared/themes.ts` exports `THEMES: Record<ThemeId, ThemeDefinition>`
-(`name`, `swatch`, `mode: 'light' | 'dark'`, `syntaxTheme`, `titleBarOverlay`) — small, reasoned
-metadata imported directly by main, preload, and renderer (the existing shared-module pattern,
-plan.md "Source code"). The actual colour values stay as CSS custom properties in
-`src/renderer/styles/globals.css`, one class per theme (`.theme-light`, `.theme-dark`,
-`.theme-high-contrast`), replacing today's single hardcoded `.dark` block.
+(`name`, `swatch`, `syntaxTheme`, `titleBarOverlay`) — small, reasoned metadata imported directly
+by main, preload, and renderer (the existing shared-module pattern, plan.md "Source code"). The
+actual colour values stay as CSS custom properties in `src/renderer/styles/globals.css`, one class
+per theme (`.theme-dark`, `.theme-high-contrast`, and so on for any further dark preset),
+replacing today's single hardcoded `.dark` block.
 
 **Rationale**: Tailwind v4's `@theme inline` indirection in `globals.css` only resolves real CSS
 custom properties, not JS-injected styles, so bulk colour values have to stay in CSS regardless.
-Keeping them next to spec 001's existing light/dark blocks (rather than moving everything into a
-JS object main/renderer would have to serialize) keeps the diff small and the per-theme token
-groups (base, state colours, diff, scrollbar) easy to compare side by side, exactly as spec 001's
-own two blocks already are.
+Keeping them next to spec 001's existing dark block (rather than moving everything into a JS
+object main/renderer would have to serialize) keeps the diff small and the per-theme token groups
+(base, state colours, diff, scrollbar) easy to compare side by side, exactly as spec 001's own
+block already is.
 
 **Alternatives considered**: Generating CSS from the JS `ThemeDefinition` table at build time —
-rejected as unnecessary indirection for three themes; a human reads and edits CSS custom
+rejected as unnecessary indirection for a short preset list; a human reads and edits CSS custom
 properties directly today and should keep doing so.
 
-## 3. No `theme.list()` / `theme.getOsPreference()` IPC requests
+## 3. No `theme.list()` IPC request
 
 **Decision**: The renderer imports `THEMES` from `src/shared/themes.ts` directly for the picker,
 Shiki theme selection, and Sonner's forced mode — no round trip needed, since shared modules are
-already imported by all three processes (plan.md "Source code"). The OS preference is known from
-the one-time synchronous bootstrap read (Decision 4) and kept live afterwards by the
-`theme:os-changed` event (Decision 5); no polling request is needed.
+already imported by all three processes (plan.md "Source code").
 
 **Rationale**: Minimizes the IPC surface to exactly the two effects only main can perform
 (persisting `settings.json`, and moving the native title-bar overlay colour), consistent with
@@ -67,13 +68,12 @@ import, adding a request/response cycle with no new information.
 
 **Decision**: Preload exposes a synchronous `window.refract.themeBootstrap()` wrapping
 `ipcRenderer.sendSync('theme:bootstrap')`, answered by a synchronous `ipcMain.on` handler in
-`src/main/ipc/theme.ts` that reads the already-loaded `SettingsStore` and
-`nativeTheme.shouldUseDarkColors` (both synchronous in main) and returns
-`{ settingsTheme: ThemeSetting; osDark: boolean }`. `main.tsx`'s very first lines call it and set
-the resolved class on `<html>` before `createRoot().render()`, replacing today's hardcoded
+`src/main/ipc/theme.ts` that reads the already-loaded `SettingsStore` (synchronous in main) and
+returns `{ theme: ThemeId }`. `main.tsx`'s very first lines call it and set the resolved class on
+`<html>` before `createRoot().render()`, replacing today's hardcoded
 `document.documentElement.classList.add('dark')`.
 
-**Rationale**: FR-015/SC-005 require no flash of the wrong theme on a window's first paint.
+**Rationale**: FR-012/SC-003 require no flash of the wrong theme on a window's first paint.
 Blocking the renderer's single JS thread for one cheap, one-time call means nothing can paint
 (there is no DOM content yet, since this runs before React mounts) until the right class is
 already set — stronger than an async `await` before mounting, which would leave a window open to
@@ -82,73 +82,49 @@ window hidden (`show: false`) until `ready-to-show`, which remains the backstop;
 removes the only other way a flash could occur (a theme-less first frame from the renderer's own
 process).
 
-**Alternatives considered**: An async `settings.get()` + a new async OS-preference request awaited
-before `createRoot().render()` — rejected per the flash risk above. Passing the initial theme via
-`webPreferences.additionalArguments` (read with `process.argv` in a preload script) — rejected:
-`sendSync` is the simpler, already-idiomatic Electron pattern for exactly this "read one
-main-process fact before the renderer paints" case, and it is one call, not a standing channel.
+**Alternatives considered**: An async `settings.get()` awaited before `createRoot().render()` —
+rejected per the flash risk above. Passing the initial theme via `webPreferences.additionalArguments`
+(read with `process.argv` in a preload script) — rejected: `sendSync` is the simpler, already-
+idiomatic Electron pattern for exactly this "read one main-process fact before the renderer
+paints" case, and it is one call, not a standing channel.
 
 **UNVERIFIED**: that a synchronous `ipcRenderer.sendSync` call still works end to end under this
 app's `sandbox: true` + `contextIsolation: true` preload build (electron-vite's isolated preload
 mode, chosen in spec 001 T003) with no flash observed in practice. Probed in tasks.md's first
 task; recorded in `docs/spike/FINDINGS.md`.
 
-## 5. System-mode live follow: `nativeTheme` in main, pushed as an event
+## 5. Moot: no OS-follow live update needed
 
-**Decision**: Main registers one `nativeTheme.on('updated', ...)` listener at app start (beside
-the existing `joinKillOnCloseJob()` / `reapStale()` startup sequence in `src/main/index.ts`) and
-forwards `{ dark: nativeTheme.shouldUseDarkColors }` as `theme:os-changed` to every window. The
-renderer's `theme-store.ts` applies it only while `settingsTheme === 'system'` and no preview is
-active (FR-002, FR-021); it still records `osDark` so System mode resolves instantly the moment a
-preview ends or Cancel/Esc reverts to System.
+This decision was originally "System-mode live follow: `nativeTheme` in main, pushed as an
+event" — a `nativeTheme.on('updated', ...)` listener forwarding Windows light/dark changes to
+every window as a `theme:os-changed` event. It is moot given the dark-only decision (Decision 1):
+there is no System mode and nothing to follow between, so no OS-change listener, no
+`theme:os-changed` event, and no probe task for `nativeTheme.updated`'s reliability are needed.
+This heading is kept, with decision numbers after it left stable, since later decisions and
+tasks.md cross-reference it by number.
 
-**Rationale**: `nativeTheme` is Electron's own cross-platform hook for exactly this OS signal, and
-main already needs `nativeTheme.shouldUseDarkColors` once for the synchronous bootstrap read
-(Decision 4), so reusing the same source for live updates avoids a second code path that could
-disagree with the first (for example, a renderer-side `prefers-color-scheme` media-query listener
-reading Chromium's own notion of the setting, which may update on a different cadence than
-Electron's native hook that also drives the main-only title-bar overlay colour).
+## 6. Moot: no System-mode/high-contrast interaction to scope
 
-**Alternatives considered**: `window.matchMedia('(prefers-color-scheme: dark)')` in the renderer —
-rejected: it cannot also drive the title-bar overlay colour (main-only, constitution V), so using
-it would still require a separate main-side `nativeTheme` listener for that surface, meaning two
-sources of the same fact instead of one.
-
-**UNVERIFIED**: whether Electron 44.5.1's `nativeTheme.updated` event reliably fires when Windows
-11's Settings > Personalization > Colors > "Choose your mode" is changed while Refract is running,
-without requiring a restart or window focus change. Probed in tasks.md's first task (a human
-toggles the real OS setting while a probe script listens and logs the event with a timestamp);
-recorded in `docs/spike/FINDINGS.md`.
-
-## 6. High-contrast theme is never part of System mode
-
-**Decision**: System mode (FR-002) only ever resolves to Light or Dark, driven solely by
-`nativeTheme.shouldUseDarkColors`. Choosing "High contrast" is only ever an explicit pick in the
-picker or profile submenu; there is no automatic detection of a Windows high-contrast mode.
-
-**Rationale**: FR-001 and FR-002 both say "Light or Dark"; no FR asks Refract to detect or react
-to a Windows contrast-mode toggle. Scoping System mode narrowly avoids an undocumented behaviour
-(switching the user into Refract's High contrast theme because Windows' own accessibility setting
-changed) that nothing in the spec requests and that could surprise a developer who turned on
-Windows high contrast for a different app.
-
-**Alternatives considered**: Also following a Windows high-contrast toggle into Refract's High
-contrast theme — rejected as unrequested scope; can be proposed as a future FR if Stuart asks.
+This decision was originally "High-contrast theme is never part of System mode" — scoping System
+mode (old FR-002) to only ever resolve to Light or Dark, never auto-detecting Windows' own
+high-contrast toggle. It is moot given the dark-only decision (Decision 1): there is no System
+mode for the high-contrast preset to be excluded from. Refract still does not auto-detect a
+Windows high-contrast toggle; that remains unrequested scope, now simply because no FR asks for
+any OS-setting detection at all. This heading is kept, with decision numbers after it left
+stable, for the same cross-reference reason as Decision 5.
 
 ## 7. Live preview: one derived store, not an imperative revert
 
-**Decision**: `theme-store.ts` holds `{ settingsTheme, osDark, previewing: ThemeId | null }` and
-always derives the displayed class as
-`previewing ?? (settingsTheme === 'system' ? (osDark ? 'dark' : 'light') : settingsTheme)`.
-The Appearance picker and the profile Theme submenu (spec 008) both call `preview(id | null)`
-while open (also invoking `theme.preview(id | null)` over IPC, for the title-bar overlay only —
-every other surface repaints from the derived class, no round trip). `save(id)` calls
-`theme.set(id)`, which both persists and updates `settingsTheme`; Cancel, Esc, and navigating
-away all simply call `preview(null)`, which needs no separate "what was it before" bookkeeping
-because the derived class already falls back to the untouched `settingsTheme`/`osDark` pair the
-moment `previewing` clears.
+**Decision**: `theme-store.ts` holds `{ theme: ThemeId, previewing: ThemeId | null }` and always
+derives the displayed class as `previewing ?? theme`. The Appearance picker and the profile Theme
+submenu (spec 008) both call `preview(id | null)` while open (also invoking `theme.preview(id |
+null)` over IPC, for the title-bar overlay only — every other surface repaints from the derived
+class, no round trip). `save(id)` calls `theme.set(id)`, which both persists and updates `theme`;
+Cancel, Esc, and navigating away all simply call `preview(null)`, which needs no separate "what
+was it before" bookkeeping because the derived class already falls back to the untouched `theme`
+the moment `previewing` clears.
 
-**Rationale**: FR-007 requires reverting to "whichever theme ... was active before the picker was
+**Rationale**: FR-005 requires reverting to "whichever theme ... was active before the picker was
 opened" on three different exit paths (Cancel, Esc, navigate away) that the Assumptions section
 already declares equivalent; a derived-state store makes all three the same one-line action
 instead of three call sites each needing to remember and restore a prior value.
@@ -159,31 +135,32 @@ instead of one.
 
 ## 8. No CSS transition on a theme switch
 
-**Decision**: The class swap that repaints the app carries no transition; FR-017 is satisfied
+**Decision**: The class swap that repaints the app carries no transition; FR-014 is satisfied
 unconditionally, not gated behind a `prefers-reduced-motion` check.
 
-**Rationale**: FR-017 requires no animated transition, and there is no requirement for one when
+**Rationale**: FR-014 requires no animated transition, and there is no requirement for one when
 reduced motion is off either; an unconditional rule is simpler than a conditional one and the
 existing `prefers-reduced-motion` block in `globals.css` already exists for a different purpose
 (collapsing ambient animation/transition durations generally), not for this deliberate, instant
 repaint.
 
 **Alternatives considered**: A brief cross-fade when reduced motion is off — rejected: no FR or
-acceptance scenario asks for one, and adding it would need its own reduced-motion gate FR-017
+acceptance scenario asks for one, and adding it would need its own reduced-motion gate FR-014
 does not request.
 
 ## 9. Syntax highlighting follows the active theme's `syntaxTheme`
 
-**Decision**: Each `ThemeDefinition.syntaxTheme` names a Shiki bundled theme
-(`light` → `github-light`, `dark` → `github-dark`, `high-contrast` → `github-dark-high-contrast`).
-`Markdown.tsx`'s `getHighlighter()` loads all three up front (replacing today's two), and
-`CodeBlock` picks by the active theme id instead of today's binary `isDark` check.
+**Decision**: Each `ThemeDefinition.syntaxTheme` names a Shiki bundled theme (the existing dark
+preset → `github-dark`, the high-contrast dark preset → `github-dark-high-contrast`, and any
+further dark preset gets its own closest-matching Shiki theme). `Markdown.tsx`'s
+`getHighlighter()` loads every built-in theme's Shiki theme up front, and `CodeBlock` picks by the
+active theme id instead of today's binary `isDark` check.
 
-**Rationale**: FR-018 requires every built-in theme to render code blocks in its own colours,
+**Rationale**: FR-015 requires every built-in theme to render code blocks in its own colours,
 including a language Shiki has no grammar for (falls back to the theme's base text/background
 colours, which Shiki already does for an unrecognised language — this path is unchanged, only the
 theme selection is). A dedicated high-contrast Shiki theme keeps code blocks at the same contrast
-bar as the rest of that theme (FR-011) instead of reusing `github-dark`'s ordinary contrast ratio.
+bar as the rest of that theme (FR-008) instead of reusing `github-dark`'s ordinary contrast ratio.
 
 **UNVERIFIED**: that `github-dark-high-contrast` is a real theme name bundled in the pinned
 `shiki@4.4.3`, and that `createHighlighter({ themes: [...] })` resolves it without error. Probed
@@ -204,23 +181,24 @@ this spec's own follow-up once T066 ships) has the colours ready rather than inv
 **Alternatives considered**: Using one of Mermaid's own named themes (`dark`, `default`,
 `forest`, ...) picked per Refract theme — rejected: a built-in Mermaid theme is a close but
 different palette than Refract's own tokens, which would read as "almost matching" rather than
-following the theme (FR-019 says follow the active theme's colours, not merely stay readable with
+following the theme (FR-016 says follow the active theme's colours, not merely stay readable with
 an unrelated palette).
 
 ## 11. `next-themes` kept, narrowly, only for Sonner compatibility
 
-**Decision**: Wrap `<App />` in `next-themes`'s `ThemeProvider` in `main.tsx`, with
-`forcedTheme` bound to the active `ThemeDefinition.mode` (`'light' | 'dark'`) from
-`theme-store.ts` — not to the browser/OS. This exists solely so `src/renderer/components/ui/
+**Decision**: Wrap `<App />` in `next-themes`'s `ThemeProvider` in `main.tsx`, with `forcedTheme`
+hardcoded to `'dark'` — every built-in theme is dark-toned (Decision 1), so Sonner's dark toast
+variant is always the right one, and `ThemeDefinition` keeps no `mode` field to drive this with
+since there is nothing left for it to vary. This exists solely so `src/renderer/components/ui/
 sonner.tsx`'s existing `useTheme()` call keeps compiling and theming toasts correctly without a
-rewrite; `next-themes` is not consulted anywhere else and its own system-detection is unused
-(System mode already has its own path, Decision 5).
+rewrite; `next-themes` is not consulted anywhere else and its own system-detection is unused.
 
 **Rationale**: `next-themes` is already a pinned dependency used only by the copied shadcn
 `sonner.tsx` component; replacing that one call site would mean diverging from the shadcn-copied
 file for no functional gain, whereas `forcedTheme` is next-themes' documented escape hatch for
-"theme is controlled by something else" — exactly this case, since High contrast has no next-themes
-equivalent and must still pick one of Sonner's two toast variants via its `mode` field.
+"theme is controlled by something else" — exactly this case, since the high-contrast preset has no
+next-themes equivalent and must still pick one of Sonner's two toast variants, which is always
+the dark one now.
 
 **Alternatives considered**: Rewriting `sonner.tsx` to read `theme-store.ts` directly and drop
 `next-themes` entirely — rejected as a larger, unrequested change to a shadcn-owned file for a
@@ -229,9 +207,9 @@ one-line behavioural difference (`forcedTheme` achieves the same result without 
 ## 12. Contrast verified by a one-off script, not CI
 
 **Decision**: `scripts/check-theme-contrast.mjs` parses each theme's OKLCH token pairs straight
-out of `globals.css`, converts to sRGB and relative luminance, and checks the FR-011 ratios
+out of `globals.css`, converts to sRGB and relative luminance, and checks the FR-008 ratios
 (4.5:1 body text / state-colour pairs, 3:1 large text and non-text parts) for every built-in
-theme and every FR-010 surface's token pair. It is run by hand during the Polish task, exactly as
+theme and every FR-007 surface's token pair. It is run by hand during the Polish task, exactly as
 spec 001 T089 verified scrollbar contrast "from the computed colours" — no CI wiring is requested
 by this spec.
 

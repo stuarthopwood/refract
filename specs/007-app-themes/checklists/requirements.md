@@ -24,16 +24,16 @@
 
 ## Requirement Clarity & Consistency
 
-- [x] "Live preview" is defined once (Clarifications) and used consistently (FR-005 to FR-007,
-      FR-020 to FR-022) rather than redefined per requirement
-- [x] "System mode" has one consistent meaning across FR-001, FR-002, FR-004, FR-008, FR-021
+- [x] "Live preview" is defined once (Clarifications) and used consistently (FR-003 to FR-005,
+      FR-017) rather than redefined per requirement
 - [x] The Save/Cancel/Esc/navigate-away equivalence is stated once (Assumptions) and the FRs that
-      depend on it (FR-006, FR-007, FR-022) do not contradict it
-- [x] FR-013's minimum built-in theme count (Light, Dark, plus at least one high-contrast theme)
-      does not conflict with the Assumptions' broader, explicitly-hedged reading ("at least one
-      further dark and one further light variant... the exact list ... should be confirmed with
-      Stuart") — the Assumption flags itself as unresolved rather than asserting a requirement, so
-      there is no contradiction for planning to resolve, only a decision to make (see research.md)
+      depend on it (FR-004, FR-005) do not contradict it
+- [x] FR-010's minimum built-in theme count (at least one dedicated high-contrast dark variant,
+      in addition to the default dark preset) does not conflict with the Assumptions' broader,
+      explicitly-hedged reading ("the exact count and names of presets beyond that are
+      undecided and should be confirmed with Stuart") — the Assumption flags itself as
+      unresolved rather than asserting a requirement, so there is no contradiction for planning
+      to resolve, only a decision to make (see research.md)
 
 ## Acceptance Criteria Quality
 
@@ -44,12 +44,11 @@
 
 ## Edge Case Coverage
 
-- [x] OS theme change during an unsaved preview is covered (FR-021)
-- [x] Closing the app during an unsaved preview is covered (FR-022)
-- [x] A saved theme that no longer exists after an update is covered (FR-016)
-- [x] A code block language with no syntax-colour entry is covered (FR-018)
-- [x] Reduced motion during a theme switch is covered (FR-017)
-- [x] Mermaid diagram readability per theme is covered (FR-019)
+- [x] Closing the app during an unsaved preview is covered (Edge Cases, spec.md)
+- [x] A saved theme that no longer exists after an update is covered (FR-013)
+- [x] A code block language with no syntax-colour entry is covered (FR-015)
+- [x] Reduced motion during a theme switch is covered (FR-014)
+- [x] Mermaid diagram readability per theme is covered (FR-016)
 
 ## Dependencies & Assumptions
 
@@ -63,9 +62,10 @@
 
 - Validation pass 1 (this review, during `/speckit.checklist` for this spec): all items pass, no
   spec.md wording changes needed.
-- The Assumptions section's hedge about a possible fourth and fifth built-in theme ("at least one
-  further dark and one further light variant... should be confirmed with Stuart") is a genuine
-  open planning question, not a requirements-quality defect: FR-013 states the actual minimum
-  unambiguously, and the hedge is clearly marked as exceeding that minimum. Resolved as a Decision
-  in plan.md/research.md per the planning brief (conservative choice: ship exactly the FR-013
-  minimum for this spec; a later issue can add more variants without a breaking `ThemeId` change).
+- The Assumptions section's hedge about further built-in dark presets beyond the required
+  high-contrast variant ("the exact count and names of presets beyond that are undecided and
+  should be confirmed with Stuart") is a genuine open planning question, not a requirements-
+  quality defect: FR-010 states the actual minimum unambiguously, and the hedge is clearly marked
+  as exceeding that minimum. Resolved as a Decision in plan.md/research.md per the planning brief
+  (conservative choice: ship the existing dark theme plus one high-contrast dark preset for this
+  spec; a later issue can add more presets without a breaking `ThemeId` change).
