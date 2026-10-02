@@ -306,8 +306,8 @@ side panel and confirm both show the same theme.
 - This spec depends on spec 004 for the Settings screen the Appearance section is added to, and on
   spec 001 FR-043 (Mermaid diagrams), FR-050 (code block language fallback), and the session
   list's state colour roles (`docs/DESIGN.md`, "Look and feel") for the surfaces User Story 3
-  must cover. A scrollbar-styling requirement is referenced as one of those surfaces on the
-  assumption that scrollbars are themed regardless of which spec first styles them.
+  must cover. Scrollbar styling is specified in spec 001 FR-053 (thin, dark on dark, from theme
+  colours); this spec makes those colours vary per theme.
 - Windows 11 is the only supported platform, consistent with the constitution; "OS reduced-motion
   setting" and "Windows light-or-dark setting" both mean the corresponding Windows 11 setting.
 - No remote content or downloaded themes: every built-in theme ships with the app.
