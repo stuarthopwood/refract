@@ -14,9 +14,9 @@ dark theme as one named preset, plus at least one more dark preset, reasonably i
 dedicated high-contrast dark variant to preserve the accessibility intent of the old FR-013. This
 is a direct instruction, not a planning inference — unlike the exact count and names of presets
 beyond those two, which remains a flagged, unresolved assumption (spec.md Assumptions) to confirm
-with Stuart later, the same way the original "Presets only" decision was flagged. `ThemeId` is an
-open string-literal union with no `'light'` member, so adding a further built-in preset later is
-additive, not a breaking change to any contract here.
+with Stuart later, the same way the original "Presets only" decision was flagged. `ThemeId` is a
+closed string-literal union today with no `'light'` member; adding a further built-in preset later
+is additive (a new union member), not a breaking change to any contract here.
 
 **Rationale**: Stuart's instruction is unambiguous and direct: no light mode, dark presets only.
 Preserving the old FR-013 high-contrast-variant intent (rather than dropping it) keeps the
@@ -35,7 +35,7 @@ the planning brief.
 (`name`, `swatch`, `syntaxTheme`, `titleBarOverlay`) — small, reasoned metadata imported directly
 by main, preload, and renderer (the existing shared-module pattern, plan.md "Source code"). The
 actual colour values stay as CSS custom properties in `src/renderer/styles/globals.css`, one class
-per theme (`.theme-dark`, `.theme-high-contrast`, and so on for any further dark preset),
+per theme (`.theme-dark`, `.theme-dark-high-contrast`, and so on for any further dark preset),
 replacing today's single hardcoded `.dark` block.
 
 **Rationale**: Tailwind v4's `@theme inline` indirection in `globals.css` only resolves real CSS
@@ -51,9 +51,10 @@ properties directly today and should keep doing so.
 
 ## 3. No `theme.list()` IPC request
 
-**Decision**: The renderer imports `THEMES` from `src/shared/themes.ts` directly for the picker,
-Shiki theme selection, and Sonner's forced mode — no round trip needed, since shared modules are
-already imported by all three processes (plan.md "Source code").
+**Decision**: The renderer imports `THEMES` from `src/shared/themes.ts` directly for the picker
+and Shiki theme selection — no round trip needed, since shared modules are already imported by all
+three processes (plan.md "Source code"). Sonner's forced mode is not driven by `THEMES` at all;
+see decision 11 for its hardcoded `'dark'` constant.
 
 **Rationale**: Minimizes the IPC surface to exactly the two effects only main can perform
 (persisting `settings.json`, and moving the native title-bar overlay colour), consistent with

@@ -16,7 +16,7 @@ signed in, a scratch repository) since this feature reuses that app shell.
 
 ## Checks per story
 
-**Story 1: opens in a sensible default preset on first launch (FR-001, FR-013)**
+**Story 1: opens in a sensible default preset on first launch (FR-018, FR-013)**
 
 1. Delete `settings.json` (or use a fresh `--user-data-dir`), launch Refract. Expect: the app
    opens in its default dark preset, with no theme ever chosen yet.

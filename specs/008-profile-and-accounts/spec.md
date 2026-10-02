@@ -10,7 +10,7 @@ Logout and Login process, manage accounts (Github OAuth?). Use Github profile in
 API?" Reference screenshots: `Screenshot 2026-10-01 103039.png` (a bottom-left bar: round avatar
 photo, the user's name, a feedback icon, and a cog) and `Screenshot 2026-10-02 150514.png` (the
 GitHub Copilot desktop app's profile menu: a header with an avatar, the `@handle`, and a usage
-line; Manage accounts; Manage sessions; a Theme submenu with a check on the active preset, and
+line; Manage accounts; Manage sessions; a Theme submenu with a check on System, Light, Dark, and
 "Make it yours"; Keyboard shortcuts with a `?` hint; "Restart to update" with a version badge;
 Health check; What's new; About; Help center; and Sign out in red).
 
@@ -180,8 +180,8 @@ confirm a list appears; open and close the menu, and move through it, using only
    apart from the rest.
 2. **Given** the menu is open, **When** the developer points at or selects Theme, **Then** a
    submenu opens listing every built-in dark preset, the currently active one marked with both a
-   check and text, and a "More themes" entry that opens the Settings screen's Appearance section
-   (spec 007).
+   check and text, and an "Appearance settings" entry that opens the Settings screen's Appearance
+   section (spec 007).
 3. **Given** the menu is open, **When** the developer selects Keyboard shortcuts, **Then** a
    read-only list of shortcuts opens; its entries come from the shortcut set tracked as backlog
    issue #6 once that work exists, and until then the list shows the shortcuts that exist today
@@ -312,8 +312,8 @@ a session, confirming each action's confirmation names what will be lost.
   Manage accounts, Manage sessions, Theme, Keyboard shortcuts, the update entry, Health check,
   What's new, and Sign out, with Sign out visually set apart from the rest.
 - **FR-019**: The Theme item MUST open a submenu listing every built-in dark preset, marking the
-  currently active one with both a check and text, plus a "More themes" entry that opens the
-  Settings screen's Appearance section (spec 007).
+  currently active one with both a check and text, plus an "Appearance settings" entry that opens
+  the Settings screen's Appearance section (spec 007).
 - **FR-020**: The Keyboard shortcuts item MUST open a read-only list of Refract's current keyboard
   shortcuts; its entries MUST come from the shortcut set defined by backlog issue #6 once that
   work exists, and MUST otherwise list the shortcuts already present in the app.
@@ -409,8 +409,8 @@ a session, confirming each action's confirmation names what will be lost.
 - This spec depends on: spec 003 (the GitHub access the active account drives), spec 004 (the
   Settings screen the cog opens; its FR-011 left-nav "Settings" entry is replaced by this spec's
   cog), spec 006 (the update entry's state, and the GitHub CLI Install action offered when it is
-  missing), spec 007 (the Theme submenu and its "More themes" link to Settings' Appearance
-  section), and backlog issue #6 (the keyboard shortcut set Keyboard shortcuts will eventually
-  list in full).
+  missing), spec 007 (the Theme submenu and its "Appearance settings" link to Settings'
+  Appearance section), and backlog issue #6 (the keyboard shortcut set Keyboard shortcuts will
+  eventually list in full).
 - Windows 11 is the only supported platform, consistent with the constitution.
 - No telemetry is added by this spec.

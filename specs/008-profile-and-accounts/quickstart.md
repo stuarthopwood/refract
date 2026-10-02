@@ -72,8 +72,8 @@ pnpm build        # must pass before a change lands on main
    accounts, Manage sessions, Theme, Keyboard shortcuts, the update entry, Health check, What's
    new, then Sign out, visually set apart.
 2. Open the Theme submenu. Expect: every built-in dark preset, with the active one checked (icon and
-   text); "More themes" opens Settings' Appearance section (spec 007 — until that spec lands, it
-   opens Settings with nothing further to show there yet).
+   text); "Appearance settings" opens Settings' Appearance section (spec 007 — until that spec
+   lands, it opens Settings with nothing further to show there yet).
 3. Open Keyboard shortcuts. Expect: a read-only list matching docs/DESIGN.md's Keyboard table.
 4. Look at the update entry. Expect: "Check for updates" with no update pending; once spec 006
    lands its update state, "Restart to update <version>" while one is downloaded and waiting.

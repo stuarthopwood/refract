@@ -39,7 +39,7 @@
 
 - [x] Each user story's acceptance scenarios map to at least one Given/When/Then with an
       observable outcome, not an implementation step
-- [x] SC-001 to SC-008 are each measurable (time bound, percentage, or a yes/no observable state)
+- [x] SC-001 to SC-006 are each measurable (time bound, percentage, or a yes/no observable state)
       without naming a UI technology
 
 ## Edge Case Coverage

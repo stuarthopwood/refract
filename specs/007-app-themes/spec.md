@@ -21,7 +21,8 @@ font and code font stay with issue #4 and are out of scope here.
   Settings reverts it.
 - Q: What is the default theme? -> A: Follow the OS until you choose: first launch follows the
   Windows light-or-dark setting and keeps following it as that setting changes, until the
-  developer picks a theme in Settings.
+  developer picks a theme in Settings. (Superseded by the later session below: there is no OS
+  setting to follow, since there is no light theme.)
 
 ### Session 2026-10-02 (later)
 
@@ -163,7 +164,7 @@ side panel and confirm both show the same theme.
 - The developer closes Refract while previewing an unsaved theme: nothing is persisted; the next
   launch shows whatever was last saved (the saved preset).
 - A saved theme no longer exists among the built-in themes (for example, after an app update
-  removes it): Refract falls back to the first/default preset in the list rather than failing to
+  removes it): Refract falls back to the default preset rather than failing to
   render or showing stale colours.
 - The developer has the OS reduced-motion setting on: switching themes shows no animated
   transition between the old and new colours.
@@ -223,6 +224,10 @@ side panel and confirm both show the same theme.
   use a fixed palette that stays readable against the background of every built-in theme.
 - **FR-017**: The live repaint triggered by choosing an entry in the theme picker MUST NOT be
   announced to assistive technology beyond the picker's own selection-state text changing.
+- **FR-018**: On first launch, before the developer has ever chosen a theme, Refract MUST start
+  in the default dark preset (the existing dark theme).
+- **FR-019**: Closing Refract while an unsaved theme is being previewed MUST NOT persist that
+  preview; the next launch MUST show whatever was last saved.
 
 ### Key Entities
 
@@ -280,6 +285,7 @@ side panel and confirm both show the same theme.
 - Windows 11 is the only supported platform, consistent with the constitution; "OS reduced-motion
   setting" means the corresponding Windows 11 setting.
 - No remote content or downloaded themes: every built-in theme ships with the app.
-- The profile menu (spec 008) has a Theme submenu (every preset, and a "More themes" entry that
-  opens the Appearance section); choosing from it follows the same keep-the-choice rules as the
-  Appearance picker.
+- The profile menu (spec 008) has a Theme submenu (every preset, and an "Appearance settings"
+  entry that opens the Appearance section); choosing from it follows the same keep-the-choice
+  rules as the Appearance picker. (Reworded from "More themes": once the submenu already lists
+  every preset, a "More themes" label promises choices that aren't there.)

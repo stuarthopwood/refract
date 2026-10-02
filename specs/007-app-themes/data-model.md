@@ -6,7 +6,7 @@ Extends [spec 001's data-model.md](../001-core-session-workspace/data-model.md).
 ## New shared types (`src/shared/themes.ts`)
 
 ```ts
-export type ThemeId = 'dark' | 'dark-high-contrast'; // open union: a further dark preset adds a key, never removes these two
+export type ThemeId = 'dark' | 'dark-high-contrast'; // additive: a further dark preset adds a key, never removes these two
 
 export interface ThemeDefinition {
   id: ThemeId;
@@ -38,7 +38,7 @@ further preset are an open question for Stuart (spec.md Assumptions). Picker ord
 export interface Settings {
   version: 1;
   approvalMode: ApprovalMode;
-  theme: ThemeId;   // default 'dark' (FR-001's default preset)
+  theme: ThemeId;   // default 'dark' (FR-018's default preset)
 }
 ```
 

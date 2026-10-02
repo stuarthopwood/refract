@@ -51,7 +51,7 @@ WCAG AA (4.5:1 body text, 3:1 large text/non-text parts) across every surface FR
 
 **Scale/Scope**: at least two built-in dark presets for this spec (research.md decision 1); about
 a dozen CSS token groups per theme (base palette, state colours, diff colours, scrollbar colours,
-syntax theme); 17 functional requirements across 4 user stories.
+syntax theme); 19 functional requirements across 4 user stories.
 
 ## Constitution Check
 
@@ -107,7 +107,7 @@ src/
     ├── state/
     │   └── theme-store.ts                 # NEW: zustand store, activeThemeId derivation, preview/save/cancel actions
     ├── styles/
-    │   └── globals.css                     # EDIT: `.dark` → `.theme-dark`/`.theme-high-contrast`; new high-contrast token block
+    │   └── globals.css                     # EDIT: `.dark` → `.theme-dark`/`.theme-dark-high-contrast`; new high-contrast token block
     └── features/
         ├── settings/
         │   ├── ThemePicker.tsx             # NEW: picker list (built-in dark presets only), swatches, keyboard nav

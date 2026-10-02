@@ -36,6 +36,7 @@ no OS-follow mode.
 ## Non-IPC: shared theme data
 
 `src/shared/themes.ts`'s `THEMES` table (data-model.md) is imported directly by main, preload, and
-renderer — it is not served over IPC. The renderer uses it for the picker's names and swatches,
-Shiki theme selection (research.md decision 9), and `next-themes`'s `forcedTheme` (research.md
-decision 11); main uses it for `theme.preview`/`theme.set`'s title-bar overlay colours.
+renderer — it is not served over IPC. The renderer uses it for the picker's names and swatches and
+Shiki theme selection (research.md decision 9); main uses it for `theme.preview`/`theme.set`'s
+title-bar overlay colours. `next-themes`'s `forcedTheme` is a hardcoded `'dark'` constant, not
+driven by `THEMES` (research.md decision 11).

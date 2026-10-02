@@ -87,7 +87,7 @@ renderer store every story builds on.
   `next-themes`'s `ThemeProvider` with `forcedTheme` hardcoded to `'dark'` (research.md decision
   11); in `src/renderer/styles/globals.css` rename the single `.dark` block to `.theme-dark`
   (`:root` keeps only truly theme-independent values, e.g. `--radius`, `--font-ui`, `--font-code`),
-  and add an empty `.theme-high-contrast` block for T016 to fill in (depends on T002, T007). (#176)
+  and add an empty `.theme-dark-high-contrast` block for T015 to fill in (depends on T002, T007). (#176)
 
 **Checkpoint**: `pnpm typecheck` and `pnpm build` pass; a scratch run that hand-edits
 `settings.json`'s `theme` field and relaunches shows the matching class with no flash.
@@ -101,7 +101,7 @@ unrecognised saved value falls back to it rather than failing.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 1.
 
-- [ ] T009 [US1] Confirm FR-001 (first launch opens the default preset) and FR-013 (an
+- [ ] T009 [US1] Confirm FR-018 (first launch opens the default preset) and FR-013 (an
   unrecognised saved value falls back to the default preset, T003) both hold from
   `theme-store.ts`'s derivation with no extra state; add any missing case directly to
   `theme-store.ts` and `src/main/ipc/theme.ts`'s bootstrap/get paths (depends on T003, T007). (#181)
@@ -162,7 +162,7 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   token: the chat transcript and its tool rows, dialogs and menus, toasts, tooltips and hover
   cards, the chip row, selection and focus rings, and the Settings screen itself (FR-007)
   (depends on T008). (#198)
-- [ ] T015 [US3] Fill in `.theme-high-contrast` in `src/renderer/styles/globals.css` with base,
+- [ ] T015 [US3] Fill in `.theme-dark-high-contrast` in `src/renderer/styles/globals.css` with base,
   state-colour (working/idle/needs-you/stopped), border, focus-ring, and scrollbar-thumb/track/
   hover values distinct enough to meet WCAG AA (FR-008); confirm the four session states stay
   distinguishable by icon and text alone, not only colour, in this theme too (FR-009, FR-010)
@@ -207,10 +207,11 @@ preview never survives closing the app.
   pane window once spec 005 exists) answers `theme:bootstrap` the same way and applies its class
   before first paint (FR-011, FR-012); if a second-window code path does not yet call the
   bootstrap wrapper, add the call there (depends on T008). (#233)
-- [ ] T021 [US4] Confirm that an unsaved preview can never persist end to end: since `previewing`
-  lives only in `theme-store.ts`'s in-memory state and is never written to `settings.json` until
-  `save()` runs (T007), ending the process mid-preview (including a force-kill) cannot persist it;
-  add this as an explicit documented check rather than new code, and note it in quickstart.md
+- [ ] T021 [US4] Confirm that an unsaved preview can never persist end to end (FR-019): since
+  `previewing` lives only in `theme-store.ts`'s in-memory state and is never written to
+  `settings.json` until `save()` runs (T007), ending the process mid-preview (including a
+  force-kill) cannot persist it; add this as an explicit documented check rather than new code,
+  and note it in quickstart.md
   (depends on T007). (#239)
 - [ ] T022 [US4] Update the docs and verify live: `docs/DESIGN.md`, `quickstart.md` Story 4; then
   on the built app in an isolated instance: Save a theme, fully restart, confirm no flash from the
