@@ -22,6 +22,7 @@ header actions for New session, Review, and merge/checks status."
 - Q: Where does pull request management live in the app? -> A: A left-nav view like the
   screenshot - a "Pull requests" entry that swaps the main area to a pull request list plus
   detail, scoped to the selected repository.
+- Q: Should a pull request offer "New session" (User Story 4)? -> A: Keep it.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -299,10 +300,10 @@ creation rules from spec 001.
 - The app stores no GitHub token for this feature; access comes from the developer's own,
   already signed-in GitHub CLI, consistent with how the rest of Refract treats external
   credentials.
-- User Story 4 ("New session" from a pull request) is included because the screenshot shows the
-  action and Stuart's scope answer ("Browse + review actions") was given as an addition to
-  browsing, not a replacement for it; this is a reasonable reading, not a separate confirmed
-  answer, and should be confirmed with Stuart.
+- User Story 4 ("New session" from a pull request) is in scope; Stuart confirmed keeping it on
+  2026-10-02.
+- Spec 004 (session readout) adds a pull request chip above the message box that opens a
+  Session's pull request in this view; this spec defines the view, and spec 004 defines the chip.
 - The repository dropdown scopes the pull request list to one repository already added to
   Refract at a time, the same scoping the rest of the app uses for Sessions.
 - The filter icon narrows the current tab's results further (for example by label or by text
