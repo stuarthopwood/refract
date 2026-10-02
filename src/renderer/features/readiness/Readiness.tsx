@@ -61,11 +61,11 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
-      <div className="flex items-center gap-3">
-        <img src={refractHero} alt="" aria-hidden className="h-14 w-14 shrink-0 rounded-xl" />
+      <div className="flex items-center gap-4">
+        <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0 rounded-xl" />
         <div className="flex flex-col">
-          <span className="font-brand text-2xl leading-none text-foreground">Refract</span>
-          <span className="font-brand text-xs leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>
+          <span className="font-brand text-5xl font-bold leading-none text-foreground">Refract</span>
+          <span className="font-brand mt-1 text-sm font-medium leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>
         </div>
       </div>
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-card-foreground">
