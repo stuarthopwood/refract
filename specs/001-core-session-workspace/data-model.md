@@ -19,7 +19,7 @@ interface Repository {
   id: string;              // uuid
   path: string;            // absolute path of the main checkout
   name: string;            // folder name, shown as the list group title
-  defaultBranch: string;   // read from git when added; preselected as Base branch
+  defaultBranch: string;   // read from git when added; one-click creation's Base branch and the picker's preselection
   addedAt: string;         // ISO 8601
 }
 

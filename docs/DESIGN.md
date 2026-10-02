@@ -17,7 +17,7 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
 - Three regions: **session list** (left), **chat** (centre), and a reserved right region for the later changes, files, and side chat pane (hidden until that spec ships).
 - A **status bar** along the bottom carries the app-wide Approval mode switch.
 - Panes resize by dragging their borders; the session list can be hidden.
-- Session list: collapsible group per **Repository**, **Sessions** sorted by most recent activity. Each row shows a state icon, the Session name, its branch, time since last activity, and an unread dot. **Archived** Sessions sit in a collapsed group at the bottom of each Repository.
+- Session list: collapsible group per **Repository**, **Sessions** sorted by most recent activity. Each row shows a state icon, the Session name, its branch, time since last activity, and an unread dot. **Archived** Sessions sit in a collapsed group at the bottom of each Repository. Each Repository header has two buttons: **+** creates a Session from the default branch in one click (tooltip "New session from <default branch>"), and the branch button opens the Base branch picker with the default branch preselected (tooltip "New session from a branch…"); either way the new Session is selected and opened.
 - Chat header: Session name and branch, a Conversation switcher (history of that Session's Conversations), and a small chip when an Approval mode change is pending ("Auto after this turn").
 
 ## Look and feel
@@ -61,7 +61,7 @@ Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reser
 
 - With nothing configured, the window shows a readiness checklist: git found, OMP found and on the supported version, OMP signed in. Each failing item has a fix hint.
 - The checklist card's title is **Get Refract ready**, with the tagline *One Pi, every angle.* under it.
-- One primary action, **Add repository**, is disabled until the checklist passes. After that, the same area is the empty state for "no Sessions yet" with a **New session** button.
+- One primary action, **Add repository**, is disabled until the checklist passes. After that, Sessions are created from the Repository header buttons in the session list; with no Session selected, the chat pane reads "No Session selected".
 
 ## Feedback and errors
 

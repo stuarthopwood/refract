@@ -25,7 +25,7 @@ The isolated checkout of a **Repository** that a **Session** works in. Created b
 _Avoid_: Branch, folder, clone
 
 **Base branch**:
-The branch a new **Session**'s **Worktree** branches from. Chosen when the **Session** is created; the repository's default branch is preselected.
+The branch a new **Session**'s **Worktree** branches from. One-click creation uses the repository's default branch; the branch button opens a picker with the default branch preselected.
 _Avoid_: Parent branch, source branch
 
 **Approval mode**:
