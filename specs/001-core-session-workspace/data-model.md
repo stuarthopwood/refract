@@ -27,7 +27,7 @@ interface Session {
   id: string;                  // uuid
   repositoryId: string;
   name: string;                // display label; renamable; never affects branch or folder
-  branch: string;              // generated, e.g. "swift-otter"
+  branch: string;              // generated, e.g. "swift-otter"; the Base branch picker lists it under the Session's name
   baseBranch: string;          // branch it was created from
   worktreePath: string;        // absolute; also the agent's cwd
   sessionDir: string | null;   // OMP's session directory for that cwd; null until first learned (see below)
