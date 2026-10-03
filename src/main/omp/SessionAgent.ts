@@ -836,6 +836,7 @@ export class SessionAgent extends EventEmitter {
       stopReason: this.runtime.stopReason,
       stopDetail: this.runtime.stopDetail,
       unread: this.runtime.unread,
+      launchedMode: this.runtime.launchedMode,
       pendingMode: this.runtime.pendingMode,
     };
     this.emit('status', payload);

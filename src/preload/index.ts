@@ -98,8 +98,7 @@ const refract: RefractApi = {
   },
 
   window: {
-    popupMenu: (menuId, x, y) => request<void>(IPC_REQUESTS.WINDOW_POPUP_MENU, menuId, x, y),
-    toggleMaximize: () => request<void>(IPC_REQUESTS.WINDOW_TOGGLE_MAXIMIZE)
+    popupMenu: (menuId, x, y) => request<void>(IPC_REQUESTS.WINDOW_POPUP_MENU, menuId, x, y)
   },
 
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),

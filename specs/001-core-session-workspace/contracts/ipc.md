@@ -85,11 +85,19 @@ A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue comma
 | `settings.get()` | `Settings` |
 | `settings.setApprovalMode(mode)` | `Settings`. Sets `pendingMode` on every live Session whose mode differs; the restart happens at each Session's next settle. |
 
+### Window (spec 001 T100, FR-057)
+
+| Method | Returns | Notes |
+|---|---|---|
+| `window.popupMenu(menuId, x, y)` | `void` | Pops open one of the in-app `AppMenuBar`'s real submenus (`'file' \| 'edit' \| 'view' \| 'window'`) at `x`/`y`, the clicked button's own `getBoundingClientRect()` CSS-pixel coordinates; main multiplies by `webContents.getZoomFactor()` before calling `Menu.popup`. Error `invalid-argument` (bad `menuId`, or non-finite `x`/`y`), `not-found` (no window, or `menuId` has no submenu). |
+
+There is no `window.toggleMaximize`: verified live (tasks.md T100) that double-clicking a `.drag-region` area already maximises/restores the window entirely at the OS level (HTCAPTION) before the double-click ever reaches the renderer's own JS, so a renderer-driven toggle IPC was unreachable dead code and was removed rather than kept.
+
 ## Events (main to renderer)
 
 | Event | Payload | Purpose |
 |---|---|---|
-| `session:status` | `{ sessionId, status, stopReason?, stopDetail?, unread, pendingMode }` | List badges, chat header chip. |
+| `session:status` | `{ sessionId, status, stopReason?, stopDetail?, unread, launchedMode, pendingMode }` | List badges, the Approval mode pill above the message box. |
 | `session:list-changed` | none | Renderer re-fetches `sessions.list()` (created, renamed, archived, deleted, reordered by activity). |
 | `transcript:patch` | `{ sessionId, ops: TranscriptOp[] }` | `TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] }`. Coalesced to at most one per 50 ms per Session; only sent for the Session the user is viewing, plus a final flush when a Session becomes visible. |
 | `queue:update` | `{ sessionId, followUp: string[]; steering: string[] }` | Queue chips. |

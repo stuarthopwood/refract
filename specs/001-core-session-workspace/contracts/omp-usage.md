@@ -89,7 +89,7 @@ Every `select`, `confirm`, `input`, and `editor` request MUST be answered, or th
 
 ## Approval mode change (FR-020)
 
-1. The user changes `Settings.approvalMode`. Every live Session with a different `launchedMode` gets `pendingMode` set (chip in the chat header).
+1. The user changes `Settings.approvalMode`. Every live Session with a different `launchedMode` gets `pendingMode` set (shown as "<mode> after this turn" on the Approval mode pill above the message box, next to the session's still-current `launchedMode`).
 2. When that Session is idle with no pending request (at `session_settled`, or immediately if it already is): stop the process (stdin close, 10 s, then force), spawn with the new `--approval-mode`, `switch_session` to `<currentConversation>`, run reattach verification, and reload the transcript.
 3. If reattach verification fails, the Session is `stopped` with the reason and a Recover action.
 4. A Session that is not running simply launches with the current mode the next time it is opened.

@@ -18,6 +18,10 @@ const MENU_LABEL: Record<AppMenuId, string> = {
   window: 'Window',
 };
 
+// Tags each top-level template item with its shared `AppMenuId` (`shared/ipc.ts`'s `APP_MENU_IDS`)
+// as the item's own `id`, so `popupAppMenu` below looks a submenu up by that stable id via
+// `Menu.getMenuItemById`, never by matching the (locale-able, display-only) `label` text.
+
 export function buildAppMenu(isDev: boolean): Menu {
   const devOnlyViewItems: MenuItemConstructorOptions[] = isDev
     ? [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }]
@@ -25,10 +29,12 @@ export function buildAppMenu(isDev: boolean): Menu {
 
   return Menu.buildFromTemplate([
     {
+      id: 'file',
       label: MENU_LABEL.file,
       submenu: [{ role: 'close' }],
     },
     {
+      id: 'edit',
       label: MENU_LABEL.edit,
       submenu: [
         { role: 'undo' },
@@ -41,6 +47,7 @@ export function buildAppMenu(isDev: boolean): Menu {
       ],
     },
     {
+      id: 'view',
       label: MENU_LABEL.view,
       submenu: [
         ...devOnlyViewItems,
@@ -52,6 +59,7 @@ export function buildAppMenu(isDev: boolean): Menu {
       ],
     },
     {
+      id: 'window',
       label: MENU_LABEL.window,
       submenu: [
         { role: 'minimize' },
@@ -70,12 +78,15 @@ export function buildAppMenu(isDev: boolean): Menu {
   ]);
 }
 
-/** Pops open one top-level item's real submenu at `x`/`y` (window-content-relative coordinates,
- * exactly what a clicked `AppMenuBar` button's `getBoundingClientRect()` already gives). Returns
- * `false` if `menuId` somehow has no matching submenu (never expected, `buildAppMenu` always sets
- * one for every `AppMenuId`), letting the IPC handler report it instead of silently doing nothing. */
+/** Pops open one top-level item's real submenu at `x`/`y` (window-content-relative, device/CSS
+ * pixels per `BrowserWindow.setTitleBarOverlay`/`Menu.popup`'s own coordinate space -- the IPC
+ * handler in `src/main/ipc/window.ts` already multiplies the renderer's raw CSS-pixel
+ * `getBoundingClientRect()` by `webContents.getZoomFactor()` before calling this, so a zoomed
+ * page still pops the menu under the clicked button instead of drifting). Returns `false` if
+ * `menuId` somehow has no matching submenu (never expected, `buildAppMenu` always sets one for
+ * every `AppMenuId`), letting the IPC handler report it instead of silently doing nothing. */
 export function popupAppMenu(appMenu: Menu, menuId: AppMenuId, window: BrowserWindow, x: number, y: number): boolean {
-  const item = appMenu.items.find((candidate) => candidate.label === MENU_LABEL[menuId]);
+  const item = appMenu.getMenuItemById(menuId);
   if (!item?.submenu) return false;
   item.submenu.popup({ window, x, y });
   return true;

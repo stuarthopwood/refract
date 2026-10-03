@@ -112,10 +112,19 @@ export class SessionManager {
     return this.registry.snapshot().sessions.map((session) => {
       const runtime = this.agents.get(session.id)?.runtimeSnapshot;
       if (runtime) {
-        return { ...session, status: runtime.status, stopReason: runtime.stopReason, unread: runtime.unread, pendingMode: runtime.pendingMode };
+        return {
+          ...session,
+          status: runtime.status,
+          stopReason: runtime.stopReason,
+          unread: runtime.unread,
+          launchedMode: runtime.launchedMode,
+          pendingMode: runtime.pendingMode,
+        };
       }
       const stopReason = existsSync(session.worktreePath) ? 'not-started' : 'worktree-missing';
-      return { ...session, status: 'stopped', stopReason, unread: false, pendingMode: null };
+      // Never actually launched this run: nothing is "currently in effect" to show as current,
+      // so this falls back to the global Settings mode the renderer already uses pre-launch.
+      return { ...session, status: 'stopped', stopReason, unread: false, launchedMode: this.settings.get().approvalMode, pendingMode: null };
     });
   }
 

@@ -3,6 +3,11 @@
 // message box (MessageInput.tsx). Replaces the old status-bar ToggleGroup (StatusBar.tsx, T098)
 // and the chat header's pending-mode Badge (ChatHeader.tsx, T098) -- both read/wrote the exact
 // same `settings.approvalMode` / session `pendingMode`, so this is the one place left that does.
+// The pill's "current" mode is the Session's own `launchedMode` (falling back to the global
+// Settings mode for a Session that has never launched), never the global Settings mode directly:
+// while `pendingMode` is set, the session is still running under the mode it actually launched
+// with, not the new one, until it restarts at its next idle settle -- showing the new mode as
+// already current here would misrepresent what approval behaviour actually governs the live turn.
 import type { ComponentType } from 'react'
 import { CheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
 import { badgeVariants } from '@/components/ui/badge'
@@ -40,9 +45,14 @@ const MODE_LABEL: Record<ApprovalMode, string> = {
 export function ApprovalModePill({ sessionId }: { sessionId: string }) {
   const approvalMode = useSettingsStore((state) => state.settings.approvalMode)
   const setApprovalMode = useSettingsStore((state) => state.setApprovalMode)
-  const pendingMode = useSessionsStore((state) => state.sessions.find((session) => session.id === sessionId)?.pendingMode)
+  const session = useSessionsStore((state) => state.sessions.find((candidate) => candidate.id === sessionId))
+  const pendingMode = session?.pendingMode
+  // The mode actually in effect right now: the Session's own launched mode while it is live, or
+  // the global Settings mode for one that has never launched (same value the Settings store
+  // itself would seed `launchedMode` with on its first launch, see `SessionManager.summaries`).
+  const currentMode = session?.launchedMode ?? approvalMode
 
-  const current = MODE_ITEMS.find((item) => item.value === approvalMode) ?? MODE_ITEMS[0]!
+  const current = MODE_ITEMS.find((item) => item.value === currentMode) ?? MODE_ITEMS[0]!
   const CurrentIcon = current.icon
   const pendingLabel = pendingMode ? `${MODE_LABEL[pendingMode]} after this turn` : null
 
@@ -70,7 +80,7 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
       <DropdownMenuContent align="start">
         {MODE_ITEMS.map((item) => {
           const ItemIcon = item.icon
-          const checked = item.value === approvalMode
+          const checked = item.value === currentMode
           return (
             <DropdownMenuItem key={item.value} onSelect={() => handleSelect(item.value)}>
               <ItemIcon aria-hidden className="size-4" />

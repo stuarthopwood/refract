@@ -8,8 +8,13 @@ import type { SlashCommandDescriptor } from './frames';
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
  * dev-only item (Reload, Force Reload, Toggle Developer Tools) is included or not by the one menu
- * main already builds, never a second renderer-side copy of that decision. */
-export type AppMenuId = 'file' | 'edit' | 'view' | 'window';
+ * main already builds, never a second renderer-side copy of that decision. The one shared list of
+ * ids: `src/main/menu.ts` tags each template item with a matching `id` (looked up via
+ * `Menu.getMenuItemById`, never by display label), `AppMenuBar.tsx` derives its own button list
+ * from it, and `src/main/ipc/window.ts` validates incoming ids against it -- a single source
+ * instead of three hand-maintained copies. */
+export const APP_MENU_IDS = ['file', 'edit', 'view', 'window'] as const;
+export type AppMenuId = (typeof APP_MENU_IDS)[number];
 
 // ---------------------------------------------------------------------------
 // Result and errors
@@ -68,6 +73,9 @@ export interface SessionSummary extends Session {
    * worktree shows a distinct badge without opening the Session. */
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   unread: boolean;
+  /** The mode the Session's live process actually launched with (settings' current mode for one
+   * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
+  launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
 }
 
@@ -129,6 +137,7 @@ export interface SessionStatusEvent {
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   stopDetail?: string;
   unread: boolean;
+  launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
 }
 
@@ -171,7 +180,6 @@ export const IPC_REQUESTS = {
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   WINDOW_POPUP_MENU: 'window.popupMenu',
-  WINDOW_TOGGLE_MAXIMIZE: 'window.toggleMaximize',
 } as const;
 
 export const IPC_EVENTS = {
@@ -259,9 +267,6 @@ export interface RefractApi {
      * window-content-relative coordinates -- exactly what the clicked button's own
      * `getBoundingClientRect()` already gives. */
     popupMenu(menuId: AppMenuId, x: number, y: number): Promise<Result<void>>;
-    /** Toggles the window between maximised and restored (FR-057: double-clicking a draggable
-     * top-row area must do this). */
-    toggleMaximize(): Promise<Result<void>>;
   };
 
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;

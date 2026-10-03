@@ -44,7 +44,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set({
       sessions: get().sessions.map((session) =>
         session.id === event.sessionId
-          ? { ...session, status: event.status, unread: event.unread, pendingMode: event.pendingMode }
+          ? { ...session, status: event.status, unread: event.unread, launchedMode: event.launchedMode, pendingMode: event.pendingMode }
           : session
       )
     }),

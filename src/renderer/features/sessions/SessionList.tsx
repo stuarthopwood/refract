@@ -16,7 +16,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
-import { toggleMaximize } from '@/lib/windowChrome'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
@@ -372,10 +371,12 @@ export function SessionList() {
       tabIndex={-1}
       className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
-      <div
-        className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3"
-        onDoubleClick={toggleMaximize}
-      >
+      {/* Part of the app's merged top row (spec 001 T100, FR-057): draggable to move the window.
+          No double-click handler here: verified live (tasks.md T100) that double-clicking this
+          `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
+          before the double-click ever reaches the page's own JS, so a renderer-driven toggle was
+          dead code and has been removed. */}
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0 rounded-md" />
         <span className="text-sm font-semibold">Refract</span>
       </div>

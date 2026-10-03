@@ -9,36 +9,60 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { notify } from '@/state'
+import { APP_MENU_IDS } from '../../../shared/ipc'
 import type { AppMenuId } from '../../../shared/ipc'
 
-const MENUS: Array<{ id: AppMenuId; label: string }> = [
-  { id: 'file', label: 'File' },
-  { id: 'edit', label: 'Edit' },
-  { id: 'view', label: 'View' },
-  { id: 'window', label: 'Window' }
-]
+const MENU_LABEL: Record<AppMenuId, string> = {
+  file: 'File',
+  edit: 'Edit',
+  view: 'View',
+  window: 'Window'
+}
+
+// Ids come from the one shared list (`shared/ipc.ts`'s `APP_MENU_IDS`, also used by
+// `src/main/menu.ts` and `src/main/ipc/window.ts`); only the display label is this component's
+// own.
+const MENUS: Array<{ id: AppMenuId; label: string }> = APP_MENU_IDS.map((id) => ({ id, label: MENU_LABEL[id] }))
 
 export function AppMenuBar() {
   const [visible, setVisible] = useState(false)
   const barRef = useRef<HTMLDivElement>(null)
   // Armed on Alt's own keydown; any other keydown before the matching keyup disarms it, so a
-  // held Alt used as part of a shortcut never toggles the bar, only a standalone tap does.
+  // held Alt used as part of a shortcut never toggles the bar, only a standalone tap does. Also
+  // cleared on window blur and on any mousedown/pointerdown: without this, an Alt+Tab away and
+  // back (the OS consumes the Tab, so this page never sees a clearing keyup) could leave the
+  // flag armed and let a later, unrelated Alt-keyup pop the bar open unexpectedly.
   const altArmedRef = useRef(false)
+  // Whatever held focus right before Alt opened the bar (e.g. the message box mid-draft),
+  // captured on Alt's keydown so every dismissal path below can restore it instead of leaving
+  // focus to fall through to <body> (WCAG 2.1 AA 2.4.3).
+  const previousFocusRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       altArmedRef.current = event.key === 'Alt'
+      if (event.key === 'Alt') previousFocusRef.current = document.activeElement as HTMLElement | null
     }
     function onKeyUp(event: KeyboardEvent): void {
       if (event.key !== 'Alt') return
       if (altArmedRef.current) setVisible((current) => !current)
       altArmedRef.current = false
     }
+    function onBlur(): void {
+      altArmedRef.current = false
+    }
+    function onPointerDown(): void {
+      altArmedRef.current = false
+    }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    window.addEventListener('pointerdown', onPointerDown)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('pointerdown', onPointerDown)
     }
   }, [])
 
@@ -57,6 +81,15 @@ export function AppMenuBar() {
       window.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('keydown', onKeyDown)
     }
+  }, [visible])
+
+  // Restores focus on every dismissal path (Esc, a second Alt tap, or a click away): all three
+  // just flip `visible` to false, so one effect here covers all of them.
+  useEffect(() => {
+    if (visible) return
+    const target = previousFocusRef.current
+    previousFocusRef.current = null
+    if (target?.isConnected) target.focus()
   }, [visible])
 
   async function openMenu(menuId: AppMenuId, target: HTMLElement): Promise<void> {
@@ -87,7 +120,7 @@ export function AppMenuBar() {
       ref={barRef}
       role="menubar"
       aria-label="App menu"
-      className="fixed left-0 top-0 z-50 flex h-10 items-center gap-1 border-b border-border bg-card px-2 text-sm text-card-foreground shadow-md"
+      className="no-drag-region fixed left-0 top-0 z-50 flex h-10 items-center gap-1 border-b border-border bg-card px-2 text-sm text-card-foreground shadow-md"
       style={{ width: 'env(titlebar-area-width, 100vw)' }}
     >
       {MENUS.map((menu, index) => (

@@ -4,13 +4,14 @@
 // Approval mode chip that used to live here moved to the ApprovalModePill above the message box
 // (MessageInput.tsx, T098): that pill is the one place a mode change, pending or not, is shown.
 // This header is also the right half of the app's merged top row (spec 001 T100, FR-057):
-// draggable to move the window (its own buttons stay clickable via `.no-drag-region`), a trailing
-// spacer reserves the top-right corner for the window's minimise/maximise/close buttons, and a
-// double-click on the draggable area maximises or restores the window.
-import type { MouseEvent } from 'react'
+// draggable to move the window (its own buttons stay clickable via `.no-drag-region`), and a
+// trailing spacer reserves the top-right corner for the window's minimise/maximise/close buttons.
+// No double-click handler here: verified live (tasks.md T100) that double-clicking this
+// `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
+// before the double-click ever reaches the page's own JS, so a renderer-driven toggle was dead
+// code and has been removed.
 import type { SessionStatus } from '../../../shared/model'
 import { cn } from '@/lib/utils'
-import { toggleMaximize } from '@/lib/windowChrome'
 import { useSessionsStore } from '@/state'
 import { ConversationSwitcher } from './ConversationSwitcher'
 
@@ -21,21 +22,12 @@ const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   stopped: 'bg-state-stopped'
 }
 
-// Only a double-click that lands on the drag area itself (never one that bubbled up from a
-// no-drag button inside it, such as ConversationSwitcher) maximises or restores the window.
-function handleDragAreaDoubleClick(event: MouseEvent<HTMLElement>): void {
-  if (event.target === event.currentTarget) toggleMaximize()
-}
-
 export function ChatHeader({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   if (!session) return null
 
   return (
-    <header
-      className="drag-region flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2"
-      onDoubleClick={handleDragAreaDoubleClick}
-    >
+    <header className="drag-region flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
       <div className="flex min-w-0 items-center gap-2">
         <span
           className={cn('size-2 shrink-0 rounded-full', STATUS_DOT_CLASS[session.status])}
