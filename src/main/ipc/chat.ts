@@ -1,39 +1,25 @@
 // IPC handlers for `chat.*` (contracts/ipc.md "Chat", tasks.md T024 + T028's `chat.answer`).
-// `chat.send` validates a leading `/name` against the Session's latest `available_commands_update`
-// list plus Refract's native set (constitution I); unknown names are refused locally and nothing
-// is sent. `/new` is the one native command implemented so far, mapped to
-// `SessionAgent.startNewConversation` (the same RPC `new_session` T027 uses); every other native
-// command name is refused with `unknown-command` so it is never silently forwarded to OMP. These
-// names are kept in their own list specifically so they are refused even if a future OMP version
-// adds a real `/plan`, `/fork`, `/btw`, etc. to its own `available_commands` (constitution I/II --
-// these must stay client-side native behaviors, never forwarded).
-//
-// T093 (FR-032, FR-033): the "Session's latest available_commands_update list" above is
-// already filtered down to `src/shared/slash-commands.ts`'s fixed supported set before it
-// ever reaches here (`SessionAgent`'s `available_commands_update` handler) -- a command OMP
-// offers that Refract has not verified, or that a later OMP patch adds, is already absent from
-// `agent.availableCommands`, so it is refused here the same way as a name OMP never offered.
+// `chat.send` validates a leading `/name [subcommand]` against the Session's latest
+// `available_commands_update` list (already filtered + subcommand-pruned by
+// `src/shared/slash-commands.ts`'s `filterSupportedCommands`, applied once in
+// `SessionAgent`'s `available_commands_update` handler) plus Refract's native reserved set
+// (constitution I); anything else -- an unrecognized name, an unverified subcommand of an
+// otherwise-allowed name, or any trailing argument text beyond a verified bare name/subcommand
+// -- is refused locally via `isSupportedInvocation` and nothing is sent (Critical remediation,
+// issue #129: a subcommand the probe never verified, e.g. `/todo copy`, used to still reach OMP
+// under its allowed parent name). `/new` is the one native command implemented so far, mapped
+// to `SessionAgent.startNewConversation` (the same RPC `new_session` T027 uses); every other
+// native command name is refused with `unknown-command` so it is never silently forwarded to
+// OMP, even if a future OMP version adds a real `/plan`, `/fork`, `/btw`, etc. to its own
+// `available_commands` (constitution I/II -- these must stay client-side native behaviors).
 
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { ChatAnswer, Result } from '../../shared/ipc';
-import type { SlashCommandDescriptor } from '../../shared/frames';
+import { isSupportedInvocation, NATIVE_RESERVED_COMMANDS, parseSlashCommand } from '../../shared/slash-commands';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from '../omp/errors';
 import { invalidArgument, mapSessionThrown, notFound } from './util';
 import type { SessionManager } from '../SessionManager';
-
-// Constitution I: "Refract ... supplies natively only the commands absent over RPC: /plan,
-// /fork, /resume, /new, /settings, /pause, /plan-review, and /btw."
-const NATIVE_COMMANDS: Record<string, true> = {
-  new: true,
-  resume: true,
-  plan: true,
-  fork: true,
-  settings: true,
-  pause: true,
-  'plan-review': true,
-  btw: true,
-};
 
 /** `chat.send`/`chat.stop`/`chat.removeQueued`/`chat.sendNow` all drive an already-attached
  * process (never a Conversation reattach), so their default code is `prompt-failed`, not
@@ -42,22 +28,6 @@ function mapChatError(err: unknown): Result<never> {
   if (err instanceof AgentNotRunningError) return { ok: false, error: { code: err.code, message: err.message } };
   if (err instanceof PromptFailedError) return { ok: false, error: { code: err.code, message: err.message } };
   return { ok: false, error: { code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) } };
-}
-
-function collectCommandNames(commands: readonly SlashCommandDescriptor[]): Set<string> {
-  const names = new Set<string>();
-  for (const command of commands) {
-    names.add(command.name);
-    for (const alias of command.aliases ?? []) names.add(alias);
-  }
-  return names;
-}
-
-/** The command name in a leading `/name ...`, or `undefined` for ordinary text. */
-function parseSlashCommand(text: string): string | undefined {
-  const trimmed = text.trimStart();
-  if (!trimmed.startsWith('/')) return undefined;
-  return /^\/(\S+)/.exec(trimmed)?.[1];
 }
 
 function isChatAnswer(value: unknown): value is ChatAnswer {
@@ -74,9 +44,9 @@ export function registerChat(manager: SessionManager): void {
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     const agent = manager.getOrCreateAgent(sessionId);
 
-    const commandName = parseSlashCommand(text);
-    if (commandName !== undefined) {
-      if (commandName === 'new') {
+    const parsed = parseSlashCommand(text);
+    if (parsed !== undefined) {
+      if (parsed.name === 'new' && parsed.rest === '') {
         try {
           await agent.startNewConversation();
           return { ok: true, value: { queued: false } };
@@ -86,12 +56,17 @@ export function registerChat(manager: SessionManager): void {
       }
       // Refuse the command locally, without forwarding anything to OMP, when either: the name
       // is one of Refract's own native/reserved commands (never forwarded even if OMP later
-      // recognizes it), or OMP genuinely doesn't recognize it either.
+      // recognizes it), or this exact invocation (bare name, or name + subcommand, with no
+      // trailing argument text) is not one `agent.availableCommands` (already filtered +
+      // pruned) actually lists.
       if (
-        Object.prototype.hasOwnProperty.call(NATIVE_COMMANDS, commandName) ||
-        !collectCommandNames(agent.availableCommands).has(commandName)
+        Object.prototype.hasOwnProperty.call(NATIVE_RESERVED_COMMANDS, parsed.name) ||
+        !isSupportedInvocation(parsed, agent.availableCommands)
       ) {
-        return { ok: false, error: { code: 'unknown-command', message: `Unknown command: /${commandName}` } };
+        return {
+          ok: false,
+          error: { code: 'unknown-command', message: `Unknown command: /${parsed.name}${parsed.rest ? ` ${parsed.rest}` : ''}` },
+        };
       }
       // A real OMP-side command (from available_commands_update): fall through and forward it
       // as a normal prompt below.
