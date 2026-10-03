@@ -150,11 +150,13 @@ export type TranscriptItem =
   | {
       /** An OMP-injected `<advisory>` note (T084, FR-051), parsed out of a `role: 'custom'`
        * message whose `content` embeds one or more `<advisory severity="..." advisor="..."
-       * turnsAgo="..." guidance="...">note text</advisory>` elements (FINDINGS item 22(f): every
-       * such message carries `customType: 'advisor'`). An unknown/missing `severity` reads as
-       * `'nit'`; a message that looks like one of these but cannot be parsed falls back to a
-       * plain `notice` instead (never this kind, and raw tag text is never shown once parsing
-       * succeeds). */
+       * turns_ago="..." guidance="...">note text</advisory>` elements (FINDINGS item 22(f): every
+       * such message carries `customType: 'advisor'`; `turns_ago` is the real OMP 18.5.1
+       * producer's own attribute name, snake_case, confirmed against real on-disk session data --
+       * it becomes this type's camelCase `turnsAgo` field below). An unknown/missing `severity`
+       * reads as `'nit'`; a message that looks like one of these but cannot be parsed falls back
+       * to a plain `notice` instead (never this kind, and raw tag text is never shown once
+       * parsing succeeds). */
       kind: 'advisory';
       id: string;
       severity: 'nit' | 'concern' | 'blocker';

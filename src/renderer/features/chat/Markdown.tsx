@@ -69,8 +69,10 @@ function useIsDarkTheme(): boolean {
 // language inference) a tool call's Arguments/Output (T083, FR-049/FR-050): the language's name
 // when it is both known and actually highlighted, else "text" -- including when `lang` was given
 // but Shiki failed to load or highlight it (the plain-fallback branch below), so the header never
-// claims a highlight the body does not show. Meets WCAG AA contrast: same `bg-muted`/
-// `text-muted-foreground` pairing as `DiffView`'s own path header.
+// claims a highlight the body does not show. Meets WCAG AA contrast in the app's current
+// dark-only theme (docs/DESIGN.md "Look and feel": "dark only, Stuart ... I don't think I want a
+// light mode"); same `bg-muted`/`text-muted-foreground` pairing as `DiffView`'s own path header --
+// unverified for a future light theme.
 function CodeBlockHeader({ label }: { label: string }) {
   return <div className="truncate border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">{label}</div>
 }
@@ -105,6 +107,14 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
   }, [code, lang, isDark])
 
   const label = html ? lang! : 'text'
+  // Named for a screen reader and keyboard-reachable on its own (the block's content is never
+  // otherwise focusable): a sighted keyboard user who tabs to a wide block needs to know it is
+  // its own horizontally-scrolling region, not stuck reading the outer wrapper's clipped edge.
+  const regionLabel = `${label} code block`
+  // `focus-visible:ring-inset` draws the ring *inside* the scrollable element's own box instead of
+  // outside it, so the outer wrapper's `overflow-hidden` (needed to clip the body to the header's
+  // rounded corners) can never clip the ring off on the left/right/bottom.
+  const scrollableClassName = 'overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
 
   if (html) {
     // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup),
@@ -112,14 +122,20 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
     return (
       <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
         <CodeBlockHeader label={label} />
-        <div className="overflow-x-auto [&>pre]:m-0 [&>pre]:p-3" dangerouslySetInnerHTML={{ __html: html }} />
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={regionLabel}
+          className={cn(scrollableClassName, '[&>pre]:m-0 [&>pre]:p-3')}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       </div>
     )
   }
   return (
     <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
       <CodeBlockHeader label={label} />
-      <pre className="overflow-x-auto bg-card p-3">
+      <pre tabIndex={0} role="region" aria-label={regionLabel} className={cn(scrollableClassName, 'bg-card p-3')}>
         <code>{code}</code>
       </pre>
     </div>

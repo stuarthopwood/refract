@@ -334,30 +334,62 @@ export function tryBuildAgentMessageFromUnknownFrame(frame: Frame, index: number
 // ---------------------------------------------------------------------------
 
 const ADVISORY_CUSTOM_TYPE = 'advisor';
-const ADVISORY_TAG_RE = /<advisory\b([^>]*)>([\s\S]*?)<\/advisory>/g;
-const ADVISORY_ATTR_RE = /([A-Za-z][\w-]*)\s*=\s*"([^"]*)"/g;
+// The attribute list is matched structurally (each `name="..."`/`name='...'` pair, any number of
+// times) rather than with a `[^>]*` scan up to the next literal `>`: a quoted attribute value may
+// itself contain `>` or `<` (e.g. `guidance="if a > b"`), which `[^>]*` would truncate on,
+// silently leaking raw tag text past the parser (FR-051 forbids that whenever parsing succeeds).
+// Both regexes below repeat the same attribute shape (`name="..."` or `name='...'`, either quote
+// style, since real XML allows both) so a tag's attribute list and one standalone attribute parse
+// identically; `ADVISORY_ATTR_RE` only ever scans the tag regex's own capture group, never the
+// tag's raw remainder, so a quoted value (even one holding the other quote character inside it)
+// can never be re-scanned as if it were a sibling attribute.
+const ADVISORY_TAG_RE = /<advisory\b((?:\s+[A-Za-z][\w-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*>([\s\S]*?)<\/advisory>/g;
+const ADVISORY_ATTR_RE = /([A-Za-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const ADVISORY_SEVERITIES = new Set(['nit', 'concern', 'blocker']);
 
+/** A numeric character reference is only valid when it names a real Unicode scalar value: at
+ * most U+10FFFF, and never a lone surrogate (U+D800-U+DFFF, which `String.fromCodePoint` also
+ * rejects) -- `&#99999999;`/`&#x110000;` are well-formed digits but not valid code points. */
+function isValidXmlCodePoint(codePoint: number): boolean {
+  return codePoint >= 0 && codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff);
+}
+
 /** Decodes the five XML entities (plus numeric character references) valid in XML-escaped
- * attribute values/text nodes; anything else (a literal `<`/`&` that was never escaped) is left
- * untouched rather than guessed at -- this reader is strict, not forgiving. */
+ * attribute values/text nodes; anything else (a literal `<`/`&` that was never escaped, or a
+ * numeric reference whose code point is out of Unicode's valid range) is left untouched rather
+ * than guessed at -- this reader is strict, not forgiving. The digit groups are capped (7 decimal
+ * digits, 6 hex digits -- enough for the highest valid code point, 0x10FFFF/1114111) so a
+ * pathologically long numeric reference can never reach `String.fromCodePoint` at all. */
 function decodeXmlEntities(text: string): string {
-  return text.replace(/&(lt|gt|amp|quot|apos);|&#(\d+);|&#x([0-9a-fA-F]+);/g, (match, named: string | undefined, dec: string | undefined, hex: string | undefined) => {
+  return text.replace(/&(lt|gt|amp|quot|apos);|&#(\d{1,7});|&#x([0-9a-fA-F]{1,6});/g, (match, named: string | undefined, dec: string | undefined, hex: string | undefined) => {
     if (named === 'lt') return '<';
     if (named === 'gt') return '>';
     if (named === 'amp') return '&';
     if (named === 'quot') return '"';
     if (named === 'apos') return "'";
-    if (dec !== undefined) return String.fromCodePoint(Number.parseInt(dec, 10));
-    if (hex !== undefined) return String.fromCodePoint(Number.parseInt(hex, 16));
+    if (dec !== undefined) {
+      const codePoint = Number.parseInt(dec, 10);
+      return isValidXmlCodePoint(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }
+    if (hex !== undefined) {
+      const codePoint = Number.parseInt(hex, 16);
+      return isValidXmlCodePoint(codePoint) ? String.fromCodePoint(codePoint) : match;
+    }
     return match;
   });
 }
 
-function parseAdvisoryAttrs(attrSource: string): Record<string, string> {
+/** Reads one tag's attribute-list capture group (never the tag's raw remainder -- see the regex
+ * comment above) into a name->value map; XML forbids repeating an attribute name on one element,
+ * so a duplicate here means the source was never well-formed and the whole element must be
+ * treated as a parse failure (`undefined`), not silently keep whichever value matched last. */
+function parseAdvisoryAttrs(attrSource: string): Record<string, string> | undefined {
   const attrs: Record<string, string> = {};
   for (const match of attrSource.matchAll(ADVISORY_ATTR_RE)) {
-    attrs[match[1]!] = decodeXmlEntities(match[2]!);
+    const name = match[1]!;
+    if (Object.prototype.hasOwnProperty.call(attrs, name)) return undefined;
+    const rawValue = match[2] !== undefined ? match[2] : match[3]!;
+    attrs[name] = decodeXmlEntities(rawValue);
   }
   return attrs;
 }
@@ -368,14 +400,20 @@ type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>;
  * several per message are possible (FR-051) -- `[]` when none are found at all, the caller's cue
  * that `content` is not advisory-shaped and should fall through to the existing `custom`-message
  * handling instead. An unknown/missing `severity` attribute reads as `'nit'` (FR-051); text and
- * attribute values are XML-unescaped, never interpreted as HTML. */
+ * attribute values are XML-unescaped, never interpreted as HTML. The real OMP 18.5.1 advisor
+ * producer writes the turns-ago attribute as `turns_ago` (snake_case, confirmed against real
+ * on-disk session data -- see the T084 note in tasks.md), not `turnsAgo`; `turnsAgo` stays the
+ * camelCase field name on the TypeScript `TranscriptItem` itself. An element whose attribute list
+ * repeats a name is dropped (see `parseAdvisoryAttrs`), same as one the tag regex cannot match at
+ * all -- both are parse failures, not a render with a guessed/overwritten value. */
 function parseAdvisoryElements(messageId: string, content: string): AdvisoryItem[] {
   const items: AdvisoryItem[] = [];
   let index = 0;
   for (const match of content.matchAll(ADVISORY_TAG_RE)) {
     const attrs = parseAdvisoryAttrs(match[1]!);
+    if (attrs === undefined) continue;
     const severity = ADVISORY_SEVERITIES.has(attrs.severity ?? '') ? (attrs.severity as AdvisoryItem['severity']) : 'nit';
-    const turnsAgo = attrs.turnsAgo !== undefined && /^\d+$/.test(attrs.turnsAgo) ? Number.parseInt(attrs.turnsAgo, 10) : undefined;
+    const turnsAgo = attrs.turns_ago !== undefined && /^\d+$/.test(attrs.turns_ago) ? Number.parseInt(attrs.turns_ago, 10) : undefined;
     items.push({
       kind: 'advisory',
       id: `${messageId}:${index}`,
@@ -390,18 +428,28 @@ function parseAdvisoryElements(messageId: string, content: string): AdvisoryItem
   return items;
 }
 
-/** Returns the parsed `advisory` item(s) when `message` looks like an OMP advisory note (its own
- * `customType: 'advisor'`, or at least one literal `<advisory` substring in `content` as a
- * defensive fallback), `undefined` when it is not one at all. FR-051: "raw tag text MUST NOT be
- * shown when parsing succeeds; text that cannot be parsed MUST show as a generic baseline line
- * instead" -- so a message that looks like an advisory but yields zero well-formed elements
- * becomes a plain `notice` (never silently dropped, and never rendered as a structured
- * `advisory` with raw tag text showing through). */
+/** Returns the parsed `advisory` item(s) when `message` carries OMP's own confirmed wire shape
+ * for one (`customType: 'advisor'`, FINDINGS item 22(f)), `undefined` when it does not. Gating on
+ * `customType` alone -- not also on a `/<advisory\b/` substring anywhere in `content` -- matters:
+ * that substring fallback used to let ANY `custom` message whose content merely quoted the literal
+ * text `<advisory` (an agent-message, a `display: true` extension message, anything) get parsed
+ * and rendered as a spoofed advisory line, stealing the message away from whatever its own real
+ * kind was (e.g. `tryBuildAgentMessage`, called after this one, never even got a chance to claim
+ * it). FR-051: "raw tag text MUST NOT be shown when parsing succeeds; text that cannot be parsed
+ * MUST show as a generic baseline line instead" -- so a confirmed advisory message that yields
+ * zero well-formed elements, or whose parsing throws for any reason (defence in depth: a crafted
+ * numeric character reference or similar should never be able to crash the transcript builder),
+ * becomes a plain `notice` instead, never silently dropped and never a structured `advisory` with
+ * raw tag text showing through. */
 function tryBuildAdvisoryItems(messageId: string, message: OmpCustomMessage): TranscriptItem[] | undefined {
-  const looksLikeAdvisory = message.customType === ADVISORY_CUSTOM_TYPE || /<advisory\b/.test(message.content);
-  if (!looksLikeAdvisory) return undefined;
-  const parsed = parseAdvisoryElements(messageId, message.content);
-  if (parsed.length > 0) return parsed;
+  if (message.customType !== ADVISORY_CUSTOM_TYPE) return undefined;
+  try {
+    const parsed = parseAdvisoryElements(messageId, message.content);
+    if (parsed.length > 0) return parsed;
+  } catch {
+    // Falls through to the generic notice below -- any parse exception is still FR-051's
+    // "text that does not parse" case, not an uncaught error that takes down the transcript.
+  }
   return [{ kind: 'notice', id: messageId, level: 'info', text: message.content }];
 }
 

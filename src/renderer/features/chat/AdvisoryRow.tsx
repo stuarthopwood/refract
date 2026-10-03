@@ -14,7 +14,9 @@ const ADVISORY_ICON = {
 
 // Never colour alone (T080/WCAG 2.1 AA, matching `ToolRow`'s `StatusIcon`/`NoticeRow`'s own
 // icon-plus-label pattern): a distinct icon shape plus the severity word below are the real cue,
-// this colour just reinforces it.
+// this colour just reinforces it. These tokens also meet WCAG AA contrast against the app's
+// current dark-only background (docs/DESIGN.md "Look and feel"); unverified for a future light
+// theme.
 const ADVISORY_CLASS = {
   blocker: 'text-destructive',
   concern: 'text-state-needs-you',

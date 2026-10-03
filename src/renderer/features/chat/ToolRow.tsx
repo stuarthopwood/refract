@@ -108,12 +108,21 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
       )}
       <div>
         <div className="mb-1 text-xs font-medium text-muted-foreground">Arguments</div>
-        <CodeBlock code={argumentsBlock.code} lang={argumentsBlock.lang} />
+        {/* `max-h-64 overflow-auto` restores the height cap `ToolCallBody` always had before T083
+         * moved this onto the shared `CodeBlock` (which, per FR-049, scrolls sideways but never
+         * caps its own height -- correct for a markdown fence, but a 200-line tool call's own
+         * Arguments/Output still needs its own vertical scroll so one row can never force the
+         * whole transcript to scroll past a screen's worth of code, WCAG 1.4.10). */}
+        <div className="max-h-64 overflow-auto rounded-lg">
+          <CodeBlock code={argumentsBlock.code} lang={argumentsBlock.lang} />
+        </div>
       </div>
       {outputBlock != null && (
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">Output</div>
-          <CodeBlock code={visibleOutputCode} lang={outputBlock.lang} />
+          <div className="max-h-64 overflow-auto rounded-lg">
+            <CodeBlock code={visibleOutputCode} lang={outputBlock.lang} />
+          </div>
           {truncated && (
             <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAllOutput(true)}>
               Show all ({outputLines.length} lines)
