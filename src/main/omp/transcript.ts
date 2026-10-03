@@ -559,7 +559,7 @@ function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndF
 
 function applyPromptResultNotice(items: TranscriptItem[], frame: PromptResultFrame): TranscriptItem[] {
   if (frame.status === 'error') {
-    const text = frame.error ?? 'Prompt failed.';
+    const text = typeof frame.error === 'string' ? frame.error : (frame.error?.message ?? 'Prompt failed.');
     return [...items, { kind: 'notice', id: `notice-${items.length}`, level: 'error', text }];
   }
   if (frame.status === 'aborted') {

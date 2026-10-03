@@ -253,13 +253,22 @@ export interface QueueUpdateFrame {
   steering: string[];
 }
 
+export interface PromptResultError {
+  message: string;
+  provider?: string;
+  model?: string;
+  httpStatus?: number;
+  retryable?: boolean;
+}
+
 export interface PromptResultFrame {
   type: 'prompt_result';
   id: string;
   agentInvoked: boolean;
   status: 'completed' | 'aborted' | 'error';
   sessionSettled?: boolean;
-  error?: string;
+  /** Per `rpc.md`: a structured object, not a string, when `status === 'error'`. */
+  error?: string | PromptResultError;
 }
 
 export interface SessionSettledFrame {

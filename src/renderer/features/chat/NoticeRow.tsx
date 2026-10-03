@@ -42,7 +42,12 @@ interface NoticeRowProps {
 // nothing to expand, a long one (or any embedded line break) expands to the full text, capped at
 // about 12 lines, so it never floods the transcript between the surrounding answers. The level's
 // icon shape, not colour alone, is the non-colour cue (info/warning/error).
-export function NoticeRow({ level, text }: NoticeRowProps) {
+export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
+  // Defense in depth: `text` is typed `string`, but a malformed upstream producer (e.g. a
+  // structured RPC error object slipping past a type error) must never crash the whole chat
+  // pane via `.length`/`.includes` on a non-string -- this is exactly the bug FINDINGS recorded
+  // for `applyPromptResultNotice`, now fixed at the source, but this guard stays cheap insurance.
+  const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText)
   const Icon = NOTICE_ICON[level]
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
   const icon = (
