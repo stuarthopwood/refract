@@ -151,9 +151,11 @@ interface ProgressEntry {
 }
 
 /** `pending` (still running) is the only status FINDINGS item 22(e) actually observed; any other
- * string is treated as a plain completion/failure signal defensively. */
+ * string is treated as a plain completion/failure signal defensively. The installed omp 18.5.1
+ * binary's own job records use `'failed'`/`'cancelled'` (direct binary inspection, 2026-10-03):
+ * both, plus `'error'`/`'aborted'`, must map to `error`, never fall through to `done`. */
 function mapProgressStatus(status: unknown): 'running' | 'done' | 'error' {
-  if (status === 'failed' || status === 'error') return 'error';
+  if (status === 'failed' || status === 'error' || status === 'cancelled' || status === 'aborted') return 'error';
   if (status === 'pending') return 'running';
   return status === undefined ? 'running' : 'done';
 }
@@ -206,6 +208,10 @@ interface JobEntry {
   status?: unknown;
   resultText?: unknown;
   schema?: { data?: unknown };
+  /** The installed omp 18.5.1 binary's own failed/cancelled job records carry this (direct
+   * binary inspection, 2026-10-03): the real error text, preferred over `label` whenever the job
+   * did not succeed. */
+  errorText?: unknown;
 }
 
 function safeStringify(value: unknown): string {
@@ -236,17 +242,23 @@ function applyAsyncResultJobs(items: TranscriptItem[], jobs: JobEntry[]): Transc
     const job = byJobId ?? (item.jobId === undefined ? jobs.find((j) => typeof j.label === 'string' && j.label === item.name) : undefined);
     if (!job) return item;
     if (job.status === 'pending' || job.status === 'running') return item;
+    // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'` (direct
+    // binary inspection, 2026-10-03): both, plus `'error'`/`'aborted'`, must flip the row to
+    // `error`, never render a failed/cancelled subagent as a green-check `done`.
+    const failed = job.status === 'failed' || job.status === 'error' || job.status === 'cancelled' || job.status === 'aborted';
     const resultText =
-      typeof job.resultText === 'string'
-        ? job.resultText
-        : job.schema && typeof job.schema === 'object' && 'data' in job.schema
-          ? safeStringify(job.schema.data)
-          : typeof job.label === 'string'
-            ? job.label
-            : item.result;
+      failed && typeof job.errorText === 'string'
+        ? job.errorText
+        : typeof job.resultText === 'string'
+          ? job.resultText
+          : job.schema && typeof job.schema === 'object' && 'data' in job.schema
+            ? safeStringify(job.schema.data)
+            : typeof job.label === 'string'
+              ? job.label
+              : item.result;
     return {
       ...item,
-      status: 'done',
+      status: failed ? 'error' : 'done',
       durationMs: typeof job.durationMs === 'number' ? job.durationMs : item.durationMs,
       result: resultText,
       jobId: (typeof job.jobId === 'string' ? job.jobId : typeof job.id === 'string' ? job.id : undefined) ?? item.jobId,

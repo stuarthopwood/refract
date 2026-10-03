@@ -30,14 +30,16 @@ function StatusIcon({ status }: { status: RowStatus }) {
   )
 }
 
-interface ToolRowProps {
+interface ToolCallBodyProps {
   item: ToolItem
 }
 
-// One compact row per tool call, built on the T080 baseline (docs/DESIGN.md "Chat"); expanding
-// shows arguments, output, and (for `edit`/`write` results) a diff. Arguments and output are
-// always plain text (constitution V).
-export function ToolRow({ item }: ToolRowProps) {
+// The expansion content for one tool call: arguments, output, and (for `edit`/`write` results) a
+// diff. Arguments and output are always plain text (constitution V). Split out from the row
+// wrapper so `ToolGroupRow` can reuse the same content for a solo call (no nested `CollapsedLine`)
+// and for each call inside a multi-call group (its own nested `CollapsedLine` via `ToolCallRow`
+// below) without ever changing the *wrapper* element type at a given tree position.
+function ToolCallBody({ item }: ToolCallBodyProps) {
   const [showAllOutput, setShowAllOutput] = React.useState(false)
   const [showAllWrite, setShowAllWrite] = React.useState(false)
 
@@ -55,12 +57,7 @@ export function ToolRow({ item }: ToolRowProps) {
   const visibleWrite = writeTruncated ? writeLines.slice(0, OUTPUT_LINE_CAP) : writeLines
 
   return (
-    <CollapsedLine
-      icon={<StatusIcon status={item.status} />}
-      label={item.tool}
-      summary={item.target}
-      meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
-    >
+    <>
       {item.edit && <DiffView path={item.edit.path} oldText={item.edit.oldText} newText={item.edit.newText} />}
       {item.write && (
         <div>
@@ -96,6 +93,25 @@ export function ToolRow({ item }: ToolRowProps) {
           )}
         </div>
       )}
+    </>
+  )
+}
+
+interface ToolCallRowProps {
+  item: ToolItem
+}
+
+// One compact row per tool call, used only for each call nested inside an expanded multi-call
+// group (never at the top-level tree position `ToolGroupRow` itself occupies).
+function ToolCallRow({ item }: ToolCallRowProps) {
+  return (
+    <CollapsedLine
+      icon={<StatusIcon status={item.status} />}
+      label={item.tool}
+      summary={item.target}
+      meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
+    >
+      <ToolCallBody item={item} />
     </CollapsedLine>
   )
 }
@@ -104,24 +120,43 @@ interface ToolGroupRowProps {
   group: ToolGroup
 }
 
-// A collapsed run of consecutive calls to the same tool (T074, docs/DESIGN.md "Chat"): the
-// group's own status is running while any call runs, else failed when any call failed; the
-// summary is the last call's target plus "+ N others" (", N failed" appended, text not colour,
-// when any failed). Expanding shows each call as its own expandable `ToolRow`.
+// A collapsed run of consecutive calls to the same tool (T074, docs/DESIGN.md "Chat"). Always
+// renders exactly one top-level `CollapsedLine`, whatever the run's length, so this never changes
+// element type at this tree position when a run grows from one call to two or more (FIX: focus
+// and expansion used to be lost the moment a second call arrived -- first because a lone call and
+// a run rendered through two different components, `ToolRow` vs `ToolGroupRow`, then because this
+// function's own single-call branch still returned a *different* top-level element, `ToolCallRow`,
+// than its multi-call branch's `CollapsedLine`; both cases make React unmount/remount the
+// Collapsible that holds the trigger's focus and open state; see `groupToolItems`, which now
+// always hands this a `ToolGroup`, even for a run of one). A one-item group's `CollapsedLine` gets
+// the same label/summary/meta a lone call used to show, with that call's own body as the content
+// (no "+ N others" summary, no extra nesting). A multi-item group's own status is running while
+// any call runs, else failed when any call failed; the summary is the last call's target plus
+// "+ N others" (", N failed" appended, text not colour, when any failed), and only the *children*
+// of this one `CollapsedLine` -- never its own presence or type -- switch to the per-call list.
 export function ToolGroupRow({ group }: ToolGroupRowProps) {
+  const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
   const status: RowStatus = group.items.some((item) => item.status === 'running') ? 'running' : failedCount > 0 ? 'error' : 'done'
   const last = group.items[group.items.length - 1]!
   const othersCount = group.items.length - 1
-  const summary = `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}${failedCount > 0 ? `, ${failedCount} failed` : ''}`
+  const label = solo ? last.tool : group.tool
+  const summary = solo
+    ? last.target
+    : `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}${failedCount > 0 ? `, ${failedCount} failed` : ''}`
+  const meta = solo && last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
 
   return (
-    <CollapsedLine icon={<StatusIcon status={status} />} label={group.tool} summary={summary}>
-      <div className="space-y-1">
-        {group.items.map((item) => (
-          <ToolRow key={item.id} item={item} />
-        ))}
-      </div>
+    <CollapsedLine icon={<StatusIcon status={status} />} label={label} summary={summary} meta={meta}>
+      {solo ? (
+        <ToolCallBody item={last} />
+      ) : (
+        <div className="space-y-1">
+          {group.items.map((item) => (
+            <ToolCallRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
     </CollapsedLine>
   )
 }

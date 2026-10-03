@@ -15,7 +15,7 @@ import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { CollapsedLine } from './CollapsedLine'
 import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
-import { ToolGroupRow, ToolRow, SubagentRow } from './ToolRow'
+import { ToolGroupRow, SubagentRow } from './ToolRow'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { NoticeRow } from './NoticeRow'
 
@@ -195,7 +195,11 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
         if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
         return <AskQuestionRow item={item} userName={userName} />
       }
-      return <ToolRow item={item} />
+      // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
+      // normally occur: `groupToolItems` wraps every run, including a run of one, in a
+      // `ToolGroup` before this renders). Wrapped as a one-item group so this still renders
+      // through the same `ToolGroupRow` component type as the grouped path above.
+      return <ToolGroupRow group={{ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] }} />
 
     case 'subagent':
       return <SubagentRow item={item} />

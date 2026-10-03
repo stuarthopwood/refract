@@ -16,26 +16,25 @@ export function isToolGroup(item: GroupedTranscriptItem): item is ToolGroup {
 }
 
 // Merges runs of adjacent `tool` items that share the same `tool` name into one `ToolGroup`
-// (T074, docs/DESIGN.md "Chat"). A run of one stays a plain `tool` item (so `ToolRow` renders it
-// unchanged). `ask` never groups: T073 gives every `ask` call its own dedicated question
-// rendering, never a generic collapsed-tool-call summary. A thinking line, a request, a notice,
-// an agent-message, a subagent row, or a different tool name all end the current run.
+// (T074, docs/DESIGN.md "Chat"). Every run -- including a run of one -- becomes a `ToolGroup`
+// (see `flushRun`): `TranscriptRow` must never switch between rendering a lone call and a run
+// through two different React component types at the same tree position, or a focused/expanded
+// row loses focus the moment a second call arrives (FINDINGS: focus loss on tool-call grouping).
+// `ask` never groups: T073 gives every `ask` call its own dedicated question rendering, never a
+// generic collapsed-tool-call summary. A thinking line, a request, a notice, an agent-message, a
+// subagent row, or a different tool name all end the current run.
 export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[] {
   const result: GroupedTranscriptItem[] = []
   let run: ToolItem[] = []
 
   const flushRun = () => {
     if (run.length === 0) return
-    if (run.length === 1) {
-      result.push(run[0]!)
-    } else {
-      // Keyed by the run's first item's own id (never a `group:`-prefixed id): a keyboard user
-      // focused or expanded on this row must not lose that state to an unmount/remount when a
-      // second consecutive call to the same tool arrives and the row transitions from a plain
-      // `tool` item to a `ToolGroup` (or back), since React's reconciliation keys both render
-      // shapes by `row.id` in Transcript.tsx.
-      result.push({ kind: 'tool-group', id: run[0]!.id, tool: run[0]!.tool, items: run })
-    }
+    // Always a `ToolGroup`, even for a run of one: `ToolGroupRow` renders a single-item group
+    // identically to how a lone call once rendered, so the component type at this tree position
+    // never changes when a second consecutive call to the same tool arrives. Keyed by the run's
+    // first item's own id (never a `group:`-prefixed id) so a keyboard user focused or expanded
+    // on this row keeps that state as the run grows.
+    result.push({ kind: 'tool-group', id: run[0]!.id, tool: run[0]!.tool, items: run })
     run = []
   }
 
