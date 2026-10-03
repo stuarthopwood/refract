@@ -15,9 +15,10 @@ import type { Check, Readiness } from '../shared/ipc';
 
 const execFileAsync = promisify(execFile);
 
-// contracts/omp-usage.md's version rule: any 18.4.x patch is supported (FINDINGS item 15
-// covers 18.4.4 and 18.4.5); only the major.minor pair is pinned.
-const OMP_VERSION_SUPPORTED_RE = /^18\.4\.\d+$/;
+// contracts/omp-usage.md's version rule: any 18.4.x or 18.5.x patch is supported (FINDINGS
+// item 15 covers 18.4.4 and 18.4.5; item 29 covers 18.5.1, constitution Principle IV); only
+// the major and minor-range are pinned.
+const OMP_VERSION_SUPPORTED_RE = /^18\.(4|5)\.\d+$/;
 const OMP_VERSION_RE = /(\d+\.\d+\.\d+)/;
 
 // contracts/ipc.md "Readiness": the fixed hint shown whenever the sign-in probe cannot confirm

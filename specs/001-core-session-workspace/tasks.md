@@ -2,7 +2,7 @@
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md), [contracts/](contracts/), [quickstart.md](quickstart.md)
 
-**Prerequisites**: OMP 18.4.x signed in; Git for Windows; Node 24+; `pnpm`. Windows 11 only.
+**Prerequisites**: OMP 18.4.x or 18.5.x signed in; Git for Windows; Node 24+; `pnpm`. Windows 11 only.
 
 **Tests**: none. Refract is a prototype (constitution, Development Workflow). Each phase ends with a **Checkpoint** that runs the matching [quickstart.md](quickstart.md) section by hand. `pnpm typecheck` and `pnpm build` MUST pass before a change lands on `main`.
 

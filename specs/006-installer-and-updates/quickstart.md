@@ -8,7 +8,7 @@ app. Requirement and story numbers refer to [spec.md](spec.md); data and protoco
 
 - Windows 11, a clean (or disposable VM) profile with no Refract, Git, or OMP installed, for
   Stories 1, 2, and 4.
-- A second, ordinary developer profile with Git, OMP 18.4.x, and the signed-in GitHub CLI already
+- A second, ordinary developer profile with Git, OMP 18.4.x or 18.5.x, and the signed-in GitHub CLI already
   present, for Story 3 (updates) and the readiness checklist's happy path.
 - A private GitHub Release, published by Story 5's own workflow against a scratch tag, carrying an
   installer and checksum asset newer than the currently installed build, for Story 3.
@@ -36,7 +36,7 @@ app. Requirement and story numbers refer to [spec.md](spec.md); data and protoco
 2. Select Install next to Git. Expect: progress shows, then an outcome; the checklist re-checks
    itself and Git shows found, with no administrator prompt from Refract itself (Git's own
    installer may still show one; `research.md` decision 6 names which this build uses).
-3. Select Install next to OMP. Expect: progress, then found on a supported `18.4.x` version; the
+3. Select Install next to OMP. Expect: progress, then found on a supported `18.4.x`/`18.5.x` version; the
    OMP sign-in step still shows its existing manual hint, never completed automatically.
 4. Leave the GitHub CLI missing. Expect: **Add repository** is still enabled once Git, OMP, and
    sign-in all pass.

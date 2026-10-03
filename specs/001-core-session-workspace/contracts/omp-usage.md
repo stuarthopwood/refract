@@ -138,5 +138,5 @@ Probed with `predict-word-probe.mjs` against an isolated, credential-free profil
 | Unparseable stdout line | Log it and continue (never crash the reader) |
 | Chunk validation error | Fail the current request, log, keep the process |
 | `success:false` response | Add an error `notice` naming the command; do not change status |
-| `omp --version` is not `18.4.x` | Readiness check fails and names the version found (FR-036). Supporting another minor/major version is a constitution amendment after the probes are rerun (Principle IV). |
+| `omp --version` is not `18.4.x` or `18.5.x` | Readiness check fails and names the version found (FR-036). Supporting another minor/major version is a constitution amendment after the probes are rerun (Principle IV). |
 | Worktree folder missing at open | `stopped`, `worktree-missing`, offer Recreate, Archive, Delete (FR-035); the agent is not started |

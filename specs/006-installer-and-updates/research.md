@@ -169,8 +169,9 @@ and re-running `readiness.check()` on completion (FR-005, FR-006).
   action invokes `powershell -NoProfile -NonInteractive -Command "& ([scriptblock]::Create((irm
   https://omp.sh/install.ps1))) -Binary -Ref <pinned-tag>"` (resolved via `resolvePowerShell()`,
   `src/main/process/executables.ts`). A found-but-unsupported existing OMP is left alone — the
-  Install action always targets the pinned 18.4.x tag, never "whatever is latest", so it can only
-  ever add or replace the standalone binary with a supported one, never silently upgrade past it.
+  Install action always targets the pinned supported-line tag (18.4.x or 18.5.x), never "whatever
+  is latest", so it can only ever add or replace the standalone binary with a supported one, never
+  silently upgrade past it.
 
 **UNVERIFIED (probe, T001, first task — constitution IV, and the spec's own Assumptions call this
 out explicitly)**: whether the exact tag name OMP's GitHub releases use matches what
@@ -188,11 +189,11 @@ up) when that direct path is itself not where OMP reports it installs.
 ## 7. OMP version pinning policy
 
 **Decision**: the Install action for OMP always targets the newest tag matching the supported
-`18.4.x` line (the same `OMP_VERSION_SUPPORTED_RE` pattern already in `src/main/readiness.ts`),
+`18.4.x`/`18.5.x` line (the same `OMP_VERSION_SUPPORTED_RE` pattern already in `src/main/readiness.ts`),
 resolved once at build time as a constant (for example `OMP_PINNED_TAG`), not "whatever `-Ref`
 defaults to" (which would be bun-or-latest-binary, an unpinned, unsupported version per
 constitution IV and the spec's Assumptions: "never run OMP's own self-update to the latest
-version"). If the probe (decision 6) finds no tag cleanly maps to a reported `18.4.x` version, the
+version"). If the probe (decision 6) finds no tag cleanly maps to a reported `18.4.x`/`18.5.x` version, the
 fallback is to run the plain `Install-Binary` default (latest) and then immediately re-run
 `readiness.check()`: if the result is unsupported, the Install action reports failure with an
 actionable message rather than ever leaving an unsupported version looking like success (FR-007,

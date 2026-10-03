@@ -4,7 +4,7 @@ Refract is a prototype with no automated tests. Each check below is a manual run
 
 ## Prerequisites
 
-- Everything in spec 001's quickstart.md Prerequisites (Windows 11, Git for Windows, Node 24+, `pnpm`, `omp` 18.4.x signed in).
+- Everything in spec 001's quickstart.md Prerequisites (Windows 11, Git for Windows, Node 24+, `pnpm`, `omp` 18.4.x or 18.5.x signed in).
 - The GitHub CLI (`gh`) on `PATH`, signed in (`gh auth status` shows an active account) (FR-027).
 - A repository already added to Refract whose `origin` remote points at a real GitHub repository, with:
   - at least one open pull request with an unresolved review thread, a label, and a reviewer or assignee;

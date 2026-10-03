@@ -1,7 +1,7 @@
 # Contract: how Refract uses OMP — Session readout additions
 
 Extends spec 001's contract (`specs/001-core-session-workspace/contracts/omp-usage.md`). This
-spec reads three OMP behaviours that are **unverified on the supported version (18.4.x)** per
+spec reads three OMP behaviours that are **unverified on the supported version (18.4.x or 18.5.x)** per
 constitution IV; each is resolved by a Phase 1 probe task in `tasks.md`, which updates this file
 with the exact field or frame name once run. Nothing below is a field name yet — these are the
 questions the probes answer, not an assumed answer.

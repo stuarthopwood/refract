@@ -18,7 +18,7 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 |---|---|
 | `readiness.check()` | `{ git: Check; omp: Check; ompSignedIn: Check }`, `Check = { ok: boolean; found?: string; hint?: string }` |
 
-`omp` is ok only when `omp --version` matches `18.4.x`. `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also appears in `get_available_models` (`docs/spike/signed-in-probe.mjs`, FINDINGS item 15, 2026-09-30): that checks the default model can actually run, not merely that some credential is authenticated. `get_login_providers` is used only to build the failure hint, never as the primary check. On failure, `hint` is `"Run omp, complete /login, then Re-check."`, optionally followed by `" Not signed in: <provider ids>."` when `get_login_providers` names unauthenticated providers.
+`omp` is ok only when `omp --version` matches `18.4.x` or `18.5.x`. `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also appears in `get_available_models` (`docs/spike/signed-in-probe.mjs`, FINDINGS item 15, 2026-09-30): that checks the default model can actually run, not merely that some credential is authenticated. `get_login_providers` is used only to build the failure hint, never as the primary check. On failure, `hint` is `"Run omp, complete /login, then Re-check."`, optionally followed by `" Not signed in: <provider ids>."` when `get_login_providers` names unauthenticated providers.
 
 ### Repositories (FR-001)
 

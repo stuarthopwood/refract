@@ -5,7 +5,7 @@ Refract is a prototype with no automated tests. Each check below is a manual run
 ## Prerequisites
 
 - Windows 11, Git for Windows, Node 24 or newer, `pnpm`.
-- `omp` 18.4.x on `PATH` and signed in (`omp --version` prints `omp/18.4.x`).
+- `omp` 18.4.x or 18.5.x on `PATH` and signed in (`omp --version` prints `omp/18.4.x` or `omp/18.5.x`).
 - A scratch git repository with at least one commit and a `main` branch:
   `git init scratch && cd scratch && git commit --allow-empty -m init`.
 - Budget memory: each live Session uses about 1.1 to 1.9 GB (FINDINGS item 13). Close other heavy `omp` sessions before the multi-session checks.
@@ -23,7 +23,7 @@ pnpm build        # must pass before a change lands on main
 
 **Story 1: start a session and chat (FR-001 to FR-012)**
 
-1. First launch shows the readiness checklist; **Add repository** is enabled only when git, `omp` 18.4.x, and sign-in all pass.
+1. First launch shows the readiness checklist; **Add repository** is enabled only when git, `omp` 18.4.x or 18.5.x, and sign-in all pass.
 2. Add the scratch repository and click its **+** button. Expect: a folder under `<scratch>/../pinion-worktrees/scratch/<name>` on a new branch of the same name created from the default branch, and the Session in the list under a generated name, selected and open. Double-click **+**: exactly one more Session. Click the branch button, pick another Base branch, and choose **Create session**: the new Session starts from that branch and is selected and open; **Cancel** creates nothing and returns focus to the branch button. Rename the default branch in the scratch repository (`git branch -m main trunk`) and click **+**: a toast says `Base branch not found: main` and no Session is added.
 3. Send "List the files in this repo". Expect: text streams in, tool calls appear as one compact row each, and the Session returns to idle.
 4. Send a long request, press **Ctrl+Shift+X**. Expect: the turn ends within 3 s and the next message is accepted with no "already processing" error. The Stop button shows no key badges; hovering or focusing it shows the tooltip "Stop (Ctrl+Shift+X)".

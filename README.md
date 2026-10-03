@@ -13,7 +13,7 @@ Spec 001 (core session workspace) is implemented: sessions per git worktree, cha
 - Windows 11.
 - Node 24 or newer, with `pnpm`.
 - Git for Windows.
-- `omp` 18.4.x on `PATH`, signed in (`omp --version` prints `omp/18.4.x`).
+- `omp` 18.4.x or 18.5.x on `PATH`, signed in (`omp --version` prints `omp/18.4.x` or `omp/18.5.x`).
 
 ## Running
 

@@ -30,7 +30,7 @@ meaning:
 | Dependency | Checked by | `ok` means |
 |---|---|---|
 | `git` | existing `checkGit()` | `git --version` resolves on PATH (unchanged). |
-| `omp` | existing `checkOmp()` | found and on the supported `18.4.x` line (unchanged). |
+| `omp` | existing `checkOmp()` | found and on the supported `18.4.x`/`18.5.x` line (unchanged). |
 | `ompSignedIn` | existing `checkOmpSignedIn()` | unchanged (manual hand-off, FR-009). |
 | `github` (new) | `checkGithubCli()` | `gh --version` resolves on PATH **and** `gh auth status` reports a signed-in account; never required for `allPass` (FR-008). |
 

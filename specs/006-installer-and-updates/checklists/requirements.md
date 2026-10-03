@@ -26,7 +26,7 @@ not that any code exists.
 
 - [x] CHK007 "Without administrator rights" (FR-001, FR-011) is a binary, checkable condition, not
   a vague quality word.
-- [x] CHK008 "A supported 18.4.x version only" (FR-005, FR-007) is a precise, checkable version
+- [x] CHK008 "A supported 18.4.x/18.5.x version only" (FR-005, FR-007) is a precise, checkable version
   range, consistent with the constitution's Principle IV OMP version pin.
 - [x] CHK009 SC-001 to SC-010 each give a concrete, checkable condition (a time bound, a
   percentage, or a 100%-of-cases statement) rather than an unquantified adjective.

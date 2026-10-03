@@ -7,7 +7,7 @@ unchanged from spec 001's quickstart.
 
 ## Prerequisites
 
-- Everything in spec 001's quickstart (Windows 11, `omp` 18.4.x signed in, a scratch repository).
+- Everything in spec 001's quickstart (Windows 11, `omp` 18.4.x or 18.5.x signed in, a scratch repository).
 - Spec 001 tasks T098 (Approval mode pill / chip row) and T068 (`sessions.diffStat`) already on
   `main`: this spec's chip row has nothing to attach to otherwise.
 - The GitHub CLI (`gh`) signed in, and a scratch branch pushed with an open pull request, for the
