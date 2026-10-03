@@ -18,6 +18,7 @@ import type {
   ToolExecutionStartFrame,
 } from '../../shared/frames';
 import { isKnownFrame } from '../../shared/frames';
+import { HIDDEN_TOOLS, HIDDEN_TOOL_NOTICE_PREFIX } from '../../shared/model';
 import type { TranscriptItem } from '../../shared/model';
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -324,6 +325,98 @@ export function tryBuildAgentMessageFromUnknownFrame(frame: Frame, index: number
   return { kind: 'agent-message', id: `agent-message:frame-${index}`, from, to, text, at: Date.now() };
 }
 
+// ---------------------------------------------------------------------------
+// Advisory notes (T084, FR-051). FINDINGS item 22(f): a read-only scan of existing session files
+// found every `<advisory>` note arrives as a `role: 'custom'` message with `customType: 'advisor'`
+// (no separate legacy shape observed). Unlike `tryBuildAgentMessage`'s deliberately fuzzy
+// field-name guessing above (an unconfirmed wire shape), the attribute names here are read
+// strictly -- exact names only, no aliasing -- since this shape is confirmed.
+// ---------------------------------------------------------------------------
+
+const ADVISORY_CUSTOM_TYPE = 'advisor';
+const ADVISORY_TAG_RE = /<advisory\b([^>]*)>([\s\S]*?)<\/advisory>/g;
+const ADVISORY_ATTR_RE = /([A-Za-z][\w-]*)\s*=\s*"([^"]*)"/g;
+const ADVISORY_SEVERITIES = new Set(['nit', 'concern', 'blocker']);
+
+/** Decodes the five XML entities (plus numeric character references) valid in XML-escaped
+ * attribute values/text nodes; anything else (a literal `<`/`&` that was never escaped) is left
+ * untouched rather than guessed at -- this reader is strict, not forgiving. */
+function decodeXmlEntities(text: string): string {
+  return text.replace(/&(lt|gt|amp|quot|apos);|&#(\d+);|&#x([0-9a-fA-F]+);/g, (match, named: string | undefined, dec: string | undefined, hex: string | undefined) => {
+    if (named === 'lt') return '<';
+    if (named === 'gt') return '>';
+    if (named === 'amp') return '&';
+    if (named === 'quot') return '"';
+    if (named === 'apos') return "'";
+    if (dec !== undefined) return String.fromCodePoint(Number.parseInt(dec, 10));
+    if (hex !== undefined) return String.fromCodePoint(Number.parseInt(hex, 16));
+    return match;
+  });
+}
+
+function parseAdvisoryAttrs(attrSource: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  for (const match of attrSource.matchAll(ADVISORY_ATTR_RE)) {
+    attrs[match[1]!] = decodeXmlEntities(match[2]!);
+  }
+  return attrs;
+}
+
+type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>;
+
+/** Parses every `<advisory ...>note</advisory>` element out of `content` into its own item --
+ * several per message are possible (FR-051) -- `[]` when none are found at all, the caller's cue
+ * that `content` is not advisory-shaped and should fall through to the existing `custom`-message
+ * handling instead. An unknown/missing `severity` attribute reads as `'nit'` (FR-051); text and
+ * attribute values are XML-unescaped, never interpreted as HTML. */
+function parseAdvisoryElements(messageId: string, content: string): AdvisoryItem[] {
+  const items: AdvisoryItem[] = [];
+  let index = 0;
+  for (const match of content.matchAll(ADVISORY_TAG_RE)) {
+    const attrs = parseAdvisoryAttrs(match[1]!);
+    const severity = ADVISORY_SEVERITIES.has(attrs.severity ?? '') ? (attrs.severity as AdvisoryItem['severity']) : 'nit';
+    const turnsAgo = attrs.turnsAgo !== undefined && /^\d+$/.test(attrs.turnsAgo) ? Number.parseInt(attrs.turnsAgo, 10) : undefined;
+    items.push({
+      kind: 'advisory',
+      id: `${messageId}:${index}`,
+      severity,
+      ...(attrs.advisor !== undefined ? { advisor: attrs.advisor } : {}),
+      ...(turnsAgo !== undefined ? { turnsAgo } : {}),
+      ...(attrs.guidance !== undefined ? { guidance: attrs.guidance } : {}),
+      text: decodeXmlEntities(match[2]!).trim(),
+    });
+    index += 1;
+  }
+  return items;
+}
+
+/** Returns the parsed `advisory` item(s) when `message` looks like an OMP advisory note (its own
+ * `customType: 'advisor'`, or at least one literal `<advisory` substring in `content` as a
+ * defensive fallback), `undefined` when it is not one at all. FR-051: "raw tag text MUST NOT be
+ * shown when parsing succeeds; text that cannot be parsed MUST show as a generic baseline line
+ * instead" -- so a message that looks like an advisory but yields zero well-formed elements
+ * becomes a plain `notice` (never silently dropped, and never rendered as a structured
+ * `advisory` with raw tag text showing through). */
+function tryBuildAdvisoryItems(messageId: string, message: OmpCustomMessage): TranscriptItem[] | undefined {
+  const looksLikeAdvisory = message.customType === ADVISORY_CUSTOM_TYPE || /<advisory\b/.test(message.content);
+  if (!looksLikeAdvisory) return undefined;
+  const parsed = parseAdvisoryElements(messageId, message.content);
+  if (parsed.length > 0) return parsed;
+  return [{ kind: 'notice', id: messageId, level: 'info', text: message.content }];
+}
+
+// ---------------------------------------------------------------------------
+// Hidden bookkeeping tools (T086, FR-052): `HIDDEN_TOOLS` calls never become a `tool` item, in
+// either the live frame path or history, so they never reach the renderer. A hidden call that
+// fails still surfaces -- as a plain `notice`, not a `tool` row -- so the failure is never
+// silently swallowed; `groupToolItems` (renderer side) is the piece that keeps this notice from
+// splitting a run of the surrounding *visible* tool's calls, using the id prefix below.
+// ---------------------------------------------------------------------------
+
+function hiddenToolFailureNotice(toolCallId: string, toolName: string, output: string): TranscriptItem {
+  return { kind: 'notice', id: `${HIDDEN_TOOL_NOTICE_PREFIX}${toolCallId}`, level: 'error', text: output || `${toolName} failed.` };
+}
+
 /** Builds/merges the items for one assistant message's `content[]` snapshot. `captureTiming` is
  * false for `fromHistory`: a historical message carries only one `timestamp` for its whole
  * `content[]`, not a per-`thinking`-part (or `tool`/`subagent`) start/end, so stamping one from
@@ -364,6 +457,7 @@ function buildAssistantItems(
       return;
     }
     if (part.type === 'toolCall') {
+      if (HIDDEN_TOOLS.has(part.name)) return;
       if (part.name === 'task') {
         const specs = readTaskSpecs(part.arguments);
         if (specs.length > 0) {
@@ -457,6 +551,8 @@ function applyMessageSnapshot(
     case 'custom': {
       const asyncResult = tryApplyAsyncResult(items, message);
       if (asyncResult) return asyncResult;
+      const advisoryItems = tryBuildAdvisoryItems(messageId, message);
+      if (advisoryItems) return replaceMessageItems(items, messageId, advisoryItems);
       const agentMessage = tryBuildAgentMessage(messageId, message);
       if (agentMessage) return replaceMessageItems(items, messageId, [agentMessage]);
       if (message.display === true) {
@@ -474,6 +570,7 @@ function applyMessageSnapshot(
 }
 
 function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionStartFrame): TranscriptItem[] {
+  if (HIDDEN_TOOLS.has(frame.toolName)) return items;
   if (frame.toolName === 'task') {
     const specs = readTaskSpecs(frame.args);
     if (specs.length > 0) return upsertSubagentItems(items, frame.toolCallId, specs);
@@ -514,6 +611,10 @@ function jobsFromDetails(details: unknown): JobEntry[] | undefined {
 }
 
 function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndFrame): TranscriptItem[] {
+  if (HIDDEN_TOOLS.has(frame.toolName)) {
+    if (!frame.isError) return items;
+    return [...items, hiddenToolFailureNotice(frame.toolCallId, frame.toolName, joinText(frame.result.content))];
+  }
   if (frame.toolName === 'task') {
     const updated = applyBatchTaskResult(items, { toolCallId: frame.toolCallId, isError: frame.isError, details: frame.result.details }, true);
     if (updated !== items) return updated;
@@ -601,6 +702,10 @@ export function applyFrame(items: TranscriptItem[], frame: Frame): TranscriptIte
 }
 
 function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage): TranscriptItem[] {
+  if (HIDDEN_TOOLS.has(message.toolName)) {
+    if (!message.isError) return items;
+    return [...items, hiddenToolFailureNotice(message.toolCallId, message.toolName, joinText(message.content))];
+  }
   if (message.toolName === 'task') {
     const updated = applyBatchTaskResult(items, { toolCallId: message.toolCallId, isError: message.isError, details: message.details }, false);
     if (updated !== items) return updated;
@@ -656,6 +761,11 @@ export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
         const asyncResult = tryApplyAsyncResult(items, message);
         if (asyncResult) {
           items = asyncResult;
+          return;
+        }
+        const advisoryItems = tryBuildAdvisoryItems(messageId, message);
+        if (advisoryItems) {
+          items = [...items, ...advisoryItems];
           return;
         }
         const agentMessage = tryBuildAgentMessage(messageId, message);

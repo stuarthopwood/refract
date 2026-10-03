@@ -13,6 +13,7 @@ import { usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@
 import type { PendingRequest, TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
+import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
 import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
 import { ToolGroupRow, SubagentRow } from './ToolRow'
@@ -206,6 +207,9 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
 
     case 'agent-message':
       return <AgentMessageRow item={item} />
+
+    case 'advisory':
+      return <AdvisoryRow item={item} />
 
     case 'request': {
       const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined

@@ -65,7 +65,19 @@ function useIsDarkTheme(): boolean {
   return isDark
 }
 
-function CodeBlock({ code, lang }: { code: string; lang: string | null }) {
+// Small header shown above every code block -- a markdown fence, and (via ToolRow's own
+// language inference) a tool call's Arguments/Output (T083, FR-049/FR-050): the language's name
+// when it is both known and actually highlighted, else "text" -- including when `lang` was given
+// but Shiki failed to load or highlight it (the plain-fallback branch below), so the header never
+// claims a highlight the body does not show. Meets WCAG AA contrast: same `bg-muted`/
+// `text-muted-foreground` pairing as `DiffView`'s own path header.
+function CodeBlockHeader({ label }: { label: string }) {
+  return <div className="truncate border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">{label}</div>
+}
+
+// The one shared code-block renderer (T083, FR-049/FR-050), exported for `ToolRow.tsx`'s
+// Arguments/Output blocks. Always full width (FR-049, no copy button per FR-050/FR-042).
+export function CodeBlock({ code, lang }: { code: string; lang: string | null }) {
   const isDark = useIsDarkTheme()
   const [html, setHtml] = React.useState<string | null>(null)
 
@@ -92,20 +104,25 @@ function CodeBlock({ code, lang }: { code: string; lang: string | null }) {
     }
   }, [code, lang, isDark])
 
+  const label = html ? lang! : 'text'
+
   if (html) {
     // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup),
     // per the constitution's markdown/sanitisation rule.
     return (
-      <div
-        className="not-prose max-w-none overflow-x-auto rounded-lg border border-border text-xs [&>pre]:m-0 [&>pre]:p-3"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
+        <CodeBlockHeader label={label} />
+        <div className="overflow-x-auto [&>pre]:m-0 [&>pre]:p-3" dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
     )
   }
   return (
-    <pre className="not-prose max-w-none overflow-x-auto rounded-lg border border-border bg-card p-3 text-xs">
-      <code>{code}</code>
-    </pre>
+    <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
+      <CodeBlockHeader label={label} />
+      <pre className="overflow-x-auto bg-card p-3">
+        <code>{code}</code>
+      </pre>
+    </div>
   )
 }
 

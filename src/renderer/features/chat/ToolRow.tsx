@@ -2,6 +2,7 @@ import * as React from 'react'
 import { CheckIcon, Loader2Icon, XIcon } from 'lucide-react'
 import type { TranscriptItem } from '../../../shared/model'
 import { Button } from '@/components/ui/button'
+import { CodeBlock } from './Markdown'
 import { CollapsedLine } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import type { ToolGroup } from './groupToolItems'
@@ -16,6 +17,34 @@ function formatDuration(ms: number): string {
 }
 
 type RowStatus = 'running' | 'done' | 'error'
+
+// Language inference for a tool call's Arguments block (T083, FR-050): always `json`, except a
+// `bash` call's own `command` string, shown verbatim and highlighted as `bash` instead of being
+// JSON-escaped inside the full arguments object -- far more readable for the one tool whose
+// primary argument is itself source text.
+function inferArgumentsBlock(item: ToolItem): { lang: string; code: string } {
+  if (item.tool === 'bash') {
+    const record = item.args && typeof item.args === 'object' ? (item.args as Record<string, unknown>) : {}
+    if (typeof record.command === 'string') return { lang: 'bash', code: record.command }
+  }
+  return { lang: 'json', code: JSON.stringify(item.args, null, 2) }
+}
+
+// A unified diff's own hunk/file markers, checked against the start of the text (T083, FR-050).
+const DIFF_PATTERN = /^(?:---|\+\+\+) |^@@ -|^diff --git /m
+
+// Language inference for a tool call's Output block (T083, FR-050): `diff` when the raw output
+// text itself looks like a unified diff, `json` (pretty-printed, replacing the original
+// unparsed/compact text) when it parses as JSON, otherwise plain `text` (`lang: null` skips
+// Shiki entirely -- there is no language to try loading).
+function inferOutputBlock(output: string): { lang: string | null; code: string } {
+  if (DIFF_PATTERN.test(output)) return { lang: 'diff', code: output }
+  try {
+    return { lang: 'json', code: JSON.stringify(JSON.parse(output), null, 2) }
+  } catch {
+    return { lang: null, code: output }
+  }
+}
 
 // A distinct icon shape per status (never colour alone, T080/WCAG 2.1 AA): spinner, check, cross.
 function StatusIcon({ status }: { status: RowStatus }) {
@@ -35,17 +64,20 @@ interface ToolCallBodyProps {
 }
 
 // The expansion content for one tool call: arguments, output, and (for `edit`/`write` results) a
-// diff. Arguments and output are always plain text (constitution V). Split out from the row
-// wrapper so `ToolGroupRow` can reuse the same content for a solo call (no nested `CollapsedLine`)
-// and for each call inside a multi-call group (its own nested `CollapsedLine` via `ToolCallRow`
-// below) without ever changing the *wrapper* element type at a given tree position.
+// diff. Arguments and output are always inert text (constitution V), each in a `CodeBlock` (T083,
+// FR-050) labelled by its inferred language. Split out from the row wrapper so `ToolGroupRow` can
+// reuse the same content for a solo call (no nested `CollapsedLine`) and for each call inside a
+// multi-call group (its own nested `CollapsedLine` via `ToolCallRow` below) without ever changing
+// the *wrapper* element type at a given tree position.
 function ToolCallBody({ item }: ToolCallBodyProps) {
   const [showAllOutput, setShowAllOutput] = React.useState(false)
   const [showAllWrite, setShowAllWrite] = React.useState(false)
 
-  const outputLines = React.useMemo(() => item.output?.split('\n') ?? [], [item.output])
+  const argumentsBlock = React.useMemo(() => inferArgumentsBlock(item), [item])
+  const outputBlock = React.useMemo(() => (item.output != null ? inferOutputBlock(item.output) : null), [item.output])
+  const outputLines = React.useMemo(() => outputBlock?.code.split('\n') ?? [], [outputBlock])
   const truncated = !showAllOutput && outputLines.length > OUTPUT_LINE_CAP
-  const visibleOutput = truncated ? outputLines.slice(0, OUTPUT_LINE_CAP) : outputLines
+  const visibleOutputCode = truncated ? outputLines.slice(0, OUTPUT_LINE_CAP).join('\n') : (outputBlock?.code ?? '')
 
   const writeLines = React.useMemo(() => {
     const content = item.write?.content ?? ''
@@ -76,16 +108,12 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
       )}
       <div>
         <div className="mb-1 text-xs font-medium text-muted-foreground">Arguments</div>
-        <pre className="max-h-64 overflow-auto rounded-md bg-muted p-2 text-xs">
-          <code>{JSON.stringify(item.args, null, 2)}</code>
-        </pre>
+        <CodeBlock code={argumentsBlock.code} lang={argumentsBlock.lang} />
       </div>
-      {item.output != null && (
+      {outputBlock != null && (
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">Output</div>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
-            <code>{visibleOutput.join('\n')}</code>
-          </pre>
+          <CodeBlock code={visibleOutputCode} lang={outputBlock.lang} />
           {truncated && (
             <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAllOutput(true)}>
               Show all ({outputLines.length} lines)

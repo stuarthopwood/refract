@@ -147,8 +147,37 @@ export type TranscriptItem =
       text: string;
       at: number;
     }
+  | {
+      /** An OMP-injected `<advisory>` note (T084, FR-051), parsed out of a `role: 'custom'`
+       * message whose `content` embeds one or more `<advisory severity="..." advisor="..."
+       * turnsAgo="..." guidance="...">note text</advisory>` elements (FINDINGS item 22(f): every
+       * such message carries `customType: 'advisor'`). An unknown/missing `severity` reads as
+       * `'nit'`; a message that looks like one of these but cannot be parsed falls back to a
+       * plain `notice` instead (never this kind, and raw tag text is never shown once parsing
+       * succeeds). */
+      kind: 'advisory';
+      id: string;
+      severity: 'nit' | 'concern' | 'blocker';
+      advisor?: string;
+      turnsAgo?: number;
+      guidance?: string;
+      text: string;
+    }
   | { kind: 'request'; id: string; requestId: string; resolved?: 'approved' | 'denied' | 'answered' | 'cancelled' }
   | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string };
+
+/** Tool names the agent calls for its own bookkeeping (T086, FR-052): a call to one of these
+ * never becomes a `tool` TranscriptItem, so it never reaches the chat transcript -- the only
+ * exception to the one-row-per-tool-call rule. A hidden call that fails still surfaces as an
+ * `notice` (see `src/main/omp/transcript.ts`), not silently; `groupToolItems` must thread that
+ * notice through a run of visible tool calls instead of ending it (see
+ * `HIDDEN_TOOL_NOTICE_PREFIX` below). The `todo` tool's own state stays available for a later
+ * readout (e.g. `get_state().todoPhases`) regardless of this list. */
+export const HIDDEN_TOOLS: ReadonlySet<string> = new Set(['todo']);
+
+/** `id` prefix for the `notice` a hidden tool's failure becomes (T086, FR-052): the one `notice`
+ * shape `groupToolItems` must not let end a run of the surrounding visible tool's calls. */
+export const HIDDEN_TOOL_NOTICE_PREFIX = 'hidden-tool-error:';
 
 /** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart. */
 export type PendingRequest =

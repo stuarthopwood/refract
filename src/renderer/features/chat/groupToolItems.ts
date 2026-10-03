@@ -1,3 +1,4 @@
+import { HIDDEN_TOOL_NOTICE_PREFIX } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -22,7 +23,13 @@ export function isToolGroup(item: GroupedTranscriptItem): item is ToolGroup {
 // row loses focus the moment a second call arrives (FINDINGS: focus loss on tool-call grouping).
 // `ask` never groups: T073 gives every `ask` call its own dedicated question rendering, never a
 // generic collapsed-tool-call summary. A thinking line, a request, a notice, an agent-message, a
-// subagent row, or a different tool name all end the current run.
+// subagent row, or a different tool name all end the current run -- except a hidden bookkeeping
+// tool's own failure notice (T086, FR-052, `HIDDEN_TOOL_NOTICE_PREFIX`), the one documented
+// exception: it is emitted in place but never flushes `run`, so a hidden call's failure in the
+// middle of a run of the *surrounding* visible tool's calls never splits that run into two groups
+// (it does reorder that one notice ahead of the eventual merged group in `result`, since the run
+// it belongs to is not flushed until the next non-matching item -- an accepted trade-off for never
+// breaking the group apart).
 export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[] {
   const result: GroupedTranscriptItem[] = []
   let run: ToolItem[] = []
@@ -46,6 +53,10 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
         flushRun()
         run = [item]
       }
+      continue
+    }
+    if (item.kind === 'notice' && item.id.startsWith(HIDDEN_TOOL_NOTICE_PREFIX)) {
+      result.push(item)
       continue
     }
     flushRun()
