@@ -87,6 +87,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
   // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
   // predictWord response against a newer edit superseding it before it resolves (same guard as
@@ -95,12 +96,26 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const ghostGenerationRef = useRef(0)
   const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ghostHintId = `${sessionId}-ghost-hint`
+  // Separate from `ghost` so the screen-reader hint doesn't flicker through '' and back on every
+  // debounce cycle: `scheduleGhostCheck` clears `ghost` (and the overlay) immediately on each
+  // edit, but leaves the last-announced suggestion text alone until eligibility fails outright or
+  // a new suggestion actually resolves. Re-announcing identical text on every keystroke is what
+  // the remediation review flagged for a slow typist (#358/#359).
+  const [announcedSuggestion, setAnnouncedSuggestion] = useState<string | null>(null)
 
   useEffect(() => {
     return () => {
       if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current)
     }
   }, [])
+
+  // Keeps the overlay's scroll position pinned to the textarea's whenever a suggestion is newly
+  // shown (the `onScroll` handler below covers scrolling while one is already showing) (#359).
+  useEffect(() => {
+    if (ghost && overlayRef.current && textareaRef.current) {
+      overlayRef.current.scrollTop = textareaRef.current.scrollTop
+    }
+  }, [ghost])
 
   useEffect(() => {
     if (autoFocusOnMount) textareaRef.current?.focus()
@@ -152,6 +167,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (disabled || starting) return
     const message = text
     if (!message.trim()) return
+    // Enter-send and the Send button both clear the draft via `setText('')` below, bypassing
+    // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
+    // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
+    clearGhostState()
     if (notStarted) {
       let snapshot
       try {
@@ -177,6 +196,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   /** Enter or Tab on a highlighted slash command (FR-032): fills the box with `/name ` so the
    * box no longer parses as a bare slash query, which closes the menu without extra state. */
   function completeSlashCommand(command: SlashCommand) {
+    clearGhostState() // bypasses the normal onChange path too (#358/#359 remediation)
     setText(`/${command.name} `)
     setSlashDismissed(false)
   }
@@ -187,6 +207,24 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (!ghost) return
     void window.refract.chat.predictWordFeedback(sessionId, ghost.text, ghost.cursor, ghost.suffix, accepted)
     setGhost(null)
+  }
+
+  /** Fully resets ghost-prediction state outside the normal onChange path -- Enter-send, plain
+   * Esc-clear, and slash-command completion all call `setText` directly, bypassing
+   * `scheduleGhostCheck`. Without this, a suggestion computed for the old draft could outlive it:
+   * it would render (and be Tab-insertable) over the now-different text, and a request still in
+   * flight for the abandoned draft could land afterward and show a stale suggestion (#358/#359
+   * remediation). Bumps `ghostGenerationRef` so any in-flight `predictWord` response is dropped
+   * on arrival, cancels a pending debounced request before it fires, and dismisses (`accepted:
+   * false`) a currently-shown suggestion. */
+  function clearGhostState() {
+    ghostGenerationRef.current++
+    if (ghostDebounceRef.current) {
+      clearTimeout(ghostDebounceRef.current)
+      ghostDebounceRef.current = null
+    }
+    dismissGhost(false)
+    setAnnouncedSuggestion(null)
   }
 
   /** Re-evaluates ghost text after every composer edit (FR-058): first dismisses (`accepted:
@@ -202,14 +240,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       ghostDebounceRef.current = null
     }
     dismissGhost(false)
-    if (!isGhostTextEligible(nextText, nextCursor)) return
+    if (!isGhostTextEligible(nextText, nextCursor)) {
+      setAnnouncedSuggestion(null) // no request will be made: nothing left to announce
+      return
+    }
     ghostDebounceRef.current = setTimeout(() => {
       ghostDebounceRef.current = null
       void window.refract.chat.predictWord(sessionId, nextText, nextCursor).then((result) => {
         if (ghostGenerationRef.current !== generation) return // superseded by a later edit
-        if (!result.ok) return // never surfaced as an error: a failed predict_word is just no ghost text
-        if (typeof result.value !== 'string' || result.value.length === 0) return
+        if (!result.ok || typeof result.value !== 'string' || result.value.length === 0) {
+          // never surfaced as an error: a failed predict_word is just no ghost text, but a
+          // lingering stale announcement would mislead a screen reader user
+          setAnnouncedSuggestion(null)
+          return
+        }
         setGhost({ text: nextText, cursor: nextCursor, suffix: result.value })
+        setAnnouncedSuggestion(result.value)
       })
     }, GHOST_TEXT_DEBOUNCE_MS)
   }
@@ -238,9 +284,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         return
       }
     }
-    // Tab accepts a shown ghost-text suggestion (FR-058); with none shown, Tab is left
-    // unhandled below so it keeps its normal field-leaving focus-movement behavior.
-    if (ghost && event.key === 'Tab') {
+    // Tab accepts a shown ghost-text suggestion (FR-058); with none shown, or modified (Shift+Tab
+    // / Ctrl+Tab / Alt+Tab / Meta+Tab focus movement, or mid-IME-composition), Tab is left
+    // unhandled below so it keeps its normal field-leaving focus-movement behavior. `ghost.text
+    // === text` is an extra invariant on top of the generation bump: a suggestion computed
+    // against a draft that's since changed outside the normal onChange path must never be
+    // insertable (#358 remediation).
+    if (
+      ghost &&
+      ghost.text === text &&
+      event.key === 'Tab' &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.nativeEvent.isComposing
+    ) {
       event.preventDefault()
       const { cursor, suffix } = ghost
       const nextText = text.slice(0, cursor) + suffix + text.slice(cursor)
@@ -248,6 +307,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       void window.refract.chat.predictWordFeedback(sessionId, ghost.text, ghost.cursor, ghost.suffix, true)
       ghostGenerationRef.current++ // invalidate any request still in flight for the old draft
       setGhost(null)
+      setAnnouncedSuggestion(null)
       setText(nextText)
       requestAnimationFrame(() => {
         textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
@@ -257,6 +317,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (ghost && event.key === 'Escape') {
       event.preventDefault()
       dismissGhost(false)
+      setAnnouncedSuggestion(null)
       return
     }
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -266,6 +327,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     if (event.key === 'Escape') {
       event.preventDefault()
+      clearGhostState()
       setText('')
     }
   }
@@ -376,7 +438,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               // when nothing actually moved away from it.
               if (!ghost) return
               const target = event.target as HTMLTextAreaElement
-              if (target.selectionStart !== ghost.cursor || target.selectionEnd !== ghost.cursor) dismissGhost(false)
+              if (target.selectionStart !== ghost.cursor || target.selectionEnd !== ghost.cursor) {
+                dismissGhost(false)
+                setAnnouncedSuggestion(null)
+              }
+            }}
+            onScroll={(event) => {
+              // The overlay doesn't track the textarea's scroll on its own (#359 remediation):
+              // without this a suggestion on a tall, scrolled draft renders on the wrong line.
+              if (overlayRef.current) overlayRef.current.scrollTop = (event.target as HTMLTextAreaElement).scrollTop
             }}
             onKeyDown={handleKeyDown}
             disabled={disabled}
@@ -386,9 +456,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {/* Ghost-text overlay (T103, FR-058): an inert sibling, not part of the textarea's own
               accessible value -- matching its box model exactly (same padding/font classes) so
               the invisible leading span reserves the same space the real draft occupies, landing
-              the dimmed suffix immediately after the cursor. */}
-          {ghost && (
+              the dimmed suffix immediately after the cursor. Gated on `ghost.text === text` as an
+              extra invariant on top of the generation bump: a suggestion computed against a draft
+              that's since changed outside the normal onChange path must never render (#358
+              remediation). */}
+          {ghost && ghost.text === text && (
             <div
+              ref={overlayRef}
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
             >
@@ -396,10 +470,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               <span className="text-muted-foreground/60">{ghost.suffix}</span>
             </div>
           )}
-          {/* Discoverable per FR-058 without firing on every keystroke: only changes text when a
-              suggestion actually becomes shown or is cleared, not on every debounce tick. */}
+          {/* Screen reader users never heard WHAT was suggested, only a generic hint -- Tab would
+              send unseen text to the agent (#359 remediation). `announcedSuggestion` is separate
+              state from `ghost` so the hint doesn't flicker through '' and back on every debounce
+              cycle (`scheduleGhostCheck` clears `ghost` immediately on each edit, but leaves the
+              last-announced text alone until eligibility fails outright or a new suggestion
+              actually resolves, so the identical text is not re-announced on every keystroke). */}
           <div id={ghostHintId} role="status" aria-live="polite" className="sr-only">
-            {ghost ? 'Suggestion available. Press Tab to accept, Escape to dismiss.' : ''}
+            {announcedSuggestion ? `Suggestion: "${announcedSuggestion}". Tab to accept, Escape to dismiss.` : ''}
           </div>
           <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
             {isWorking && (
