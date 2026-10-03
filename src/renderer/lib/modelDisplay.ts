@@ -25,6 +25,12 @@ export function formatModelReadout(session: Pick<Session, 'lastModel' | 'lastThi
  const { provider, id, name } = session.lastModel
  const label = `${provider}/${name ?? id}`
  if (!session.lastThinkingLevel) return label
- const effort = THINKING_LEVEL_LABEL[session.lastThinkingLevel] ?? session.lastThinkingLevel
+ // Security audit finding (2026-10-03, Low): a plain object literal lookup also returns
+ // inherited Object.prototype properties for a key like "constructor" or "toString" --
+ // `Object.hasOwn` keeps the fallback to the raw string for any key that isn't a real,
+ // own-declared effort label.
+ const effort = Object.hasOwn(THINKING_LEVEL_LABEL, session.lastThinkingLevel)
+  ? THINKING_LEVEL_LABEL[session.lastThinkingLevel]
+  : session.lastThinkingLevel
  return `${label} (${effort})`
 }

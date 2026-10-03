@@ -38,6 +38,25 @@ import type { SettingsStore } from '../store/settings';
 
 const ABORT_SETTLE_TIMEOUT_MS = 60_000;
 
+/** Security audit finding (2026-10-03, Medium): `get_state.model` is cast from OMP's own JSON
+ * output (`res.data as GetStateResponseData`), not runtime-validated -- a malformed value (any
+ * non-string field) used to be stored verbatim in the registry and crashed the renderer's
+ * `formatModelReadout` on every later read, persisting across a restart. Capped length guards
+ * against one session's registry row growing unboundedly from a single oversized field. */
+const MAX_MODEL_FIELD_LENGTH = 256;
+
+function isValidModelRef(model: unknown): model is { provider: string; id: string; name?: string } {
+  if (typeof model !== 'object' || model === null) return false;
+  const { provider, id, name } = model as Record<string, unknown>;
+  return (
+    typeof provider === 'string' &&
+    provider.length > 0 &&
+    typeof id === 'string' &&
+    id.length > 0 &&
+    (name === undefined || typeof name === 'string')
+  );
+}
+
 export interface SessionAgentEvents {
   status: (payload: SessionStatusEvent) => void;
   patch: (payload: { sessionId: string; ops: TranscriptOp[] }) => void;
@@ -582,9 +601,24 @@ export class SessionAgent extends EventEmitter {
     // patch from the same `get_state` snapshot: if `state.model` is present, `lastThinkingLevel`
     // is set alongside it (even to `undefined`, for a non-reasoning model) so a new model can
     // never end up paired with a stale effort value left over from a previous model.
-    if (state.model) {
-      patch.lastModel = { provider: state.model.provider, id: state.model.id, name: state.model.name };
-      patch.lastThinkingLevel = state.thinkingLevel;
+    // Security audit finding (2026-10-03, Medium): `state.model`/`state.thinkingLevel` are OMP's
+    // own output, untyped at the IPC boundary beyond a cast -- a malformed value (non-string
+    // field, or a string shaped to collide with Object.prototype when used as a lookup key
+    // elsewhere) used to be stored as-is, persisting a value that could crash the renderer on
+    // every later read, surviving a restart since `syncFromState` never re-validates stored data.
+    // `isValidModelRef`/a length cap below reject a malformed snapshot entirely (keeping the
+    // prior good value, never storing a maybe-garbage one) rather than storing it and hoping a
+    // later `get_state` repairs it.
+    if (state.model && isValidModelRef(state.model)) {
+      patch.lastModel = {
+        provider: state.model.provider.slice(0, MAX_MODEL_FIELD_LENGTH),
+        id: state.model.id.slice(0, MAX_MODEL_FIELD_LENGTH),
+        name: state.model.name?.slice(0, MAX_MODEL_FIELD_LENGTH),
+      };
+      patch.lastThinkingLevel =
+        typeof state.thinkingLevel === 'string'
+          ? state.thinkingLevel.slice(0, MAX_MODEL_FIELD_LENGTH)
+          : undefined;
     }
     try {
       await this.registry.updateSession(this.sessionId, patch);
