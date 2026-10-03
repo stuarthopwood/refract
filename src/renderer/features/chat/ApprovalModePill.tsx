@@ -3,11 +3,15 @@
 // message box (MessageInput.tsx). Replaces the old status-bar ToggleGroup (StatusBar.tsx, T098)
 // and the chat header's pending-mode Badge (ChatHeader.tsx, T098) -- both read/wrote the exact
 // same `settings.approvalMode` / session `pendingMode`, so this is the one place left that does.
-// The pill's "current" mode is the Session's own `launchedMode` (falling back to the global
-// Settings mode for a Session that has never launched), never the global Settings mode directly:
-// while `pendingMode` is set, the session is still running under the mode it actually launched
-// with, not the new one, until it restarts at its next idle settle -- showing the new mode as
-// already current here would misrepresent what approval behaviour actually governs the live turn.
+// The pill's "current" mode is the Session's own `launchedMode` while its agent is actually LIVE
+// (status !== 'stopped'): while `pendingMode` is set, the session is still running under the mode
+// it actually launched with, not the new one, until it restarts at its next idle settle -- showing
+// the new mode as already current here would misrepresent what approval behaviour actually governs
+// the live turn. Once the agent is `stopped` (exited, failed to start, or a failed mode restart --
+// `SessionManager` keeps the `SessionAgent` around after a stop, only removing it on delete), there
+// is no live turn for `launchedMode` to describe, so the pill falls back to the global Settings
+// mode instead; a stale `launchedMode` from the session's last run would otherwise freeze the pill
+// on a mode the app-wide setting has since moved on from (regression fixed here).
 import type { ComponentType } from 'react'
 import { CheckIcon, HandIcon, PencilLineIcon, ZapIcon } from 'lucide-react'
 import { badgeVariants } from '@/components/ui/badge'
@@ -46,11 +50,15 @@ export function ApprovalModePill({ sessionId }: { sessionId: string }) {
   const approvalMode = useSettingsStore((state) => state.settings.approvalMode)
   const setApprovalMode = useSettingsStore((state) => state.setApprovalMode)
   const session = useSessionsStore((state) => state.sessions.find((candidate) => candidate.id === sessionId))
-  const pendingMode = session?.pendingMode
-  // The mode actually in effect right now: the Session's own launched mode while it is live, or
-  // the global Settings mode for one that has never launched (same value the Settings store
-  // itself would seed `launchedMode` with on its first launch, see `SessionManager.summaries`).
-  const currentMode = session?.launchedMode ?? approvalMode
+  const isLive = session !== undefined && session.status !== 'stopped'
+  // `pendingMode`/`launchedMode` only describe a live agent's in-flight mode change; a stopped
+  // Session (never launched, exited, start failed, or a failed mode restart) has no live turn for
+  // either to describe, so both fall back to the global Settings mode (no pending change, current
+  // = whatever the app-wide setting now is) rather than freezing on a stale value from its last run.
+  const pendingMode = isLive ? session!.pendingMode : null
+  // The mode actually in effect right now: the Session's own launched mode while its agent is live,
+  // or the global Settings mode while it is stopped (see comment above).
+  const currentMode = isLive ? session!.launchedMode : approvalMode
 
   const current = MODE_ITEMS.find((item) => item.value === currentMode) ?? MODE_ITEMS[0]!
   const CurrentIcon = current.icon
