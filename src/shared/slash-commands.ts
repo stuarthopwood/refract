@@ -38,8 +38,9 @@
 // end to end. Decision (not yet re-probed with a signed-in profile): refuse arguments entirely
 // for now rather than silently guess which are safe -- `/add-dir` in particular could widen the
 // session's file-system access arbitrarily if any path were accepted unchecked.
-// `isSupportedInvocation` below enforces this: any trailing text beyond the bare name or its one
-// recognized subcommand is refused the same way an unknown command name is. Re-opening any of
+// `classifySlashInvocation` below enforces this: any trailing text beyond the bare name or its
+// one recognized subcommand is classified `'unsupported-arguments'`, a distinct refusal from an
+// unrecognized command name. Re-opening any of
 // these for real arguments needs a fresh probe run with a representative argument first
 // (FR-032), not a quiet allowance here.
 
@@ -103,7 +104,7 @@ export const NATIVE_BUILT_COMMANDS: readonly SlashCommandDescriptor[] = [
 /** Keeps only the subcommands this command actually has verified (`SUPPORTED_OMP_COMMANDS`);
  * an unverified subcommand (e.g. `todo`'s `copy`/`edit`/`import`/`export`/`drop`, `session`'s
  * `delete`/`pin`) is dropped here so neither the renderer menu nor `chat.send`'s validation
- * (which reads this same pruned list via `isSupportedInvocation`) can ever see it. */
+ * (which reads this same pruned list via `classifySlashInvocation`) can ever see it. */
 function pruneSubcommands(command: SlashCommandDescriptor): SlashCommandDescriptor {
   if (!command.subcommands) return command;
   const allowed = SUPPORTED_OMP_COMMANDS[command.name] ?? [];
@@ -114,7 +115,7 @@ function pruneSubcommands(command: SlashCommandDescriptor): SlashCommandDescript
  * `SUPPORTED_OMP_COMMANDS` (a command not listed is hidden, per FR-032), prunes each surviving
  * descriptor's `subcommands` to the verified set, then prepends Refract's own built native
  * commands so both show up in the same menu and the same `chat.send` validation
- * (`isSupportedInvocation` reads this same filtered-and-pruned list). */
+ * (`classifySlashInvocation` reads this same filtered-and-pruned list). */
 export function filterSupportedCommands(commands: readonly SlashCommandDescriptor[]): SlashCommandDescriptor[] {
   return [
     ...NATIVE_BUILT_COMMANDS,
@@ -142,20 +143,32 @@ export function parseSlashCommand(text: string): ParsedSlashCommand | undefined 
   return { name, rest };
 }
 
-/** True when `commands` (already run through `filterSupportedCommands`, so subcommands are
- * pruned to the verified set) supports this EXACT invocation: the bare name, or the name plus
- * exactly one of its listed subcommands and nothing else. Every supported command was verified
- * in exactly one of those two shapes -- never with any further argument text -- so anything
- * else (an unverified subcommand of an allowed parent, or any trailing text after a valid bare
- * name or subcommand) is refused the same way an unrecognized command name is (Critical
- * remediation, issue #129). */
-export function isSupportedInvocation(parsed: ParsedSlashCommand, commands: readonly SlashCommandDescriptor[]): boolean {
+/** The three outcomes `chat.send` distinguishes for a slash invocation: `'supported'` runs it,
+ * `'unknown-command'` is a name (or alias) `commands` never lists at all -- genuinely hidden per
+ * FR-032 -- and `'unsupported-arguments'` is a LISTED, recognized command given a subcommand or
+ * trailing text that was never verified (an unverified subcommand of an allowed parent, e.g.
+ * `/todo copy`, or any argument text after a valid bare name/subcommand, e.g. `/rename foo`).
+ * FR-033 reserves "unknown" for a command hidden under FR-032; a listed command whose only
+ * unverified part is its arguments is a different, narrower refusal, so `chat.send` gives it a
+ * distinct message instead of conflating it with "never heard of this command". */
+export type SlashInvocationClassification = 'supported' | 'unknown-command' | 'unsupported-arguments';
+
+/** Classifies `parsed` against `commands` (already run through `filterSupportedCommands`, so
+ * subcommands are pruned to the verified set). Every supported command was verified in exactly
+ * one of two shapes -- the bare name, or the name plus exactly one of its listed subcommands,
+ * never with any further argument text -- so anything else on an otherwise-recognized command is
+ * `'unsupported-arguments'`, not `'unknown-command'` (Critical remediation, issue #129, refined
+ * to distinguish the two refusal reasons). */
+export function classifySlashInvocation(
+  parsed: ParsedSlashCommand,
+  commands: readonly SlashCommandDescriptor[]
+): SlashInvocationClassification {
   const descriptor = commands.find((c) => c.name === parsed.name || (c.aliases ?? []).includes(parsed.name));
-  if (!descriptor) return false;
-  if (parsed.rest === '') return true;
+  if (!descriptor) return 'unknown-command';
+  if (parsed.rest === '') return 'supported';
   const spaceIdx = parsed.rest.indexOf(' ');
   const subName = spaceIdx === -1 ? parsed.rest : parsed.rest.slice(0, spaceIdx);
   const extra = spaceIdx === -1 ? '' : parsed.rest.slice(spaceIdx + 1).trim();
-  if (extra !== '') return false;
-  return (descriptor.subcommands ?? []).some((sub) => sub.name === subName);
+  if (extra !== '') return 'unsupported-arguments';
+  return (descriptor.subcommands ?? []).some((sub) => sub.name === subName) ? 'supported' : 'unsupported-arguments';
 }

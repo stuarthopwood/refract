@@ -16,7 +16,13 @@ const LEAK_PATTERN = /\b(?:FR|SC)-\d{3}\b|\bT\d{3}\b|\bUS\d\b|later task|wired u
 
 // Exact matched substrings known to come from third-party bundled text, not Refract's own UI
 // copy. Add an entry here (never loosen the regex above) if a real false positive shows up.
-const ALLOWED = [];
+// 'not implemented' matches Mermaid's own bundled xychart error string ("Drawing of right axis
+// is not implemented", mermaid.core's xychartDiagram chunk) -- a real upstream library message,
+// not a Refract placeholder. This blanket-exempts the bare phrase everywhere; a future genuine
+// Refract-authored "not implemented" leak would also be missed by this guard. If that happens,
+// replace this entry with a more specific check (e.g. require the Mermaid-specific surrounding
+// text) rather than tightening the shared regex, which every other pattern here still needs.
+const ALLOWED = ['not implemented'];
 
 const root = path.resolve(process.cwd(), process.argv[2] ?? path.join(repoRoot, 'out'));
 const SUBDIRS = ['main', 'preload', path.join('renderer', 'assets')];

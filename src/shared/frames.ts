@@ -151,10 +151,10 @@ export interface GetStateResponseData {
   sessionId: string;
   messageCount: number;
   isSettled: boolean;
-  /** T056/T062, FINDINGS item 28: the live model, when `get_state` reports one (omitted for a
+  /** T056/T062, FINDINGS item 30: the live model, when `get_state` reports one (omitted for a
    * Session with no model resolved yet). `name` is the display name, distinct from `id`. */
   model?: { provider: string; id: string; name?: string };
-  /** T056/T062, FINDINGS item 28: the live thinking level/reasoning effort, when `get_state`
+  /** T056/T062, FINDINGS item 30: the live thinking level/reasoning effort, when `get_state`
    * reports one; OMP's own `ThinkingLevel` string union (`"off" | "inherit" | "minimal" |
    * "low" | "medium" | "high" | "xhigh" | "max"`), carried verbatim. */
   thinkingLevel?: string;

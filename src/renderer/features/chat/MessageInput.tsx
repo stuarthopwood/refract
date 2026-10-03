@@ -122,8 +122,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (!snapshot) return
       applySnapshot(sessionId, snapshot)
     }
-    // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); notify below
-    // shows it as a toast, same as any other IPC error.
+    // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); a listed
+    // command given unverified arguments gets `unsupported-arguments` instead (issue #129); notify
+    // below shows either as a toast, same as any other IPC error.
     const result = await window.refract.chat.send(sessionId, message)
     if (!result.ok) {
       notify(result.error)

@@ -4,7 +4,7 @@
 // last-known values, never a separate live-only source.
 import type { Session } from '../../shared/model'
 
-// OMP's own `ThinkingLevel` string union (docs/spike/FINDINGS.md item 28): a closed set today,
+// OMP's own `ThinkingLevel` string union (docs/spike/FINDINGS.md item 30): a closed set today,
 // but an unrecognised future value still renders (falls back to the raw string) instead of
 // disappearing.
 const THINKING_LEVEL_LABEL: Record<string, string> = {

@@ -69,7 +69,7 @@ For a `stopped` Session, both start a fresh reattach against the chosen Conversa
 
 | Method | Returns | Notes |
 |---|---|---|
-| `chat.send(sessionId, text)` | `{ queued: boolean }` | `queued: true` when the Session was working. Text starting `/` is validated against the Session's command list (T093: OMP's raw list filtered to `src/shared/slash-commands.ts`'s fixed supported set, plus Refract's built native commands); unknown, unsupported, or not-yet-built gives error `unknown-command` (FR-033). |
+| `chat.send(sessionId, text)` | `{ queued: boolean }` | `queued: true` when the Session was working. Text starting `/` is validated against the Session's command list (T093: OMP's raw list filtered to `src/shared/slash-commands.ts`'s fixed supported set, plus Refract's built native commands); a name not on that list, or a Refract-native command that isn't built yet, gives `unknown-command` (FR-033); a listed command given a subcommand or argument text never verified for it gives `unsupported-arguments` instead (issue #129) -- FR-033's "unknown" is reserved for a command hidden entirely under FR-032, not a listed one given bad arguments. |
 | `chat.stop(sessionId)` | `void` | |
 | `chat.removeQueued(sessionId, text)` | `{ removed: boolean }` | |
 | `chat.sendNow(sessionId, text)` | `{ steered: boolean }` | |

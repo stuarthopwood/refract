@@ -21,6 +21,7 @@ export type IpcErrorCode =
   | 'not-idle'
   | 'reattach-failed'
   | 'unknown-command'
+  | 'unsupported-arguments'
   | 'branch-missing'
   | 'not-found'
   | 'invalid-argument'

@@ -5,9 +5,12 @@
 // `SessionAgent`'s `available_commands_update` handler) plus Refract's native reserved set
 // (constitution I); anything else -- an unrecognized name, an unverified subcommand of an
 // otherwise-allowed name, or any trailing argument text beyond a verified bare name/subcommand
-// -- is refused locally via `isSupportedInvocation` and nothing is sent (Critical remediation,
+// -- is refused locally via `classifySlashInvocation` and nothing is sent (Critical remediation,
 // issue #129: a subcommand the probe never verified, e.g. `/todo copy`, used to still reach OMP
-// under its allowed parent name). `/new` is the one native command implemented so far, mapped
+// under its allowed parent name). A recognized command given unverified arguments gets its own
+// `unsupported-arguments` refusal instead of being folded into `unknown-command` (FR-033 reserves
+// "unknown" for a command hidden entirely under FR-032, not a listed one with bad arguments).
+// `/new` is the one native command implemented so far, mapped
 // to `SessionAgent.startNewConversation` (the same RPC `new_session` T027 uses); every other
 // native command name is refused with `unknown-command` so it is never silently forwarded to
 // OMP, even if a future OMP version adds a real `/plan`, `/fork`, `/btw`, etc. to its own
@@ -16,7 +19,7 @@
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { ChatAnswer, Result } from '../../shared/ipc';
-import { isSupportedInvocation, NATIVE_RESERVED_COMMANDS, parseSlashCommand } from '../../shared/slash-commands';
+import { classifySlashInvocation, NATIVE_RESERVED_COMMANDS, parseSlashCommand } from '../../shared/slash-commands';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from '../omp/errors';
 import { invalidArgument, mapSessionThrown, notFound } from './util';
 import type { SessionManager } from '../SessionManager';
@@ -59,13 +62,26 @@ export function registerChat(manager: SessionManager): void {
       // recognizes it), or this exact invocation (bare name, or name + subcommand, with no
       // trailing argument text) is not one `agent.availableCommands` (already filtered +
       // pruned) actually lists.
-      if (
-        Object.prototype.hasOwnProperty.call(NATIVE_RESERVED_COMMANDS, parsed.name) ||
-        !isSupportedInvocation(parsed, agent.availableCommands)
-      ) {
+      if (Object.prototype.hasOwnProperty.call(NATIVE_RESERVED_COMMANDS, parsed.name)) {
         return {
           ok: false,
           error: { code: 'unknown-command', message: `Unknown command: /${parsed.name}${parsed.rest ? ` ${parsed.rest}` : ''}` },
+        };
+      }
+      const classification = classifySlashInvocation(parsed, agent.availableCommands);
+      if (classification === 'unknown-command') {
+        return {
+          ok: false,
+          error: { code: 'unknown-command', message: `Unknown command: /${parsed.name}${parsed.rest ? ` ${parsed.rest}` : ''}` },
+        };
+      }
+      if (classification === 'unsupported-arguments') {
+        return {
+          ok: false,
+          error: {
+            code: 'unsupported-arguments',
+            message: `/${parsed.name} doesn't support arguments yet. Try /${parsed.name} on its own.`,
+          },
         };
       }
       // A real OMP-side command (from available_commands_update): fall through and forward it
