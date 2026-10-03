@@ -146,6 +146,11 @@ export function registerSessions(manager: SessionManager): void {
     // cold start (bug report point 5).
     if (agent.runtimeSnapshot.status === 'stopped' && (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason))) {
       await agent.start().catch(() => undefined);
+      // T062: `agent.start()` runs `syncFromState` against the registry before resolving
+      // (`lastModel`/`lastThinkingLevel`, `sessionDir`, ...), so the row the renderer already
+      // cached from a previous `sessions.list()` is now stale; tell it to re-fetch, the same way
+      // every other Session-row-affecting mutation in this file already does.
+      manager.notifyListChanged();
     }
     const refreshed = manager.registry.getSession(id) ?? session;
     return { ok: true, value: await buildSnapshot(agent, refreshed) };

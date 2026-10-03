@@ -8,9 +8,11 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { SendIcon, SquareIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { formatModelReadout } from '@/lib/modelDisplay'
 import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
@@ -40,6 +42,10 @@ interface MessageInputProps {
 
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
+  // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
+  // `SessionSummary` row), never a separate live-only source -- "Model not known yet" before the
+  // first `get_state` this Session has ever reported one.
+  const modelReadout = useSessionsStore((s) => formatModelReadout(s.sessions.find((x) => x.id === sessionId) ?? {}))
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
   const [text, setText] = useState('')
@@ -224,62 +230,88 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <div role="status" aria-live="polite" className="sr-only">
         {showSlashMenu && slashMatches.length === 0 ? 'No matching commands' : ''}
       </div>
-      <div className="relative flex items-end gap-2">
-        {showSlashMenu && (
-          <SlashMenu
-            id={slashMenuId}
-            commands={slashMatches}
-            activeIndex={clampedSlashActiveIndex}
-            onSelect={completeSlashCommand}
-            onActiveIndexChange={setSlashActiveIndex}
+      {/* T063: the field itself -- translucent background + subtle border, Send/Stop moved
+          inside as round icon-only buttons, and the provider/model/effort readout along the
+          bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the
+          whole field, not just the text area, shows the focus state. */}
+      <div className="flex flex-col gap-1 rounded-lg border border-border bg-background/40 pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+        <div className="relative flex items-end">
+          {showSlashMenu && (
+            <SlashMenu
+              id={slashMenuId}
+              commands={slashMatches}
+              activeIndex={clampedSlashActiveIndex}
+              onSelect={completeSlashCommand}
+              onActiveIndexChange={setSlashActiveIndex}
+            />
+          )}
+          <Textarea
+            ref={textareaRef}
+            role="combobox"
+            aria-label="Message"
+            aria-autocomplete="list"
+            aria-expanded={showSlashMenu && slashMatches.length > 0}
+            aria-controls={showSlashMenu && slashMatches.length > 0 ? slashMenuId : undefined}
+            aria-activedescendant={
+              showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, clampedSlashActiveIndex) : undefined
+            }
+            aria-describedby={disabled ? stopReasonId : undefined}
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value)
+              setSlashDismissed(false)
+            }}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            placeholder={placeholder}
+            className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent"
           />
-        )}
-        <Textarea
-          ref={textareaRef}
-          role="combobox"
-          aria-label="Message"
-          aria-autocomplete="list"
-          aria-expanded={showSlashMenu && slashMatches.length > 0}
-          aria-controls={showSlashMenu && slashMatches.length > 0 ? slashMenuId : undefined}
-          aria-activedescendant={
-            showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, clampedSlashActiveIndex) : undefined
-          }
-          aria-describedby={disabled ? stopReasonId : undefined}
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value)
-            setSlashDismissed(false)
-          }}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          placeholder={placeholder}
-          className="max-h-48 min-h-16 resize-none overflow-y-auto"
-        />
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {isWorking && (
-            <div className="flex items-center gap-1.5">
+          <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
+            {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
+                    size="icon-sm"
+                    className="rounded-full"
+                    aria-label="Stop"
                     aria-keyshortcuts="Control+Shift+X"
                     onClick={() => void handleStop()}
                   >
                     <SquareIcon />
-                    Stop
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Stop (Ctrl+Shift+X)</TooltipContent>
+                <TooltipContent>
+                  <KbdGroup>
+                    <Kbd>Ctrl</Kbd>
+                    <Kbd>Shift</Kbd>
+                    <Kbd>X</Kbd>
+                  </KbdGroup>
+                </TooltipContent>
               </Tooltip>
-            </div>
-          )}
-          <Button type="button" size="sm" disabled={disabled || starting || !text.trim()} onClick={() => void handleSend()}>
-            <SendIcon />
-            Send
-          </Button>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  className="rounded-full"
+                  aria-label="Send message"
+                  aria-keyshortcuts="Enter"
+                  disabled={disabled || starting || !text.trim()}
+                  onClick={() => void handleSend()}
+                >
+                  <SendIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <Kbd>Enter</Kbd>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
+        <p className="truncate px-2.5 pb-1 text-xs text-muted-foreground">{modelReadout}</p>
       </div>
     </div>
   )

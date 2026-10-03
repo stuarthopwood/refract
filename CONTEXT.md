@@ -9,7 +9,7 @@ A local git project the developer has added to Refract. Owns zero or more **Sess
 _Avoid_: Project, workspace
 
 **Session**:
-One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Repository** has many **Sessions**; a **Session** has exactly one **Worktree**.
+One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Repository** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
 _Avoid_: Task, thread, chat (for the whole unit)
 
 **Archive**:

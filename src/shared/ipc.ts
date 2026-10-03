@@ -52,7 +52,9 @@ export interface Readiness {
   ompSignedIn: Check;
 }
 
-/** `sessions.list()` row: a Session plus its live-runtime view. */
+/** `sessions.list()` row: a Session plus its live-runtime view. `lastModel`/`lastThinkingLevel`
+ * (T062) come straight through from `Session`: the last known provider/model/thinking level,
+ * absent until the first `get_state`. */
 export interface SessionSummary extends Session {
   status: SessionStatus;
   /** T043: surfaces `worktree-missing`/`not-started` in the list row itself, so a missing

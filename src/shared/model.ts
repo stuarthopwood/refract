@@ -21,6 +21,13 @@ export interface Session {
   sessionDir: string | null; // OMP's session directory for that cwd; null until first learned
   currentConversation: string | null; // absolute path of the current Conversation's file; null before the first message
   lastMessageCount: number | null; // messageCount at the last settle; used to verify a reattach
+  // T062: last known model/thinking level from `get_state`, persisted (registry-backed), not only
+  // live-runtime state -- absent means unknown (never started, or no `get_state` has reported one
+  // yet), not "no model". Written by `SessionAgent.syncFromState` at session start and after every
+  // settle; never cleared when the agent stops, so they remain the last-known values across a
+  // Stop or an app restart.
+  lastModel?: { provider: string; id: string; name?: string };
+  lastThinkingLevel?: string;
   createdAt: string;
   lastActivityAt: string;
   archivedAt: string | null; // non-null = archived

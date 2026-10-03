@@ -24,9 +24,13 @@ export function registerNotifications(manager: SessionManager, getWindow: () => 
     const finished = previous === 'working' && status === 'idle';
     if (!becameNeedsYou && !finished) return;
 
+    // T057: read the live display name at fire time (never cached), so a rename shows in the
+    // very next notification with no extra plumbing -- the registry is the source of truth and
+    // this already runs on the main process's own event loop, after the rename IPC has resolved.
+    const name = manager.registry.getSession(sessionId)?.name ?? 'A Session';
     const notification = new Notification({
       title: 'Refract',
-      body: becameNeedsYou ? 'A Session needs your input.' : 'A Session finished.',
+      body: becameNeedsYou ? `${name} needs your input.` : `${name} finished.`,
     });
     notification.on('click', () => {
       const clicked = getWindow();

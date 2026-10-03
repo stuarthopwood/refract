@@ -34,10 +34,10 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 
 | Method | Returns | Notes |
 |---|---|---|
-| `sessions.list()` | `SessionSummary[]` | Non-archived and archived; carries `status`, `stopReason?` (detects a missing worktree at list time, T043), `unread`, `pendingMode`. |
-| `sessions.create({ repositoryId, baseBranch })` | `Session` | Generates the name, runs `git worktree add -b <name> <path> <baseBranch>`. Never leaves a half-created Session: on any failure the worktree and branch it created are removed. Errors: `worktree-failed`, `base-missing`, `path-too-long`. |
-| `sessions.rename(id, name)` | `void` | Label only. |
-| `sessions.open(id)` | `SessionSnapshot` | Starts and reattaches the agent if it is not running (or returns the stopped reason). `SessionSnapshot = { runtime: SessionRuntimeView; conversations: ConversationInfo[] }`. |
+| `sessions.list()` | `SessionSummary[]` | Non-archived and archived; carries `status`, `stopReason?` (detects a missing worktree at list time, T043), `unread`, `pendingMode`, `lastModel?`, `lastThinkingLevel?` (T062: the Session's last known provider/model/thinking level, straight through from the registry's `Session`; absent until `get_state` has reported one at least once). |
+| `sessions.create({ repositoryId, baseBranch })` | `Session` | Generates the name, runs `git worktree add -b <name> <path> <baseBranch>`. Never leaves a half-created Session: on any failure the worktree and branch it created are removed. Errors: `worktree-failed`, `base-missing`, `path-too-long`. The generated `name` is independent of `branch`/`worktreePath` from creation onward (data-model.md): nothing else is derived from it. |
+| `sessions.rename(id, name)` | `void` | Label only -- writes `Session.name`, never `branch` or `worktreePath`, and emits `session:list-changed` so every surface showing the name (list, chat header, branch picker, details card, delete confirmation, the next notification) picks it up immediately. |
+| `sessions.open(id)` | `SessionSnapshot` | Starts and reattaches the agent if it is not running (or returns the stopped reason). `SessionSnapshot = { runtime: SessionRuntimeView; conversations: ConversationInfo[] }`. Also emits `session:list-changed` once a start actually ran (T062): `agent.start()` writes `lastModel`/`lastThinkingLevel` (among other fields) to the registry before this resolves, so the renderer's cached `sessions.list()` row is stale otherwise. |
 | `sessions.archive(id)` / `sessions.restore(id)` | `void` | Stops the agent first if it runs. |
 | `sessions.deleteCheck(id)` | `{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }` | Feeds the confirmation text. |
 | `sessions.delete(id, { confirmed: true })` | `void` | Removes worktree, branch (only if unmerged work was confirmed), the Session entry, and Conversation files. Refused without `confirmed: true`. |

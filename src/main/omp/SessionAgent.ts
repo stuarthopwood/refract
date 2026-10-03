@@ -569,6 +569,15 @@ export class SessionAgent extends EventEmitter {
       patch.lastMessageCount = state.messageCount;
       patch.currentConversation = state.sessionFile;
     }
+    // T062/FINDINGS item 28: persisted (registry-backed) last-known model/thinking level, not
+    // only live-runtime state -- never cleared when the agent stops, so Stop and an app restart
+    // both keep showing the last values `get_state` actually reported.
+    if (state.model) {
+      patch.lastModel = { provider: state.model.provider, id: state.model.id, name: state.model.name };
+    }
+    if (state.thinkingLevel !== undefined) {
+      patch.lastThinkingLevel = state.thinkingLevel;
+    }
     try {
       await this.registry.updateSession(this.sessionId, patch);
     } catch (err) {

@@ -4,6 +4,7 @@ import { CopyIcon, FolderIcon, FolderOpenIcon, GitBranchIcon } from 'lucide-reac
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useSessionsStore } from '@/state'
+import { formatModelReadout } from '@/lib/modelDisplay'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { StateIcon, STATUS_LABEL, formatDiffStat, formatRelativeTime } from './sessionDisplay'
@@ -86,10 +87,7 @@ export function SessionDetailsCard({
         session.worktreePath
        )}
       </p>
-      {/* T062 hasn't landed: no `lastModel`/`lastThinkingLevel` field exists on
-                SessionSummary yet to read, so this is the documented placeholder, not invented
-                data. */}
-      <p className="text-xs text-muted-foreground">Model not known yet</p>
+      <p className="text-xs text-muted-foreground">{formatModelReadout(session)}</p>
       <p className="text-xs text-muted-foreground">
        {worktreeMissing
         ? 'Not available'

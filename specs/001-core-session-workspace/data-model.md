@@ -33,6 +33,8 @@ interface Session {
   sessionDir: string | null;   // OMP's session directory for that cwd; null until first learned (see below)
   currentConversation: string | null; // absolute path of the current Conversation's file; null before the first message
   lastMessageCount: number | null;    // messageCount at the last settle; reattach requires messageCount >= this
+  lastModel?: { provider: string; id: string; name?: string }; // T062: last known model from get_state; absent = unknown
+  lastThinkingLevel?: string;  // T062: last known thinking level/reasoning effort from get_state; absent = unknown
   createdAt: string;
   lastActivityAt: string;
   archivedAt: string | null;   // non-null = archived
@@ -42,7 +44,9 @@ interface Session {
 Rules:
 
 - `worktreePath` is unique across all Sessions. `branch` is unique within a Repository.
+- `name` (the display label shown in the list, chat header, branch picker, and notifications) is entirely independent of `branch` and `worktreePath`: renaming a Session (`sessions.rename`) only ever writes `name`, never touches the git branch or the worktree folder on disk, and takes effect immediately everywhere the name is shown (no restart, no re-list beyond the normal `session:list-changed` refresh).
 - `sessionDir` is learned once: after the first agent process for a Session reports `get_state`, take `dirname(sessionFile)`. Refract does not compute OMP's directory-name encoding itself. Until the first message is sent, no file exists (OMP creates it lazily), so `sessionDir` is set when the first `sessionFile` is observed on a settled turn.
+- `lastModel`/`lastThinkingLevel` (T062, docs/spike/FINDINGS.md item 30): written by `SessionAgent.syncFromState` from `get_state`'s own `model`/`thinkingLevel` fields at session start and after every settle, the same points `sessionDir`/`lastMessageCount` are written from. Persisted (registry-backed) last-known state, not only live-runtime state: unlike a `SessionRuntime` field, they are never cleared when the agent stops, so they remain the last values actually observed across a Stop and across an app restart. Absent means unknown (never started, or `get_state` has never reported a model for this Session yet), not "no model" -- existing registry rows with no such keys are read the same way, so no migration is needed. `name` inside `lastModel` is the display name OMP's `Model.name` reports, distinct from `id`; it is optional because not every response is guaranteed to carry it.
 - Deleting a Session removes its entry and its worktree; the `sessionDir` files are deleted only when the user confirmed Delete.
 - Removing a Repository from Refract removes the Repository and its Session entries, and never touches disk. It is refused while any of its Sessions has a running agent.
 
