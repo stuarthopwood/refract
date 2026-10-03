@@ -26,6 +26,32 @@ type StopReason = SessionStatusEvent['stopReason']
 // causes an infinite re-render loop.
 const EMPTY_COMMANDS: SlashCommand[] = []
 
+// T103, FR-058: debounce before a predict_word request, and a local mirror of the server's own
+// gating (rpc.md "Word prediction"): the cursor must sit at the end of its line and end a
+// plausible prose word, with no slash-command or path-shaped token being typed. Keeping this
+// local means the vast majority of keystrokes (mid-word, mid-line, slash commands, paths) never
+// reach a request at all; the server re-applies the same gates regardless.
+const GHOST_TEXT_DEBOUNCE_MS = 300
+
+function isGhostTextEligible(text: string, cursor: number): boolean {
+  if (cursor < 0 || cursor > text.length) return false
+  const after = text.slice(cursor)
+  const nextNewline = after.indexOf('\n')
+  const restOfLine = nextNewline === -1 ? after : after.slice(0, nextNewline)
+  if (restOfLine.length > 0) return false // cursor is not at the end of its line
+
+  const lastNewline = text.lastIndexOf('\n', cursor - 1)
+  const line = text.slice(lastNewline + 1, cursor)
+  if (line.trim() === '') return false // nothing typed on this line yet
+  if (/^\s*\//.test(line)) return false // a slash-command draft, e.g. "/mo"
+  if (!/[A-Za-z]+$/.test(line)) return false // cursor doesn't end a prose word
+
+  const token = /\S+$/.exec(line)?.[0] ?? ''
+  if (token.includes('/') || token.includes('\\')) return false // a file-path-shaped token
+
+  return true
+}
+
 interface QueuedChip {
   key: string
   text: string
@@ -61,6 +87,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
+  // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
+  // predictWord response against a newer edit superseding it before it resolves (same guard as
+  // SessionDetailsCard's diffStat stale-response fix).
+  const [ghost, setGhost] = useState<{ text: string; cursor: number; suffix: string } | null>(null)
+  const ghostGenerationRef = useRef(0)
+  const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ghostHintId = `${sessionId}-ghost-hint`
+
+  useEffect(() => {
+    return () => {
+      if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (autoFocusOnMount) textareaRef.current?.focus()
@@ -141,6 +181,39 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     setSlashDismissed(false)
   }
 
+  /** Sends `predictWordFeedback` for whatever suggestion is currently shown, at most once per
+   * shown-then-abandoned suggestion (FR-058), then clears it. A no-op when nothing is shown. */
+  function dismissGhost(accepted: boolean) {
+    if (!ghost) return
+    void window.refract.chat.predictWordFeedback(sessionId, ghost.text, ghost.cursor, ghost.suffix, accepted)
+    setGhost(null)
+  }
+
+  /** Re-evaluates ghost text after every composer edit (FR-058): first dismisses (`accepted:
+   * false`) whatever suggestion was showing -- typing past it or deleting into it both count as
+   * abandoning it -- then, only when the new draft/cursor passes the local gate
+   * (`isGhostTextEligible`), debounces a fresh `predictWord` request. `ghostGenerationRef` is
+   * bumped on every call so a response for an already-superseded draft is dropped on arrival
+   * instead of showing a stale suggestion. */
+  function scheduleGhostCheck(nextText: string, nextCursor: number) {
+    const generation = ++ghostGenerationRef.current
+    if (ghostDebounceRef.current) {
+      clearTimeout(ghostDebounceRef.current)
+      ghostDebounceRef.current = null
+    }
+    dismissGhost(false)
+    if (!isGhostTextEligible(nextText, nextCursor)) return
+    ghostDebounceRef.current = setTimeout(() => {
+      ghostDebounceRef.current = null
+      void window.refract.chat.predictWord(sessionId, nextText, nextCursor).then((result) => {
+        if (ghostGenerationRef.current !== generation) return // superseded by a later edit
+        if (!result.ok) return // never surfaced as an error: a failed predict_word is just no ghost text
+        if (typeof result.value !== 'string' || result.value.length === 0) return
+        setGhost({ text: nextText, cursor: nextCursor, suffix: result.value })
+      })
+    }, GHOST_TEXT_DEBOUNCE_MS)
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (showSlashMenu) {
       if (event.key === 'ArrowDown') {
@@ -164,6 +237,27 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         setSlashDismissed(true)
         return
       }
+    }
+    // Tab accepts a shown ghost-text suggestion (FR-058); with none shown, Tab is left
+    // unhandled below so it keeps its normal field-leaving focus-movement behavior.
+    if (ghost && event.key === 'Tab') {
+      event.preventDefault()
+      const { cursor, suffix } = ghost
+      const nextText = text.slice(0, cursor) + suffix + text.slice(cursor)
+      const nextCursor = cursor + suffix.length
+      void window.refract.chat.predictWordFeedback(sessionId, ghost.text, ghost.cursor, ghost.suffix, true)
+      ghostGenerationRef.current++ // invalidate any request still in flight for the old draft
+      setGhost(null)
+      setText(nextText)
+      requestAnimationFrame(() => {
+        textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
+      })
+      return
+    }
+    if (ghost && event.key === 'Escape') {
+      event.preventDefault()
+      dismissGhost(false)
+      return
     }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -266,17 +360,47 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             aria-activedescendant={
               showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, clampedSlashActiveIndex) : undefined
             }
-            aria-describedby={disabled ? stopReasonId : undefined}
+            aria-describedby={disabled ? `${stopReasonId} ${ghostHintId}` : ghostHintId}
             value={text}
             onChange={(event) => {
-              setText(event.target.value)
+              const value = event.target.value
+              const cursor = event.target.selectionStart ?? value.length
+              setText(value)
               setSlashDismissed(false)
+              scheduleGhostCheck(value, cursor)
+            }}
+            onSelect={(event) => {
+              // A cursor move with no accompanying edit (click, arrow keys) that lands away from
+              // where a shown suggestion was requested invalidates it too (FR-058); onChange
+              // already handles the edit case, so this is a no-op (dismissGhost checks `ghost`)
+              // when nothing actually moved away from it.
+              if (!ghost) return
+              const target = event.target as HTMLTextAreaElement
+              if (target.selectionStart !== ghost.cursor || target.selectionEnd !== ghost.cursor) dismissGhost(false)
             }}
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
             className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent"
           />
+          {/* Ghost-text overlay (T103, FR-058): an inert sibling, not part of the textarea's own
+              accessible value -- matching its box model exactly (same padding/font classes) so
+              the invisible leading span reserves the same space the real draft occupies, landing
+              the dimmed suffix immediately after the cursor. */}
+          {ghost && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
+            >
+              <span className="invisible">{text.slice(0, ghost.cursor)}</span>
+              <span className="text-muted-foreground/60">{ghost.suffix}</span>
+            </div>
+          )}
+          {/* Discoverable per FR-058 without firing on every keystroke: only changes text when a
+              suggestion actually becomes shown or is cleared, not on every debounce tick. */}
+          <div id={ghostHintId} role="status" aria-live="polite" className="sr-only">
+            {ghost ? 'Suggestion available. Press Tab to accept, Escape to dismiss.' : ''}
+          </div>
           <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
             {isWorking && (
               <Tooltip>

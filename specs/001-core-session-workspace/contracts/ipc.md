@@ -75,8 +75,10 @@ For a `stopped` Session, both start a fresh reattach against the chosen Conversa
 | `chat.sendNow(sessionId, text)` | `{ steered: boolean }` | |
 | `chat.answer(sessionId, requestId, answer)` | `void` | `answer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true }`. |
 | `chat.commands(sessionId)` | `SlashCommand[]` | Latest filtered list (T093); also pushed as an event. Includes `/new`, the one native command Refract has actually built; `/plan`, `/fork`, `/settings`, `/pause`, `/plan-review`, `/btw`, and `/resume` stay unlisted until built (FR-032). |
+| `chat.predictWord(sessionId, text, cursor)` | `string \| null` | Ghost-text composer completion (T103, FR-058; rpc.md "Word prediction"). `text` is the whole draft, `cursor` a UTF-16 offset. Proxies to `predict_word` ONLY on an already-running live `OmpProcess` -- never starts one -- resolving `null` whenever there is no live process, the server's own gating yields nothing, or the RPC call fails or times out; never rejects, so a `predict_word` failure is never a chat error. |
+| `chat.predictWordFeedback(sessionId, text, cursor, suggestion, accepted)` | `void` | Companion to `chat.predictWord`: send once per shown suggestion, `accepted: true` when Tab took it, `false` when Esc or an edit dismissed it. Same silent-degradation contract -- a no-op with no live process, never rejects. |
 
-A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue command) or `agent-not-running` (no live process); a chat error is never reported as `reattach-failed` (that code is `conversations.open`-only, see above).
+A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue command) or `agent-not-running` (no live process); a chat error is never reported as `reattach-failed` (that code is `conversations.open`-only, see above). `chat.predictWord`/`chat.predictWordFeedback` are the one exception: both always resolve `{ ok: true, ... }` (never `agent-not-running` or any other error code) since a missing live process is itself just `null`/a no-op, not a failure.
 
 ### Settings (FR-015, FR-020)
 

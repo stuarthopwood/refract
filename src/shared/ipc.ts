@@ -177,6 +177,8 @@ export const IPC_REQUESTS = {
   CHAT_SEND_NOW: 'chat.sendNow',
   CHAT_ANSWER: 'chat.answer',
   CHAT_COMMANDS: 'chat.commands',
+  CHAT_PREDICT_WORD: 'chat.predictWord',
+  CHAT_PREDICT_WORD_FEEDBACK: 'chat.predictWordFeedback',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   WINDOW_POPUP_MENU: 'window.popupMenu',
@@ -255,6 +257,18 @@ export interface RefractApi {
     sendNow(sessionId: string, text: string): Promise<Result<{ steered: boolean }>>;
     answer(sessionId: string, requestId: string, answer: ChatAnswer): Promise<Result<void>>;
     commands(sessionId: string): Promise<Result<SlashCommand[]>>;
+    /** Ghost-text composer completion (T103, FR-058): `null` whenever there is no live agent
+     * process or the server's own gating yields nothing; never rejects. */
+    predictWord(sessionId: string, text: string, cursor: number): Promise<Result<string | null>>;
+    /** Sent once per shown-then-resolved suggestion; `accepted: true` on Tab, `false` on
+     * dismiss (Esc) or an invalidating edit. */
+    predictWordFeedback(
+      sessionId: string,
+      text: string,
+      cursor: number,
+      suggestion: string,
+      accepted: boolean
+    ): Promise<Result<void>>;
   };
 
   settings: {

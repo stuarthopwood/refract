@@ -27,6 +27,7 @@ import type {
   Frame,
   GetMessagesResponseData,
   GetStateResponseData,
+  PredictWordResponseData,
   QueueUpdateFrame,
   SwitchSessionResponseData,
 } from '../../shared/frames';
@@ -37,6 +38,10 @@ import type { RegistryStore } from '../store/registry';
 import type { SettingsStore } from '../store/settings';
 
 const ABORT_SETTLE_TIMEOUT_MS = 60_000;
+/** `predict_word`'s own worst case (rpc.md "Word prediction": "about two minutes" for a cold
+ * shared prediction daemon start, FINDINGS item 28) exceeds `OmpProcess.request`'s 60 s default
+ * timeout, so ghost text gets its own longer allowance instead of being treated as a failure. */
+const PREDICT_WORD_TIMEOUT_MS = 150_000;
 
 /** Security audit finding (2026-10-03, Medium): `get_state.model` is cast from OMP's own JSON
  * output (`res.data as GetStateResponseData`), not runtime-validated -- a malformed value (any
@@ -446,6 +451,37 @@ export class SessionAgent extends EventEmitter {
       this.appendNotice(`remove_queued_message failed: ${res.error ?? 'unknown error'}`, 'error');
     }
     return { removed: res.success && (res.data as { removed?: boolean } | undefined)?.removed === true };
+  }
+
+  /** `chat.predictWord` (T103, FR-058): ghost-text composer completion. Issues `predict_word`
+   * ONLY on an already-running live `OmpProcess` -- never `start()`'s path -- since the first call
+   * after a cold shared prediction daemon start can take up to ~2 minutes (rpc.md "Word
+   * prediction", FINDINGS item 28), and a keystroke in a stopped Session's composer must never
+   * trigger that wait. `predict_word` is best-effort, inline-editor sugar, not a user-facing
+   * action: no live process, a failed RPC call, or a timeout all resolve to `null` (no
+   * suggestion) rather than throwing or appending a visible notice, so a predict_word failure is
+   * never surfaced as an error. */
+  async predictWord(text: string, cursor: number): Promise<string | null> {
+    if (!this.process) return null;
+    try {
+      const res = await this.process.request({ type: 'predict_word', id: '', text, cursor }, PREDICT_WORD_TIMEOUT_MS);
+      if (!res.success) return null;
+      const suffix = (res.data as PredictWordResponseData | undefined)?.suffix;
+      return typeof suffix === 'string' ? suffix : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** `chat.predictWordFeedback`: companion to `predictWord` above, same silent-degradation
+   * contract -- no live process or a failed send is dropped, never surfaced. */
+  async predictWordFeedback(text: string, cursor: number, suggestion: string, accepted: boolean): Promise<void> {
+    if (!this.process) return;
+    try {
+      await this.process.request({ type: 'predict_word_feedback', id: '', text, cursor, suggestion, accepted });
+    } catch {
+      // best-effort; see predictWord's doc comment above
+    }
   }
 
   /** `chat.sendNow` (contracts/omp-usage.md "Send now (steer)"): removes the queued chip, then

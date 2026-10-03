@@ -89,7 +89,11 @@ const refract: RefractApi = {
     sendNow: (sessionId, text) => request<{ steered: boolean }>(IPC_REQUESTS.CHAT_SEND_NOW, sessionId, text),
     answer: (sessionId, requestId, answer: ChatAnswer) =>
       request<void>(IPC_REQUESTS.CHAT_ANSWER, sessionId, requestId, answer),
-    commands: (sessionId) => request<SlashCommand[]>(IPC_REQUESTS.CHAT_COMMANDS, sessionId)
+    commands: (sessionId) => request<SlashCommand[]>(IPC_REQUESTS.CHAT_COMMANDS, sessionId),
+    predictWord: (sessionId, text, cursor) =>
+      request<string | null>(IPC_REQUESTS.CHAT_PREDICT_WORD, sessionId, text, cursor),
+    predictWordFeedback: (sessionId, text, cursor, suggestion, accepted) =>
+      request<void>(IPC_REQUESTS.CHAT_PREDICT_WORD_FEEDBACK, sessionId, text, cursor, suggestion, accepted)
   },
 
   settings: {

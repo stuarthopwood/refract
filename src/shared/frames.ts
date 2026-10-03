@@ -173,6 +173,13 @@ export interface GetAvailableCommandsResponseData {
   commands: SlashCommandDescriptor[];
 }
 
+/** `predict_word` (T103, FR-058): `suffix` is `null` whenever the server's own gating
+ * (cursor mid-word, not at the end of its line, path-shaped, or slash-command-shaped) or an
+ * unavailable prediction engine yields no suggestion (rpc.md "Word prediction"). */
+export interface PredictWordResponseData {
+  suffix: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Frames Refract consumes
 // ---------------------------------------------------------------------------
@@ -429,6 +436,26 @@ export interface GetAvailableCommandsCommand {
   id: string;
 }
 
+/** Ghost-text composer completion (T103, FR-058; rpc.md "Word prediction"). `text` is the
+ * whole draft and `cursor` a UTF-16 offset into it. */
+export interface PredictWordCommand {
+  type: 'predict_word';
+  id: string;
+  text: string;
+  cursor: number;
+}
+
+/** Sent once per shown-then-resolved suggestion (`accepted: true` on Tab, `false` on dismiss
+ * or an invalidating edit); no response payload on success. */
+export interface PredictWordFeedbackCommand {
+  type: 'predict_word_feedback';
+  id: string;
+  text: string;
+  cursor: number;
+  suggestion: string;
+  accepted: boolean;
+}
+
 export type RpcCommand =
   | PromptCommand
   | SteerCommand
@@ -440,4 +467,6 @@ export type RpcCommand =
   | GetMessagesCommand
   | NegotiateProtocolCommand
   | ExtensionUiResponseFrame
-  | GetAvailableCommandsCommand;
+  | GetAvailableCommandsCommand
+  | PredictWordCommand
+  | PredictWordFeedbackCommand;

@@ -151,4 +151,37 @@ export function registerChat(manager: SessionManager): void {
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     return { ok: true, value: [...manager.getOrCreateAgent(sessionId).availableCommands] };
   });
+
+  // T103, FR-058: ghost-text composer completion. `getOrCreateAgent` only looks up (or lazily
+  // constructs, never starts) the Session's `SessionAgent`; `predictWord`/`predictWordFeedback`
+  // themselves check for an already-running live `OmpProcess` and resolve to `null`/a no-op
+  // instead of starting one (a cold shared prediction daemon's first call can take up to ~2
+  // minutes, FINDINGS item 28, and a keystroke in a stopped Session's composer must never
+  // trigger that). Neither ever throws, so a failure here is never surfaced as a chat error.
+  ipcMain.handle(IPC_REQUESTS.CHAT_PREDICT_WORD, async (_event, sessionId: unknown, text: unknown, cursor: unknown) => {
+    if (typeof sessionId !== 'string' || typeof text !== 'string' || typeof cursor !== 'number') {
+      return invalidArgument(`${IPC_REQUESTS.CHAT_PREDICT_WORD} expects (sessionId, text, cursor)`);
+    }
+    if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
+    const suffix = await manager.getOrCreateAgent(sessionId).predictWord(text, cursor);
+    return { ok: true, value: suffix };
+  });
+
+  ipcMain.handle(
+    IPC_REQUESTS.CHAT_PREDICT_WORD_FEEDBACK,
+    async (_event, sessionId: unknown, text: unknown, cursor: unknown, suggestion: unknown, accepted: unknown) => {
+      if (
+        typeof sessionId !== 'string' ||
+        typeof text !== 'string' ||
+        typeof cursor !== 'number' ||
+        typeof suggestion !== 'string' ||
+        typeof accepted !== 'boolean'
+      ) {
+        return invalidArgument(`${IPC_REQUESTS.CHAT_PREDICT_WORD_FEEDBACK} expects (sessionId, text, cursor, suggestion, accepted)`);
+      }
+      if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
+      await manager.getOrCreateAgent(sessionId).predictWordFeedback(text, cursor, suggestion, accepted);
+      return { ok: true, value: undefined };
+    }
+  );
 }

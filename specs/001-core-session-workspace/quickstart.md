@@ -70,6 +70,18 @@ pnpm build        # must pass before a change lands on main
 1. Type `/`. Expect: the menu lists only the commands Refract has verified work (the fixed supported set in `src/shared/slash-commands.ts`, built from the probe table in `docs/spike/FINDINGS.md` item 23 and `contracts/omp-usage.md`) -- never OMP's raw, unfiltered list, and never a native command Refract has not built yet. Run each listed command one by one: each shows a visible result (its own output line, the dialog it raises answered through the ordinary request cards, or an error notice) and the Session returns to idle ready for the next message, never stuck. Send `/notacommand` (unknown to OMP) and a hidden command typed by hand (one the probe denylisted, or OMP's own, e.g. `/mcp`): both get the same unknown-command warning and nothing is sent. Adding a newly-probed command to the menu is a code change (rerun the probe, record it, add the name to `SUPPORTED_OMP_COMMANDS`), not a setting.
 2. Kill a Session's `omp.exe` by pid from Task Manager. Expect: the Session shows stopped; **Recover** reattaches and the history is intact.
 
+**Story 8: ghost-text word completion (FR-058)**
+
+1. In the message box, type a partial prose word at the end of a line (e.g. "The quick brown fox jumped over the laz") and pause. Expect: after a short debounce, a dimmed suggestion appears inline right after the cursor (e.g. "y"), not selectable and not part of the box's own text.
+2. Press **Tab** while the suggestion shows. Expect: exactly the suggested text is inserted and the cursor lands right after it; the dimmed text is gone.
+3. Repeat step 1, then press **Esc**. Expect: the suggestion disappears and the typed text is unchanged (Esc does not clear the whole box while a suggestion is showing).
+4. Repeat step 1, then keep typing past the suggested letters instead of accepting it. Expect: the suggestion disappears as soon as the draft no longer matches what it was shown for.
+5. With nothing suggested, press **Tab**. Expect: normal focus movement out of the field (e.g. to the Send button), never swallowed.
+6. Move the cursor back into the middle of an existing word and type a letter; separately, type a path-like string (e.g. "see src/components/Foo"); separately, type a slash command (e.g. "/mo"). Expect: no suggestion ever appears in any of these three cases.
+7. Type an extra letter immediately after a first edit, before the debounce could fire for the first one. Expect: at most the latest draft's suggestion ever appears -- never a suggestion for an earlier, already-superseded draft.
+8. Open a Session that has never been started (status not-started) and type a qualifying partial word in its message box. Expect: no agent starts just from typing -- the Session's status stays not-started/stopped throughout (confirm nothing new appears in `Get-Process omp`); a suggestion may or may not appear depending on whether the shared prediction daemon elsewhere on the machine is already warm, but typing alone must never launch this Session's own agent.
+9. Stop a live Session's agent mid-turn and keep typing a qualifying word in its composer. Expect: no error toast and no visible crash; the composer stays fully usable, simply without a suggestion.
+
 **Memory (FR-037, FR-038, SC-010)**
 
 1. Open Sessions until free memory drops below the threshold in `src/main/memory.ts`. Expect: a warning within 10 s naming the number of live agents; **Stop agent** on an idle Session frees its memory and the Session stays listed and reopens with its conversation.
