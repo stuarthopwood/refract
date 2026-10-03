@@ -35,6 +35,8 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo>
 | New Conversation | `{type:'new_session'}` | Same process, same cwd, same Session. Requires the Session to be idle. Clears the transcript; `currentConversation` updates when the first message is written. |
 | Open an earlier Conversation | `{type:'switch_session', sessionPath}` | Requires idle. Success is `data.cancelled === false`; then run reattach verification and reload the transcript with `get_messages`. `success:true, cancelled:true` is a failure. |
 | Slash command | `{type:'prompt', message:'/name args'}` | Only names present in the latest `available_commands_update` or Refract's native set; unknown names are refused locally (FR-033). |
+| Ghost-text word prediction | `{type:'predict_word', text, cursor}` → `data:{suffix: string\|null}` | For a composer that renders its own input box (FR/T103 scope). `text` is the whole draft, `cursor` a UTF-16 offset. Gated server-side (mid-word cursor, non-end-of-line cursor, file-path-shaped or slash-command-shaped drafts all answer `suffix:null`); independent of the session's chat model (FINDINGS item 28). Per session only the newest in-flight request is answered; match responses on `id` and treat an answer of `suffix:null` for a request you still care about as "superseded by a newer one", not as "no suggestion". |
+| Ghost-text acceptance feedback | `{type:'predict_word_feedback', text, cursor, suggestion, accepted}` | Send once per shown suggestion, `accepted:true` if the user took it, `false` if they typed past it. No `data` payload on success. |
 | Answer a dialog | `{type:'extension_ui_response', id, value}` or `{..., confirmed}` or `{..., cancelled:true}` | See "Dialogs". |
 | Shut down | close stdin, keep reading stdout until exit; after 10 s `taskkill /PID <pid> /T /F` | |
 
@@ -105,6 +107,16 @@ Probed with `chat-lines-probe.mjs` (FINDINGS item 22):
 - A cancelled `ask` is `toolResult.isError: true` with a fixed sentence and an empty `details` (no `question`/`options`) — render from the error text, not from `details`.
 - `todo` progress is available per call (`toolResult.details.phases`) and as live session state (`get_state().todoPhases`, same shape).
 - A batch `task()` call's own `tool_execution_end` completes almost immediately with `details.progress[]` stuck at `"pending"`; the authoritative per-subagent completion is a later `custom`/`async-result` message's `details.jobs[]` (`jobId`/`label`/`durationMs`/`schema.data`). `agent_start`/`agent_end` frames carry no subagent id and cannot be correlated to one. `set_subagent_subscription` does not exist in `get_available_commands` on 18.4.10.
+
+## Word prediction (`predict_word`/`predict_word_feedback`) (T102)
+
+Probed with `predict-word-probe.mjs` against an isolated, credential-free profile (FINDINGS item 28):
+
+- Wire shapes exactly as documented in `omp://rpc.md`: `{id?, type:"predict_word", text, cursor}` → `data:{suffix: string|null}` (no `cursor` echoed back); `{id?, type:"predict_word_feedback", text, cursor, suggestion, accepted}` → `success:true` with no `data` payload for both `accepted:true` and `accepted:false`.
+- Gating confirmed live: cursor mid-word, cursor not at the end of its line (more text follows on the same line), a file-path-shaped draft, and a slash-command-shaped draft all answered `suffix:null`. A plausible partial prose word at the end of a line answered a real `suffix`.
+- **The prediction engine does not depend on the session's configured chat model.** Every call above, including the cold-start measurement, ran against a session whose only configured chat model was deliberately unreachable (`baseUrl: http://127.0.0.1:1`); every `predict_word` call still returned real suggestions. `rpc.md` itself supports this: answers come "from the engine selected by `spelling.autocomplete`" — a boolean (`auto`/`off`), not a model/provider selector. Refract can therefore exercise ghost text in an isolated or stub-model profile; no live chat-capable credential is required, only `spelling.autocomplete` left at its default.
+- One-in-flight-replaces-older confirmed: with a burst of identical requests fired back to back (no await between sends), the first (already dispatched) and the last (left waiting when the first finished) each answered for real; every request in between answered `suffix:null` (superseded). A gap of only two requests was not reliably wide enough to reproduce this on a warm engine (both resolved for real in 1-9 ms) — do not use a two-request test as a regression check for this behaviour; use a wider burst.
+- Cold start measured 7-16 ms for the first `predict_word` call on a brand-new isolated profile/process — far below `rpc.md`'s documented "worst case about two minutes." The shared prediction daemon is almost certainly a machine-wide singleton that was already warm from an earlier process; treat this number as "warm daemon," not as a refutation of the documented worst case, and do not assume Refract's own first keystroke-triggered `predict_word` call will always be this fast on a machine where the daemon has never run.
 
 ## Slash command classification (T092)
 
