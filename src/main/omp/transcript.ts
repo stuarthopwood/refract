@@ -200,8 +200,11 @@ function applyBatchTaskResult(items: TranscriptItem[], result: ToolResultLike, l
 
 interface JobEntry {
   jobId?: unknown;
+  id?: unknown;
   label?: unknown;
   durationMs?: unknown;
+  status?: unknown;
+  resultText?: unknown;
   schema?: { data?: unknown };
 }
 
@@ -214,25 +217,39 @@ function safeStringify(value: unknown): string {
   }
 }
 
-/** The authoritative per-subagent completion (FINDINGS item 22(e)): a later `custom`/
- * `async-result` message's `details.jobs[]`. Matched by the `jobId` `applyBatchTaskResult`
- * recorded from `progress[i].id`; falls back to matching by `label === name` for a subagent that
- * never got a `progress` entry at all. No per-job success/failure field was observed in the
- * probe, so arrival itself is read as `done` (the call's own `tool_execution_end` already
- * covers a hard failure of the whole batch). */
+/** The authoritative per-subagent completion (FINDINGS item 22(e)/live verification, 2026-10-03):
+ * a later `custom`/`async-result` message's `details.jobs[]` keys each entry by `jobId`, but the
+ * `wait` tool's own `tool_execution_end` carries an equivalent `details.jobs[]` keyed by `id`
+ * instead (same batch, two different carriers -- OMP reports whichever jobs a `wait` call
+ * actually waited for through the tool's own result, and any that finished after that `wait`
+ * returned through the separate async-result message), so both key names are matched here. Falls
+ * back to matching by `label === name` for a subagent that never got a `progress` entry at all. A
+ * job's plain-text result is `resultText` when present (the wait tool's shape: the subagent's
+ * full raw output), `schema.data` on the async-result shape, `label` as a last resort; `status`
+ * is read when present (`"pending"`/`"running"` never completes the row), else arrival itself is
+ * read as `done` (the call's own `tool_execution_end` already covers a hard failure of the whole
+ * batch). */
 function applyAsyncResultJobs(items: TranscriptItem[], jobs: JobEntry[]): TranscriptItem[] {
   return items.map((item) => {
     if (item.kind !== 'subagent') return item;
-    const byJobId = jobs.find((job) => typeof job.jobId === 'string' && job.jobId === item.jobId);
+    const byJobId = jobs.find((job) => (typeof job.jobId === 'string' ? job.jobId : typeof job.id === 'string' ? job.id : undefined) === item.jobId);
     const job = byJobId ?? (item.jobId === undefined ? jobs.find((j) => typeof j.label === 'string' && j.label === item.name) : undefined);
     if (!job) return item;
-    const resultText = job.schema && typeof job.schema === 'object' && 'data' in job.schema ? safeStringify(job.schema.data) : typeof job.label === 'string' ? job.label : item.result;
+    if (job.status === 'pending' || job.status === 'running') return item;
+    const resultText =
+      typeof job.resultText === 'string'
+        ? job.resultText
+        : job.schema && typeof job.schema === 'object' && 'data' in job.schema
+          ? safeStringify(job.schema.data)
+          : typeof job.label === 'string'
+            ? job.label
+            : item.result;
     return {
       ...item,
       status: 'done',
       durationMs: typeof job.durationMs === 'number' ? job.durationMs : item.durationMs,
       result: resultText,
-      jobId: typeof job.jobId === 'string' ? job.jobId : item.jobId,
+      jobId: (typeof job.jobId === 'string' ? job.jobId : typeof job.id === 'string' ? job.id : undefined) ?? item.jobId,
     };
   });
 }
@@ -478,11 +495,24 @@ function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionSt
   return items.map((item) => (item === existing ? updated : item));
 }
 
+function jobsFromDetails(details: unknown): JobEntry[] | undefined {
+  return details && typeof details === 'object' && Array.isArray((details as { jobs?: unknown }).jobs)
+    ? (details as { jobs: JobEntry[] }).jobs
+    : undefined;
+}
+
 function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndFrame): TranscriptItem[] {
   if (frame.toolName === 'task') {
     const updated = applyBatchTaskResult(items, { toolCallId: frame.toolCallId, isError: frame.isError, details: frame.result.details }, true);
     if (updated !== items) return updated;
   }
+  // The `wait` tool's own `tool_execution_end` is the other real carrier of per-subagent
+  // completion (see `applyAsyncResultJobs`'s doc comment): apply its `details.jobs[]` the same
+  // way regardless of tool name, so a batch a `wait` call actually waited for completes its rows
+  // instead of leaving them `running` forever once the separate async-result message never
+  // arrives for jobs a `wait` call already resolved.
+  const waitJobs = jobsFromDetails(frame.result.details);
+  if (waitJobs) items = applyAsyncResultJobs(items, waitJobs);
   const existing = items.find((item): item is ToolItem => isToolItem(item) && item.toolCallId === frame.toolCallId);
   const isError = frame.isError;
   const output = joinText(frame.result.content);
@@ -563,6 +593,8 @@ function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage
     const updated = applyBatchTaskResult(items, { toolCallId: message.toolCallId, isError: message.isError, details: message.details }, false);
     if (updated !== items) return updated;
   }
+  const historyWaitJobs = jobsFromDetails(message.details);
+  if (historyWaitJobs) items = applyAsyncResultJobs(items, historyWaitJobs);
   const existing = items.find((item): item is ToolItem => isToolItem(item) && item.toolCallId === message.toolCallId);
   const output = joinText(message.content);
   const edit = buildEditField(message.toolName, message.details);
