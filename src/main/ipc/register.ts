@@ -4,7 +4,7 @@
 // `conversations.ts`, `chat.ts`, `settings.ts`, `clipboard.ts`) registers its own channels; this
 // file only wires them together and owns the manager-to-window event forwarding.
 
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow, Menu } from 'electron';
 import { IPC_EVENTS } from '../../shared/ipc';
 import type { ManagerEvent, SessionManager } from '../SessionManager';
 import { registerChat } from './chat';
@@ -14,8 +14,9 @@ import { registerReadiness } from './readiness';
 import { registerRepositories } from './repositories';
 import { registerSessions } from './sessions';
 import { registerSettings } from './settings';
+import { registerWindow } from './window';
 
-export function registerIpc(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
+export function registerIpc(manager: SessionManager, getWindow: () => BrowserWindow | undefined, appMenu: Menu): void {
   registerReadiness();
   registerRepositories(manager, getWindow);
   registerSessions(manager);
@@ -23,6 +24,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerChat(manager);
   registerSettings(manager, getWindow);
   registerClipboard();
+  registerWindow(appMenu, getWindow);
 
   manager.onEvent((event) => forwardEvent(event, getWindow));
 }

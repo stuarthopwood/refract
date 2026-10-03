@@ -97,6 +97,11 @@ const refract: RefractApi = {
     setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode)
   },
 
+  window: {
+    popupMenu: (menuId, x, y) => request<void>(IPC_REQUESTS.WINDOW_POPUP_MENU, menuId, x, y),
+    toggleMaximize: () => request<void>(IPC_REQUESTS.WINDOW_TOGGLE_MAXIMIZE)
+  },
+
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
   onTranscriptPatch: (handler) => on<{ sessionId: string; ops: TranscriptOp[] }>(IPC_EVENTS.TRANSCRIPT_PATCH, handler),

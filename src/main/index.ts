@@ -3,11 +3,13 @@
 // never falls into that search order even indirectly (security fix, independent review).
 process.env['NoDefaultCurrentDirectoryInExePath'] = '1'
 
-import { app, BrowserWindow, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, session, shell } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { joinKillOnCloseJob } from './process/jobObject'
+import { buildAppMenu } from './menu'
+import { DARK_TITLE_BAR_OVERLAY } from './titleBarOverlay'
 import { initPidRecords, reapStale } from './process/pidRecords'
 import { RegistryStore } from './store/registry'
 import { SettingsStore } from './store/settings'
@@ -89,6 +91,14 @@ function createWindow(): void {
     width: 1280,
     height: 800,
     show: false,
+    // The title bar merged into the app's own top row (spec 001 T100, FR-057): the native menu
+    // never reveals on Alt once `titleBarStyle: 'hidden'` is set (confirmed live,
+    // docs/spike/FINDINGS.md item 33), so the renderer draws its own File/Edit/View/Window bar
+    // instead (`AppMenuBar.tsx`, `menu.ts`'s `Menu.setApplicationMenu` keeps every accelerator
+    // working regardless). `titleBarOverlay` paints the minimise/maximise/close buttons in the
+    // active theme's colours (dark-only today, `titleBarOverlay.ts`).
+    titleBarStyle: 'hidden',
+    titleBarOverlay: DARK_TITLE_BAR_OVERLAY,
     // The dev-time window icon: `build/icon.ico` resolves relative to `out/main`, so this path
     // only exists when running unpackaged. Once spec 006's T006 adds electron-builder, it will
     // embed this same build/icon.ico in the packaged exe's own resource instead, wired through
@@ -173,7 +183,13 @@ if (!gotLock) {
     const registry = await RegistryStore.open(userDataDir)
     const settings = await SettingsStore.open(userDataDir)
     manager = new SessionManager(registry, settings)
-    registerIpc(manager, getWindow)
+
+    // T100: the one real application menu (accelerators work regardless of the merged top row
+    // never showing a visible bar); the renderer's `AppMenuBar` pops its submenus by id.
+    const appMenu = buildAppMenu(isDev)
+    Menu.setApplicationMenu(appMenu)
+
+    registerIpc(manager, getWindow, appMenu)
     registerNotifications(manager, getWindow)
     startMemoryMonitor(manager, getWindow)
 

@@ -216,3 +216,10 @@
 [data-slot='message-scroller-viewport'][data-autoscrolling]::-webkit-scrollbar-thumb { background: transparent; }
 
 :is([role='option'], [role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='radio'], [role='tab'], [data-slot='toggle-group-item'], [data-choice-item]) { border-radius: 0; }
+
+/* The title bar merged into the app's own top row (spec 001 T100, FR-057): `.drag-region` marks
+ * the left nav header and the chat header as the window's draggable area; `.no-drag-region`
+ * carves out their own interactive children (buttons, inputs, menus) so dragging still works
+ * everywhere else in that row, matching Electron's `-webkit-app-region` contract. */
+.drag-region { -webkit-app-region: drag; }
+.no-drag-region { -webkit-app-region: no-drag; }

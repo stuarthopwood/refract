@@ -1,31 +1,20 @@
-// Status bar (docs/DESIGN.md "Layout": "A status bar along the bottom carries the app-wide
-// Approval mode switch."; CONTEXT.md "Approval mode": Ask/Edit freely/Auto, reads are never
-// prompted). T033 (the switch) and the T039 low-memory notice (contracts/ipc.md
-// `memory:warning`, FR-037) share this bar because both are small, always-visible controls.
+// Status bar (docs/DESIGN.md "Layout"): the T039 low-memory notice (contracts/ipc.md
+// `memory:warning`, FR-037), the one remaining always-visible control here. The Approval mode
+// switch this bar used to carry (T033) moved to the ApprovalModePill above the message box
+// (MessageInput.tsx, T098, FR-056): Refract's Approval mode control lives there now, not here.
 import { useState } from 'react'
 import { AlertTriangleIcon } from 'lucide-react'
 import { badgeVariants } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { useMemoryStore, useSessionsStore, useSettingsStore } from '@/state'
-import type { ApprovalMode } from '../../../shared/model'
-
-const MODE_ITEMS: Array<{ value: ApprovalMode; label: string; hint: string }> = [
-  { value: 'ask', label: 'Ask', hint: 'Prompts for file changes and commands. Reads are never prompted.' },
-  { value: 'edit-freely', label: 'Edit freely', hint: 'Prompts for commands only. Reads and file changes are never prompted.' },
-  { value: 'auto', label: 'Auto', hint: 'Never prompts. Reads are never prompted either way.' }
-]
+import { useMemoryStore, useSessionsStore } from '@/state'
 
 function pluralAgents(count: number): string {
   return `${count} agent${count === 1 ? '' : 's'} running`
 }
 
 export function StatusBar() {
-  const approvalMode = useSettingsStore((state) => state.settings.approvalMode)
-  const setApprovalMode = useSettingsStore((state) => state.setApprovalMode)
   const warning = useMemoryStore((state) => state.warning)
   const sessions = useSessionsStore((state) => state.sessions)
   const stopAgent = useSessionsStore((state) => state.stopAgent)
@@ -33,27 +22,8 @@ export function StatusBar() {
 
   const liveSessions = sessions.filter((session) => session.status !== 'stopped')
 
-  function handleModeChange(value: string): void {
-    // ToggleGroup type="single" deselects on a repeat click; Approval mode always has a value.
-    if (!value) return
-    void setApprovalMode(value as ApprovalMode)
-  }
-
   return (
     <footer className="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-border bg-card px-3 text-xs text-muted-foreground">
-      <ToggleGroup type="single" size="sm" value={approvalMode} onValueChange={handleModeChange} aria-label="Approval mode">
-        {MODE_ITEMS.map((item) => (
-          <Tooltip key={item.value}>
-            <TooltipTrigger asChild>
-              <ToggleGroupItem value={item.value} aria-label={item.label}>
-                {item.label}
-              </ToggleGroupItem>
-            </TooltipTrigger>
-            <TooltipContent>{item.hint}</TooltipContent>
-          </Tooltip>
-        ))}
-      </ToggleGroup>
-
       {warning && (
         <Popover open={memoryOpen} onOpenChange={setMemoryOpen}>
           <PopoverTrigger asChild>

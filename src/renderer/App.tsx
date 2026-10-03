@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
@@ -13,6 +14,8 @@ import { useRepositoriesStore } from '@/state'
 // checklist passes or before a repository exists, this area shows the readiness screen instead
 // (docs/DESIGN.md "First run and empty states"). Each region has its own ErrorBoundary so a
 // render error in one (a malformed Session/TranscriptItem, say) cannot blank the other.
+// `AppMenuBar` mounts once here, outside both branches, so Alt reveals the File/Edit/View/Window
+// bar (FR-057) no matter which screen is showing.
 export function App() {
   const [ready, setReady] = useState(false)
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
@@ -20,6 +23,7 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
+      <AppMenuBar />
       <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />

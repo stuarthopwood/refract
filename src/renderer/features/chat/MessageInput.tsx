@@ -17,6 +17,7 @@ import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore 
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
+import { ApprovalModePill } from './ApprovalModePill'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -230,6 +231,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       )}
       <div role="status" aria-live="polite" className="sr-only">
         {showSlashMenu && slashMatches.length === 0 ? 'No matching commands' : ''}
+      </div>
+      {/* Chip row (docs/DESIGN.md "Chat"; spec 004 appends readout chips after the pill): the
+          Approval mode pill is always the first item, FR-056. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <ApprovalModePill sessionId={sessionId} />
       </div>
       {/* T063/quality-gate fix: a real `bg-muted/60` fill (distinct from the page's own
           `bg-background` -- `ChatPane.tsx` sets no background of its own, so a translucent

@@ -5,6 +5,12 @@
 import type { ApprovalMode, ConversationInfo, PendingRequest, Repository, Session, SessionStatus, Settings, TranscriptItem } from './model';
 import type { SlashCommandDescriptor } from './frames';
 
+/** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
+ * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
+ * dev-only item (Reload, Force Reload, Toggle Developer Tools) is included or not by the one menu
+ * main already builds, never a second renderer-side copy of that decision. */
+export type AppMenuId = 'file' | 'edit' | 'view' | 'window';
+
 // ---------------------------------------------------------------------------
 // Result and errors
 // ---------------------------------------------------------------------------
@@ -164,6 +170,8 @@ export const IPC_REQUESTS = {
   CHAT_COMMANDS: 'chat.commands',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
+  WINDOW_POPUP_MENU: 'window.popupMenu',
+  WINDOW_TOGGLE_MAXIMIZE: 'window.toggleMaximize',
 } as const;
 
 export const IPC_EVENTS = {
@@ -244,6 +252,16 @@ export interface RefractApi {
   settings: {
     get(): Promise<Result<Settings>>;
     setApprovalMode(mode: ApprovalMode): Promise<Result<Settings>>;
+  };
+
+  window: {
+    /** Pops open one of the in-app menu bar's real submenus (spec 001 T100, FR-057) at `x`/`y`,
+     * window-content-relative coordinates -- exactly what the clicked button's own
+     * `getBoundingClientRect()` already gives. */
+    popupMenu(menuId: AppMenuId, x: number, y: number): Promise<Result<void>>;
+    /** Toggles the window between maximised and restored (FR-057: double-clicking a draggable
+     * top-row area must do this). */
+    toggleMaximize(): Promise<Result<void>>;
   };
 
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;

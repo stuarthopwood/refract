@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import refractHero from '@/assets/brand/refract-hero.png'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -15,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
+import { toggleMaximize } from '@/lib/windowChrome'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
@@ -357,6 +359,9 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
 
 // The session list (docs/DESIGN.md "Layout"): a collapsible group per Repository, Sessions
 // sorted by most recent activity, and a collapsed Archived group at the bottom of each group.
+// Its header (the Refract icon and name, spec 001 T100, FR-057) starts at the very top of the
+// window and is part of the app's merged top row: draggable to move the window, double-click to
+// maximise or restore.
 export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
@@ -367,6 +372,13 @@ export function SessionList() {
       tabIndex={-1}
       className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
+      <div
+        className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3"
+        onDoubleClick={toggleMaximize}
+      >
+        <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0 rounded-md" />
+        <span className="text-sm font-semibold">Refract</span>
+      </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-2">
           {repositories.map((repository) => (
