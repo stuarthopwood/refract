@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { BrainIcon, Loader2Icon } from 'lucide-react'
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -8,25 +9,137 @@ import {
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
 import { Message, MessageContent, MessageHeader } from '@/components/ui/message'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
 import type { PendingRequest, TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
-import { ToolRow } from './ToolRow'
-import { RequestCard, ResolvedRequestSummary } from './RequestCard'
+import { AgentMessageRow } from './AgentMessageRow'
+import { CollapsedLine } from './CollapsedLine'
+import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
+import { ToolGroupRow, ToolRow, SubagentRow } from './ToolRow'
+import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { NoticeRow } from './NoticeRow'
 
-interface TranscriptRowProps {
-  item: TranscriptItem
-  sessionId: string | null
-  pending: PendingRequest[]
+type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
+type UserItem = Extract<TranscriptItem, { kind: 'user' }>
+
+// Cached per repository id for the renderer's lifetime (T072, FR-045): every AskQuestionRow in
+// every Session of the same repository shares one `repositories.userName` round trip.
+const userNameCache = new Map<string, string>()
+
+function useRepositoryUserName(repositoryId: string | null): string | undefined {
+  const [name, setName] = React.useState<string | undefined>(repositoryId ? userNameCache.get(repositoryId) : undefined)
+  React.useEffect(() => {
+    if (!repositoryId) {
+      setName(undefined)
+      return
+    }
+    const cached = userNameCache.get(repositoryId)
+    if (cached !== undefined) {
+      setName(cached)
+      return
+    }
+    let cancelled = false
+    void window.refract.repositories.userName(repositoryId).then((result) => {
+      if (cancelled || !result.ok) return
+      userNameCache.set(repositoryId, result.value)
+      setName(result.value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [repositoryId])
+  return name
 }
 
-// Renders one TranscriptItem per its kind (data-model.md `TranscriptItem`, docs/DESIGN.md
-// "Chat"). A `request` item looks itself up in the pending-requests store: still pending ->
-// RequestCard; otherwise -> the one-line resolved summary, because `TranscriptItem.resolved`
-// does not carry the original request's tool/target/title once it is no longer pending.
-function TranscriptRow({ item, sessionId, pending }: TranscriptRowProps) {
+function formatThinkingSeconds(ms: number): string {
+  return `${Math.max(1, Math.round(ms / 1000))}`
+}
+
+// "28s", "1m 14s", "2h 3m" (T076, FR-046).
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+const THINKING_PREVIEW_CHARS = 120
+
+/** The nearest preceding `ask` tool item for a `request` item at `requestIndex`, scanning
+ * backward only until an earlier `request` item (a different question) is hit (T072/T073). */
+function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): ToolItem | undefined {
+  for (let i = requestIndex - 1; i >= 0; i--) {
+    const candidate = items[i]!
+    if (candidate.kind === 'request') break
+    if (candidate.kind === 'tool' && candidate.tool === 'ask') return candidate
+  }
+  return undefined
+}
+
+/** Every item's own best end-time estimate, read from whichever kind-specific timing field it
+ * has (T076): absent for a kind with none at all (`assistant-text`, `notice`, `request`), which
+ * is exactly why `receivedAt` (live arrival time) is tried first by the caller. */
+function itemEndTime(item: TranscriptItem): number | undefined {
+  if (item.kind === 'tool' || item.kind === 'subagent') {
+    return item.durationMs != null ? item.startedAt + item.durationMs : undefined
+  }
+  if (item.kind === 'thinking') return item.endedAt
+  if (item.kind === 'user' || item.kind === 'agent-message') return item.at
+  return undefined
+}
+
+function computeTurnEnd(turnItems: TranscriptItem[], receivedAt: Record<string, number>): number | undefined {
+  let maxEnd: number | undefined
+  for (const item of turnItems) {
+    const end = receivedAt[item.id] ?? itemEndTime(item)
+    if (end != null && (maxEnd === undefined || end > maxEnd)) maxEnd = end
+  }
+  return maxEnd
+}
+
+interface Turn {
+  userItem: UserItem | null
+  items: TranscriptItem[]
+}
+
+// Splits the flat transcript into turns (one per `user` item, running to just before the next
+// one) for T076's per-turn total-time line. Any items ahead of the first `user` item (should not
+// normally occur) form a leading turn with no total-time line (`userItem: null`).
+function splitIntoTurns(items: TranscriptItem[]): Turn[] {
+  const turns: Turn[] = []
+  let current: Turn = { userItem: null, items: [] }
+  for (const item of items) {
+    if (item.kind === 'user') {
+      if (current.items.length > 0) turns.push(current)
+      current = { userItem: item, items: [item] }
+    } else {
+      current.items.push(item)
+    }
+  }
+  turns.push(current)
+  return turns
+}
+
+interface TranscriptRowProps {
+  item: GroupedTranscriptItem
+  sessionId: string | null
+  pending: PendingRequest[]
+  userName: string | undefined
+  resolvedAskByRequestId: Map<string, ToolItem | undefined>
+}
+
+// Renders one grouped transcript row per its kind (data-model.md `TranscriptItem`,
+// docs/DESIGN.md "Chat"). A `request` item looks itself up in the pending-requests store: still
+// pending -> RequestCard; an answered/cancelled question is superseded by the matching `ask`
+// tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
+function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByRequestId }: TranscriptRowProps) {
+  if (isToolGroup(item)) {
+    return <ToolGroupRow group={item} />
+  }
+
   switch (item.kind) {
     case 'user':
       return (
@@ -50,33 +163,85 @@ function TranscriptRow({ item, sessionId, pending }: TranscriptRowProps) {
         </Message>
       )
 
-    case 'thinking':
+    case 'thinking': {
       if (!item.text) return null
+      const duration = item.startedAt != null && item.endedAt != null ? item.endedAt - item.startedAt : undefined
+      const label = item.streaming ? 'Thinking' : duration != null ? `Thought for ${formatThinkingSeconds(duration)}s` : 'Thought'
       return (
-        <Collapsible className="rounded-md border border-border">
-          <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs font-medium text-muted-foreground hover:bg-muted">
-            Thinking
-          </CollapsibleTrigger>
-          <CollapsibleContent className="px-2 pb-2">
-            <Markdown id={item.id} text={item.text} streaming={item.streaming} />
-          </CollapsibleContent>
-        </Collapsible>
+        <CollapsedLine
+          icon={
+            item.streaming ? (
+              <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />
+            ) : (
+              <BrainIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            )
+          }
+          label={label}
+          summary={item.streaming ? item.text.slice(-THINKING_PREVIEW_CHARS) : undefined}
+        >
+          <Markdown id={item.id} text={item.text} streaming={item.streaming} />
+        </CollapsedLine>
       )
+    }
 
     case 'tool':
+      if (item.tool === 'ask') {
+        if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
+        return <AskQuestionRow item={item} userName={userName} />
+      }
       return <ToolRow item={item} />
+
+    case 'subagent':
+      return <SubagentRow item={item} />
+
+    case 'agent-message':
+      return <AgentMessageRow item={item} />
 
     case 'request': {
       const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined
       if (live && !item.resolved) {
         return <RequestCard sessionId={sessionId as string} request={live} />
       }
+      if (item.resolved === 'answered' || item.resolved === 'cancelled') {
+        // Superseded by the matching `ask` tool item once it resolves (T072); until then (a brief
+        // race between the answer landing and that item's own `tool_execution_end`), fall back to
+        // the plain one-line summary so the question is never shown as still pending.
+        const askItem = resolvedAskByRequestId.get(item.id)
+        if (askItem && askItem.status !== 'running') return null
+      }
       return <ResolvedRequestSummary resolved={item.resolved} />
     }
 
     case 'notice':
       return <NoticeRow level={item.level} text={item.text} />
+
+    default:
+      return null
   }
+}
+
+interface TurnTotalLineProps {
+  turn: Turn
+  isLastTurn: boolean
+  isTurnRunning: boolean
+  receivedAt: Record<string, number>
+}
+
+// The turn's total elapsed time (T076, FR-046): a muted line after the turn's last item, `
+// aria-hidden` while it is still running (ticking every second) so a screen reader only reads
+// the final value once the turn ends; omitted when no item in the turn carries usable timing
+// (a reopened Conversation whose history has none).
+function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTotalLineProps) {
+  if (!turn.userItem) return null
+  const running = isLastTurn && isTurnRunning
+  const end = running ? Date.now() : computeTurnEnd(turn.items, receivedAt)
+  if (end === undefined) return null
+  const elapsedMs = Math.max(0, end - turn.userItem.at)
+  return (
+    <div aria-hidden={running || undefined} className="px-2 py-1 text-xs text-muted-foreground">
+      {formatElapsed(elapsedMs)}
+    </div>
+  )
 }
 
 // The Session's transcript (T025, no props: reads the visible Session from the zustand stores).
@@ -86,7 +251,9 @@ function TranscriptRow({ item, sessionId, pending }: TranscriptRowProps) {
 export function Transcript() {
   const trackedSessionId = useTranscriptStore((state) => state.sessionId)
   const storeItems = useTranscriptStore((state) => state.items)
+  const receivedAt = useTranscriptStore((state) => state.receivedAt)
   const visibleSessionId = useSessionsStore((state) => state.visibleSessionId)
+  const sessions = useSessionsStore((state) => state.sessions)
   // The store may have adopted a `reset` for a Session that is not (yet) the visible one
   // (transcript-store.ts's defense-in-depth path for a dropped/failed `sessions.setVisible`
   // call): never render those items over the visible Session's own transcript (bug report
@@ -94,6 +261,30 @@ export function Transcript() {
   const items = trackedSessionId === visibleSessionId ? storeItems : []
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = visibleSessionId ? (pendingBySession[visibleSessionId] ?? []) : []
+
+  const visibleSession = visibleSessionId ? sessions.find((session) => session.id === visibleSessionId) : undefined
+  const userName = useRepositoryUserName(visibleSession?.repositoryId ?? null)
+  const isTurnRunning = visibleSession?.status === 'working' || visibleSession?.status === 'needs-you'
+
+  // Re-renders the running turn's total-time line every second (T076); the running turn is the
+  // only one whose elapsed time is ever recomputed from `Date.now()` rather than frozen item
+  // timestamps, so nothing else needs to re-render on this tick.
+  const [, forceTick] = React.useReducer((count: number) => count + 1, 0)
+  React.useEffect(() => {
+    if (!isTurnRunning) return
+    const interval = setInterval(forceTick, 1000)
+    return () => clearInterval(interval)
+  }, [isTurnRunning])
+
+  const resolvedAskByRequestId = React.useMemo(() => {
+    const map = new Map<string, ToolItem | undefined>()
+    items.forEach((item, index) => {
+      if (item.kind === 'request') map.set(item.id, findPrecedingAskItem(items, index))
+    })
+    return map
+  }, [items])
+
+  const turns = React.useMemo(() => splitIntoTurns(items), [items])
 
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
@@ -103,10 +294,26 @@ export function Transcript() {
             {items.length === 0 && (
               <div className="px-2 py-8 text-center text-sm text-muted-foreground">No messages yet</div>
             )}
-            {items.map((item) => (
-              <MessageScrollerItem key={item.id} messageId={item.id}>
-                <TranscriptRow item={item} sessionId={visibleSessionId} pending={pending} />
-              </MessageScrollerItem>
+            {turns.map((turn, turnIndex) => (
+              <React.Fragment key={turn.userItem?.id ?? `turn-${turnIndex}`}>
+                {groupToolItems(turn.items).map((row) => (
+                  <MessageScrollerItem key={row.id} messageId={row.id}>
+                    <TranscriptRow
+                      item={row}
+                      sessionId={visibleSessionId}
+                      pending={pending}
+                      userName={userName}
+                      resolvedAskByRequestId={resolvedAskByRequestId}
+                    />
+                  </MessageScrollerItem>
+                ))}
+                <TurnTotalLine
+                  turn={turn}
+                  isLastTurn={turnIndex === turns.length - 1}
+                  isTurnRunning={isTurnRunning}
+                  receivedAt={receivedAt}
+                />
+              </React.Fragment>
             ))}
           </MessageScrollerContent>
         </MessageScrollerViewport>

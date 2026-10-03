@@ -47,7 +47,8 @@ const refract: RefractApi = {
     add: (path) => request<Repository>(IPC_REQUESTS.REPOSITORIES_ADD, path),
     remove: (id) => request<void>(IPC_REQUESTS.REPOSITORIES_REMOVE, id),
     branches: (id) => request<BranchEntry[]>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id),
-    pickFolder: () => request<string | null>(IPC_REQUESTS.REPOSITORIES_PICK_FOLDER)
+    pickFolder: () => request<string | null>(IPC_REQUESTS.REPOSITORIES_PICK_FOLDER),
+    userName: (id) => request<string>(IPC_REQUESTS.REPOSITORIES_USER_NAME, id)
   },
 
   sessions: {

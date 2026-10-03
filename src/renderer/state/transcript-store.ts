@@ -5,6 +5,12 @@ import type { TranscriptItem } from '../../shared/model'
 interface TranscriptState {
   sessionId: string | null
   items: TranscriptItem[]
+  /** Wall-clock arrival time of each item that arrived as a live `upsert` patch during this app
+   * run, keyed by item id (T076's turn-total-time line); a `reset` (full history load, e.g. a
+   * restart or Session switch) clears it, since those items' own real timestamps may be far in
+   * the past and "now" would show a nonsensical elapsed time -- that is also exactly the
+   * "reopened Conversation with no usable timing" case the turn-total line is required to omit. */
+  receivedAt: Record<string, number>
   reset(sessionId: string, items: TranscriptItem[]): void
   applyOps(sessionId: string, ops: TranscriptOp[]): void
 }
@@ -15,7 +21,8 @@ interface TranscriptState {
 export const useTranscriptStore = create<TranscriptState>((set, get) => ({
   sessionId: null,
   items: [],
-  reset: (sessionId, items) => set({ sessionId, items }),
+  receivedAt: {},
+  reset: (sessionId, items) => set({ sessionId, items, receivedAt: {} }),
   applyOps: (sessionId, ops) => {
     const state = get()
     const isTrackedSession = sessionId === state.sessionId
@@ -27,14 +34,17 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
     // no base to apply against for an untracked session, so it is dropped as before.
     if (!isTrackedSession && !hasReset) return
     let items = isTrackedSession ? state.items : []
+    let receivedAt = isTrackedSession ? state.receivedAt : {}
     for (const op of ops) {
       if (op.op === 'reset') {
         items = op.items
+        receivedAt = {}
         continue
       }
       const index = items.findIndex((item) => item.id === op.item.id)
       items = index === -1 ? [...items, op.item] : items.map((item, i) => (i === index ? op.item : item))
+      receivedAt = { ...receivedAt, [op.item.id]: Date.now() }
     }
-    set({ sessionId, items })
+    set({ sessionId, items, receivedAt })
   }
 }))

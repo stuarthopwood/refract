@@ -82,7 +82,16 @@ export interface SessionRuntime {
 export type TranscriptItem =
   | { kind: 'user'; id: string; text: string; at: number }
   | { kind: 'assistant-text'; id: string; text: string; streaming: boolean }
-  | { kind: 'thinking'; id: string; text: string; streaming: boolean } // omitted when the text is empty
+  | {
+      kind: 'thinking';
+      id: string;
+      text: string;
+      streaming: boolean; // omitted when the text is empty
+      /** Wall-clock bounds for "Thought for Ns" (T075); absent when the source (live or history)
+       * carries no usable timing, in which case the row shows just "Thought". */
+      startedAt?: number;
+      endedAt?: number;
+    }
   | {
       kind: 'tool';
       id: string;
@@ -95,10 +104,44 @@ export type TranscriptItem =
       args: unknown;
       output?: string;
       diff?: string;
+      /** The raw `tool_execution_end` `result.details` (or history's `toolResult.details`): read
+       * generically by a tool-specific renderer (T073's `ask` answer: `selectedOptions`/
+       * `customInput`) instead of adding a one-off TranscriptItem field per tool. */
+      details?: unknown;
       /** From an `edit` tool's `tool_execution_end` `result.details`; the renderer builds the unified diff (T025). */
       edit?: { path: string; oldText: string; newText: string };
       /** From a `write` tool's args; the renderer diffs it against a cached prior read/edit of the same path (T025). */
       write?: { path: string; content: string };
+    }
+  | {
+      /** One subagent started by a batch `task()` call (T078): a `tasks` array of N starts N of
+       * these, never a single `tool` item, so each has its own collapsed line and (later, spec
+       * 004) its own transcript panel. `id` stays stable (`subagent:<toolCallId>:<index>`) across
+       * the run so re-opening it keeps the same identity. */
+      kind: 'subagent';
+      id: string;
+      toolCallId: string; // the parent `task` call's id
+      name: string; // the task's own `name`, else its `task` text truncated
+      task: string; // the full prompt text (`tasks[i].task`), shown on expansion
+      status: 'running' | 'done' | 'error';
+      startedAt: number;
+      durationMs?: number;
+      /** The authoritative per-subagent result (FINDINGS item 22(e) `details.jobs[].schema.data`,
+       * falling back to `.label`), shown as plain text on expansion once known. */
+      result?: string;
+      /** The batch call's own `details.progress[].id`/the later `details.jobs[].jobId`, used only
+       * to correlate this row across the two frames; never rendered. */
+      jobId?: string;
+    }
+  | {
+      /** An IRC-style message between a subagent and the main agent, or between subagents
+       * (T079, FR-048); never grouped or hidden. */
+      kind: 'agent-message';
+      id: string;
+      from: string;
+      to: string;
+      text: string;
+      at: number;
     }
   | { kind: 'request'; id: string; requestId: string; resolved?: 'approved' | 'denied' | 'answered' | 'cancelled' }
   | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string };

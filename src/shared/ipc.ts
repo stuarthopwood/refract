@@ -136,6 +136,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_REMOVE: 'repositories.remove',
   REPOSITORIES_BRANCHES: 'repositories.branches',
   REPOSITORIES_PICK_FOLDER: 'repositories.pickFolder',
+  REPOSITORIES_USER_NAME: 'repositories.userName',
   SESSIONS_LIST: 'sessions.list',
   SESSIONS_CREATE: 'sessions.create',
   SESSIONS_RENAME: 'sessions.rename',
@@ -195,6 +196,9 @@ export interface RefractApi {
     remove(id: string): Promise<Result<void>>;
     branches(id: string): Promise<Result<BranchEntry[]>>;
     pickFolder(): Promise<Result<string | null>>;
+    /** `git config user.name` in the repository's own checkout, falling back to the Windows
+     * account name; cached per repository id (T072, FR-045). */
+    userName(id: string): Promise<Result<string>>;
   };
 
   sessions: {

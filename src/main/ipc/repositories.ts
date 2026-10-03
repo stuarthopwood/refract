@@ -3,15 +3,30 @@
 // never touches disk in that case.
 
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { BranchEntry } from '../../shared/ipc';
 import type { Repository, Session } from '../../shared/model';
-import { repoInfo } from '../git/git';
+import { gitRaw, repoInfo } from '../git/git';
 import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
+
+/** `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
+ * checkout, falling back to the Windows account name when git has none configured; cached per
+ * repository id for the process lifetime so the "Answer:" avatar/name never re-shells out. */
+const userNameCache = new Map<string, string>();
+
+async function resolveUserName(repositoryId: string, repoPath: string): Promise<string> {
+  const cached = userNameCache.get(repositoryId);
+  if (cached !== undefined) return cached;
+  const result = await gitRaw(repoPath, ['config', 'user.name']);
+  const name = (result.code === 0 ? result.stdout.trim() : '') || os.userInfo().username;
+  userNameCache.set(repositoryId, name);
+  return name;
+}
 
 /** Base branch picker entries (FR-002, contracts/ipc.md `repositories.branches`): the default
  * branch first (when it still exists), then plain branches in git order, then branches owned by
@@ -101,5 +116,16 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       : await dialog.showOpenDialog({ properties: ['openDirectory'] });
     const value = result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!;
     return { ok: true, value };
+  });
+
+  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_USER_NAME, async (_event, id: unknown) => {
+    if (typeof id !== 'string') {
+      return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_USER_NAME} expects a string id`);
+    }
+    const repository = manager.registry.getRepository(id);
+    if (!repository) {
+      return notFound(`Repository not found: ${id}`);
+    }
+    return { ok: true, value: await resolveUserName(repository.id, repository.path) };
   });
 }

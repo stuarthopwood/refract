@@ -25,7 +25,7 @@ pnpm build        # must pass before a change lands on main
 
 1. First launch shows the readiness checklist; **Add repository** is enabled only when git, `omp` 18.4.x or 18.5.x, and sign-in all pass.
 2. Add the scratch repository and click its **+** button. Expect: a folder under `<scratch>/../pinion-worktrees/scratch/<name>` on a new branch of the same name created from the default branch, and the Session in the list under a generated name, selected and open. Double-click **+**: exactly one more Session. Click the branch button, pick another Base branch, and choose **Create session**: the new Session starts from that branch and is selected and open; **Cancel** creates nothing and returns focus to the branch button. Rename the default branch in the scratch repository (`git branch -m main trunk`) and click **+**: a toast says `Base branch not found: main` and no Session is added.
-3. Send "List the files in this repo". Expect: text streams in, tool calls appear as one compact row each, and the Session returns to idle.
+3. Send "List the files in this repo". Expect: text streams in, tool calls appear as one compact row each (consecutive calls to the same tool collapse into one "+ N others" row; a different tool or a Thinking line ends the run), a Thinking line (if any) shows "Thought for Ns" once done, the turn ends with a muted total-time line, and the Session returns to idle.
 4. Send a long request, press **Ctrl+Shift+X**. Expect: the turn ends within 3 s and the next message is accepted with no "already processing" error. Send and Stop are round icon-only buttons inside the bottom-right corner of the message box (no "Send"/"Stop" words anywhere); hovering or keyboard-focusing either shows its shortcut as key-cap icons (Send: **Enter**; Stop: **Ctrl**+**Shift**+**X**), never plain text.
 5. While a turn runs, type a second message and press Enter. Expect: a chip under the turn; **Send now** steers the turn; removing the chip before the turn ends sends nothing.
 6. Run `/new`. Expect: same Session and worktree, empty transcript; the earlier Conversation is in the history and opens and continues.
@@ -35,7 +35,7 @@ pnpm build        # must pass before a change lands on main
 **Story 2: approvals and questions (FR-015 to FR-019)**
 
 1. With Approval mode **Ask**, request "create a file hello.txt". Expect: an approval card naming the tool and target; Deny leaves no file; repeat and Approve creates it. Reads (for example listing files) never prompt.
-2. Ask the agent to ask you a multiple-choice question. Expect: options render and the answer reaches the agent.
+2. Ask the agent to ask you a multiple-choice question. Expect: options render and the answer reaches the agent; once answered, the question collapses to "Asked user:" plus the question cut to one line, expanding to the full question, its options, and (indented below, with your initials and git/Windows account name) "Answer:" the chosen option; a cancelled question shows "Cancelled" instead.
 3. Switch to another Session while a request is pending. Expect: the first Session shows **needs you** and the request is still there when you return.
 
 **Story 3: Approval mode (FR-015, FR-020, SC-009)**

@@ -49,7 +49,7 @@ Not used in this spec: `set_model`, thinking-level commands, `compact`, `handoff
 | `agent_start` | Session status `working` (also covers turns started by a queued message or background job). |
 | `message_start` / `message_update` / `message_end` | Build assistant items. Each `message_update` carries the whole `message` so far (`message.content[]` parts: `text`, `thinking`, `toolCall`): replace the item's content with that snapshot instead of concatenating deltas. `messageId` identifies the message. Coalesce IPC updates to at most one per 50 ms per Session. |
 | `tool_execution_start` | Add a `tool` item with status `running`: `toolName`, `args`, `intent`. |
-| `tool_execution_end` | Set `status` (`isError`), `durationMs`, and `output` from `result.content` text parts. |
+| `tool_execution_end` | Set `status` (`isError`), `durationMs`, and `output` from `result.content` text parts; `details` is kept as-is (T072's `ask` answer, T078's batch-subagent `progress[]`). |
 | `queue_update` | Replace `queue` (`steering`, `followUp`). |
 | `extension_ui_request` | See "Dialogs". |
 | `prompt_result` | `status: 'error'` adds a `notice` (error) with `error.message`; `'aborted'` adds an info notice. |
@@ -107,6 +107,13 @@ Probed with `chat-lines-probe.mjs` (FINDINGS item 22):
 - A cancelled `ask` is `toolResult.isError: true` with a fixed sentence and an empty `details` (no `question`/`options`) — render from the error text, not from `details`.
 - `todo` progress is available per call (`toolResult.details.phases`) and as live session state (`get_state().todoPhases`, same shape).
 - A batch `task()` call's own `tool_execution_end` completes almost immediately with `details.progress[]` stuck at `"pending"`; the authoritative per-subagent completion is a later `custom`/`async-result` message's `details.jobs[]` (`jobId`/`label`/`durationMs`/`schema.data`). `agent_start`/`agent_end` frames carry no subagent id and cannot be correlated to one. `set_subagent_subscription` does not exist in `get_available_commands` on 18.4.10.
+- A subagent-to-parent IRC message's wire shape was never confirmed (the probe's prompt reported sending one but no matching frame was observed within its timeout) — left open for a longer-timeout or narrower-prompt re-probe.
+
+### Built from the above (T072-T079)
+
+- **Ask (T072/T073)**: the `ask` tool's own `toolCall` message part plus its `tool_execution_end`/history `details` builds the answered-question row directly — no correlation with the `extension_ui_request`/`PendingRequest` the dialog raised is needed once that item resolves. The question/options are read from `args.questions[0]` (live-verified, FINDINGS item 27: the real shape batches under `questions[]`, each `{question, options: [{label}]}` — a flat `args.question`/`args.options` is kept only as a defensive fallback), and the answer from `details.selectedOptions`/`details.customInput`/`output` as item 22 already established. The `request` item (driven by the dialog, survives only in memory) stays the live card while pending, and is superseded by the `ask` tool item once it resolves.
+- **Subagents (T078)**: a `task` toolCall's `args.tasks[]` yields one `subagent` `TranscriptItem` per entry (`subagent:<toolCallId>:<index>`), never a generic `tool` item. `tool_execution_end`'s `details.progress[]` flips a subagent to `done`/`error` only once its own entry says so (otherwise it stays `running`); the later `custom`/`async-result` message's `details.jobs[]` is matched by the `id` recorded from `progress[]` (falling back to matching `label` against the subagent's `name`) and is the only source of `durationMs` and the plain-text result. A malformed/argument-less `task` call falls back to the plain `tool` item path instead of being silently dropped.
+- **Agent messages (T079)**: FINDINGS item 22(f) left the wire shape open, so this is read defensively rather than against one exact assumed shape: a `custom` message whose `customType` names one of a few plausible IRC-message spellings, or whose `details` carries `from`/`sender` fields, becomes an `agent-message` item (`main.ts`'s `transcript.ts`); `SessionAgent.onFrame`'s `default` case additionally shape-detects the same fields on an unrecognised top-level frame, covering the alternative hypothesis that OMP sends it outside the message lifecycle entirely. Revisit once a real occurrence is observed.
 
 ## Word prediction (`predict_word`/`predict_word_feedback`) (T102)
 

@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { OmpProcess } from './OmpProcess';
-import { applyFrame, fromHistory } from './transcript';
+import { applyFrame, fromHistory, tryBuildAgentMessageFromUnknownFrame } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
 import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './transcriptDiff';
@@ -698,11 +698,17 @@ export class SessionAgent extends EventEmitter {
       case 'notice':
         this.applyTranscriptFrame(frame);
         return;
-      default:
+      default: {
         // agent_end (Refract tracks history incrementally, not from the final snapshot),
         // rpc_chunk/response (consumed inside OmpProcess and never emitted as 'frame'), and
-        // unrecognised frame types: no-op.
+        // most unrecognised frame types: no-op. T079/FINDINGS item 22(f): if OMP sends a
+        // subagent-to-parent IRC message as its own top-level frame instead of a `custom`
+        // message (the hypothesis `transcript.ts`'s message-lifecycle path already covers),
+        // shape-detect it here so it is never silently dropped.
+        const agentMessage = tryBuildAgentMessageFromUnknownFrame(frame, this.runtime.transcript.length);
+        if (agentMessage) this.upsertTranscriptItem(agentMessage);
         return;
+      }
     }
   }
 

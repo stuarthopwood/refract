@@ -67,6 +67,10 @@ export interface OmpCustomMessage {
   display?: boolean;
   attribution?: string;
   timestamp?: number;
+  /** Carries structured payloads for a recognised `customType`, e.g. a batch `task()` run's
+   * `async-result` (`{jobs: [...]}, FINDINGS item 22(e)) or a (best-effort, FINDINGS item
+   * 22(f) left this wire shape unconfirmed) subagent-to-parent IRC message. */
+  details?: unknown;
   [key: string]: unknown;
 }
 

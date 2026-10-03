@@ -1,12 +1,14 @@
 // Builds the renderer-facing TranscriptItem[] from OMP's own message history (`fromHistory`)
 // and from live rpc-ui frames (`applyFrame`), per
 // specs/001-core-session-workspace/contracts/omp-usage.md ("Frames Refract consumes",
-// "Message parts", "Tool row fields") and docs/spike/FINDINGS.md item 14 (edit-diff-probe).
+// "Message parts", "Tool row fields", "Chat line wire shapes") and docs/spike/FINDINGS.md
+// item 14 (edit-diff-probe) and item 22 (chat-lines-probe).
 // Pure: no I/O, no Electron imports. `applyFrame` never mutates its `items` argument; it
 // returns a new array, replacing only the items that changed, so callers can diff by identity.
 
 import type {
   Frame,
+  OmpCustomMessage,
   OmpMessage,
   OmpMessageContentPart,
   OmpTextPart,
@@ -19,6 +21,8 @@ import { isKnownFrame } from '../../shared/frames';
 import type { TranscriptItem } from '../../shared/model';
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
+type ThinkingItem = Extract<TranscriptItem, { kind: 'thinking' }>;
+type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>;
 
 const MAX_TARGET_LENGTH = 200;
 
@@ -92,12 +96,210 @@ function isToolItem(item: TranscriptItem): item is ToolItem {
   return item.kind === 'tool';
 }
 
-/** Builds/merges the items for one assistant message's `content[]` snapshot. */
+// ---------------------------------------------------------------------------
+// Subagents (T078, FINDINGS item 22(e)): a batch `task()` call's `args.tasks[]` yields one
+// `subagent` item per entry, never a single `tool` item, so each has its own collapsed line.
+// ---------------------------------------------------------------------------
+
+interface TaskSpecLike {
+  task?: unknown;
+  name?: unknown;
+}
+
+const SUBAGENT_NAME_LENGTH = 60;
+
+/** Reads `args.tasks[]` defensively: a malformed or absent array means the caller falls back to
+ * rendering the call as a plain `tool` item instead of silently dropping it. */
+function readTaskSpecs(args: unknown): TaskSpecLike[] {
+  const record = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
+  return Array.isArray(record.tasks) ? (record.tasks as unknown[]).filter((t): t is TaskSpecLike => !!t && typeof t === 'object') : [];
+}
+
+function subagentName(spec: TaskSpecLike): string {
+  if (typeof spec.name === 'string' && spec.name.length > 0) return spec.name;
+  const task = typeof spec.task === 'string' ? spec.task : '';
+  return task.length > SUBAGENT_NAME_LENGTH ? `${task.slice(0, SUBAGENT_NAME_LENGTH)}\u2026` : task;
+}
+
+/** Upserts one `subagent` item per `specs[]` entry, keyed by `subagent:<toolCallId>:<index>` so
+ * the id stays stable across the toolCall message part, `tool_execution_start`, and
+ * `tool_execution_end` -- none of which share a common key with each other except `toolCallId`.
+ * New items are appended; existing ones are updated in place (name/task only; status/duration
+ * come from `applyBatchTaskResult`/`applyAsyncResultJobs`, never from here). */
+function upsertSubagentItems(items: TranscriptItem[], toolCallId: string, specs: TaskSpecLike[]): TranscriptItem[] {
+  let result = items;
+  specs.forEach((spec, index) => {
+    const id = `subagent:${toolCallId}:${index}`;
+    const name = subagentName(spec);
+    const task = typeof spec.task === 'string' ? spec.task : '';
+    const existingIndex = result.findIndex((item) => item.id === id);
+    if (existingIndex === -1) {
+      const created: TranscriptItem = { kind: 'subagent', id, toolCallId, name, task, status: 'running', startedAt: Date.now() };
+      result = [...result, created];
+      return;
+    }
+    const prior = result[existingIndex] as SubagentItem;
+    const updated: SubagentItem = { ...prior, name, task };
+    result = result.map((item, i) => (i === existingIndex ? updated : item));
+  });
+  return result;
+}
+
+interface ProgressEntry {
+  id?: unknown;
+  status?: unknown;
+}
+
+/** `pending` (still running) is the only status FINDINGS item 22(e) actually observed; any other
+ * string is treated as a plain completion/failure signal defensively. */
+function mapProgressStatus(status: unknown): 'running' | 'done' | 'error' {
+  if (status === 'failed' || status === 'error') return 'error';
+  if (status === 'pending') return 'running';
+  return status === undefined ? 'running' : 'done';
+}
+
+interface ToolResultLike {
+  toolCallId: string;
+  isError?: boolean;
+  details?: unknown;
+}
+
+/** Applies a `task` call's own `tool_execution_end` (live) or `toolResult` (history): per
+ * FINDINGS item 22(e) this completes almost immediately with `details.progress[]` stuck at
+ * `"pending"` -- not the authoritative result, just whichever per-subagent ids/statuses exist so
+ * far -- so this only ever flips a subagent to `done`/`error` when `progress[i].status` already
+ * says so, or (no `progress` array at all) falls back to the call's own overall status, per
+ * `durationMs` only when `live` (history has no reliable wall clock to derive one from -- see
+ * the `thinking` timing note below). Returns `items` unchanged (by reference) when this
+ * `toolCallId` has no subagent items at all, so callers can fall through to the generic `tool`
+ * item path for a malformed `task` call whose `args.tasks` never produced any. */
+function applyBatchTaskResult(items: TranscriptItem[], result: ToolResultLike, live: boolean): TranscriptItem[] {
+  const subagents = items.filter((item): item is SubagentItem => item.kind === 'subagent' && item.toolCallId === result.toolCallId);
+  if (subagents.length === 0) return items;
+  const details = result.details as { progress?: ProgressEntry[] } | undefined;
+  const progress = Array.isArray(details?.progress) ? details!.progress : undefined;
+  const fallbackStatus: 'done' | 'error' = result.isError ? 'error' : 'done';
+  return items.map((item) => {
+    if (item.kind !== 'subagent' || item.toolCallId !== result.toolCallId) return item;
+    const index = subagents.indexOf(item);
+    const entry = progress?.[index];
+    if (entry) {
+      return { ...item, status: mapProgressStatus(entry.status), jobId: typeof entry.id === 'string' ? entry.id : item.jobId };
+    }
+    return { ...item, status: fallbackStatus, ...(live ? { durationMs: Math.max(0, Date.now() - item.startedAt) } : {}) };
+  });
+}
+
+interface JobEntry {
+  jobId?: unknown;
+  label?: unknown;
+  durationMs?: unknown;
+  schema?: { data?: unknown };
+}
+
+function safeStringify(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+/** The authoritative per-subagent completion (FINDINGS item 22(e)): a later `custom`/
+ * `async-result` message's `details.jobs[]`. Matched by the `jobId` `applyBatchTaskResult`
+ * recorded from `progress[i].id`; falls back to matching by `label === name` for a subagent that
+ * never got a `progress` entry at all. No per-job success/failure field was observed in the
+ * probe, so arrival itself is read as `done` (the call's own `tool_execution_end` already
+ * covers a hard failure of the whole batch). */
+function applyAsyncResultJobs(items: TranscriptItem[], jobs: JobEntry[]): TranscriptItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'subagent') return item;
+    const byJobId = jobs.find((job) => typeof job.jobId === 'string' && job.jobId === item.jobId);
+    const job = byJobId ?? (item.jobId === undefined ? jobs.find((j) => typeof j.label === 'string' && j.label === item.name) : undefined);
+    if (!job) return item;
+    const resultText = job.schema && typeof job.schema === 'object' && 'data' in job.schema ? safeStringify(job.schema.data) : typeof job.label === 'string' ? job.label : item.result;
+    return {
+      ...item,
+      status: 'done',
+      durationMs: typeof job.durationMs === 'number' ? job.durationMs : item.durationMs,
+      result: resultText,
+      jobId: typeof job.jobId === 'string' ? job.jobId : item.jobId,
+    };
+  });
+}
+
+const ASYNC_RESULT_CUSTOM_TYPE = 'async-result';
+
+/** Returns the patched items when `message` is a batch-subagent result carrier (recognised type,
+ * whether or not it had jobs to apply yet), `undefined` when it is not one at all. */
+function tryApplyAsyncResult(items: TranscriptItem[], message: OmpCustomMessage): TranscriptItem[] | undefined {
+  if (message.customType !== ASYNC_RESULT_CUSTOM_TYPE) return undefined;
+  const details = (message as { details?: unknown }).details;
+  const jobs = details && typeof details === 'object' && Array.isArray((details as { jobs?: unknown }).jobs) ? ((details as { jobs: JobEntry[] }).jobs) : undefined;
+  if (!jobs) return items;
+  return applyAsyncResultJobs(items, jobs);
+}
+
+// ---------------------------------------------------------------------------
+// Subagent-to-parent IRC messages (T079, FR-048). FINDINGS item 22(f) could not trigger OMP's
+// wire shape for this within the probe's timeout (left open for a longer-timeout re-probe), so
+// this reads defensively for any `custom` message that looks like one, by a plausible
+// `customType` name or by carrying `from`/`sender` fields, rather than one exact assumed shape.
+// ---------------------------------------------------------------------------
+
+const AGENT_MESSAGE_CUSTOM_TYPES = new Set(['agent-message', 'agent_message', 'irc-message', 'irc_message', 'subagent-message']);
+
+interface AgentMessageLike {
+  from?: unknown;
+  to?: unknown;
+  sender?: unknown;
+  recipient?: unknown;
+  text?: unknown;
+  message?: unknown;
+}
+
+function tryBuildAgentMessage(messageId: string, message: OmpCustomMessage): TranscriptItem | undefined {
+  const details = (message as { details?: unknown }).details;
+  const source: AgentMessageLike | undefined = details && typeof details === 'object' ? (details as AgentMessageLike) : undefined;
+  const looksLikeAgentMessage = AGENT_MESSAGE_CUSTOM_TYPES.has(message.customType) || (source !== undefined && (typeof source.from === 'string' || typeof source.sender === 'string'));
+  if (!looksLikeAgentMessage) return undefined;
+  const from = (typeof source?.from === 'string' ? source.from : typeof source?.sender === 'string' ? source.sender : undefined) ?? 'subagent';
+  const to = (typeof source?.to === 'string' ? source.to : typeof source?.recipient === 'string' ? source.recipient : undefined) ?? 'main agent';
+  const text = (typeof source?.text === 'string' ? source.text : typeof source?.message === 'string' ? source.message : undefined) ?? message.content;
+  const at = typeof message.timestamp === 'number' ? message.timestamp : Date.now();
+  return { kind: 'agent-message', id: `agent-message:${messageId}`, from, to, text, at };
+}
+
+/** Best-effort fallback for T079's other hypothesis: OMP emits a subagent-to-parent IRC message
+ * as its own top-level frame `type` rather than a `custom` message (FINDINGS item 22(f) could
+ * not confirm either shape). Shape-detected the same way as `tryBuildAgentMessage`, not by
+ * guessing a specific `type` string. Called from `SessionAgent.onFrame`'s `default` case, since
+ * an unrecognised top-level frame never reaches `applyFrame` (`isKnownFrame` guards it). */
+export function tryBuildAgentMessageFromUnknownFrame(frame: Frame, index: number): TranscriptItem | undefined {
+  const record = frame as unknown as AgentMessageLike & { type: string };
+  const looksLikeAgentMessage = AGENT_MESSAGE_CUSTOM_TYPES.has(record.type) || typeof record.from === 'string' || typeof record.sender === 'string';
+  if (!looksLikeAgentMessage) return undefined;
+  const from = (typeof record.from === 'string' ? record.from : typeof record.sender === 'string' ? record.sender : undefined) ?? 'subagent';
+  const to = (typeof record.to === 'string' ? record.to : typeof record.recipient === 'string' ? record.recipient : undefined) ?? 'main agent';
+  const text = typeof record.text === 'string' ? record.text : typeof record.message === 'string' ? record.message : undefined;
+  if (!text) return undefined;
+  return { kind: 'agent-message', id: `agent-message:frame-${index}`, from, to, text, at: Date.now() };
+}
+
+/** Builds/merges the items for one assistant message's `content[]` snapshot. `captureTiming` is
+ * false for `fromHistory`: a historical message carries only one `timestamp` for its whole
+ * `content[]`, not a per-`thinking`-part start/end, so stamping one from `Date.now()` at load
+ * time would show a meaningless "Thought for 0s" on every reopened Conversation instead of the
+ * required plain "Thought" (T075, FR-009). A `task` toolCall never gets a `tool` item here --
+ * `applyMessageSnapshot`/`fromHistory` upsert its subagents separately, keyed by `toolCallId`,
+ * which this function does not have scoped per-message existing items for. */
 function buildAssistantItems(
   messageId: string,
   parts: OmpMessageContentPart[],
   streaming: boolean,
   existingForMessage: TranscriptItem[],
+  captureTiming: boolean,
 ): TranscriptItem[] {
   const result: TranscriptItem[] = [];
   parts.forEach((part, index) => {
@@ -109,10 +311,20 @@ function buildAssistantItems(
     if (part.type === 'thinking') {
       // Kept only when the text is non-empty (contracts/omp-usage.md "Message parts").
       if (part.thinking.length === 0) return;
-      result.push({ kind: 'thinking', id, text: part.thinking, streaming });
+      if (!captureTiming) {
+        result.push({ kind: 'thinking', id, text: part.thinking, streaming });
+        return;
+      }
+      const existing = existingForMessage.find((item): item is ThinkingItem => item.kind === 'thinking' && item.id === id);
+      const startedAt = existing?.startedAt ?? Date.now();
+      const endedAt = !streaming ? (existing?.endedAt ?? Date.now()) : existing?.endedAt;
+      result.push({ kind: 'thinking', id, text: part.thinking, streaming, startedAt, ...(endedAt !== undefined ? { endedAt } : {}) });
       return;
     }
     if (part.type === 'toolCall') {
+      if (part.name === 'task' && readTaskSpecs(part.arguments).length > 0) {
+        return; // subagents: applied via upsertSubagentItems by the caller, keyed by toolCallId.
+      }
       const existing = existingForMessage.find((item): item is ToolItem => isToolItem(item) && item.id === id);
       const target = extractTarget(part.name, part.arguments);
       const write = buildWriteField(part.name, part.arguments);
@@ -139,7 +351,10 @@ function buildAssistantItems(
 }
 
 /** Replaces every item belonging to `messageId` (single id or `id:index`) with `replacement`,
- * preserving its position; appends at the end for a brand-new message. */
+ * preserving its position; appends at the end for a brand-new message. Never used for `subagent`
+ * items (keyed by `toolCallId`, not `messageId`) or the `agent-message` item built below (keyed
+ * by `messageId` directly, so it IS covered -- a `replaceMessageItems` call with a one-item
+ * replacement works for it unchanged). */
 function replaceMessageItems(items: TranscriptItem[], messageId: string, replacement: TranscriptItem[]): TranscriptItem[] {
   const matches = (item: TranscriptItem) => item.id === messageId || item.id.startsWith(`${messageId}:`);
   if (!items.some(matches)) {
@@ -154,6 +369,20 @@ function replaceMessageItems(items: TranscriptItem[], messageId: string, replace
   return [...withoutMessage.slice(0, insertAt), ...replacement, ...withoutMessage.slice(insertAt)];
 }
 
+/** Applies every `task` toolCall part's subagents via `upsertSubagentItems`, keyed by its own
+ * `toolCallId` rather than the enclosing message id (shared by `applyMessageSnapshot` and
+ * `fromHistory`'s assistant case). */
+function applySubagentToolCalls(items: TranscriptItem[], parts: OmpMessageContentPart[]): TranscriptItem[] {
+  let next = items;
+  for (const part of parts) {
+    if (part.type === 'toolCall' && part.name === 'task') {
+      const specs = readTaskSpecs(part.arguments);
+      if (specs.length > 0) next = upsertSubagentItems(next, part.id, specs);
+    }
+  }
+  return next;
+}
+
 function applyMessageSnapshot(
   items: TranscriptItem[],
   messageId: string,
@@ -164,8 +393,9 @@ function applyMessageSnapshot(
   switch (message.role) {
     case 'assistant': {
       const existingForMessage = items.filter((item) => item.id === messageId || item.id.startsWith(`${messageId}:`));
-      const built = buildAssistantItems(messageId, message.content, streaming, existingForMessage);
-      return replaceMessageItems(items, messageId, built);
+      const built = buildAssistantItems(messageId, message.content, streaming, existingForMessage, true);
+      const replaced = replaceMessageItems(items, messageId, built);
+      return applySubagentToolCalls(replaced, message.content);
     }
     case 'user': {
       const text = joinText(message.content);
@@ -173,6 +403,10 @@ function applyMessageSnapshot(
       return replaceMessageItems(items, messageId, [{ kind: 'user', id: messageId, text, at }]);
     }
     case 'custom': {
+      const asyncResult = tryApplyAsyncResult(items, message);
+      if (asyncResult) return asyncResult;
+      const agentMessage = tryBuildAgentMessage(messageId, message);
+      if (agentMessage) return replaceMessageItems(items, messageId, [agentMessage]);
       if (message.display === true) {
         return replaceMessageItems(items, messageId, [{ kind: 'notice', id: messageId, level: 'info', text: message.content }]);
       }
@@ -188,6 +422,10 @@ function applyMessageSnapshot(
 }
 
 function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionStartFrame): TranscriptItem[] {
+  if (frame.toolName === 'task') {
+    const specs = readTaskSpecs(frame.args);
+    if (specs.length > 0) return upsertSubagentItems(items, frame.toolCallId, specs);
+  }
   const existing = items.find((item): item is ToolItem => isToolItem(item) && item.toolCallId === frame.toolCallId);
   const target = extractTarget(frame.toolName, frame.args);
   const write = buildWriteField(frame.toolName, frame.args);
@@ -218,6 +456,10 @@ function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionSt
 }
 
 function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndFrame): TranscriptItem[] {
+  if (frame.toolName === 'task') {
+    const updated = applyBatchTaskResult(items, { toolCallId: frame.toolCallId, isError: frame.isError, details: frame.result.details }, true);
+    if (updated !== items) return updated;
+  }
   const existing = items.find((item): item is ToolItem => isToolItem(item) && item.toolCallId === frame.toolCallId);
   const isError = frame.isError;
   const output = joinText(frame.result.content);
@@ -234,6 +476,7 @@ function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndF
       durationMs: 0,
       args: undefined,
       output,
+      details: frame.result.details,
       ...(edit ? { edit } : {}),
     };
     return [...items, created];
@@ -243,6 +486,7 @@ function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndF
     status: isError ? 'error' : 'done',
     durationMs: Math.max(0, Date.now() - existing.startedAt),
     output,
+    details: frame.result.details,
     ...(edit ? { edit } : {}),
   };
   return items.map((item) => (item === existing ? updated : item));
@@ -292,6 +536,10 @@ export function applyFrame(items: TranscriptItem[], frame: Frame): TranscriptIte
 }
 
 function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage): TranscriptItem[] {
+  if (message.toolName === 'task') {
+    const updated = applyBatchTaskResult(items, { toolCallId: message.toolCallId, isError: message.isError, details: message.details }, false);
+    if (updated !== items) return updated;
+  }
   const existing = items.find((item): item is ToolItem => isToolItem(item) && item.toolCallId === message.toolCallId);
   const output = joinText(message.content);
   const edit = buildEditField(message.toolName, message.details);
@@ -306,6 +554,7 @@ function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage
       startedAt: 0,
       args: undefined,
       output,
+      details: message.details,
       ...(edit ? { edit } : {}),
     };
     return [...items, created];
@@ -314,6 +563,7 @@ function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage
     ...existing,
     status: message.isError ? 'error' : 'done',
     output,
+    details: message.details,
     ...(edit ? { edit } : {}),
   };
   return items.map((item) => (item === existing ? updated : item));
@@ -327,7 +577,8 @@ export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
     const messageId = `h${index}`;
     switch (message.role) {
       case 'assistant': {
-        items = [...items, ...buildAssistantItems(messageId, message.content, false, [])];
+        items = [...items, ...buildAssistantItems(messageId, message.content, false, [], false)];
+        items = applySubagentToolCalls(items, message.content);
         return;
       }
       case 'user': {
@@ -337,6 +588,16 @@ export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
         return;
       }
       case 'custom': {
+        const asyncResult = tryApplyAsyncResult(items, message);
+        if (asyncResult) {
+          items = asyncResult;
+          return;
+        }
+        const agentMessage = tryBuildAgentMessage(messageId, message);
+        if (agentMessage) {
+          items = [...items, agentMessage];
+          return;
+        }
         if (message.display === true) {
           items = [...items, { kind: 'notice', id: messageId, level: 'info', text: message.content }];
         }
