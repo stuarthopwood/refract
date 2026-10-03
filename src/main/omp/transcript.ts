@@ -343,7 +343,14 @@ const ADVISORY_CUSTOM_TYPE = 'advisor';
 // identically; `ADVISORY_ATTR_RE` only ever scans the tag regex's own capture group, never the
 // tag's raw remainder, so a quoted value (even one holding the other quote character inside it)
 // can never be re-scanned as if it were a sibling attribute.
-const ADVISORY_TAG_RE = /<advisory\b((?:\s+[A-Za-z][\w-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*>([\s\S]*?)<\/advisory>/g;
+// Matches only the opening tag (no `[\s\S]*?` body capture) so each `exec` call is bounded by
+// one tag's own length, never by how far away its closing tag (or lack of one) sits in `content`;
+// `parseAdvisoryElements` below pairs this with a forward `indexOf` scan for `</advisory>` so the
+// whole parse stays linear even when `content` is full of unclosed `<advisory` tags -- see the
+// comment on `parseAdvisoryElements` for why a naive single regex here is quadratic (FR-051,
+// retroactive security-auditor pass, Medium: unclosed-tag quadratic scan).
+const ADVISORY_OPEN_TAG_RE = /<advisory\b((?:\s+[A-Za-z][\w-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*>/g;
+const ADVISORY_CLOSE_TAG = '</advisory>';
 const ADVISORY_ATTR_RE = /([A-Za-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const ADVISORY_SEVERITIES = new Set(['nit', 'concern', 'blocker']);
 
@@ -405,12 +412,34 @@ type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>;
  * on-disk session data -- see the T084 note in tasks.md), not `turnsAgo`; `turnsAgo` stays the
  * camelCase field name on the TypeScript `TranscriptItem` itself. An element whose attribute list
  * repeats a name is dropped (see `parseAdvisoryAttrs`), same as one the tag regex cannot match at
- * all -- both are parse failures, not a render with a guessed/overwritten value. */
+ * all -- both are parse failures, not a render with a guessed/overwritten value.
+ *
+ * Finds each opening tag with `ADVISORY_OPEN_TAG_RE` (bounded to the tag itself, no body capture)
+ * and then looks for that element's `</advisory>` with a single forward `indexOf` from the end of
+ * the opening tag, rather than letting one `[\s\S]*?` regex backtrack all the way to the end of
+ * `content` for every unclosed tag. A hostile/malformed advisor message can contain many `<advisory`
+ * opens with no closer at all; once `indexOf` fails to find a `</advisory>` anywhere in the
+ * remaining content, no later opening tag could find one either (its search range is a strict
+ * subset of the one that just failed), so the loop stops immediately instead of re-scanning the
+ * same unclosed tail once per remaining tag. That keeps the whole parse linear in `content.length`
+ * regardless of how many `<advisory` tags are left unclosed (FR-051, retroactive security-auditor
+ * pass, Medium finding: quadratic scan on unclosed `<advisory` tags, performance-only fix). */
 function parseAdvisoryElements(messageId: string, content: string): AdvisoryItem[] {
   const items: AdvisoryItem[] = [];
   let index = 0;
-  for (const match of content.matchAll(ADVISORY_TAG_RE)) {
-    const attrs = parseAdvisoryAttrs(match[1]!);
+  let searchFrom = 0;
+  for (;;) {
+    ADVISORY_OPEN_TAG_RE.lastIndex = searchFrom;
+    const openMatch = ADVISORY_OPEN_TAG_RE.exec(content);
+    if (openMatch === null) break;
+    const bodyStart = ADVISORY_OPEN_TAG_RE.lastIndex;
+    const closeIndex = content.indexOf(ADVISORY_CLOSE_TAG, bodyStart);
+    // No closing tag anywhere in the rest of `content`: every later opening tag's search range is
+    // a subset of this one's, so none of them can find a closer either -- stop scanning entirely
+    // instead of repeating this same failed to-the-end search once per remaining unclosed tag.
+    if (closeIndex === -1) break;
+    const attrs = parseAdvisoryAttrs(openMatch[1]!);
+    searchFrom = closeIndex + ADVISORY_CLOSE_TAG.length;
     if (attrs === undefined) continue;
     const severity = ADVISORY_SEVERITIES.has(attrs.severity ?? '') ? (attrs.severity as AdvisoryItem['severity']) : 'nit';
     const turnsAgo = attrs.turns_ago !== undefined && /^\d+$/.test(attrs.turns_ago) ? Number.parseInt(attrs.turns_ago, 10) : undefined;
@@ -421,7 +450,7 @@ function parseAdvisoryElements(messageId: string, content: string): AdvisoryItem
       ...(attrs.advisor !== undefined ? { advisor: attrs.advisor } : {}),
       ...(turnsAgo !== undefined ? { turnsAgo } : {}),
       ...(attrs.guidance !== undefined ? { guidance: attrs.guidance } : {}),
-      text: decodeXmlEntities(match[2]!).trim(),
+      text: decodeXmlEntities(content.slice(bodyStart, closeIndex)).trim(),
     });
     index += 1;
   }
