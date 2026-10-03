@@ -21,7 +21,8 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 | Need | Choice | Version |
 |---|---|---|
 | State | `zustand` | 5.0.15 |
-| Markdown (untrusted) | `react-markdown` + `rehype-sanitize` | 10.1.0, 6.0.0 |
+| Markdown (untrusted) | `react-markdown` + `remark-gfm` + `rehype-sanitize` | 10.1.0, 4.0.1, 6.0.0 |
+| Diagrams in markdown | `mermaid`, lazy-loaded via dynamic `import()` | 11.17.2 |
 | Code highlighting | `shiki` with the JavaScript regex engine | 4.4.3 |
 | File-edit diffs | `react-diff-view` | 3.3.3 |
 | Long transcripts | `react-virtuoso` | 4.18.16 |
@@ -30,6 +31,8 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 | Component library | `shadcn/ui`, components copied into `src/renderer/components/ui/` | CLI 4.21.0 |
 
 **Rationale**: `rehype-sanitize` is the maintained sanitiser for react-markdown, which constitution V requires because agent text is untrusted. `react-virtuoso` measures variable-height rows and has built-in stick-to-bottom, which fits 30+ tool rows and streaming text. `react-diff-view` is a React component that reads unified diffs. `isomorphic-git` was rejected: it has no `worktree` command (sourced: isomorphic-git.org command index).
+
+**GFM and Mermaid (T065, T066, built 2026-10-03)**: `remark-gfm` 4.0.1 is the maintained GFM plugin (tables, strikethrough, task lists, footnotes); no version was already pinned for it in this table, so 4.0.1 (npm `latest` on 2026-10-03) was chosen. `rehype-sanitize`'s default schema is GitHub-style sanitation (`hast-util-sanitize` `lib/schema.js`, read, not inferred) and already allows `table`/`thead`/`tbody`/`tr`/`th`/`td`, `input[type=checkbox][disabled]`, `li.task-list-item`, and the GFM footnotes `section`/`h2.sr-only`/backref `a` -- so **no schema extension was needed**, contrary to the original task wording; `Markdown.tsx`'s `components` map only adds Tailwind styling (a scrollable table wrapper, bordered cells, themed checkboxes, a footnotes divider), confirmed by live render (see tasks.md T067 verification note). `mermaid` 11.17.2 is the newest 11.x release (12.0.0 exists but is a very recent major version change, released two weeks prior to this check, so the established 11.x line was preferred); 11.17.2 postdates the fix for CVE-2026-41148/CVE-2026-41149 (classDef CSS/HTML injection, fixed in 10.9.6/11.15.0), both irrelevant to Pinion's design anyway since diagrams render to a detached SVG string, never inserted into the live DOM (`<img>` only, see the Mermaid security decision below).
 
 **Component library (decided 2026-09-30)**: shadcn/ui. Themeable through semantic CSS-variable tokens (`--primary`, `--muted`, `--border`, and so on, with dark mode by overriding them under `.dark`), and new tokens such as `--warning` are added the documented way (sourced: ui.shadcn.com/docs/theming), which is how Refract adds its state-colour roles. Extensible because the component source is copied into the repository, so extending a component is editing it. It has about 60 components, including Message, Message Scroller, Bubble, Marker, Kbd, Command (the Ctrl+K palette), Sidebar, Resizable, Menubar, Context Menu, Empty, Dialog, Alert Dialog, and Toast (sourced: ui.shadcn.com/docs/components). Rejected: Web Awesome 3.14.0 (web components; Combobox, Data Grid, Date Picker, and charts are Pro-only, and shadow DOM fights a Tailwind-token approach), Tamagui 2.7.7 (React Native plus web; its value is not needed for an Electron-only app; only its introduction page was read), Radix Themes 3.3.0 (prop-based theming, least extensible, last published January 2026), Fluent UI v9 and Mantine (own styling systems, would replace the Tailwind decision). Not verified: whether shadcn's Message Scroller virtualises long transcripts, and that its Resizable wraps `react-resizable-panels` [INFERENCE]; T025 tries Message Scroller before falling back to `react-virtuoso`.
 
@@ -103,7 +106,17 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 
 **Decision**: none. The prototype runs with `pnpm dev` and `pnpm build` (electron-vite). An installer is a later issue. When packaging is added, `koffi`'s native `.node` binary must be unpacked from the asar archive (electron-builder `asarUnpack`) or it fails to load [INFERENCE: standard Electron native-module behaviour, not tested here].
 
-## Unknowns that remain, and where they are resolved
+## 14. Mermaid diagram security (constitution V, T066, 2026-10-03)
+
+**Decision**: render a Mermaid fence by calling `mermaid.render()` off-DOM to get an SVG string, then show that string as a `data:image/svg+xml` `<img>`, never by inserting the SVG into the live DOM (no `dangerouslySetInnerHTML`, unlike `CodeBlock`'s Shiki output). `mermaid.initialize({ securityLevel: 'strict', startOnLoad: false, theme: ... })` is also set, as defence in depth, not as the sole control.
+
+**Rationale (sourced, not inferred -- read mermaid.js.org directly)**:
+- Browsers disable JavaScript for SVG used as an image (MDN "SVG as an image", developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image: "JavaScript is disabled" in image contexts, HTML `<img>` included). An `<img>` whose `src` is an SVG therefore cannot execute an embedded `<script>`, an `onclick`/`onerror` attribute, or a Mermaid `click` callback, regardless of `securityLevel`. This is the primary control; `bindFunctions` (the function `mermaid.render()` returns to wire up click handlers) is never called, because there is no live DOM node for it to attach to in the first place.
+- `securityLevel: 'strict'` (mermaid's own default) additionally disables click functionality and HTML-encodes label text at the Mermaid-config level (mermaid.js.org/config/schema-docs/config-properties-securitylevel.html).
+- A Mermaid `%%{init: ...}%%` directive cannot lower `securityLevel` back to `'loose'`: `config.secure` defaults to `['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges']` (mermaid.js.org/config/schema-docs/config-properties-secure.html), and that list is exactly "which `currentConfig` keys ... can only be changed via a call to `mermaid.initialize`" -- a directive is not such a call. Confirmed live (tasks.md T067 verification note): a fence with both a `click ... call alert(...)` callback and a `%%{init: {"securityLevel": "loose"}}%%` directive rendered as an ordinary inert diagram image; no `<script>` beyond the app's own bundle, no `onerror`/`onclick` attribute, and no new `window` property appeared afterward.
+- Mermaid's own classDef-CSS/HTML-injection CVEs (CVE-2026-41148, CVE-2026-41149; fixed 10.9.6/11.15.0, this pinned version 11.17.2 postdates both) attack `style.innerHTML`/DOM injection paths that only matter when Mermaid's output is inserted live into the page; Pinion's design (SVG string to `<img>`, never to the DOM) is outside that attack surface by construction, not merely by version.
+
+**Not verified**: whether `secure` itself, being secure-listed, can be widened by a directive that adds entries removing something else from the list -- not tried, and moot given the `<img>` control above makes it unreachable either way.
 
 | Unknown | Resolved by |
 |---|---|

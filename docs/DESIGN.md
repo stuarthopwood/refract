@@ -41,6 +41,8 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
 - Sending while a turn runs queues a removable chip under the turn; "Send now" on the chip steers the running turn.
 - Approval requests and agent questions appear inline in the transcript at the point they arise, with Approve / Deny or the answer controls, and mark the Session as needs you.
 - Agent text, tool output, and file contents are always shown as inert content.
+- **GitHub-flavoured markdown** (tables, task lists, strikethrough, footnotes) renders on every markdown surface (assistant text, user text, the Thinking row): tables sit in a horizontally-scrolling wrapper with bordered header/data cells; task-list checkboxes are disabled, themed checkboxes; footnotes land in a divided section at the end of the message, numbered and back-linked. Raw HTML in agent/user text never renders (constitution V): it is sanitised away or shown as plain text, never as live markup.
+- **Mermaid diagrams** (a ```` ```mermaid ```` fence) render as an inert image, never inline SVG: Mermaid itself (`securityLevel: 'strict'`) is loaded only once the first diagram actually appears, and the rendered SVG is shown as a `data:image/svg+xml` `<img>` -- browsers disable script execution for SVG used as an image, so a diagram cannot run code regardless of what its source contains. A diagram still streaming, over a 50 KB source cap, past a 5 s render timeout, or that fails to parse falls back to the fenced source with a one-line reason above it, never a blank area. Every rendered diagram has a **Show source** toggle and an `aria-label` naming its Mermaid diagram type.
 
 ## Keyboard
 

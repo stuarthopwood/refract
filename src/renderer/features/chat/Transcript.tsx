@@ -42,7 +42,7 @@ function TranscriptRow({ item, sessionId, pending }: TranscriptRowProps) {
       return (
         <Message>
           <MessageContent className="w-full">
-            <Markdown text={item.text} />
+            <Markdown text={item.text} streaming={item.streaming} />
             {item.streaming && (
               <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
             )}
@@ -58,7 +58,7 @@ function TranscriptRow({ item, sessionId, pending }: TranscriptRowProps) {
             Thinking
           </CollapsibleTrigger>
           <CollapsibleContent className="px-2 pb-2">
-            <Markdown text={item.text} />
+            <Markdown text={item.text} streaming={item.streaming} />
           </CollapsibleContent>
         </Collapsible>
       )
