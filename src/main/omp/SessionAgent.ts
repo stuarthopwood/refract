@@ -44,6 +44,12 @@ export interface SessionAgentEvents {
   request: (payload: { sessionId: string; request: PendingRequest }) => void;
   requestResolved: (payload: { sessionId: string; requestId: string }) => void;
   commands: (payload: { sessionId: string; commands: SlashCommand[] }) => void;
+  /** Fired whenever `syncFromState` writes a registry patch (after the initial `get_state`, every
+   * `session_settled`, a Conversation switch, or a mode-change restart) -- i.e. whenever
+   * `lastModel`/`lastThinkingLevel`/`currentConversation`/... may have changed. `SessionManager`
+   * turns this into `notifyListChanged()` so the renderer's cached `sessions.list()` row (read by
+   * the message box) never goes stale after the Session's first start (issues #84/#85). */
+  registryUpdated: (payload: { sessionId: string }) => void;
 }
 
 // EventEmitter's own typings are untyped by default; this declaration merge narrows `on`/`emit`
@@ -571,15 +577,17 @@ export class SessionAgent extends EventEmitter {
     }
     // T062/FINDINGS item 28: persisted (registry-backed) last-known model/thinking level, not
     // only live-runtime state -- never cleared when the agent stops, so Stop and an app restart
-    // both keep showing the last values `get_state` actually reported.
+    // both keep showing the last values `get_state` actually reported. Written as one atomic
+    // patch from the same `get_state` snapshot: if `state.model` is present, `lastThinkingLevel`
+    // is set alongside it (even to `undefined`, for a non-reasoning model) so a new model can
+    // never end up paired with a stale effort value left over from a previous model.
     if (state.model) {
       patch.lastModel = { provider: state.model.provider, id: state.model.id, name: state.model.name };
-    }
-    if (state.thinkingLevel !== undefined) {
       patch.lastThinkingLevel = state.thinkingLevel;
     }
     try {
       await this.registry.updateSession(this.sessionId, patch);
+      this.emit('registryUpdated', { sessionId: this.sessionId });
     } catch (err) {
       console.error(`SessionAgent ${this.sessionId}: failed to update registry from get_state`, err);
     }

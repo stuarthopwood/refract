@@ -230,11 +230,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <div role="status" aria-live="polite" className="sr-only">
         {showSlashMenu && slashMatches.length === 0 ? 'No matching commands' : ''}
       </div>
-      {/* T063: the field itself -- translucent background + subtle border, Send/Stop moved
-          inside as round icon-only buttons, and the provider/model/effort readout along the
-          bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the
-          whole field, not just the text area, shows the focus state. */}
-      <div className="flex flex-col gap-1 rounded-lg border border-border bg-background/40 pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      {/* T063/quality-gate fix: a real `bg-muted/60` fill (distinct from the page's own
+          `bg-background` -- `ChatPane.tsx` sets no background of its own, so a translucent
+          `bg-background/40` here composited to literally the same colour as the page, a no-op)
+          plus a `border-muted-foreground/85` border re-measured at >=3:1 against both the page
+          background and this fill (WCAG 1.4.11), Send/Stop moved inside as round icon-only
+          buttons, and the provider/model/effort readout along the bottom. `focus-within` replaces
+          the Textarea's own (now removed) focus ring so the whole field, not just the text area,
+          shows the focus state. */}
+      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-muted/60 pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         <div className="relative flex items-end">
           {showSlashMenu && (
             <SlashMenu
@@ -296,11 +300,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                 <Button
                   type="button"
                   size="icon-sm"
-                  className="rounded-full"
+                  className="rounded-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
-                  disabled={disabled || starting || !text.trim()}
-                  onClick={() => void handleSend()}
+                  aria-disabled={disabled || starting || !text.trim()}
+                  onClick={() => {
+                    if (disabled || starting || !text.trim()) return
+                    void handleSend()
+                  }}
                 >
                   <SendIcon />
                 </Button>

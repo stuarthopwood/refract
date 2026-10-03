@@ -76,6 +76,13 @@ export class SessionManager {
     agent.on('request', (payload) => this.emit({ type: 'request', payload }));
     agent.on('requestResolved', (payload) => this.emit({ type: 'requestResolved', payload }));
     agent.on('commands', (payload) => this.emit({ type: 'commands', payload }));
+    // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and
+    // `currentConversation`/...) to the registry on every settle, Conversation switch, and
+    // mode-change restart -- not just on start, which `ipc/sessions.ts`'s `open` handler already
+    // covers explicitly. Without this, the message box's cached `sessions.list()` row goes stale
+    // the moment the model/effort changes mid-session while `SessionDetailsCard` (which re-fetches
+    // on every open) shows the new value -- the two surfaces visibly disagree.
+    agent.on('registryUpdated', () => this.notifyListChanged());
     this.agents.set(sessionId, agent);
     return agent;
   }
