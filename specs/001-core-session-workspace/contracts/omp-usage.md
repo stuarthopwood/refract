@@ -118,17 +118,55 @@ Probed with `predict-word-probe.mjs` against an isolated, credential-free profil
 - One-in-flight-replaces-older confirmed: with a burst of identical requests fired back to back (no await between sends), the first (already dispatched) and the last (left waiting when the first finished) each answered for real; every request in between answered `suffix:null` (superseded). A gap of only two requests was not reliably wide enough to reproduce this on a warm engine (both resolved for real in 1-9 ms) — do not use a two-request test as a regression check for this behaviour; use a wider burst.
 - Cold start measured 7-16 ms for the first `predict_word` call on a brand-new isolated profile/process — far below `rpc.md`'s documented "worst case about two minutes." The shared prediction daemon is almost certainly a machine-wide singleton that was already warm from an earlier process; treat this number as "warm daemon," not as a refutation of the documented worst case, and do not assume Refract's own first keystroke-triggered `predict_word` call will always be this fast on a machine where the daemon has never run.
 
-## Slash command classification (T092)
+## Slash command classification (T092, re-run on omp 18.5.1)
 
-`slash-commands-probe.mjs` (FINDINGS item 23) sent every command from `get_available_commands` through an isolated, credential-free profile and classified each by observed behaviour:
+`slash-commands-probe.mjs` (FINDINGS item 23) sends every top-level command and subcommand from
+`get_available_commands` through an isolated, credential-free profile and classifies each by
+observed behaviour. The run this table reflects used the script's current, fixed denylist
+unchanged (constitution IV: the T092 run against omp 18.4.10 used an earlier, narrower denylist
+and its per-command results were never trustworthy enough to build T093 from -- see FINDINGS item
+23 -- so this 18.5.1 run supersedes it outright rather than diffing against it name-by-name):
 
 | Class | Meaning | Count |
 |---|---|---|
-| `works-local` | Completes synchronously (`agentInvoked:false`) or completes a local turn without leaving the session unsettled | 80 |
-| `starts-agent-turn` | Dispatches a real idle agent turn; needs a signed-in profile to confirm | 3 (`/ratchet`, `/green`, `/init`) |
-| `needs-decision` | Denylisted (config/credential/model/plugin/destructive-shaped); never sent | 105 |
+| `works-local` | Completes synchronously (`agentInvoked:false`) or completes a local turn without leaving the session unsettled | 57 |
+| `starts-agent-turn` | Dispatches a real idle agent turn; needs a signed-in profile to confirm | 3 (`/ratchet`, `/green`, `/init`) -- same three names as the superseded 18.4.10 run |
+| `needs-decision` | Denylisted (config/credential/model/plugin/destructive-shaped); never sent | 138 |
 
-**Stale classification, do not build T093 from this table as-is:** this run used the script's EARLIER, narrower denylist, before `copy`, `edit`, `import`, `stats`, `trace`, `review`, `security`, `wt`, `move`, `ssh`, `pin`, `browser`, and `computer` were added to it. The script's own header comment documents that this same run really did overwrite Stuart's clipboard (`/todo copy`) and really did start local dashboards/servers (`/stats`, `/trace`) on his desktop, alongside `/todo edit`/`import`, `/review`, `/security scan`/`import`/`disposition`, `/wt`, `/move`, `/ssh add`/`remove`, `/session pin`, `/browser visible`, and `/computer on`. Every one of those command names IS denylisted (`needs-decision`) under the current, fixed denylist and so was wrongly counted inside the 80 `works-local` figure above -- it was classified `works-local` only because the denylist had not yet been fixed. The denylist regex matches a substring of the full command name with no word boundary, so the exclusion scope differs per command: for `stats`, `trace`, `review`, `security`, `wt`, `move`, `ssh`, `browser`, and `computer`, the whole parent command and every one of its subcommands is denylisted (the bare name itself matches the regex). For `todo` and `session`, only the specific subcommands actually seen (`todo copy`/`edit`/`import`, `session pin`) are denylisted -- the bare `/todo` and `/session` commands, and any OTHER `todo`/`session` subcommand not named copy/edit/import/pin, still match neither the old nor the new denylist and so were correctly classified `works-local`; do not exclude them. Any T093 supported set drawn from this run MUST exclude every individually-named command above, the whole `stats`/`trace`/`review`/`security`/`wt`/`move`/`ssh`/`browser`/`computer` families, and only the named `todo`/`session` subcommands -- not those two parent commands wholesale. A rerun of `slash-commands-probe.mjs` with the current denylist is needed to get an accurate `works-local` count and set.
+198 commands/subcommands were discovered in total (188 on the superseded 18.4.10 run; the two runs
+used different denylists so the raw counts are not a like-for-like diff). `/effort` (`Set or show
+reasoning effort (thinking level, intelligence)`) is present and `works-local`, confirming it is
+new since 18.4.10 as expected for an 18.5.0 feature. `/changelog` and `/jobs` are also present and
+`works-local`: both still answer over RPC with a plain-text `command_output` (a changelog excerpt
+and a background-jobs summary respectively), so whatever 18.5.0 changed about their *interactive*
+presentation (moving TUI output to a native sheet/page) is TUI-only and does not remove or alter
+the `command_output` frame Refract reads -- it does not affect T093/T094. `/mcp` and `/ssh` remain
+name-matched by the denylist (`mcp`, `ssh`), so this probe still never sends them and cannot
+confirm or rule out the same TUI-only/RPC-unaffected conclusion for them directly; this stays an
+open item, moot for T093/T094 either way since both names are hidden regardless of the answer.
+
+The 57 `works-local` top-level command names: `fast` (+`on`/`ultra`/`off`/`status`), `slow`
+(+`on`/`off`/`status`), `extended-context` (+`on`/`off`/`status`), `prewalk` (+`restart`), `effort`
+(+`off`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max`/`auto`), `dump` (+`all`), `todo`
+(+`expand`/`collapse`/`append`/`start`/`done`/`rm`), `session` (+`info`), `jobs` (+`full`), `usage`
+(+`show`), `changelog` (+`full`/`last`), `tools`, `context`, `fresh`, `shake`
+(+`elide`/`images`/`thinking`), `retry`, `rename`, `add-dir`, `dirs`, `force`, `autoresearch`,
+`annotate`, and `switch`.
+
+**`src/shared/slash-commands.ts`'s T093 supported set deliberately excludes `switch` from the 57**
+even though it completed cleanly (bare `/switch` only echoes `Current model: <provider>/<id>`; it
+is read-only without an argument): its description is `Switch model for this session only`, i.e. a
+model write by another name, and T092's own instructions flag "/model writes" for Stuart's
+decision before Refract exposes them -- this is a judgment call recorded here, not a probe result,
+because the denylist regex (name-only) does not catch it. The 3 `starts-agent-turn` names
+(`/ratchet`, `/green`, `/init`) are excluded for the reason the class itself states: unverified
+against a real model. Every `works-local` command actually included in the supported set was
+checked against its raw recorded frames for this run: all 56 produce a visible `command_output`,
+`notice`, or `extension_ui_request` dialog (never a silent `agentInvoked:false` with no observable
+effect), so none needed to be dropped under FR-032's "cannot run to a visible result" rule.
+`/annotate` and `/autoresearch` raise `select`/`notify` dialogs Refract already answers generically
+(`dialogs.ts`); none of the 56 needed new main-process or renderer code beyond the T093 filter
+itself.
 
 ## Failure handling
 

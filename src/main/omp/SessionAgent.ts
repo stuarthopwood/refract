@@ -32,6 +32,7 @@ import type {
 } from '../../shared/frames';
 import type { ApprovalMode, PendingRequest, Session, SessionRuntime, SessionStatus, TranscriptItem } from '../../shared/model';
 import type { ChatAnswer, SessionStatusEvent, SlashCommand, TranscriptOp } from '../../shared/ipc';
+import { filterSupportedCommands } from '../../shared/slash-commands';
 import type { RegistryStore } from '../store/registry';
 import type { SettingsStore } from '../store/settings';
 
@@ -659,9 +660,12 @@ export class SessionAgent extends EventEmitter {
         return;
       }
       case 'available_commands_update': {
+        // T093 (FR-032): only the fixed supported set (plus Refract's built native
+        // commands) is ever kept, so the menu and chat.send's validation both stay in sync
+        // through this one list -- a command OMP added since the last probe stays hidden.
         const commandsFrame = frame as AvailableCommandsUpdateFrame;
-        this.commands = commandsFrame.commands;
-        this.emit('commands', { sessionId: this.sessionId, commands: commandsFrame.commands });
+        this.commands = filterSupportedCommands(commandsFrame.commands);
+        this.emit('commands', { sessionId: this.sessionId, commands: this.commands });
         return;
       }
       case 'extension_ui_request': {

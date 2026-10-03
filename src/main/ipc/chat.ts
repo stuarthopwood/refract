@@ -7,6 +7,12 @@
 // names are kept in their own list specifically so they are refused even if a future OMP version
 // adds a real `/plan`, `/fork`, `/btw`, etc. to its own `available_commands` (constitution I/II --
 // these must stay client-side native behaviors, never forwarded).
+//
+// T093 (FR-032, FR-033): the "Session's latest available_commands_update list" above is
+// already filtered down to `src/shared/slash-commands.ts`'s fixed supported set before it
+// ever reaches here (`SessionAgent`'s `available_commands_update` handler) -- a command OMP
+// offers that Refract has not verified, or that a later OMP patch adds, is already absent from
+// `agent.availableCommands`, so it is refused here the same way as a name OMP never offered.
 
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';

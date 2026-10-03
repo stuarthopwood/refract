@@ -65,7 +65,7 @@ pnpm build        # must pass before a change lands on main
 
 **Story 7: commands and recovery (FR-032 to FR-036)**
 
-1. Type `/`. Expect: the agent's commands are listed and one runs. Send `/notacommand`: a warning and nothing is sent.
+1. Type `/`. Expect: the menu lists only the commands Refract has verified work (the fixed supported set in `src/shared/slash-commands.ts`, built from the probe table in `docs/spike/FINDINGS.md` item 23 and `contracts/omp-usage.md`) -- never OMP's raw, unfiltered list, and never a native command Refract has not built yet. Run each listed command one by one: each shows a visible result (its own output line, the dialog it raises answered through the ordinary request cards, or an error notice) and the Session returns to idle ready for the next message, never stuck. Send `/notacommand` (unknown to OMP) and a hidden command typed by hand (one the probe denylisted, or OMP's own, e.g. `/mcp`): both get the same unknown-command warning and nothing is sent. Adding a newly-probed command to the menu is a code change (rerun the probe, record it, add the name to `SUPPORTED_OMP_COMMANDS`), not a setting.
 2. Kill a Session's `omp.exe` by pid from Task Manager. Expect: the Session shows stopped; **Recover** reattaches and the history is intact.
 
 **Memory (FR-037, FR-038, SC-010)**

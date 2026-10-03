@@ -68,12 +68,12 @@ For a `stopped` Session, both start a fresh reattach against the chosen Conversa
 
 | Method | Returns | Notes |
 |---|---|---|
-| `chat.send(sessionId, text)` | `{ queued: boolean }` | `queued: true` when the Session was working. Text starting `/` is validated against the Session's command list; unknown gives error `unknown-command`. |
+| `chat.send(sessionId, text)` | `{ queued: boolean }` | `queued: true` when the Session was working. Text starting `/` is validated against the Session's command list (T093: OMP's raw list filtered to `src/shared/slash-commands.ts`'s fixed supported set, plus Refract's built native commands); unknown, unsupported, or not-yet-built gives error `unknown-command` (FR-033). |
 | `chat.stop(sessionId)` | `void` | |
 | `chat.removeQueued(sessionId, text)` | `{ removed: boolean }` | |
 | `chat.sendNow(sessionId, text)` | `{ steered: boolean }` | |
 | `chat.answer(sessionId, requestId, answer)` | `void` | `answer = { approve: boolean } | { value: string } | { confirmed: boolean } | { cancelled: true }`. |
-| `chat.commands(sessionId)` | `SlashCommand[]` | Latest list; also pushed as an event. |
+| `chat.commands(sessionId)` | `SlashCommand[]` | Latest filtered list (T093); also pushed as an event. Includes `/new`, the one native command Refract has actually built; `/plan`, `/fork`, `/settings`, `/pause`, `/plan-review`, `/btw`, and `/resume` stay unlisted until built (FR-032). |
 
 A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue command) or `agent-not-running` (no live process); a chat error is never reported as `reattach-failed` (that code is `conversations.open`-only, see above).
 
@@ -93,7 +93,7 @@ A chat error surfaces as `prompt-failed` (a failed prompt, abort, or queue comma
 | `transcript:patch` | `{ sessionId, ops: TranscriptOp[] }` | `TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] }`. Coalesced to at most one per 50 ms per Session; only sent for the Session the user is viewing, plus a final flush when a Session becomes visible. |
 | `queue:update` | `{ sessionId, followUp: string[]; steering: string[] }` | Queue chips. |
 | `request:pending` / `request:resolved` | `{ sessionId, request }` / `{ sessionId, requestId }` | Approval and question cards. |
-| `commands:update` | `{ sessionId, commands: SlashCommand[] }` | Slash-command menu. |
+| `commands:update` | `{ sessionId, commands: SlashCommand[] }` | Slash-command menu; already filtered to the T093 supported set. |
 | `settings:changed` | `Settings` | Status bar switch. |
 | `ui:open-session` | `{ sessionId }` | Emitted when the user clicks a Windows notification. |
 | `memory:warning` | `{ low: boolean; freeBytes: number; liveAgents: number }` | Status bar low-memory notice; never stops an agent automatically (FR-037). |
