@@ -286,11 +286,11 @@ export function registerSessions(manager: SessionManager): void {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE} expects a string id`);
     const session = manager.registry.getSession(id);
     if (!session) return notFound(`Session not found: ${id}`);
-    const worktreeExists = await fs.stat(session.worktreePath).then(
-      () => true,
+    const worktreeIsDirectory = await fs.stat(session.worktreePath).then(
+      (stat) => stat.isDirectory(),
       () => false
     );
-    if (!worktreeExists) {
+    if (!worktreeIsDirectory) {
       return { ok: false, error: { code: 'worktree-missing', message: `Worktree missing: ${session.worktreePath}` } };
     }
     const openError = await shell.openPath(session.worktreePath);

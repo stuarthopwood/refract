@@ -6,15 +6,8 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import type { DiffStat } from '../../shared/ipc'
 import { gitRaw } from './git'
-
-export interface DiffStat {
-  files: number
-  additions: number
-  deletions: number
-  /** `true` when the 200-file or 1 MiB-per-file cap stopped counting before the real total. */
-  partial: boolean
-}
 
 const MAX_FILES = 200
 const MAX_FILE_BYTES = 1024 * 1024
@@ -41,15 +34,33 @@ function countLines(text: string): number {
 }
 
 async function computeDiffStat(worktreePath: string, baseBranch: string, signal: AbortSignal): Promise<DiffStat | null> {
-  const mergeBaseResult = await gitRaw(worktreePath, ['merge-base', 'HEAD', baseBranch], { signal })
+  const mergeBaseResult = await gitRaw(
+    worktreePath,
+    ['merge-base', '--end-of-options', 'HEAD', baseBranch],
+    { signal }
+  )
   if (mergeBaseResult.code !== 0) return null
   const mergeBase = mergeBaseResult.stdout.trim()
   if (!mergeBase) return null
 
-  const numstatResult = await gitRaw(worktreePath, ['diff', '--numstat', mergeBase], { signal })
+  // Plumbing, not porcelain `git diff`: `diff-index` never refreshes or writes the index, so a
+  // concurrent `git add`/`git commit` in the same worktree cannot race it on `index.lock`.
+  // `--no-ext-diff --no-textconv` stop a diff driver from git config running arbitrary commands.
+  const numstatResult = await gitRaw(
+    worktreePath,
+    ['diff-index', '--no-ext-diff', '--no-textconv', '--numstat', mergeBase],
+    { signal }
+  )
   if (numstatResult.code !== 0) return null
 
-  const untrackedResult = await gitRaw(worktreePath, ['ls-files', '--others', '--exclude-standard'], { signal })
+  // `-z` NUL-delimits entries with no C-style quoting, so non-ASCII/special-character paths
+  // (e.g. `café.txt`, which git would otherwise print as a quoted `"caf\303\251.txt"`) and
+  // paths with real leading/trailing spaces survive intact; `.trim()` would corrupt the latter.
+  const untrackedResult = await gitRaw(
+    worktreePath,
+    ['ls-files', '-z', '--others', '--exclude-standard'],
+    { signal }
+  )
   if (untrackedResult.code !== 0) return null
 
   let files = 0
@@ -70,10 +81,7 @@ async function computeDiffStat(worktreePath: string, baseBranch: string, signal:
   }
 
   if (!partial) {
-    const untrackedPaths = untrackedResult.stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
+    const untrackedPaths = untrackedResult.stdout.split('\0').filter((entry) => entry.length > 0)
 
     for (const relativePath of untrackedPaths) {
       if (signal.aborted) return null
