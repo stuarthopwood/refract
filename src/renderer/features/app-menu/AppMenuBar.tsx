@@ -35,13 +35,19 @@ export function AppMenuBar() {
   const altArmedRef = useRef(false)
   // Whatever held focus right before Alt opened the bar (e.g. the message box mid-draft),
   // captured on Alt's keydown so every dismissal path below can restore it instead of leaving
-  // focus to fall through to <body> (WCAG 2.1 AA 2.4.3).
+  // focus to fall through to <body> (WCAG 2.1 AA 2.4.3). Only captured while focus is OUTSIDE
+  // the bar: the SECOND Alt tap that closes an already-open bar also fires this keydown, and by
+  // then the bar's own autoFocused "File" button holds focus, so without the `barRef` guard
+  // below this ref would get clobbered with the bar's own button instead of keeping the
+  // original pre-bar target.
   const previousFocusRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       altArmedRef.current = event.key === 'Alt'
-      if (event.key === 'Alt') previousFocusRef.current = document.activeElement as HTMLElement | null
+      if (event.key === 'Alt' && !barRef.current?.contains(document.activeElement)) {
+        previousFocusRef.current = document.activeElement as HTMLElement | null
+      }
     }
     function onKeyUp(event: KeyboardEvent): void {
       if (event.key !== 'Alt') return
@@ -70,6 +76,10 @@ export function AppMenuBar() {
     if (!visible) return
     function onMouseDown(event: MouseEvent): void {
       if (barRef.current?.contains(event.target as Node)) return
+      // A click away is itself the user choosing a new focus target (e.g. clicking straight into
+      // the message textarea): clear the captured ref so the restore effect below does not then
+      // fight that click by yanking focus back to the pre-bar element on the next render.
+      previousFocusRef.current = null
       setVisible(false)
     }
     function onKeyDown(event: KeyboardEvent): void {
@@ -83,8 +93,10 @@ export function AppMenuBar() {
     }
   }, [visible])
 
-  // Restores focus on every dismissal path (Esc, a second Alt tap, or a click away): all three
-  // just flip `visible` to false, so one effect here covers all of them.
+  // Restores focus on Esc or a second Alt tap: both just flip `visible` to false with
+  // `previousFocusRef` still holding the pre-bar target. A click-away also flips `visible` to
+  // false, but its `onMouseDown` handler above clears the ref first, so this effect is a no-op
+  // for that path and the user's own click target keeps focus instead of being fought over.
   useEffect(() => {
     if (visible) return
     const target = previousFocusRef.current
