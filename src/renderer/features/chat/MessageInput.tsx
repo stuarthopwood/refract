@@ -93,6 +93,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // predictWord response against a newer edit superseding it before it resolves (same guard as
   // SessionDetailsCard's diffStat stale-response fix).
   const [ghost, setGhost] = useState<{ text: string; cursor: number; suffix: string } | null>(null)
+  // Mirrors `ghost` for `handleSend`'s async body (#358/#359 round-3 remediation): that function is an
+  // ordinary closure captured once per render, so after its `await`s resolve its own `ghost`
+  // binding is whatever was current when it started -- stale against anything that happened
+  // during the gap. Refs are stable across renders, so reading through `ghostRef` instead always
+  // sees the live value regardless of which render's closure is asking.
+  const ghostRef = useRef<typeof ghost>(null)
   const ghostGenerationRef = useRef(0)
   const ghostDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ghostHintId = `${sessionId}-ghost-hint`
@@ -191,6 +197,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     setText('')
+    // Second invalidation (#358/#359 round-3 remediation): typing during the `await open()` / `await
+    // chat.send()` gap above can schedule a fresh ghost-text debounce/request -- or let one
+    // already in flight resolve -- against the draft `setText('')` just wiped; the early
+    // `clearGhostState()` above ran before those awaits and can't see state that changed during
+    // them. Calling it again here bumps the generation ref (dropping/cancelling anything from the
+    // gap), and `dismissGhost` reads through `ghostRef` so this acts on whatever ghost is actually
+    // current now, not this function's own stale `ghost` binding from before the awaits.
+    clearGhostState()
   }
 
   /** Enter or Tab on a highlighted slash command (FR-032): fills the box with `/name ` so the
@@ -204,8 +218,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   /** Sends `predictWordFeedback` for whatever suggestion is currently shown, at most once per
    * shown-then-abandoned suggestion (FR-058), then clears it. A no-op when nothing is shown. */
   function dismissGhost(accepted: boolean) {
-    if (!ghost) return
-    void window.refract.chat.predictWordFeedback(sessionId, ghost.text, ghost.cursor, ghost.suffix, accepted)
+    // Reads `ghostRef` rather than the closed-over `ghost` so a second, post-await call from
+    // `handleSend` (#358/#359 round-3 remediation) acts on whatever ghost state is actually current, not a
+    // snapshot from before the `await open()` / `await chat.send()` calls.
+    const current = ghostRef.current
+    if (!current) return
+    void window.refract.chat.predictWordFeedback(sessionId, current.text, current.cursor, current.suffix, accepted)
+    ghostRef.current = null
     setGhost(null)
   }
 
@@ -254,7 +273,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           setAnnouncedSuggestion(null)
           return
         }
-        setGhost({ text: nextText, cursor: nextCursor, suffix: result.value })
+        ghostRef.current = { text: nextText, cursor: nextCursor, suffix: result.value }
+        setGhost(ghostRef.current)
         setAnnouncedSuggestion(result.value)
       })
     }, GHOST_TEXT_DEBOUNCE_MS)
@@ -306,6 +326,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       const nextCursor = cursor + suffix.length
       void window.refract.chat.predictWordFeedback(sessionId, ghost.text, ghost.cursor, ghost.suffix, true)
       ghostGenerationRef.current++ // invalidate any request still in flight for the old draft
+      ghostRef.current = null
       setGhost(null)
       setAnnouncedSuggestion(null)
       setText(nextText)
@@ -314,7 +335,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       })
       return
     }
-    if (ghost && event.key === 'Escape') {
+    // `ghost.text === text` guard mirrors the Tab-accept and render invariants above: a stale
+    // ghost computed against a draft that's since changed outside the normal onChange path (e.g.
+    // #358/#359's round-3 post-send gap) must not swallow Esc into a silent no-op dismiss -- fall through to
+    // the real composer-clear Esc below instead.
+    if (ghost && ghost.text === text && event.key === 'Escape') {
       event.preventDefault()
       dismissGhost(false)
       setAnnouncedSuggestion(null)
