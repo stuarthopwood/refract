@@ -83,11 +83,12 @@ renderer store every story builds on.
   `cancelPreview()` (`preview(null)`) (depends on T006). (#173)
 - [ ] T008 Replace `src/renderer/main.tsx`'s hardcoded
   `document.documentElement.classList.add('dark')` with the bootstrap-derived class
-  (`theme-${activeThemeId(...)}`) set before `createRoot().render()`, and wrap `<App />` in
-  `next-themes`'s `ThemeProvider` with `forcedTheme` hardcoded to `'dark'` (research.md decision
-  11); in `src/renderer/styles/globals.css` rename the single `.dark` block to `.theme-dark`
-  (`:root` keeps only truly theme-independent values, e.g. `--radius`, `--font-ui`, `--font-code`),
-  and add an empty `.theme-dark-high-contrast` block for T015 to fill in (depends on T002, T007). (#176)
+  (`theme-${activeThemeId(...)}`) set before `createRoot().render()`; no `ThemeProvider` wrapping
+  needed (research.md decision 11, moot -- `sonner.tsx` already pins `theme="dark"` directly, no
+  `next-themes` dependency exists to wrap); in `src/renderer/styles/globals.css` rename the single
+  `.dark` block to `.theme-dark` (`:root` keeps only truly theme-independent values, e.g.
+  `--radius`, `--font-ui`, `--font-code`), and add an empty `.theme-dark-high-contrast` block for
+  T015 to fill in (depends on T002, T007). (#176)
 
 **Checkpoint**: `pnpm typecheck` and `pnpm build` pass; a scratch run that hand-edits
 `settings.json`'s `theme` field and relaunches shows the matching class with no flash.

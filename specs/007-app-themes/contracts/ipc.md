@@ -38,5 +38,6 @@ no OS-follow mode.
 `src/shared/themes.ts`'s `THEMES` table (data-model.md) is imported directly by main, preload, and
 renderer — it is not served over IPC. The renderer uses it for the picker's names and swatches and
 Shiki theme selection (research.md decision 9); main uses it for `theme.preview`/`theme.set`'s
-title-bar overlay colours. `next-themes`'s `forcedTheme` is a hardcoded `'dark'` constant, not
-driven by `THEMES` (research.md decision 11).
+title-bar overlay colours. Sonner's dark variant is a hardcoded `theme="dark"` literal in
+`sonner.tsx` itself, with no `next-themes` dependency involved at all (research.md decision 11,
+moot).

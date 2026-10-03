@@ -21,10 +21,10 @@ paint. Design rationale and the two UNVERIFIED Electron/Windows facts this depen
 **Language/Version**: TypeScript (`strict: true`) on Node 24.21.0 as bundled by Electron 44.5.1;
 React 19.3.0 in the renderer. Same stack as spec 001; no new runtime added.
 
-**Primary Dependencies**: `next-themes` 0.4.6 (already a dependency, today used only by the copied
-shadcn `sonner.tsx`; kept narrowly per research.md decision 11, not newly adopted app-wide),
-`shiki` 4.4.3 (already a dependency; extends its loaded theme set from one to two or more,
-research.md decision 9), `zustand` 5.0.15 (already a dependency; one new store, `theme-store.ts`).
+**Primary Dependencies**: `shiki` 4.4.3 (already a dependency; extends its loaded theme set from
+one to two or more, research.md decision 9), `zustand` 5.0.15 (already a dependency; one new
+store, `theme-store.ts`). `next-themes` was removed ahead of this spec (research.md decision 11,
+moot) -- `sonner.tsx` now pins `theme="dark"` directly, no `ThemeProvider` involved.
 No new npm dependency is introduced by this spec.
 
 **Storage**: extends the existing `settings.json` (spec 001 data-model.md) with one new field,
@@ -103,7 +103,7 @@ src/
 ├── preload/
 │   └── index.ts                           # EDIT: expose theme.preview/theme.set/themeBootstrap
 └── renderer/
-    ├── main.tsx                            # EDIT: bootstrap-driven initial class (no hardcoded '.dark'); next-themes ThemeProvider (forcedTheme: 'dark')
+    ├── main.tsx                            # EDIT: bootstrap-driven initial class (no hardcoded '.dark'); no ThemeProvider needed (research.md decision 11, moot -- sonner.tsx already pins theme="dark" directly)
     ├── state/
     │   └── theme-store.ts                 # NEW: zustand store, activeThemeId derivation, preview/save/cancel actions
     ├── styles/

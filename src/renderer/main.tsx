@@ -6,8 +6,8 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from './components/ui/sonner'
 import { initStores } from './state'
 
-// Dark theme is the default (docs/DESIGN.md "Look and feel"); a light theme exists through the
-// same tokens by removing this class.
+// Refract is dark-only (docs/DESIGN.md "Look and feel"); spec 007 will replace this hardcoded
+// class with a bootstrap-derived one once real theme presets ship (research.md decision 4).
 document.documentElement.classList.add('dark')
 
 initStores()

@@ -185,25 +185,24 @@ different palette than Refract's own tokens, which would read as "almost matchin
 following the theme (FR-016 says follow the active theme's colours, not merely stay readable with
 an unrelated palette).
 
-## 11. `next-themes` kept, narrowly, only for Sonner compatibility
+## 11. `next-themes` already removed; Sonner is pinned directly, nothing for this spec to do
 
-**Decision**: Wrap `<App />` in `next-themes`'s `ThemeProvider` in `main.tsx`, with `forcedTheme`
-hardcoded to `'dark'` — every built-in theme is dark-toned (Decision 1), so Sonner's dark toast
-variant is always the right one, and `ThemeDefinition` keeps no `mode` field to drive this with
-since there is nothing left for it to vary. This exists solely so `src/renderer/components/ui/
-sonner.tsx`'s existing `useTheme()` call keeps compiling and theming toasts correctly without a
-rewrite; `next-themes` is not consulted anywhere else and its own system-detection is unused.
+**Decision**: Moot, overtaken by a fix landed ahead of this spec (`src/renderer/components/ui/
+sonner.tsx`, 2026-10-03): `next-themes` was never actually wired to anything — `main.tsx` has no
+`ThemeProvider`, so `sonner.tsx`'s old `useTheme()` call always silently fell back to its own
+`"system"` default, meaning toasts followed the OS's light/dark setting independently of the
+app's own (always-dark) appearance. That call, and the `next-themes` dependency itself, are gone;
+`sonner.tsx` now passes `theme="dark"` as a plain literal. This spec therefore adds no
+`ThemeProvider`, no `forcedTheme`, and does not reintroduce `next-themes` — there is nothing left
+for Decision 1's "every built-in theme is dark-toned" to drive through next-themes, since Sonner
+already reads a hardcoded literal.
 
-**Rationale**: `next-themes` is already a pinned dependency used only by the copied shadcn
-`sonner.tsx` component; replacing that one call site would mean diverging from the shadcn-copied
-file for no functional gain, whereas `forcedTheme` is next-themes' documented escape hatch for
-"theme is controlled by something else" — exactly this case, since the high-contrast preset has no
-next-themes equivalent and must still pick one of Sonner's two toast variants, which is always
-the dark one now.
+**Rationale**: the alternative this decision originally rejected (rewriting `sonner.tsx` to drop
+`next-themes` entirely) is exactly what happened, for unrelated reasons (the `useTheme()` call was
+already dead code, not a deliberate theming mechanism). Reopening `next-themes` as a dependency now
+would add back a library with zero live call sites for no benefit.
 
-**Alternatives considered**: Rewriting `sonner.tsx` to read `theme-store.ts` directly and drop
-`next-themes` entirely — rejected as a larger, unrequested change to a shadcn-owned file for a
-one-line behavioural difference (`forcedTheme` achieves the same result without touching it).
+**Alternatives considered**: n/a — superseded, not re-decided.
 
 ## 12. Contrast verified by a one-off script, not CI
 
