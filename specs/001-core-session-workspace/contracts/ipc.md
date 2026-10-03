@@ -45,6 +45,14 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 | `sessions.recover(id)` | `SessionSnapshot` | Restart and reattach after `agent-exited`. |
 | `sessions.stopAgent(sessionId)` | `void` | Stops the process, leaves the Session listed as `stopped`/`not-started`, keeps its Conversation; reopening reattaches it (FR-038). |
 | `sessions.setVisible(sessionId \| null)` | `void` | Selects which Session's `transcript:patch` events are forwarded (FR-026); `sessions.open` calls this too. Also clears that Session's `unread` and flushes a full transcript snapshot (`transcript:patch` `reset`). `null` when no Session is shown. |
+| `sessions.diffStat(id)` | `{ files: number; additions: number; deletions: number; partial: boolean } \| null` | Read-only (T068, FR-039, FR-044): `git diff --numstat <merge-base of HEAD and baseBranch>` for tracked edits plus `git ls-files --others --exclude-standard` for new untracked files (read in main to count their lines as additions); capped at 200 files and 1 MiB per file (`partial: true` past either cap; a binary file counts as one file with 0 lines), 3 s overall timeout. `null` when the worktree is missing, the Base branch no longer exists, or git fails. |
+| `sessions.revealWorktree(id)` | `void` | Opens the Session's worktree in Windows Explorer (`shell.openPath`) after an `fs.stat` check; looks the worktree up by Session id in the registry, never a path from the renderer (constitution V). Error `worktree-missing` when the folder is gone. |
+
+### Clipboard
+
+| Method | Returns | Notes |
+|---|---|---|
+| `clipboard.writeText(text)` | `void` | Fallback for the session details card's Copy path button (T069): writes through main's own `electron.clipboard` when the sandboxed renderer's `navigator.clipboard.writeText` is refused. Error `clipboard-failed`. |
 
 ### Conversations (FR-013, FR-014)
 

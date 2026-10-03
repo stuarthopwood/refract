@@ -25,7 +25,9 @@ export type IpcErrorCode =
   | 'not-found'
   | 'invalid-argument'
   | 'prompt-failed'
-  | 'agent-not-running';
+  | 'agent-not-running'
+  | 'worktree-missing'
+  | 'clipboard-failed';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -58,6 +60,16 @@ export interface SessionSummary extends Session {
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   unread: boolean;
   pendingMode: ApprovalMode | null;
+}
+
+/** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base
+ * with the Session's Base branch, plus new untracked files. `partial` marks that the 200-file or
+ * 1 MiB-per-file cap stopped counting before the real total. */
+export interface DiffStat {
+  files: number;
+  additions: number;
+  deletions: number;
+  partial: boolean;
 }
 
 /** The renderer-facing copy of main's in-memory SessionRuntime (data-model.md). */
@@ -134,6 +146,9 @@ export const IPC_REQUESTS = {
   SESSIONS_RECOVER: 'sessions.recover',
   SESSIONS_STOP_AGENT: 'sessions.stopAgent',
   SESSIONS_SET_VISIBLE: 'sessions.setVisible',
+  SESSIONS_DIFF_STAT: 'sessions.diffStat',
+  SESSIONS_REVEAL_WORKTREE: 'sessions.revealWorktree',
+  CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
@@ -193,6 +208,15 @@ export interface RefractApi {
     recover(id: string): Promise<Result<SessionSnapshot>>;
     stopAgent(sessionId: string): Promise<Result<void>>;
     setVisible(sessionId: string | null): Promise<Result<void>>;
+    diffStat(id: string): Promise<Result<DiffStat | null>>;
+    revealWorktree(id: string): Promise<Result<void>>;
+  };
+
+  clipboard: {
+    /** Fallback for a sandboxed renderer where `navigator.clipboard.writeText` is refused
+     * (`session.setPermissionRequestHandler` denies every permission): writes through main's own
+     * `electron.clipboard` instead, which needs no renderer permission. */
+    writeText(text: string): Promise<Result<void>>;
   };
 
   conversations: {

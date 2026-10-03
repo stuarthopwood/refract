@@ -2,16 +2,17 @@
 // `rename` (T022), `open`/`recover` (T022/T045, sharing `attachSnapshot`; `open` only
 // auto-starts a Session that was never wrong -- `canAutoStart` -- `recover` always restarts),
 // `archive`/`restore` (T041), `deleteCheck`/`delete` (T042), `recreateWorktree` (T043),
-// `stopAgent` (T040), and `setVisible` (T036/T037).
+// `stopAgent` (T040), `setVisible` (T036/T037), and `diffStat`/`revealWorktree` (T068).
 
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
-import type { Result, SessionSnapshot, SessionRuntimeView } from '../../shared/ipc';
+import type { DiffStat, Result, SessionSnapshot, SessionRuntimeView } from '../../shared/ipc';
 import { git } from '../git/git';
+import { diffStat } from '../git/diffStat';
 import { addWorktree, branchExists, deleteCheck, generateName, listBranches, recreateWorktree, removeWorktree } from '../git/worktrees';
 import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
@@ -265,6 +266,35 @@ export function registerSessions(manager: SessionManager): void {
       return invalidArgument(`${IPC_REQUESTS.SESSIONS_SET_VISIBLE} expects a string id or null`);
     }
     manager.setVisible(sessionId);
+    return { ok: true, value: undefined };
+  });
+
+  // T068: read-only, so never throws past `diffStat` itself -- a timeout, a missing worktree, a
+  // missing Base branch, or any git failure all come back as `null`, a normal `ok: true` value.
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_DIFF_STAT, async (_event, id: unknown): Promise<Result<DiffStat | null>> => {
+    if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_DIFF_STAT} expects a string id`);
+    const session = manager.registry.getSession(id);
+    if (!session) return notFound(`Session not found: ${id}`);
+    const value = await diffStat(session.worktreePath, session.baseBranch);
+    return { ok: true, value };
+  });
+
+  // T068: looks the worktree up by Session id in the registry, never a path handed in by the
+  // renderer (constitution V). `shell.openPath` returns an error string (never throws) on
+  // failure instead of an empty one on success.
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE, async (_event, id: unknown) => {
+    if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE} expects a string id`);
+    const session = manager.registry.getSession(id);
+    if (!session) return notFound(`Session not found: ${id}`);
+    const worktreeExists = await fs.stat(session.worktreePath).then(
+      () => true,
+      () => false
+    );
+    if (!worktreeExists) {
+      return { ok: false, error: { code: 'worktree-missing', message: `Worktree missing: ${session.worktreePath}` } };
+    }
+    const openError = await shell.openPath(session.worktreePath);
+    if (openError) return { ok: false, error: { code: 'worktree-failed', message: openError } };
     return { ok: true, value: undefined };
   });
 }

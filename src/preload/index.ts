@@ -4,6 +4,7 @@ import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import type {
   BranchEntry,
   ChatAnswer,
+  DiffStat,
   LowMemoryWarning,
   RefractApi,
   Readiness,
@@ -65,7 +66,13 @@ const refract: RefractApi = {
     recreateWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_RECREATE_WORKTREE, id),
     recover: (id) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_RECOVER, id),
     stopAgent: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_STOP_AGENT, sessionId),
-    setVisible: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_SET_VISIBLE, sessionId)
+    setVisible: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_SET_VISIBLE, sessionId),
+    diffStat: (id) => request<DiffStat | null>(IPC_REQUESTS.SESSIONS_DIFF_STAT, id),
+    revealWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE, id)
+  },
+
+  clipboard: {
+    writeText: (text) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_TEXT, text)
   },
 
   conversations: {

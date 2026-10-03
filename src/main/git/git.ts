@@ -35,7 +35,7 @@ export interface GitRawResult {
  * git's absolute path via `resolveExecutable` (security: Windows would otherwise search `cwd`
  * before PATH for a bare `"git"`, so a repository that commits its own `git.exe` could run
  * instead of the real one). */
-export async function gitRaw(cwd: string, args: string[]): Promise<GitRawResult> {
+export async function gitRaw(cwd: string, args: string[], opts?: { signal?: AbortSignal }): Promise<GitRawResult> {
   let gitPath: string
   try {
     gitPath = await resolveExecutable('git')
@@ -43,14 +43,19 @@ export async function gitRaw(cwd: string, args: string[]): Promise<GitRawResult>
     return { stdout: '', stderr: err instanceof Error ? err.message : String(err), code: 1 }
   }
   return new Promise((resolve) => {
-    execFile(gitPath, args, { cwd, windowsHide: true }, (error: ExecFileException | null, stdout, stderr) => {
-      if (error === null) {
-        resolve({ stdout, stderr, code: 0 })
-        return
+    execFile(
+      gitPath,
+      args,
+      { cwd, windowsHide: true, signal: opts?.signal },
+      (error: ExecFileException | null, stdout, stderr) => {
+        if (error === null) {
+          resolve({ stdout, stderr, code: 0 })
+          return
+        }
+        const code = typeof error.code === 'number' ? error.code : 1
+        resolve({ stdout, stderr: stderr || error.message, code })
       }
-      const code = typeof error.code === 'number' ? error.code : 1
-      resolve({ stdout, stderr: stderr || error.message, code })
-    })
+    )
   })
 }
 

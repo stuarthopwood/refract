@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { BellRingIcon, ChevronRightIcon, CircleIcon, EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon, SquareIcon } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  BellRingIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  CopyIcon,
+  EllipsisVerticalIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  GitBranchIcon,
+  GitBranchPlusIcon,
+  LoaderCircleIcon,
+  PlusIcon,
+  SquareIcon
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -10,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -17,7 +32,7 @@ import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
-import type { SessionSummary } from '../../../shared/ipc'
+import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository, SessionStatus } from '../../../shared/model'
 
 const STATUS_LABEL: Record<SessionStatus, string> = {
@@ -54,7 +69,7 @@ function StateIcon({ status }: { status: SessionStatus }) {
   }
 }
 
-function SessionRow({ session }: { session: SessionSummary }) {
+function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   const isVisible = useSessionsStore((state) => state.visibleSessionId === session.id)
   const open = useSessionsStore((state) => state.open)
   const setVisibleSessionId = useSessionsStore((state) => state.setVisibleSessionId)
@@ -65,7 +80,10 @@ function SessionRow({ session }: { session: SessionSummary }) {
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // T069: fetched fresh each time the details card opens, never cached across opens.
+  const [diffStatResult, setDiffStatResult] = useState<DiffStat | null | 'loading'>('loading')
   const isArchived = !!session.archivedAt
+  const worktreeMissing = session.stopReason === 'worktree-missing'
   const rowRef = useRef<HTMLLIElement>(null)
   const openButtonRef = useRef<HTMLButtonElement>(null)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
@@ -163,6 +181,38 @@ function SessionRow({ session }: { session: SessionSummary }) {
     openButtonRef.current?.focus()
   }, [renaming])
 
+  // T069: tries the renderer's own Clipboard API first; the sandboxed renderer denies every
+  // permission request/check (`src/main/index.ts`), so that throws here and this falls back to
+  // the allowlisted main-process channel instead.
+  async function handleCopyPath(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(session.worktreePath)
+      toast.success('Path copied')
+      return
+    } catch {
+      // fall through to the main-process clipboard channel
+    }
+    const result = await window.refract.clipboard.writeText(session.worktreePath)
+    if (result.ok) toast.success('Path copied')
+    else notify(result.error)
+  }
+
+  async function handleReveal(): Promise<void> {
+    const result = await window.refract.sessions.revealWorktree(session.id)
+    if (!result.ok) notify(result.error)
+  }
+
+  // T069: fetches a fresh diff stat and re-lists Sessions (so a since-deleted worktree's
+  // `stopReason` is current, not a stale cached value) every time the card opens.
+  function handleCardOpenChange(open: boolean): void {
+    if (!open) return
+    setDiffStatResult('loading')
+    void window.refract.sessions.diffStat(session.id).then((result) => {
+      setDiffStatResult(result.ok ? result.value : null)
+    })
+    void useSessionsStore.getState().refresh()
+  }
+
   return (
     <li ref={rowRef} className="group relative flex w-full items-center gap-2 rounded-md">
       {isVisible && (
@@ -180,34 +230,87 @@ function SessionRow({ session }: { session: SessionSummary }) {
           className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1.5 text-sm outline-none"
         />
       ) : (
-        <button
-          ref={openButtonRef}
-          type="button"
-          aria-current={isVisible ? 'true' : undefined}
-          // A non-visible row only flips visibility: ChatPane's [visibleSessionId] effect is the single
-          // opener and applies the snapshot (transcript, queue, pending requests, stop banner). The
-          // visible row has no such effect to fire, so clicking it (waking an asleep Session) opens directly.
-          onClick={() => (isVisible ? void open(session.id) : setVisibleSessionId(session.id))}
-          onDoubleClick={startRenaming}
-          onKeyDown={handleOpenButtonKeyDown}
-          data-choice-item
-          className={cn(
-            'session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-            isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
-          )}
-        >
-          <StateIcon status={session.status} />
-          <span className="sr-only">{STATUS_LABEL[session.status]}</span>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate font-medium">{session.name}</span>
-            <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
-          </span>
-          <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
-          {session.unread && (
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
-          )}
-          {session.unread && <span className="sr-only">Unread</span>}
-        </button>
+        <HoverCard openDelay={500} onOpenChange={handleCardOpenChange}>
+          <HoverCardTrigger asChild>
+            <button
+              ref={openButtonRef}
+              type="button"
+              aria-current={isVisible ? 'true' : undefined}
+              // A non-visible row only flips visibility: ChatPane's [visibleSessionId] effect is the single
+              // opener and applies the snapshot (transcript, queue, pending requests, stop banner). The
+              // visible row has no such effect to fire, so clicking it (waking an asleep Session) opens directly.
+              onClick={() => (isVisible ? void open(session.id) : setVisibleSessionId(session.id))}
+              onDoubleClick={startRenaming}
+              onKeyDown={handleOpenButtonKeyDown}
+              data-choice-item
+              className={cn(
+                'session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
+              )}
+            >
+              <StateIcon status={session.status} />
+              <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-medium">{session.name}</span>
+                <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
+              {session.unread && (
+                <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
+              )}
+              {session.unread && <span className="sr-only">Unread</span>}
+            </button>
+          </HoverCardTrigger>
+          <HoverCardContent>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-1.5">
+                <StateIcon status={session.status} />
+                <span className="font-medium">{STATUS_LABEL[session.status]}</span>
+                <span className="text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <FolderIcon aria-hidden className="size-3.5 shrink-0" />
+                <span className="truncate">{repository.name}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <GitBranchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{session.branch}</span>
+                <span className="shrink-0 text-muted-foreground">from {session.baseBranch}</span>
+              </div>
+              <p className="min-w-0 break-all text-xs text-muted-foreground">
+                {worktreeMissing ? (
+                  <>
+                    {session.worktreePath} <span className="text-destructive">(missing)</span>
+                  </>
+                ) : (
+                  session.worktreePath
+                )}
+              </p>
+              {/* Provider/model/reasoning-effort readout belongs here once T062 stores
+                  `lastModel`/`lastThinkingLevel` on SessionSummary -- neither field exists yet, so
+                  this is omitted rather than invented (no live source to read it from). */}
+              <p className="text-xs text-muted-foreground">
+                {worktreeMissing
+                  ? 'Not available'
+                  : diffStatResult === 'loading'
+                    ? 'Counting changes…'
+                    : diffStatResult === null
+                      ? 'Not available'
+                      : `${diffStatResult.files} files changed +${diffStatResult.additions} -${diffStatResult.deletions}${diffStatResult.partial ? ' (partial)' : ''}`}
+              </p>
+              <div className="flex items-center gap-1.5 pt-1">
+                <Button variant="outline" size="xs" onClick={() => void handleCopyPath()}>
+                  <CopyIcon aria-hidden />
+                  Copy path
+                </Button>
+                <Button variant="outline" size="xs" onClick={() => void handleReveal()}>
+                  <FolderOpenIcon aria-hidden />
+                  Open in file explorer
+                </Button>
+              </div>
+            </div>
+          </HoverCardContent>
+        </HoverCard>
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -240,6 +343,10 @@ function SessionRow({ session }: { session: SessionSummary }) {
           >
             Rename
           </DropdownMenuItem>
+          {/* T069: the same two actions the details card offers, kept here too since Radix hover
+              cards are not keyboard-reachable. */}
+          <DropdownMenuItem onSelect={() => void handleCopyPath()}>Copy worktree path</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void handleReveal()}>Open worktree folder</DropdownMenuItem>
           {isArchived ? (
             <DropdownMenuItem
               onSelect={() => {
@@ -354,7 +461,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
         <CollapsibleContent>
           <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
             {active.map((session) => (
-              <SessionRow key={session.id} session={session} />
+              <SessionRow key={session.id} session={session} repository={repository} />
             ))}
           </ul>
         </CollapsibleContent>
@@ -368,7 +475,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
           <CollapsibleContent>
             <ul aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1">
               {archived.map((session) => (
-                <SessionRow key={session.id} session={session} />
+                <SessionRow key={session.id} session={session} repository={repository} />
               ))}
             </ul>
           </CollapsibleContent>

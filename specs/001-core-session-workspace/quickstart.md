@@ -48,10 +48,12 @@ pnpm build        # must pass before a change lands on main
 3. Relaunch. Expect: the Session is listed and no agent is running. Open it: both messages are shown, and a follow-up that depends on them is answered correctly.
 4. Delete the Session's conversation file on disk, reopen the Session. Expect: a clear "conversation missing" message, not a blank chat.
 
-**Story 5: several sessions (FR-005, FR-006, FR-026, FR-027, SC-005)**
+**Story 5: several sessions (FR-005, FR-006, FR-026, FR-027, FR-039, FR-044, SC-005)**
 
 1. Start a long turn in Session A, switch to Session B and send a different request. Expect: both show working; each conversation stays separate.
 2. Focus another app. Expect: a Windows notification when a Session needs you or finishes, and none for anything else; clicking it opens that Session.
+3. Hover a Session row's open button (or give it keyboard focus). Expect: a details card after about 500 ms showing status, relative time, repository, branch and Base branch, the worktree's absolute path, and a files-changed count that matches a direct `git diff --numstat` against the merge-base plus any new untracked files; moving the pointer onto the card keeps it open; Esc dismisses it; it never covers the row. Copy path puts the path on the clipboard; Open in file explorer opens it in Explorer; both are also on the row `⋮` menu.
+4. Delete that Session's worktree folder outside Refract, then hover the row again after the app next re-lists Sessions (or restart Refract). Expect: the card marks the path missing and shows "Not available" for files changed instead of a stale count.
 
 **Story 6: archive and delete (FR-028, FR-029)**
 
