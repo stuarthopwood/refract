@@ -47,7 +47,7 @@ export function mergeLiveTranscript(historyTranscript: TranscriptItem[], liveTra
   const isUnpersisted = (item: TranscriptItem): boolean => {
     if (historyIds.has(item.id)) return false;
     if (item.kind === 'request') return !item.resolved;
-    if (item.kind === 'tool') return item.status === 'running';
+    if (item.kind === 'tool' || item.kind === 'subagent') return item.status === 'running';
     if (item.kind === 'assistant-text' || item.kind === 'thinking') return item.streaming;
     return false;
   };
@@ -65,7 +65,7 @@ export function mergeLiveTranscript(historyTranscript: TranscriptItem[], liveTra
 export function finalizeLiveTranscript(transcript: TranscriptItem[]): TranscriptItem[] {
   let changed = false;
   const next = transcript.map((item) => {
-    if (item.kind === 'tool' && item.status === 'running') {
+    if ((item.kind === 'tool' || item.kind === 'subagent') && item.status === 'running') {
       changed = true;
       return { ...item, status: 'error' as const };
     }

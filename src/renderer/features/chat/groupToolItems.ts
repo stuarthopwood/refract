@@ -29,7 +29,12 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
     if (run.length === 1) {
       result.push(run[0]!)
     } else {
-      result.push({ kind: 'tool-group', id: `group:${run[0]!.id}`, tool: run[0]!.tool, items: run })
+      // Keyed by the run's first item's own id (never a `group:`-prefixed id): a keyboard user
+      // focused or expanded on this row must not lose that state to an unmount/remount when a
+      // second consecutive call to the same tool arrives and the row transitions from a plain
+      // `tool` item to a `ToolGroup` (or back), since React's reconciliation keys both render
+      // shapes by `row.id` in Transcript.tsx.
+      result.push({ kind: 'tool-group', id: run[0]!.id, tool: run[0]!.tool, items: run })
     }
     run = []
   }

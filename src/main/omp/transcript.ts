@@ -183,10 +183,18 @@ function applyBatchTaskResult(items: TranscriptItem[], result: ToolResultLike, l
     if (item.kind !== 'subagent' || item.toolCallId !== result.toolCallId) return item;
     const index = subagents.indexOf(item);
     const entry = progress?.[index];
-    if (entry) {
-      return { ...item, status: mapProgressStatus(entry.status), jobId: typeof entry.id === 'string' ? entry.id : item.jobId };
+    const jobId = entry && typeof entry.id === 'string' ? entry.id : item.jobId;
+    const durationField = live && item.startedAt !== undefined ? { durationMs: Math.max(0, Date.now() - item.startedAt) } : {};
+    // A hard batch failure (`result.isError`) must flip every subagent row to `error`, even one
+    // whose `progress[i].status` is still `"pending"` -- otherwise that row spins forever (the
+    // bug this guards against); only the `jobId` correlation from `progress` survives in that case.
+    if (result.isError) {
+      return { ...item, status: fallbackStatus, jobId, ...durationField };
     }
-    return { ...item, status: fallbackStatus, ...(live ? { durationMs: Math.max(0, Date.now() - item.startedAt) } : {}) };
+    if (entry) {
+      return { ...item, status: mapProgressStatus(entry.status), jobId };
+    }
+    return { ...item, status: fallbackStatus, ...durationField };
   });
 }
 
@@ -289,18 +297,23 @@ export function tryBuildAgentMessageFromUnknownFrame(frame: Frame, index: number
 
 /** Builds/merges the items for one assistant message's `content[]` snapshot. `captureTiming` is
  * false for `fromHistory`: a historical message carries only one `timestamp` for its whole
- * `content[]`, not a per-`thinking`-part start/end, so stamping one from `Date.now()` at load
- * time would show a meaningless "Thought for 0s" on every reopened Conversation instead of the
- * required plain "Thought" (T075, FR-009). A `task` toolCall never gets a `tool` item here --
- * `applyMessageSnapshot`/`fromHistory` upsert its subagents separately, keyed by `toolCallId`,
- * which this function does not have scoped per-message existing items for. */
+ * `content[]`, not a per-`thinking`-part (or `tool`/`subagent`) start/end, so stamping one from
+ * `Date.now()` at load time would show a meaningless "Thought for 0s"/wrong multi-hour duration
+ * on every reopened Conversation instead of the required plain "Thought" (T075, FR-009) --
+ * `startedAt` is simply omitted in that case, same as `thinking`'s own `startedAt?`. A `task`
+ * toolCall's subagents are built in place here, at the toolCall's own position (never appended
+ * to the whole transcript's end), and merged against `existingItems` (the WHOLE transcript, not
+ * just this message's own items) by each subagent's own stable id -- a subagent row is keyed by
+ * `toolCallId`, not by the message that started it, so a messageId-prefix lookup would never
+ * find it. */
 function buildAssistantItems(
   messageId: string,
   parts: OmpMessageContentPart[],
   streaming: boolean,
-  existingForMessage: TranscriptItem[],
+  existingItems: TranscriptItem[],
   captureTiming: boolean,
 ): TranscriptItem[] {
+  const existingForMessage = existingItems.filter((item) => item.id === messageId || item.id.startsWith(`${messageId}:`));
   const result: TranscriptItem[] = [];
   parts.forEach((part, index) => {
     const id = `${messageId}:${index}`;
@@ -322,8 +335,30 @@ function buildAssistantItems(
       return;
     }
     if (part.type === 'toolCall') {
-      if (part.name === 'task' && readTaskSpecs(part.arguments).length > 0) {
-        return; // subagents: applied via upsertSubagentItems by the caller, keyed by toolCallId.
+      if (part.name === 'task') {
+        const specs = readTaskSpecs(part.arguments);
+        if (specs.length > 0) {
+          specs.forEach((spec, specIndex) => {
+            const subId = `subagent:${part.id}:${specIndex}`;
+            const name = subagentName(spec);
+            const task = typeof spec.task === 'string' ? spec.task : '';
+            const existing = existingItems.find((item): item is SubagentItem => item.kind === 'subagent' && item.id === subId);
+            if (existing) {
+              result.push({ ...existing, name, task });
+            } else {
+              result.push({
+                kind: 'subagent',
+                id: subId,
+                toolCallId: part.id,
+                name,
+                task,
+                status: 'running',
+                ...(captureTiming ? { startedAt: Date.now() } : {}),
+              });
+            }
+          });
+          return;
+        }
       }
       const existing = existingForMessage.find((item): item is ToolItem => isToolItem(item) && item.id === id);
       const target = extractTarget(part.name, part.arguments);
@@ -338,7 +373,7 @@ function buildAssistantItems(
           tool: part.name,
           target,
           status: 'running',
-          startedAt: Date.now(),
+          ...(captureTiming ? { startedAt: Date.now() } : {}),
           args: part.arguments,
           ...(write ? { write } : {}),
         });
@@ -351,12 +386,16 @@ function buildAssistantItems(
 }
 
 /** Replaces every item belonging to `messageId` (single id or `id:index`) with `replacement`,
- * preserving its position; appends at the end for a brand-new message. Never used for `subagent`
- * items (keyed by `toolCallId`, not `messageId`) or the `agent-message` item built below (keyed
- * by `messageId` directly, so it IS covered -- a `replaceMessageItems` call with a one-item
- * replacement works for it unchanged). */
+ * preserving its position; appends at the end for a brand-new message. Also strips any item
+ * whose id appears in `replacement` from wherever it currently sits (a `subagent` item is keyed
+ * by `toolCallId`, not `messageId`, so it never matches the `messageId` prefix, but `replacement`
+ * now builds it in place -- without this it would be duplicated rather than moved). The
+ * `agent-message` item built below is keyed by `messageId` directly, so it IS covered by the
+ * plain prefix match -- a `replaceMessageItems` call with a one-item replacement works for it
+ * unchanged). */
 function replaceMessageItems(items: TranscriptItem[], messageId: string, replacement: TranscriptItem[]): TranscriptItem[] {
-  const matches = (item: TranscriptItem) => item.id === messageId || item.id.startsWith(`${messageId}:`);
+  const replacementIds = new Set(replacement.map((item) => item.id));
+  const matches = (item: TranscriptItem) => item.id === messageId || item.id.startsWith(`${messageId}:`) || replacementIds.has(item.id);
   if (!items.some(matches)) {
     return replacement.length === 0 ? items : [...items, ...replacement];
   }
@@ -369,20 +408,6 @@ function replaceMessageItems(items: TranscriptItem[], messageId: string, replace
   return [...withoutMessage.slice(0, insertAt), ...replacement, ...withoutMessage.slice(insertAt)];
 }
 
-/** Applies every `task` toolCall part's subagents via `upsertSubagentItems`, keyed by its own
- * `toolCallId` rather than the enclosing message id (shared by `applyMessageSnapshot` and
- * `fromHistory`'s assistant case). */
-function applySubagentToolCalls(items: TranscriptItem[], parts: OmpMessageContentPart[]): TranscriptItem[] {
-  let next = items;
-  for (const part of parts) {
-    if (part.type === 'toolCall' && part.name === 'task') {
-      const specs = readTaskSpecs(part.arguments);
-      if (specs.length > 0) next = upsertSubagentItems(next, part.id, specs);
-    }
-  }
-  return next;
-}
-
 function applyMessageSnapshot(
   items: TranscriptItem[],
   messageId: string,
@@ -392,10 +417,8 @@ function applyMessageSnapshot(
   if (!messageId) return items;
   switch (message.role) {
     case 'assistant': {
-      const existingForMessage = items.filter((item) => item.id === messageId || item.id.startsWith(`${messageId}:`));
-      const built = buildAssistantItems(messageId, message.content, streaming, existingForMessage, true);
-      const replaced = replaceMessageItems(items, messageId, built);
-      return applySubagentToolCalls(replaced, message.content);
+      const built = buildAssistantItems(messageId, message.content, streaming, items, true);
+      return replaceMessageItems(items, messageId, built);
     }
     case 'user': {
       const text = joinText(message.content);
@@ -484,7 +507,7 @@ function applyToolExecutionEnd(items: TranscriptItem[], frame: ToolExecutionEndF
   const updated: TranscriptItem = {
     ...existing,
     status: isError ? 'error' : 'done',
-    durationMs: Math.max(0, Date.now() - existing.startedAt),
+    durationMs: existing.startedAt !== undefined ? Math.max(0, Date.now() - existing.startedAt) : 0,
     output,
     details: frame.result.details,
     ...(edit ? { edit } : {}),
@@ -551,7 +574,6 @@ function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage
       tool: message.toolName,
       target: '',
       status: message.isError ? 'error' : 'done',
-      startedAt: 0,
       args: undefined,
       output,
       details: message.details,
@@ -577,8 +599,7 @@ export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
     const messageId = `h${index}`;
     switch (message.role) {
       case 'assistant': {
-        items = [...items, ...buildAssistantItems(messageId, message.content, false, [], false)];
-        items = applySubagentToolCalls(items, message.content);
+        items = [...items, ...buildAssistantItems(messageId, message.content, false, items, false)];
         return;
       }
       case 'user': {

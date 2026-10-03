@@ -84,16 +84,22 @@ function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): To
  * is exactly why `receivedAt` (live arrival time) is tried first by the caller. */
 function itemEndTime(item: TranscriptItem): number | undefined {
   if (item.kind === 'tool' || item.kind === 'subagent') {
-    return item.durationMs != null ? item.startedAt + item.durationMs : undefined
+    return item.startedAt != null && item.durationMs != null ? item.startedAt + item.durationMs : undefined
   }
   if (item.kind === 'thinking') return item.endedAt
   if (item.kind === 'user' || item.kind === 'agent-message') return item.at
   return undefined
 }
 
+// Excludes the turn's own leading `user` item: its `at` always exists (even a sentinel `0` for a
+// history entry with no usable timestamp, FR-046), so including it would make `computeTurnEnd`
+// return a defined value for every turn and defeat the "omitted when no item carries usable
+// timing" rule below -- a reopened Conversation with no real timing would show "0s" instead of
+// nothing.
 function computeTurnEnd(turnItems: TranscriptItem[], receivedAt: Record<string, number>): number | undefined {
   let maxEnd: number | undefined
   for (const item of turnItems) {
+    if (item.kind === 'user') continue
     const end = receivedAt[item.id] ?? itemEndTime(item)
     if (end != null && (maxEnd === undefined || end > maxEnd)) maxEnd = end
   }
@@ -230,16 +236,23 @@ interface TurnTotalLineProps {
 // The turn's total elapsed time (T076, FR-046): a muted line after the turn's last item, `
 // aria-hidden` while it is still running (ticking every second) so a screen reader only reads
 // the final value once the turn ends; omitted when no item in the turn carries usable timing
-// (a reopened Conversation whose history has none).
+// (a reopened Conversation whose history has none -- including a `user` item whose own `at` is
+// the sentinel `0` fromHistory falls back to when the source message carried no timestamp at
+// all, which is not a real timing and must not be used to compute an elapsed time).
 function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTotalLineProps) {
-  if (!turn.userItem) return null
+  if (!turn.userItem || turn.userItem.at === 0) return null
   const running = isLastTurn && isTurnRunning
   const end = running ? Date.now() : computeTurnEnd(turn.items, receivedAt)
   if (end === undefined) return null
   const elapsedMs = Math.max(0, end - turn.userItem.at)
+  const elapsed = formatElapsed(elapsedMs)
   return (
     <div aria-hidden={running || undefined} className="px-2 py-1 text-xs text-muted-foreground">
-      {formatElapsed(elapsedMs)}
+      {/* Visible text stays the bare minimal duration; the sr-only text adds the framing a
+       * screen reader needs once this un-hides at turn end inside the transcript's `log` live
+       * region, where a bare "28s" would otherwise be announced with no context. */}
+      <span aria-hidden="true">{elapsed}</span>
+      <span className="sr-only">Turn took {elapsed}</span>
     </div>
   )
 }

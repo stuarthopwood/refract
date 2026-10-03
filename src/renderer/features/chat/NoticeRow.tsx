@@ -18,6 +18,16 @@ const NOTICE_CLASS = {
   error: 'text-destructive'
 } as const satisfies Record<NoticeLevel, string>
 
+// Non-colour cue for severity (DESIGN.md: "including for screen readers"): the icon alone is
+// `aria-hidden` by default, so without this a screen reader hears every notice identically
+// regardless of level. Matches the `sr-only` "Running"/"Done"/"Failed" pattern ToolRow's
+// `StatusIcon` already uses.
+const NOTICE_LABEL = {
+  info: 'Info:',
+  warning: 'Warning:',
+  error: 'Error:'
+} as const satisfies Record<NoticeLevel, string>
+
 // Above this length (or any embedded line break), a notice is treated as "long" and rendered
 // expandable instead of one huge inline paragraph -- OMP sends notices like every mounted MCP
 // tool name as a single line of text.
@@ -35,11 +45,17 @@ interface NoticeRowProps {
 export function NoticeRow({ level, text }: NoticeRowProps) {
   const Icon = NOTICE_ICON[level]
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
+  const icon = (
+    <>
+      <Icon className={cn('size-3.5 shrink-0', NOTICE_CLASS[level])} />
+      <span className="sr-only">{NOTICE_LABEL[level]}</span>
+    </>
+  )
 
   if (!isLong) {
     return (
       <CollapsedLine
-        icon={<Icon className={cn('size-3.5 shrink-0', NOTICE_CLASS[level])} />}
+        icon={icon}
         summary={text}
         summaryClassName={NOTICE_CLASS[level]}
       />
@@ -48,7 +64,7 @@ export function NoticeRow({ level, text }: NoticeRowProps) {
 
   return (
     <CollapsedLine
-      icon={<Icon className={cn('size-3.5 shrink-0', NOTICE_CLASS[level])} />}
+      icon={icon}
       summary={text}
       summaryClassName={NOTICE_CLASS[level]}
       contentClassName="pl-7"

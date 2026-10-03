@@ -99,7 +99,9 @@ export type TranscriptItem =
       tool: string;
       target: string;
       status: 'running' | 'done' | 'error';
-      startedAt: number;
+      /** Absent when built from history (no reliable wall clock to derive it from), matching
+       * the `thinking` item's `startedAt`. */
+      startedAt?: number;
       durationMs?: number;
       args: unknown;
       output?: string;
@@ -124,7 +126,9 @@ export type TranscriptItem =
       name: string; // the task's own `name`, else its `task` text truncated
       task: string; // the full prompt text (`tasks[i].task`), shown on expansion
       status: 'running' | 'done' | 'error';
-      startedAt: number;
+      /** Absent when built from history (no reliable wall clock to derive it from), matching
+       * the `thinking` item's `startedAt`. */
+      startedAt?: number;
       durationMs?: number;
       /** The authoritative per-subagent result (FINDINGS item 22(e) `details.jobs[].schema.data`,
        * falling back to `.label`), shown as plain text on expansion once known. */
