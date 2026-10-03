@@ -8,7 +8,7 @@
 
 Package Refract as a single, per-user, no-admin NSIS installer (electron-builder) with Desktop and
 Start Menu shortcuts, a Windows Apps & Features entry, and in-place upgrade; add Install actions
-for Git, OMP (pinned to the supported `18.4.x` line), and the optional GitHub CLI to the existing
+for Git, OMP (pinned to the supported `18.4.x`/`18.5.x` range), and the optional GitHub CLI to the existing
 first-run readiness screen; add an update engine that checks private GitHub Releases through the
 developer's own signed-in `gh` CLI (no stored token), downloads and checksum-verifies an update,
 and installs it only at the developer's own next normal quit, never interrupting a running agent;

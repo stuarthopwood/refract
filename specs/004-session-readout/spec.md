@@ -283,7 +283,7 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   not a separately confirmed answer, and should be confirmed with Stuart.
 - Per the constitution's "Evidence before design" principle, this spec's Context window usage and
   Subagents readouts depend on OMP behaviour that is not yet verified on the supported OMP
-  version (18.4.x) and must be recorded in `docs/spike/FINDINGS.md` before the plan relies on it.
+  versions (18.4.x/18.5.x) and must be recorded in `docs/spike/FINDINGS.md` before the plan relies on it.
   FINDINGS row C6 records that subagent frames pass over a subscription, with progress arriving as
   `tool_call_update` progress on the `task` tool rather than a dedicated event type; that row was
   proven for a different use and is unverified for driving this spec's subagent list and stream.

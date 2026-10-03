@@ -16,8 +16,8 @@ import type { Check, Readiness } from '../shared/ipc';
 const execFileAsync = promisify(execFile);
 
 // contracts/omp-usage.md's version rule: any 18.4.x or 18.5.x patch is supported (FINDINGS
-// item 15 covers 18.4.4 and 18.4.5; item 29 covers 18.5.1, constitution Principle IV); only
-// the major and minor-range are pinned.
+// items 15 and 19 cover 18.4.4 and 18.4.5; item 29 covers 18.5.1, constitution Principle IV);
+// only the major and minor-range are pinned.
 const OMP_VERSION_SUPPORTED_RE = /^18\.(4|5)\.\d+$/;
 const OMP_VERSION_RE = /(\d+\.\d+\.\d+)/;
 
@@ -50,7 +50,7 @@ async function checkOmp(): Promise<Check> {
   if (OMP_VERSION_SUPPORTED_RE.test(found)) {
     return { ok: true, found };
   }
-  return { ok: false, found, hint: `Expected omp 18.4.x, found ${found}. Install a supported version and relaunch Refract.` };
+  return { ok: false, found, hint: `Expected omp 18.4.x or 18.5.x, found ${found}. Install a supported version and relaunch Refract.` };
 }
 
 // contracts/ipc.md: `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also

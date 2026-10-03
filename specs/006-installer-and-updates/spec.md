@@ -64,8 +64,9 @@ run the same installer file again and confirm it upgrades in place.
 ### User Story 2 - Get missing dependencies from the first-run screen (Priority: P1)
 
 On the first-run readiness screen, each missing or unsupported item offers an Install action:
-Git (installed as Git for Windows), OMP (a supported 18.4.x version only, since Refract supports
-only OMP 18.4.x), and the GitHub CLI, shown as an optional item needed for updates (User Story 3)
+Git (installed as Git for Windows), OMP (a supported 18.4.x or 18.5.x version only, since
+Refract supports only those OMP minor lines), and the GitHub CLI, shown as an optional item
+needed for updates (User Story 3)
 and for pull request access (spec 003). Installing runs the product's own official installer,
 shows progress and the outcome, then re-checks the checklist automatically. The OMP sign-in step
 stays manual with its existing hint, because Refract cannot sign in for the developer. A failed
@@ -87,7 +88,7 @@ is marked optional; confirm the OMP sign-in step still asks the developer to sig
    its Install action, **Then** Refract runs Git for Windows's own official installer, shows
    progress and the outcome, and re-checks the checklist automatically once it finishes.
 2. **Given** the first-run readiness screen shows OMP as missing, **When** the developer selects
-   its Install action, **Then** Refract installs a supported 18.4.x version of OMP, shows
+   its Install action, **Then** Refract installs a supported 18.4.x or 18.5.x version of OMP, shows
    progress and the outcome, and re-checks the checklist automatically.
 3. **Given** OMP is installed but on an unsupported version, **When** the developer looks at the
    checklist, **Then** it reports OMP as unsupported with an explanation, rather than treating it
@@ -264,7 +265,7 @@ draft, are never offered as an update by User Story 3's check.
   installer, show its progress and outcome inside Refract, and automatically re-check the
   checklist once it finishes.
 - **FR-007**: The checklist MUST report OMP as unsupported, with an explanation, when a found
-  installation is newer than the supported 18.4.x line, rather than treating it as passing or
+  installation is outside the supported 18.4.x/18.5.x range, rather than treating it as passing or
   silently installing a different version over it.
 - **FR-008**: The checklist MUST show the GitHub CLI as an optional item, needed for updates
   (User Story 3) and for pull request access (spec 003 FR-027), and MUST be able to pass without
@@ -315,7 +316,7 @@ draft, are never offered as an update by User Story 3's check.
 - **Release**: a published version of Refract, with a version number, an installer, a checksum,
   release notes, and a pre-release or draft flag.
 - **Dependency**: one of Git, OMP, or the GitHub CLI, each with a found, missing, or unsupported
-  state on the readiness checklist, and, for OMP, a check against the supported 18.4.x line.
+  state on the readiness checklist, and, for OMP, a check against the supported 18.4.x/18.5.x range.
 - **Update**: a release newer than the installed version, once found; it moves from notified, to
   downloaded and checksum-verified, to installed at the next normal quit.
 
@@ -357,7 +358,7 @@ draft, are never offered as an update by User Story 3's check.
   can run without prompts are unverified. Per the constitution's "Evidence before design"
   principle (IV), this must be probed on a clean profile and recorded in
   `docs/spike/FINDINGS.md` before the plan relies on it.
-- Refract's install and update actions MUST keep OMP inside the supported 18.4.x range: Refract
+- Refract's install and update actions MUST keep OMP inside the supported 18.4.x/18.5.x range: Refract
   never runs OMP's own self-update to the latest version, and never leaves the developer on an
   unsupported OMP without saying so on the readiness screen (the app stays blocked until a
   supported version is present, as spec 001 FR-036 requires). OMP's sign-in (`omp login`) needs

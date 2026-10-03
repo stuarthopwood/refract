@@ -2,7 +2,7 @@
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md), [contracts/](contracts/), [quickstart.md](quickstart.md)
 
-**Prerequisites**: Windows 11; Node 24+; `pnpm`; `omp` 18.4.x signed in; Git for Windows; `gh` signed in to a GitHub account with write access to `stuarthopwood/refract` (for Story 5 and the probes).
+**Prerequisites**: Windows 11; Node 24+; `pnpm`; `omp` 18.4.x or 18.5.x signed in; Git for Windows; `gh` signed in to a GitHub account with write access to `stuarthopwood/refract` (for Story 5 and the probes).
 
 **Tests**: none. Refract is a prototype (constitution, Development Workflow). Each phase ends with a **Checkpoint** that runs the matching [quickstart.md](quickstart.md) section by hand against the packaged app. `pnpm typecheck` and `pnpm build` MUST pass before a change lands on `main`; this spec adds `pnpm package` (electron-builder) as a further required gate from Phase 2 onward.
 
@@ -64,7 +64,7 @@ settings.
 
 ## Phase 4: User Story 2 - Get missing dependencies from the first-run screen (Priority: P1)
 
-**Goal**: Install actions for Git, OMP (pinned 18.4.x), and the optional GitHub CLI, with progress,
+**Goal**: Install actions for Git, OMP (pinned 18.4.x/18.5.x), and the optional GitHub CLI, with progress,
 outcome, and an automatic re-check, all from the existing readiness screen.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 2.

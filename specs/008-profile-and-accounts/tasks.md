@@ -2,7 +2,7 @@
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md), [research.md](research.md), [data-model.md](data-model.md), [contracts/](contracts/), [quickstart.md](quickstart.md)
 
-**Prerequisites**: `omp` 18.4.x signed in; Git for Windows; Node 24+; `pnpm`; the GitHub CLI
+**Prerequisites**: `omp` 18.4.x or 18.5.x signed in; Git for Windows; Node 24+; `pnpm`; the GitHub CLI
 (`gh`) installed and signed in to at least one account. Windows 11 only.
 
 **Tests**: none. Refract is a prototype (constitution, Development Workflow). Each phase ends with

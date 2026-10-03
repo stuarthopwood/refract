@@ -6,7 +6,7 @@ Requirement and story numbers refer to [spec.md](spec.md); data and protocol det
 
 ## Prerequisites
 
-- Windows 11, `omp` 18.4.x on `PATH` and signed in (same as specs/001's quickstart).
+- Windows 11, `omp` 18.4.x or 18.5.x on `PATH` and signed in (same as specs/001's quickstart).
 - The GitHub CLI (`gh`) installed and signed in to at least one account (`gh auth status`). For
   User Story 2's switch/sign-out checks, a second GitHub account you can safely add and remove
   (`gh auth login --web`) is needed — use a disposable or secondary account, not your only one.
