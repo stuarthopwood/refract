@@ -419,11 +419,16 @@ type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>;
  * the opening tag, rather than letting one `[\s\S]*?` regex backtrack all the way to the end of
  * `content` for every unclosed tag. A hostile/malformed advisor message can contain many `<advisory`
  * opens with no closer at all; once `indexOf` fails to find a `</advisory>` anywhere in the
- * remaining content, no later opening tag could find one either (its search range is a strict
- * subset of the one that just failed), so the loop stops immediately instead of re-scanning the
- * same unclosed tail once per remaining tag. That keeps the whole parse linear in `content.length`
- * regardless of how many `<advisory` tags are left unclosed (FR-051, retroactive security-auditor
- * pass, Medium finding: quadratic scan on unclosed `<advisory` tags, performance-only fix). */
+ * remaining content, the loop stops immediately rather than keep re-scanning that same unclosed
+ * tail once per remaining tag. The "no later tag could close either" rule holds for every tag whose
+ * own opening tag starts at or after the failed tag's `bodyStart` -- it deliberately does NOT cover
+ * an opening tag that appears nested inside the failed tag's own quoted attribute value (that text
+ * was already consumed as an attribute, not re-scanned as a sibling element), so a crafted
+ * `<advisory a="<advisory></advisory>">tail` is parsed as zero advisories and falls back to a
+ * notice, same as any other unclosed tag -- never as the nested advisory found inside the attribute.
+ * That keeps the whole parse linear in `content.length` regardless of how many `<advisory` tags are
+ * left unclosed (FR-051, retroactive security-auditor pass, Medium finding: quadratic scan on
+ * unclosed `<advisory` tags, performance-only fix). */
 function parseAdvisoryElements(messageId: string, content: string): AdvisoryItem[] {
   const items: AdvisoryItem[] = [];
   let index = 0;
@@ -434,9 +439,11 @@ function parseAdvisoryElements(messageId: string, content: string): AdvisoryItem
     if (openMatch === null) break;
     const bodyStart = ADVISORY_OPEN_TAG_RE.lastIndex;
     const closeIndex = content.indexOf(ADVISORY_CLOSE_TAG, bodyStart);
-    // No closing tag anywhere in the rest of `content`: every later opening tag's search range is
-    // a subset of this one's, so none of them can find a closer either -- stop scanning entirely
-    // instead of repeating this same failed to-the-end search once per remaining unclosed tag.
+    // No closing tag anywhere in the rest of `content`: this tag (and, by the same argument, any
+    // later tag whose opening tag starts at or after this one's `bodyStart`) cannot find a closer
+    // either, so stop scanning entirely instead of repeating this same failed to-the-end search
+    // once per remaining unclosed tag. Does not apply to a tag nested inside this one's own quoted
+    // attribute value -- see the function-level comment above.
     if (closeIndex === -1) break;
     const attrs = parseAdvisoryAttrs(openMatch[1]!);
     searchFrom = closeIndex + ADVISORY_CLOSE_TAG.length;
