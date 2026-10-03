@@ -274,9 +274,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   be added without redesigning the screen.
 - The Todo progress readout is included because spec 001 FR-052 hides the agent's task-list calls
   from the chat (Stuart chose "Hide them" when the option said progress would show only as a
-  chip). Its source, the agent's reported task phases in the session state, is unverified on OMP
-  18.4.x and must be probed and recorded in `docs/spike/FINDINGS.md` before the plan relies on
-  it (constitution IV).
+  chip). Its source, the agent's reported task phases in the session state, is unverified on the
+  supported OMP versions (18.4.x/18.5.x) and must be probed and recorded in `docs/spike/FINDINGS.md`
+  before the plan relies on it (constitution IV).
 - Both a turn timer and a clock are included because Stuart first said "time" and then separately
   said "Current Time as well" when asked to name the readouts. This reading (elapsed turn time
   plus the wall clock, rather than either alone) is a reasonable interpretation of what he said,

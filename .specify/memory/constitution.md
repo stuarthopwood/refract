@@ -120,4 +120,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.7.2 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-03
+**Version**: 1.8.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-03

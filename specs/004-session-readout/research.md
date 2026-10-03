@@ -153,7 +153,7 @@ two counts/lists separately computed rather than reusing one count for both surf
 
 | Unknown | Resolved by |
 |---|---|
-| Whether and how OMP reports context-window usage (`get_state` field, or a dedicated `get_session_stats` request) | First probe task: `docs/spike/context-usage-probe.mjs` on OMP 18.4.x |
+| Whether and how OMP reports context-window usage (`get_state` field, or a dedicated `get_session_stats` request) | First probe task: `docs/spike/context-usage-probe.mjs` on a supported OMP version (18.4.x/18.5.x) |
 | Whether and how OMP reports task-list ("todo") progress as counts, not just the hidden tool calls (spec 001 FR-052) | Second probe task: `docs/spike/todo-progress-probe.mjs` |
 | Per-subagent id, name, status, and live stream content (text/tool calls) beyond FINDINGS C6's proof that `tool_call_update` progress exists on the `task` tool at all, and beyond spec 001 task T071(d)'s scope (which only needs enough for one collapsed chat line per subagent, not a selectable live stream) | Third probe task: extends FINDINGS C6 and spec 001 T071(d)'s result rather than re-running it from scratch; recorded as a new numbered FINDINGS item and in `contracts/omp-usage.md` |
 

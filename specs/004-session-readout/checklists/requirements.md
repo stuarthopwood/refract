@@ -86,9 +86,9 @@ satisfied. `[x]` does not mean implementation work is complete.
       stream); no numeric criterion is missing for a live surface the FRs describe.
 - [x] CHK020 The spec names every constitution-IV "evidence before design" gap it depends on,
       rather than silently assuming an unverified OMP behaviour — verified: the Assumptions
-      section explicitly calls out Context window usage and Subagents as unverified on 18.4.x and
-      requires a `docs/spike/FINDINGS.md` record before a plan relies on them; Todo progress's
-      source is similarly flagged as unverified in the same section.
+      section explicitly calls out Context window usage and Subagents as unverified on the supported
+      OMP versions (18.4.x/18.5.x) and requires a `docs/spike/FINDINGS.md` record before a plan
+      relies on them; Todo progress's source is similarly flagged as unverified in the same section.
 - [x] CHK021 Out-of-scope items are distinguished from deferred [NEEDS CLARIFICATION] items —
       verified: the "Artifacts" chip and "other OMP statistics" are explicitly marked as dropped/
       candidates-for-later, not blocking questions.
