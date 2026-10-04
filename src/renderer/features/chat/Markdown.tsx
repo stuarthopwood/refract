@@ -79,7 +79,22 @@ function CodeBlockHeader({ label }: { label: string }) {
 
 // The one shared code-block renderer (T083, FR-049/FR-050), exported for `ToolRow.tsx`'s
 // Arguments/Output blocks. Always full width (FR-049, no copy button per FR-050/FR-042).
-export function CodeBlock({ code, lang }: { code: string; lang: string | null }) {
+export function CodeBlock({
+  code,
+  lang,
+  wrap = false,
+}: {
+  code: string
+  lang: string | null
+  // Opt-in wrapping for prose-shaped surfaces (an approval card's detail lines, a subagent's
+  // Prompt/Result) that previously scrolled sideways like real code instead of wrapping like
+  // every other paragraph in the transcript (T083, code-reviewer/test-reviewer/accessibility-auditor,
+  // round 2). Every other `CodeBlock` caller -- markdown's own untagged fences, a tool call's
+  // Arguments/Output, a `write` call's content preview -- keeps the original no-wrap/scroll-sideways
+  // behavior: `lang === null` also covers ASCII diagrams, tables, and any non-JSON tool output, none
+  // of which should wrap.
+  wrap?: boolean
+}) {
   const isDark = useIsDarkTheme()
   const [html, setHtml] = React.useState<string | null>(null)
 
@@ -115,13 +130,13 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
   // outside it, so the outer wrapper's `overflow-hidden` (needed to clip the body to the header's
   // rounded corners) can never clip the ring off on the left/right/bottom.
   const scrollableClassName = 'overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
-  // `lang === null` (code-reviewer/test-reviewer/accessibility-auditor, round 2, same issue from
-  // three angles) means `inferOutputBlock` found no code/json/diff shape at all -- prose-shaped
-  // text (a subagent's Prompt/Result, an approval card's detail lines) that previously scrolled
-  // sideways like real code instead of wrapping like every other paragraph in the transcript, the
-  // one case that matters most on an approval card where the user must read a full command before
-  // approving. `html` never gets set for this case (the effect above bails out before ever calling
-  // Shiki when `lang` is falsy), so this is the only branch `lang === null` can ever reach.
+  // Wrapping is opt-in via the `wrap` prop (T083 round 3): `lang === null` alone is not a safe
+  // proxy for "prose-shaped text" -- `inferOutputBlock` also returns it for any untagged markdown
+  // fence (ASCII diagrams, tables, shell output) and for any non-JSON tool Output, all of which
+  // must keep scrolling sideways like real code. Only the two callers that are actually prose (an
+  // approval card's detail lines, a subagent's Prompt/Result) pass `wrap`. `html` never gets set
+  // when `lang` is null (the effect above bails out before ever calling Shiki), so the wrap branch
+  // only ever applies to that falsy-`lang`, unhighlighted case.
   const wrapClassName = 'whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
 
   if (html) {
@@ -143,7 +158,7 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
   return (
     <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
       <CodeBlockHeader label={label} />
-      <pre tabIndex={0} role="region" aria-label={regionLabel} className={cn(lang === null ? wrapClassName : scrollableClassName, 'bg-card p-3')}>
+      <pre tabIndex={0} role="region" aria-label={regionLabel} className={cn(wrap && lang === null ? wrapClassName : scrollableClassName, 'bg-card p-3')}>
         <code>{code}</code>
       </pre>
     </div>

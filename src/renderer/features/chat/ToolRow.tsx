@@ -219,14 +219,14 @@ export function SubagentRow({ item }: SubagentRowProps) {
       <div>
         <div className="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
         <div className="max-h-64 overflow-auto rounded-lg">
-          <CodeBlock code={taskBlock.code} lang={taskBlock.lang} />
+          <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap />
         </div>
       </div>
       {resultBlock != null && (
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">Result</div>
           <div className="max-h-64 overflow-auto rounded-lg">
-            <CodeBlock code={resultBlock.code} lang={resultBlock.lang} />
+            <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap />
           </div>
         </div>
       )}

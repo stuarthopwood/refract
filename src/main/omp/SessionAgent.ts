@@ -130,11 +130,12 @@ export class SessionAgent extends EventEmitter {
 
   /** `transcript.ts`'s `applyFrame` reads this to tell OMP's own unsolicited startup banner
    * apart from a user-run slash command's output (`STARTUP_NOTICE_PREFIX`): `false` only for the
-   * window between process start and the user's first `send()` call, which is the only place in
-   * this class that represents the user actually doing something (a prompt or a slash command,
-   * both go through `send`). Set once and never reset -- a later restart's own fresh startup
-   * banner is a real "process just (re)started" notice too, so tagging it again is correct, not a
-   * bug, and nothing downstream ever needs this flag to go back to `false`. */
+   * window between this `SessionAgent`'s construction and the user's first `send()` call, which
+   * is the only place in this class that represents the user actually doing something (a prompt
+   * or a slash command, both go through `send`). Set once and never reset for the rest of this
+   * instance's lifetime -- so a later `restart()`'s own fresh startup banner does NOT get tagged
+   * (the flag is already `true` by then, from the user's earlier `send()`); only a banner arriving
+   * before that very first `send()` ever gets the startup prefix. */
   private hasUserActed = false;
 
   constructor(opts: SessionAgentOptions) {

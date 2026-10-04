@@ -200,7 +200,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         </CardHeader>
         {request.details.length > 0 && (
           <CardContent>
-            <CodeBlock code={approvalDetailBlock.code} lang={approvalDetailBlock.lang} />
+            <CodeBlock code={approvalDetailBlock.code} lang={approvalDetailBlock.lang} wrap />
           </CardContent>
         )}
         {error && (
