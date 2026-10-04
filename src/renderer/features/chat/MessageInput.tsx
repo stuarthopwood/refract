@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore } from '@/state'
+import { EMPTY_QUEUE, notify, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
@@ -261,6 +261,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       }
       if (!snapshot) return
       applySnapshot(sessionId, snapshot)
+      // Spec 005 (research.md Decision 4): sending the first message to a just-restored,
+      // not-yet-opened pane is itself the "real action" that clears its pristine flag -- it
+      // already called `open()` above directly (this branch, not ChatPane's own effect, since
+      // that effect is exactly what pristine was skipping).
+      useSplitStore.getState().markOpened(sessionId)
     }
     // FR-013: every pending text chip's full original text is substituted back into the draft at
     // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
@@ -677,13 +682,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           chip independently hides itself when its own data is null (FR-002 to FR-007, FR-021). */}
       <div className="flex flex-wrap items-center gap-1.5">
         <ApprovalModePill sessionId={sessionId} />
-        {sessionReadout.changes && <ChangesChip />}
-        {sessionReadout['context-usage'] && <ContextUsageChip />}
-        {sessionReadout['turn-time'] && <TurnTimeChip />}
+        {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
+        {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
+        {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
         {sessionReadout['current-time'] && <CurrentTimeChip />}
-        {sessionReadout['pull-request'] && <PullRequestChip />}
-        {sessionReadout.subagents && <SubagentsChip />}
-        {sessionReadout['todo-progress'] && <TodoProgressChip />}
+        {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
+        {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
+        {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
       </div>
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}

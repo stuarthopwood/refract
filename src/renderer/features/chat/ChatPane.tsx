@@ -1,7 +1,7 @@
-// The chat pane (docs/DESIGN.md "Chat", "Layout"): header, transcript, and message box for the
-// visible Session, plus the persistent stopped-Session banner (docs/DESIGN.md "Feedback and
-// errors"). T025 (Transcript) and T028/T029 (RequestCard, inline in the transcript) land
-// alongside this file; this owns only the pane's own composition.
+// The chat pane (docs/DESIGN.md "Chat", "Layout"): header, transcript, and message box for one
+// Session, plus the persistent stopped-Session banner (docs/DESIGN.md "Feedback and errors").
+// Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
+// `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
 import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
@@ -17,6 +17,7 @@ import {
   useQueueStore,
   useReadoutStore,
   useSessionsStore,
+  useSplitStore,
   useSubagentPanelStore,
   useTranscriptStore
 } from '@/state'
@@ -59,8 +60,8 @@ export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): voi
 }
 
 /** `SessionSummary` (the sessions-store list row) carries `status` but not `stopReason`/
- * `stopDetail` (only `SessionRuntimeView` does). This is the one place that tracks them for the
- * visible Session: seeded from the snapshot `sessions.open`/`sessions.recover` return, kept live
+ * `stopDetail` (only `SessionRuntimeView` does). This is the one place that tracks them for a
+ * pane's Session: seeded from the snapshot `sessions.open`/`sessions.recover` return, kept live
  * by a direct `onSessionStatus` subscription (contracts/ipc.md: that event is the "chat header
  * chip" source). */
 export function describeStopReason(reason: StopReason, detail?: string): string {
@@ -76,20 +77,40 @@ export function describeStopReason(reason: StopReason, detail?: string): string 
   }
 }
 
-export function ChatPane() {
-  const visibleSessionId = useSessionsStore((s) => s.visibleSessionId)
-  const session = useSessionsStore((s) => s.sessions.find((x) => x.id === s.visibleSessionId))
+interface ChatPaneProps {
+  sessionId: string
+  /** Index into `useSplitStore`'s `paneSessionIds` (0 or 1); meaningless when a split is not
+   * open, but always passed so every pane-targeting action has it ready the moment one opens. */
+  paneIndex: number
+  /** Spec 005 (ChatHeader.tsx): only the pane actually touching the window's top-right corner
+   * reserves space for the minimise/maximise/close buttons. */
+  reservesWindowControls: boolean
+  /** Spec 005 (research.md Decision 6, FR-017): set only by App.tsx's narrow-window collapse,
+   * never while both panes are genuinely shown side by side. */
+  otherSession?: { id: string; name: string } | null
+}
+
+export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession }: ChatPaneProps) {
+  const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   // bug report point 4: while `sessions-store.ts`'s `open()` is in flight for this Session (a
   // fresh click, or a not-started Session cold-starting its agent), show that here too -- not
   // just as the list row's spinner -- since the transcript would otherwise just read "No
   // messages yet" for the ~16s a cold start takes.
-  const isOpening = useSessionsStore((s) => s.visibleSessionId !== null && s.openingIds.has(s.visibleSessionId))
+  const isOpening = useSessionsStore((s) => s.openingIds.has(sessionId))
+  // Spec 005 (research.md Decision 4): a just-restored pane that has not yet been opened by a
+  // real user action skips the snapshot-fetch effect below entirely.
+  const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
+  const isSplit = useSplitStore((s) => s.paneSessionIds.length === 2)
+  const isFocused = useSplitStore((s) => s.paneSessionIds.length < 2 || s.focusedIndex === paneIndex)
+  const focusPane = useSplitStore((s) => s.focusPane)
+  const closePane = useSplitStore((s) => s.closePane)
+  const openInSplit = useSplitStore((s) => s.openInSplit)
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
-  const visibleSessionIdRef = useRef(visibleSessionId)
-  visibleSessionIdRef.current = visibleSessionId
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
   // Tracks whether focus is currently somewhere inside the chat pane (the message textarea,
   // most often), kept live via a document-wide `focusin` listener rather than read at the
   // moment `sessionId` changes: by the time a session switch re-renders this component, the
@@ -109,28 +130,32 @@ export function ChatPane() {
   const prevSessionIdRef = useRef<string | null>(null)
   const autoFocusRef = useRef(false)
 
-  // Live updates to the visible Session's stop reason (e.g. the agent exits while it is open).
+  // Live updates to this pane's Session's stop reason (e.g. the agent exits while it is open).
   useEffect(
     () =>
       window.refract.onSessionStatus((event) => {
-        if (event.sessionId !== visibleSessionIdRef.current) return
+        if (event.sessionId !== sessionIdRef.current) return
         setStopInfo({ reason: event.stopReason, detail: event.stopDetail })
       }),
     []
   )
 
-  // Asks for a full snapshot whenever the visible Session changes (contracts/ipc.md: "the
+  // Asks for a full snapshot whenever this pane's Session changes (contracts/ipc.md: "the
   // renderer ... asks for a full snapshot via sessions.open when it switches"). Also covers the
-  // initial stop reason for a Session that was already stopped before this pane saw it.
+  // initial stop reason for a Session that was already stopped before this pane saw it. Spec 005
+  // (research.md Decision 4): skipped entirely while `isPristine` -- a just-restored pane renders
+  // from the Session's own already-cached SessionSummary below (empty transcript, no banner,
+  // `stopInfo` staying `{}`), the same look a never-opened Session already has elsewhere in the
+  // app, until some real action clears `isPristine`, which re-runs this effect for real.
   useEffect(() => {
-    if (!visibleSessionId) return
+    if (isPristine) return
     setStopInfo({})
     let cancelled = false
     void (async () => {
       try {
-        const snapshot = await useSessionsStore.getState().open(visibleSessionId)
+        const snapshot = await useSessionsStore.getState().open(sessionId)
         if (cancelled || !snapshot) return
-        applySnapshot(visibleSessionId, snapshot)
+        applySnapshot(sessionId, snapshot)
         setStopInfo({ reason: snapshot.runtime.stopReason, detail: snapshot.runtime.stopDetail })
         // `commands:update` only pushes on the next `available_commands_update` frame from
         // OMP (SessionAgent.ts), which may not arrive again for a Session that was already
@@ -138,9 +163,9 @@ export function ChatPane() {
         // reload while the agent stayed up. Without this, the slash menu's `aria-controls`
         // points at a listbox that never renders (SlashMenu.tsx renders no id when the
         // command list is empty), and typing `/` shows "No matching commands" forever.
-        const commandsResult = await window.refract.chat.commands(visibleSessionId)
+        const commandsResult = await window.refract.chat.commands(sessionId)
         if (!cancelled && commandsResult.ok) {
-          useCommandsStore.getState().setForSession(visibleSessionId, commandsResult.value)
+          useCommandsStore.getState().setForSession(sessionId, commandsResult.value)
         }
       } catch (error) {
         // Defense in depth: a throw here (e.g. a future `sessionsStore.open` regression) must
@@ -152,22 +177,35 @@ export function ChatPane() {
     return () => {
       cancelled = true
     }
-  }, [visibleSessionId])
+  }, [sessionId, isPristine])
+
+  // FR-016: a Session that no longer exists at all (`sessions.delete`, never just archived)
+  // closes its own pane -- `split-store.ts`'s own `pruneDeleted` (reacting to the next
+  // `sessions.list()` refresh) is the belt to this braces, for immediate responsiveness without
+  // waiting on that round trip.
+  useEffect(() => {
+    if (session) return
+    useSplitStore.getState().closePane(paneIndex)
+  }, [session, paneIndex])
 
   // Sibling case to applySnapshot's own reset (test-reviewer finding): archiving or deleting the
-  // visible Session never re-triggers a sessions.open() call for it (the effect above only fires
-  // when `visibleSessionId` itself changes), so applySnapshot's own panel reset never runs --
-  // MessageInput and the chip row unmount here (the Empty state below) while
-  // `useSubagentPanelStore`'s `open`/`sessionId` silently keep pointing at a Session that no
-  // longer exists. Closing the panel whenever that exact Session vanishes mirrors an explicit
-  // Close click instead of leaving a stale, inaccessible panel open.
+  // Session never re-triggers a sessions.open() call for it (the effect above only fires when
+  // `sessionId` itself changes), so applySnapshot's own panel reset never runs -- MessageInput
+  // and the chip row unmount here (the Empty state below) while `useSubagentPanelStore`'s
+  // `open`/`sessionId` silently keep pointing at a Session that no longer exists. Closing the
+  // panel whenever that exact Session vanishes mirrors an explicit Close click instead of
+  // leaving a stale, inaccessible panel open.
   useEffect(() => {
-    if (!visibleSessionId || session) return
+    if (session) return
     const panelState = useSubagentPanelStore.getState()
-    if (panelState.sessionId === visibleSessionId) panelState.closePanel({ restoreFocus: false })
-  }, [visibleSessionId, session])
+    if (panelState.sessionId === sessionId) panelState.closePanel({ restoreFocus: false })
+  }, [sessionId, session])
 
-  if (!visibleSessionId || !session) {
+  function handleFocusPane(): void {
+    focusPane(paneIndex)
+  }
+
+  if (!session) {
     return (
       <Empty className="h-full">
         <EmptyHeader>
@@ -181,7 +219,6 @@ export function ChatPane() {
     )
   }
 
-  const sessionId = session.id
   const recovering = recoveringId === sessionId
   // `not-started` is idle-and-asleep, not an error (data-model.md); it gets no banner.
   const showBanner = session.status === 'stopped' && !!stopInfo.reason && stopInfo.reason !== 'not-started'
@@ -204,7 +241,7 @@ export function ChatPane() {
       return
     }
     applySnapshot(recoveringFor, result.value)
-    if (visibleSessionIdRef.current === recoveringFor) {
+    if (sessionIdRef.current === recoveringFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
   }
@@ -220,8 +257,28 @@ export function ChatPane() {
   }
 
   return (
-    <div ref={chatPaneRef} className="flex h-full flex-col overflow-hidden">
-      <ChatHeader sessionId={sessionId} />
+    <div
+      ref={chatPaneRef}
+      role="region"
+      aria-label={`${session.name} chat`}
+      onMouseDownCapture={handleFocusPane}
+      onFocusCapture={handleFocusPane}
+      className="relative flex h-full flex-col overflow-hidden"
+    >
+      {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
+          SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
+          "Focused" text badge so the marker is never colour alone. */}
+      {isSplit && isFocused && (
+        <span aria-hidden className="absolute inset-y-0 left-0 z-10 w-0.5 bg-active-indicator" />
+      )}
+      <ChatHeader
+        sessionId={sessionId}
+        focused={isSplit ? isFocused : undefined}
+        onClose={isSplit ? () => closePane(paneIndex) : undefined}
+        otherSessionName={otherSession?.name}
+        onSwapToOther={otherSession ? () => openInSplit(otherSession.id) : undefined}
+        reservesWindowControls={reservesWindowControls}
+      />
       <div
         role="status"
         className={cn(
@@ -273,14 +330,19 @@ export function ChatPane() {
         session={session}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        onDeleted={focusSessionsNav}
+        onDeleted={() => {
+          // FR-016: deleting the Session shown in this pane closes the pane itself (a no-op when
+          // there is no split to close down to), not just a focus move inside it.
+          useSplitStore.getState().closePane(paneIndex)
+          focusSessionsNav()
+        }}
         onCancelled={() => {
           if (deleteBannerButtonRef.current?.isConnected) deleteBannerButtonRef.current.focus()
           else focusSessionsNav()
         }}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        <Transcript />
+        <Transcript sessionId={sessionId} />
       </div>
       <MessageInput
         key={sessionId}

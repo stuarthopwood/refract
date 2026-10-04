@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ArrowLeftRightIcon } from 'lucide-react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
@@ -8,8 +9,14 @@ import { Readiness } from '@/features/readiness/Readiness'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { StatusBar } from '@/features/status-bar/StatusBar'
-import { useRepositoriesStore, useSessionsStore, useSubagentPanelStore, useViewStore } from '@/state'
+import { useRepositoriesStore, useSessionsStore, useSplitStore, useSubagentPanelStore, useViewStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
+
+// Spec 005 (research.md Decision 6, FR-017): below this many pixels of chat-area width, two
+// minimum-width panes (360px each, matching the "chat" ResizablePanel's own existing floor) can
+// no longer both fit; the chat area shows one pane instead of two, with the other Session one
+// click away via ChatHeader's swap chip.
+const MIN_SPLIT_WIDTH_PX = 360 * 2
 
 // Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and the right region --
 // spec 004's Subagents panel is its first occupant (FR-017 to FR-020), always mounted but
@@ -23,6 +30,12 @@ import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 // bar (FR-057) no matter which screen is showing; it is deliberately the LAST element in this
 // file (see its own comment below) so its `no-drag-region` always outranks every drag-region
 // header underneath it.
+//
+// Spec 005: the chat region renders one `ChatPane` when `useSplitStore`'s `paneSessionIds` holds
+// one id, or two side by side (a nested horizontal `ResizablePanelGroup`) when it holds two --
+// unless the chat area is narrower than `MIN_SPLIT_WIDTH_PX` (research.md Decision 6), in which
+// case only the focused pane renders, with the other Session reachable through its header's
+// swap chip.
 export function App() {
   const [ready, setReady] = useState(false)
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
@@ -30,8 +43,42 @@ export function App() {
   const view = useViewStore((state) => state.view)
   const panelOpen = useSubagentPanelStore((state) => state.open)
   const panelSessionId = useSubagentPanelStore((state) => state.sessionId)
-  const visibleSessionId = useSessionsStore((state) => state.visibleSessionId)
+  const sessions = useSessionsStore((state) => state.sessions)
+  const paneSessionIds = useSplitStore((state) => state.paneSessionIds)
+  const focusedIndex = useSplitStore((state) => state.focusedIndex)
+  const dividerPercent = useSplitStore((state) => state.dividerPercent)
   const subagentPanelRef = useRef<PanelImperativeHandle>(null)
+  const [chatWidthPx, setChatWidthPx] = useState<number>(Number.POSITIVE_INFINITY)
+
+  const isSplit = paneSessionIds.length === 2
+  const canShowSplit = chatWidthPx >= MIN_SPLIT_WIDTH_PX
+  const showSplit = isSplit && canShowSplit
+  // "Whichever pane is front-and-center" regardless of whether a split is actually open right
+  // now: index 0 for a single pane (focusedIndex is meaningless at that length), the focused
+  // pane's id for a real split.
+  const [paneA, paneB] = paneSessionIds
+  const frontSessionId = paneSessionIds.length > 0 ? paneSessionIds[Math.min(focusedIndex, paneSessionIds.length - 1)] : null
+  const unfocusedSessionId = isSplit ? paneSessionIds[focusedIndex === 0 ? 1 : 0] : null
+  const unfocusedSession = unfocusedSessionId ? sessions.find((session) => session.id === unfocusedSessionId) : undefined
+  const otherSessionForNarrowCollapse =
+    isSplit && !canShowSplit && unfocusedSession ? { id: unfocusedSession.id, name: unfocusedSession.name } : null
+
+  // Spec 005 (FR-007, research.md Decision 8): Ctrl+Shift+\ moves focus to the other pane while
+  // a split is open, active window-wide (same pattern MessageInput.tsx's Ctrl+Shift+X listener
+  // uses); `event.code` (not `event.key`) targets the physical backslash key regardless of what
+  // Shift produces on the current keyboard layout.
+  useEffect(() => {
+    if (!isSplit) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (!event.ctrlKey || !event.shiftKey || event.code !== 'Backslash') return
+      event.preventDefault()
+      const state = useSplitStore.getState()
+      if (state.paneSessionIds.length !== 2) return
+      state.focusPane(state.focusedIndex === 0 ? 1 : 0)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isSplit])
 
   // Keeps the subagents Panel mounted at all times (collapsible/collapsedSize=0, same pattern
   // as SessionList's own left-nav panel) rather than conditionally mounting/unmounting it --
@@ -42,7 +89,7 @@ export function App() {
   // never flashing the panel at its expanded width first. Depends on `showReadiness`/`view`
   // too, not just `panelOpen`: the `ResizablePanelGroup` (and so `subagentPanelRef`'s handle)
   // only exists once the Readiness screen clears and `view` is `'chat'`/`'pull-requests'`/
-  // `'manage-sessions'`, and a `[panelOpen]`-only dependency list never re-ran this effect for
+  // `'manage-sessions'`, and a `[panelOpen]`-only dependency list never ran this effect for
   // that later first mount (caught live: the panel rendered at its full `defaultSize` instead
   // of collapsed, the very regression this effect exists to prevent).
   useLayoutEffect(() => {
@@ -85,9 +132,73 @@ export function App() {
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel id="chat" minSize={360}>
+            <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
               <ErrorBoundary>
-                <ChatPane />
+                {paneSessionIds.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    Select a Session or create one.
+                  </div>
+                ) : !showSplit || paneA === undefined || paneB === undefined ? (
+                  <ChatPane
+                    key={frontSessionId}
+                    sessionId={frontSessionId as string}
+                    paneIndex={isSplit ? focusedIndex : 0}
+                    reservesWindowControls
+                    otherSession={otherSessionForNarrowCollapse}
+                  />
+                ) : (
+                  <>
+                    {/* Spec 005 (FR-022): one shared live region for the whole split, outside both
+                        panes, so a focus change is announced exactly once (React only touches
+                        this text node when the computed string itself changes) rather than each
+                        pane re-reading on every unrelated re-render. */}
+                    <div aria-live="polite" className="sr-only">
+                      {`Focused: ${sessions.find((session) => session.id === paneSessionIds[focusedIndex])?.name ?? ''}`}
+                    </div>
+                    <ResizablePanelGroup
+                      orientation="horizontal"
+                      className="h-full"
+                      onLayoutChanged={(layout, meta) => {
+                        // research.md Decision 5: only a real drag or keyboard resize persists;
+                        // the initial/restored mount's own layout-settle call is not a user
+                        // choice.
+                        if (!meta.isUserInteraction) return
+                        const percent = layout['split-pane-0']
+                        if (typeof percent === 'number') {
+                          useSplitStore.getState().setDividerPercent(percent, { isUserInteraction: true })
+                        }
+                      }}
+                    >
+                      <ResizablePanel id="split-pane-0" defaultSize={dividerPercent} minSize={360}>
+                        <ErrorBoundary>
+                          <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} />
+                        </ErrorBoundary>
+                      </ResizablePanel>
+                      <ResizableHandle
+                        withHandle
+                        handleContent={
+                          <button
+                            type="button"
+                            className="absolute left-1/2 top-1/2 z-20 flex size-5 -translate-x-1/2 -translate-y-8 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                            aria-label="Move focus to the other pane"
+                            aria-keyshortcuts="Control+Shift+\"
+                            onClick={() => {
+                              const state = useSplitStore.getState()
+                              state.focusPane(state.focusedIndex === 0 ? 1 : 0)
+                            }}
+                          >
+                            <ArrowLeftRightIcon aria-hidden className="size-3" />
+                          </button>
+                        }
+                      />
+                      <ResizablePanel id="split-pane-1" defaultSize={100 - dividerPercent} minSize={360}>
+                        <ErrorBoundary>
+                          <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls />
+                        </ErrorBoundary>
+                      </ResizablePanel>
+                    </ResizablePanelGroup>
+                  </>
+                )}
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle />
@@ -106,8 +217,8 @@ export function App() {
                 // size from `useSubagentPanelStore`'s own `open` boolean: dragging an open panel
                 // shut left `open: true` with no way back in (the chip's `openPanel` call is
                 // already `true`, so nothing re-triggers the layout effect above), and dragging a
-                // closed panel open showed an empty panel (`panelSessionId` stays `null`). This
-                // keeps the store in sync with the panel's REAL rendered state on every resize,
+                // closed panel open showed an empty panel (`panelSessionId` still `null`). This
+                // keeps the store in sync with the panel's REAL rendered size on every resize,
                 // not just the state the store thinks it last commanded; `prevSize === undefined`
                 // is the initial mount, which the layout effect above already owns.
                 if (prevSize === undefined) return
@@ -116,14 +227,18 @@ export function App() {
                 if (collapsed === wasCollapsed) return
                 const panelState = useSubagentPanelStore.getState()
                 if (collapsed && panelState.open) panelState.closePanel({ restoreFocus: false })
-                else if (!collapsed && !panelState.open && visibleSessionId) panelState.openPanel(visibleSessionId)
+                // Spec 005 (tasks.md T031): dragging the panel open directly (not via a chip, see
+                // ReadoutChips.tsx's `SubagentsChip`) falls back to the FOCUSED pane's Session,
+                // the same default-target rule FR-008 already uses for an ambiguous row click --
+                // never the singular `visibleSessionId` this used to read (removed by T012).
+                else if (!collapsed && !panelState.open && frontSessionId) panelState.openPanel(frontSessionId)
                 // Low remediation (code-reviewer, spec 004 final confirmation pass): dragging the
-                // collapsed panel open while there is no visible Session at all (`visibleSessionId`
+                // collapsed panel open while there is no Session shown at all (`frontSessionId`
                 // null, so the branch above cannot call `openPanel`) left it visually expanded with
                 // the store still `open: false` -- desynced again, the same root cause this whole
                 // handler exists to prevent. Forces the real rendered panel back closed instead of
                 // leaving that mismatch sitting there.
-                else if (!collapsed && !panelState.open && !visibleSessionId) subagentPanelRef.current?.collapse()
+                else if (!collapsed && !panelState.open && !frontSessionId) subagentPanelRef.current?.collapse()
               }}
             >
               {/* Critical remediation (a11y + test-reviewer, same root cause from two angles):
@@ -132,8 +247,8 @@ export function App() {
                   inert/hidden/display:none on a collapsed Panel), so the Close button and every
                   subagent row button stayed in the Tab order and in screen-reader browse mode
                   even while visually hidden. The `ResizablePanel` wrapper itself stays always
-                  mounted either way (FR-020's pixel-exact sizing fix depends on that, see the
-                  comment above); only the content inside now actually unmounts when closed. */}
+                  mounted either way (FR-020's pixel-exact sizing fix still holds); only the
+                  content inside now actually unmounts when closed. */}
               <ErrorBoundary>{panelOpen && panelSessionId && <SubagentPanel sessionId={panelSessionId} />}</ErrorBoundary>
             </ResizablePanel>
           </ResizablePanelGroup>

@@ -50,6 +50,16 @@ export interface Settings {
   version: 1;
   approvalMode: ApprovalMode; // default 'ask'
   sessionReadout: Record<ReadoutKind, boolean>; // spec 004 FR-012 to FR-014
+  split: SplitLayout | null; // spec 005: null = single pane, no split open
+}
+
+/** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the
+ * two Session ids shown (left pane first), the divider position, and which pane was focused;
+ * there is no one-element form -- closing a pane simply sets `Settings.split` back to `null`. */
+export interface SplitLayout {
+  sessionIds: [string, string]; // the two Session ids shown, left pane first
+  dividerPercent: number; // 0-100, percentage of the chat area width the left pane takes
+  focusedIndex: 0 | 1; // which of sessionIds[0]/sessionIds[1] was focused
 }
 
 /** Defaults (spec 004 FR-013): every kind on except Current time. */

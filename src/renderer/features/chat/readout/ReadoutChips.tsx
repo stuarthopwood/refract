@@ -1,7 +1,9 @@
 // The chip row's individual readouts (spec 004 FR-002 to FR-007, FR-021), each built on
-// ReadoutChip.tsx's shared baseline. Reads `useReadoutStore()` (the visible Session's live
-// bundle, seeded from `SessionSnapshot.readout` and kept live by `readout:update`/
-// `subagents:update`); which of these render at all is filtered by
+// ReadoutChip.tsx's shared baseline. Each takes an explicit `sessionId` prop (spec 005
+// convergence, tasks.md T030: generalised from a single implicit "the visible Session" to
+// per-session storage, so each pane's own chip row reads its own Session's data) and reads
+// `useReadoutStore()`'s entry for that id, seeded from `SessionSnapshot.readout` and kept live
+// by `readout:update`/`subagents:update`; which of these render at all is filtered by
 // `useSettingsStore().sessionReadout` in MessageInput.tsx, not repeated in each chip here.
 import { useEffect, useState } from 'react'
 import {
@@ -13,7 +15,7 @@ import {
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { useReadoutStore, useSessionsStore, useSubagentPanelStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, useReadoutStore, useSubagentPanelStore } from '@/state'
 import { formatDiffStat } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../Transcript'
 import { ReadoutChip } from './ReadoutChip'
@@ -30,8 +32,8 @@ function compact(n: number): string {
 /** FR-002: "N files, +A -D", matching the Session details card's `formatDiffStat` exactly for a
  * real `DiffStat`, abbreviated past 1000; "Not available" for the `'not-available'` literal;
  * hidden (`null`) otherwise. */
-export function ChangesChip() {
-  const changes = useReadoutStore((s) => s.readout.changes)
+export function ChangesChip({ sessionId }: { sessionId: string }) {
+  const changes = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.changes)
   if (changes === null) return null
   if (changes === 'not-available') {
     return (
@@ -53,8 +55,8 @@ export function ChangesChip() {
 
 /** FR-003: "N/M tokens (P%)", hidden when `null`, "Not available" for the `'not-available'`
  * literal, a visible warning (icon + the word "high", never colour alone) once `percent >= 90`. */
-export function ContextUsageChip() {
-  const contextUsage = useReadoutStore((s) => s.readout.contextUsage)
+export function ContextUsageChip({ sessionId }: { sessionId: string }) {
+  const contextUsage = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.contextUsage)
   if (contextUsage === null) return null
   if (contextUsage === 'not-available') {
     return (
@@ -76,8 +78,10 @@ export function ContextUsageChip() {
 }
 
 /** FR-004: ticks the elapsed time once a second from `startedAt`, hidden when no turn runs. */
-export function TurnTimeChip() {
-  const startedAt = useReadoutStore((s) => s.readout.turnTime?.startedAt ?? null)
+export function TurnTimeChip({ sessionId }: { sessionId: string }) {
+  const startedAt = useReadoutStore(
+    (s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.turnTime?.startedAt ?? null
+  )
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (startedAt === null) return
@@ -134,8 +138,8 @@ export function CurrentTimeChip() {
  * plain external `<a>` (Electron's existing `setWindowOpenHandler`, no new IPC); hidden when
  * `null` (no such pull request, no remote, a lookup failure, or GitHub unavailable all collapse
  * to the same hidden state here, with no error toast). */
-export function PullRequestChip() {
-  const pullRequest = useReadoutStore((s) => s.readout.pullRequest)
+export function PullRequestChip({ sessionId }: { sessionId: string }) {
+  const pullRequest = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.pullRequest)
   if (pullRequest === null) return null
   return (
     <ReadoutChip icon={GitPullRequestIcon} href={pullRequest.url} accessibleName={`Open pull request #${pullRequest.number}`}>
@@ -147,9 +151,8 @@ export function PullRequestChip() {
 /** FR-007, FR-017: the count of this turn's subagents that are running or finished (excluding
  * failed), hidden when the turn has started none. Activating it opens the Subagents panel
  * (T021) with an accessible name stating the running count. */
-export function SubagentsChip() {
-  const subagentCount = useReadoutStore((s) => s.readout.subagentCount)
-  const sessionId = useSessionsStore((s) => s.visibleSessionId)
+export function SubagentsChip({ sessionId }: { sessionId: string }) {
+  const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
   const openPanel = useSubagentPanelStore((s) => s.openPanel)
   if (subagentCount === null) return null
   const total = subagentCount.running + subagentCount.finished
@@ -157,7 +160,10 @@ export function SubagentsChip() {
   return (
     <ReadoutChip
       icon={UsersIcon}
-      onActivate={sessionId ? () => openPanel(sessionId) : undefined}
+      // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
+      // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
+      // focus-move retarget (research.md Decision 10).
+      onActivate={() => openPanel(sessionId)}
       accessibleName={`Open subagents panel (${subagentCount.running} running)`}
     >
       <span aria-hidden>{phrase}</span>
@@ -166,8 +172,8 @@ export function SubagentsChip() {
 }
 
 /** FR-021: "Todo N/M", hidden when the agent has no task list at all. */
-export function TodoProgressChip() {
-  const todoProgress = useReadoutStore((s) => s.readout.todoProgress)
+export function TodoProgressChip({ sessionId }: { sessionId: string }) {
+  const todoProgress = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoProgress)
   if (todoProgress === null) return null
   return (
     <ReadoutChip icon={ListTodoIcon}>

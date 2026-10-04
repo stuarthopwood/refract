@@ -3,7 +3,7 @@
 import path from 'node:path'
 import { readJsonFile, writeJsonFile } from './atomicJson'
 import { DEFAULT_SESSION_READOUT } from '../../shared/model'
-import type { ApprovalMode, ReadoutKind, Settings } from '../../shared/model'
+import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model'
 
 export class SettingsStore {
   private constructor(
@@ -13,13 +13,19 @@ export class SettingsStore {
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null }))
     // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
     // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
     // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
     // or corrupt file above.
     if (!data.sessionReadout) {
       data.sessionReadout = DEFAULT_SESSION_READOUT
+    }
+    // Spec 005 data-model.md "Migration": an existing settings.json written before this spec has
+    // no `split` key at all (`undefined`, not `null`); the same field-level merge pattern as
+    // `sessionReadout` above.
+    if (data.split === undefined) {
+      data.split = null
     }
     return new SettingsStore(file, data)
   }
@@ -47,6 +53,17 @@ export class SettingsStore {
    * shared read). */
   async setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<Settings> {
     const next = { ...this.data, sessionReadout: { ...this.data.sessionReadout, [kind]: visible } }
+    this.data = next
+    await writeJsonFile(this.file, next)
+    return { ...next }
+  }
+
+  /** `settings.setSplit(layout)` (spec 005 FR-014/FR-015/data-model.md, contracts/ipc.md): persists
+   * the whole Split layout (or `null` for no split), the same race-safety pattern as
+   * `setApprovalMode`/`setReadoutVisibility` above (returns this call's own written value). Never
+   * starts, stops, or touches any agent -- this call only ever writes the stored layout. */
+  async setSplit(layout: SplitLayout | null): Promise<Settings> {
+    const next = { ...this.data, split: layout }
     this.data = next
     await writeJsonFile(this.file, next)
     return { ...next }

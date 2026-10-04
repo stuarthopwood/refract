@@ -266,11 +266,13 @@ export function registerSessions(manager: SessionManager): void {
     return { ok: true, value: undefined };
   });
 
-  ipcMain.handle(IPC_REQUESTS.SESSIONS_SET_VISIBLE, async (_event, sessionId: unknown) => {
-    if (sessionId !== null && typeof sessionId !== 'string') {
-      return invalidArgument(`${IPC_REQUESTS.SESSIONS_SET_VISIBLE} expects a string id or null`);
+  // Spec 005 contracts/ipc.md: sessionIds is every session id currently shown in any pane
+  // (0, 1, or 2 elements), replacing the single-id/null form.
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_SET_VISIBLE, async (_event, sessionIds: unknown) => {
+    if (!Array.isArray(sessionIds) || !sessionIds.every((id) => typeof id === 'string')) {
+      return invalidArgument(`${IPC_REQUESTS.SESSIONS_SET_VISIBLE} expects a string[]`);
     }
-    manager.setVisible(sessionId);
+    manager.setVisible(sessionIds as string[]);
     return { ok: true, value: undefined };
   });
 

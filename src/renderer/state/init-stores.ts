@@ -10,6 +10,7 @@ import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
+import { useSplitStore } from './split-store'
 
 // Awaits an initial-load request; an error or a rejected invoke falls back to an empty/default
 // value instead of a toast on every cold start.
@@ -61,8 +62,11 @@ export function initStores(): void {
   window.refract.onSubagentPatch(({ sessionId, subagentId, ops }) => {
     useSubagentPanelStore.getState().applyPatch(sessionId, subagentId, ops)
   })
+  // Spec 005 (tasks.md T012): a Windows-notification click, or a restored split that dropped to
+  // one surviving Session (main's `index.ts` validateSplitAtStartup), both reuse this one
+  // existing event; replaceFocused is the ordinary single-target action (same as a row click).
   window.refract.onUiOpenSession(({ sessionId }) => {
-    useSessionsStore.getState().setVisibleSessionId(sessionId)
+    useSplitStore.getState().replaceFocused(sessionId)
   })
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
@@ -77,5 +81,9 @@ export function initStores(): void {
     useSessionsStore.getState().setSessions(sessions)
     useSettingsStore.getState().setSettings(settings)
     useRepositoriesStore.getState().setRepositories(repositories)
+    // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
+    // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
+    // agent, per research.md Decision 4.
+    useSplitStore.getState().restoreFromSettings(settings.split)
   })()
 }

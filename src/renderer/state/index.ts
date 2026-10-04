@@ -8,10 +8,11 @@ import { EMPTY_QUEUE, useQueueStore } from './queue-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
-import { useTranscriptStore } from './transcript-store'
+import { EMPTY_TRANSCRIPT, useTranscriptStore } from './transcript-store'
 import { useViewStore } from './view-store'
-import { EMPTY_READOUT, useReadoutStore } from './readout-store'
+import { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
+import { useSplitStore } from './split-store'
 
 export { initStores }
 export { notify }
@@ -23,11 +24,12 @@ export { EMPTY_QUEUE, useQueueStore }
 export { useRepositoriesStore }
 export { DEFAULT_SETTINGS, useSettingsStore }
 export { useSessionsStore }
-export { useTranscriptStore }
+export { EMPTY_TRANSCRIPT, useTranscriptStore }
 export { useViewStore }
 export type { MainView, SettingsSectionId } from './view-store'
-export { EMPTY_READOUT, useReadoutStore }
+export { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore }
 export { useSubagentPanelStore }
+export { useSplitStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -43,6 +45,7 @@ export interface RefractDevStores {
   view: typeof useViewStore
   readout: typeof useReadoutStore
   subagentPanel: typeof useSubagentPanelStore
+  split: typeof useSplitStore
 }
 
 declare global {
@@ -67,6 +70,7 @@ if (import.meta.env.DEV) {
     transcript: useTranscriptStore,
     view: useViewStore,
     readout: useReadoutStore,
-    subagentPanel: useSubagentPanelStore
+    subagentPanel: useSubagentPanelStore,
+    split: useSplitStore
   }
 }

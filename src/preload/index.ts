@@ -77,7 +77,7 @@ const refract: RefractApi = {
     recreateWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_RECREATE_WORKTREE, id),
     recover: (id) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_RECOVER, id),
     stopAgent: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_STOP_AGENT, sessionId),
-    setVisible: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_SET_VISIBLE, sessionId),
+    setVisible: (sessionIds) => request<void>(IPC_REQUESTS.SESSIONS_SET_VISIBLE, sessionIds),
     diffStat: (id) => request<DiffStat | null>(IPC_REQUESTS.SESSIONS_DIFF_STAT, id),
     revealWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE, id)
   },
@@ -115,7 +115,8 @@ const refract: RefractApi = {
     get: () => request<Settings>(IPC_REQUESTS.SETTINGS_GET),
     setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode),
     setReadoutVisibility: (kind, visible) =>
-      request<Settings>(IPC_REQUESTS.SETTINGS_SET_READOUT_VISIBILITY, kind, visible)
+      request<Settings>(IPC_REQUESTS.SETTINGS_SET_READOUT_VISIBILITY, kind, visible),
+    setSplit: (layout) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SPLIT, layout)
   },
 
   window: {

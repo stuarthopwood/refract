@@ -6,7 +6,7 @@ import { CheckCircle2Icon, LoaderCircleIcon, XCircleIcon, XIcon } from 'lucide-r
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { useReadoutStore, useSubagentPanelStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, useReadoutStore, useSubagentPanelStore } from '@/state'
 import type { SubagentSummary } from '../../../shared/model'
 import { groupToolItems, isToolGroup } from '../chat/groupToolItems'
 import { ToolGroupRow } from '../chat/ToolRow'
@@ -32,7 +32,10 @@ function SubagentStateIcon({ status }: { status: SubagentSummary['status'] }) {
 }
 
 export function SubagentPanel({ sessionId }: { sessionId: string }) {
-  const subagents = useReadoutStore((s) => s.subagents)
+  // Spec 005 convergence (tasks.md T030): readout-store.ts is now per-session; this panel is
+  // the one shared instance, explicitly bound to whichever pane's chip last activated it
+  // (research.md Decision 10), so it always reads THIS sessionId's own subagent list.
+  const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   const selectedId = useSubagentPanelStore((s) => s.selectedId)
   const selectSubagent = useSubagentPanelStore((s) => s.selectSubagent)
   const closePanel = useSubagentPanelStore((s) => s.closePanel)

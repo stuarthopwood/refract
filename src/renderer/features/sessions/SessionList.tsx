@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
-import { notify, useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
+import { notify, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { SessionDetailsCard } from './SessionDetailsCard'
@@ -39,9 +39,17 @@ type SessionRowAction =
   | { kind: 'item'; key: string; label: string; variant?: 'destructive'; onSelect: () => void }
 
 function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
-  const isVisible = useSessionsStore((state) => state.visibleSessionId === session.id)
+  // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
+  // reading, extended to this row's own marker); which pane specifically only matters to the
+  // click handler below, not this visual marker.
+  const isVisible = useSplitStore((state) => state.paneSessionIds.includes(session.id))
+  const isFocusedPane = useSplitStore((state) => {
+    const index = state.paneSessionIds.indexOf(session.id)
+    return index !== -1 && (state.paneSessionIds.length < 2 || state.focusedIndex === index)
+  })
+  const replaceFocused = useSplitStore((state) => state.replaceFocused)
+  const openInSplit = useSplitStore((state) => state.openInSplit)
   const open = useSessionsStore((state) => state.open)
-  const setVisibleSessionId = useSessionsStore((state) => state.setVisibleSessionId)
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -161,6 +169,8 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
         startRenaming()
       }
     },
+    // Spec 005: same effect as Ctrl+click on the row's open button below.
+    { kind: 'item', key: 'open-in-split', label: 'Open in split', onSelect: () => openInSplit(session.id) },
     // The same two actions the details card offers, kept here too since Radix hover
     // cards are not keyboard-reachable.
     { kind: 'item', key: 'copy-path', label: 'Copy worktree path', onSelect: () => void copyPath() },
@@ -266,10 +276,21 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   ref={openButtonRef}
                   type="button"
                   aria-current={isVisible ? 'true' : undefined}
-                  // A non-visible row only flips visibility: ChatPane's [visibleSessionId] effect is the single
-                  // opener and applies the snapshot (transcript, queue, pending requests, stop banner). The
-                  // visible row has no such effect to fire, so clicking it (waking an asleep Session) opens directly.
-                  onClick={() => (isVisible ? void open(session.id) : setVisibleSessionId(session.id))}
+                  // Spec 005 (FR-001, FR-008, FR-009, data-model.md transition table): Ctrl+click
+                  // always opens a split (or replaces the unfocused pane / focuses it, per
+                  // `openInSplit`'s own rules). A plain click on the already-focused pane's own
+                  // row only flips visibility by waking it directly (nothing else will fire
+                  // ChatPane's own effect for an unchanged sessionId); every other plain click
+                  // goes through `replaceFocused`, which also clears this id's pristine flag
+                  // (research.md Decision 4) regardless of which of its own branches fires.
+                  onClick={(event) => {
+                    if (event.ctrlKey) {
+                      openInSplit(session.id)
+                      return
+                    }
+                    replaceFocused(session.id)
+                    if (isFocusedPane) void open(session.id)
+                  }}
                   onDoubleClick={startRenaming}
                   onKeyDown={handleOpenButtonKeyDown}
                   data-choice-item

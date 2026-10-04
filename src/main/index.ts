@@ -7,6 +7,7 @@ import { app, BrowserWindow, Menu, session, shell } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { IPC_EVENTS } from '../shared/ipc'
 import { joinKillOnCloseJob } from './process/jobObject'
 import { buildAppMenu } from './menu'
 import { DARK_TITLE_BAR_OVERLAY } from './titleBarOverlay'
@@ -40,6 +41,15 @@ const BEFORE_QUIT_STOP_ALL_TIMEOUT_MS = 10_000
 
 let mainWindow: BrowserWindow | undefined
 let manager: SessionManager | undefined
+
+// Spec 005 FR-015/data-model.md: set by `validateSplitAtStartup` when a restored split drops to
+// exactly one surviving Session; sent as a one-time `ui:open-session` once the renderer's own
+// listener for it is guaranteed registered (`did-finish-load` fires only after the page's
+// top-level synchronous scripts -- including `main.tsx`'s `initStores()` call, which attaches
+// that listener before React even mounts -- have already run). This never starts the surviving
+// Session's agent (FR-014): `ui:open-session`'s existing handler only calls the renderer's own
+// 'make this pane visible' action, never `sessions.open`.
+let pendingSplitSurvivorId: string | undefined
 
 function getWindow(): BrowserWindow | undefined {
   return mainWindow
@@ -86,6 +96,32 @@ function isOwnOrigin(url: string): boolean {
   }
 }
 
+/** Spec 005 FR-015/data-model.md Decision 3b: validates the persisted `Settings.split` against
+ * `RegistryStore`'s already-loaded, in-memory `Session[]` -- never touches any agent. Drops any
+ * id no longer present or now archived; if both survive, the split is left unchanged; otherwise
+ * the corrected value (always `null` -- there is no one-element `SplitLayout`) is written back
+ * so a stale id is never offered again. Returns the lone surviving Session id when exactly one
+ * remains (so the caller can show it, focused, full width, once the renderer is ready --
+ * `pendingSplitSurvivorId`'s own comment), or `undefined` otherwise. */
+async function validateSplitAtStartup(manager: SessionManager): Promise<string | undefined> {
+  const split = manager.settings.get().split
+  if (!split) return undefined
+  const liveSessionIds = new Set(
+    manager.registry
+      .snapshot()
+      .sessions.filter((session) => session.archivedAt === null)
+      .map((session) => session.id)
+  )
+  const survivors = split.sessionIds.filter((id) => liveSessionIds.has(id))
+  if (survivors.length === split.sessionIds.length) return undefined // both still exist and are not archived
+  await manager.settings.setSplit(null)
+  if (survivors.length === 1) {
+    manager.setVisible(survivors)
+    return survivors[0]
+  }
+  return undefined
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -121,6 +157,14 @@ function createWindow(): void {
 
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
+  })
+
+  // Spec 005: delivers a restored split's lone surviving Session (see `pendingSplitSurvivorId`'s
+  // own comment above) the first time this window's page finishes loading.
+  window.webContents.on('did-finish-load', () => {
+    if (!pendingSplitSurvivorId) return
+    window.webContents.send(IPC_EVENTS.UI_OPEN_SESSION, { sessionId: pendingSplitSurvivorId })
+    pendingSplitSurvivorId = undefined
   })
 
   // T037: SessionAgent's unread tracking needs real OS focus, not just "a window exists".
@@ -183,6 +227,11 @@ if (!gotLock) {
     const registry = await RegistryStore.open(userDataDir)
     const settings = await SettingsStore.open(userDataDir)
     manager = new SessionManager(registry, settings)
+
+    // Spec 005 FR-015/data-model.md Decision 3b: drop any persisted split id no longer present
+    // in the registry or now archived, before the renderer ever reads `settings.get()`. Reads
+    // the registry only -- never starts an agent (FR-014).
+    pendingSplitSurvivorId = await validateSplitAtStartup(manager)
 
     // T100: the one real application menu (accelerators work regardless of the merged top row
     // never showing a visible bar); the renderer's `AppMenuBar` pops its submenus by id.

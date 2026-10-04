@@ -9,7 +9,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC_EVENTS, IPC_REQUESTS } from '../../shared/ipc';
 import type { Result } from '../../shared/ipc';
-import type { ApprovalMode, ReadoutKind, Settings } from '../../shared/model';
+import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model';
 import type { SessionManager } from '../SessionManager';
 
 const APPROVAL_MODES: Record<ApprovalMode, true> = { ask: true, 'edit-freely': true, auto: true };
@@ -70,6 +70,35 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
       };
     }
     const value = await manager.settings.setReadoutVisibility(kind as ReadoutKind, visible);
+    broadcastSettingsChanged(value, getWindow);
+    return { ok: true, value };
+  });
+
+  // Spec 005 contracts/ipc.md `settings.setSplit`: basic-shape validation only (invalid-argument
+  // for a malformed payload) -- the renderer only ever calls this with ids it already knows are
+  // valid (its own split-store's current pane ids); registry validation against archived/deleted
+  // sessions happens separately, once, at app start (index.ts, FR-015).
+  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_SPLIT, async (_event, layout: unknown): Promise<Result<Settings>> => {
+    if (layout !== null) {
+      if (typeof layout !== 'object') {
+        return { ok: false, error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_SPLIT} expects a SplitLayout or null` } };
+      }
+      const { sessionIds, dividerPercent, focusedIndex } = layout as Partial<SplitLayout>;
+      const validSessionIds =
+        Array.isArray(sessionIds) && sessionIds.length === 2 && sessionIds.every((id) => typeof id === 'string');
+      const validDividerPercent = typeof dividerPercent === 'number' && Number.isFinite(dividerPercent);
+      const validFocusedIndex = focusedIndex === 0 || focusedIndex === 1;
+      if (!validSessionIds || !validDividerPercent || !validFocusedIndex) {
+        return {
+          ok: false,
+          error: {
+            code: 'invalid-argument',
+            message: `${IPC_REQUESTS.SETTINGS_SET_SPLIT} expects { sessionIds: [string, string], dividerPercent: number, focusedIndex: 0 | 1 } or null`,
+          },
+        };
+      }
+    }
+    const value = await manager.settings.setSplit(layout as SplitLayout | null);
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });
