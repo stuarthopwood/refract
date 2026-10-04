@@ -32,7 +32,7 @@ on tracking issue #125 and kept here.
 **Purpose**: settle the two facts the constitution (Principle IV) says must be verified before
 the work that depends on them (research.md decisions 4, 9).
 
-- [ ] T001 Gate: probe two Electron/Windows facts in `docs/spike/theme-probe.mjs`: (a) in a
+- [X] T001 Gate: probe two Electron/Windows facts in `docs/spike/theme-probe.mjs`: (a) in a
   minimal Electron app's preload, time a synchronous `ipcRenderer.sendSync` round trip called
   before the renderer's first paint and confirm the window never shows an unstyled or
   default-classed frame first; (b) call `createHighlighter({ themes: ['github-dark-high-contrast'],
@@ -40,6 +40,7 @@ the work that depends on them (research.md decisions 4, 9).
   resolves with no error. Record both outcomes as one new numbered item in
   `docs/spike/FINDINGS.md`; if (b) comes back negative, replace research.md decision 9 with the
   working alternative before any later task that assumes it. (#163)
+  **Done**: `docs/spike/theme-probe.mjs` run live (Electron 44.5.1, `node_modules/electron/dist/electron.exe docs/spike/theme-probe.mjs`): (a) sendSync round trip under real `sandbox: true` + `contextIsolation: true` = 0.6ms, no throw/hang, correct value; (b) `github-dark-high-contrast` resolved with no error, `getLoadedThemes()` confirms it. Recorded as FINDINGS.md item 42. Decision 9 needs no correction.
 
 **Checkpoint**: `docs/spike/FINDINGS.md` has the new item; research.md decision 9 is confirmed or
 corrected.
