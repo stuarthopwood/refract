@@ -55,23 +55,22 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
     textColor: '#fafafa'
   },
   'dark-high-contrast': {
-    // `.theme-dark-high-contrast`'s `--background` is specified as pure black (`oklch(0 0 0)`,
-    // matching its own `swatch`, `#000000`) -- its full token set is not yet landed in
-    // globals.css (a later task fills in `.theme-dark-high-contrast {}`, currently empty), so
-    // these values are chosen directly from `ThemeDefinition`'s own stated max-contrast intent
-    // (FR-008, FR-010: "maximising the margin above WCAG AA's 4.5:1/3:1 floors") rather than
-    // copied from an existing CSS block: pure black/white with no intermediate grey softening,
-    // the same way its `titleBarOverlay` already pairs `#000000` with `#ffffff`.
+    // `.theme-dark-high-contrast`'s own CSS custom properties (globals.css): `--background:
+    // oklch(0 0 0)` (pure black, matching this theme's `swatch`), `--card: oklch(0.14 0 0)` ==
+    // `#090909`, `--border: oklch(0.6 0 0)` == `#808080`, `--muted-foreground: oklch(0.85 0 0)`
+    // == `#cecece`, `--secondary`/`--muted: oklch(0.26 0 0)` == `#242424`. Node fill/border/line
+    // colours below are those real values, not pure black/white placeholders, so a diagram reads
+    // visually consistent with every other panel in this theme (dialogs, cards, the message box).
     background: '#000000',
-    primaryColor: '#000000',
+    primaryColor: '#090909',
     primaryTextColor: '#ffffff',
-    primaryBorderColor: '#ffffff',
-    lineColor: '#ffffff',
-    // Multi-fill diagrams still need to tell fills apart even at this theme's max-contrast
-    // extreme; these stay dark (never mid-grey) so no fill reads as "washed out" next to a pure
-    // black background, while remaining visibly distinct from `primaryColor`'s pure black.
-    secondaryColor: '#1a1a1a',
-    tertiaryColor: '#333333',
+    primaryBorderColor: '#808080',
+    lineColor: '#cecece',
+    // Multi-fill diagrams still need to tell fills apart at this theme's own higher contrast
+    // bar; `secondaryColor` matches `--secondary`/`--muted`, `tertiaryColor` is one step lighter
+    // again so a three-way diagram stays distinguishable, same pattern as the `dark` mapping.
+    secondaryColor: '#242424',
+    tertiaryColor: '#363636',
     textColor: '#ffffff'
   }
 }

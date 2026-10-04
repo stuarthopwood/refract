@@ -47,7 +47,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     name: 'Dark (high contrast)',
     // Matches `.theme-dark-high-contrast`'s own `--background: oklch(0 0 0)` (pure black,
     // globals.css) -- a deliberately starker background than `dark`'s, maximising the margin
-    // above WCAG AA's 4.5:1/3:1 floors (FR-008, FR-010).
+    // above the WCAG AA contrast floors every built-in theme must clear.
     swatch: '#000000',
     syntaxTheme: 'github-dark-high-contrast',
     titleBarOverlay: { color: '#000000', symbolColor: '#ffffff' }
