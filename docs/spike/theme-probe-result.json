@@ -1,0 +1,17 @@
+{
+  "probedAt": "2026-10-04T21:18:47.159Z",
+  "electronVersion": "44.5.1",
+  "nodeVersion": "24.21.0",
+  "sendSyncBootstrap": {
+    "ok": true,
+    "roundTripMs": 0.5999999642372131,
+    "error": null
+  },
+  "shikiHighContrast": {
+    "ok": true,
+    "error": null,
+    "loadedThemes": [
+      "github-dark-high-contrast"
+    ]
+  }
+}
