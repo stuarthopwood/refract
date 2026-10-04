@@ -190,6 +190,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   useEffect(() => {
     if (autoFocusOnMount) textareaRef.current?.focus()
+    // High remediation (accessibility-auditor, quality gate 2026-10-04): a restored
+    // (non-empty) draft's own caret otherwise lands at position 0, not the end -- live-verified
+    // against this same Electron build: a controlled <textarea> does NOT default its caret to
+    // the end of a non-empty `value` set at mount, focused or not (spec.md's Clarifications
+    // wrongly assumed it would). Setting it explicitly, every mount, matches how a freshly typed
+    // draft already looks and keeps a keyboard-only user (Tab back in, or a focus-carrying
+    // Session switch) from silently prepending into restored text (FR-001).
+    const end = textareaRef.current?.value.length ?? 0
+    textareaRef.current?.setSelectionRange(end, end)
     // Runs once per mount only: this component remounts (`key={sessionId}`) whenever the
     // visible Session changes, so re-running on prop changes would steal focus back after the
     // user deliberately moves it elsewhere.
@@ -238,7 +247,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (disabled || starting) return
     const draftText = text
     if (!draftText.trim()) return
-    // Enter-send and the Send button both clear the draft via `setText('')` below, bypassing
+    // Enter-send and the Send button both clear the draft via `clear(sessionId)` below, bypassing
     // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
     // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
     clearGhostState()
@@ -275,7 +284,19 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // separate `setText('')`/`setAttachments(EMPTY_ATTACHMENTS)` calls) -- FR-007: pending image
     // attachments clear once the send is accepted, not once the agent's turn finishes; pending
     // text chips are a draft-only concept with nothing left to track once the draft is cleared.
-    useDraftStore.getState().clear(sessionId)
+    // Medium remediation (code-reviewer + test-reviewer, quality gate 2026-10-04): the draft now
+    // outlives this component, so `await chat.send()` above can straddle a Session switch away
+    // and back, or just the user continuing to type/paste during the request -- an unconditional
+    // clear here would silently wipe whatever newer draft/attachments now sit in the store, which
+    // the old local-`useState` code could never do (a stale `setState` on an unmounted instance
+    // was always a no-op). Only clear if the store still holds exactly what THIS send captured
+    // (`draftText`/`attachments`, both read at the top of this call); a draft that changed in the
+    // meantime is left alone rather than destroyed, even though its now-stale pending attachments
+    // (already part of the accepted send) stay visibly pending until removed or sent again.
+    const currentDraft = useDraftStore.getState().bySession[sessionId]
+    if (currentDraft?.text === draftText && currentDraft?.attachments === attachments) {
+      useDraftStore.getState().clear(sessionId)
+    }
     // Second invalidation (#358/#359 round-3 remediation): typing during the `await open()` / `await
     // chat.send()` gap above can schedule a fresh ghost-text debounce/request -- or let one
     // already in flight resolve -- against the draft `clear(sessionId)` just wiped; the early

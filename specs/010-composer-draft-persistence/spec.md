@@ -107,13 +107,19 @@ Settings, clicking "Back to chat", and confirming both are restored exactly.
 - Sending a message still clears that Session's draft text and every pending attachment, exactly as
   before (spec 009 FR-007) -- this spec changes where that state is held, not the send-success
   clearing behaviour itself.
-- A Session that is archived or deleted while it has a pending draft leaves that draft's store
-  entry simply unused from then on (never read again, since no Session row can make it the visible
-  Session again) -- matching every other per-session store in the app today (`queue-store.ts`,
-  `commands-store.ts`, `transcript-store.ts`, `pending-requests-store.ts`), none of which prune a
-  deleted Session's entry either. No new leak is introduced here; none of the existing ones are
-  fixed by this spec, since that is a pre-existing, repo-wide pattern, not something this feature
-  was asked to change.
+- A **deleted** Session's draft store entry is simply unused from then on (no Session row can ever
+  make a deleted Session the visible one again) -- matching every other per-session store in the
+  app today (`queue-store.ts`, `commands-store.ts`, `transcript-store.ts`,
+  `pending-requests-store.ts`), none of which prune a deleted Session's entry either. No new leak
+  is introduced here; none of the existing ones are fixed by this spec, since that is a
+  pre-existing, repo-wide pattern, not something this feature was asked to change.
+- An **archived** Session is different: it still renders (`SessionList.tsx`'s "Archived" section)
+  and can still become the visible Session again (opening it, or an explicit restore). Its draft
+  entry is therefore not dead the way a deleted Session's is -- viewing or restoring an archived
+  Session shows its old draft again, by the same FR-001-to-FR-003 restoration this spec builds for
+  any other Session, not a separate mechanism. This is the intended behaviour (an archived Session
+  is reversible, per `CONTEXT.md`'s own definition), corrected here from an earlier draft of this
+  spec that wrongly assumed archiving behaved like deleting for this purpose.
 - Two Sessions switched between rapidly (several times within the debounce window of the
   ghost-text/ slash-menu logic that still resets on remount) never cross-contaminate: each
   read/write is keyed by its own `sessionId`, never by "whichever Session was visible most

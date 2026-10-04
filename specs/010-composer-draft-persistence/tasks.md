@@ -194,3 +194,103 @@ check:ui-text` pass.
 Created with `gh issue create` (2026-10-04) against the existing `stuarthopwood/refract` repo.
 Posted as a comment on tracking issue [#383](https://github.com/stuarthopwood/refract/issues/383),
 matching spec 009's convention.
+
+---
+
+## Remediation round (quality gate, 2026-10-04)
+
+4-reviewer gate (code-reviewer, security-auditor, test-reviewer, accessibility-auditor) ran
+against commit `22e5e45`. security-auditor verdict was PASS (only Low/informational notes: no
+leak, no new persistence, no new sink). code-reviewer, test-reviewer, and accessibility-auditor
+each found one High; every High plus one Medium both code-reviewer and test-reviewer independently
+flagged is fixed below. `pnpm typecheck`/`pnpm build`/`pnpm check:ui-text` (0 leaks/371 files) all
+re-ran clean after every fix.
+
+- **[HIGH, code-reviewer]** The T005 `docs/DESIGN.md` bullet was written into the **main
+  checkout** (`C:/Repos/personal/pinion`) by mistake -- the worktree-path-resolution trap: a `read`/
+  `grep` call against a bare `docs/DESIGN.md` path resolved against the session's default cwd, not
+  this worktree. The branch itself shipped without its doc deliverable, and `main` had a stray
+  uncommitted one-line edit. **Fix**: reverted the stray edit in the main checkout (`git checkout
+  -- docs/DESIGN.md` there, confirmed clean afterward) and re-applied the identical bullet directly
+  in this worktree's `docs/DESIGN.md` (now present at the file's own line 74, after "Pasted text
+  chips", confirmed by `git diff main...HEAD` touching `docs/DESIGN.md` on this branch).
+- **[HIGH, accessibility-auditor]** A restored (non-empty) draft's caret landed at position 0, not
+  the end, contradicting spec.md's own Clarifications (FR-001, Acceptance Scenario 1) -- live
+  Electron-confirmed by the reviewer and independently re-confirmed here. **Fix**:
+  `MessageInput.tsx`'s mount-only effect now calls `textareaRef.current?.setSelectionRange(end,
+  end)` (end = the restored value's length) alongside the existing conditional `focus()`, every
+  mount. **Live-verified** in a fresh isolated scratch instance (own `--user-data-dir` under
+  `C:/tmp`, this time with forward-slash paths after the prior run's backslash-path bug was
+  diagnosed and fixed -- see Low note below): restored a draft, read
+  `{"selectionStart":84,"selectionEnd":84,"len":84}` both before and after an explicit `.focus()`
+  call -- caret at the exact end, not 0, matching a freshly typed draft.
+- **[HIGH, test-reviewer]** Acceptance Scenario 3 / FR-003 (a *restored* text chip still
+  substitutes its full text on send) had no evidence -- the only send in the original round
+  happened after the chip had already been pruned. **Fix (verification only, no code change
+  needed)**: live-verified in the same fresh scratch instance: pasted a real PNG and a 967-char
+  chip (`VERIFICATION-PHRASE-ALPHA-7749: ... END-VERIFICATION-PHRASE-ALPHA-7749`) into Session
+  `earnest-bison`, switched to `calm-fox` and back (restoring both), confirmed the caret-at-end fix
+  above, then sent. The transcript's own user-turn bubble showed the **full, exact 967-character
+  original text** substituted in place of the chip's short label -- not the label -- directly
+  confirming FR-003 for a restored chip, screenshotted live.
+- **[HIGH, test-reviewer] -- partially closed.** Acceptance Scenario 2 / FR-002 (a *restored* image
+  still attaches on send) was intended to be closed in the same run by asking the agent to name the
+  pasted image's colour, but that real turn hit an unrelated OMP-side "thinking loop detected"
+  abort (a pre-existing model-flakiness failure mode, not a regression this spec introduced) before
+  replying, so the agent's own acknowledgement was not obtained this round. What *is* directly
+  confirmed: the restored `PendingImageAttachment` (same `id`/`base64`/`mimeType` as pasted) is
+  still present in `draft-store.ts`'s state at send time, and `handleSend`'s
+  `attachments.images.map(toImageContent)` / `window.refract.chat.send(sessionId, message, images)`
+  call is byte-identical to spec 009's own already-shipped, already-verified send path -- this
+  spec changes only where `attachments` is read from (the store instead of local state), never
+  what is built from it or how it is sent. Re-verifying the agent's own acknowledgement against a
+  non-flaky turn is the one piece of this round's evidence budget left undone; the code path itself
+  is unchanged from spec 009's own already-verified FR-006.
+- **[MEDIUM, code-reviewer + test-reviewer, same root cause from two angles]** Because the draft
+  now outlives the component, `handleSend`'s `await chat.send()` can straddle a Session switch away
+  and back, or the user simply continuing to type/paste during the request; an unconditional
+  send-success `clear(sessionId)` could then silently wipe a newer draft/attachments the old
+  local-`useState` code could never touch (a stale `setState` on an unmounted instance was always a
+  no-op). **Fix**: `handleSend` now reads `useDraftStore.getState().bySession[sessionId]` right
+  before clearing and only calls `clear(sessionId)` if both `text` and `attachments` are still
+  reference-identical to what this specific send captured at its own start: a draft that changed in
+  the meantime is left alone rather than destroyed (its now-stale, already-sent attachments stay
+  visibly pending until removed or sent again, a narrow, non-destructive residue, never a silent
+  loss of newer work). Verified by code reading (the exact race -- a slow `chat.send()` RPC
+  overlapping new typing -- has no practical repro within this round's evidence budget without
+  artificially stalling the RPC); `pnpm typecheck` confirms the guard compiles and type-narrows
+  correctly.
+- **[LOW, incidental]** The first live-verification attempt in this remediation round passed
+  `--user-data-dir=C:\tmp\pinion-composer-draft-verify-userdata` (backslashes) to `electron-vite
+  dev` via a POSIX shell, which silently stripped the backslashes and created a stray
+  `tmppinion-composer-draft-verify-userdata/` directory **inside this worktree** instead of under
+  `C:\tmp`. Caught before committing (`git status` showed it staged), deleted with an absolute,
+  explicitly-outside-the-directory `rm -rf` (per the standing safe-deletion rule), and every
+  later launch in this round used forward-slash paths (`C:/tmp/...`), confirmed to land in the
+  right place before reuse.
+- **[LOW, cheap, same files already being edited]** `handleSend`'s own stale comment ("clear the
+  draft via `setText('')` below") corrected to name `clear(sessionId)`, the function that has
+  actually done this since T003.
+- **[MEDIUM, test-reviewer, spec text only]** `spec.md`'s Edge Cases claimed an archived Session's
+  draft is "never read again, since no Session row can make it the visible Session again" -- false
+  for *archived* (only true for *deleted*): `SessionList.tsx`'s "Archived" section still renders an
+  archived Session's row, and opening or restoring it can make it visible again, showing its old
+  draft. **Fix**: `spec.md`'s Edge Cases now states the deleted/archived cases separately and
+  correctly; `data-model.md`'s own matching rule needed no change (it only claims the entry isn't
+  pruned, which was already true either way).
+
+### Not independently re-verified this round
+- FR-002's agent-acknowledgement half (see the High above) -- the code path is unchanged from
+  spec 009's own shipped, already-verified behaviour, but the live round-trip hit an unrelated
+  model-side abort before completing.
+- The Medium double-clear-race guard -- verified by code reading, not by an artificially stalled
+  RPC repro, per this round's evidence budget.
+
+Every other finding from the four reviewers (Low/informational: unused `EMPTY_DRAFT` export,
+`setAttachments`'s unused plain-value branch, `draft-store.ts` importing a type from `features/`
+rather than a shared module, no per-session cleanup on archive/delete, a restored `/`-prefixed
+draft reopening the slash menu, an in-flight paste's announcement being dropped if its Session is
+switched away mid-paste) was read and judged acceptable as specified, matching this repo's existing
+patterns (queue-store/commands-store/pending-requests-store also never prune on delete; the slash
+menu/ghost-text already intentionally re-derive on every mount per spec.md's own Clarifications),
+and left unchanged.
