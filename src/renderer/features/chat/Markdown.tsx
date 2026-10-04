@@ -10,7 +10,7 @@ import type { MermaidConfig } from 'mermaid'
 import { safeUrl } from '@/lib/safe-url'
 import { THEMES } from '../../../shared/themes'
 import { MERMAID_THEME_VARIABLES } from '../../../shared/mermaidTheme'
-import { useActiveThemeId } from '../../state/theme-store'
+import { useActiveThemeId } from '@/state'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
