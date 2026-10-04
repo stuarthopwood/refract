@@ -1,6 +1,6 @@
 import { cloneElement, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { CopyIcon, FolderIcon, FolderOpenIcon, GitBranchIcon } from 'lucide-react'
+import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, FolderOpenIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useSessionsStore } from '@/state'
@@ -58,7 +58,7 @@ export function SessionDetailsCard({
 
  return (
   <>
-   <HoverCard openDelay={500} onOpenChange={handleCardOpenChange}>
+   <HoverCard openDelay={750} onOpenChange={handleCardOpenChange}>
     <HoverCardTrigger asChild>
      {cloneElement(children, { 'aria-describedby': descriptionId })}
     </HoverCardTrigger>
@@ -78,26 +78,35 @@ export function SessionDetailsCard({
        <span className="truncate">{session.branch}</span>
        <span className="shrink-0 text-muted-foreground">from {session.baseBranch}</span>
       </div>
-      <p className="min-w-0 break-all text-xs text-muted-foreground">
-       {worktreeMissing ? (
-        <>
-         {session.worktreePath} <span className="text-destructive">(missing)</span>
-        </>
-       ) : (
-        session.worktreePath
-       )}
-      </p>
-      <p className="text-xs text-muted-foreground">{formatModelReadout(session)}</p>
-      <p className="text-xs text-muted-foreground">
-       {worktreeMissing
-        ? 'Not available'
-        : diffStatResult === 'loading'
-         ? 'Counting changes…'
-         : diffStatResult === null
-          ? 'Not available'
-          : formatDiffStat(diffStatResult)}
-      </p>
-      <div className="flex items-center gap-1.5 pt-1">
+      <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+       <MapPinIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+       <p className="min-w-0 break-all">
+        {worktreeMissing ? (
+         <>
+          {session.worktreePath} <span className="text-destructive">(missing)</span>
+         </>
+        ) : (
+         session.worktreePath
+        )}
+       </p>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+       <CpuIcon aria-hidden className="size-3.5 shrink-0" />
+       <span className="truncate">{formatModelReadout(session)}</span>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+       <FileDiffIcon aria-hidden className="size-3.5 shrink-0" />
+       <span className="truncate">
+        {worktreeMissing
+         ? 'Not available'
+         : diffStatResult === 'loading'
+          ? 'Counting changes…'
+          : diffStatResult === null
+           ? 'Not available'
+           : formatDiffStat(diffStatResult)}
+       </span>
+      </div>
+      <div className="flex items-center justify-end gap-1.5 pt-1">
        <Button variant="outline" size="xs" onClick={() => void copyPath()}>
         <CopyIcon aria-hidden />
         Copy path

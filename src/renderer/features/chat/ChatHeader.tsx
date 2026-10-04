@@ -1,5 +1,5 @@
 // Chat header (docs/DESIGN.md "Layout": "Chat header: Session name and branch, a Conversation
-// switcher ..."). The status dot reads `SessionSummary` from the sessions store directly; New
+// switcher ..."). The shared `StateIcon` reads `SessionSummary` from the sessions store directly; New
 // conversation and the Conversation history popover live in ConversationSwitcher. The pending
 // Approval mode chip that used to live here moved to the ApprovalModePill above the message box
 // (MessageInput.tsx, T098): that pill is the one place a mode change, pending or not, is shown.
@@ -10,17 +10,9 @@
 // `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
 // before the double-click ever reaches the page's own JS, so a renderer-driven toggle was dead
 // code and has been removed.
-import type { SessionStatus } from '../../../shared/model'
-import { cn } from '@/lib/utils'
 import { useSessionsStore } from '@/state'
+import { STATUS_LABEL, StateIcon } from '@/features/sessions/sessionDisplay'
 import { ConversationSwitcher } from './ConversationSwitcher'
-
-const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
-  idle: 'bg-state-idle',
-  working: 'bg-state-working',
-  'needs-you': 'bg-state-needs-you',
-  stopped: 'bg-state-stopped'
-}
 
 export function ChatHeader({ sessionId }: { sessionId: string }) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
@@ -29,11 +21,8 @@ export function ChatHeader({ sessionId }: { sessionId: string }) {
   return (
     <header className="drag-region flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
       <div className="flex min-w-0 items-center gap-2">
-        <span
-          className={cn('size-2 shrink-0 rounded-full', STATUS_DOT_CLASS[session.status])}
-          aria-hidden="true"
-          title={session.status}
-        />
+        <StateIcon status={session.status} />
+        <span className="sr-only">{STATUS_LABEL[session.status]}</span>
         <span className="truncate text-sm font-medium">{session.name}</span>
         <span className="shrink-0 truncate text-xs text-muted-foreground">{session.branch}</span>
       </div>

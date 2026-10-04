@@ -5,6 +5,13 @@ import refractHero from '@/assets/brand/refract-hero.png'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -23,6 +30,13 @@ import type { Repository } from '../../../shared/model'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
+
+// One action descriptor list builds both the row's "..." dropdown menu and its right-click
+// context menu (DESIGN.md "Session list keyboard and focus model"): the same options,
+// reachable either way, never two separately-maintained menus.
+type SessionRowAction =
+  | { kind: 'separator' }
+  | { kind: 'item'; key: string; label: string; variant?: 'destructive'; onSelect: () => void }
 
 function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   const isVisible = useSessionsStore((state) => state.visibleSessionId === session.id)
@@ -135,125 +149,166 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     openButtonRef.current?.focus()
   }, [renaming])
 
+  // The row's "..." menu and its right-click context menu share this one action list:
+  // one set of options, reachable two ways, never two menus to keep in sync.
+  const actions: SessionRowAction[] = [
+    {
+      kind: 'item',
+      key: 'rename',
+      label: 'Rename',
+      onSelect: () => {
+        renameRequestedRef.current = true
+        startRenaming()
+      }
+    },
+    // The same two actions the details card offers, kept here too since Radix hover
+    // cards are not keyboard-reachable.
+    { kind: 'item', key: 'copy-path', label: 'Copy worktree path', onSelect: () => void copyPath() },
+    { kind: 'item', key: 'reveal', label: 'Open worktree folder', onSelect: () => void reveal() },
+    isArchived
+      ? {
+          kind: 'item',
+          key: 'restore',
+          label: 'Restore',
+          onSelect: () => {
+            listFocusRequestedRef.current = true
+            captureFocusFallback()
+            void restore(session.id)
+          }
+        }
+      : {
+          kind: 'item',
+          key: 'archive',
+          label: 'Archive',
+          onSelect: () => {
+            listFocusRequestedRef.current = true
+            captureFocusFallback()
+            void archive(session.id)
+          }
+        },
+    ...(session.status !== 'stopped'
+      ? ([{ kind: 'item', key: 'stop', label: 'Stop agent', onSelect: () => void stopAgent(session.id) }] as const)
+      : []),
+    { kind: 'separator' },
+    {
+      kind: 'item',
+      key: 'delete',
+      label: 'Delete…',
+      variant: 'destructive',
+      onSelect: () => {
+        captureFocusFallback()
+        setDeleteOpen(true)
+      }
+    }
+  ]
+
+  function handleMenuCloseAutoFocus(event: Event): void {
+    if (renameRequestedRef.current) {
+      event.preventDefault()
+      renameRequestedRef.current = false
+    } else if (listFocusRequestedRef.current) {
+      event.preventDefault()
+      listFocusRequestedRef.current = false
+      focusListContainer()
+    }
+  }
+
   return (
-    <li ref={rowRef} className="group relative flex w-full items-center gap-2 rounded-md">
+    <li ref={rowRef} className="group relative w-full rounded-md">
       {isVisible && (
-        <span aria-hidden className="absolute inset-y-0.5 left-0 w-0.5 rounded-full bg-sidebar-primary" />
+        <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-sidebar-primary" />
       )}
-      {renaming ? (
-        <input
-          ref={renameInputRef}
-          autoFocus
-          value={draftName}
-          onChange={(event) => setDraftName(event.target.value)}
-          onBlur={() => void commitRename()}
-          onKeyDown={handleNameKeyDown}
-          aria-label="Session name"
-          className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1.5 text-sm outline-none"
-        />
-      ) : (
-        <SessionDetailsCard session={session} repository={repository} worktreeMissing={worktreeMissing}>
-          <button
-            ref={openButtonRef}
-            type="button"
-            aria-current={isVisible ? 'true' : undefined}
-            // A non-visible row only flips visibility: ChatPane's [visibleSessionId] effect is the single
-            // opener and applies the snapshot (transcript, queue, pending requests, stop banner). The
-            // visible row has no such effect to fire, so clicking it (waking an asleep Session) opens directly.
-            onClick={() => (isVisible ? void open(session.id) : setVisibleSessionId(session.id))}
-            onDoubleClick={startRenaming}
-            onKeyDown={handleOpenButtonKeyDown}
-            data-choice-item
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          {/* The whole row is one card surface (DESIGN.md "Session card layout"): this div, not
+              the open button alone, carries the hover/selected background, so the "..." trigger
+              reads as part of the same card rather than sitting past its edge. Full width of its
+              <li>, no leftover gutter. */}
+          <div
             className={cn(
-              'session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
-              isVisible && 'bg-sidebar-accent text-sidebar-accent-foreground'
+              'flex w-full items-center gap-2 rounded-md',
+              isVisible ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent'
             )}
           >
-            <StateIcon status={session.status} />
-            <span className="sr-only">{STATUS_LABEL[session.status]}</span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate font-medium">{session.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
-            </span>
-            <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
-            {session.unread && (
-              <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
+            {renaming ? (
+              <input
+                ref={renameInputRef}
+                autoFocus
+                value={draftName}
+                onChange={(event) => setDraftName(event.target.value)}
+                onBlur={() => void commitRename()}
+                onKeyDown={handleNameKeyDown}
+                aria-label="Session name"
+                className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1.5 text-sm outline-none"
+              />
+            ) : (
+              <SessionDetailsCard session={session} repository={repository} worktreeMissing={worktreeMissing}>
+                <button
+                  ref={openButtonRef}
+                  type="button"
+                  aria-current={isVisible ? 'true' : undefined}
+                  // A non-visible row only flips visibility: ChatPane's [visibleSessionId] effect is the single
+                  // opener and applies the snapshot (transcript, queue, pending requests, stop banner). The
+                  // visible row has no such effect to fire, so clicking it (waking an asleep Session) opens directly.
+                  onClick={() => (isVisible ? void open(session.id) : setVisibleSessionId(session.id))}
+                  onDoubleClick={startRenaming}
+                  onKeyDown={handleOpenButtonKeyDown}
+                  data-choice-item
+                  className="session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  <StateIcon status={session.status} />
+                  <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-medium">{session.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
+                  {session.unread && (
+                    <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-state-needs-you" />
+                  )}
+                  {session.unread && <span className="sr-only">Unread</span>}
+                </button>
+              </SessionDetailsCard>
             )}
-            {session.unread && <span className="sr-only">Unread</span>}
-          </button>
-        </SessionDetailsCard>
-      )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            ref={menuTriggerRef}
-            type="button"
-            aria-label={`${session.name} actions`}
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 aria-expanded:opacity-100"
-          >
-            <EllipsisVerticalIcon aria-hidden className="size-3.5" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          onCloseAutoFocus={(event) => {
-            if (renameRequestedRef.current) {
-              event.preventDefault()
-              renameRequestedRef.current = false
-            } else if (listFocusRequestedRef.current) {
-              event.preventDefault()
-              listFocusRequestedRef.current = false
-              focusListContainer()
-            }
-          }}
-        >
-          <DropdownMenuItem
-            onSelect={() => {
-              renameRequestedRef.current = true
-              startRenaming()
-            }}
-          >
-            Rename
-          </DropdownMenuItem>
-          {/* T069: the same two actions the details card offers, kept here too since Radix hover
-              cards are not keyboard-reachable. */}
-          <DropdownMenuItem onSelect={() => void copyPath()}>Copy worktree path</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void reveal()}>Open worktree folder</DropdownMenuItem>
-          {isArchived ? (
-            <DropdownMenuItem
-              onSelect={() => {
-                listFocusRequestedRef.current = true
-                captureFocusFallback()
-                void restore(session.id)
-              }}
-            >
-              Restore
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem
-              onSelect={() => {
-                listFocusRequestedRef.current = true
-                captureFocusFallback()
-                void archive(session.id)
-              }}
-            >
-              Archive
-            </DropdownMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  ref={menuTriggerRef}
+                  type="button"
+                  aria-label={`${session.name} actions`}
+                  className="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 aria-expanded:opacity-100"
+                >
+                  <EllipsisVerticalIcon aria-hidden className="size-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+                {actions.map((action, index) =>
+                  action.kind === 'separator' ? (
+                    <DropdownMenuSeparator key={`sep-${index}`} />
+                  ) : (
+                    <DropdownMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+                      {action.label}
+                    </DropdownMenuItem>
+                  )
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </ContextMenuTrigger>
+        {/* Right-click opens the same options the "..." trigger does (T117 new feature): one
+            action list, never a second menu to maintain. */}
+        <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+          {actions.map((action, index) =>
+            action.kind === 'separator' ? (
+              <ContextMenuSeparator key={`sep-${index}`} />
+            ) : (
+              <ContextMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+                {action.label}
+              </ContextMenuItem>
+            )
           )}
-          {session.status !== 'stopped' && (
-            <DropdownMenuItem onSelect={() => void stopAgent(session.id)}>Stop agent</DropdownMenuItem>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onSelect={() => {
-              captureFocusFallback()
-              setDeleteOpen(true)
-            }}
-          >
-            Delete…
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </ContextMenuContent>
+      </ContextMenu>
       <DeleteDialog
         session={session}
         open={deleteOpen}
@@ -296,15 +351,15 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
     <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
         <div className="flex items-center gap-1 px-1">
-          <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-            <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+          <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
             <span className="truncate">{repository.name}</span>
           </CollapsibleTrigger>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 aria-label={`New session from ${repository.defaultBranch} in ${repository.name}`}
                 aria-disabled={creating || undefined}
                 className="aria-disabled:opacity-50"
@@ -320,7 +375,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
               repository={repository}
               trigger={
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon-xs" aria-label={`New session from a branch in ${repository.name}`}>
+                  <Button variant="ghost" size="icon-sm" aria-label={`New session from a branch in ${repository.name}`}>
                     <GitBranchPlusIcon aria-hidden />
                   </Button>
                 </TooltipTrigger>
