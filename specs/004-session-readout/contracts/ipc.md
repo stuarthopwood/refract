@@ -17,7 +17,7 @@ changed channels are listed here. Everything else (the `Result<T>` envelope, err
 
 | Method | Returns | Notes |
 |---|---|---|
-| `sessions.open(id)` / `sessions.recover(id)` / `conversations.startNew(id)` / `conversations.open(id, file)` | `SessionSnapshot` (spec 001), now `{ runtime, conversations, readout }` | `readout: SessionReadout` (data-model.md) is the initial bundle for the chip row; subsequent changes arrive only via `readout:update` (below), mirroring how `transcript:patch` follows the initial transcript in `runtime`. |
+| `sessions.open(id)` / `sessions.recover(id)` / `conversations.startNew(id)` / `conversations.open(id, file)` | `SessionSnapshot` (spec 001), now `{ runtime, conversations, readout, subagents }` | `readout: SessionReadout` (data-model.md) is the initial bundle for the chip row; subsequent changes arrive only via `readout:update` (below), mirroring how `transcript:patch` follows the initial transcript in `runtime`. `subagents: SubagentSummary[]` is the current turn's subagent list as of this snapshot (the same shape `subagents:update` pushes), seeding the Subagent panel so re-applying a snapshot (a session switch, a view round-trip that remounts `ChatPane`) never wipes an already-running or already-finished turn's list back to empty while `readout.subagentCount` still shows it; subsequent changes still arrive only via `subagents:update`. |
 
 Changes chip data itself is **not** a new request: it is exactly spec 001's
 `sessions.diffStat(id)`, called by main (not the renderer) to assemble `SessionReadout.changes`,

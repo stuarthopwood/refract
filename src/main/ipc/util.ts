@@ -27,11 +27,15 @@ export function mapStoreThrown(err: unknown): Result<never> {
 }
 
 export async function buildSnapshot(agent: SessionAgent, session: Session): Promise<SessionSnapshot> {
-  // Spec 004: `turnStartedAt`/`subagents` are main-only bookkeeping (the renderer reads the
-  // derived `readout`/`subagents:update` instead), so they are excluded from `SessionRuntimeView`
-  // rather than sent twice over IPC.
-  const { turnStartedAt: _turnStartedAt, readout, subagents: _subagents, ...runtimeFields } = agent.runtimeSnapshot;
+  // Spec 004: `turnStartedAt` is main-only bookkeeping (the renderer reads the derived `readout`
+  // instead), so it is excluded from `SessionRuntimeView` rather than sent twice over IPC.
+  // `subagents` (T024 live-finding fix) is different: it IS the renderer-facing shape
+  // (`SubagentSummary[]`, the same one `subagents:update` pushes), so the top-level snapshot
+  // still carries it as a seed -- dropping it here left the Subagent panel's list wiped back to
+  // empty on every snapshot re-application (a Settings round-trip, a session switch away and
+  // back), even while the chip's own `readout.subagentCount` correctly kept showing the count.
+  const { turnStartedAt: _turnStartedAt, readout, subagents, ...runtimeFields } = agent.runtimeSnapshot;
   const runtime: SessionRuntimeView = runtimeFields;
   const conversations = await listConversations(session.sessionDir, session.currentConversation);
-  return { runtime, conversations, readout };
+  return { runtime, conversations, readout, subagents };
 }

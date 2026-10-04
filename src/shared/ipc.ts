@@ -117,6 +117,11 @@ export interface SessionSnapshot {
   runtime: SessionRuntimeView;
   conversations: ConversationInfo[];
   readout: SessionReadout; // spec 004: initial chip-row bundle; subsequent changes via readout:update
+  // spec 004 (T024 live-finding fix): the current turn's subagents, seeded here so a Subagent
+  // panel re-open after any ChatPane remount (a Settings round-trip, a session switch away and
+  // back) shows the real current list instead of an empty one -- subsequent changes still arrive
+  // via `subagents:update`, this is only the seed `sessions.open`/`recover` itself must not drop.
+  subagents: SubagentSummary[];
 }
 
 export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] };

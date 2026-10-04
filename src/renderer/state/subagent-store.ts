@@ -42,6 +42,14 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     const { sessionId } = get()
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
     set({ open: false, selectedId: null, streams: {} })
+    // T024 live-finding fix (FR-020, WCAG 2.1 AA 2.4.3): the panel stays permanently mounted,
+    // collapsed to zero width (App.tsx, T021's own note), so a focused element inside it (the
+    // Close button itself, most often) is never unmounted or blurred by the collapse -- without
+    // this, keyboard focus was silently stranded on a now off-screen, clipped button, matching
+    // `focusSessionsNav`'s own always-connected-fallback pattern (`lib/focus.ts`), moved here
+    // (rather than only in `SubagentPanel.tsx`'s own handler) so every `closePanel()` caller gets
+    // the same return-focus behaviour.
+    document.querySelector<HTMLElement>('button[aria-label^="Open subagents panel"]')?.focus()
   },
   selectSubagent: async (subagentId) => {
     const { sessionId } = get()
