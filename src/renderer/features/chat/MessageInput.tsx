@@ -3,7 +3,7 @@
 // only from `useQueueStore` (queue:update events), never from optimistic local state. The
 // slash-command menu (T044, FR-032, FR-033) lives in SlashMenu.tsx; this file only decides when
 // to show it and handles the keys that drive it.
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ClipboardEvent as ReactClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { ArrowUpIcon, CpuIcon, GaugeIcon, SquareIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -106,6 +106,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // live region from the slash-menu one below so an attachment event is never swallowed by (or
   // swallows) an unrelated "No matching commands" announcement.
   const [attachmentAnnouncement, setAttachmentAnnouncement] = useState<string | null>(null)
+  // A repeated identical announcement (e.g. pasting the same image twice) would otherwise never
+  // re-render the live region, since React bails out on an unchanged string -- clear first so the
+  // next microtask's set is always a real DOM mutation, even when the text itself repeats.
+  const announceAttachment = useCallback((message: string) => {
+    setAttachmentAnnouncement(null)
+    queueMicrotask(() => setAttachmentAnnouncement(message))
+  }, [])
   const attachmentsStatusId = `${sessionId}-attachments-status`
   const attachmentsSummaryId = `${sessionId}-attachments-summary`
 
@@ -507,7 +514,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   function announceChipRemoval(removed: readonly PendingTextChip[]) {
     const [first] = removed
     if (!first) return
-    setAttachmentAnnouncement(
+    announceAttachment(
       removed.length === 1 ? `Pasted text attachment ${first.label} removed.` : `${removed.length} pasted text attachments removed.`
     )
   }
@@ -535,7 +542,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         return
       }
       setAttachments((prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-      setAttachmentAnnouncement(`Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
+      announceAttachment(`Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
       return
     }
 
@@ -559,7 +566,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       ...prev,
       textChips: [...prev.textChips, { kind: 'text-chip', id: crypto.randomUUID(), text: pastedText, label }]
     }))
-    setAttachmentAnnouncement(`Pasted text collapsed into an attachment: ${label}. Review it in Pending attachments.`)
+    announceAttachment(`Pasted text collapsed into an attachment: ${label}. Review it in Pending attachments.`)
     requestAnimationFrame(() => {
       textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
     })
