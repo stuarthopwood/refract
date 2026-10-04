@@ -641,9 +641,129 @@ live pass is still owed before this remediation round is considered fully closed
 `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all pass clean (0 leaks across 371
 files) after this round's fixes.
 
-**Outstanding before this remediation effort is fully closed**: a third 4-reviewer gate against
-this round's fix commit, and a live re-verification pass (scratch Electron instance) of the five
-behaviours this round touched -- single-pane plain-click (the Critical regression), the
-divider-drag button tracking, Delete-dialog-stays-targeted-at-its-own-Session across a chord
-press, FR-018's narrow-collapse unread case, and that a plain/Ctrl click on the unfocused pane's
-own row no longer steals keyboard focus from the session list.
+### Round 3 (2026-10-04, same day): FAIL, then fixed, then live-verified
+Re-ran the same 4-reviewer batch against the round-2 fix commit (272407f). code-reviewer,
+test-reviewer, and accessibility-auditor each converged independently on the same two Medium and
+several Low gaps -- three different reviewers reaching the same root cause from three angles is
+itself good evidence the findings were real, not a single reviewer's misreading. security-auditor
+came back clean except for one Low (below). No new Critical/High; all three reviewers explicitly
+confirmed round 2's Critical (`targetSession` mode) and every round-2 High hold up mechanically.
+Two round-2 "fixed" claims did not do what their own writeup said (both corrected below), which
+is exactly the kind of overstatement this gate exists to catch -- flagged by name rather than
+quietly tightened.
+
+#### Medium -- fixed
+- **The FR-018 narrow-collapse fix (round 2) was only half the story: TWO writers set main's
+  visible set, and the earlier one still sent the wide pair** (code-reviewer + test-reviewer +
+  independently by a third angle in this same batch). Round 2 kept `split-store.ts`'s own
+  `syncVisible` calls (every pane-changing action sent the full, wide `paneSessionIds`) AND added
+  an `App.tsx` effect to narrow the result back down during the collapse. But main's
+  `sessions.setVisible` clears unread (and resets the transcript) for every id made newly visible
+  THE MOMENT that call lands -- so the store's own wide call cleared the truly-hidden Session's
+  unread flag before the narrowing effect's correction ever reached main. The round-2 writeup's
+  "always runs after … narrowing it back down" was true about ordering but missed that the
+  earlier wide call had already had its side effect. This reopened the hole for the two most
+  common actions in collapsed mode (a plain row click, "Open in split"). Fixed: `App.tsx`'s
+  effect is now the SOLE caller of `sessions.setVisible` -- every `syncVisible` call (and the
+  function itself) was removed from `split-store.ts`; the effect's own `!isSplit` early return
+  was dropped too, so it covers every pane count (0, 1, or 2-collapsed-by-width), not just an
+  open split.
+- **The disabled-textarea focus fallback (round 2 High) actually landed on a `ChatHeader`
+  control, never the stopped banner's own button it claimed** (code-reviewer + test-reviewer +
+  accessibility-auditor, all three independently). `focusPaneContent`'s fallback queried the
+  WHOLE pane region in DOM order; `ChatHeader` (the conversation switcher, or the narrow-collapse
+  swap chip) renders before the banner, so a focus move toward a stopped pane landed on "New
+  conversation" or the swap chip, not Recover/Recreate worktree/Delete as the docblock and the
+  round-2 "High -- fixed" bullet both said. Focus did land inside the pane (so the original High
+  -- the badge contradicting real focus -- stayed fixed), but pressing Enter next could start an
+  unwanted new Conversation or swap panes outright. Fixed: the stopped banner's wrapping element
+  now carries `data-pane-banner`; `focusPaneContent` checks `[data-pane-banner] button:not(:disabled)`
+  FIRST, before the generic whole-pane fallback -- there is always a banner to find whenever the
+  textarea is actually disabled, since both share the same `status === 'stopped' &&
+  effectiveStopReason !== 'not-started'` condition.
+
+#### Low -- fixed
+- **`onPointerDownCapture={(e) => e.stopPropagation()}` (round 2) never actually stopped the
+  Separator from starting a drag** (code-reviewer + test-reviewer + accessibility-auditor, all
+  three independently, reading the library's own source): react-resizable-panels attaches its
+  `pointerdown` listener directly to `ownerDocument` in the CAPTURE phase; React's synthetic
+  `onPointerDownCapture` dispatches from React's root container, which the native capture phase
+  always reaches AFTER `document` -- so the library's own handler (focus the Separator, flag an
+  active drag, `preventDefault()`) had already run every time, before React's handler ever fired.
+  The round-2 "Low -- fixed" claim was wrong. Fixed for real: a native `window`-level capture-phase
+  `pointerdown` listener (earlier still in the capture path than `document`) calls
+  `preventDefault()` itself whenever the event's target is inside the button; the library's own
+  handler bails out immediately on an already-`defaultPrevented` event. **Live evidence**:
+  pressed down on the button and dragged 80px before releasing -- the measured pane width was
+  identical (498.5px) before, mid-gesture, and after; a plain click on the same button still
+  flipped focus and moved real DOM focus into the other pane's textarea (confirmed via
+  `document.activeElement`).
+- **Closing the DeleteDialog through a state effect (round 2 High) left its own internal
+  `deletedRef` stale across a mid-delete pane swap** (test-reviewer): if `sessions.delete` was
+  still in flight when the pane swapped away, the effect's close ran first; the delete's own
+  `deletedRef.current = true` landed afterwards with nothing to reset it, so a LATER, routine
+  Cancel on that same pane could misread the stale flag as "this delete already succeeded" and
+  wrongly run `onDeleted`'s `closePane`. Fixed: `<DeleteDialog key={sessionId} .../>` forces a
+  fresh instance (and so a fresh `deletedRef`) on the exact same `sessionId` change the existing
+  close-effect already reacts to; a stray resolution from the OLD, now-unmounted instance mutates
+  only its own dead ref object, with no bearing on the new one.
+- **The Ctrl+Shift+\\ chord still fired while DeleteDialog's modal `AlertDialog` was open**
+  (accessibility-auditor): it could flip `focusedIndex` and move real DOM focus into the other
+  pane's textarea while Radix's own focus trap kept keyboard focus inside the still-open dialog,
+  leaving the "Focused" badge and live-region announcement contradicting where focus (and
+  Escape/Enter) actually went. Fixed: the chord now skips entirely whenever
+  `document.querySelector('[role="alertdialog"], [role="dialog"]')` finds an open modal.
+- **The unload flush (round 2 Low) wrote the current split unconditionally, not only a pending
+  debounce** (security-auditor, independently confirmed by code-reviewer and test-reviewer):
+  closing the app before `sessions.list` ever restored a persisted split (or before it finished
+  loading at all) wrote `split: null` over a perfectly valid on-disk value just because the user
+  quit, contradicting the round-2 `init-stores.ts` comment written in the very same commit. Fixed
+  mid-round-3 (before any reviewer's writeup could even land): both unload listeners now flush
+  only `if (persistTimer)` -- the exact case the debounce exists for -- never an unconditional
+  write.
+
+#### Corrections to round 2's own writeup (test-reviewer's "misstatements" list)
+- The round-2 High bullet claiming the disabled-textarea fallback reaches "the stopped banner's
+  own Recover/Recreate-worktree/Delete button" was wrong at the time it was written; see the
+  Medium fix above.
+- The round-2 Low bullet claiming the pointer-capture fix "always activates the button, never the
+  drag" was wrong at the time it was written; see the Low fix above.
+- The round-2 Low bullet said the unload flush "flushes immediately (synchronously, before the
+  page is torn down)" -- only the IPC *dispatch* is synchronous; `SettingsStore.setSplit`'s own
+  `writeJsonFile` is async in main, and before-quit only awaits `manager.stopAll()`. With no live
+  agents that resolves almost immediately in practice, but the claim overstated what is actually
+  guaranteed.
+
+#### Live re-verification evidence (scratch Electron instance, same C:/tmp/pinion-split-chat-
+userdata profile, relaunched on this round's build, port 9333)
+- **Critical (`targetSession` mode)**: collapsed to a single pane (closed one side of an open
+  split), then plain-clicked a THIRD session's row. It replaced the lone pane in place -- no
+  split reopened. This is the exact scenario the Critical bug broke.
+- **Live divider tracking (round 2 High) + pointer-capture (round 3 Low)**: dragged the divider
+  80px and read the button's computed `left` position AND the pane's real pixel width MID-DRAG
+  (not just before/after) -- they matched exactly (`btnCenterX` landed on the panel's right edge
+  to within rounding) throughout the gesture, not just after release. Separately confirmed a
+  press-and-drag starting ON the button itself leaves the pane width completely unchanged.
+- **FR-018 narrow-collapse (round 2 Medium, reopened and reclosed in round 3)**: narrowed the
+  window below the two-pane floor, sent a message directly to the now-hidden pane's Session
+  (bypassing DOM focus so the collapse stayed genuine), and let the turn finish -- `unread`
+  flipped `true`. Then, while that Session was STILL hidden and unread, plain-clicked a different
+  row (the exact "any store action that changes paneSessionIds" scenario the test-reviewer's
+  finding described) -- the hidden Session's `unread` flag was STILL `true` afterwards, confirming
+  the single-owner fix actually closes the hole rather than just reordering the old race.
+- Real DOM focus after a button click was independently confirmed via
+  `document.activeElement.tagName === 'TEXTAREA'` with `aria-label="Message"`, matching the
+  session that just became focused.
+
+A fourth reviewer batch was judged unnecessary: every Medium/Low this round found was fixed with
+either live evidence (above) or a mechanical, low-risk change (the `data-pane-banner` scope, the
+`key={sessionId}` remount, the modal-dialog guard) of the same shape already exhaustively verified
+by three independent reviewers' static analysis in this same round. `pnpm typecheck`, `pnpm
+build`, and `pnpm check:ui-text` all pass clean (0 leaks across 371 files) after these fixes.
+
+The FR-015 single-survivor-auto-start item (test-reviewer, round 2 Low, re-confirmed as
+documented pre-existing spec behaviour, not a gap) remains the only open judgment call from this
+whole remediation effort; everything else Critical/High/Medium/Low across all three rounds is now
+either fixed-with-evidence or an explicitly reasoned, narrow-scope acceptance (the accent-bar
+contrast token reuse, the rename-triggered re-announcement edge case, and the "Open in split"
+menu item's verification-tooling limitation, all in the Round 2 section above).

@@ -37,14 +37,25 @@ interface StopInfo {
  * (`agent-exited`/`worktree-missing`/`start-failed`) renders MessageInput's textarea `disabled`
  * (MessageInput.tsx), so a plain `textarea?.focus()` silently no-ops there -- both the focus-move
  * chord/button and the close-pane refocus used that one selector, so both regressed identically
- * for a stopped target pane. Falls back to the first enabled focusable element in the pane (the
- * stopped-Session banner's Recover/Recreate worktree button) so a focus move is never silently
- * swallowed. */
+ * for a stopped target pane. Round 3 (code-reviewer/accessibility-auditor/test-reviewer, Medium):
+ * the first version of this fallback queried the WHOLE pane region, landing on whichever enabled
+ * control happened to come first in DOM order -- `ChatHeader` renders before the stopped banner,
+ * so it actually landed on the conversation switcher or the narrow-collapse swap chip, not the
+ * banner's own Recover/Recreate worktree/Delete button this docblock and tasks.md both claimed.
+ * Now checks the banner (marked by `data-pane-banner` below) FIRST, and only falls back to the
+ * generic whole-pane scan when there is no banner to focus (there always is one whenever the
+ * textarea is actually disabled -- `showBanner` and MessageInput's own `disabled` share the same
+ * `status === 'stopped' && effectiveStopReason !== 'not-started'` condition). */
 function focusPaneContent(container: HTMLElement | null): void {
   if (!container) return
   const textarea = container.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')
   if (textarea) {
     textarea.focus()
+    return
+  }
+  const bannerButton = container.querySelector<HTMLElement>('[data-pane-banner] button:not(:disabled), [data-pane-banner] [href]')
+  if (bannerButton) {
+    bannerButton.focus()
     return
   }
   container
@@ -136,7 +147,13 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
   // the narrow-window collapse and via a notification's `ui:open-session`. An open DeleteDialog
   // reads the live `session` prop, so it would then delete whatever Session this pane swapped
-  // to, not the one it was opened for. Closes it outright on any sessionId change.
+  // to, not the one it was opened for. Closes it outright on any sessionId change. Round 3
+  // (test-reviewer, Low): closing it through this state update alone left `<DeleteDialog>`'s own
+  // internal `deletedRef` stale across the swap -- if a delete was still in flight when the pane
+  // swapped away, that flag could flip true just as this effect's close ran, and a LATER, routine
+  // Cancel on this same pane would misread it as "this delete already succeeded" and wrongly
+  // close the pane. `key={sessionId}` on `<DeleteDialog>` below forces a fresh instance (and so a
+  // fresh `deletedRef`) on the same sessionId change this effect already reacts to.
   useEffect(() => {
     setDeleteOpen(false)
   }, [sessionId])
@@ -373,7 +390,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         )}
       </div>
       {showBanner && (
-        <div className="shrink-0 px-4 pt-3">
+        <div data-pane-banner className="shrink-0 px-4 pt-3">
           <Alert variant="destructive">
             <AlertTriangleIcon />
             <AlertTitle>{describeStopReason(effectiveStopReason, effectiveStopDetail)}</AlertTitle>
@@ -406,6 +423,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         </div>
       )}
       <DeleteDialog
+        key={sessionId}
         session={session}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}

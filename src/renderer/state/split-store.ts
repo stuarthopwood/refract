@@ -50,17 +50,16 @@ interface SplitState {
 }
 
 export const useSplitStore = create<SplitState>((set, get) => {
-  // Tells main which sessions are currently shown (contracts/ipc.md `sessions.setVisible`), so
-  // unread-clearing, transcript-patch forwarding, and spec 004's readout/subagent forwarding all
-  // reach every visible pane, not just one.
-  function syncVisible(paneSessionIds: string[]): void {
-    window.refract.sessions.setVisible(paneSessionIds).then(
-      (result) => {
-        if (!result.ok) console.error('sessions.setVisible failed', result.error)
-      },
-      (err: unknown) => console.error('sessions.setVisible threw', err)
-    )
-  }
+  // Round 3 (code-reviewer/test-reviewer, Medium): `syncVisible` used to live here and get
+  // called by every action below with the full `paneSessionIds` array -- correct only while
+  // both panes are genuinely on screen. During the narrow-window collapse, main's
+  // `sessions.setVisible` clears unread (and resets the transcript) for every id made newly
+  // visible IMMEDIATELY, so a store-driven call sending both ids re-cleared the truly-hidden
+  // pane's unread flag before App.tsx's own narrowing effect could correct it, reopening the
+  // exact FR-018 hole that effect exists to close. `App.tsx` is now the SOLE caller of
+  // `sessions.setVisible`, derived from what it actually renders (`paneSessionIds`, `isSplit`,
+  // `canShowSplit`, `frontSessionId`) -- every call below that used to call `syncVisible` no
+  // longer does; that effect picks up the very same state changes after this store commits them.
 
   // Browser `setTimeout` (this is renderer/DOM code, not Node) returns a numeric handle.
   let persistTimer: number | undefined
@@ -96,9 +95,17 @@ export const useSplitStore = create<SplitState>((set, get) => {
   // closes the window inside that window, and the pending timer's own write never runs. Flushes
   // immediately (synchronously, before the page is torn down) on both events Chromium/Electron
   // fire for a closing window.
+  // Quality-gate remediation (security-auditor, round 3, Low): only flush when a debounced write
+  // is genuinely pending -- calling `persist()` unconditionally on every close would also fire
+  // when nothing was waiting (e.g. this launch's `sessionsLoad.ok` was false, so the split was
+  // never restored at all, per init-stores.ts's own comment), overwriting a perfectly valid
+  // on-disk split with `null` just because the user quit, not because they changed anything.
   if (typeof window !== 'undefined') {
-    window.addEventListener('beforeunload', () => persist())
-    window.addEventListener('pagehide', () => persist())
+    const flushPending = () => {
+      if (persistTimer) persist()
+    }
+    window.addEventListener('beforeunload', flushPending)
+    window.addEventListener('pagehide', flushPending)
   }
 
   function withoutPristine(sessionId: string): Set<string> {
@@ -136,7 +143,6 @@ export const useSplitStore = create<SplitState>((set, get) => {
       }
       const next = mode === 'split' && existing ? [existing, sessionId] : [sessionId]
       set({ paneSessionIds: next, pristineIds })
-      syncVisible(next)
       persist()
       return
     }
@@ -156,7 +162,6 @@ export const useSplitStore = create<SplitState>((set, get) => {
     const next = replaceAt(paneSessionIds, replaceIndex, sessionId)
     if (!next) return
     set({ paneSessionIds: next, pristineIds })
-    syncVisible(next)
     persist()
   }
 
@@ -200,7 +205,6 @@ export const useSplitStore = create<SplitState>((set, get) => {
       if (survivor === undefined) return
       const next = [survivor]
       set({ paneSessionIds: next, focusedIndex: 0 })
-      syncVisible(next)
       persist()
     },
 
@@ -223,7 +227,6 @@ export const useSplitStore = create<SplitState>((set, get) => {
         dividerPercent: split.dividerPercent,
         pristineIds: new Set(split.sessionIds)
       })
-      syncVisible(paneSessionIds)
     },
 
     // Quality-gate remediation (code-reviewer, Medium): the previous `closePane`-based
@@ -241,7 +244,6 @@ export const useSplitStore = create<SplitState>((set, get) => {
         focusedIndex: 0,
         pristineIds: new Set([...pristineIds].filter((id) => next.includes(id)))
       })
-      syncVisible(next)
       persist()
     }
   }

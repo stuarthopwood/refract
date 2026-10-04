@@ -48,6 +48,7 @@ export function App() {
   const focusedIndex = useSplitStore((state) => state.focusedIndex)
   const dividerPercent = useSplitStore((state) => state.dividerPercent)
   const subagentPanelRef = useRef<PanelImperativeHandle>(null)
+  const focusMoveButtonRef = useRef<HTMLButtonElement>(null)
   const [chatWidthPx, setChatWidthPx] = useState<number>(Number.POSITIVE_INFINITY)
   // Quality-gate remediation (code-reviewer, round 2, High): the focus-move button's `left` was
   // reading the PERSISTED `dividerPercent`, which `onLayoutChanged` only updates once a drag or
@@ -58,10 +59,15 @@ export function App() {
   // instead (fires on every pointer move AND every programmatic layout change, not just completed
   // user interactions) purely for the button's own position; `dividerPercent`/`onLayoutChanged`
   // remain the persisted, debounced source of truth for everything else.
+  // Round 3 (code-reviewer/test-reviewer, Medium): the sync effect this first shipped with
+  // (`useEffect(() => setLiveDividerPercent(dividerPercent), [dividerPercent])`) raced the
+  // Group's own mount-time `onLayoutChange` emit -- both fire for the same commit when a split
+  // mounts with a restored `dividerPercent` the `minSize={360}` floor re-clamps, and the passive
+  // effect below the Group's layout effect runs LAST, overwriting the library's correct clamped
+  // value with the stale persisted one. Removed: `onLayoutChange` alone already covers every
+  // case (it fires on every mount, not just drags/later changes), so the `useState` initial
+  // value only matters for the one frame before that first mount emit lands.
   const [liveDividerPercent, setLiveDividerPercent] = useState(dividerPercent)
-  useEffect(() => {
-    setLiveDividerPercent(dividerPercent)
-  }, [dividerPercent])
 
   const isSplit = paneSessionIds.length === 2
   const canShowSplit = chatWidthPx >= MIN_SPLIT_WIDTH_PX
@@ -89,6 +95,12 @@ export function App() {
     if (!isSplit) return
     function onKeyDown(event: KeyboardEvent) {
       if (!event.ctrlKey || !event.shiftKey || event.code !== 'Backslash') return
+      // Round 3 (accessibility-auditor, Low): skips while a modal dialog (DeleteDialog's
+      // AlertDialog) is open -- without this, the chord could flip `focusedIndex` and move real
+      // DOM focus into the OTHER pane's textarea while Radix's own FocusScope keeps keyboard
+      // focus trapped inside the still-open dialog, leaving the "Focused" badge and live-region
+      // announcement contradicting where focus (and the Escape/Enter keys) actually go.
+      if (document.querySelector('[role="alertdialog"], [role="dialog"]')) return
       event.preventDefault()
       useSplitStore.getState().focusOther()
     }
@@ -96,18 +108,40 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isSplit])
 
-  // Quality-gate remediation (test-reviewer, round 2, Medium): FR-018 ("a session shown in
-  // either pane counts as viewed") is implemented by `split-store.ts`'s own `syncVisible` calls,
-  // which always mark BOTH `paneSessionIds` visible -- correct while both panes are genuinely
-  // on screen, but during the narrow-window collapse only `frontSessionId`'s pane actually
-  // renders (the other pane's content is unmounted, reachable only via the swap chip), so a turn
-  // finishing in the truly-hidden Session was never marked unread, contradicting FR-018/SC-006's
-  // own "neither pane" half. Re-asserts the REAL rendered visibility set after every relevant
-  // change; this always runs after whichever store action's own (wide-assuming) `syncVisible`
-  // call just fired, narrowing it back down to one id whenever the collapse is active.
+  // Round 3 (code-reviewer/accessibility-auditor/test-reviewer, Low): the React
+  // `onPointerDownCapture` prop this first shipped with on the button below never ran early
+  // enough -- react-resizable-panels attaches its own `pointerdown` listener directly to
+  // `ownerDocument` in the CAPTURE phase, and the capture phase always reaches `document` before
+  // it reaches React's root container (where React's synthetic `onPointerDownCapture` actually
+  // dispatches from), so the library's handler -- which focuses the Separator, flags an active
+  // drag, and calls `preventDefault()` -- had already run by the time React's handler fired. A
+  // native listener on `window` (earlier still in the capture path than `document`) that calls
+  // `preventDefault()` itself when the event's target is inside this button pre-empts it for
+  // real: the library's own handler bails out immediately whenever the event arrives already
+  // `defaultPrevented`.
   useEffect(() => {
-    if (!isSplit) return
-    const visible = canShowSplit ? paneSessionIds : frontSessionId ? [frontSessionId] : []
+    function onPointerDownCapture(event: PointerEvent) {
+      if (focusMoveButtonRef.current?.contains(event.target as Node)) event.preventDefault()
+    }
+    window.addEventListener('pointerdown', onPointerDownCapture, { capture: true })
+    return () => window.removeEventListener('pointerdown', onPointerDownCapture, { capture: true })
+  }, [])
+
+  // Quality-gate remediation (test-reviewer, round 2, Medium; then round 3, Medium, same gap):
+  // FR-018 ("a session shown in either pane counts as viewed") needs exactly ONE place deciding
+  // what main thinks is visible. Round 2 kept `split-store.ts`'s own `syncVisible` calls (always
+  // sending BOTH `paneSessionIds`) AND added this effect to narrow the result back down during
+  // the narrow-window collapse -- but main's `setVisible` clears unread (and resets the
+  // transcript) for every id made newly visible the MOMENT the store's wide call lands, before
+  // this effect's own narrowing call ever reaches main; the hidden Session's unread flag was
+  // already cleared by the time the correction arrived, so the hole stayed open for the most
+  // common actions (a plain row click, "Open in split"). This effect is now the SOLE caller of
+  // `sessions.setVisible` -- every `syncVisible` call was removed from `split-store.ts` -- and
+  // covers every pane count, not just an open split: `paneSessionIds.length` 0 (nothing visible),
+  // 1 (today's single-pane case), or 2 collapsed-by-width (only `frontSessionId`'s pane actually
+  // renders) all resolve to exactly what's on screen.
+  useEffect(() => {
+    const visible = isSplit && canShowSplit ? paneSessionIds : frontSessionId ? [frontSessionId] : []
     window.refract.sessions.setVisible(visible).then(
       (result) => {
         if (!result.ok) console.error('sessions.setVisible failed', result.error)
@@ -233,19 +267,13 @@ export function App() {
                         second pane's own content; the library's hit-region scan sorts by
                         `offsetLeft`, not DOM order, so this placement does not affect it. */}
                     <button
+                      ref={focusMoveButtonRef}
                       type="button"
                       className="absolute top-1/2 z-20 flex size-6 -translate-x-1/2 -translate-y-10 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                       style={{ left: `${liveDividerPercent}%` }}
                       title="Move focus to other pane (Ctrl+Shift+\)"
                       aria-label="Move focus to the other pane"
                       aria-keyshortcuts="Control+Shift+\"
-                      // Quality-gate remediation (accessibility-auditor, round 2, Low): this
-                      // button's centre sits inside the Separator's own widened pointer hit
-                      // region (`resizeTargetMinimumSize`), whose capture-phase `pointerdown`
-                      // listener would otherwise start a divider drag before the button's own
-                      // click handler ever runs. Stops that at the capture phase so a click here
-                      // always activates the button, never the drag.
-                      onPointerDownCapture={(event) => event.stopPropagation()}
                       onClick={() => useSplitStore.getState().focusOther()}
                     >
                       <ArrowLeftRightIcon aria-hidden className="size-3.5" />
