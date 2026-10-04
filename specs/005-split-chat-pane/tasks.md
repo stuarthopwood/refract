@@ -49,8 +49,12 @@ issue titles are prefixed `005-` (e.g. `005-T001`) since spec 001 already owns p
       `unread` and flushes a transcript `reset` for every newly-visible id) and the
       `isVisible`/`patch`-forwarding closures inside `getOrCreateAgent` to set-membership checks,
       so the existing per-session unread rule in `SessionAgent.setStatus` now correctly reflects
-      "shown in either pane" (FR-018, SC-006) with no change to `SessionAgent.ts` itself (depends
-      on T001). (#180)
+      "shown in either pane" (FR-018, SC-006) with no change to `SessionAgent.ts` itself. The
+      `readout`/`subagents`/`subagentPatch` forwarding closures in the same `getOrCreateAgent`
+      method (added by spec 004, after this task was originally written) gate on the exact same
+      singular `this.visibleSessionId` field as `patch` does, right next to it — convert all four
+      closures to the same set-membership check together, in this one task, not three separate
+      ones (convergence note below; depends on T001). (#180)
 - [ ] T005 `src/main/ipc/sessions.ts`: update the `SESSIONS_SET_VISIBLE` handler to accept and
       validate `string[]` instead of `string \| null` (depends on T002, T004). (#183)
 - [ ] T006 `src/main/ipc/settings.ts`: add the `SETTINGS_SET_SPLIT` handler, calling
@@ -291,3 +295,49 @@ Task: "T011 [P] src/renderer/state/index.ts + init-stores.ts: export useSplitSto
   independent testability.
 
 GitHub issues: every task has an issue titled `005-Tnnn: ...`.
+
+---
+
+## Convergence (2026-10-04): spec 004 landed after this spec was written
+
+This spec's Phase 1/2 tasks (T001-T016) were authored 2026-10-02, before spec 004 (session
+readout chips, Subagents panel) landed on `main`. Spec 004 added two more places that carry a
+singular "the one visible Session" assumption, beyond the `SessionManager.ts` `patch` forwarder
+and `visibleSessionId`/`transcript-store.ts` this spec's Phase 1/2 already generalise. Both are
+closed by the tasks below rather than silently left as a gap once two panes exist.
+
+1. **`src/main/SessionManager.ts`'s `readout`/`subagents`/`subagentPatch` forwarding closures**
+   (`getOrCreateAgent`) gate on the same singular `this.visibleSessionId` field the `patch`
+   closure does — without a fix, a pane's readout chips and Subagents chip/panel data would
+   silently stop updating the moment a second pane existed, for whichever pane's session is not
+   picked as "the" visible one. Folded directly into **T004** above (same file, same
+   generalise-to-set-membership change), not a separate task.
+- [ ] T030 [P] `src/renderer/state/readout-store.ts`: generalise from a single
+      `{ sessionId, readout, subagents }` triple to per-session storage,
+      `Record<sessionId, { readout: SessionReadout; subagents: SubagentSummary[] }>` — the same
+      shape `queue-store.ts`/`pending-requests-store.ts`/`commands-store.ts` already use — so each
+      pane's own chip row keeps its own live readout/subagent data independent of the other pane,
+      instead of the single shared field silently belonging to whichever pane last called
+      `reset()`. Update every call site: `ChatPane.tsx`'s `applySnapshot` (keys by its own
+      `sessionId` argument, already per-pane once T013/T014 land), `init-stores.ts`'s
+      `onReadoutUpdate`/`onSubagentsUpdate` handlers (already carry `sessionId`, just route to the
+      per-session map instead of the single field), and `ReadoutChips.tsx`'s reads (select by the
+      `sessionId` prop ChatPane already passes down, not an implicit "the" visible Session)
+      (depends on T013, T014). (#384)
+- [ ] T031 [P] Bind the one shared Subagents panel (spec 004) to a pane explicitly, not silently
+      to whichever pane is merely focused: activating a Subagents chip in either pane
+      opens/retargets the shared panel to that pane's session (`useSubagentPanelStore.openPanel`
+      already takes an explicit `sessionId`, unchanged); moving focus between panes alone (the
+      focus-move chord, a row click, Ctrl+click) MUST NOT retarget an already-open panel — it
+      keeps showing whichever session's chip last opened it, mirroring spec 004's own existing
+      rule that the panel never silently re-targets except on an explicit user action (Close, a
+      new turn starting, the Session it is showing vanishing). `src/renderer/App.tsx`'s
+      `onResize` drag-collapse fallback (today keyed off the singular `visibleSessionId` from
+      `sessions-store.ts`) opens for the **focused pane's** session instead, once that concept
+      exists (depends on T018). Document the decision as a dated Q&A under spec.md's
+      Clarifications and as a research.md Decision 10; update `docs/DESIGN.md`'s Layout section
+      to note the panel is shared across a split, bound by explicit activation. (#385)
+
+GitHub issues for T030/T031 created with `gh issue create` against the existing
+`stuarthopwood/refract` repo, matching this spec's own issue-numbering convention.
+

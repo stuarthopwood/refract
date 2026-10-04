@@ -21,6 +21,16 @@ here because each pane's text must fill that pane's own width once the chat area
   -> A: Replace the focused pane: one pane is focused and marked; clicking a row shows that
   session in the focused pane; clicking inside a pane focuses it.
 
+### Session 2026-10-04 (convergence with spec 004)
+
+- Q: Spec 004's Subagents panel is a single, shared right-side panel keyed to one Session. Once
+  two panes exist, which pane does it belong to -- the focused one, always, or whichever pane's
+  Subagents chip the developer actually clicked? -> A: Whichever pane's chip was clicked. The
+  panel stays bound to the session that last explicitly opened or retargeted it; moving focus
+  between panes on its own never silently retargets an already-open panel, matching spec 004's
+  own existing rule that the panel only ever changes what it shows on an explicit user action
+  (Close, a new turn starting, the shown Session vanishing) -- see research.md Decision 10.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Put a second session beside the first (Priority: P1)
