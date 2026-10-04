@@ -7,8 +7,7 @@ import { create } from 'zustand'
 // behaviour on without re-touching this file's shape.
 
 export type MainView = 'chat' | 'pull-requests' | 'settings' | 'manage-sessions'
-// Spec 007 adds 'appearance' later; not built here.
-export type SettingsSectionId = 'session-readout'
+export type SettingsSectionId = 'session-readout' | 'appearance'
 
 interface ViewState {
   view: MainView
@@ -31,6 +30,9 @@ export const useViewStore = create<ViewState>((set) => ({
   openChat: (repositoryId) => set((state) => ({ view: 'chat', repositoryId: repositoryId ?? state.repositoryId })),
   openPullRequests: (repositoryId) => set({ view: 'pull-requests', repositoryId }),
   openSettings: (section) =>
-    set({ view: 'settings', settingsSection: section === 'session-readout' ? section : DEFAULT_SETTINGS_SECTION }),
+    set({
+      view: 'settings',
+      settingsSection: section === 'session-readout' || section === 'appearance' ? section : DEFAULT_SETTINGS_SECTION
+    }),
   openManageSessions: () => set({ view: 'manage-sessions' })
 }))
