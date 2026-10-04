@@ -46,9 +46,21 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
   const [result, setResult] = useState<DeleteCheck | null>(check ?? null)
   const [error, setError] = useState<string | null>(null)
   const deletedRef = useRef(false)
+  // Live, not closure-captured: handleDelete's own `session` is fixed to whatever it was
+  // when that specific call started (an ordinary JS closure), so it can never detect that a
+  // DIFFERENT Session's dialog is now showing by the time its await resolves. This ref is
+  // reassigned every render, so it always reflects whichever Session is current *right now*.
+  const sessionIdRef = useRef(session.id)
+  sessionIdRef.current = session.id
 
   useEffect(() => {
     if (!open) return
+    // Round 4 fix (real bug found by review after the deleteForId refactor landed): this
+    // instance now persists across a Session change instead of remounting, so a stale
+    // deletedRef/deleting from a PREVIOUS Session's delete must never leak into a dialog
+    // freshly opened for a DIFFERENT Session.
+    deletedRef.current = false
+    setDeleting(false)
     setError(null)
     if (check) {
       setResult(check)
@@ -72,9 +84,20 @@ export function DeleteDialog({ session, open, onOpenChange, check, onDeleted, on
   }, [open, session.id, check])
 
   async function handleDelete(): Promise<void> {
+    // Capture which Session this call is actually deleting: `session` is a prop that can
+    // change (to a DIFFERENT Session) while this await is in flight, now that the dialog no
+    // longer remounts on a Session change. `session.id` itself is useless for detecting that
+    // after the await -- it's fixed by this ordinary closure to whatever it was when this
+    // call started, so it can never disagree with `deletingId`. `sessionIdRef` is the live
+    // value instead, reassigned on every render.
+    const deletingId = session.id
     setDeleting(true)
     setError(null)
-    const response = await window.refract.sessions.delete(session.id, { confirmed: true })
+    const response = await window.refract.sessions.delete(deletingId, { confirmed: true })
+    // The dialog may now belong to a different Session entirely (this component persists
+    // across a Session change; see the effect above). If so, this stale resolution must not
+    // touch `deleting`, `deletedRef`, or close whatever is currently open for the new Session.
+    if (sessionIdRef.current !== deletingId) return
     setDeleting(false)
     if (!response.ok) {
       setError(response.error.message)
