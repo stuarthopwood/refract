@@ -13,16 +13,18 @@ import { useSubagentPanelStore } from './subagent-store'
 import { useSplitStore } from './split-store'
 
 // Awaits an initial-load request; an error or a rejected invoke falls back to an empty/default
-// value instead of a toast on every cold start.
-async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: string): Promise<T> {
+// value instead of a toast on every cold start. `ok` reports whether the real value loaded
+// (quality-gate remediation, code-reviewer Medium): a caller that must not act on the fallback
+// as if it were a genuine empty result (see `sessions.list` below) checks this instead.
+async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: string): Promise<{ value: T; ok: boolean }> {
   try {
     const result = await request
-    if (result.ok) return result.value
+    if (result.ok) return { value: result.value, ok: true }
     console.error(`[refract] ${label}: ${result.error.code} ${result.error.message}`)
-    return fallback
+    return { value: fallback, ok: false }
   } catch (error) {
     console.debug(`[refract] ${label}: invoke failed (handler not registered yet)`, error)
-    return fallback
+    return { value: fallback, ok: false }
   }
 }
 
@@ -73,17 +75,23 @@ export function initStores(): void {
   })
 
   void (async () => {
-    const [sessions, settings, repositories] = await Promise.all([
+    const [sessionsLoad, settingsLoad, repositoriesLoad] = await Promise.all([
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
       loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
       loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
     ])
-    useSessionsStore.getState().setSessions(sessions)
-    useSettingsStore.getState().setSettings(settings)
-    useRepositoriesStore.getState().setRepositories(repositories)
+    useSessionsStore.getState().setSessions(sessionsLoad.value)
+    useSettingsStore.getState().setSettings(settingsLoad.value)
+    useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
-    // agent, per research.md Decision 4.
-    useSplitStore.getState().restoreFromSettings(settings.split)
+    // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
+    // when `sessions.list` genuinely loaded -- restoring against the `[]` FALLBACK (used only
+    // when that call itself failed) would make every restored pane's `ChatPane` see
+    // `session === undefined`, triggering the FR-016 "deleted" effect and silently erasing a
+    // perfectly valid persisted split from settings.json on a transient list failure.
+    if (sessionsLoad.ok) {
+      useSplitStore.getState().restoreFromSettings(settingsLoad.value.split)
+    }
   })()
 }

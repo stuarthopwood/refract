@@ -78,27 +78,45 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
   // for a malformed payload) -- the renderer only ever calls this with ids it already knows are
   // valid (its own split-store's current pane ids); registry validation against archived/deleted
   // sessions happens separately, once, at app start (index.ts, FR-015).
+  //
+  // Quality-gate remediation (security-auditor, HIGH): `typeof layout !== 'object'` let an Array
+  // through (`typeof [] === 'object'`), and every field below was read off the CALLER'S object
+  // and then that same object was persisted verbatim -- an array with `sessionIds`/`dividerPercent`/
+  // `focusedIndex` set as extra named properties (survives Electron's structured-clone IPC) passed
+  // every check here but serialised to `"split": []` in settings.json, which `validateSplitAtStartup`
+  // (index.ts) had no shape check against -- `[].sessionIds.filter` throws on the next launch,
+  // inside an uncaught `app.whenReady().then`, permanently preventing the window from ever opening.
+  // Now: Array is rejected explicitly, every field is validated by direct index/property read (never
+  // `.every()`, which silently skips a sparse array's holes), and only a freshly-built, exactly-
+  // shaped object is ever persisted -- the caller's own object (and any extra property on it) is
+  // never stored. `SettingsStore.open`'s own shape check (store/settings.ts) is the second,
+  // independent layer against a hand-edited or already-corrupt settings.json.
   ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_SPLIT, async (_event, layout: unknown): Promise<Result<Settings>> => {
+    let validated: SplitLayout | null = null;
     if (layout !== null) {
-      if (typeof layout !== 'object') {
+      if (typeof layout !== 'object' || Array.isArray(layout)) {
         return { ok: false, error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_SPLIT} expects a SplitLayout or null` } };
       }
       const { sessionIds, dividerPercent, focusedIndex } = layout as Partial<SplitLayout>;
+      const first = Array.isArray(sessionIds) ? sessionIds[0] : undefined;
+      const second = Array.isArray(sessionIds) ? sessionIds[1] : undefined;
       const validSessionIds =
-        Array.isArray(sessionIds) && sessionIds.length === 2 && sessionIds.every((id) => typeof id === 'string');
-      const validDividerPercent = typeof dividerPercent === 'number' && Number.isFinite(dividerPercent);
+        Array.isArray(sessionIds) && sessionIds.length === 2 && typeof first === 'string' && typeof second === 'string' && first !== second;
+      const validDividerPercent =
+        typeof dividerPercent === 'number' && Number.isFinite(dividerPercent) && dividerPercent >= 0 && dividerPercent <= 100;
       const validFocusedIndex = focusedIndex === 0 || focusedIndex === 1;
       if (!validSessionIds || !validDividerPercent || !validFocusedIndex) {
         return {
           ok: false,
           error: {
             code: 'invalid-argument',
-            message: `${IPC_REQUESTS.SETTINGS_SET_SPLIT} expects { sessionIds: [string, string], dividerPercent: number, focusedIndex: 0 | 1 } or null`,
+            message: `${IPC_REQUESTS.SETTINGS_SET_SPLIT} expects { sessionIds: [string, string] (distinct), dividerPercent: 0-100, focusedIndex: 0 | 1 } or null`,
           },
         };
       }
+      validated = { sessionIds: [first as string, second as string], dividerPercent: dividerPercent as number, focusedIndex: focusedIndex as 0 | 1 };
     }
-    const value = await manager.settings.setSplit(layout as SplitLayout | null);
+    const value = await manager.settings.setSplit(validated);
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });

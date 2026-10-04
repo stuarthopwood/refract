@@ -46,9 +46,13 @@ let manager: SessionManager | undefined
 // exactly one surviving Session; sent as a one-time `ui:open-session` once the renderer's own
 // listener for it is guaranteed registered (`did-finish-load` fires only after the page's
 // top-level synchronous scripts -- including `main.tsx`'s `initStores()` call, which attaches
-// that listener before React even mounts -- have already run). This never starts the surviving
-// Session's agent (FR-014): `ui:open-session`'s existing handler only calls the renderer's own
-// 'make this pane visible' action, never `sessions.open`.
+// that listener before React even mounts -- have already run). `validateSplitAtStartup` itself
+// never calls `sessions.open`/starts an agent; the survivor DOES end up starting its own agent
+// shortly after, once `replaceFocused` (triggered by this event) makes it the non-pristine
+// single pane and that pane's own mount effect runs -- matching data-model.md's own restart-row
+// entry ("not pristine... keeps today's single-pane behaviour, which does open it"), not the
+// stricter never-starts-an-agent guarantee FR-014 makes specifically for restoring a real
+// 2-session split.
 let pendingSplitSurvivorId: string | undefined
 
 function getWindow(): BrowserWindow | undefined {
@@ -230,8 +234,16 @@ if (!gotLock) {
 
     // Spec 005 FR-015/data-model.md Decision 3b: drop any persisted split id no longer present
     // in the registry or now archived, before the renderer ever reads `settings.get()`. Reads
-    // the registry only -- never starts an agent (FR-014).
-    pendingSplitSurvivorId = await validateSplitAtStartup(manager)
+    // the registry only -- never starts an agent itself (FR-014). Quality-gate remediation
+    // (security-auditor, HIGH): `SettingsStore.open`'s own shape check already keeps a malformed
+    // `split` from ever reaching this function, but a thrown error here must still never prevent
+    // `createWindow()` below from running -- this `async whenReady` chain has no other catch, and
+    // an uncaught rejection would leave the single-instance lock held by a window-less process.
+    try {
+      pendingSplitSurvivorId = await validateSplitAtStartup(manager)
+    } catch (err) {
+      console.error('main: validateSplitAtStartup failed, continuing with no split restored', err)
+    }
 
     // T100: the one real application menu (accelerators work regardless of the merged top row
     // never showing a visible bar); the renderer's `AppMenuBar` pops its submenus by id.

@@ -62,6 +62,11 @@ export function App() {
   const unfocusedSession = unfocusedSessionId ? sessions.find((session) => session.id === unfocusedSessionId) : undefined
   const otherSessionForNarrowCollapse =
     isSplit && !canShowSplit && unfocusedSession ? { id: unfocusedSession.id, name: unfocusedSession.name } : null
+  // Quality-gate remediation (accessibility-auditor, High): the shared aria-live announcer used
+  // to mount only inside the `showSplit` branch, so a narrow-window collapse (still `isSplit`,
+  // just rendering one pane) never announced its own swap-chip focus changes. Driven by
+  // `isSplit` throughout instead, regardless of whether both panes currently fit on screen.
+  const focusedSessionName = isSplit ? sessions.find((session) => session.id === paneSessionIds[focusedIndex])?.name : undefined
 
   // Spec 005 (FR-007, research.md Decision 8): Ctrl+Shift+\ moves focus to the other pane while
   // a split is open, active window-wide (same pattern MessageInput.tsx's Ctrl+Shift+X listener
@@ -72,9 +77,7 @@ export function App() {
     function onKeyDown(event: KeyboardEvent) {
       if (!event.ctrlKey || !event.shiftKey || event.code !== 'Backslash') return
       event.preventDefault()
-      const state = useSplitStore.getState()
-      if (state.paneSessionIds.length !== 2) return
-      state.focusPane(state.focusedIndex === 0 ? 1 : 0)
+      useSplitStore.getState().focusOther()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -117,6 +120,12 @@ export function App() {
           style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }}
         />
       </div>
+      {/* Spec 005 (FR-022): one shared live region for the whole split, outside both panes and
+          mounted whenever a split exists (even collapsed to one pane by the narrow-window
+          rule), so a focus change -- including a narrow-window swap -- is announced exactly
+          once (React only touches this text node when the computed string itself changes)
+          rather than each pane re-reading on every unrelated re-render. */}
+      {isSplit && <div aria-live="polite" className="sr-only">{focusedSessionName ? `Focused: ${focusedSessionName}` : ''}</div>}
       <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
@@ -131,7 +140,7 @@ export function App() {
                 <SessionList />
               </ErrorBoundary>
             </ResizablePanel>
-            <ResizableHandle withHandle />
+            <ResizableHandle withHandle aria-label="Resize session list" />
             <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
               <ErrorBoundary>
                 {paneSessionIds.length === 0 ? (
@@ -140,68 +149,64 @@ export function App() {
                   </div>
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
                   <ChatPane
-                    key={frontSessionId}
                     sessionId={frontSessionId as string}
                     paneIndex={isSplit ? focusedIndex : 0}
                     reservesWindowControls
                     otherSession={otherSessionForNarrowCollapse}
                   />
                 ) : (
-                  <>
-                    {/* Spec 005 (FR-022): one shared live region for the whole split, outside both
-                        panes, so a focus change is announced exactly once (React only touches
-                        this text node when the computed string itself changes) rather than each
-                        pane re-reading on every unrelated re-render. */}
-                    <div aria-live="polite" className="sr-only">
-                      {`Focused: ${sessions.find((session) => session.id === paneSessionIds[focusedIndex])?.name ?? ''}`}
+                  <ResizablePanelGroup
+                    orientation="horizontal"
+                    className="h-full"
+                    onLayoutChanged={(layout, meta) => {
+                      // research.md Decision 5: only a real drag or keyboard resize persists;
+                      // the initial/restored mount's own layout-settle call is not a user
+                      // choice.
+                      if (!meta.isUserInteraction) return
+                      const percent = layout['split-pane-0']
+                      if (typeof percent === 'number') {
+                        useSplitStore.getState().setDividerPercent(percent, { isUserInteraction: true })
+                      }
+                    }}
+                  >
+                    <ResizablePanel id="split-pane-0" defaultSize={`${dividerPercent}%`} minSize={360}>
+                      <ErrorBoundary>
+                        <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} />
+                      </ErrorBoundary>
+                    </ResizablePanel>
+                    {/* Quality-gate remediation (accessibility-auditor, High x2): the focus-move
+                        button previously rendered INSIDE the Separator (`handleContent`), which
+                        (a) made it a child of `role="separator"`, a widget whose children ARIA
+                        treats as presentational, so screen readers announced only the separator
+                        and lost the button's own name entirely, and (b) let the library's own
+                        `keydown` handler on the Separator (registered for arrow keys/Home/End/
+                        Enter) catch and `preventDefault` the button's native Enter-activates-click
+                        behaviour before it ever fired. Now a true sibling, absolutely positioned
+                        over the handle from a `relative` wrapper -- not a descendant of the
+                        separator at all -- so it keeps its own name/role and its own native Enter
+                        handling. */}
+                    <div className="relative flex w-px shrink-0">
+                      <ResizableHandle withHandle aria-label="Resize chat panes" />
+                      <button
+                        type="button"
+                        className="absolute left-1/2 top-1/2 z-20 flex size-6 -translate-x-1/2 -translate-y-10 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        aria-label="Move focus to the other pane"
+                        aria-keyshortcuts="Control+Shift+\"
+                        onClick={() => useSplitStore.getState().focusOther()}
+                      >
+                        <ArrowLeftRightIcon aria-hidden className="size-3.5" />
+                      </button>
                     </div>
-                    <ResizablePanelGroup
-                      orientation="horizontal"
-                      className="h-full"
-                      onLayoutChanged={(layout, meta) => {
-                        // research.md Decision 5: only a real drag or keyboard resize persists;
-                        // the initial/restored mount's own layout-settle call is not a user
-                        // choice.
-                        if (!meta.isUserInteraction) return
-                        const percent = layout['split-pane-0']
-                        if (typeof percent === 'number') {
-                          useSplitStore.getState().setDividerPercent(percent, { isUserInteraction: true })
-                        }
-                      }}
-                    >
-                      <ResizablePanel id="split-pane-0" defaultSize={dividerPercent} minSize={360}>
-                        <ErrorBoundary>
-                          <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} />
-                        </ErrorBoundary>
-                      </ResizablePanel>
-                      <ResizableHandle
-                        withHandle
-                        handleContent={
-                          <button
-                            type="button"
-                            className="absolute left-1/2 top-1/2 z-20 flex size-5 -translate-x-1/2 -translate-y-8 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                            aria-label="Move focus to the other pane"
-                            aria-keyshortcuts="Control+Shift+\"
-                            onClick={() => {
-                              const state = useSplitStore.getState()
-                              state.focusPane(state.focusedIndex === 0 ? 1 : 0)
-                            }}
-                          >
-                            <ArrowLeftRightIcon aria-hidden className="size-3" />
-                          </button>
-                        }
-                      />
-                      <ResizablePanel id="split-pane-1" defaultSize={100 - dividerPercent} minSize={360}>
-                        <ErrorBoundary>
-                          <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls />
-                        </ErrorBoundary>
-                      </ResizablePanel>
-                    </ResizablePanelGroup>
-                  </>
+                    <ResizablePanel id="split-pane-1" defaultSize={`${100 - dividerPercent}%`} minSize={360}>
+                      <ErrorBoundary>
+                        <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls />
+                      </ErrorBoundary>
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
                 )}
               </ErrorBoundary>
             </ResizablePanel>
-            <ResizableHandle withHandle />
+            <ResizableHandle withHandle aria-label="Resize subagents panel" />
             <ResizablePanel
               id="subagents"
               panelRef={subagentPanelRef}

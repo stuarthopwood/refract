@@ -47,6 +47,11 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     const index = state.paneSessionIds.indexOf(session.id)
     return index !== -1 && (state.paneSessionIds.length < 2 || state.focusedIndex === index)
   })
+  // Quality-gate remediation (accessibility-auditor, Medium): while a split is open, TWO rows
+  // can carry `aria-current="true"` at once (one per pane) -- nothing in the accessibility tree
+  // said which of the two is the one a plain click/Enter actually targets. Only meaningful (and
+  // only rendered) while a real split is open; a single pane's row is trivially "focused".
+  const isSplitOpen = useSplitStore((state) => state.paneSessionIds.length === 2)
   const replaceFocused = useSplitStore((state) => state.replaceFocused)
   const openInSplit = useSplitStore((state) => state.openInSplit)
   const open = useSessionsStore((state) => state.open)
@@ -298,6 +303,9 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                 >
                   <StateIcon status={session.status} />
                   <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+                  {isSplitOpen && isVisible && (
+                    <span className="sr-only">{isFocusedPane ? '(focused pane)' : '(shown, unfocused pane)'}</span>
+                  )}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-medium">{session.name}</span>
                     <span className="truncate text-xs text-muted-foreground">{session.branch}</span>

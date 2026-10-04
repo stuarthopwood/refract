@@ -20,9 +20,11 @@ interface SplitState {
   openInSplit(sessionId: string): void
   /** A plain session-row click (FR-008, FR-009). */
   replaceFocused(sessionId: string): void
-  /** Clicking or typing inside a pane (FR-006), or the keyboard focus-move command/button (FR-007,
-   * caller computes the other index). */
+  /** Clicking or typing inside a pane (FR-006). */
   focusPane(index: number): void
+  /** The keyboard focus-move command/button (FR-007): flips to whichever pane is not currently
+   * focused; a no-op when a split is not open. */
+  focusOther(): void
   /** Closing one pane's control (FR-011, FR-013): the other becomes the sole pane, full width. */
   closePane(index: number): void
   /** `ResizablePanelGroup`'s `onLayoutChanged` (research.md Decision 5): always updates the live
@@ -97,88 +99,75 @@ export const useSplitStore = create<SplitState>((set, get) => {
     return index === 0 ? [sessionId, second] : [first, sessionId]
   }
 
+  // Quality-gate remediation (code-reviewer, Medium, DRY): `openInSplit` and `replaceFocused`
+  // shared every branch of data-model.md's transition table except which pane a genuinely-new
+  // session replaces -- the unfocused pane (FR-012) or the focused one (FR-008). One shared
+  // implementation, parameterised by that one difference, so the table is encoded exactly once.
+  function targetSession(sessionId: string, replaceIndex: 0 | 1): void {
+    const { paneSessionIds, focusedIndex } = get()
+    const pristineIds = withoutPristine(sessionId)
+
+    if (paneSessionIds.length < 2) {
+      const existing = paneSessionIds[0]
+      if (existing === sessionId) {
+        set({ pristineIds })
+        return
+      }
+      const next = existing ? [existing, sessionId] : [sessionId]
+      set({ paneSessionIds: next, pristineIds })
+      syncVisible(next)
+      persist()
+      return
+    }
+
+    const unfocusedIndex = focusedIndex === 0 ? 1 : 0
+    if (sessionId === paneSessionIds[focusedIndex]) {
+      // research.md Decision 7: already the focused pane -- no-op.
+      set({ pristineIds })
+      return
+    }
+    if (sessionId === paneSessionIds[unfocusedIndex]) {
+      // FR-009: already the unfocused pane -- focus it instead of duplicating.
+      set({ focusedIndex: unfocusedIndex, pristineIds })
+      persist()
+      return
+    }
+    const next = replaceAt(paneSessionIds, replaceIndex, sessionId)
+    if (!next) return
+    set({ paneSessionIds: next, pristineIds })
+    syncVisible(next)
+    persist()
+  }
+
   return {
     paneSessionIds: [],
     focusedIndex: 0,
     dividerPercent: 50,
     pristineIds: new Set<string>(),
 
+    // Spec 005 (data-model.md): replaces the unfocused pane; the focused pane and its session are unchanged.
     openInSplit: (sessionId) => {
-      const { paneSessionIds, focusedIndex } = get()
-      const pristineIds = withoutPristine(sessionId)
-
-      if (paneSessionIds.length < 2) {
-        const existing = paneSessionIds[0]
-        if (existing === sessionId) {
-          set({ pristineIds })
-          return
-        }
-        const next = existing ? [existing, sessionId] : [sessionId]
-        set({ paneSessionIds: next, pristineIds })
-        syncVisible(next)
-        persist()
-        return
-      }
-
-      const unfocusedIndex = focusedIndex === 0 ? 1 : 0
-      if (sessionId === paneSessionIds[focusedIndex]) {
-        // research.md Decision 7: already the focused pane -- no-op.
-        set({ pristineIds })
-        return
-      }
-      if (sessionId === paneSessionIds[unfocusedIndex]) {
-        // FR-009: already the unfocused pane -- focus it instead of duplicating.
-        set({ focusedIndex: unfocusedIndex, pristineIds })
-        persist()
-        return
-      }
-      // FR-012: replace the unfocused pane; the focused pane and its session are unchanged.
-      const next = replaceAt(paneSessionIds, unfocusedIndex, sessionId)
-      if (!next) return
-      set({ paneSessionIds: next, pristineIds })
-      syncVisible(next)
-      persist()
+      const { focusedIndex } = get()
+      targetSession(sessionId, focusedIndex === 0 ? 1 : 0)
     },
 
+    // Spec 005 (data-model.md): replaces whatever the focused pane showed; the unfocused pane is unaffected.
     replaceFocused: (sessionId) => {
-      const { paneSessionIds, focusedIndex } = get()
-      const pristineIds = withoutPristine(sessionId)
-
-      if (paneSessionIds.length < 2) {
-        if (paneSessionIds[0] === sessionId) {
-          set({ pristineIds })
-          return
-        }
-        const next = [sessionId]
-        set({ paneSessionIds: next, pristineIds })
-        syncVisible(next)
-        persist()
-        return
-      }
-
-      const unfocusedIndex = focusedIndex === 0 ? 1 : 0
-      if (sessionId === paneSessionIds[focusedIndex]) {
-        set({ pristineIds })
-        return
-      }
-      if (sessionId === paneSessionIds[unfocusedIndex]) {
-        // FR-009: already shown in the other pane -- focus it instead of duplicating.
-        set({ focusedIndex: unfocusedIndex, pristineIds })
-        persist()
-        return
-      }
-      // FR-008: replaces whatever the focused pane showed; the unfocused pane is unaffected.
-      const next = replaceAt(paneSessionIds, focusedIndex === 0 ? 0 : 1, sessionId)
-      if (!next) return
-      set({ paneSessionIds: next, pristineIds })
-      syncVisible(next)
-      persist()
+      const { focusedIndex } = get()
+      targetSession(sessionId, focusedIndex === 0 ? 0 : 1)
     },
 
     focusPane: (index) => {
       if (get().paneSessionIds.length !== 2) return
       if (get().focusedIndex === index) return
       set({ focusedIndex: index })
+      persist()
+    },
+
+    focusOther: () => {
+      const { paneSessionIds, focusedIndex } = get()
+      if (paneSessionIds.length !== 2) return
+      set({ focusedIndex: focusedIndex === 0 ? 1 : 0 })
       persist()
     },
 
@@ -215,20 +204,22 @@ export const useSplitStore = create<SplitState>((set, get) => {
       syncVisible(paneSessionIds)
     },
 
+    // Quality-gate remediation (code-reviewer, Medium): the previous `closePane`-based
+    // implementation only ever dropped ONE stale id -- when BOTH panes' sessions vanished at
+    // once (e.g. removing a Repository deletes every one of its Sessions in one step), the
+    // survivor it kept (`paneSessionIds[1]` after `closePane(0)`) was ALSO stale, leaving an
+    // orphan id stuck in `paneSessionIds`/`setVisible` until the next list refresh. Now filters
+    // by `existingIds` directly, so 0, 1, or 2 stale ids are all handled in one pass.
     pruneDeleted: (existingIds) => {
-      const { paneSessionIds } = get()
-      const stale = paneSessionIds.filter((id) => !existingIds.has(id))
-      if (stale.length === 0) return
-      if (paneSessionIds.length === 2) {
-        const first = paneSessionIds[0]
-        const staleIndex = first !== undefined && existingIds.has(first) ? 1 : 0
-        get().closePane(staleIndex)
-        return
-      }
-      // A single pane whose sole Session vanished (or, defensively, both gone at once): nothing
-      // left to show.
-      set({ paneSessionIds: [], focusedIndex: 0, pristineIds: new Set() })
-      syncVisible([])
+      const { paneSessionIds, pristineIds } = get()
+      const next = paneSessionIds.filter((id) => existingIds.has(id))
+      if (next.length === paneSessionIds.length) return
+      set({
+        paneSessionIds: next,
+        focusedIndex: 0,
+        pristineIds: new Set([...pristineIds].filter((id) => next.includes(id)))
+      })
+      syncVisible(next)
       persist()
     }
   }

@@ -205,6 +205,21 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     focusPane(paneIndex)
   }
 
+  // Quality-gate remediation (accessibility-auditor, High): the keyboard focus-move chord/button
+  // (App.tsx) only ever updated `focusedIndex` -- real keyboard/DOM focus stayed wherever it was,
+  // so the "Focused" badge and aria-live announcement could silently contradict where typing
+  // actually went. Only reacts to a genuine false->true transition (never the initial mount, and
+  // never when focus is already somewhere inside this pane -- a click/type that triggered
+  // `focusPane` directly already placed DOM focus correctly, so this must not fight it).
+  const wasFocusedRef = useRef(isFocused)
+  useEffect(() => {
+    const was = wasFocusedRef.current
+    wasFocusedRef.current = isFocused
+    if (!isSplit || !isFocused || was) return
+    if (chatPaneRef.current?.contains(document.activeElement)) return
+    chatPaneRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+  }, [isFocused, isSplit])
+
   if (!session) {
     return (
       <Empty className="h-full">
@@ -281,7 +296,22 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       <ChatHeader
         sessionId={sessionId}
         focused={isSplit ? isFocused : undefined}
-        onClose={isSplit ? () => closePane(paneIndex) : undefined}
+        onClose={
+          isSplit
+            ? () => {
+                closePane(paneIndex)
+                // Quality-gate remediation (accessibility-auditor, High): closing a pane via
+                // keyboard previously dropped focus to <body> -- both panes unmount/remount
+                // across this structural layout change (App.tsx swaps the whole subtree), so
+                // there is no previous-instance ref to refocus. Waits one frame for the
+                // survivor's fresh single-pane ChatPane/MessageInput to mount, then focuses its
+                // own message box.
+                requestAnimationFrame(() => {
+                  document.querySelector<HTMLTextAreaElement>('[aria-label="Message"]')?.focus()
+                })
+              }
+            : undefined
+        }
         otherSessionName={otherSession?.name}
         onSwapToOther={otherSession ? () => openInSplit(otherSession.id) : undefined}
         reservesWindowControls={reservesWindowControls}

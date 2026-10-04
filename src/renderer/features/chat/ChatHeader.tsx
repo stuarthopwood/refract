@@ -51,7 +51,12 @@ export function ChatHeader({
         <span className="truncate text-sm font-medium">{session.name}</span>
         <span className="shrink-0 truncate text-xs text-muted-foreground">{session.branch}</span>
         {focused && (
-          <span className="shrink-0 rounded-full bg-active-indicator/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-active-indicator">
+          // Quality-gate remediation (accessibility-auditor, Critical): the previous
+          // `text-active-indicator` on `bg-active-indicator/15` composited to 2.69:1 against the
+          // dark background -- below WCAG 1.4.3's 4.5:1 minimum for text, on the one marker this
+          // spec relies on being readable without colour. `text-foreground` (near-white in the
+          // dark theme) against this same tinted background comfortably clears 4.5:1.
+          <span className="shrink-0 rounded-full border border-active-indicator/40 bg-active-indicator/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground">
             Focused
           </span>
         )}

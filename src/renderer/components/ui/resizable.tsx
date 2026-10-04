@@ -1,6 +1,5 @@
 "use client"
 
-import type { ReactNode } from "react"
 import { cn } from "cn"
 import * as ResizablePrimitive from "react-resizable-panels"
 
@@ -26,13 +25,10 @@ function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
 
 function ResizableHandle({
   withHandle,
-  handleContent,
   className,
   ...props
 }: ResizablePrimitive.SeparatorProps & {
   withHandle?: boolean
-  // Extra content rendered beside the drag grip (spec 005: the split divider's focus-move button).
-  handleContent?: ReactNode
 }) {
   return (
     <ResizablePrimitive.Separator
@@ -46,7 +42,6 @@ function ResizableHandle({
       {withHandle && (
         <div className="z-10 flex h-6 w-1 shrink-0 rounded-lg bg-border" />
       )}
-      {handleContent}
     </ResizablePrimitive.Separator>
   )
 }
