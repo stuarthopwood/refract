@@ -15,14 +15,14 @@ interface SplitState {
   /** 0-100; meaningless when paneSessionIds.length === 1. */
   dividerPercent: number
   /** Session ids whose pane was populated by restoring a persisted split and has not yet been
-    * opened by a real user action (research.md Decision 4). */
+   * opened by a real user action (research.md Decision 4). */
   pristineIds: Set<string>
   /** Quality-gate remediation (code-reviewer, round 2, Medium): bumped only by `focusOther` (the
-    * Ctrl+Shift+\ chord and the divider's focus-move button), never by `focusPane` or any
-    * `targetSession` branch (a plain/Ctrl click, "Open in split", a notification). ChatPane's
-    * real-DOM-focus-follows effect keys off a CHANGE in this value, not every `focusedIndex`
-    * flip, so a click on the row already shown in the unfocused pane (FR-009: focuses it without
-    * moving DOM focus) can no longer yank keyboard focus out of the session list. */
+   * Ctrl+Shift+\ chord and the divider's focus-move button), never by `focusPane` or any
+   * `targetSession` branch (a plain/Ctrl click, "Open in split", a notification). ChatPane's
+   * real-DOM-focus-follows effect keys off a CHANGE in this value, not every `focusedIndex`
+   * flip, so a click on the row already shown in the unfocused pane (FR-009: focuses it without
+   * moving DOM focus) can no longer yank keyboard focus out of the session list. */
   focusMoveSignal: number
   /** "Open in split" / Ctrl+click (FR-001, FR-009, FR-012, research.md Decision 7). */
   openInSplit(sessionId: string): void
@@ -31,24 +31,24 @@ interface SplitState {
   /** Clicking or typing inside a pane (FR-006). */
   focusPane(index: number): void
   /** The keyboard focus-move command/button (FR-007): flips to whichever pane is not currently
-    * focused; a no-op when a split is not open. */
+   * focused; a no-op when a split is not open. */
   focusOther(): void
   /** Closing one pane's control (FR-011, FR-013): the other becomes the sole pane, full width. */
   closePane(index: number): void
   /** `ResizablePanelGroup`'s `onLayoutChanged` (research.md Decision 5): always updates the live
-    * value; persists (debounced ~300ms) only when `isUserInteraction` is true, never for a
-    * programmatic layout set (initial mount, a restored split). */
+   * value; persists (debounced ~300ms) only when `isUserInteraction` is true, never for a
+   * programmatic layout set (initial mount, a restored split). */
   setDividerPercent(percent: number, options?: { isUserInteraction: boolean }): void
   /** Clears one pane's pristine flag the moment a real action opens that session (research.md
-    * Decision 4): MessageInput's notStarted-send branch, or any targeting action below. */
+   * Decision 4): MessageInput's notStarted-send branch, or any targeting action below. */
   markOpened(sessionId: string): void
   /** App start (FR-014): seeds a persisted 2-session split, marks both pristine -- never opens
-    * (starts) either agent. Round 3 (code-reviewer, Low): no longer tells main which sessions are
-    * visible itself; `App.tsx`'s own rendered-panes effect is the SOLE caller of
-    * `sessions.setVisible` now, reacting to the `paneSessionIds` state this sets. */
+   * (starts) either agent. Round 3 (code-reviewer, Low): no longer tells main which sessions are
+   * visible itself; `App.tsx`'s own rendered-panes effect is the SOLE caller of
+   * `sessions.setVisible` now, reacting to the `paneSessionIds` state this sets. */
   restoreFromSettings(split: SplitLayout | null): void
   /** FR-016: a session being deleted (not just archived) closes its own pane, leaving the other
-    * at full width. Called after every `sessions.list()` refresh with the current full id set. */
+   * at full width. Called after every `sessions.list()` refresh with the current full id set. */
   pruneDeleted(existingIds: Set<string>): void
 }
 
@@ -125,8 +125,8 @@ export const useSplitStore = create<SplitState>((set, get) => {
   }
 
   /** Builds the two-pane `[A, B]` array for a replace, given which index is being replaced;
-    * `noUncheckedIndexedAccess`-safe -- callers already know `paneSessionIds.length === 2` here,
-    * this just proves it to the type checker without a blind non-null assertion. */
+   * `noUncheckedIndexedAccess`-safe -- callers already know `paneSessionIds.length === 2` here,
+   * this just proves it to the type checker without a blind non-null assertion. */
   function replaceAt(paneSessionIds: string[], index: 0 | 1, sessionId: string): string[] | null {
     const [first, second] = paneSessionIds
     if (first === undefined || second === undefined) return null
@@ -141,22 +141,22 @@ export const useSplitStore = create<SplitState>((set, get) => {
   // (code-reviewer, Critical): the first version of this DRY merge dropped that single-pane
   // distinction entirely and always opened a split, turning every plain single-pane session
   // click into an unwanted split -- mode restores it explicitly.
-  //
-  // Third remediation round (code-reviewer/a11y, High): round 2 only returned the view to
-  // 'chat' from three callsites that happened to call `openInSplit`/`replaceFocused` directly
-  // (SessionList.tsx's row click, Ctrl+click, "Open in split"). Every OTHER path that focuses a
-  // session -- the per-repository "+" quick-create, NewSessionDialog's submit, and main's
-  // `onUiOpenSession` (notification click / startup split-recovery) -- all funnel through
-  // `sessions-store.ts`'s `create` or `init-stores.ts`, which both call `replaceFocused` too,
-  // but the per-callsite guard those paths lack left a Session created or opened that way
-  // hidden behind the Pull Requests panel: a genuine dead end. `targetSession` is the one
-  // function BOTH `openInSplit` and `replaceFocused` funnel through, so every current and
-  // future caller of either gets this for free. Any call here means a user action intends to
-  // see a specific session's chat right now, including the "already focused, no-op for pane
-  // arrangement" branches below -- so the view switch happens unconditionally, before those
-  // early returns, not only on the branches that actually change `paneSessionIds`.
+ //
+ // Third remediation round (code-reviewer/a11y, High): round 2 only returned the view to
+ // 'chat' from three callsites that happened to call `openInSplit`/`replaceFocused` directly
+ // (SessionList.tsx's row click, Ctrl+click, "Open in split"). Every OTHER path that focuses a
+ // session -- the per-repository "+" quick-create, NewSessionDialog's submit, and main's
+ // `onUiOpenSession` (notification click / startup split-recovery) -- all funnel through
+ // `sessions-store.ts`'s `create` or `init-stores.ts`, which both call `replaceFocused` too,
+ // but the per-callsite guard those paths lack left a Session created or opened that way
+ // hidden behind the Pull Requests panel: a genuine dead end. `targetSession` is the one
+ // function BOTH `openInSplit` and `replaceFocused` funnel through, so every current and
+ // future caller of either gets this for free. Any call here means a user action intends to
+ // see a specific session's chat right now, including the "already focused, no-op for pane
+ // arrangement" branches below -- so the view switch happens unconditionally, before those
+ // early returns, not only on the branches that actually change `paneSessionIds`.
   function targetSession(sessionId: string, replaceIndex: 0 | 1, mode: 'split' | 'replace'): void {
-    if (useViewStore.getState().view === 'pull-requests') useViewStore.getState().openChat()
+  if (useViewStore.getState().view === 'pull-requests') useViewStore.getState().openChat()
     const { paneSessionIds, focusedIndex } = get()
     const pristineIds = withoutPristine(sessionId)
 

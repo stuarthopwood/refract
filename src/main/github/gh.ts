@@ -35,10 +35,10 @@ export interface GhRawResult {
 }
 
 /** Runs `gh <args>` with no shell in `cwd`. Never throws for a nonzero exit; callers branch on
-  * `.code`. Throws `GhError('gh-unavailable', ...)` only when `gh` itself cannot be found on PATH.
-  * Executor form: `Promise.withResolvers()` needs lib "ES2024"; tsconfig.node.json is pinned to
-  * "ES2023" (same documented exception as `OmpProcess.ts`'s `start()` and the existing
-  * `src/main/git/github.ts`'s `runGh()`). */
+ * `.code`. Throws `GhError('gh-unavailable', ...)` only when `gh` itself cannot be found on PATH.
+ * Executor form: `Promise.withResolvers()` needs lib "ES2024"; tsconfig.node.json is pinned to
+ * "ES2023" (same documented exception as `OmpProcess.ts`'s `start()` and the existing
+ * `src/main/git/github.ts`'s `runGh()`). */
 export async function ghRaw(cwd: string, args: string[]): Promise<GhRawResult> {
   let ghPath: string;
   try {
@@ -68,9 +68,9 @@ export async function ghRaw(cwd: string, args: string[]): Promise<GhRawResult> {
 }
 
 /** Research.md "Polling interval and rate-limit headroom": the rate-limited signal is `gh`'s own
-  * `HTTPError.Error()` format ("HTTP 403/429: <GitHub message> (<url>)") sourced from cli/go-gh's
-  * published error formatting, not reproduced live (forbidden -- real shared-account quota risk,
-  * docs/spike/FINDINGS.md row 40). `gh-unavailable` covers not-signed-in and offline per FR-026. */
+ * `HTTPError.Error()` format ("HTTP 403/429: <GitHub message> (<url>)") sourced from cli/go-gh's
+ * published error formatting, not reproduced live (forbidden -- real shared-account quota risk,
+ * docs/spike/FINDINGS.md row 40). `gh-unavailable` covers not-signed-in and offline per FR-026. */
 function mapGhFailure(stderr: string, stdout: string): GhError {
   const text = `${stderr}\n${stdout}`;
   if (/rate limit/i.test(text)) {
@@ -98,9 +98,9 @@ interface GraphqlResponse<T> {
 }
 
 /** `gh api graphql -f query=<query> [-f k=v | -F k=v]...` (docs/spike/gh-pr-graphql-probe.mjs's
-  * own `graphql()` helper, confirmed live). Variables are passed as `-f`/`-F` fields, never
-  * interpolated into the query string, so no caller-supplied text (a comment body, a thread id)
-  * can ever need hand-escaping or risk breaking/injecting into the query. */
+ * own `graphql()` helper, confirmed live). Variables are passed as `-f`/`-F` fields, never
+ * interpolated into the query string, so no caller-supplied text (a comment body, a thread id)
+ * can ever need hand-escaping or risk breaking/injecting into the query. */
 export async function ghGraphql<T>(cwd: string, query: string, variables?: Record<string, string | number>): Promise<T> {
   const args = ['api', 'graphql', '-f', `query=${query}`];
   if (variables) {
@@ -124,8 +124,8 @@ export async function ghGraphql<T>(cwd: string, query: string, variables?: Recor
 }
 
 /** `owner/repo`, inferred from the repository's `origin` remote URL (duplicated from the
-  * existing `src/main/git/github.ts`'s private `parseOwnerRepo`, which is not exported -- kept as
-  * its own small copy here rather than changing that spec-004 module's exports). */
+ * existing `src/main/git/github.ts`'s private `parseOwnerRepo`, which is not exported -- kept as
+ * its own small copy here rather than changing that spec-004 module's exports). */
 export async function ownerRepoFor(repoPath: string): Promise<{ owner: string; repo: string }> {
   const remote = await gitRaw(repoPath, ['remote', 'get-url', 'origin']);
   if (remote.code !== 0) throw new GhError('no-github-remote', 'This repository has no "origin" remote.');
@@ -157,7 +157,7 @@ export interface GhCheckRun {
 }
 
 /** `gh pr list --json <LIST_FIELDS>` (docs/spike/FINDINGS.md row 37, T001): every field name
-  * round-trips unchanged against a real repository. */
+ * round-trips unchanged against a real repository. */
 export interface GhPrListEntry {
   number: number;
   title: string;
@@ -177,17 +177,17 @@ const LIST_FIELDS =
   'number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,statusCheckRollup,labels,reviewRequests,assignees';
 
 /** High remediation (code-reviewer): `--state open` directly, not `--state all --limit 50`
-  * filtered client-side to OPEN afterward -- the old form missed any open pull request older than
-  * the 50 most-recently-updated pull requests of ANY state. `--state open` scopes the whole
-  * 50-row limit to open pull requests only. */
+ * filtered client-side to OPEN afterward -- the old form missed any open pull request older than
+ * the 50 most-recently-updated pull requests of ANY state. `--state open` scopes the whole
+ * 50-row limit to open pull requests only. */
 export async function listOpenPullRequests(repoPath: string): Promise<GhPrListEntry[]> {
   const { owner, repo } = await ownerRepoFor(repoPath);
   return ghJson<GhPrListEntry[]>(repoPath, ['pr', 'list', '--repo', `${owner}/${repo}`, '--state', 'open', '--limit', '50', '--json', LIST_FIELDS]);
 }
 
 /** `gh search prs --repo <repo> "<qualifier>" --json <SEARCH_FIELDS>` (row 37, T001): a narrower,
-  * documented field set than `gh pr list --json` -- no `statusCheckRollup`/`headRefName`/
-  * `baseRefName`/`isDraft`/`assignees`-equivalent on this surface beyond what's listed here. */
+ * documented field set than `gh pr list --json` -- no `statusCheckRollup`/`headRefName`/
+ * `baseRefName`/`isDraft`/`assignees`-equivalent on this surface beyond what's listed here. */
 export interface GhSearchEntry {
   number: number;
   title: string;
@@ -201,37 +201,37 @@ export interface GhSearchEntry {
 const SEARCH_FIELDS = 'number,title,state,author,url,updatedAt,labels';
 
 /** One of the 4 built-in narrowing qualifiers this feature offers (data-model.md's own list):
-  * `--author @me` / `--assignee @me` / `--involves @me` / `--review-requested @me`, never the
-  * bare `author:@me` qualifier string -- `gh search prs` has its own named flag per qualifier. */
+ * `--author @me` / `--assignee @me` / `--involves @me` / `--review-requested @me`, never the
+ * bare `author:@me` qualifier string -- `gh search prs` has its own named flag per qualifier. */
 export type SearchQualifierFlag = '--author' | '--assignee' | '--involves' | '--review-requested';
 
 /** High remediation (code-reviewer Critical-adjacent): the qualifier and the user's free-text
-  * narrowing query used to be joined into one argv entry (`"author:@me foo"`), which `gh search
-  * prs` genuinely misparses -- confirmed live: it quotes the ENTIRE string as the `author:` value
-  * (`author:"@me foo"`), rejecting it outright as an unknown user. Passing the qualifier via its
-  * own named flag and the free text as a separate positional argv entry is what `gh search prs
-  * --author @me foo` does at a real shell, and is the form gh's parser actually expects.
-  *
-  * Medium remediation (new regression, this round): the free-text query was pushed as a bare
-  * positional with no `--` separator, so GitHub's own exclusion syntax (`-label:bug`) was parsed
-  * as an unknown `gh` shorthand flag and errored, while a query like `--repo=other/repo` was
-  * silently ACCEPTED as a real flag and changed which repository was searched. `gh search --help`
-  * documents `--` as the literal separator between flags and the search query; pushing it ahead
-  * of `query` makes `-label:` text safe and makes `--repo=`-style text an inert search term. */
+ * narrowing query used to be joined into one argv entry (`"author:@me foo"`), which `gh search
+ * prs` genuinely misparses -- confirmed live: it quotes the ENTIRE string as the `author:` value
+ * (`author:"@me foo"`), rejecting it outright as an unknown user. Passing the qualifier via its
+ * own named flag and the free text as a separate positional argv entry is what `gh search prs
+ * --author @me foo` does at a real shell, and is the form gh's parser actually expects.
+ *
+ * Medium remediation (new regression, this round): the free-text query was pushed as a bare
+ * positional with no `--` separator, so GitHub's own exclusion syntax (`-label:bug`) was parsed
+ * as an unknown `gh` shorthand flag and errored, while a query like `--repo=other/repo` was
+ * silently ACCEPTED as a real flag and changed which repository was searched. `gh search --help`
+ * documents `--` as the literal separator between flags and the search query; pushing it ahead
+ * of `query` makes `-label:` text safe and makes `--repo=`-style text an inert search term. */
 export async function searchPullRequests(repoPath: string, qualifierFlag: SearchQualifierFlag, query?: string): Promise<GhSearchEntry[]> {
   const { owner, repo } = await ownerRepoFor(repoPath);
   const args = ['search', 'prs', '--repo', `${owner}/${repo}`, qualifierFlag, '@me'];
-  if (query) args.push('--', query);
+ if (query) args.push('--', query);
   args.push('--json', SEARCH_FIELDS);
   return ghJson<GhSearchEntry[]>(repoPath, args);
 }
 
 /** The search surface has no `statusCheckRollup` (row 37); fetched per-row via a second
-  * `gh pr view --json statusCheckRollup` call for the non-Open tabs only (small result counts).
-  * High remediation (code-reviewer): takes an already-resolved `owner/repo` rather than a
-  * `repoPath`, so the caller resolves it ONCE per request (`ownerRepoFor` itself runs a real `git
-  * remote get-url` process) instead of once per row -- up to ~30 redundant git spawns per tab
-  * switch, on top of the ~30 `gh pr view` spawns this function already makes. */
+ * `gh pr view --json statusCheckRollup` call for the non-Open tabs only (small result counts).
+ * High remediation (code-reviewer): takes an already-resolved `owner/repo` rather than a
+ * `repoPath`, so the caller resolves it ONCE per request (`ownerRepoFor` itself runs a real `git
+ * remote get-url` process) instead of once per row -- up to ~30 redundant git spawns per tab
+ * switch, on top of the ~30 `gh pr view` spawns this function already makes. */
 export async function viewCheckState(repoPath: string, ownerRepo: string, number: number): Promise<GhCheckRun[] | null> {
   const result = await ghJson<{ statusCheckRollup: GhCheckRun[] | null }>(repoPath, [
     'pr',
@@ -246,10 +246,10 @@ export async function viewCheckState(repoPath: string, ownerRepo: string, number
 }
 
 /** `gh pr view --json <VIEW_FIELDS>` (row 38, T002): `mergeable`/`mergeStateStatus` confirmed
-  * live as `"MERGEABLE"`/`"CLEAN"` string enums on a clean PR; `files` never carries `patch`.
-  * `isDraft`/`body`/`updatedAt`/`headRefOid` are standard documented `gh pr view --json` fields
-  * (same family as `gh pr list --json`'s own fields) added for the Overview/staleness needs this
-  * spec has beyond the literal T002 probe's own field list. */
+ * live as `"MERGEABLE"`/`"CLEAN"` string enums on a clean PR; `files` never carries `patch`.
+ * `isDraft`/`body`/`updatedAt`/`headRefOid` are standard documented `gh pr view --json` fields
+ * (same family as `gh pr list --json`'s own fields) added for the Overview/staleness needs this
+ * spec has beyond the literal T002 probe's own field list. */
 export interface GhPrViewDetail {
   title: string;
   number: number;
@@ -291,10 +291,10 @@ export async function viewPullRequestDetail(repoPath: string, number: number): P
 }
 
 /** Cheap staleness re-fetch (FR-021): only the fields a mutating action compares against the
-  * cache or needs to re-derive `reviewDisabledReason`/`mergeDisabledReason`, never the full
-  * detail. `id` (the GraphQL node id) is included so `submitReview`'s approve path can pin its
-  * mutation to the exact reviewed commit via `commitOID` (security remediation, Medium-but-must-
-  * fix: approve/merge must never act on a head that moved since the renderer last saw it). */
+ * cache or needs to re-derive `reviewDisabledReason`/`mergeDisabledReason`, never the full
+ * detail. `id` (the GraphQL node id) is included so `submitReview`'s approve path can pin its
+ * mutation to the exact reviewed commit via `commitOID` (security remediation, Medium-but-must-
+ * fix: approve/merge must never act on a head that moved since the renderer last saw it). */
 export interface GhStalenessCheck {
   id: string;
   updatedAt: string;
@@ -328,9 +328,9 @@ export async function viewStalenessCheck(repoPath: string, number: number): Prom
 }
 
 /** REST `repos/<owner>/<repo>/pulls/<number>/files` (row 38, T002): the only surface that carries
-  * `patch`; absent (never `null`) once a file exceeds GitHub's per-file size threshold. Returns
-  * `null` (never throws) on any failure so the caller can fall back to the porcelain `files` field
-  * (every `patch` null) plus the FR-011 truncation banner. */
+ * `patch`; absent (never `null`) once a file exceeds GitHub's per-file size threshold. Returns
+ * `null` (never throws) on any failure so the caller can fall back to the porcelain `files` field
+ * (every `patch` null) plus the FR-011 truncation banner. */
 export interface GhRestFile {
   filename: string;
   additions: number;
@@ -340,31 +340,31 @@ export interface GhRestFile {
 }
 
 /** High remediation (code-reviewer): `--paginate` (gh's own documented way to follow every
-  * `Link: rel="next"` page) so a pull request with more than GitHub's default 30-per-page REST
-  * limit no longer silently drops files past the first page -- `gh api --paginate` concatenates
-  * every page's JSON array into one before this ever sees it.
-  *
-  * CRITICAL regression fix (this round): the previous version additionally passed `-f
-  * per_page=100`. `gh api`'s own documented behavior is that ANY `-f`/`-F`/`--input` body
-  * parameter forces the request method to POST unless `--method` is given explicitly -- this is
-  * true even for a GET-only endpoint like `.../pulls/<number>/files`, and GitHub's REST API
-  * rejects a POST to that path with a 404 (not a 405), which looks exactly like "this PR has no
-  * files" rather than a method error. `--paginate` already appends its own `per_page=100` to the
-  * request URL with no body parameter and no method change, so the explicit `-f` was always
-  * redundant even before it was discovered to silently break every single PR's Changes tab. */
+ * `Link: rel="next"` page) so a pull request with more than GitHub's default 30-per-page REST
+ * limit no longer silently drops files past the first page -- `gh api --paginate` concatenates
+ * every page's JSON array into one before this ever sees it.
+ *
+ * CRITICAL regression fix (this round): the previous version additionally passed `-f
+ * per_page=100`. `gh api`'s own documented behavior is that ANY `-f`/`-F`/`--input` body
+ * parameter forces the request method to POST unless `--method` is given explicitly -- this is
+ * true even for a GET-only endpoint like `.../pulls/<number>/files`, and GitHub's REST API
+ * rejects a POST to that path with a 404 (not a 405), which looks exactly like "this PR has no
+ * files" rather than a method error. `--paginate` already appends its own `per_page=100` to the
+ * request URL with no body parameter and no method change, so the explicit `-f` was always
+ * redundant even before it was discovered to silently break every single PR's Changes tab. */
 export async function getChangedFilesWithPatch(repoPath: string, number: number): Promise<GhRestFile[] | null> {
   try {
     const { owner, repo } = await ownerRepoFor(repoPath);
-    return await ghJson<GhRestFile[]>(repoPath, ['api', `repos/${owner}/${repo}/pulls/${number}/files`, '--paginate']);
+  return await ghJson<GhRestFile[]>(repoPath, ['api', `repos/${owner}/${repo}/pulls/${number}/files`, '--paginate']);
   } catch {
     return null;
   }
 }
 
 /** `reviewThreads`/`timelineItems` (row 39, T003): connection shapes confirmed live via
-  * introspection + a live query. `itemTypes` filters the timeline to the three kinds this feature
-  * renders (commits, general comments, submitted reviews) -- review threads come from the
-  * separate `reviewThreads` connection on the same query, not from `timelineItems`. */
+ * introspection + a live query. `itemTypes` filters the timeline to the three kinds this feature
+ * renders (commits, general comments, submitted reviews) -- review threads come from the
+ * separate `reviewThreads` connection on the same query, not from `timelineItems`. */
 export interface GhReviewThreadNode {
   id: string;
   isResolved: boolean;
@@ -416,8 +416,8 @@ export async function getReviewThreadsAndTimeline(repoPath: string, number: numb
 }
 
 /** `resolveReviewThread`/`unresolveReviewThread` (row 39, T003): input shapes confirmed via
-  * introspection only; never executed live in this session. Variables, never string
-  * interpolation, so a thread id never needs hand-escaping. */
+ * introspection only; never executed live in this session. Variables, never string
+ * interpolation, so a thread id never needs hand-escaping. */
 export async function resolveReviewThreadMutation(repoPath: string, threadId: string): Promise<void> {
   const query = 'mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id isResolved } } }';
   await ghGraphql(repoPath, query, { id: threadId });
@@ -429,8 +429,8 @@ export async function unresolveReviewThreadMutation(repoPath: string, threadId: 
 }
 
 /** `addPullRequestReviewComment(input: { inReplyTo: ... })` (row 39, T003): `inReplyTo` confirmed
-  * as a real, current input field. Links the reply to the thread's opening comment, never a new
-  * unrelated top-level comment. */
+ * as a real, current input field. Links the reply to the thread's opening comment, never a new
+ * unrelated top-level comment. */
 export async function replyToThreadMutation(
   repoPath: string,
   pullRequestId: string,
@@ -448,8 +448,8 @@ export async function replyToThreadMutation(
 }
 
 /** A top-level pull request comment (FR-012), distinct from a thread reply: the documented
-  * porcelain `gh pr comment` command already covers it (research.md decision 3's own preference
-  * for porcelain wherever it suffices), no GraphQL mutation needed. */
+ * porcelain `gh pr comment` command already covers it (research.md decision 3's own preference
+ * for porcelain wherever it suffices), no GraphQL mutation needed. */
 export async function commentOnPullRequest(repoPath: string, number: number, body: string): Promise<void> {
   const { owner, repo } = await ownerRepoFor(repoPath);
   const { code, stderr, stdout } = await ghRaw(repoPath, ['pr', 'comment', String(number), '--repo', `${owner}/${repo}`, '--body', body]);
@@ -461,19 +461,19 @@ const ADD_REVIEW_MUTATION =
   'addPullRequestReview(input: { pullRequestId: $pullRequestId, commitOID: $commitOID, event: $event, body: $body }) { clientMutationId } }';
 
 /** `gh pr review` (FR-015): documented porcelain command for comment/request-changes (not
-  * independently live-probed this session; a mutating action, never executed here). Approve is
-  * pinned to the exact reviewed commit (security remediation, Medium-but-must-fix) via the
-  * `addPullRequestReview` GraphQL mutation's `commitOID`.
-  *
-  * CORRECTED (round 3): the prior comment here claimed GitHub "refuses" this mutation if the head
-  * moved since `pullRequestId`/`commitOID` were read -- that was never true and is now proven
-  * false by GitHub's own documented behavior: `commitOID` on `addPullRequestReview` only RECORDS
-  * which commit the review is attached to display-side (shown as "reviewed <sha>" in the UI); it
-  * is not a precondition GitHub validates against the current head, and the mutation succeeds
-  * even if the head has since moved. `gh pr merge --match-head-commit` (below) is the only one of
-  * these two mutations with a real server-side head-match guarantee; approve's own staleness
-  * protection comes entirely from the IPC handler's `expectedHeadSha` check run immediately
-  * before this call (pullRequests.ts), not from anything GitHub itself enforces here. */
+ * independently live-probed this session; a mutating action, never executed here). Approve is
+ * pinned to the exact reviewed commit (security remediation, Medium-but-must-fix) via the
+ * `addPullRequestReview` GraphQL mutation's `commitOID`.
+ *
+ * CORRECTED (round 3): the prior comment here claimed GitHub "refuses" this mutation if the head
+ * moved since `pullRequestId`/`commitOID` were read -- that was never true and is now proven
+ * false by GitHub's own documented behavior: `commitOID` on `addPullRequestReview` only RECORDS
+ * which commit the review is attached to display-side (shown as "reviewed <sha>" in the UI); it
+ * is not a precondition GitHub validates against the current head, and the mutation succeeds
+ * even if the head has since moved. `gh pr merge --match-head-commit` (below) is the only one of
+ * these two mutations with a real server-side head-match guarantee; approve's own staleness
+ * protection comes entirely from the IPC handler's `expectedHeadSha` check run immediately
+ * before this call (pullRequests.ts), not from anything GitHub itself enforces here. */
 export async function submitReview(
   repoPath: string,
   number: number,
@@ -500,11 +500,11 @@ export async function submitReview(
 }
 
 /** `gh pr merge` (FR-016): documented porcelain command, not independently live-probed this
-  * session (a mutating action; never executed here). Maps a "not mergeable" refusal (conflicts or
-  * a failing required check) to `GhErrorCode 'not-mergeable'`, distinct from a generic failure. */
+ * session (a mutating action; never executed here). Maps a "not mergeable" refusal (conflicts or
+ * a failing required check) to `GhErrorCode 'not-mergeable'`, distinct from a generic failure. */
 /** Repository-level merge-method settings (`gh repo view --json`, a standard documented field
-  * set -- not independently live-probed this session, no mutation involved). Maps to the
-  * `MergeMethod[]` a pull request's `allowedMergeMethods` offers. */
+ * set -- not independently live-probed this session, no mutation involved). Maps to the
+ * `MergeMethod[]` a pull request's `allowedMergeMethods` offers. */
 export async function getAllowedMergeMethods(repoPath: string): Promise<MergeMethod[]> {
   const { owner, repo } = await ownerRepoFor(repoPath);
   const result = await ghJson<{ mergeCommitAllowed: boolean; squashMergeAllowed: boolean; rebaseMergeAllowed: boolean }>(
@@ -519,8 +519,8 @@ export async function getAllowedMergeMethods(repoPath: string): Promise<MergeMet
 }
 
 /** `headSha` is always passed (security remediation, Medium-but-must-fix): `--match-head-commit`
-  * makes GitHub itself refuse the merge if the pull request's head has moved since the renderer
-  * last saw it, independent of (and a stronger guarantee than) the in-process staleness cache. */
+ * makes GitHub itself refuse the merge if the pull request's head has moved since the renderer
+ * last saw it, independent of (and a stronger guarantee than) the in-process staleness cache. */
 export async function mergePullRequest(repoPath: string, number: number, method: MergeMethod, headSha: string): Promise<void> {
   const { owner, repo } = await ownerRepoFor(repoPath);
   const flag = method === 'merge' ? '--merge' : method === 'squash' ? '--squash' : '--rebase';
