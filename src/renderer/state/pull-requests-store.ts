@@ -37,6 +37,11 @@ interface PullRequestsState {
   refresh(repositoryId: string): Promise<void>
 }
 
+// High remediation (code-reviewer): module-level, not store state -- a per-repository counter
+// bumped at the START of every `refresh()` call, so a response can check "am I still the latest
+// request for this repository" after its `await` without needing its own store slice.
+const refreshSequence: Record<string, number> = {}
+
 function patch(
   byRepository: Record<string, PullRequestsRepoState>,
   repositoryId: string,
@@ -61,8 +66,14 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   },
   refresh: async (repositoryId) => {
     const before = get().stateFor(repositoryId)
+    // High remediation (code-reviewer): a per-repository sequence number so a slower, now-stale
+    // `list()` response (an earlier tab switch, or a rapid double-switch) can never overwrite a
+    // newer one that already landed -- `refresh` had no request-sequencing token at all before.
+    refreshSequence[repositoryId] = (refreshSequence[repositoryId] ?? 0) + 1
+    const sequence = refreshSequence[repositoryId]
     set({ byRepository: patch(get().byRepository, repositoryId, { loading: true, error: null }) })
     const result = await window.refract.pullRequests.list(repositoryId, before.tab, before.query || undefined)
+    if (refreshSequence[repositoryId] !== sequence) return
     if (!result.ok) {
       set({ byRepository: patch(get().byRepository, repositoryId, { loading: false, error: result.error }) })
       return

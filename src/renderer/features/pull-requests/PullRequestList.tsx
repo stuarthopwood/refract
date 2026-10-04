@@ -49,8 +49,15 @@ export function PullRequestList({ repositoryId }: PullRequestListProps) {
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
-      <Tabs value={state.tab} onValueChange={(value) => setTab(repositoryId, value as FilterTab)}>
-        <TabsList>
+      {/* High remediation: a live screenshot confirmed the 5 filter tab labels genuinely clip at
+          this column's default ~320px width ("Review requested" was fully cut off) -- `h-auto
+          flex-wrap` lets them wrap to a second row instead of overflowing past the column and
+          being hidden by its `overflow-hidden`. `activationMode="manual"` (also High remediation,
+          code-reviewer): Radix's default automatic activation fires a real `gh` call on every
+          arrow-key FOCUS move between tabs, not just a committed choice -- manual activation
+          requires Enter/Space, matching every other list-style control in this view. */}
+      <Tabs value={state.tab} onValueChange={(value) => setTab(repositoryId, value as FilterTab)} activationMode="manual">
+        <TabsList className="h-auto flex-wrap justify-start">
           {TABS.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.label}
