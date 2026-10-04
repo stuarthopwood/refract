@@ -121,7 +121,13 @@
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
-  --border: oklch(1 0 0 / 16%);
+  /* Quality-gate remediation (HIGH, 3 independent reviewers + corrected check-theme-contrast.mjs):
+   * the previous semi-transparent `oklch(1 0 0 / 16%)` blends (gamma-correctly, matching how
+   * Chromium actually composites) to only 1.53:1 against this theme's `--background` -- well
+   * under the 3:1 WCAG AA non-text floor, despite the old (linear-space) version of this script
+   * misreporting it as 4.01:1 PASS. Now opaque, independently re-verified at 5.21:1 by the
+   * corrected script (not scaled from the old 16% token). */
+  --border: oklch(0.5 0 0);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
   --active-indicator: oklch(0.58 0.22 264.376);

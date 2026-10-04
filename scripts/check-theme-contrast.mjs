@@ -108,11 +108,20 @@ function clamp01(x) {
   return Math.min(1, Math.max(0, x))
 }
 
-// Alpha-composite `fg` (with its own alpha) over opaque `bg`, in linear space, then clamp --
-// approximates what the browser paints for the handful of semi-transparent tokens (e.g.
-// `--border`) this file defines.
+// Quality-gate remediation (HIGH, corroborated by code-reviewer/test-reviewer/accessibility-
+// auditor): browsers alpha-composite in gamma-encoded sRGB space, not linear light -- blending
+// in linear space (the old behaviour here) understated how much a semi-transparent token lets
+// the backdrop show through. A reviewer independently confirmed with node that `.theme-dark`'s
+// `--border` (16% alpha) was reported 4.01:1 by the old linear blend but is actually only
+// 1.53:1 as really rendered. Fix: gamma-encode both operands, blend in that gamma space (what
+// the compositor does), then gamma-decode the blended result back to linear before computing
+// WCAG relative luminance.
 function compositeOverLinear(fg, bg) {
-  return fg.linear.map((c, i) => clamp01(fg.alpha * c + (1 - fg.alpha) * bg.linear[i]))
+  return fg.linear.map((c, i) => {
+    const fgGamma = srgbGammaEncode(clamp01(c))
+    const bgGamma = srgbGammaEncode(clamp01(bg.linear[i]))
+    return srgbGammaDecode(clamp01(fg.alpha * fgGamma + (1 - fg.alpha) * bgGamma))
+  })
 }
 
 function relativeLuminance([r, g, b]) {
