@@ -3,7 +3,12 @@
 // Pure types and helpers; MessageInput.tsx owns the actual state and wiring, AttachmentStrip.tsx
 // and the preview modals own the presentation.
 import type { ImageContent, SupportedImageMimeType } from '../../../shared/frames'
-import { LARGE_PASTE_CHIP_THRESHOLD, MAX_IMAGE_INPUT_BYTES, SUPPORTED_IMAGE_MIME_TYPES } from '../../../shared/images'
+import {
+  LARGE_PASTE_CHIP_THRESHOLD,
+  MAX_IMAGE_INPUT_BYTES,
+  matchesImageSignature,
+  SUPPORTED_IMAGE_MIME_TYPES
+} from '../../../shared/images'
 
 export interface PendingImageAttachment {
   kind: 'image'
@@ -63,9 +68,16 @@ function base64FromDataUrl(dataUrl: string): string {
  * (FR-002; research.md Decision 7): Refract never relies on OMP's own fallback/conversion for an
  * unsupported source format. Throws on a paste that cannot even be decoded as an image (corrupt
  * data, an unsupported binary format) -- the caller turns that into the Edge Cases' inline error. */
+// Low remediation: a compressed "decompression bomb" (tiny file, enormous pixel count) could
+// otherwise allocate a canvas/bitmap far larger than anything the post-re-encode size check below
+// would catch, hanging or crashing the renderer before that check ever runs. 40 MP is comfortably
+// larger than any real clipboard paste while still bounding worst-case canvas memory.
+const MAX_IMAGE_PIXELS = 40_000_000
+
 async function reencodeToPng(blob: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(blob)
   try {
+    if (bitmap.width * bitmap.height > MAX_IMAGE_PIXELS) throw new Error('image exceeds the maximum pixel count')
     const canvas = document.createElement('canvas')
     canvas.width = bitmap.width
     canvas.height = bitmap.height
@@ -78,6 +90,13 @@ async function reencodeToPng(blob: Blob): Promise<Blob> {
   } finally {
     bitmap.close()
   }
+}
+
+function readBytePrefix(blob: Blob, length: number): Promise<Uint8Array> {
+  return blob
+    .slice(0, length)
+    .arrayBuffer()
+    .then((buffer) => new Uint8Array(buffer))
 }
 
 export type ImageAttachResult =
@@ -94,6 +113,10 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
   let mimeType: string = file.type
   try {
     if (!isSupportedImageMimeType(mimeType)) {
+      // Low remediation: reject an over-cap source file before ever decoding it -- `blob.size`
+      // here is the original (possibly compressed) file, re-checked again below against the
+      // final re-encoded blob's own size, since re-encoding can change it either way.
+      if (blob.size > MAX_IMAGE_INPUT_BYTES) return { ok: false, reason: 'too-large', byteLength: blob.size }
       blob = await reencodeToPng(blob)
       mimeType = 'image/png'
     }
@@ -101,6 +124,14 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
     return { ok: false, reason: 'decode-failed' }
   }
   if (blob.size > MAX_IMAGE_INPUT_BYTES) return { ok: false, reason: 'too-large', byteLength: blob.size }
+  // Security remediation (Medium): an already-supported declared `mimeType` is never otherwise
+  // decoded or byte-checked -- only its MIME string and size are. Check the real magic bytes here
+  // too (the freshly re-encoded PNG branch above also passes through this harmlessly, since a
+  // browser-generated PNG blob always has a real PNG signature).
+  const signaturePrefix = await readBytePrefix(blob, 16)
+  if (!matchesImageSignature(signaturePrefix, mimeType as SupportedImageMimeType)) {
+    return { ok: false, reason: 'decode-failed' }
+  }
   let dataUrl: string
   try {
     dataUrl = await readAsDataUrl(blob)
@@ -137,15 +168,21 @@ const LABEL_FIRST_LINE_MAX = 40
 /** `PendingTextChip.label` (data-model.md "Rules"): the first line of the pasted text, truncated
  * to a readable length, plus a character count, with a disambiguating index appended when it
  * would otherwise collide with another pending chip's label (e.g. two pastes of the same short
- * function each producing the same label). */
+ * function each producing the same label). Critical remediation: the index sits INSIDE the
+ * closing `)` (`"X (900 chars, #2)"`), never appended after it (`"X (900 chars) #2"`) -- the old
+ * form made every disambiguated label a literal superstring of its own base label, so a plain
+ * `includes`/`indexOf` lookup for the base label (e.g. a dangling chip whose own label was never
+ * disambiguated) would also match inside the longer label. Appending before the final `)` instead
+ * means `base` and `base, #2` diverge at the character right after the shared prefix (`)` vs `,`),
+ * so neither can ever be a literal prefix of the other, structurally, not just by convention. */
 export function buildChipLabel(text: string, existingLabels: ReadonlySet<string>): string {
   const firstLine = text.split('\n', 1)[0] ?? ''
   const truncated = firstLine.length > LABEL_FIRST_LINE_MAX ? `${firstLine.slice(0, LABEL_FIRST_LINE_MAX)}…` : firstLine
   const base = `${truncated} (${text.length} chars)`
   if (!existingLabels.has(base)) return base
   let index = 2
-  while (existingLabels.has(`${base} #${index}`)) index++
-  return `${base} #${index}`
+  while (existingLabels.has(`${truncated} (${text.length} chars, #${index})`)) index++
+  return `${truncated} (${text.length} chars, #${index})`
 }
 
 /** FR-010, FR-011: over the threshold collapses to a chip; at or under it, paste exactly as
@@ -154,43 +191,77 @@ export function isLargePaste(text: string): boolean {
   return text.length > LARGE_PASTE_CHIP_THRESHOLD
 }
 
-/** FR-014, Edge Cases: a chip is dropped the moment its label no longer appears intact in the
- * draft -- an explicit delete and an edit that breaks the label are both covered the same way,
- * since `label` is also the correlation/editing-detection key (data-model.md, research.md
- * Decision 10). */
-export function pruneDanglingChips(text: string, chips: readonly PendingTextChip[]): PendingTextChip[] {
-  return chips.filter((chip) => text.includes(chip.label))
-}
-
-/** FR-013, FR-015: substitutes every still-pending chip's full original text back into the draft
- * at its own current position, independently of the others and of their order -- each chip looks
- * up its own label's current index at the moment it is processed, so an earlier substitution
- * shifting the string never corrupts a later chip's own replacement. */
-export function substituteChips(message: string, chips: readonly PendingTextChip[]): string {
-  let result = message
-  for (const chip of chips) {
-    const index = result.indexOf(chip.label)
-    if (index === -1) continue // already dropped (Edge Cases); nothing to substitute
-    result = result.slice(0, index) + chip.text + result.slice(index + chip.label.length)
-  }
-  return result
-}
-
 export interface ChipOccurrence {
   chip: PendingTextChip
   start: number
   end: number
 }
 
-/** Every pending chip's current position in `text` (research.md Decision 10: the label is the
- * correlation key, so its live `indexOf` is also the overlay's own position), sorted left to
- * right for the overlay renderer below. */
-export function findChipOccurrences(text: string, chips: readonly PendingTextChip[]): ChipOccurrence[] {
+/** Critical remediation: resolves every pending chip's current position in `text` in ONE
+ * left-to-right pass, instead of each chip independently looking up its own label's `indexOf`
+ * (the old per-chip approach: with prefix-ambiguous labels, or any two pending labels that happen
+ * to overlap at the same position -- e.g. a dangling chip's label never pruned -- an earlier
+ * chip's lookup could match inside a later chip's own label, or the same text span could satisfy
+ * more than one chip). Scans left to right; at each position considers every chip not yet
+ * resolved, picks whichever pending label starts earliest, and breaks a same-start tie in favour
+ * of the LONGEST label (the more specific match "wins" over a shorter one that happens to be a
+ * literal prefix of it). Each chip is assigned at most one occurrence. `pruneDanglingChips`,
+ * `substituteChips`, and `findChipOccurrences` (the overlay's own position-finding) all call this
+ * one function, so all three always agree on which occurrence belongs to which chip. */
+function resolveChipOccurrences(text: string, chips: readonly PendingTextChip[]): ChipOccurrence[] {
   const occurrences: ChipOccurrence[] = []
-  for (const chip of chips) {
-    const start = text.indexOf(chip.label)
-    if (start === -1) continue
-    occurrences.push({ chip, start, end: start + chip.label.length })
+  const resolved = new Set<string>()
+  let cursor = 0
+  while (cursor <= text.length) {
+    let best: { chip: PendingTextChip; start: number } | null = null
+    for (const chip of chips) {
+      if (resolved.has(chip.id)) continue
+      const start = text.indexOf(chip.label, cursor)
+      if (start === -1) continue
+      if (best === null || start < best.start || (start === best.start && chip.label.length > best.chip.label.length)) {
+        best = { chip, start }
+      }
+    }
+    if (best === null) break
+    resolved.add(best.chip.id)
+    const end = best.start + best.chip.label.length
+    occurrences.push({ chip: best.chip, start: best.start, end })
+    cursor = end
   }
-  return occurrences.sort((a, b) => a.start - b.start)
+  return occurrences
+}
+
+/** FR-014, Edge Cases: a chip is dropped the moment its label no longer appears intact in the
+ * draft -- an explicit delete and an edit that breaks the label are both covered the same way,
+ * since `label` is also the correlation/editing-detection key (data-model.md, research.md
+ * Decision 10). Critical remediation: uses the shared `resolveChipOccurrences` pass instead of an
+ * independent `includes` check per chip, so a dangling chip's label can never be kept alive by
+ * coincidentally being a literal substring of another, still-live chip's label. */
+export function pruneDanglingChips(text: string, chips: readonly PendingTextChip[]): PendingTextChip[] {
+  const stillPending = new Set(resolveChipOccurrences(text, chips).map((occurrence) => occurrence.chip.id))
+  return chips.filter((chip) => stillPending.has(chip.id))
+}
+
+/** FR-013, FR-015: substitutes every still-pending chip's full original text back into the draft
+ * at its own position. Critical remediation: every chip's position is resolved together in one
+ * pass first (`resolveChipOccurrences`), then substituted back-to-front (highest `start` first) --
+ * replacing a later occurrence can never shift an earlier, not-yet-processed occurrence's indices,
+ * so there is no risk of an earlier substitution corrupting a later chip's position the way a
+ * naive left-to-right independent-lookup substitution could with overlapping/prefix labels. */
+export function substituteChips(message: string, chips: readonly PendingTextChip[]): string {
+  const occurrences = resolveChipOccurrences(message, chips)
+  let result = message
+  for (let i = occurrences.length - 1; i >= 0; i--) {
+    const { chip, start, end } = occurrences[i]!
+    result = result.slice(0, start) + chip.text + result.slice(end)
+  }
+  return result
+}
+
+/** Every pending chip's current position in `text` (research.md Decision 10: the label is the
+ * correlation key), resolved via the same shared pass `pruneDanglingChips`/`substituteChips` use
+ * (Critical remediation), sorted left to right for the overlay renderer below -- the loop already
+ * produces occurrences in left-to-right order, since `cursor` only ever advances. */
+export function findChipOccurrences(text: string, chips: readonly PendingTextChip[]): ChipOccurrence[] {
+  return resolveChipOccurrences(text, chips)
 }

@@ -260,10 +260,10 @@ export interface RefractApi {
     send(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ queued: boolean }>>;
     stop(sessionId: string): Promise<Result<void>>;
     removeQueued(sessionId: string, text: string): Promise<Result<{ removed: boolean }>>;
-    /** Same `images?` and the same two new error codes as `send` (contracts/ipc.md), applied
-     * before the existing `remove_queued_message` then `steer` sequence builds its `steer`
-     * command with `images` set. */
-    sendNow(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ steered: boolean }>>;
+    /** High remediation (spec 009 quality gate): no `images?` parameter -- a resend must carry
+     * the queued message's OWN images, recorded by `SessionAgent` at the moment it was queued,
+     * never whatever the caller's composer happens to have pending right now (contracts/ipc.md). */
+    sendNow(sessionId: string, text: string): Promise<Result<{ steered: boolean }>>;
     answer(sessionId: string, requestId: string, answer: ChatAnswer): Promise<Result<void>>;
     commands(sessionId: string): Promise<Result<SlashCommand[]>>;
     /** Ghost-text composer completion (T103, FR-058): `null` whenever there is no live agent

@@ -6,7 +6,7 @@
 // the textarea's own scroll position, unlike the inline overlay this same module also renders --
 // see `ChipOverlaySegments` below), but has no remove control of its own: FR-014 removes a chip
 // only by editing or deleting its label the same way any other draft text is edited.
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ImagePreviewModal } from './ImagePreviewModal'
@@ -73,13 +73,32 @@ export function AttachmentStrip({ images, textChips, onRemoveImage }: Attachment
  * each occurrence so the visible chip lands exactly where its label renders in the real
  * textarea. Only the chip buttons themselves are `pointer-events-auto`; the container stays
  * `pointer-events-none` (set by the caller) so the real textarea beneath remains the one surface
- * that receives clicks, drags, and text selection everywhere else. */
+ * that receives clicks, drags, and text selection everywhere else.
+ *
+ * High remediation (code-reviewer): the clickable chip itself is a `<span role="button">`, not a
+ * real `<button>` -- a `<button>` is `display: inline-block` by default (Chromium), one
+ * unbreakable box, so a chip label positioned near a line's wrap point would sit on a different
+ * visual line than the textarea's own text wraps it to (the ghost-text overlay this is meant to
+ * reuse the measurement technique from uses only plain `<span>`s, which wrap exactly like the
+ * underlying text). A `<span>` is `display: inline` by default and wraps the same way; `[box-
+ * decoration-break:clone]` makes the chip's background/rounding repeat cleanly on every visual
+ * line fragment it wraps across, rather than being sliced across the break.
+ *
+ * High remediation (accessibility-auditor): `tabIndex={-1}` keeps this a mouse-only shortcut --
+ * it sits inside an `aria-hidden="true"` container (the ghost-overlay pattern), so a default
+ * `tabIndex` of 0 would otherwise create a Tab stop with no exposed accessible name. The strip's
+ * own badge (`AttachmentStrip` above) is a real `<button>` and remains the one keyboard/
+ * assistive-tech route to the same preview. `restoreFocusTo` (the textarea) is threaded into
+ * `TextPreviewModal` below so the modal's own close-focus-return target is the textarea, not this
+ * now-keyboard-unreachable span, when it was opened from here specifically. */
 export function ChipOverlaySegments({
   text,
-  occurrences
+  occurrences,
+  textareaRef
 }: {
   text: string
   occurrences: ChipOccurrence[]
+  textareaRef: RefObject<HTMLTextAreaElement | null>
 }): ReactNode {
   const nodes: ReactNode[] = []
   let cursor = 0
@@ -95,13 +114,15 @@ export function ChipOverlaySegments({
       <TextPreviewModal
         key={occurrence.chip.id}
         chip={occurrence.chip}
+        restoreFocusTo={textareaRef}
         trigger={
-          <button
-            type="button"
-            className="pointer-events-auto rounded-sm bg-secondary/80 align-baseline text-secondary-foreground underline decoration-dotted underline-offset-2 hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          <span
+            role="button"
+            tabIndex={-1}
+            className="pointer-events-auto cursor-pointer rounded-sm bg-secondary/80 text-secondary-foreground underline decoration-dotted underline-offset-2 [box-decoration-break:clone] hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             {occurrence.chip.label}
-          </button>
+          </span>
         }
       />
     )

@@ -31,7 +31,7 @@ import {
   substituteChips,
   toImageContent
 } from './attachments'
-import type { AttachmentsState } from './attachments'
+import type { AttachmentsState, PendingTextChip } from './attachments'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -100,6 +100,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const [slashDismissed, setSlashDismissed] = useState(false)
   const stopReasonId = `${sessionId}-stop-reason`
   const slashMenuId = `${sessionId}-slash-menu`
+  // Accessibility remediation (High): a transient polite announcement for a chip being created,
+  // an image being attached, or a chip being silently dropped (FR-014) -- none of which otherwise
+  // reach a screen-reader user, who only ever hears the textarea's own plain-text value. Separate
+  // live region from the slash-menu one below so an attachment event is never swallowed by (or
+  // swallows) an unrelated "No matching commands" announcement.
+  const [attachmentAnnouncement, setAttachmentAnnouncement] = useState<string | null>(null)
+  const attachmentsStatusId = `${sessionId}-attachments-status`
+  const attachmentsSummaryId = `${sessionId}-attachments-summary`
 
   const statusRef = useRef(status)
   statusRef.current = status
@@ -261,8 +269,19 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
    * box no longer parses as a bare slash query, which closes the menu without extra state. */
   function completeSlashCommand(command: SlashCommand) {
     clearGhostState() // bypasses the normal onChange path too (#358/#359 remediation)
-    setText(`/${command.name} `)
+    const nextText = `/${command.name} `
+    setText(nextText)
     setSlashDismissed(false)
+    // Medium remediation (test-reviewer): this also bypasses onChange's own `pruneDanglingChips`
+    // call the same way Enter-send and Esc-clear do -- without this a chip whose label no longer
+    // appears in the draft stays pending indefinitely, and a stale pending label can wrongly count
+    // as "already used" when a later paste tries to disambiguate against it (compounding the
+    // Critical chip-collision remediation above).
+    const prunedChips = pruneDanglingChips(nextText, attachments.textChips)
+    if (prunedChips.length !== attachments.textChips.length) {
+      announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
+      setAttachments((prev) => ({ ...prev, textChips: prunedChips }))
+    }
   }
 
   /** Sends `predictWordFeedback` for whatever suggestion is currently shown, at most once per
@@ -443,6 +462,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       event.preventDefault()
       clearGhostState()
       setText('')
+      // Medium remediation (test-reviewer): same bypass as `completeSlashCommand` above --
+      // plain Esc-clear calls `setText` directly too, skipping onChange's own
+      // `pruneDanglingChips`. Every chip's label is gone from the (now-empty) draft, so this
+      // simply drops them all, with the same silent-removal announcement any other drop gets.
+      const prunedChips = pruneDanglingChips('', attachments.textChips)
+      if (prunedChips.length !== attachments.textChips.length) {
+        announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
+        setAttachments((prev) => ({ ...prev, textChips: prunedChips }))
+      }
     }
   }
 
@@ -457,19 +485,31 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }
 
   async function handleSendNow(queuedText: string) {
-    // FR-017, contracts/ipc.md: `chat.sendNow` accepts the same `images?` as `chat.send` since
-    // its own `steer` command is built from scratch (never reusing whatever `images` the
-    // original queued `prompt` carried) -- so any image still pending in the composer right now
-    // goes out with this resend the same way it would with an idle send. Whatever image(s) were
-    // actually part of the originally-queued followUp already reached OMP as part of that
-    // earlier `chat.send` call, independently of this one (FR-007 already cleared them then).
-    const images = attachments.images.length > 0 ? attachments.images.map(toImageContent) : undefined
-    const result = await window.refract.chat.sendNow(sessionId, queuedText, images)
+    // High remediation (test-reviewer): `chat.sendNow` no longer takes an `images` argument from
+    // here at all. The old code forwarded whatever images happen to be pending in the composer
+    // RIGHT NOW -- usually meant for a later, different message -- while the queued message's own
+    // real images were silently dropped (`remove_queued_message` removes the whole queued prompt,
+    // images included). `SessionAgent` now records a queued prompt's own images at the moment it
+    // was queued and re-attaches THAT message's own images to the `steer` command itself, so this
+    // call site must never touch, forward, or clear the composer's own current pending images.
+    const result = await window.refract.chat.sendNow(sessionId, queuedText)
     if (!result.ok) {
       notify(result.error)
       return
     }
-    setAttachments((prev) => (prev.images.length > 0 ? { ...prev, images: [] } : prev))
+  }
+
+  /** Accessibility remediation (High): announces a chip's own silent removal (`pruneDanglingChips`
+   * dropping it because its label no longer appears intact in the draft, FR-014) via the live
+   * region above -- a screen-reader user otherwise gets no indication that editing, clearing, or
+   * completing a slash command discarded a whole pasted block, with the broken label text sent in
+   * its place and no undo. A no-op when nothing was actually removed. */
+  function announceChipRemoval(removed: readonly PendingTextChip[]) {
+    const [first] = removed
+    if (!first) return
+    setAttachmentAnnouncement(
+      removed.length === 1 ? `Pasted text attachment ${first.label} removed.` : `${removed.length} pasted text attachments removed.`
+    )
   }
 
   /** FR-001 to FR-003, FR-010, FR-011, Edge Cases: an image representation always wins over a
@@ -495,6 +535,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         return
       }
       setAttachments((prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+      setAttachmentAnnouncement(`Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
       return
     }
 
@@ -518,6 +559,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       ...prev,
       textChips: [...prev.textChips, { kind: 'text-chip', id: crypto.randomUUID(), text: pastedText, label }]
     }))
+    setAttachmentAnnouncement(`Pasted text collapsed into an attachment: ${label}. Review it in Pending attachments.`)
     requestAnimationFrame(() => {
       textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
     })
@@ -532,6 +574,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // Slash commands are discoverable by typing '/' itself (SlashMenu.tsx opens on it), so no
     // parenthetical hint is needed here (docs/DESIGN.md "No bracket/parenthetical UI copy").
     : 'Message the agent…'
+  // Accessibility remediation (High): a short, persistent sr-only summary of how many
+  // attachments are pending right now, pointed to by the textarea's own `aria-describedby` --
+  // the only programmatic link from the textarea to its pending chips/images before this.
+  const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length
+  const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId].filter(Boolean).join(' ')
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-border px-4 py-3">
@@ -570,6 +617,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <div role="status" aria-live="polite" className="sr-only">
         {showSlashMenu && slashMatches.length === 0 ? 'No matching commands' : ''}
       </div>
+      {/* Accessibility remediation (High): announces a chip/image being created or a chip being
+          silently dropped (`announceChipRemoval`, `handlePaste`) -- separate from the slash-menu
+          status above so the two never step on each other. */}
+      <div id={attachmentsStatusId} role="status" aria-live="polite" className="sr-only">
+        {attachmentAnnouncement ?? ''}
+      </div>
+      <span id={attachmentsSummaryId} className="sr-only">
+        {pendingAttachmentsCount > 0
+          ? `${pendingAttachmentsCount} pending attachment${pendingAttachmentsCount === 1 ? '' : 's'}`
+          : ''}
+      </span>
       {/* Chip row (docs/DESIGN.md "Chat"; spec 004 appends readout chips after the pill): the
           Approval mode pill is always the first item, FR-056. */}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -615,7 +673,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             aria-activedescendant={
               showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, clampedSlashActiveIndex) : undefined
             }
-            aria-describedby={disabled ? `${stopReasonId} ${ghostHintId}` : ghostHintId}
+            aria-describedby={describedByIds}
             value={text}
             onChange={(event) => {
               const value = event.target.value
@@ -625,11 +683,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               scheduleGhostCheck(value, cursor)
               // FR-014, Edge Cases: every edit re-checks every pending chip's label against the
               // new value -- an explicit delete and an edit that merely breaks the label both
-              // drop it from pending state the same way.
-              setAttachments((prev) => {
-                const prunedChips = pruneDanglingChips(value, prev.textChips)
-                return prunedChips.length === prev.textChips.length ? prev : { ...prev, textChips: prunedChips }
-              })
+              // drop it from pending state the same way. Accessibility remediation (High):
+              // whatever got dropped is announced via the live region below, since this was
+              // previously completely silent to a screen-reader user.
+              const prunedChips = pruneDanglingChips(value, attachments.textChips)
+              if (prunedChips.length !== attachments.textChips.length) {
+                announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
+                setAttachments((prev) => ({ ...prev, textChips: prunedChips }))
+              }
             }}
             onPaste={(event) => void handlePaste(event)}
             onScroll={(event) => {
@@ -671,7 +732,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
             >
-              <ChipOverlaySegments text={text} occurrences={findChipOccurrences(text, attachments.textChips)} />
+              <ChipOverlaySegments
+                text={text}
+                occurrences={findChipOccurrences(text, attachments.textChips)}
+                textareaRef={textareaRef}
+              />
             </div>
           )}
           {/* Screen reader users never heard WHAT was suggested, only a generic hint -- Tab would

@@ -99,7 +99,13 @@ Rules:
   the first line of `text` (truncated to a readable length) plus a character count, with a
   disambiguating index appended when two pending chips would otherwise produce the same label (for
   example two pastes of the same short function, each producing "`function foo() {...` (842
-  chars)"; the second becomes "`function foo() {...` (842 chars) #2").
+  chars)"; the second becomes "`function foo() {...` (842 chars, #2)"). **Remediation (Critical,
+  quality gate 2026-10-04): the index sits INSIDE the closing `)`, never appended after it** (the
+  original "`... (842 chars) #2`" form made every disambiguated label a literal prefix-superstring
+  of its own base label, so a plain substring lookup for the base label also matched inside the
+  longer one — see `resolveChipOccurrences` in `attachments.ts` for the shared left-to-right
+  resolution pass that `pruneDanglingChips`/`substituteChips`/the overlay's position-finding all
+  now use instead of each independently calling `indexOf` on its own label.
 - Created only when a plain-text paste (no image representation present, Edge Cases) is over
   `LARGE_PASTE_CHIP_THRESHOLD` characters; at or under the threshold no `PendingTextChip` is created
   and the raw text inserts normally (FR-010).
@@ -120,14 +126,16 @@ interface AttachmentsState {
 ```
 
 Not part of `SessionRuntime` (data-model.md, spec 001): attachments belong to the composer's current
-draft, not to the Session's transcript or queue state, and are never sent to main except as the
-`images` array of one outgoing `chat.send`/`chat.sendNow` call.
+draft, not to the Session's transcript or queue state, and the renderer never sends these pending
+images to main except as the `images` array of one outgoing `chat.send` call (remediation, quality
+gate 2026-10-04: `chat.sendNow` no longer takes an `images` argument from the renderer at all --
+`SessionAgent` resends a queued message's own recorded images itself; see contracts/ipc.md).
 
 ## IPC surface change (`src/shared/ipc.ts`, `contracts/ipc.md`)
 
 ```ts
 chat.send(sessionId: string, text: string, images?: ImageContent[]): Result<{ queued: boolean }>
-chat.sendNow(sessionId: string, text: string, images?: ImageContent[]): Result<{ steered: boolean }>
+chat.sendNow(sessionId: string, text: string): Result<{ steered: boolean }>
 ```
 
 New error codes: `unsupported-image-type`, `image-too-large` (contracts/ipc.md).

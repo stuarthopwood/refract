@@ -43,28 +43,38 @@ function isChatAnswer(value: unknown): value is ChatAnswer {
 
 /** `images` (spec 009, FR-018, contracts/ipc.md): accepted as `unknown` off the wire like every
  * other argument here, shape-checked, then independently re-validated entry by entry (mime type,
- * decoded byte size) before anything is ever forwarded to `SessionAgent` -- the renderer's own
- * paste-time check is never trusted alone (constitution Principle V). Runs in the same place the
- * existing `sessionId`/argument-shape checks already do, additive to them, never replacing their
- * failure modes; the first failing entry's code is returned and nothing is sent. `undefined`
- * (no `images` argument at all) is valid and carries no images. */
+ * decoded byte size, real magic bytes) before anything is ever forwarded to `SessionAgent` -- the
+ * renderer's own paste-time check is never trusted alone (constitution Principle V). Runs in the
+ * same place the existing `sessionId`/argument-shape checks already do, additive to them, never
+ * replacing their failure modes; the first failing entry's code is returned and nothing is sent.
+ * `undefined` (no `images` argument at all) is valid and carries no images. Used by `CHAT_SEND`
+ * only -- `CHAT_SEND_NOW` no longer accepts an `images` argument (High remediation: a resend's own
+ * images are recorded and resent by `SessionAgent` itself, never supplied by the caller).
+ *
+ * Critical/High remediation (code-reviewer): builds a FRESH `ImageContent` containing ONLY the
+ * three validated fields, never `candidate as unknown as ImageContent`. The old cast forwarded the
+ * renderer's whole object unchanged -- a compromised/buggy renderer could attach extra fields
+ * (`providerFile`, `url`, `detail`) that OMP's own real handling acts on, reaching a privileged
+ * provider-file/remote-URL fetch despite every shape/mime/size check here passing. Also rejects a
+ * zero-length `data` string, which the old checks never excluded. */
 function parseImagesArgument(images: unknown): { ok: true; value: ImageContent[] | undefined } | Result<never> {
   if (images === undefined) return { ok: true, value: undefined };
   if (!Array.isArray(images)) {
-    return invalidArgument(`${IPC_REQUESTS.CHAT_SEND}/${IPC_REQUESTS.CHAT_SEND_NOW} expects images to be an array when provided`);
+    return invalidArgument(`${IPC_REQUESTS.CHAT_SEND} expects images to be an array when provided`);
   }
   const parsed: ImageContent[] = [];
   for (const entry of images) {
     if (typeof entry !== 'object' || entry === null) {
-      return invalidArgument(`${IPC_REQUESTS.CHAT_SEND}/${IPC_REQUESTS.CHAT_SEND_NOW}: each image must be an object`);
+      return invalidArgument(`${IPC_REQUESTS.CHAT_SEND}: each image must be an object`);
     }
     const candidate = entry as Record<string, unknown>;
     if (candidate.type !== 'image' || typeof candidate.data !== 'string' || typeof candidate.mimeType !== 'string') {
-      return invalidArgument(
-        `${IPC_REQUESTS.CHAT_SEND}/${IPC_REQUESTS.CHAT_SEND_NOW}: each image must be { type: 'image', data: string, mimeType: string }`
-      );
+      return invalidArgument(`${IPC_REQUESTS.CHAT_SEND}: each image must be { type: 'image', data: string, mimeType: string }`);
     }
-    const image = candidate as unknown as ImageContent;
+    if (candidate.data.length === 0) {
+      return invalidArgument(`${IPC_REQUESTS.CHAT_SEND}: image data must not be empty`);
+    }
+    const image: ImageContent = { type: 'image', data: candidate.data, mimeType: candidate.mimeType as ImageContent['mimeType'] };
     const validation = validateImageAttachment(image);
     if (!validation.ok) {
       return {
@@ -166,15 +176,16 @@ export function registerChat(manager: SessionManager): void {
     }
   });
 
-  ipcMain.handle(IPC_REQUESTS.CHAT_SEND_NOW, async (_event, sessionId: unknown, text: unknown, images: unknown) => {
+  // High remediation (test-reviewer): no `images` argument here at all -- a resend must carry
+  // the queued message's OWN images, recorded by `SessionAgent` when it was originally queued,
+  // never whatever the caller's composer happens to have pending right now.
+  ipcMain.handle(IPC_REQUESTS.CHAT_SEND_NOW, async (_event, sessionId: unknown, text: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.CHAT_SEND_NOW} expects (sessionId, text) strings`);
     }
-    const parsedImages = parseImagesArgument(images);
-    if (!parsedImages.ok) return parsedImages;
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     try {
-      const result = await manager.getOrCreateAgent(sessionId).sendNow(text, parsedImages.value);
+      const result = await manager.getOrCreateAgent(sessionId).sendNow(text);
       return { ok: true, value: result };
     } catch (err) {
       return mapChatError(err);

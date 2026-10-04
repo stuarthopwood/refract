@@ -88,8 +88,7 @@ const refract: RefractApi = {
       request<{ queued: boolean }>(IPC_REQUESTS.CHAT_SEND, sessionId, text, images),
     stop: (sessionId) => request<void>(IPC_REQUESTS.CHAT_STOP, sessionId),
     removeQueued: (sessionId, text) => request<{ removed: boolean }>(IPC_REQUESTS.CHAT_REMOVE_QUEUED, sessionId, text),
-    sendNow: (sessionId, text, images?: ImageContent[]) =>
-      request<{ steered: boolean }>(IPC_REQUESTS.CHAT_SEND_NOW, sessionId, text, images),
+    sendNow: (sessionId, text) => request<{ steered: boolean }>(IPC_REQUESTS.CHAT_SEND_NOW, sessionId, text),
     answer: (sessionId, requestId, answer: ChatAnswer) =>
       request<void>(IPC_REQUESTS.CHAT_ANSWER, sessionId, requestId, answer),
     commands: (sessionId) => request<SlashCommand[]>(IPC_REQUESTS.CHAT_COMMANDS, sessionId),

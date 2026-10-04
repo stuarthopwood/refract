@@ -128,6 +128,16 @@ export class SessionAgent extends EventEmitter {
    * `prompt_result.sessionSettled:true` and a separate `session_settled` frame for the same
    * turn. Reset at the next `agent_start`. */
   private turnSettleHandled = false;
+  /** High remediation (spec 009 quality gate): images that went out with a queued `followUp`
+   * prompt (`send()` while `working`), keyed by the exact same `message` text OMP's own
+   * `remove_queued_message`/`steer` commands already match a queued chip by. `sendNow()` reads
+   * (and removes) the entry for its own text instead of ever being handed images by the caller --
+   * the old code forwarded whatever images happen to be pending in the composer right now,
+   * silently dropping the queued message's own real images and sending someone else's. Entries
+   * are cleaned up here (on successful removal/resend) and in `setQueue` (when a queued message
+   * leaves the queue by any other route, e.g. OMP itself promoting it once the turn ends), so this
+   * map never grows unbounded. */
+  private readonly queuedImages = new Map<string, ImageContent[]>();
 
   /** `transcript.ts`'s `applyFrame` reads this to tell OMP's own unsolicited startup banner
    * apart from a user-run slash command's output (`STARTUP_NOTICE_PREFIX`): `false` only for the
@@ -437,10 +447,17 @@ export class SessionAgent extends EventEmitter {
     }
     const working = this.runtime.status === 'working' || this.runtime.status === 'needs-you';
     const imagesField = images && images.length > 0 ? { images } : {};
+    // High remediation (spec 009 quality gate): record this queued message's own images (if any)
+    // against its exact text, so a later `sendNow(text)` resends THESE images, never whatever the
+    // composer happens to have pending at that later moment. Only meaningful when this prompt is
+    // actually being queued (`working`); an idle send starts a turn immediately and has no queue
+    // chip for `sendNow` to ever resend.
+    if (working && images && images.length > 0) this.queuedImages.set(text, images);
     const res = working
       ? await this.process.request({ type: 'prompt', id: '', message: text, ...imagesField, streamingBehavior: 'followUp' })
       : await this.process.request({ type: 'prompt', id: '', message: text, ...imagesField });
     if (!res.success) {
+      if (working && images && images.length > 0) this.queuedImages.delete(text); // never actually queued
       this.appendNotice(`prompt failed: ${res.error ?? 'unknown error'}`, 'error');
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: prompt failed: ${res.error ?? 'unknown error'}`);
     }
@@ -471,7 +488,9 @@ export class SessionAgent extends EventEmitter {
     if (!res.success) {
       this.appendNotice(`remove_queued_message failed: ${res.error ?? 'unknown error'}`, 'error');
     }
-    return { removed: res.success && (res.data as { removed?: boolean } | undefined)?.removed === true };
+    const removed = res.success && (res.data as { removed?: boolean } | undefined)?.removed === true;
+    if (removed) this.queuedImages.delete(text); // High remediation: this message is gone, never resend its images
+    return { removed };
   }
 
   /** `chat.predictWord` (T103, FR-058): ghost-text composer completion. Issues `predict_word`
@@ -507,11 +526,13 @@ export class SessionAgent extends EventEmitter {
 
   /** `chat.sendNow` (contracts/omp-usage.md "Send now (steer)"): removes the queued chip, then
    * steers with the same text. If it had already left the queue on its own, does nothing more.
-   * `images` (spec 009, contracts/ipc.md) is forwarded unchanged onto the `steer` command this
-   * builds from scratch -- that command carries no reference to whatever `images` the original
-   * queued `prompt` may have had, so a caller that wants this steer to carry attachments must
-   * pass them again here; omitted entirely (never `images: undefined`) when there are none. */
-  async sendNow(text: string, images?: ImageContent[]): Promise<{ steered: boolean }> {
+   * High remediation (spec 009 quality gate): no `images` parameter -- the `steer` command this
+   * builds from scratch carries whatever images `send()` recorded against this exact text at the
+   * moment it was originally queued (`this.queuedImages`), never images supplied by this call's
+   * own caller. The old signature took a caller-supplied `images?` and forwarded it unchanged,
+   * which in practice meant the composer's CURRENT pending images (meant for a later, different
+   * message) went out on this resend instead of the queued message's own real images. */
+  async sendNow(text: string): Promise<{ steered: boolean }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send now, no live process`);
     }
@@ -522,6 +543,8 @@ export class SessionAgent extends EventEmitter {
     if (!(removeRes.success && (removeRes.data as { removed?: boolean } | undefined)?.removed === true)) {
       return { steered: false };
     }
+    const images = this.queuedImages.get(text);
+    this.queuedImages.delete(text);
     const imagesField = images && images.length > 0 ? { images } : {};
     const steerRes = await this.process.request({ type: 'steer', id: '', message: text, ...imagesField });
     if (!steerRes.success) {
@@ -818,6 +841,16 @@ export class SessionAgent extends EventEmitter {
 
   private setQueue(followUp: string[], steering: string[]): void {
     this.runtime = { ...this.runtime, queue: { followUp, steering } };
+    // High remediation cleanup: a queued message can also leave the `followUp` queue by OMP's
+    // own route (e.g. promoted into a real turn once the previous one settles), never going
+    // through `removeQueued`/`sendNow` at all -- drop its recorded images here too, so
+    // `queuedImages` never grows unbounded over a long-lived Session.
+    if (this.queuedImages.size > 0) {
+      const stillQueued = new Set(followUp);
+      for (const key of this.queuedImages.keys()) {
+        if (!stillQueued.has(key)) this.queuedImages.delete(key);
+      }
+    }
     this.emit('queue', { sessionId: this.sessionId, followUp, steering });
   }
 

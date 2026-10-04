@@ -227,3 +227,125 @@ priority, and `spec:009`. Issue numbers:
   T008 (#371) · T009 (#372) · T010 (#373) · T011 (#374) · T012 (#375) · T013 (#376)
 
 (Posted as a comment on tracking issue #363, matching spec 008's convention.)
+
+---
+
+## Remediation round (quality gate, 2026-10-04)
+
+Post-landing 4-reviewer gate (code-reviewer, security-auditor, test-reviewer, accessibility-auditor)
+found 1 Critical, 4 High, 2 Medium, 1 Low finding against commit `e86e8c5`. Fixed in commit order
+below; `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` (0 leaks/371 files) all re-ran clean
+after every fix. This section is additive — the "Built"/live-verified notes on T001-T013 above are
+untouched historical record of the original implementation, not this remediation.
+
+- **[CRITICAL, code-reviewer + test-reviewer, confirmed independently]** `attachments.ts`
+  `buildChipLabel`/`pruneDanglingChips`/`substituteChips`/`findChipOccurrences` — a disambiguated
+  chip label (`"X (900 chars) #2"`) was a literal prefix-superstring of its own base label
+  (`"X (900 chars)"`), and every lookup used plain `includes`/`indexOf`. Two pastes of the same
+  >800-char text, with the first copy's label deleted, kept both chips alive at prune time and
+  substituted the wrong chip's text at the wrong position, leaving a stray `" #2"` suffix in the
+  message actually sent.
+  **Fix**: the disambiguating index now sits INSIDE the closing `)` (`"X (900 chars, #2)"`), making
+  every label structurally prefix-free; a new `resolveChipOccurrences` resolves every chip's
+  position together in one left-to-right pass (preferring the longest/most-specific label on a
+  tied start), and `pruneDanglingChips`/`substituteChips`/`findChipOccurrences` (the overlay's own
+  position-finding) all call this one function so the three can never disagree.
+  **Live/repro evidence**: `C:/tmp/critical_repro_old_buggy.mjs` reproduces the exact pre-fix bug
+  (both chips kept, sent text ends in `" fn foo #2"`); `C:/tmp/critical_repro.mjs` runs the exact
+  reviewers' repro (paste the same >900-char block twice, delete the first label, "send") against
+  the fixed logic and confirms: chip 1 correctly pruned, the full original text sent for chip 2
+  with no stray suffix, and exactly one overlay occurrence.
+
+- **[HIGH, test-reviewer]** `handleSendNow`/`SessionAgent.sendNow` — "Send now" on a queued message
+  dropped that message's OWN images (removed along with its text by `remove_queued_message`) and
+  instead attached whatever images happen to be pending in the composer right now, usually meant
+  for a later, different message.
+  **Fix**: `SessionAgent` now records a queued prompt's own images (if any) in a
+  `queuedImages: Map<string, ImageContent[]>` keyed by the same exact text `remove_queued_message`
+  already matches by, set in `send()` when a prompt queues as a followUp, cleaned up in
+  `removeQueued()` and `setQueue()` (a queued message leaving the queue by any other route), and
+  read-then-deleted by `sendNow()` to build the `steer` command's own `images`. `chat.sendNow` no
+  longer accepts an `images` argument at all (IPC surface, preload, `shared/ipc.ts`, contracts/ipc.md,
+  data-model.md all updated); the renderer's `handleSendNow` no longer forwards or clears the
+  composer's own pending images on this call path.
+  **Live/repro evidence**: `C:/tmp/sendnow_repro.mjs` drives the real `send`/`removeQueued`/
+  `sendNow` logic against a fake OMP process: queues a message with a real image while "working",
+  models an unrelated image becoming pending in the composer afterward, presses "Send now", and
+  confirms (via the logged outgoing `steer` command) it carries the ORIGINAL queued image, never
+  the unrelated composer one, and that the map entry is cleaned up afterward.
+
+- **[HIGH, code-reviewer]** `src/main/ipc/chat.ts` `parseImagesArgument` validated `type`/`data`/
+  `mimeType` but then forwarded the renderer's WHOLE object (`candidate as unknown as ImageContent`)
+  into the outgoing command unchanged — extra fields (`providerFile`, `url`, `detail`) a
+  compromised/buggy renderer attaches would reach OMP's own real handling of those fields,
+  bypassing the "renderer is untrusted" boundary entirely.
+  **Fix**: builds a FRESH `{ type: 'image', data: candidate.data, mimeType: candidate.mimeType }`
+  object, never the received object as-is; also rejects a zero-length `data` string.
+  **Live/repro evidence**: `C:/tmp/high_ipc_and_magicbyte_repro.mjs` drives the real (ported)
+  `parseImagesArgument` logic with a crafted entry carrying `providerFile`/`url`/`detail` and
+  confirms the object that would actually reach `SessionAgent` has only `{type, data, mimeType}`;
+  also confirms a zero-length `data` string is rejected.
+
+- **[HIGH, code-reviewer]** `AttachmentStrip.tsx`'s `ChipOverlaySegments` rendered each chip as a
+  `<button>` (Chromium default `display: inline-block`, one unbreakable box) inside the ghost-text
+  overlay's reused measurement technique, which otherwise uses only inline `<span>`s that wrap
+  exactly like the underlying text — a chip near a line-wrap point could sit on the wrong visual
+  line, drawing over other text and misaligning every later chip's click target.
+  **Fix**: the overlay's clickable chip is now a `<span role="button">` (inline by default, wraps
+  like the ghost overlay's own spans) with `[box-decoration-break:clone]` so its background/
+  rounding repeats cleanly across a wrapped line.
+
+- **[HIGH, accessibility-auditor]** The overlay chip button sat inside an `aria-hidden="true"`
+  container with the default `tabIndex` of 0 — a real, nameless Tab stop (and the modal's own
+  close-focus-return landed back on this same inaccessible element).
+  **Fix**: the overlay's `<span role="button">` now has `tabIndex={-1}` (mouse-only shortcut; the
+  strip's own already-accessible badge remains the one keyboard/AT route to the same preview), and
+  `TextPreviewModal` gained an optional `restoreFocusTo` ref — wired to the textarea for the
+  overlay's own trigger only — that overrides Radix's `onCloseAutoFocus` to focus the textarea
+  instead of the now-unreachable-by-keyboard overlay span.
+
+- **[HIGH, accessibility-auditor]** Chip creation, image attachment, and a chip's own silent
+  removal (`pruneDanglingChips` dropping it because an edit broke its label) were never announced
+  to screen readers, and the textarea had no programmatic link to its pending attachments.
+  **Fix**: a new polite `role="status"` live region in `MessageInput.tsx` announces "Image
+  attached, …", "Pasted text collapsed into an attachment: …", and "Pasted text attachment … removed."
+  (singular/plural) via a new `announceChipRemoval` helper, called from `handlePaste`, the
+  onChange prune step, the Escape handler, and `completeSlashCommand` (see the Medium finding
+  below). The textarea's `aria-describedby` now also points at a short sr-only "`N` pending
+  attachment(s)" summary.
+
+- **[MEDIUM, test-reviewer]** The plain-Esc-clears-draft path and `completeSlashCommand` both
+  called `setText` directly, bypassing `onChange`'s own `pruneDanglingChips` — a stale chip
+  (label gone from the draft, but never pruned) could then wrongly count as "already used" when a
+  later paste tried to disambiguate against it, compounding the Critical finding above.
+  **Fix**: both call sites now run `pruneDanglingChips` against their own new text and announce
+  whatever was dropped, same as the normal `onChange` path.
+
+- **[MEDIUM, security-auditor]** An image whose clipboard-declared MIME type already matched one
+  of the 4 supported types was never actually decoded or magic-byte-checked — only the declared
+  MIME string and byte length were checked, so a renamed/mislabeled non-image file would pass
+  straight through as a "validated" image.
+  **Fix**: a new shared `matchesImageSignature` (`src/shared/images.ts`) checks the real magic
+  bytes (PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `47 49 46 38`, WebP `RIFF`...`WEBP`) against the
+  declared type, called from both the renderer's `buildImageAttachment` (same inline
+  `decode-failed` error path as any other invalid paste) and the main process's
+  `validateImageAttachment` (the real security boundary), so renderer and main can never drift
+  apart on this check.
+  **Live/repro evidence**: `C:/tmp/high_ipc_and_magicbyte_repro.mjs` also covers this — an
+  `image/png`-declared payload with plain-ASCII bytes is rejected, while a genuine 1×1 PNG with
+  matching magic bytes is still accepted.
+
+- **[LOW, security-auditor, fixed while in the area]** `reencodeToPng` decoded a pasted image's
+  full pixel data via `createImageBitmap`/canvas *before* any size check, so a compressed
+  decompression-bomb-shaped file could exhaust renderer memory. Cheap to fix alongside the Medium
+  above: `buildImageAttachment` now rejects an over-cap *source* file's `byte.size` before ever
+  calling `reencodeToPng`, and `reencodeToPng` itself rejects a bitmap whose `width * height`
+  exceeds a new 40-megapixel cap immediately after `createImageBitmap`, before the canvas is ever
+  allocated.
+
+Not fixed: the a11y Medium/Low findings (strip badge's `title` reading 800+ characters as the
+accessible description, remove-image focus landing on `body`, 16px remove-target size, `<pre>`
+keyboard-scroll reachability, duplicate remove-button names, missing `DialogDescription`) and the
+test-reviewer's other Medium (`setAttachments(EMPTY_ATTACHMENTS)` racing a slow `open()`/re-encode)
+were out of this round's assigned scope (Critical/High/the two named Mediums/one named Low only)
+and were left untouched.
