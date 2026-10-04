@@ -5,24 +5,14 @@
 
 import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { IPC_EVENTS, IPC_REQUESTS, THEME_BOOTSTRAP_CHANNEL } from '../../shared/ipc';
+import { IPC_REQUESTS, THEME_BOOTSTRAP_CHANNEL } from '../../shared/ipc';
 import type { Result } from '../../shared/ipc';
 import type { Settings } from '../../shared/model';
-import { THEMES } from '../../shared/themes';
+import { THEMES, isThemeId } from '../../shared/themes';
 import type { ThemeId } from '../../shared/themes';
 import type { SessionManager } from '../SessionManager';
 import { applyTitleBarOverlay } from '../titleBarOverlay';
-
-function isThemeId(value: unknown): value is ThemeId {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEMES, value);
-}
-
-function broadcastSettingsChanged(value: Settings, getWindow: () => BrowserWindow | undefined): void {
-  const window = getWindow();
-  if (window && !window.isDestroyed()) {
-    window.webContents.send(IPC_EVENTS.SETTINGS_CHANGED, value);
-  }
-}
+import { broadcastSettingsChanged } from './broadcast';
 
 export function registerTheme(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   // `theme.preview` (FR-003 to FR-005, FR-017): live-only, never persisted. Moves only the
@@ -36,8 +26,16 @@ export function registerTheme(manager: SessionManager, getWindow: () => BrowserW
     const window = getWindow();
     if (window && !window.isDestroyed()) {
       const savedTheme = manager.settings.get().theme;
-      const resolvedId: ThemeId = themeId ?? (savedTheme in THEMES ? savedTheme : 'dark');
-      applyTitleBarOverlay(window, THEMES[resolvedId].titleBarOverlay);
+      const resolvedId: ThemeId = themeId ?? (isThemeId(savedTheme) ? savedTheme : 'dark');
+      // Quality-gate remediation (HIGH): a throw here (e.g. a destroyed/minimized window
+      // rejecting the native overlay call) must never propagate out of the IPC handler --
+      // nothing was persisted for `theme.preview` to begin with, so there is nothing else to
+      // keep in sync; just don't crash the handler.
+      try {
+        applyTitleBarOverlay(window, THEMES[resolvedId].titleBarOverlay);
+      } catch (err) {
+        console.error('theme.preview: failed to apply title-bar overlay', err);
+      }
     }
     return { ok: true, value: undefined };
   });
@@ -50,11 +48,20 @@ export function registerTheme(manager: SessionManager, getWindow: () => BrowserW
       return { ok: false, error: { code: 'invalid-theme', message: `theme.set expects a known theme id, got ${JSON.stringify(themeId)}` } };
     }
     const next = await manager.settings.setTheme(themeId);
+    // Quality-gate remediation (HIGH): broadcast BEFORE applying the overlay, and wrap the
+    // overlay call in try/catch -- `settings.json` is already durably written by this point, so
+    // if the native overlay call throws, every open window must still learn about the change
+    // (the renderer's own CSS-class repaint doesn't depend on the overlay at all); previously a
+    // throw here left the broadcast never sent, silently desyncing the renderer from disk.
+    broadcastSettingsChanged(next, getWindow);
     const window = getWindow();
     if (window && !window.isDestroyed()) {
-      applyTitleBarOverlay(window, THEMES[themeId].titleBarOverlay);
+      try {
+        applyTitleBarOverlay(window, THEMES[themeId].titleBarOverlay);
+      } catch (err) {
+        console.error('theme.set: failed to apply title-bar overlay', err);
+      }
     }
-    broadcastSettingsChanged(next, getWindow);
     return { ok: true, value: next };
   });
 

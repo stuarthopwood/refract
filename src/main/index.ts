@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { IPC_EVENTS } from '../shared/ipc'
-import { THEMES } from '../shared/themes'
+import { THEMES, isThemeId } from '../shared/themes'
 import { joinKillOnCloseJob } from './process/jobObject'
 import { buildAppMenu } from './menu'
 import { TITLE_BAR_OVERLAY_HEIGHT } from './titleBarOverlay'
@@ -135,7 +135,7 @@ async function validateSplitAtStartup(manager: SessionManager): Promise<string |
 // .open's own FR-013 fallback defensively rather than trusting a value that already should be valid.
 function currentTitleBarOverlay(): { color: string; symbolColor: string; height: number } {
   const savedTheme = manager?.settings.get().theme
-  const themeId = savedTheme && savedTheme in THEMES ? savedTheme : 'dark'
+  const themeId = isThemeId(savedTheme) ? savedTheme : 'dark'
   return { ...THEMES[themeId].titleBarOverlay, height: TITLE_BAR_OVERLAY_HEIGHT }
 }
 

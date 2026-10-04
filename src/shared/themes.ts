@@ -53,3 +53,11 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     titleBarOverlay: { color: '#000000', symbolColor: '#ffffff' }
   }
 }
+
+// Quality-gate remediation (security-auditor, HIGH): the strict own-property check `theme.ts`
+// already used, now shared by every site that validates an untrusted/persisted theme id
+// (`isThemeId`, not the weaker `in` operator, which also matches a name inherited from
+// `Object.prototype` -- e.g. a hand-corrupted settings.json with `"theme": "toString"`).
+export function isThemeId(value: unknown): value is ThemeId {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEMES, value)
+}

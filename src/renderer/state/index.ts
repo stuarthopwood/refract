@@ -31,7 +31,7 @@ export type { MainView, SettingsSectionId } from './view-store'
 export { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore }
 export { useSubagentPanelStore }
 export { useSplitStore }
-export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName } from './theme-store'
+export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
