@@ -129,27 +129,27 @@ export async function addWorktree(repo: string, name: string, baseBranch: string
  * always free.
  */
 export async function uniquePullRequestBranchName(repo: string, number: number): Promise<string> {
- const base = `pr-${number}`
- const branches = new Set(await listBranches(repo))
- let existingFolders = new Set<string>()
+  const base = `pr-${number}`
+  const branches = new Set(await listBranches(repo))
+  let existingFolders = new Set<string>()
   try {
-  existingFolders = new Set(await fs.readdir(worktreesRoot(repo)))
+    existingFolders = new Set(await fs.readdir(worktreesRoot(repo)))
   } catch (err) {
-  if (!isEnoent(err)) throw err
+    if (!isEnoent(err)) throw err
   }
 
- if (!branches.has(base) && !existingFolders.has(base)) return base
+  if (!branches.has(base) && !existingFolders.has(base)) return base
 
- const MAX_ATTEMPTS = 1000
+  const MAX_ATTEMPTS = 1000
   for (let suffix = 2; suffix <= MAX_ATTEMPTS; suffix++) {
-  const candidate = `${base}-${suffix}`
-  if (!branches.has(candidate) && !existingFolders.has(candidate)) return candidate
+    const candidate = `${base}-${suffix}`
+    if (!branches.has(candidate) && !existingFolders.has(candidate)) return candidate
   }
 
   throw new GitError(
     'worktree-failed',
     `Could not find a free local name for pull request #${number}'s worktree: every "${base}"/"${base}-2".."${base}-${MAX_ATTEMPTS}" is already taken.`
- )
+  )
 }
 
 /**

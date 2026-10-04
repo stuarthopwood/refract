@@ -182,7 +182,7 @@ export interface PullRequestListResult {
 export interface SubmitReviewInput {
   verdict: ReviewVerdict;
   body?: string;
- expectedHeadSha: string;
+  expectedHeadSha: string;
 }
 
 /** `pullRequests.merge` (FR-016, FR-017): `method` must be one of the pull request's own
@@ -190,7 +190,7 @@ export interface SubmitReviewInput {
  * reasoning -- captured when `MergeDialog` opens, checked against a fresh re-fetch, not the cache. */
 export interface MergeInput {
   method: MergeMethod;
- expectedHeadSha: string;
+  expectedHeadSha: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -26,11 +26,11 @@ export interface ReviewDialogProps {
   number: number
   /** e.g. "pull request #95" -- named in both the compose header and the confirmation. */
   title: string
- /** Security remediation (round 3, High): see `MergeDialog.tsx`'s identical prop -- the
-  * renderer's own snapshot of `headSha` from the moment this dialog opened, sent as
-  * `expectedHeadSha` so a background poll landing while the dialog is open can't silently pin
-  * an approval to a commit the user never saw. */
- headSha: string
+  /** Security remediation (round 3, High): see `MergeDialog.tsx`'s identical prop -- the
+   * renderer's own snapshot of `headSha` from the moment this dialog opened, sent as
+   * `expectedHeadSha` so a background poll landing while the dialog is open can't silently pin
+   * an approval to a commit the user never saw. */
+  headSha: string
   open: boolean
   onOpenChange(open: boolean): void
   onSubmitted(): void
@@ -51,7 +51,7 @@ export function ReviewDialog({
   repositoryId,
   number,
   title,
- headSha,
+  headSha,
   open,
   onOpenChange,
   onSubmitted,
@@ -63,20 +63,15 @@ export function ReviewDialog({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
- // Security remediation (round 3, High): see `MergeDialog.tsx`'s identical ref -- captures
- // `headSha` the instant the dialog opens, sent as `expectedHeadSha` instead of trusting
- // whatever the in-process staleness cache currently holds (silently re-seeded by the 15s poll
- // even while this dialog sits open).
- const expectedHeadShaRef = useRef(headSha)
- useEffect(() => {
-  if (open) expectedHeadShaRef.current = headSha
-  // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [open])
- // Accessibility remediation (round 3, High): see `MergeDialog.tsx`'s identical `succeededRef`
- // -- the prior focus logic inferred success from whether `restoreFocusTo`'s button was
- // disabled at close time, but the post-submit reload that disables it is async and usually
- // slower than Radix's ~200ms `onCloseAutoFocus` timing, so the fallback was never reached.
- const succeededRef = useRef(false)
+  // Security remediation (round 3, High): see `MergeDialog.tsx`'s identical ref -- captures
+  // `headSha` the instant the dialog opens, sent as `expectedHeadSha` instead of trusting
+  // whatever the in-process staleness cache currently holds (silently re-seeded by the 15s poll
+  // even while this dialog sits open).
+  const expectedHeadShaRef = useRef(headSha)
+  useEffect(() => {
+    if (open) expectedHeadShaRef.current = headSha
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   function reset(): void {
     setVerdict('comment')
@@ -97,15 +92,14 @@ export function ReviewDialog({
     setError(null)
     const result = await window.refract.pullRequests.submitReview(repositoryId, number, {
       verdict,
-   body: trimmedBody || undefined,
-   expectedHeadSha: expectedHeadShaRef.current
+      body: trimmedBody || undefined,
+      expectedHeadSha: expectedHeadShaRef.current
     })
     setSubmitting(false)
     if (!result.ok) {
       setError(result.error.message)
       return
     }
-  succeededRef.current = true
     reset()
     onOpenChange(false)
     onSubmitted()
@@ -130,22 +124,23 @@ export function ReviewDialog({
 
   function focusTrigger(event: { preventDefault(): void }): void {
     event.preventDefault()
-  if (succeededRef.current) {
-   succeededRef.current = false
-   restoreFocusFallbackTo.current?.focus()
-   return
-  }
+    // Security/accessibility remediation (round 4): unlike `MergeDialog.tsx`'s identical-looking
+    // `succeededRef`, a successful review submission never disables this dialog's own "Review"
+    // trigger -- `reviewDisabledReason` (FR-019) only reacts to the pull request's own
+    // draft/closed/merged state, which a review never changes. The enabled-check below is
+    // already correct for both the success and cancel paths, so no synchronous success flag is
+    // needed here.
     const button = restoreFocusTo.current
     if (button && !button.disabled) button.focus()
     else restoreFocusFallbackTo.current?.focus()
   }
 
   const actionLabel = verdict === 'approve' ? 'Approve' : 'Request changes'
- // "Also fix" remediation (round 3, Medium): the placeholder/copy used to claim the body was
- // optional for every verdict, even though comment/request-changes now require one (added last
- // round, `bodyRequired` above) -- worded per-verdict instead.
- const bodyHint = verdict === 'approve' ? 'optional' : 'required'
- const bodyErrorId = 'review-body-error'
+  // "Also fix" remediation (round 3, Medium): the placeholder/copy used to claim the body was
+  // optional for every verdict, even though comment/request-changes now require one (added last
+  // round, `bodyRequired` above) -- worded per-verdict instead.
+  const bodyHint = verdict === 'approve' ? 'optional' : 'required'
+  const bodyErrorId = 'review-body-error'
 
   return (
     <>
@@ -164,7 +159,7 @@ export function ReviewDialog({
         >
           <DialogHeader>
             <DialogTitle>Review {title}</DialogTitle>
-      <DialogDescription>Choose a verdict and a body ({bodyHint}).</DialogDescription>
+            <DialogDescription>Choose a verdict and a body ({bodyHint}).</DialogDescription>
           </DialogHeader>
           <div className="flex gap-2" role="group" aria-label="Review verdict">
             {VERDICTS.map((option) => (
@@ -186,42 +181,42 @@ export function ReviewDialog({
           <Textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-      placeholder={verdict === 'approve' ? 'Optional comment' : 'A body is required for this verdict'}
+            placeholder={verdict === 'approve' ? 'Optional comment' : 'A body is required for this verdict'}
             aria-label="Review body"
-      aria-invalid={bodyMissing && !!error}
-      aria-describedby={error ? bodyErrorId : undefined}
+            aria-invalid={bodyMissing && !!error}
+            aria-describedby={error ? bodyErrorId : undefined}
             className="min-h-24"
-      readOnly={submitting}
-      aria-disabled={submitting}
+            readOnly={submitting}
+            aria-disabled={submitting}
           />
-     <p id={bodyErrorId} role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
+          <p id={bodyErrorId} role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
             {error ?? ''}
           </p>
           <DialogFooter>
             <Button
               variant="outline"
-       aria-disabled={submitting}
-       className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-       onClick={(event) => {
-        if (submitting) {
-         event.preventDefault()
-         return
-        }
+              aria-disabled={submitting}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+              onClick={(event) => {
+                if (submitting) {
+                  event.preventDefault()
+                  return
+                }
                 reset()
                 onOpenChange(false)
               }}
             >
               Cancel
             </Button>
-      <Button
-       aria-disabled={submitting}
-       className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-       onClick={(event) => {
-        event.preventDefault()
-        if (submitting) return
-        handlePrimaryClick()
-       }}
-      >
+            <Button
+              aria-disabled={submitting}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+              onClick={(event) => {
+                event.preventDefault()
+                if (submitting) return
+                handlePrimaryClick()
+              }}
+            >
               {verdict === 'comment' ? (submitting ? 'Submitting…' : 'Submit') : 'Continue'}
             </Button>
           </DialogFooter>

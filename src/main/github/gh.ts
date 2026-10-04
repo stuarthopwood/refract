@@ -220,9 +220,8 @@ export type SearchQualifierFlag = '--author' | '--assignee' | '--involves' | '--
  * of `query` makes `-label:` text safe and makes `--repo=`-style text an inert search term. */
 export async function searchPullRequests(repoPath: string, qualifierFlag: SearchQualifierFlag, query?: string): Promise<GhSearchEntry[]> {
   const { owner, repo } = await ownerRepoFor(repoPath);
-  const args = ['search', 'prs', '--repo', `${owner}/${repo}`, qualifierFlag, '@me'];
- if (query) args.push('--', query);
-  args.push('--json', SEARCH_FIELDS);
+  const args = ['search', 'prs', '--repo', `${owner}/${repo}`, qualifierFlag, '@me', '--json', SEARCH_FIELDS];
+  if (query) args.push('--', query);
   return ghJson<GhSearchEntry[]>(repoPath, args);
 }
 
