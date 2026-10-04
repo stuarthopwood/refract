@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { ChatPane } from '@/features/chat/ChatPane'
@@ -11,7 +12,8 @@ import { useRepositoriesStore, useSubagentPanelStore, useViewStore } from '@/sta
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 
 // Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and the right region --
-// spec 004's Subagents panel is its first occupant (FR-017 to FR-020), rendered only while open;
+// spec 004's Subagents panel is its first occupant (FR-017 to FR-020), always mounted but
+// collapsed to zero width until opened (see the `useLayoutEffect` below for why);
 // a file browser and side chat (backlog issue #1) remain later tenants of the same region. A
 // fixed status bar runs along the bottom, outside the resizable regions. Before the readiness
 // checklist passes or before a repository exists, this area shows the readiness screen instead
@@ -28,6 +30,26 @@ export function App() {
   const view = useViewStore((state) => state.view)
   const panelOpen = useSubagentPanelStore((state) => state.open)
   const panelSessionId = useSubagentPanelStore((state) => state.sessionId)
+  const subagentPanelRef = useRef<PanelImperativeHandle>(null)
+
+  // Keeps the subagents Panel mounted at all times (collapsible/collapsedSize=0, same pattern
+  // as SessionList's own left-nav panel) rather than conditionally mounting/unmounting it --
+  // react-resizable-panels recomputes every sibling's size whenever the set of mounted Panels
+  // changes, which would move the chat pane's width on open/close and break FR-020's "Close
+  // restores the chat pane's size and scroll exactly as before". `useLayoutEffect` (not
+  // `useEffect`) so the imperative collapse()/expand() call commits before the browser paints,
+  // never flashing the panel at its expanded width first. Depends on `showReadiness`/`view`
+  // too, not just `panelOpen`: the `ResizablePanelGroup` (and so `subagentPanelRef`'s handle)
+  // only exists once the Readiness screen clears and `view` is `'chat'`/`'pull-requests'`/
+  // `'manage-sessions'`, and a `[panelOpen]`-only dependency list never re-ran this effect for
+  // that later first mount (caught live: the panel rendered at its full `defaultSize` instead
+  // of collapsed, the very regression this effect exists to prevent).
+  useLayoutEffect(() => {
+    const handle = subagentPanelRef.current
+    if (!handle) return
+    if (panelOpen && handle.isCollapsed()) handle.expand()
+    else if (!panelOpen && !handle.isCollapsed()) handle.collapse()
+  }, [panelOpen, showReadiness, view])
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -67,16 +89,18 @@ export function App() {
                 <ChatPane />
               </ErrorBoundary>
             </ResizablePanel>
-            {panelOpen && panelSessionId && (
-              <>
-                <ResizableHandle withHandle />
-                <ResizablePanel id="subagents" defaultSize={320} minSize={240} maxSize={520}>
-                  <ErrorBoundary>
-                    <SubagentPanel sessionId={panelSessionId} />
-                  </ErrorBoundary>
-                </ResizablePanel>
-              </>
-            )}
+            <ResizableHandle withHandle />
+            <ResizablePanel
+              id="subagents"
+              panelRef={subagentPanelRef}
+              defaultSize={320}
+              minSize={240}
+              maxSize={520}
+              collapsible
+              collapsedSize={0}
+            >
+              <ErrorBoundary>{panelSessionId && <SubagentPanel sessionId={panelSessionId} />}</ErrorBoundary>
+            </ResizablePanel>
           </ResizablePanelGroup>
         )}
       </div>

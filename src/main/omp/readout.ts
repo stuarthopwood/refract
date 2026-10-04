@@ -24,8 +24,10 @@ export interface ReadoutState {
 
 /** Builds a fresh `SessionReadout` from `previous` (for retention) and the current `state`
  * (data-model.md's retention rule: `changes`/`contextUsage`/`pullRequest` keep their last
- * non-null reading on a transient failure; `turnTime`/`subagentCount` are always derived fresh
- * from `state.turnStartedAt`/`state.subagents`, never meaningful outside a running turn). */
+ * non-null reading on a transient failure; `turnTime` is always derived fresh from
+ * `state.turnStartedAt`, never meaningful outside a running turn; `subagentCount` is always
+ * derived fresh from `state.subagents`, meaningful for the whole current turn including after
+ * it settles, until the next turn clears the underlying list). */
 export async function assembleReadout(session: Session, previous: SessionReadout, state: ReadoutState): Promise<SessionReadout> {
   // `sessions.diffStat`'s own `null` covers both "missing worktree/Base branch" (spec 001
   // FR-039) and an internal failure/timeout; both map to this spec's `'not-available'` (FR-002)
@@ -48,9 +50,16 @@ export async function assembleReadout(session: Session, previous: SessionReadout
   const lookup = await pullRequestForBranch(session.worktreePath, session.branch);
   const pullRequest = lookup.status === 'found' ? lookup.pr : lookup.status === 'none' ? null : previous.pullRequest;
 
+  // FR-007/T008: the count reflects the *current* turn's subagents -- it MUST persist after
+  // that turn settles (a developer still asking "what did it delegate to" after the fact) and
+  // is only cleared by the *next* turn starting (SessionAgent.ts resets `runtime.subagents` on
+  // `agent_start`), never by `turnStartedAt` going back to `null` on settle -- gating on it here
+  // too (as an earlier draft of this function did) hid the chip the instant the turn finished,
+  // before the next turn had a chance to clear the underlying list (caught live: quickstart
+  // Story 1's multi-subagent-turn check, the chip vanished right as the final reply landed).
   const activeSubagents = state.subagents.filter((s) => s.status !== 'failed');
   const subagentCount =
-    state.turnStartedAt !== null && state.subagents.length > 0
+    state.subagents.length > 0
       ? {
           running: activeSubagents.filter((s) => s.status === 'running').length,
           finished: activeSubagents.filter((s) => s.status === 'finished').length,
