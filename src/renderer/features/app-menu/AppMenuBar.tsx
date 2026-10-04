@@ -83,7 +83,15 @@ export function AppMenuBar() {
       setVisible(false)
     }
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') setVisible(false)
+      // Quality-gate remediation (a11y, round 2, corroborated by all three reviewers): closing
+      // the Alt-opened bar via Escape must not look like an unhandled keypress to anything else
+      // also listening for Escape on window (AppearanceSection.tsx's own preview-cancel handler
+      // checks exactly this -- see its 'role="menubar"' guard for the order-independent half of
+      // this fix).
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setVisible(false)
+      }
     }
     window.addEventListener('mousedown', onMouseDown)
     window.addEventListener('keydown', onKeyDown)

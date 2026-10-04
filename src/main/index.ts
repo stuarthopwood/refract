@@ -131,7 +131,7 @@ async function validateSplitAtStartup(manager: SessionManager): Promise<string |
 // theme's title-bar overlay colours, from its very first paint -- never the hardcoded dark one
 // swapped in later. `manager` is already assigned (`SessionManager` constructed, which in turn
 // already holds the fully-loaded `SettingsStore`) by the time this is ever called; the `?? 'dark'`
-// fallback only guards a theoretical call before that, and `in THEMES` repeats `SettingsStore`
+// fallback only guards a theoretical call before that, and `isThemeId` repeats `SettingsStore`
 // .open's own FR-013 fallback defensively rather than trusting a value that already should be valid.
 function currentTitleBarOverlay(): { color: string; symbolColor: string; height: number } {
   const savedTheme = manager?.settings.get().theme

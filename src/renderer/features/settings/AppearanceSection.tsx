@@ -15,6 +15,11 @@ export function AppearanceSection() {
   const isDirty = useThemeStore((state) => state.previewing !== null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const wasDirtyRef = useRef(false)
+  // Quality-gate remediation (a11y, round 2): scopes the focus-restoration effect below (and
+  // its radio-group query) to THIS section's own DOM subtree, so a future section also titled
+  // 'Theme' (spec 008's planned Theme submenu) can never be matched by mistake, and so the
+  // effect can tell whether focus was already inside this section before moving it.
+  const rootRef = useRef<HTMLDivElement>(null)
 
   // Matches SettingsScreen.tsx's own "Session readout" heading-focus pattern: this component
   // mounts fresh every time the developer switches to this section (SettingsScreen renders it
@@ -33,11 +38,19 @@ export function AppearanceSection() {
   // meaningful after the blur" pattern `focusSettingsEntry`/`focusSessionsNav` already use.
   useEffect(() => {
     if (wasDirtyRef.current && !isDirty) {
-      const checkedRadio = document.querySelector<HTMLElement>(
-        '[role="radiogroup"][aria-label="Theme"] [role="radio"][aria-checked="true"]'
-      )
-      if (checkedRadio) checkedRadio.focus()
-      else headingRef.current?.focus()
+      // Quality-gate remediation (a11y, round 2): only steal focus if it wasn't already
+      // somewhere deliberate OUTSIDE this section (e.g. the Settings nav) when Save/Cancel/
+      // Escape fired -- Escape in particular can fire while focus is still on a nav item, and
+      // this effect previously yanked it into this section's radio group regardless.
+      const active = document.activeElement
+      const activeWasOutside = active !== null && active !== document.body && !rootRef.current?.contains(active)
+      if (!activeWasOutside) {
+        const checkedRadio = rootRef.current?.querySelector<HTMLElement>(
+          '[role="radiogroup"][aria-label="Theme"] [role="radio"][aria-checked="true"]'
+        )
+        if (checkedRadio) checkedRadio.focus()
+        else headingRef.current?.focus()
+      }
     }
     wasDirtyRef.current = isDirty
   }, [isDirty])
@@ -49,7 +62,14 @@ export function AppearanceSection() {
       // `defaultPrevented` check) stole Escape from the Alt menu bar and any Radix
       // menu/listbox too, silently cancelling an unrelated preview -- narrowed to spec 005's
       // own already-fixed pattern (round-3 remediation), which only matches a REAL modal.
-      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"]')) return
+      //
+      // Quality-gate remediation (a11y, round 2, corroborated by all three reviewers): the
+      // `defaultPrevented` check above only works if AppMenuBar.tsx's own Escape listener
+      // happens to run first -- it does not when AppMenuBar's bar-visible listener attaches
+      // AFTER this component already has (the common case: Settings > Appearance opened, THEN
+      // Alt pressed). Guarding on `[role="menubar"]` directly checks whether the Alt bar is
+      // open right now, independent of event-listener registration order.
+      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"], [role="menubar"]')) return
       if (useThemeStore.getState().previewing === null) return
       event.preventDefault()
       useThemeStore.getState().cancelPreview()
@@ -76,7 +96,7 @@ export function AppearanceSection() {
   }
 
   return (
-    <div>
+    <div ref={rootRef}>
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">Appearance</h2>
       <p className="mb-4 text-sm text-muted-foreground">Choose the colour theme used across the app.</p>
       <ThemePicker />

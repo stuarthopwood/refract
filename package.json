@@ -10,7 +10,8 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "check:ui-text": "node scripts/check-ui-text.mjs",
-    "check:theme-contrast": "node scripts/check-theme-contrast.mjs"
+    "check:theme-contrast": "node scripts/check-theme-contrast.mjs",
+    "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs"
   },
   "dependencies": {
     "@shadcn/react": "0.3.1",

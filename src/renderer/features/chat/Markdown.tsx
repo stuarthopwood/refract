@@ -282,7 +282,7 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
           startOnLoad: false,
           securityLevel: 'strict',
           suppressErrorRendering: true,
-          theme: 'base',
+          theme: 'dark',
           themeVariables: MERMAID_THEME_VARIABLES[activeThemeId]
         } satisfies MermaidConfig)
         const rendered = await Promise.race([

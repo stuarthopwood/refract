@@ -165,6 +165,15 @@ const PAIRS = [
   { fg: 'state-idle', bg: 'background', min: 3 },
   { fg: 'state-needs-you', bg: 'background', min: 3 },
   { fg: 'state-stopped', bg: 'background', min: 3 },
+  // Quality-gate remediation (round 2): these real component-boundary pairs were missing and
+  // measure as genuine failures -- `--input` (the border of every Input/Textarea/Select/
+  // outline-Toggle/outline-Button, including the Appearance section's own Cancel button) and
+  // `--border` against the other surfaces it's actually drawn on top of (`--card`/`--popover`
+  // panels, `--muted` fills), not just `--background`.
+  { fg: 'input', bg: 'background', min: 3 },
+  { fg: 'border', bg: 'card', min: 3 },
+  { fg: 'border', bg: 'popover', min: 3 },
+  { fg: 'border', bg: 'muted', min: 3 },
 ]
 
 // ---- run every pair against every parsed theme ------------------------------------------------

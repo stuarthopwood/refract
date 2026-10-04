@@ -60,9 +60,13 @@ export class SettingsStore {
     // `sessionReadout`/`split` above), and a value that IS present but is not a key of `THEMES`
     // (a theme a later app update removed) is treated as the default preset for every read --
     // the bootstrap read, the picker's marked entry, and `theme-store.ts`'s derivation -- without
-    // requiring a save; this in-memory correction does not rewrite the file until the developer
-    // actually saves a theme choice (data-model.md), the same lazy-correction pattern
-    // `isValidSplitLayout` above already uses for `split`.
+    // requiring a save; the same lazy-correction pattern `isValidSplitLayout` above already uses
+    // for `split`. (Quality-gate remediation, round 2: this previously claimed the correction
+    // 'does not rewrite the file until the developer actually saves a theme choice' -- not quite
+    // true. An UNRELATED setter's own whole-row write (`persistWhole` below) still rewrites the
+    // whole file immediately; it just writes `rawTheme`, so the missing/invalid key is silently
+    // DROPPED from the file on that save rather than being corrected into it -- same practical
+    // end state the old wording described, reached a different way.)
     //
     // Quality-gate remediation (HIGH): `rawTheme` captures the value exactly as it was BEFORE
     // this correction -- `undefined` for both the "missing key" and "present but invalid" cases

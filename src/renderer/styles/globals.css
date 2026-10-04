@@ -125,10 +125,16 @@
    * the previous semi-transparent `oklch(1 0 0 / 16%)` blends (gamma-correctly, matching how
    * Chromium actually composites) to only 1.53:1 against this theme's `--background` -- well
    * under the 3:1 WCAG AA non-text floor, despite the old (linear-space) version of this script
-   * misreporting it as 4.01:1 PASS. Now opaque, independently re-verified at 5.21:1 by the
-   * corrected script (not scaled from the old 16% token). */
-  --border: oklch(0.5 0 0);
-  --input: oklch(1 0 0 / 15%);
+   * misreporting it as 4.01:1 PASS. Now opaque at `oklch(0.5 0 0)`, measured 3.30:1 against
+   * `--background` by the corrected script -- but quality-gate remediation, round 2 (corrected
+   * script's own expanded PAIRS list) found `--border` ALSO sits directly on `--card`/
+   * `--popover` (2.99:1, under the 3:1 floor) and `--muted` (2.52:1) elsewhere in this app, which
+   * `0.5` didn't clear. Raised to `0.56` (`#747474`): 4.25:1 on `--background`, 3.85:1 on
+   * `--card`/`--popover`, 3.25:1 on `--muted`, all now >=3:1. `--input` below raised to 36%
+   * alpha for the same reason (15% measured 1.47:1 on `--background` -- the border of every
+   * Input/Textarea/Select/outline-Toggle/outline-Button in this theme). */
+  --border: oklch(0.56 0 0);
+  --input: oklch(1 0 0 / 36%);
   --ring: oklch(0.556 0 0);
   --active-indicator: oklch(0.58 0.22 264.376);
   --chart-1: oklch(0.488 0.243 264.376);
@@ -199,8 +205,11 @@
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.78 0.17 22);
   --destructive-foreground: oklch(0 0 0);
+  /* Quality-gate remediation (round 2): `--input` at 30% measured 2.46:1 against this
+   * theme's `--background` -- under the 3:1 floor, same real component-boundary token as the
+   * `dark` theme's fix above. Raised to 38% alpha: 3.39:1. */
   --border: oklch(0.6 0 0);
-  --input: oklch(1 0 0 / 30%);
+  --input: oklch(1 0 0 / 38%);
   --ring: oklch(0.9 0 0);
   --active-indicator: oklch(0.75 0.17 264);
   --chart-1: oklch(0.75 0.17 264);
