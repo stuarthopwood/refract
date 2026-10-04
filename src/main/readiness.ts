@@ -59,7 +59,10 @@ async function checkOmp(): Promise<Check> {
 // `get_login_providers` is used only to enrich the failure hint below.
 async function checkOmpSignedIn(): Promise<Check> {
   const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), 'refract-readiness-'));
-  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe' });
+  // --no-session: this probe never calls `open_session` or any other command requiring
+  // persistence (just get_state / get_available_models / get_login_providers), so it never
+  // needs a real session-store folder under ~/.omp/agent/sessions (issue #362).
+  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe', noSession: true });
   try {
     await proc.start();
     const stateRes = await proc.request({ type: 'get_state', id: '' });

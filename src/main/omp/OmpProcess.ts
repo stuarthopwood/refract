@@ -30,6 +30,10 @@ export interface OmpProcessOptions {
   approvalMode: ApprovalMode
   sessionId: string
   ompPath?: string
+  /** Appends `--no-session` so the process never persists a session-store folder under
+   * `~/.omp/agent/sessions` (omp-usage.md's `--no-session` flag; issue #362). Only safe for
+   * callers that never issue `open_session` or any other command requiring persistence. */
+  noSession?: boolean
 }
 
 interface PendingRequestEntry {
@@ -80,6 +84,9 @@ export class OmpProcess extends EventEmitter {
 
     const ompPath = this.opts.ompPath ?? (await resolveExecutable('omp'))
     const args: string[] = ['--mode', 'rpc-ui', `--approval-mode=${OMP_APPROVAL_MODE[this.opts.approvalMode]}`]
+    if (this.opts.noSession) {
+      args.push('--no-session')
+    }
 
     // stdio omitted: the default ('pipe' for all three streams) is exactly what the
     // contract asks for, and omitting it lets TypeScript pick the
