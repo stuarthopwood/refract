@@ -22,7 +22,7 @@ These OMP facts are unverified and are checked before the work that depends on t
 - Whether and where OMP reports context-window usage (`get_state` field, `get_session_stats`, or
   only `/context`'s `command_output`).
 - Whether and where OMP reports task-list ("todo") done/total counts.
-- Whether `tool_call_update` progress (or `set_subagent_subscription`) carries a per-subagent
+- Whether `tool_execution_update` progress (or `set_subagent_subscription`) carries a per-subagent
   live text/tool-call stream, not only a status summary.
 
 ## Checks per story
@@ -48,8 +48,9 @@ These OMP facts are unverified and are checked before the work that depends on t
    spec 003's own view exists — research.md decision 4). Switch to a branch with no pull request,
    or disconnect from GitHub: the chip disappears with no error toast.
 7. Ask the agent a request that starts two or more subagents. Expect: a Subagents chip shows the
-   count of ones running or finished (not counting any that failed) while the turn runs, and
-   disappears once the turn that started them ends.
+   count of ones running or finished (not counting any that failed) while the turn runs, and keeps
+   showing that same count once the turn settles; it disappears only once a later turn starts (and
+   clears the prior turn's subagent list).
 8. Ask the agent to keep a task list for the current work, and read it partway through. Expect: a
    Todo chip reads "Todo N/M"; it disappears once the agent has no task list at all.
 9. Resize the window very narrow with several chips enabled. Expect: the row wraps onto a further

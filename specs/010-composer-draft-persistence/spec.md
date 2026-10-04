@@ -28,10 +28,13 @@ Settings and returning to chat. Fix this via the speckit process."
   (`slashActiveIndex`, `slashDismissed`), and the in-flight "starting" flag. None of these is
   meaningful to resume after a remount; re-deriving them fresh from the restored text (the
   slash-menu, ghost-text) is exactly what happens on a normal first load already.
-- Q: Does the restored text land with any particular cursor/selection state? -> A: No explicit
-  restoration -- the textarea is a plain controlled input; setting its `value` on mount without
-  also calling `setSelectionRange` leaves the browser's own default caret placement (the end of
-  the value), identical to how a freshly typed draft looks today. No new code is needed for this.
+- Q: Does the restored text land with any particular cursor/selection state? -> A: Yes, explicit
+  restoration to the end -- corrected during this spec's own accessibility remediation round. A
+  controlled `<textarea>` whose `value` is set programmatically (as the restored draft is, via the
+  draft-store) does not inherit the browser's natural "typed to the end" caret behavior; without an
+  explicit `setSelectionRange(end, end)` on mount, the restored caret lands at position 0 instead,
+  which the accessibility-auditor caught as a High finding against this FR. `MessageInput.tsx` now
+  calls `setSelectionRange` once per mount for exactly this reason.
 - Q: Is the draft persisted to disk (surviving a full app restart), or renderer-memory only? -> A:
   Renderer-memory only, matching spec 009's own Assumptions for its attachments ("gone if Refract
   restarts, the same as the draft text itself already is"). This spec only moves *where in memory*
