@@ -1,10 +1,10 @@
 import { cloneElement, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
-import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, FolderOpenIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
+import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, FolderOpenIcon, GaugeIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useSessionsStore } from '@/state'
-import { formatModelReadout } from '@/lib/modelDisplay'
+import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { StateIcon, STATUS_LABEL, formatDiffStat, formatRelativeTime } from './sessionDisplay'
@@ -90,9 +90,22 @@ export function SessionDetailsCard({
         )}
        </p>
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-       <CpuIcon aria-hidden className="size-3.5 shrink-0" />
-       <span className="truncate">{formatModelReadout(session)}</span>
+      {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)"
+          suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+       <span className="flex min-w-0 items-center gap-1.5 truncate">
+        <CpuIcon aria-hidden className="size-3.5 shrink-0" />
+        <span className="truncate">{formatModelLabel(session) ?? 'Model not known yet'}</span>
+       </span>
+       {formatThinkingLevelLabel(session) && (
+        <span className="flex shrink-0 items-center gap-1.5">
+         <GaugeIcon aria-hidden className="size-3.5 shrink-0" />
+         <span>
+          <span className="sr-only">Thinking level: </span>
+          {formatThinkingLevelLabel(session)}
+         </span>
+        </span>
+       )}
       </div>
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
        <FileDiffIcon aria-hidden className="size-3.5 shrink-0" />

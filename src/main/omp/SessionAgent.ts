@@ -46,8 +46,8 @@ const PREDICT_WORD_TIMEOUT_MS = 150_000;
 /** Security audit finding (2026-10-03, Medium): `get_state.model` is cast from OMP's own JSON
  * output (`res.data as GetStateResponseData`), not runtime-validated -- a malformed value (any
  * non-string field) used to be stored verbatim in the registry and crashed the renderer's
- * `formatModelReadout` on every later read, persisting across a restart. Capped length guards
- * against one session's registry row growing unboundedly from a single oversized field. */
+ * `formatModelLabel`/`formatThinkingLevelLabel` on every later read, persisting across a restart.
+ * Capped length guards against one session's registry row growing unboundedly from a single oversized field. */
 const MAX_MODEL_FIELD_LENGTH = 256;
 
 function isValidModelRef(model: unknown): model is { provider: string; id: string; name?: string } {

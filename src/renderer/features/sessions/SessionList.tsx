@@ -202,7 +202,10 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     }
   ]
 
-  function handleMenuCloseAutoFocus(event: Event): void {
+  // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's open
+  // button (the only normally-focusable element in the row), so its own close-autofocus prefers
+  // sending focus straight back there instead of the "..." trigger the user never started from.
+  function handleMenuCloseAutoFocus(event: Event, isContextMenu = false): void {
     if (renameRequestedRef.current) {
       event.preventDefault()
       renameRequestedRef.current = false
@@ -210,6 +213,20 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       event.preventDefault()
       listFocusRequestedRef.current = false
       focusListContainer()
+    } else {
+      // Shared by the "..." dropdown and the right-click context menu. The dropdown's own
+      // trigger is a real, focusable button, so Radix's default close-autofocus would land here
+      // anyway -- but the context menu's trigger is the whole row `<div>` (not focusable), which
+      // Radix cannot hand focus back to, so without this it falls through to `<body>` (WCAG 2.1
+      // AA focus-visibility). Explicitly redirecting to the row's own focusable elements covers
+      // both menus the same way: the "..." button if still mounted (also true after Copy path /
+      // Open folder / Stop agent, none of which unmount the row), else the open button, else the
+      // list itself.
+      event.preventDefault()
+      if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else focusListContainer()
     }
   }
 
@@ -220,13 +237,15 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       )}
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          {/* The whole row is one card surface (DESIGN.md "Session card layout"): this div, not
+          {/* The whole row is one card surface (DESIGN.md "Square choice items"): this div, not
               the open button alone, carries the hover/selected background, so the "..." trigger
               reads as part of the same card rather than sitting past its edge. Full width of its
-              <li>, no leftover gutter. */}
+              <li>, no leftover gutter. No `rounded-md` here: the selected session row is one of
+              the square-choice-item surfaces, and this div (not `data-choice-item`'s button) is
+              the one actually painting that background, so it must stay square-cornered too. */}
           <div
             className={cn(
-              'flex w-full items-center gap-2 rounded-md',
+              'flex w-full items-center gap-2',
               isVisible ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'hover:bg-sidebar-accent'
             )}
           >
@@ -297,7 +316,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
         </ContextMenuTrigger>
         {/* Right-click opens the same options the "..." trigger does (T117 new feature): one
             action list, never a second menu to maintain. */}
-        <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+        <ContextMenuContent onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>
           {actions.map((action, index) =>
             action.kind === 'separator' ? (
               <ContextMenuSeparator key={`sep-${index}`} />

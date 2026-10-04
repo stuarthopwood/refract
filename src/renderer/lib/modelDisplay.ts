@@ -1,4 +1,4 @@
-// Shared "provider/model (effort)" readout (T062/T063), used by both the session details card
+// Shared model/effort label helpers (T062/T063), used by both the session details card
 // (SessionDetailsCard.tsx) and the message box (MessageInput.tsx) so the two surfaces never drift
 // apart. Reads only `Session.lastModel`/`lastThinkingLevel` (T062): the persisted, registry-backed
 // last-known values, never a separate live-only source.
@@ -19,8 +19,9 @@ const THINKING_LEVEL_LABEL: Record<string, string> = {
 }
 
 /** "provider/model-name" for a Session's last known model, or `null` before any `get_state`
- * has ever reported one (T063). Split out from `formatModelReadout` so the message box
- * (MessageInput.tsx) can pair this with a leading icon instead of composing plain text. */
+ * has ever reported one (T063). Split so a surface rendering model and effort as two
+ * separately-iconed chips (docs/DESIGN.md "No bracket/parenthetical UI copy") -- both
+ * SessionDetailsCard.tsx and MessageInput.tsx -- never has to re-parse a combined string. */
 export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | null {
  if (!session.lastModel) return null
  const { provider, id, name } = session.lastModel
@@ -38,16 +39,4 @@ export function formatThinkingLevelLabel(session: Pick<Session, 'lastThinkingLev
  return Object.hasOwn(THINKING_LEVEL_LABEL, session.lastThinkingLevel)
   ? (THINKING_LEVEL_LABEL[session.lastThinkingLevel] ?? session.lastThinkingLevel)
   : session.lastThinkingLevel
-}
-
-/** "provider/model-name (Effort)" for a Session's last known model, or the documented
- * placeholder before any `get_state` has ever reported one (T063). Used by surfaces that show
- * plain text only (SessionDetailsCard.tsx); the message box uses the two label helpers above
- * instead so it can show icons rather than a bracketed effort (docs/DESIGN.md "No
- * bracket/parenthetical UI copy"). */
-export function formatModelReadout(session: Pick<Session, 'lastModel' | 'lastThinkingLevel'>): string {
- const label = formatModelLabel(session)
- if (!label) return 'Model not known yet'
- const effort = formatThinkingLevelLabel(session)
- return effort ? `${label} (${effort})` : label
 }
