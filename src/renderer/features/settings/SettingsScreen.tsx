@@ -58,9 +58,14 @@ export function SettingsScreen() {
   // here claimed focus -- it silently dropped to `<body>` on every entry. Focusing this screen's
   // own heading (already a real `<h2>`, `tabIndex={-1}` so it accepts programmatic focus without
   // joining the Tab order) lands keyboard/screen-reader users somewhere meaningful instead.
+  // Spec 007: now that this screen switches between two LIVE sections without unmounting
+  // itself, re-focus the heading on every section change too, not only the screen's own first
+  // mount -- otherwise clicking "Appearance" in the nav (or back to "Session readout") left
+  // focus sitting on whichever nav button was clicked instead of landing on the new section's
+  // content, same gap the original effect already existed to avoid for the screen's own entry.
   useEffect(() => {
     headingRef.current?.focus()
-  }, [])
+  }, [settingsSection])
 
   function handleBackToChat(): void {
     openChat()
