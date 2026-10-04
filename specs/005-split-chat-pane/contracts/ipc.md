@@ -12,11 +12,11 @@ unchanged.
 |---|---|---|
 | `sessions.setVisible(sessionIds: string[])` | `void` | Replaces the single-id/`null` form. `sessionIds` is every session id currently shown in any pane (0, 1, or 2 elements). Selects which sessions' `transcript:patch` events are forwarded (generalises spec 001 FR-026 to "any visible pane"); for each id newly present that was not in the previous call, clears that session's `unread` and flushes a full transcript snapshot (`transcript:patch` `reset`) for it, exactly as the single-id form did. An empty array means no pane is shown (the readiness/empty view). |
 
-Every existing caller of the single-id form is updated to pass an array: `sessions.open`'s
-internal visibility flip, the split-store's pane-targeting actions, and `init-stores.ts`'s
-`onUiOpenSession` handler (a Windows-notification click sets `[sessionId]`, replacing whichever
-pane the clicked session already occupies if it is already shown, per FR-009, or the focused pane
-otherwise, per FR-008).
+Round 3 (code-reviewer, Low): `App.tsx`'s own rendered-panes effect is the SOLE caller of the
+array form, derived from what it actually renders (`paneSessionIds`, `isSplit`, `canShowSplit`,
+`frontSessionId`) and firing *after* the state change that triggers it (a pane targeting action,
+or `sessions.open` resolving), not before. Neither `split-store.ts` nor `init-stores.ts` calls
+`sessions.setVisible` itself any more.
 
 ## New: `settings.setSplit`
 

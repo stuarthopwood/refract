@@ -49,7 +49,11 @@ export function App() {
   const dividerPercent = useSplitStore((state) => state.dividerPercent)
   const subagentPanelRef = useRef<PanelImperativeHandle>(null)
   const focusMoveButtonRef = useRef<HTMLButtonElement>(null)
-  const [chatWidthPx, setChatWidthPx] = useState<number>(Number.POSITIVE_INFINITY)
+  // Round 3 (code-reviewer, Low): starting this at `+Infinity` made `canShowSplit` wrongly
+  // assume a wide window before the chat panel's first real `onResize` measurement lands (e.g.
+  // at startup or just after a renderer reload) -- long enough to clear a hidden Session's unread
+  // flag the `visible` effect below should not have touched yet. `null` means "not yet measured".
+  const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
   // Quality-gate remediation (code-reviewer, round 2, High): the focus-move button's `left` was
   // reading the PERSISTED `dividerPercent`, which `onLayoutChanged` only updates once a drag or
   // keyboard resize finishes (the library's own docs: "not called until the pointer has been
@@ -70,7 +74,7 @@ export function App() {
   const [liveDividerPercent, setLiveDividerPercent] = useState(dividerPercent)
 
   const isSplit = paneSessionIds.length === 2
-  const canShowSplit = chatWidthPx >= MIN_SPLIT_WIDTH_PX
+  const canShowSplit = chatWidthPx !== null && chatWidthPx >= MIN_SPLIT_WIDTH_PX
   const showSplit = isSplit && canShowSplit
   // "Whichever pane is front-and-center" regardless of whether a split is actually open right
   // now: index 0 for a single pane (focusedIndex is meaningless at that length), the focused
@@ -99,8 +103,13 @@ export function App() {
       // AlertDialog) is open -- without this, the chord could flip `focusedIndex` and move real
       // DOM focus into the OTHER pane's textarea while Radix's own FocusScope keeps keyboard
       // focus trapped inside the still-open dialog, leaving the "Focused" badge and live-region
-      // announcement contradicting where focus (and the Escape/Enter keys) actually go.
-      if (document.querySelector('[role="alertdialog"], [role="dialog"]')) return
+      // announcement contradicting where focus (and the Escape/Enter keys) actually go. Round 3
+      // (code-reviewer, Low): a bare `[role="dialog"]` also matched Radix's non-modal
+      // `PopoverContent` (e.g. StatusBar's "Free up memory" popover) -- focus is not trapped
+      // there, so the chord silently no-op'd while it was open for no reason. Narrowed to only
+      // the dialogs that actually trap focus: `alertdialog` (always modal) and a `dialog` that
+      // declares itself modal via `aria-modal="true"`.
+      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"]')) return
       event.preventDefault()
       useSplitStore.getState().focusOther()
     }

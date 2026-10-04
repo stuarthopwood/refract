@@ -137,13 +137,14 @@ export function registerSessions(manager: SessionManager): void {
     const session = manager.registry.getSession(id);
     if (!session) return notFound(`Session not found: ${id}`);
     const agent = manager.getOrCreateAgent(id);
-    // Visibility is NOT set here. It is set solely by the explicit `sessions.setVisible` IPC
-    // (sessions-store.ts `setVisibleSessionId`, fired by the renderer before this call even
-    // starts -- see its `open()`). Calling `manager.setVisible(id)` here too used to run
-    // synchronously ahead of `agent.start()` resolving (~16s on a cold start) while the
-    // renderer's own visible-Session state did not flip until this whole IPC round-trip
-    // returned: main and the renderer disagreed about which Session was visible for the entire
-    // cold start (bug report point 5).
+    // Visibility is NOT set here. It is set solely by the explicit `sessions.setVisible` IPC.
+    // Round 3 (code-reviewer, Low): App.tsx's own rendered-panes effect is the SOLE caller now,
+    // and it fires AFTER this call's snapshot resolves (reacting to the resulting state change),
+    // not before as sessions-store.ts/split-store.ts used to. Calling `manager.setVisible(id)`
+    // here too used to run synchronously ahead of `agent.start()` resolving (~16s on a cold
+    // start) while the renderer's own visible-Session state did not flip until this whole IPC
+    // round-trip returned: main and the renderer disagreed about which Session was visible for
+    // the entire cold start (bug report point 5).
     if (agent.runtimeSnapshot.status === 'stopped' && (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason))) {
       await agent.start().catch(() => undefined);
       // T062: `agent.start()` runs `syncFromState` against the registry before resolving

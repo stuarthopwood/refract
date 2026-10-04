@@ -41,11 +41,15 @@ interface StopInfo {
  * the first version of this fallback queried the WHOLE pane region, landing on whichever enabled
  * control happened to come first in DOM order -- `ChatHeader` renders before the stopped banner,
  * so it actually landed on the conversation switcher or the narrow-collapse swap chip, not the
- * banner's own Recover/Recreate worktree/Delete button this docblock and tasks.md both claimed.
- * Now checks the banner (marked by `data-pane-banner` below) FIRST, and only falls back to the
- * generic whole-pane scan when there is no banner to focus (there always is one whenever the
- * textarea is actually disabled -- `showBanner` and MessageInput's own `disabled` share the same
- * `status === 'stopped' && effectiveStopReason !== 'not-started'` condition). */
+ * banner's own Recover/Recreate worktree/Delete button this docblock previously (wrongly) claimed
+ * "always exists when the textarea is disabled". It does not: a `start-failed` banner renders no
+ * button at all, an `agent-exited` banner mid-recovery has its only button (`Recover`) disabled,
+ * and there is a brief window right after a stopped Session is (re)opened where `stopInfo` is
+ * still `{}` -- MessageInput already disables the textarea once `status === 'stopped'` (treating
+ * an undefined `stopReason` as "not `not-started`"), but `showBanner` requires a truthy
+ * `effectiveStopReason`, so no banner has rendered yet either. For all three, this now focuses
+ * the pane region itself (`tabIndex={-1}` below) rather than falling through to a generic
+ * whole-pane DOM scan, which would otherwise land on a `ChatHeader` control again. */
 function focusPaneContent(container: HTMLElement | null): void {
   if (!container) return
   const textarea = container.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')
@@ -58,11 +62,7 @@ function focusPaneContent(container: HTMLElement | null): void {
     bannerButton.focus()
     return
   }
-  container
-    .querySelector<HTMLElement>(
-      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    )
-    ?.focus()
+  container.focus()
 }
 
 /** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
@@ -140,23 +140,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const openInSplit = useSplitStore((s) => s.openInSplit)
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
   // Quality-gate remediation (code-reviewer, round 2, High): removing `key={frontSessionId}`
   // from App.tsx's single-pane `ChatPane` (restoring reclaim-focus-on-switch, a separate fix
   // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
   // the narrow-window collapse and via a notification's `ui:open-session`. An open DeleteDialog
   // reads the live `session` prop, so it would then delete whatever Session this pane swapped
-  // to, not the one it was opened for. Closes it outright on any sessionId change. Round 3
-  // (test-reviewer, Low): closing it through this state update alone left `<DeleteDialog>`'s own
-  // internal `deletedRef` stale across the swap -- if a delete was still in flight when the pane
-  // swapped away, that flag could flip true just as this effect's close ran, and a LATER, routine
-  // Cancel on this same pane would misread it as "this delete already succeeded" and wrongly
-  // close the pane. `key={sessionId}` on `<DeleteDialog>` below forces a fresh instance (and so a
-  // fresh `deletedRef`) on the same sessionId change this effect already reacts to.
-  useEffect(() => {
-    setDeleteOpen(false)
-  }, [sessionId])
+  // to, not the one it was opened for. Round 3 (code-reviewer, Low): the previous fix for this
+  // (`key={sessionId}` on `<DeleteDialog>`, forcing a remount on every sessionId change) opened a
+  // different race -- a freshly-keyed instance could mount already-open (`open={deleteOpen}` still
+  // true from the outgoing Session) for one render before a reset effect ran, firing an unwanted
+  // `deleteCheck` request and stealing focus, and separately let an in-flight delete on the OLD
+  // instance close a dialog the user had just reopened for the NEW Session. `deleteForId` (the
+  // Session id currently being deleted, or `null`) replaces both the boolean state and the key:
+  // the dialog's `open` prop is `deleteForId === sessionId`, which is naturally `false` the instant
+  // `sessionId` changes away from whatever it was opened for, with no separate reset effect and no
+  // remount (so no stale/duplicate instance race either).
+  const [deleteForId, setDeleteForId] = useState<string | null>(null)
+  const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
   // Tracks whether focus is currently somewhere inside the chat pane (the message textarea,
@@ -338,6 +338,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       ref={chatPaneRef}
       role="region"
       aria-label={`${session.name} chat`}
+      tabIndex={-1}
       onMouseDownCapture={handleFocusPane}
       onFocusCapture={handleFocusPane}
       className="relative flex h-full flex-col overflow-hidden"
@@ -413,7 +414,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                   ref={deleteBannerButtonRef}
                   size="sm"
                   variant="destructive"
-                  onClick={() => setDeleteOpen(true)}
+                  onClick={() => setDeleteForId(sessionId)}
                 >
                   Delete
                 </Button>
@@ -423,10 +424,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         </div>
       )}
       <DeleteDialog
-        key={sessionId}
         session={session}
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
+        open={deleteForId === sessionId}
+        onOpenChange={(open) => setDeleteForId(open ? sessionId : null)}
         onDeleted={() => {
           // FR-016: deleting the Session shown in this pane closes the pane itself (a no-op when
           // there is no split to close down to), not just a focus move inside it.

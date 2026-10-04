@@ -678,9 +678,13 @@ quietly tightened.
   -- the badge contradicting real focus -- stayed fixed), but pressing Enter next could start an
   unwanted new Conversation or swap panes outright. Fixed: the stopped banner's wrapping element
   now carries `data-pane-banner`; `focusPaneContent` checks `[data-pane-banner] button:not(:disabled)`
-  FIRST, before the generic whole-pane fallback -- there is always a banner to find whenever the
-  textarea is actually disabled, since both share the same `status === 'stopped' &&
-  effectiveStopReason !== 'not-started'` condition.
+  FIRST, before the generic whole-pane fallback. Round 3 (code-reviewer, Medium): that banner is
+  NOT always there to find -- a `start-failed` banner renders no button at all, an `agent-exited`
+  banner mid-recovery has its only button (`Recover`) disabled, and a brief post-open window has
+  the textarea already disabled with no banner rendered yet (`stopInfo` still `{}`). The generic
+  whole-pane fallback is gone entirely; when neither the textarea nor a banner button is enabled,
+  `focusPaneContent` now focuses the pane region itself (`tabIndex={-1}`), never a `ChatHeader`
+  control.
 
 #### Low -- fixed
 - **`onPointerDownCapture={(e) => e.stopPropagation()}` (round 2) never actually stopped the

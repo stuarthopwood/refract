@@ -29,10 +29,12 @@ const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
 
 // The session list (contracts/ipc.md "Sessions"). Spec 005 (tasks.md T012): which Session(s) the
 // chat area shows is owned entirely by `split-store.ts` now -- this store only starts/reattaches
-// an agent and returns its snapshot; visibility is set by whichever split-store action triggers
-// the open, before `open()` is ever called (preserving `src/main/ipc/sessions.ts`'s existing
-// ordering rule: "Visibility is NOT set here... set solely by the explicit `sessions.setVisible`
-// IPC").
+// an agent and returns its snapshot; it never sets visibility itself. Round 3 (code-reviewer,
+// Low): `App.tsx`'s own rendered-panes effect is the SOLE caller of `sessions.setVisible` now,
+// and it runs AFTER this store's `open()` resolves (not before, as split-store/init-stores used
+// to), reacting to the resulting state change like every other `useEffect` dependency (preserving
+// `src/main/ipc/sessions.ts`'s existing rule: "Visibility is NOT set here... set solely by the
+// explicit `sessions.setVisible` IPC").
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
   openingIds: new Set(),
