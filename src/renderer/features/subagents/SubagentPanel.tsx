@@ -41,7 +41,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   const grouped = groupToolItems(selectedStream)
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div id="subagent-panel" className="flex h-full flex-col overflow-hidden">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <span className="text-sm font-semibold">Subagents</span>
         <Button
@@ -49,7 +49,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
           size="icon"
           className="ml-auto size-7"
           aria-label="Close subagents panel"
-          onClick={closePanel}
+          onClick={() => closePanel()}
         >
           <XIcon aria-hidden className="size-4" />
         </Button>

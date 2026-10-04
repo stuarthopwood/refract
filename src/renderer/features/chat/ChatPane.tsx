@@ -164,7 +164,7 @@ export function ChatPane() {
   useEffect(() => {
     if (!visibleSessionId || session) return
     const panelState = useSubagentPanelStore.getState()
-    if (panelState.sessionId === visibleSessionId) panelState.closePanel()
+    if (panelState.sessionId === visibleSessionId) panelState.closePanel({ restoreFocus: false })
   }, [visibleSessionId, session])
 
   if (!visibleSessionId || !session) {

@@ -115,8 +115,15 @@ export function App() {
                 const wasCollapsed = prevSize.inPixels <= 0
                 if (collapsed === wasCollapsed) return
                 const panelState = useSubagentPanelStore.getState()
-                if (collapsed && panelState.open) panelState.closePanel()
+                if (collapsed && panelState.open) panelState.closePanel({ restoreFocus: false })
                 else if (!collapsed && !panelState.open && visibleSessionId) panelState.openPanel(visibleSessionId)
+                // Low remediation (code-reviewer, spec 004 final confirmation pass): dragging the
+                // collapsed panel open while there is no visible Session at all (`visibleSessionId`
+                // null, so the branch above cannot call `openPanel`) left it visually expanded with
+                // the store still `open: false` -- desynced again, the same root cause this whole
+                // handler exists to prevent. Forces the real rendered panel back closed instead of
+                // leaving that mismatch sitting there.
+                else if (!collapsed && !panelState.open && !visibleSessionId) subagentPanelRef.current?.collapse()
               }}
             >
               {/* Critical remediation (a11y + test-reviewer, same root cause from two angles):

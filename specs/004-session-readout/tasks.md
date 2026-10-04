@@ -187,3 +187,82 @@ A 4-reviewer quality gate (code-reviewer, security-auditor, test-reviewer, acces
 ### Not independently live-verified this round
 Every item in the assignment's explicit live-check list was exercised (see each High entry above for its own evidence). The Medium `reset()` IPC-consistency fix and the documented Settings-round-trip limitation were judged code-correct but not independently screenshotted/CDP-driven, per this round's own evidence budget.
 
+
+---
+
+## Final remediation round (2026-10-04, second pass)
+
+A confirmation pass over the remediation above found one more real High (a regression in the
+High fix itself) plus three cheap Medium/Low items worth bundling in. One Low (position-matching
+assuming OMP sends `progress[]` entries in spec order) was judged unlikely/lower-value and
+skipped, per the pass's own assessment. Live-verified in a fresh isolated scratch Electron
+instance (`electron-vite dev` with its own `--user-data-dir=C:/scratch/pinion-verify-userdata`,
+CDP on an explicit `--remoteDebuggingPort`, driven via the existing dev-only
+`window.__refractStores` hook -- no real repository/Session/OMP process needed since the bug and
+its fix live entirely in renderer store logic); scratch userData dir left on disk as instructed.
+
+### High -- fixed
+- **Starting a new turn with the Subagents panel open stole focus from the message box**
+  (confirmation pass): `applySubagents`'s own non-empty -> empty transition detection (added in
+  the remediation round above) calls `resetForNewTurn`, which calls `closePanel()` -- but
+  `closePanel()` unconditionally moved focus to the Subagents chip regardless of whether focus
+  was actually inside the panel, and the chip is still mounted at that moment (the readout update
+  that would eventually unmount it is debounced). A user who just sent the very message that
+  starts the new turn had focus yanked out of the composer. Fixed in
+  `src/renderer/state/subagent-store.ts`: `closePanel(options?: { restoreFocus?: boolean })` now
+  only moves focus when `document.getElementById('subagent-panel')` (a new `id` on
+  `SubagentPanel.tsx`'s root) actually contains `document.activeElement`, and every caller closing
+  the panel for a reason other than the user clicking its own Close button --
+  `resetForNewTurn`, `ChatPane.tsx`'s archive/vanished-Session effect, and `App.tsx`'s onResize
+  drag-collapse handler -- now passes `restoreFocus: false` outright. **Live evidence**: with the
+  panel open, a subagent running, and the message textarea genuinely focused
+  (`{"focusedIsTextarea": true}`), calling the exact production trigger
+  (`useReadoutStore.getState().applySubagents(sessionId, [])`) closed the panel
+  (`{"panelOpenAfter": false}`) but left focus exactly where it was
+  (`{"activeElementTag": "TEXTAREA", "activeElementAriaLabel": "Message", "textareaStillFocused": true}`).
+  The explicit-Close-button path was spot-checked too, to confirm it still restores focus
+  correctly when focus genuinely was inside the panel: focusing the panel's own Close button and
+  clicking it produced `{"panelOpenAfter": false, "focusMovedToChip": true, "activeElementAriaLabel": "Open subagents panel (1 running)"}`.
+
+### Medium -- fixed
+- **Two subagents sharing a name within one `task()` call collided on `${toolCallId}:${name}`**
+  (confirmation pass): not unique within a single batch, only across batches/turns -- two
+  same-named (or two unnamed, same-task-text) specs ended up sharing one `subagentStreams` entry
+  and one React key. Fixed in `SessionAgent.ts`'s `handleTaskStart`: counts each spec's base id's
+  occurrences within the batch first and appends `:${occurrence}` to every duplicate (the same
+  `${id}:${index}` fallback `contracts/omp-usage.md` already documents OMP's own `progress.id`
+  using in the same circumstance); `handleTaskUpdate`'s existing id-match-then-position fallback
+  needed no further change, since id-matching now naturally fails for a disambiguated slot and
+  falls through to position, exactly as intended. **Spot-checked**: running the exact batch-build
+  algorithm against two `Alpha`/`Alpha` specs, two unnamed specs with identical task text, and one
+  `Beta` produced `{"ids": ["tc1:Alpha:0", "tc1:Alpha:1", "tc1:investigate the bug:0", "tc1:investigate the bug:1", "tc1:Beta"], "allUnique": true}`.
+- **The 60s PR-poll timer and a branch-change-triggered lookup could race**: an older lookup
+  (started for a branch the Session has since moved on from) resolving after a newer one already
+  in flight for the real current branch could clobber `cachedPullRequest` with the wrong branch's
+  PR, uncorrected until the next tick. Fixed in `SessionAgent.ts`'s `refreshPullRequest`: captures
+  the branch it was called for locally, and after the `await` discards the result outright if
+  `pullRequestBranch` (always the latest *requested* branch) no longer matches what this call
+  requested -- a later call has already superseded it. **Spot-checked**: simulating an older
+  branch-A lookup (slow) started before a newer branch-B lookup (fast) produced
+  `{"olderResult": "discarded-stale", "newerResult": "applied", "finalCachedPullRequest": {"number": 2, "url": "https://x/B"}, "finalPullRequestBranch": "B"}`
+  -- branch A's stale result never applied.
+
+### Low -- fixed
+- **`refreshPullRequest`'s own `scheduleReadoutUpdate` call could fire after `shutdown()`**,
+  arming a brand-new timer post-shutdown and emitting a readout for a closed Session. Fixed:
+  `refreshPullRequest` now returns early if `stopRequested` (the same flag `shutdown()` already
+  sets, and `start()`/`restart()` already clear on a fresh run) is true, before scheduling
+  anything. Verified by code reading (`stopRequested` is exclusively set by `shutdown()`, distinct
+  from `stop()`, which only aborts the running turn).
+- **Dragging the collapsed Subagents panel open with no visible Session** (`visibleSessionId`
+  null) left it visually expanded while the store stayed `open: false` -- desynced again, the
+  same root cause the existing `onResize` handler exists to prevent. Fixed: that branch now calls
+  `subagentPanelRef.current?.collapse()` to force the real rendered panel back closed instead of
+  leaving the mismatch. Verified by code reading (the same `onResize` handler's existing branches
+  were already live-verified in the prior remediation round).
+
+### Low -- intentionally skipped (per the assignment's own assessment)
+- `handleTaskUpdate`'s position-based fallback assumes OMP sends `progress[]` entries in spec
+  order; judged unlikely/lower-value, not worth the complexity this round.
+
+`pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all pass clean (0 leaks) after this round.

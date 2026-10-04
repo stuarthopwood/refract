@@ -26,7 +26,11 @@ interface SubagentPanelState {
   selectedId: string | null
   streams: Record<string, TranscriptItem[]>
   openPanel(sessionId: string): void
-  closePanel(): void
+  /** `restoreFocus` (default true) moves focus to the Subagents chip only when it was
+   * actually inside the panel at close time -- callers closing the panel for a reason OTHER
+   * than the user clicking its own Close button (a new turn starting, the visible Session
+   * archiving/vanishing, a drag-collapse) pass `false` so a steal never happens. */
+  closePanel(options?: { restoreFocus?: boolean }): void
   selectSubagent(subagentId: string): Promise<void>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
   reset(): void
@@ -46,7 +50,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   selectedId: null,
   streams: {},
   openPanel: (sessionId) => set({ open: true, sessionId }),
-  closePanel: () => {
+  closePanel: (options) => {
     const { sessionId } = get()
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
     // Critical remediation (a11y + test-reviewer, same root cause from two angles): `sessionId`
@@ -58,14 +62,24 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // the content on `panelOpen`, but clearing `sessionId` here too means no stale panel state
     // lingers for `resetForNewTurn`/the ChatPane archive-while-open guard to ever see.
     set({ open: false, sessionId: null, selectedId: null, streams: {} })
-    // T024 live-finding fix (FR-020, WCAG 2.1 AA 2.4.3): the panel stays permanently mounted,
-    // collapsed to zero width (App.tsx, T021's own note), so a focused element inside it (the
-    // Close button itself, most often) is never unmounted or blurred by the collapse -- without
-    // this, keyboard focus was silently stranded on a now off-screen, clipped button, matching
-    // `focusSessionsNav`'s own always-connected-fallback pattern (`lib/focus.ts`), moved here
-    // (rather than only in `SubagentPanel.tsx`'s own handler) so every `closePanel()` caller gets
-    // the same return-focus behaviour.
-    document.querySelector<HTMLElement>('button[aria-label^="Open subagents panel"]')?.focus()
+    // High remediation (code-reviewer, spec-004 final confirmation pass): the readout update
+    // that unmounts this panel's content is debounced, so the chip this used to focus
+    // unconditionally was ALWAYS still mounted at this point, regardless of whether focus was
+    // ever inside the panel to begin with -- `resetForNewTurn`'s own call path (a new turn
+    // starting, e.g. right after the user sends the very message that starts it) and the
+    // ChatPane archive-path/onResize drag-collapse path all close this panel for reasons that
+    // have nothing to do with the user having been inside it, and every one of them now passes
+    // `restoreFocus: false` to skip this outright rather than steal focus out of wherever it
+    // already was (the message box, most often, the very moment the user wants to type a
+    // follow-up). The containment check below is the remaining guard for this component's only
+    // other caller, the panel's own explicit Close button: focus should return to the chip only
+    // if it was actually inside the panel when Close was clicked.
+    if (options?.restoreFocus ?? true) {
+      const panelEl = document.getElementById('subagent-panel')
+      if (panelEl?.contains(document.activeElement)) {
+        document.querySelector<HTMLElement>('button[aria-label^="Open subagents panel"]')?.focus()
+      }
+    }
   },
   selectSubagent: async (subagentId) => {
     const { sessionId } = get()
@@ -100,7 +114,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     const state = get()
     if (state.sessionId !== sessionId) return
     if (state.open) {
-      state.closePanel()
+      state.closePanel({ restoreFocus: false })
       return
     }
     set({ selectedId: null, streams: {} })

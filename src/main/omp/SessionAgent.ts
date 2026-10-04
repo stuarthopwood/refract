@@ -1146,8 +1146,24 @@ export class SessionAgent extends EventEmitter {
   private async refreshPullRequest(): Promise<void> {
     const session = this.registry.getSession(this.sessionId);
     if (!session) return;
-    this.pullRequestBranch = session.branch;
-    const lookup = await pullRequestForBranch(session.worktreePath, session.branch);
+    const requestedBranch = session.branch;
+    this.pullRequestBranch = requestedBranch;
+    const lookup = await pullRequestForBranch(session.worktreePath, requestedBranch);
+    // Medium remediation (code-reviewer, spec 004 final confirmation pass): the 60s timer tick
+    // and a branch-change-triggered lookup (`computeReadout`, above) can race -- if an OLDER
+    // lookup (started for a branch the Session has since moved on from) resolves AFTER a NEWER
+    // one already started for the branch it is really on now, applying the older result would
+    // clobber `cachedPullRequest` with the wrong branch's PR, uncorrected until the next tick.
+    // `pullRequestBranch` always holds the latest REQUESTED branch (set synchronously above, by
+    // every call), so if it no longer matches what THIS call requested, a later call has already
+    // superseded it -- this result is stale and is discarded outright rather than applied.
+    if (this.pullRequestBranch !== requestedBranch) return;
+    // Low remediation (code-reviewer): `shutdown()` already clears `readoutTimer` and sets
+    // `stopRequested` before awaiting any in-flight work drains; without this guard, an await
+    // above resolving after `shutdown()` ran would still call `scheduleReadoutUpdate()` below,
+    // arming a brand-new timer post-shutdown and eventually emitting a readout for a closed
+    // Session nothing is listening to any more.
+    if (this.stopRequested) return;
     // Judgment call (data-model.md's retention rule vs spec.md's edge-case wording, both
     // ambiguous together): a clean lookup that finds no open PR for this branch (a PR
     // closed/merged, or a branch that never had one) actively hides the chip (quickstart Story 1
@@ -1182,18 +1198,37 @@ export class SessionAgent extends EventEmitter {
    * `task` calls and a repeated subagent name reused in a later turn, neither of which a bare
    * name (FINDINGS item 36: OMP's own `progress[].id` echoes it back unchanged) can tell apart
    * on its own; `toolCallId` is also kept as its own field so `handleTaskUpdate`/`handleTaskEnd`
-   * can scope their own correlation to the right batch before ever falling back to name/position. */
+   * can scope their own correlation to the right batch before ever falling back to name/position.
+   * Medium remediation (code-reviewer, spec 004 final confirmation pass): that prefix alone still
+   * collides when the SAME `task()` call's own `tasks[]` has two specs sharing a name (or two
+   * unnamed specs whose `subagentNameOrTask` fallback happens to coincide) -- counts each spec's
+   * base id's occurrences within this one batch first and appends `:${occurrence}` to every
+   * duplicate (the same `${id}:${index}` disambiguation contracts/omp-usage.md already documents
+   * OMP's own `progress.id` falling back to in the same circumstance), so two same-named subagents
+   * never share a stream entry or a React key. `handleTaskUpdate`'s own id-match-then-position
+   * fallback (below) already resolves these disambiguated slots by position once id-matching can
+   * no longer succeed for them, with no further change needed there. */
   private handleTaskStart(frame: ToolExecutionStartFrame): void {
     const specs = this.readTaskSpecs(frame.args);
     if (specs.length === 0) return;
     const startedAt = Date.now();
-    const created: SubagentSummary[] = specs.map((spec) => ({
-      id: `${frame.toolCallId}:${spec.name ?? this.subagentNameOrTask(spec)}`,
-      toolCallId: frame.toolCallId,
-      nameOrTask: this.subagentNameOrTask(spec),
-      status: 'running',
-      startedAt,
-    }));
+    const baseIds = specs.map((spec) => `${frame.toolCallId}:${spec.name ?? this.subagentNameOrTask(spec)}`);
+    const baseIdCounts = new Map<string, number>();
+    for (const baseId of baseIds) baseIdCounts.set(baseId, (baseIdCounts.get(baseId) ?? 0) + 1);
+    const occurrenceIndex = new Map<string, number>();
+    const created: SubagentSummary[] = specs.map((spec, index) => {
+      const baseId = baseIds[index] as string;
+      const occurrence = occurrenceIndex.get(baseId) ?? 0;
+      occurrenceIndex.set(baseId, occurrence + 1);
+      const id = (baseIdCounts.get(baseId) ?? 0) > 1 ? `${baseId}:${occurrence}` : baseId;
+      return {
+        id,
+        toolCallId: frame.toolCallId,
+        nameOrTask: this.subagentNameOrTask(spec),
+        status: 'running',
+        startedAt,
+      };
+    });
     for (const summary of created) {
       if (!this.subagentStreams.has(summary.id)) this.subagentStreams.set(summary.id, []);
     }
