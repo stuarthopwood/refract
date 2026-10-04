@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/message-scroller'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
 import { usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
-import type { PendingRequest, TranscriptItem } from '../../../shared/model'
+import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
@@ -196,7 +196,12 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
           label={label}
           summary={item.streaming ? item.text.slice(-THINKING_PREVIEW_CHARS) : undefined}
         >
-          <Markdown id={item.id} text={item.text} streaming={item.streaming} />
+          {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): the ambient
+           * `--foreground` this inherited by default reads brighter than primary chat prose's own
+           * `--chat-foreground`, inverting the intended secondary/bookkeeping hierarchy for a
+           * Thinking block's full expanded text -- the same level its own collapsed summary above
+           * already uses. */}
+          <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-muted-foreground" />
         </CollapsedLine>
       )
     }
@@ -336,14 +341,23 @@ export function Transcript() {
   // point 5's "old Session B's header/input sit over A's empty transcript").
   const items = trackedSessionId === visibleSessionId ? storeItems : []
   // Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
-  // 2026-10-04): the only transcript item a brand-new agent process can produce before any real
-  // exchange is a `notice` (OMP's own unsolicited startup banner -- a `command_output`/`notice`
-  // frame, same mechanism any local slash command's output uses, `transcript.ts`'s
-  // `applyPromptResultNotice`/`command_output` case -- lists every mounted MCP tool verbatim). A
-  // session "has started" the moment anything else (a user message, a tool call, ...) exists;
-  // until then the raw notice(s) stay in `items` (never dropped -- they render normally the
-  // moment real content exists) but are not displayed, replaced by a neutral placeholder instead.
-  const hasConversationStarted = items.some((item) => item.kind !== 'notice')
+  // 2026-10-04; narrowed per code/test-reviewer round 2): the only transcript item a brand-new
+  // agent process can produce before any real exchange is a `notice` (OMP's own unsolicited
+  // startup banner -- a `command_output`/`notice` frame, same mechanism a user-run slash
+  // command's own output uses, lists every mounted MCP tool verbatim). Hiding *every* `notice`
+  // until a non-notice item exists was too broad: it also hid a start-failure notice, a rejected
+  // first prompt's error notice, and a slash command's own output when run as the very first
+  // action in a new Session -- none of which is the startup banner, and DESIGN.md's "never a
+  // silent no-op" rule for slash commands means the last of those must always be visible. A
+  // `notice` now counts as "conversation started" unless it is BOTH an info/warning-level notice
+  // (an error is always a real outcome, never the unsolicited banner) AND tagged
+  // `STARTUP_NOTICE_PREFIX` (`transcript.ts`'s `applyFrame`, keyed off `SessionAgent.hasUserActed`
+  // -- the one case that is unambiguously the agent's own startup dump, not something the user
+  // did). Suppressed notice(s) stay in `items` (never dropped -- they render normally the moment
+  // real content exists) but are not displayed, replaced by a neutral placeholder instead.
+  const hasConversationStarted = items.some(
+    (item) => item.kind !== 'notice' || item.level === 'error' || !item.id.startsWith(STARTUP_NOTICE_PREFIX)
+  )
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = visibleSessionId ? (pendingBySession[visibleSessionId] ?? []) : []
 

@@ -128,6 +128,15 @@ export class SessionAgent extends EventEmitter {
    * turn. Reset at the next `agent_start`. */
   private turnSettleHandled = false;
 
+  /** `transcript.ts`'s `applyFrame` reads this to tell OMP's own unsolicited startup banner
+   * apart from a user-run slash command's output (`STARTUP_NOTICE_PREFIX`): `false` only for the
+   * window between process start and the user's first `send()` call, which is the only place in
+   * this class that represents the user actually doing something (a prompt or a slash command,
+   * both go through `send`). Set once and never reset -- a later restart's own fresh startup
+   * banner is a real "process just (re)started" notice too, so tagging it again is correct, not a
+   * bug, and nothing downstream ever needs this flag to go back to `false`. */
+  private hasUserActed = false;
+
   constructor(opts: SessionAgentOptions) {
     super();
     this.sessionId = opts.sessionId;
@@ -409,6 +418,10 @@ export class SessionAgent extends EventEmitter {
    * `streamingBehavior:'followUp'` prompt while a turn is already running becomes a queue chip
    * instead of starting a second turn. `queued` reports which case this was. */
   async send(text: string): Promise<{ queued: boolean }> {
+    // Marks the user's first real action in this process (see `hasUserActed`'s own doc comment)
+    // before either guard below can throw: even a `send()` that ultimately fails to reach the
+    // process is the user genuinely trying to do something, never OMP's own unprompted startup.
+    this.hasUserActed = true;
     if (this.restarting) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send, restart in progress`);
     }
@@ -783,7 +796,7 @@ export class SessionAgent extends EventEmitter {
   }
 
   private applyTranscriptFrame(frame: Frame): void {
-    const next = applyFrame(this.runtime.transcript, frame);
+    const next = applyFrame(this.runtime.transcript, frame, this.hasUserActed);
     if (next === this.runtime.transcript) return;
     const ops = diffTranscript(this.runtime.transcript, next);
     this.runtime = { ...this.runtime, transcript: next };

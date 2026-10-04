@@ -115,6 +115,14 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
   // outside it, so the outer wrapper's `overflow-hidden` (needed to clip the body to the header's
   // rounded corners) can never clip the ring off on the left/right/bottom.
   const scrollableClassName = 'overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+  // `lang === null` (code-reviewer/test-reviewer/accessibility-auditor, round 2, same issue from
+  // three angles) means `inferOutputBlock` found no code/json/diff shape at all -- prose-shaped
+  // text (a subagent's Prompt/Result, an approval card's detail lines) that previously scrolled
+  // sideways like real code instead of wrapping like every other paragraph in the transcript, the
+  // one case that matters most on an approval card where the user must read a full command before
+  // approving. `html` never gets set for this case (the effect above bails out before ever calling
+  // Shiki when `lang` is falsy), so this is the only branch `lang === null` can ever reach.
+  const wrapClassName = 'whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
 
   if (html) {
     // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup),
@@ -135,7 +143,7 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
   return (
     <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
       <CodeBlockHeader label={label} />
-      <pre tabIndex={0} role="region" aria-label={regionLabel} className={cn(scrollableClassName, 'bg-card p-3')}>
+      <pre tabIndex={0} role="region" aria-label={regionLabel} className={cn(lang === null ? wrapClassName : scrollableClassName, 'bg-card p-3')}>
         <code>{code}</code>
       </pre>
     </div>
@@ -568,10 +576,12 @@ interface MarkdownProps {
   // Only set for the live assistant-text/thinking rows (`TranscriptItem.streaming`); omitted
   // (false) for settled messages, including every user message, which never stream.
   streaming?: boolean
-  // Overrides the wrapper's default (inherited) text colour. Only the two primary-prose callers
+  // Overrides the wrapper's default (inherited) text colour. The two primary-prose callers
   // (user/assistant message text, docs/DESIGN.md "Chat text colour") pass `text-chat-foreground`;
-  // every other caller (thinking, ask-question text, ...) renders secondary/bookkeeping material
-  // and keeps the ambient `--foreground` it already inherited.
+  // the Thinking row's expanded text passes `text-muted-foreground` (accessibility-auditor round
+  // 2: matches its own collapsed summary's level, instead of inheriting ambient `--foreground`,
+  // which reads brighter than chat prose and inverted the secondary/bookkeeping hierarchy); every
+  // other caller keeps the ambient `--foreground` it already inherited.
   className?: string
 }
 

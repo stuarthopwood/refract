@@ -74,7 +74,10 @@ export function NoticeRow({ level, text: rawText }: NoticeRowProps) {
       summaryClassName={NOTICE_CLASS[level]}
       contentClassName="pl-7"
     >
-      <div className="max-h-60 overflow-y-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap text-foreground">{text}</div>
+      {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
+       * summary above and the surrounding bookkeeping rows, instead of the ambient `--foreground`
+       * this previously set explicitly, which reads brighter than primary chat prose. */}
+      <div className="max-h-60 overflow-y-auto rounded-md bg-muted p-2 text-xs whitespace-pre-wrap text-muted-foreground">{text}</div>
     </CollapsedLine>
   )
 }

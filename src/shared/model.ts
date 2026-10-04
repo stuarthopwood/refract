@@ -181,6 +181,15 @@ export const HIDDEN_TOOLS: ReadonlySet<string> = new Set(['todo']);
  * shape `groupToolItems` must not let end a run of the surrounding visible tool's calls. */
 export const HIDDEN_TOOL_NOTICE_PREFIX = 'hidden-tool-error:';
 
+/** `id` prefix for a `notice` built from a `command_output`/`notice` frame that arrived before
+ * the user had taken any action in this agent process (`SessionAgent.hasUserActed`) -- OMP's own
+ * unsolicited startup banner (lists every mounted MCP tool verbatim) uses the exact same frame
+ * shapes a user-run slash command's own output does, so this is the only way to tell them apart.
+ * `Transcript.tsx`'s empty-transcript check hides only a notice carrying this prefix (and even
+ * then only while nothing else real has happened); a `level: 'error'` notice is never hidden
+ * regardless of this prefix, since an error is always a real outcome worth showing. */
+export const STARTUP_NOTICE_PREFIX = 'startup-notice:';
+
 /** `requestId` is the `id` of the OMP `extension_ui_request`. Does not survive a process restart. */
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }

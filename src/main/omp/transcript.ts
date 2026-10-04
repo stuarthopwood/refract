@@ -18,7 +18,7 @@ import type {
   ToolExecutionStartFrame,
 } from '../../shared/frames';
 import { isKnownFrame } from '../../shared/frames';
-import { HIDDEN_TOOLS, HIDDEN_TOOL_NOTICE_PREFIX } from '../../shared/model';
+import { HIDDEN_TOOLS, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX } from '../../shared/model';
 import type { TranscriptItem } from '../../shared/model';
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -754,8 +754,16 @@ function applyPromptResultNotice(items: TranscriptItem[], frame: PromptResultFra
 }
 
 /** Applies one live rpc-ui frame to the current transcript. Ignores every frame type not listed
- * in contracts/omp-usage.md "Frames Refract consumes" without throwing. */
-export function applyFrame(items: TranscriptItem[], frame: Frame): TranscriptItem[] {
+ * in contracts/omp-usage.md "Frames Refract consumes" without throwing. `hasUserActed` is
+ * `SessionAgent`'s own tracking of whether the user has sent a prompt or slash command yet in
+ * this process's lifetime (both go through `SessionAgent.send`): `false` only for the window
+ * between process start and the user's first `send`, exactly when OMP's unsolicited startup
+ * banner (a `command_output`/`notice` frame listing every mounted MCP tool) can arrive -- the
+ * only moment a `command_output`/`notice` frame might not represent something the user actually
+ * did. A `command_output`/`notice`-derived notice built while `false` is tagged with
+ * `STARTUP_NOTICE_PREFIX` so `Transcript.tsx` can hide only that specific banner, never a real
+ * slash-command result or any other notice (docs/DESIGN.md "Hide new-session MCP-mount dump"). */
+export function applyFrame(items: TranscriptItem[], frame: Frame, hasUserActed: boolean): TranscriptItem[] {
   if (!isKnownFrame(frame)) return items;
   switch (frame.type) {
     case 'message_start':
@@ -776,10 +784,13 @@ export function applyFrame(items: TranscriptItem[], frame: Frame): TranscriptIte
     case 'command_output': {
       const text = typeof frame.text === 'string' ? frame.text : typeof frame.message === 'string' ? frame.message : '';
       if (!text) return items;
-      return [...items, { kind: 'notice', id: `notice-${items.length}`, level: 'info', text }];
+      const id = hasUserActed ? `notice-${items.length}` : `${STARTUP_NOTICE_PREFIX}${items.length}`;
+      return [...items, { kind: 'notice', id, level: 'info', text }];
     }
-    case 'notice':
-      return [...items, { kind: 'notice', id: `notice-${items.length}`, level: frame.level, text: frame.message }];
+    case 'notice': {
+      const id = hasUserActed ? `notice-${items.length}` : `${STARTUP_NOTICE_PREFIX}${items.length}`;
+      return [...items, { kind: 'notice', id, level: frame.level, text: frame.message }];
+    }
     default:
       return items;
   }

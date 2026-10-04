@@ -78,15 +78,12 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
   const truncated = !showAllOutput && outputLines.length > OUTPUT_LINE_CAP
   const visibleOutputCode = truncated ? outputLines.slice(0, OUTPUT_LINE_CAP).join('\n') : (outputBlock?.code ?? '')
 
-  // `writeLines` is the file's own raw line count for the "Wrote N lines" label (unaffected by
-  // any JSON re-pretty-printing below); `writeBlock`/`writeCodeLines` are the (possibly
-  // reformatted) CodeBlock content, truncated the same way `outputBlock`/`outputLines` are above.
-  const writeLines = React.useMemo(() => {
-    const content = item.write?.content ?? ''
-    const lines = content.split('\n')
-    if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-    return lines
-  }, [item.write])
+  // `writeBlock`/`writeCodeLines` are the (possibly JSON-reformatted) CodeBlock content, truncated
+  // the same way `outputBlock`/`outputLines` are above; both the "Wrote N lines" label and the
+  // "Show all (M lines)" button below count `writeCodeLines` (test-reviewer, round 2: the label
+  // used to count the file's own raw lines while "Show all" counted the reformatted CodeBlock's
+  // lines, so the two disagreed whenever `write.content` was compact JSON re-pretty-printed for
+  // display -- both numbers must describe the one block actually rendered on screen).
   const writeBlock = React.useMemo(() => (item.write != null ? inferOutputBlock(item.write.content) : null), [item.write])
   const writeCodeLines = React.useMemo(() => writeBlock?.code.split('\n') ?? [], [writeBlock])
   const writeTruncated = !showAllWrite && writeCodeLines.length > OUTPUT_LINE_CAP
@@ -98,7 +95,7 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
       {item.write && (
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">
-            Wrote {writeLines.length} {writeLines.length === 1 ? 'line' : 'lines'} to {item.write.path}
+            Wrote {writeCodeLines.length} {writeCodeLines.length === 1 ? 'line' : 'lines'} to {item.write.path}
           </div>
           <div className="max-h-64 overflow-auto rounded-lg">
             <CodeBlock code={visibleWriteCode} lang={writeBlock?.lang ?? null} />

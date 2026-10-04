@@ -123,7 +123,10 @@ export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
       label="Asked user:"
       summary={question}
     >
-      <div className="whitespace-pre-wrap text-sm">{question}</div>
+      {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
+       * summary above instead of the ambient `--foreground` this previously inherited, which
+       * reads brighter than primary chat prose and inverted the secondary/bookkeeping hierarchy. */}
+      <div className="whitespace-pre-wrap text-sm text-muted-foreground">{question}</div>
       {options.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
           {options.map((option) => (
