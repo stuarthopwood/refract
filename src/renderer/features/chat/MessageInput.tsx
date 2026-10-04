@@ -280,6 +280,31 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }, GHOST_TEXT_DEBOUNCE_MS)
   }
 
+  // FR-058: a pure cursor move away from an already-shown suggestion dismisses it too, with no
+  // accompanying text edit -- onChange already covers the edit case via `scheduleGhostCheck`'s own
+  // `dismissGhost` call. React's `onSelect` prop (the native `select` DOM event) looked like the
+  // obvious hook for this, but live verification found Chromium never actually fires `select` for
+  // a plain caret reposition -- only for an actual non-collapsed text-range selection -- so an
+  // `onSelect` handler here was dead code for exactly the click/arrow-key case FR-058 names (round
+  // 4 remediation, #358/#359). `selectionchange` (necessarily document-scoped: the Selection APIs
+  // have no per-element event) fires for both a click and a bare arrow key. Mount-once (`[]`) like
+  // the autoFocus effect below: reads `ghostRef` rather than `ghost` state, so it never goes stale
+  // across renders, same reasoning as `dismissGhost` itself.
+  useEffect(() => {
+    function handleSelectionChange() {
+      const target = textareaRef.current
+      if (!target || document.activeElement !== target) return
+      const current = ghostRef.current
+      if (!current) return
+      if (target.selectionStart !== current.cursor || target.selectionEnd !== current.cursor) {
+        dismissGhost(false)
+        setAnnouncedSuggestion(null)
+      }
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [])
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (showSlashMenu) {
       if (event.key === 'ArrowDown') {
@@ -455,18 +480,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               setText(value)
               setSlashDismissed(false)
               scheduleGhostCheck(value, cursor)
-            }}
-            onSelect={(event) => {
-              // A cursor move with no accompanying edit (click, arrow keys) that lands away from
-              // where a shown suggestion was requested invalidates it too (FR-058); onChange
-              // already handles the edit case, so this is a no-op (dismissGhost checks `ghost`)
-              // when nothing actually moved away from it.
-              if (!ghost) return
-              const target = event.target as HTMLTextAreaElement
-              if (target.selectionStart !== ghost.cursor || target.selectionEnd !== ghost.cursor) {
-                dismissGhost(false)
-                setAnnouncedSuggestion(null)
-              }
             }}
             onScroll={(event) => {
               // The overlay doesn't track the textarea's scroll on its own (#359 remediation):
