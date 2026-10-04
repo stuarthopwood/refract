@@ -1,0 +1,444 @@
+// GitHub CLI (`gh`) access for pull request management (specs/003-pull-request-management).
+// Mirrors `src/main/git/git.ts`'s execFile discipline: no shell, argument arrays only, an
+// absolute resolved path (`resolveExecutable`, security: never a bare name on PATH, which Windows
+// would otherwise search `cwd` for first). Every command shape and field name below is cited to
+// research.md / docs/spike/FINDINGS.md rows 37 to 41 (live-probed 2026-10-04 against gh 2.102.0),
+// except where noted as a reasonable, documented-gh-CLI addition beyond the literal probe set
+// (isDraft/body/updatedAt/headRefOid on `gh pr view --json`: standard, documented fields, same
+// family already used by `gh pr list --json` in the same probe).
+//
+// Distinct from the existing `src/main/git/github.ts` (spec 004's `pullRequestForBranch`, a
+// narrower never-throwing lookup for the readout chip) -- that module is unmodified by this one.
+
+import { execFile } from 'node:child_process';
+import { resolveExecutable } from '../process/executables';
+import { gitRaw } from '../git/git';
+import type { MergeMethod, ReviewVerdict } from '../../shared/github';
+
+export type GhErrorCode = 'no-github-remote' | 'gh-unavailable' | 'rate-limited' | 'github-failed' | 'not-mergeable';
+
+export class GhError extends Error {
+  readonly code: GhErrorCode;
+  constructor(code: GhErrorCode, message: string) {
+    super(message);
+    this.name = 'GhError';
+    this.code = code;
+  }
+}
+
+const TIMEOUT_MS = 15_000;
+
+export interface GhRawResult {
+  stdout: string;
+  stderr: string;
+  code: number;
+}
+
+/** Runs `gh <args>` with no shell in `cwd`. Never throws for a nonzero exit; callers branch on
+ * `.code`. Throws `GhError('gh-unavailable', ...)` only when `gh` itself cannot be found on PATH.
+ * Executor form: `Promise.withResolvers()` needs lib "ES2024"; tsconfig.node.json is pinned to
+ * "ES2023" (same documented exception as `OmpProcess.ts`'s `start()` and the existing
+ * `src/main/git/github.ts`'s `runGh()`). */
+export async function ghRaw(cwd: string, args: string[]): Promise<GhRawResult> {
+  let ghPath: string;
+  try {
+    ghPath = await resolveExecutable('gh');
+  } catch {
+    throw new GhError('gh-unavailable', 'The GitHub CLI (gh) is not installed or not on PATH.');
+  }
+  return new Promise((resolve) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    execFile(
+      ghPath,
+      args,
+      { cwd, windowsHide: true, signal: controller.signal },
+      (error: Error | null, stdout: string, stderr: string) => {
+        clearTimeout(timer);
+        let code = 0;
+        if (error !== null && 'code' in error && typeof (error as { code: unknown }).code === 'number') {
+          code = (error as { code: number }).code;
+        } else if (error !== null) {
+          code = 1;
+        }
+        resolve({ stdout: stdout ?? '', stderr: stderr ?? '', code });
+      }
+    );
+  });
+}
+
+/** Research.md "Polling interval and rate-limit headroom": the rate-limited signal is `gh`'s own
+ * `HTTPError.Error()` format ("HTTP 403/429: <GitHub message> (<url>)") sourced from cli/go-gh's
+ * published error formatting, not reproduced live (forbidden -- real shared-account quota risk,
+ * docs/spike/FINDINGS.md row 40). `gh-unavailable` covers not-signed-in and offline per FR-026. */
+function mapGhFailure(stderr: string, stdout: string): GhError {
+  const text = `${stderr}\n${stdout}`;
+  if (/rate limit/i.test(text)) {
+    return new GhError('rate-limited', stderr.trim() || stdout.trim() || 'GitHub rate limit exceeded.');
+  }
+  if (/gh auth login|not logged into|authentication required|could not resolve|enotfound|getaddrinfo|network is unreachable/i.test(text)) {
+    return new GhError('gh-unavailable', stderr.trim() || stdout.trim() || 'GitHub CLI is not signed in or GitHub is unreachable.');
+  }
+  return new GhError('github-failed', stderr.trim() || stdout.trim() || 'gh command failed.');
+}
+
+export async function ghJson<T>(cwd: string, args: string[]): Promise<T> {
+  const { stdout, stderr, code } = await ghRaw(cwd, args);
+  if (code !== 0) throw mapGhFailure(stderr, stdout);
+  try {
+    return JSON.parse(stdout) as T;
+  } catch {
+    throw new GhError('github-failed', `gh returned invalid JSON for: gh ${args.join(' ')}`);
+  }
+}
+
+interface GraphqlResponse<T> {
+  data?: T;
+  errors?: Array<{ message: string }>;
+}
+
+/** `gh api graphql -f query=<query> [-f k=v | -F k=v]...` (docs/spike/gh-pr-graphql-probe.mjs's
+ * own `graphql()` helper, confirmed live). Variables are passed as `-f`/`-F` fields, never
+ * interpolated into the query string, so no caller-supplied text (a comment body, a thread id)
+ * can ever need hand-escaping or risk breaking/injecting into the query. */
+export async function ghGraphql<T>(cwd: string, query: string, variables?: Record<string, string | number>): Promise<T> {
+  const args = ['api', 'graphql', '-f', `query=${query}`];
+  if (variables) {
+    for (const [key, value] of Object.entries(variables)) {
+      args.push(typeof value === 'number' ? '-F' : '-f', `${key}=${value}`);
+    }
+  }
+  const { stdout, stderr, code } = await ghRaw(cwd, args);
+  if (code !== 0) throw mapGhFailure(stderr, stdout);
+  let parsed: GraphqlResponse<T>;
+  try {
+    parsed = JSON.parse(stdout) as GraphqlResponse<T>;
+  } catch {
+    throw new GhError('github-failed', 'gh api graphql returned invalid JSON.');
+  }
+  if (parsed.errors && parsed.errors.length > 0) {
+    throw new GhError('github-failed', parsed.errors.map((e) => e.message).join('; '));
+  }
+  if (!parsed.data) throw new GhError('github-failed', 'gh api graphql returned no data.');
+  return parsed.data;
+}
+
+/** `owner/repo`, inferred from the repository's `origin` remote URL (duplicated from the
+ * existing `src/main/git/github.ts`'s private `parseOwnerRepo`, which is not exported -- kept as
+ * its own small copy here rather than changing that spec-004 module's exports). */
+export async function ownerRepoFor(repoPath: string): Promise<{ owner: string; repo: string }> {
+  const remote = await gitRaw(repoPath, ['remote', 'get-url', 'origin']);
+  if (remote.code !== 0) throw new GhError('no-github-remote', 'This repository has no "origin" remote.');
+  const trimmed = remote.stdout.trim();
+  const httpsMatch = /^https?:\/\/(?:[^@/]+@)?github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(trimmed);
+  if (httpsMatch && httpsMatch[1] && httpsMatch[2]) return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  const sshMatch = /^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?\/?$/i.exec(trimmed);
+  if (sshMatch && sshMatch[1] && sshMatch[2]) return { owner: sshMatch[1], repo: sshMatch[2] };
+  throw new GhError('no-github-remote', "This repository's origin remote is not a github.com remote.");
+}
+
+// ---------------------------------------------------------------------------
+// Wire shapes gh/GitHub return (mapped to src/shared/github.ts types by pullRequests.ts)
+// ---------------------------------------------------------------------------
+
+export interface GhActor {
+  login: string;
+  name?: string | null;
+}
+
+export interface GhLabel {
+  name: string;
+}
+
+export interface GhCheckRun {
+  status?: string; // e.g. 'QUEUED' | 'IN_PROGRESS' | 'COMPLETED'
+  conclusion?: string; // e.g. 'SUCCESS' | 'FAILURE' | 'CANCELLED' | ...
+  state?: string; // legacy commit-status shape: 'PENDING' | 'SUCCESS' | 'FAILURE' | 'ERROR'
+}
+
+/** `gh pr list --json <LIST_FIELDS>` (docs/spike/FINDINGS.md row 37, T001): every field name
+ * round-trips unchanged against a real repository. */
+export interface GhPrListEntry {
+  number: number;
+  title: string;
+  state: string; // 'OPEN' | 'CLOSED' | 'MERGED'
+  isDraft: boolean;
+  author: GhActor;
+  headRefName: string;
+  baseRefName: string;
+  updatedAt: string;
+  statusCheckRollup: GhCheckRun[] | null;
+  labels: GhLabel[];
+  reviewRequests: GhActor[];
+  assignees: GhActor[];
+}
+
+const LIST_FIELDS =
+  'number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,statusCheckRollup,labels,reviewRequests,assignees';
+
+export async function listOpenPullRequests(repoPath: string): Promise<GhPrListEntry[]> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  return ghJson<GhPrListEntry[]>(repoPath, ['pr', 'list', '--repo', `${owner}/${repo}`, '--state', 'all', '--limit', '50', '--json', LIST_FIELDS]);
+}
+
+/** `gh search prs --repo <repo> "<qualifier>" --json <SEARCH_FIELDS>` (row 37, T001): a narrower,
+ * documented field set than `gh pr list --json` -- no `statusCheckRollup`/`headRefName`/
+ * `baseRefName`/`isDraft`/`assignees`-equivalent on this surface beyond what's listed here. */
+export interface GhSearchEntry {
+  number: number;
+  title: string;
+  state: string; // 'open' | 'closed' on the search surface
+  author: GhActor;
+  url: string;
+  updatedAt: string;
+  labels: GhLabel[];
+}
+
+const SEARCH_FIELDS = 'number,title,state,author,url,updatedAt,labels';
+
+export async function searchPullRequests(repoPath: string, qualifier: string): Promise<GhSearchEntry[]> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  return ghJson<GhSearchEntry[]>(repoPath, ['search', 'prs', '--repo', `${owner}/${repo}`, qualifier, '--json', SEARCH_FIELDS]);
+}
+
+/** The search surface has no `statusCheckRollup` (row 37); fetched per-row via a second
+ * `gh pr view --json statusCheckRollup` call for the non-Open tabs only (small result counts). */
+export async function viewCheckState(repoPath: string, number: number): Promise<GhCheckRun[] | null> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  const result = await ghJson<{ statusCheckRollup: GhCheckRun[] | null }>(repoPath, [
+    'pr',
+    'view',
+    String(number),
+    '--repo',
+    `${owner}/${repo}`,
+    '--json',
+    'statusCheckRollup'
+  ]);
+  return result.statusCheckRollup;
+}
+
+/** `gh pr view --json <VIEW_FIELDS>` (row 38, T002): `mergeable`/`mergeStateStatus` confirmed
+ * live as `"MERGEABLE"`/`"CLEAN"` string enums on a clean PR; `files` never carries `patch`.
+ * `isDraft`/`body`/`updatedAt`/`headRefOid` are standard documented `gh pr view --json` fields
+ * (same family as `gh pr list --json`'s own fields) added for the Overview/staleness needs this
+ * spec has beyond the literal T002 probe's own field list. */
+export interface GhPrViewDetail {
+  title: string;
+  number: number;
+  state: string;
+  author: GhActor;
+  baseRefName: string;
+  headRefName: string;
+  reviews: Array<{ id: string; author: GhActor; state: string; body: string; submittedAt: string }>;
+  reviewRequests: GhActor[];
+  assignees: GhActor[];
+  labels: GhLabel[];
+  commits: Array<{ oid: string; messageHeadline?: string }>;
+  mergeStateStatus: string;
+  mergeable: string; // 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  files: Array<{ path: string; additions: number; deletions: number; changeType: string }>;
+  isDraft: boolean;
+  statusCheckRollup: GhCheckRun[] | null;
+  updatedAt: string;
+  headRefOid: string;
+  body: string;
+}
+
+const VIEW_FIELDS =
+  'title,number,state,author,baseRefName,headRefName,reviews,reviewRequests,assignees,labels,commits,' +
+  'mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,' +
+  'updatedAt,headRefOid,body';
+
+export async function viewPullRequestDetail(repoPath: string, number: number): Promise<GhPrViewDetail> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  return ghJson<GhPrViewDetail>(repoPath, ['pr', 'view', String(number), '--repo', `${owner}/${repo}`, '--json', VIEW_FIELDS]);
+}
+
+/** Cheap staleness re-fetch (FR-021): only the fields a mutating action compares against the
+ * cache or needs to re-derive `disabledReason`, never the full detail. */
+export interface GhStalenessCheck {
+  updatedAt: string;
+  headSha: string;
+  mergeable: string;
+  mergeStateStatus: string;
+  isDraft: boolean;
+  state: string;
+}
+
+export async function viewStalenessCheck(repoPath: string, number: number): Promise<GhStalenessCheck> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  const result = await ghJson<{ updatedAt: string; headRefOid: string; mergeable: string; mergeStateStatus: string; isDraft: boolean; state: string }>(
+    repoPath,
+    ['pr', 'view', String(number), '--repo', `${owner}/${repo}`, '--json', 'updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state']
+  );
+  return {
+    updatedAt: result.updatedAt,
+    headSha: result.headRefOid,
+    mergeable: result.mergeable,
+    mergeStateStatus: result.mergeStateStatus,
+    isDraft: result.isDraft,
+    state: result.state
+  };
+}
+
+/** REST `repos/<owner>/<repo>/pulls/<number>/files` (row 38, T002): the only surface that carries
+ * `patch`; absent (never `null`) once a file exceeds GitHub's per-file size threshold. Returns
+ * `null` (never throws) on any failure so the caller can fall back to the porcelain `files` field
+ * (every `patch` null) plus the FR-011 truncation banner. */
+export interface GhRestFile {
+  filename: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+  status: string;
+}
+
+export async function getChangedFilesWithPatch(repoPath: string, number: number): Promise<GhRestFile[] | null> {
+  try {
+    const { owner, repo } = await ownerRepoFor(repoPath);
+    return await ghJson<GhRestFile[]>(repoPath, ['api', `repos/${owner}/${repo}/pulls/${number}/files`]);
+  } catch {
+    return null;
+  }
+}
+
+/** `reviewThreads`/`timelineItems` (row 39, T003): connection shapes confirmed live via
+ * introspection + a live query. `itemTypes` filters the timeline to the three kinds this feature
+ * renders (commits, general comments, submitted reviews) -- review threads come from the
+ * separate `reviewThreads` connection on the same query, not from `timelineItems`. */
+export interface GhReviewThreadNode {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string;
+  line: number | null;
+  diffSide: string; // 'LEFT' | 'RIGHT'
+  comments: { nodes: Array<{ id: string; author: GhActor | null; body: string; createdAt: string }> };
+}
+
+export interface GhTimelineNode {
+  __typename: string;
+  // PullRequestCommit
+  commit?: { oid: string; message: string; committedDate: string; author?: { name: string } | null };
+  // IssueComment
+  id?: string;
+  author?: GhActor | null;
+  body?: string;
+  createdAt?: string;
+  // PullRequestReview
+  state?: string;
+  submittedAt?: string;
+}
+
+export interface GhThreadsAndTimeline {
+  id: string; // the pull request's own GraphQL node id, needed by addPullRequestReviewComment
+  reviewThreads: { nodes: GhReviewThreadNode[] };
+  timelineItems: { nodes: GhTimelineNode[] };
+}
+
+const THREADS_AND_TIMELINE_QUERY =
+  'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { ' +
+  'pullRequest(number: $number) { id ' +
+  'reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide ' +
+  'comments(first: 50) { nodes { id author { login name } body createdAt } } } } ' +
+  'timelineItems(first: 100, itemTypes: [COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ' +
+  '... on PullRequestCommit { commit { oid message committedDate author { name } } } ' +
+  '... on IssueComment { id author { login name } body createdAt } ' +
+  '... on PullRequestReview { id author { login name } state body submittedAt } } } } } }';
+
+export async function getReviewThreadsAndTimeline(repoPath: string, number: number): Promise<GhThreadsAndTimeline> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  const data = await ghGraphql<{ repository: { pullRequest: GhThreadsAndTimeline } }>(repoPath, THREADS_AND_TIMELINE_QUERY, {
+    owner,
+    name: repo,
+    number
+  });
+  return data.repository.pullRequest;
+}
+
+/** `resolveReviewThread`/`unresolveReviewThread` (row 39, T003): input shapes confirmed via
+ * introspection only; never executed live in this session. Variables, never string
+ * interpolation, so a thread id never needs hand-escaping. */
+export async function resolveReviewThreadMutation(repoPath: string, threadId: string): Promise<void> {
+  const query = 'mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id isResolved } } }';
+  await ghGraphql(repoPath, query, { id: threadId });
+}
+
+export async function unresolveReviewThreadMutation(repoPath: string, threadId: string): Promise<void> {
+  const query = 'mutation($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id isResolved } } }';
+  await ghGraphql(repoPath, query, { id: threadId });
+}
+
+/** `addPullRequestReviewComment(input: { inReplyTo: ... })` (row 39, T003): `inReplyTo` confirmed
+ * as a real, current input field. Links the reply to the thread's opening comment, never a new
+ * unrelated top-level comment. */
+export async function replyToThreadMutation(
+  repoPath: string,
+  pullRequestId: string,
+  inReplyToCommentId: string,
+  body: string
+): Promise<{ id: string }> {
+  const query =
+    'mutation($pr: ID!, $reply: ID!, $body: String!) { addPullRequestReviewComment(input: { pullRequestId: $pr, inReplyTo: $reply, body: $body }) { comment { id } } }';
+  const data = await ghGraphql<{ addPullRequestReviewComment: { comment: { id: string } } }>(repoPath, query, {
+    pr: pullRequestId,
+    reply: inReplyToCommentId,
+    body
+  });
+  return data.addPullRequestReviewComment.comment;
+}
+
+/** A top-level pull request comment (FR-012), distinct from a thread reply: the documented
+ * porcelain `gh pr comment` command already covers it (research.md decision 3's own preference
+ * for porcelain wherever it suffices), no GraphQL mutation needed. */
+export async function commentOnPullRequest(repoPath: string, number: number, body: string): Promise<void> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  const { code, stderr, stdout } = await ghRaw(repoPath, ['pr', 'comment', String(number), '--repo', `${owner}/${repo}`, '--body', body]);
+  if (code !== 0) throw mapGhFailure(stderr, stdout);
+}
+
+/** `gh pr review` (FR-015): documented porcelain command, not independently live-probed this
+ * session (a mutating action; never executed here). */
+export async function submitReview(repoPath: string, number: number, verdict: ReviewVerdict, body?: string): Promise<void> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  const flag = verdict === 'approve' ? '--approve' : verdict === 'request-changes' ? '--request-changes' : '--comment';
+  const args = ['pr', 'review', String(number), '--repo', `${owner}/${repo}`, flag];
+  if (body) args.push('--body', body);
+  const { code, stderr, stdout } = await ghRaw(repoPath, args);
+  if (code !== 0) throw mapGhFailure(stderr, stdout);
+}
+
+/** `gh pr merge` (FR-016): documented porcelain command, not independently live-probed this
+ * session (a mutating action; never executed here). Maps a "not mergeable" refusal (conflicts or
+ * a failing required check) to `GhErrorCode 'not-mergeable'`, distinct from a generic failure. */
+/** Repository-level merge-method settings (`gh repo view --json`, a standard documented field
+ * set -- not independently live-probed this session, no mutation involved). Maps to the
+ * `MergeMethod[]` a pull request's `allowedMergeMethods` offers. */
+export async function getAllowedMergeMethods(repoPath: string): Promise<MergeMethod[]> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  const result = await ghJson<{ mergeCommitAllowed: boolean; squashMergeAllowed: boolean; rebaseMergeAllowed: boolean }>(
+    repoPath,
+    ['repo', 'view', `${owner}/${repo}`, '--json', 'mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed']
+  );
+  const methods: MergeMethod[] = [];
+  if (result.mergeCommitAllowed) methods.push('merge');
+  if (result.squashMergeAllowed) methods.push('squash');
+  if (result.rebaseMergeAllowed) methods.push('rebase');
+  return methods;
+}
+
+export async function mergePullRequest(repoPath: string, number: number, method: MergeMethod): Promise<void> {
+  const { owner, repo } = await ownerRepoFor(repoPath);
+  const flag = method === 'merge' ? '--merge' : method === 'squash' ? '--squash' : '--rebase';
+  const { code, stderr, stdout } = await ghRaw(repoPath, ['pr', 'merge', String(number), '--repo', `${owner}/${repo}`, flag]);
+  if (code !== 0) {
+    const text = `${stderr}\n${stdout}`;
+    if (/not mergeable|conflict|required status check|review.*required|changes.*requested/i.test(text)) {
+      throw new GhError('not-mergeable', stderr.trim() || stdout.trim() || 'This pull request cannot be merged.');
+    }
+    throw mapGhFailure(stderr, stdout);
+  }
+}

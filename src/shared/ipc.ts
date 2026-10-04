@@ -4,6 +4,14 @@
 
 import type { ApprovalMode, ConversationInfo, DiffStat, PendingRequest, ReadoutKind, Repository, Session, SessionReadout, SessionStatus, Settings, SplitLayout, SubagentSummary, TranscriptItem } from './model';
 import type { ImageContent, SlashCommandDescriptor } from './frames';
+import type {
+  ChangedFile,
+  FilterTab,
+  MergeMethod,
+  PullRequestDetail,
+  PullRequestSummary,
+  ReviewVerdict
+} from './github';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
@@ -41,7 +49,15 @@ export type IpcErrorCode =
   | 'worktree-missing'
   | 'clipboard-failed'
   | 'unsupported-image-type'
-  | 'image-too-large';
+  | 'image-too-large'
+  | 'no-github-remote'
+  | 'gh-unavailable'
+  | 'rate-limited'
+  | 'github-failed'
+  | 'stale'
+  | 'not-mergeable'
+  | 'checkout-failed'
+  | 'disabled';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -146,6 +162,29 @@ export interface SessionStatusEvent {
   pendingMode: ApprovalMode | null;
 }
 
+// Pull request management (specs/003-pull-request-management/contracts/ipc.md). Entity types
+// (PullRequestSummary, PullRequestDetail, ChangedFile, FilterTab, ReviewVerdict, MergeMethod) live
+// in './github', imported above; these are the per-request wrapper shapes only.
+
+/** `pullRequests.list` (FR-001 to FR-006): the current tab's rows plus when they were fetched. */
+export interface PullRequestListResult {
+  items: PullRequestSummary[];
+  fetchedAt: string;
+}
+
+/** `pullRequests.submitReview` (FR-015): the caller-side confirmation for 'approve'/'request-changes'
+ * already happened (ReviewDialog.tsx) before this is ever sent; 'comment' needs no confirmation. */
+export interface SubmitReviewInput {
+  verdict: ReviewVerdict;
+  body?: string;
+}
+
+/** `pullRequests.merge` (FR-016, FR-017): `method` must be one of the pull request's own
+ * `PullRequestDetail.allowedMergeMethods`. */
+export interface MergeInput {
+  method: MergeMethod;
+}
+
 // ---------------------------------------------------------------------------
 // Channel names
 // ---------------------------------------------------------------------------
@@ -191,6 +230,15 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   SETTINGS_SET_SPLIT: 'settings.setSplit',
   WINDOW_POPUP_MENU: 'window.popupMenu',
+  PULL_REQUESTS_LIST: 'pullRequests.list',
+  PULL_REQUESTS_DETAIL: 'pullRequests.detail',
+  PULL_REQUESTS_COMMENT: 'pullRequests.comment',
+  PULL_REQUESTS_REPLY_TO_THREAD: 'pullRequests.replyToThread',
+  PULL_REQUESTS_RESOLVE_THREAD: 'pullRequests.resolveThread',
+  PULL_REQUESTS_UNRESOLVE_THREAD: 'pullRequests.unresolveThread',
+  PULL_REQUESTS_SUBMIT_REVIEW: 'pullRequests.submitReview',
+  PULL_REQUESTS_MERGE: 'pullRequests.merge',
+  PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST: 'pullRequests.newSessionFromPullRequest',
 } as const;
 
 export const IPC_EVENTS = {
@@ -320,6 +368,35 @@ export interface RefractApi {
      * window-content-relative coordinates -- exactly what the clicked button's own
      * `getBoundingClientRect()` already gives. */
     popupMenu(menuId: AppMenuId, x: number, y: number): Promise<Result<void>>;
+  };
+
+  // Pull request management (specs/003-pull-request-management/contracts/ipc.md). The renderer
+  // never touches `gh`, the file system, or git directly (constitution V); this namespace is the
+  // only surface pull-request data crosses the renderer/main boundary through.
+  pullRequests: {
+    /** FR-001 to FR-006: called on open and on every explicit refresh, never polled automatically
+     * (FR-028). `query` is the FR-004 narrowing filter. */
+    list(repositoryId: string, tab: FilterTab, query?: string): Promise<Result<PullRequestListResult>>;
+    /** FR-007 to FR-011: called on open and again by the renderer's own polling loop while
+     * `checkState === 'pending'` (FR-010); each call refreshes the main-process staleness cache. */
+    detail(repositoryId: string, number: number): Promise<Result<PullRequestDetail>>;
+    /** FR-012: a top-level pull request comment (plain text; rendered through the sanitiser). */
+    comment(repositoryId: string, number: number, body: string): Promise<Result<{ id: string }>>;
+    /** FR-013: linked to the thread's opening comment (GraphQL `inReplyTo`), never a new
+     * unrelated top-level comment. */
+    replyToThread(repositoryId: string, number: number, threadId: string, body: string): Promise<Result<{ id: string }>>;
+    /** FR-014: a single explicit action (SC-006); reversible by `unresolveThread`. */
+    resolveThread(repositoryId: string, number: number, threadId: string): Promise<Result<void>>;
+    unresolveThread(repositoryId: string, number: number, threadId: string): Promise<Result<void>>;
+    /** FR-015, FR-017: the renderer calls this only after its own confirmation for
+     * 'approve'/'request-changes' (ReviewDialog.tsx); 'comment' needs no confirmation. */
+    submitReview(repositoryId: string, number: number, input: SubmitReviewInput): Promise<Result<{ id: string }>>;
+    /** FR-016, FR-017, FR-020: `method` must be one of `PullRequestDetail.allowedMergeMethods`;
+     * the renderer's own confirmation (MergeDialog.tsx) names the pull request and this method. */
+    merge(repositoryId: string, number: number, input: MergeInput): Promise<Result<void>>;
+    /** FR-022: fetches the pull request's head branch and creates a Session exactly as
+     * `sessions.create` does, substituting the fetched branch for a new one cut from a base. */
+    newSessionFromPullRequest(repositoryId: string, number: number): Promise<Result<Session>>;
   };
 
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;

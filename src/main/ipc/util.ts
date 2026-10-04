@@ -5,6 +5,7 @@ import { ReattachFailedError, SessionNotIdleError } from '../omp/errors';
 import type { SessionAgent } from '../omp/SessionAgent';
 import { GitError } from '../git/git';
 import { RegistryError } from '../store/registry';
+import { GhError } from '../github/gh';
 
 export function invalidArgument(message: string): Result<never> {
   return { ok: false, error: { code: 'invalid-argument', message } };
@@ -23,6 +24,7 @@ export function mapSessionThrown(err: unknown): Result<never> {
 export function mapStoreThrown(err: unknown): Result<never> {
   if (err instanceof GitError) return { ok: false, error: { code: err.code, message: err.message } };
   if (err instanceof RegistryError) return { ok: false, error: { code: err.code, message: err.message } };
+  if (err instanceof GhError) return { ok: false, error: { code: err.code, message: err.message } };
   return { ok: false, error: { code: 'git-failed', message: err instanceof Error ? err.message : String(err) } };
 }
 

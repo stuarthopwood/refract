@@ -117,6 +117,42 @@ export async function addWorktree(repo: string, name: string, baseBranch: string
   return { worktreePath, branch: name }
 }
 
+/**
+ * Fetches a pull request's head branch and attaches it to a new worktree
+ * (specs/003-pull-request-management research.md decision 6, T024, FR-022):
+ * `git fetch origin pull/<number>/head:<localBranchName>` (this ref form works for both
+ * same-repository and fork pull requests, confirmed live) then `git worktree add <path>
+ * <localBranchName>` -- no `-b`, the branch already exists after the fetch. On any failed step,
+ * removes whatever the attempt already created (branch and/or worktree directory), matching
+ * `addWorktree`'s own all-or-nothing contract: no half-created Session is ever left behind.
+ */
+export async function addWorktreeFromPullRequestBranch(repo: string, number: number, localBranchName: string): Promise<AddWorktreeResult> {
+  const fetchResult = await gitRaw(repo, ['fetch', 'origin', `pull/${number}/head:${localBranchName}`])
+  if (fetchResult.code !== 0) {
+    // Nothing was created yet (the fetch itself failed): no cleanup needed. The exact "source
+    // ref is gone" error is `fatal: couldn't find remote ref <ref>`, git exit code 128
+    // (docs/spike/FINDINGS.md row 41, T005).
+    throw new GitError('checkout-failed', fetchResult.stderr.trim() || `Could not fetch pull request #${number}'s head branch.`)
+  }
+
+  const worktreePath = path.join(worktreesRoot(repo), localBranchName)
+  try {
+    await fs.mkdir(path.dirname(worktreePath), { recursive: true })
+  } catch (err) {
+    await gitRaw(repo, ['branch', '-D', '--', localBranchName])
+    if (isPathTooLongError(err)) throw new GitError('path-too-long', `Worktree path too long: ${worktreePath}`)
+    throw err
+  }
+
+  const addResult = await gitRaw(repo, ['worktree', 'add', '--', worktreePath, localBranchName])
+  if (addResult.code !== 0) {
+    await cleanupFailedWorktree(repo, localBranchName, worktreePath)
+    throw mapAddWorktreeError(addResult.stderr, worktreePath)
+  }
+
+  return { worktreePath, branch: localBranchName }
+}
+
 async function cleanupFailedWorktree(repo: string, name: string, worktreePath: string): Promise<void> {
   await gitRaw(repo, ['worktree', 'remove', '--force', '--', worktreePath])
   try {
