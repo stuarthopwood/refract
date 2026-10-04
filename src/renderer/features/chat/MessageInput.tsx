@@ -273,6 +273,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           setAnnouncedSuggestion(null)
           return
         }
+        // The caret may have moved away (click/arrow key) *before* this request resolved --
+        // the only case the `selectionchange` listener above can't catch, since no *further*
+        // selection change happens after a caret move that predates the suggestion's arrival.
+        // Showing it now would render (and let Tab insert) at a cursor position that's no
+        // longer current, so require the textarea's live selection to still match the exact
+        // collapsed position this request was made for; otherwise drop it, still sending
+        // `accepted: false` feedback so the server-side loop sees the same silently-dropped
+        // suggestion any other abandoned one gets (round 5 remediation, #358/#359).
+        const target = textareaRef.current
+        if (!target || target.selectionStart !== nextCursor || target.selectionEnd !== nextCursor) {
+          void window.refract.chat.predictWordFeedback(sessionId, nextText, nextCursor, result.value, false)
+          setAnnouncedSuggestion(null)
+          return
+        }
         ghostRef.current = { text: nextText, cursor: nextCursor, suffix: result.value }
         setGhost(ghostRef.current)
         setAnnouncedSuggestion(result.value)
