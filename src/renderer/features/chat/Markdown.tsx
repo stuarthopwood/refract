@@ -142,6 +142,25 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
   )
 }
 
+// A unified diff's own hunk/file markers, checked against the start of the text (T083, FR-050).
+const DIFF_PATTERN = /^(?:---|\+\+\+) |^@@ -|^diff --git /m
+
+// Language inference for an arbitrary code/text surface (T083, FR-050, docs/DESIGN.md "Every
+// JSON-shaped tool/code surface uses `CodeBlock`"): `diff` when the raw text itself looks like a
+// unified diff, `json` (pretty-printed, replacing the original unparsed/compact text) when it
+// parses as JSON, otherwise plain `text` (`lang: null` skips Shiki entirely -- there is no
+// language to try loading). Shared by every tool/code surface in the transcript -- a tool call's
+// Output, a subagent's Prompt/Result, and a pending approval card's detail lines -- so none of
+// them render raw, unformatted text outside `CodeBlock`.
+export function inferOutputBlock(text: string): { lang: string | null; code: string } {
+  if (DIFF_PATTERN.test(text)) return { lang: 'diff', code: text }
+  try {
+    return { lang: 'json', code: JSON.stringify(JSON.parse(text), null, 2) }
+  } catch {
+    return { lang: null, code: text }
+  }
+}
+
 // Mermaid is loaded lazily (dynamic `import()`) only once the first ```mermaid fence actually
 // appears, so it never adds to the main bundle (T066). `securityLevel: 'strict'` is mermaid's
 // default and, per its own docs (config/schema-docs/config-properties-securitylevel.html),
@@ -549,6 +568,11 @@ interface MarkdownProps {
   // Only set for the live assistant-text/thinking rows (`TranscriptItem.streaming`); omitted
   // (false) for settled messages, including every user message, which never stream.
   streaming?: boolean
+  // Overrides the wrapper's default (inherited) text colour. Only the two primary-prose callers
+  // (user/assistant message text, docs/DESIGN.md "Chat text colour") pass `text-chat-foreground`;
+  // every other caller (thinking, ask-question text, ...) renders secondary/bookkeeping material
+  // and keeps the ambient `--foreground` it already inherited.
+  className?: string
 }
 
 // Agent/tool text is untrusted (constitution V): react-markdown produces a hast tree, never raw
@@ -558,7 +582,7 @@ interface MarkdownProps {
 // comments above), so it is still called with no custom schema. `streaming` is threaded through
 // `StreamingContext` (read only by the `code`/`MermaidBlock` renderer) rather than via a per-flip
 // `components` map, so the rest of the component identities stay stable across the transition.
-export function Markdown({ text, id, streaming = false }: MarkdownProps) {
+export function Markdown({ text, id, streaming = false, className }: MarkdownProps) {
   // Per-message footnote-id namespace (see `MarkdownProps.id` above). `id` is a UUID (`shared/
   // model.ts`'s `TranscriptItem.id`) but is sanitized defensively rather than assumed safe, since
   // it ends up inside an `id`/href-fragment pair. This REPLACES mdast-util-to-hast's own
@@ -570,7 +594,7 @@ export function Markdown({ text, id, streaming = false }: MarkdownProps) {
   const remarkRehypeOptions = React.useMemo(() => ({ clobberPrefix: footnotePrefix }), [footnotePrefix])
   return (
     <StreamingContext.Provider value={streaming}>
-      <div className="space-y-2 text-sm leading-relaxed break-words">
+      <div className={cn('space-y-2 text-sm leading-relaxed break-words', className)}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           remarkRehypeOptions={remarkRehypeOptions}

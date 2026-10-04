@@ -2,7 +2,7 @@ import * as React from 'react'
 import { CheckIcon, Loader2Icon, XIcon } from 'lucide-react'
 import type { TranscriptItem } from '../../../shared/model'
 import { Button } from '@/components/ui/button'
-import { CodeBlock } from './Markdown'
+import { CodeBlock, inferOutputBlock } from './Markdown'
 import { CollapsedLine } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import type { ToolGroup } from './groupToolItems'
@@ -21,29 +21,28 @@ type RowStatus = 'running' | 'done' | 'error'
 // Language inference for a tool call's Arguments block (T083, FR-050): always `json`, except a
 // `bash` call's own `command` string, shown verbatim and highlighted as `bash` instead of being
 // JSON-escaped inside the full arguments object -- far more readable for the one tool whose
-// primary argument is itself source text.
+// primary argument is itself source text. A `write` call's own `content` string is tried as JSON
+// too (Stuart's screenshot, docs/DESIGN.md "Every JSON-shaped tool/code surface uses `CodeBlock`"):
+// a `write` targeting an `xd://` device takes JSON *as* its content, so leaving it a string would
+// bury a whole second JSON document as one unreadable, fully-escaped line inside the outer
+// Arguments JSON; parsing and re-nesting it lets the outer `JSON.stringify` pretty-print both
+// levels. A plain-text file write's `content` never parses as JSON and is left untouched.
 function inferArgumentsBlock(item: ToolItem): { lang: string; code: string } {
   if (item.tool === 'bash') {
     const record = item.args && typeof item.args === 'object' ? (item.args as Record<string, unknown>) : {}
     if (typeof record.command === 'string') return { lang: 'bash', code: record.command }
   }
-  return { lang: 'json', code: JSON.stringify(item.args, null, 2) }
-}
-
-// A unified diff's own hunk/file markers, checked against the start of the text (T083, FR-050).
-const DIFF_PATTERN = /^(?:---|\+\+\+) |^@@ -|^diff --git /m
-
-// Language inference for a tool call's Output block (T083, FR-050): `diff` when the raw output
-// text itself looks like a unified diff, `json` (pretty-printed, replacing the original
-// unparsed/compact text) when it parses as JSON, otherwise plain `text` (`lang: null` skips
-// Shiki entirely -- there is no language to try loading).
-function inferOutputBlock(output: string): { lang: string | null; code: string } {
-  if (DIFF_PATTERN.test(output)) return { lang: 'diff', code: output }
-  try {
-    return { lang: 'json', code: JSON.stringify(JSON.parse(output), null, 2) }
-  } catch {
-    return { lang: null, code: output }
+  if (item.tool === 'write') {
+    const record = item.args && typeof item.args === 'object' ? (item.args as Record<string, unknown>) : {}
+    if (typeof record.content === 'string') {
+      try {
+        return { lang: 'json', code: JSON.stringify({ ...record, content: JSON.parse(record.content) }, null, 2) }
+      } catch {
+        // `content` is plain file text, not JSON -- fall through to the generic stringify below.
+      }
+    }
   }
+  return { lang: 'json', code: JSON.stringify(item.args, null, 2) }
 }
 
 // A distinct icon shape per status (never colour alone, T080/WCAG 2.1 AA): spinner, check, cross.
@@ -79,14 +78,19 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
   const truncated = !showAllOutput && outputLines.length > OUTPUT_LINE_CAP
   const visibleOutputCode = truncated ? outputLines.slice(0, OUTPUT_LINE_CAP).join('\n') : (outputBlock?.code ?? '')
 
+  // `writeLines` is the file's own raw line count for the "Wrote N lines" label (unaffected by
+  // any JSON re-pretty-printing below); `writeBlock`/`writeCodeLines` are the (possibly
+  // reformatted) CodeBlock content, truncated the same way `outputBlock`/`outputLines` are above.
   const writeLines = React.useMemo(() => {
     const content = item.write?.content ?? ''
     const lines = content.split('\n')
     if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
     return lines
   }, [item.write])
-  const writeTruncated = !showAllWrite && writeLines.length > OUTPUT_LINE_CAP
-  const visibleWrite = writeTruncated ? writeLines.slice(0, OUTPUT_LINE_CAP) : writeLines
+  const writeBlock = React.useMemo(() => (item.write != null ? inferOutputBlock(item.write.content) : null), [item.write])
+  const writeCodeLines = React.useMemo(() => writeBlock?.code.split('\n') ?? [], [writeBlock])
+  const writeTruncated = !showAllWrite && writeCodeLines.length > OUTPUT_LINE_CAP
+  const visibleWriteCode = writeTruncated ? writeCodeLines.slice(0, OUTPUT_LINE_CAP).join('\n') : (writeBlock?.code ?? '')
 
   return (
     <>
@@ -96,12 +100,12 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
           <div className="mb-1 text-xs font-medium text-muted-foreground">
             Wrote {writeLines.length} {writeLines.length === 1 ? 'line' : 'lines'} to {item.write.path}
           </div>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
-            <code>{visibleWrite.join('\n')}</code>
-          </pre>
+          <div className="max-h-64 overflow-auto rounded-lg">
+            <CodeBlock code={visibleWriteCode} lang={writeBlock?.lang ?? null} />
+          </div>
           {writeTruncated && (
             <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAllWrite(true)}>
-              Show all ({writeLines.length} lines)
+              Show all ({writeCodeLines.length} lines)
             </Button>
           )}
         </div>
@@ -207,6 +211,8 @@ interface SubagentRowProps {
 // activation can reopen the same subagent's full transcript panel, spec 004). Expanding shows
 // the prompt and (once known) the result as plain text.
 export function SubagentRow({ item }: SubagentRowProps) {
+  const taskBlock = React.useMemo(() => inferOutputBlock(item.task), [item.task])
+  const resultBlock = React.useMemo(() => (item.result != null ? inferOutputBlock(item.result) : null), [item.result])
   return (
     <CollapsedLine
       icon={<StatusIcon status={item.status} />}
@@ -215,16 +221,16 @@ export function SubagentRow({ item }: SubagentRowProps) {
     >
       <div>
         <div className="mb-1 text-xs font-medium text-muted-foreground">Prompt</div>
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
-          <code>{item.task}</code>
-        </pre>
+        <div className="max-h-64 overflow-auto rounded-lg">
+          <CodeBlock code={taskBlock.code} lang={taskBlock.lang} />
+        </div>
       </div>
-      {item.result != null && (
+      {resultBlock != null && (
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">Result</div>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-xs">
-            <code>{item.result}</code>
-          </pre>
+          <div className="max-h-64 overflow-auto rounded-lg">
+            <CodeBlock code={resultBlock.code} lang={resultBlock.lang} />
+          </div>
         </div>
       )}
     </CollapsedLine>

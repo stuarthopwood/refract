@@ -8,7 +8,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
-import { Message, MessageContent, MessageHeader } from '@/components/ui/message'
+import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
 import { usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
 import type { PendingRequest, TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
@@ -17,7 +17,7 @@ import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
 import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
 import { ToolGroupRow, SubagentRow } from './ToolRow'
-import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
+import { AskQuestionRow, RequestCard, ResolvedRequestSummary, initials } from './RequestCard'
 import { NoticeRow } from './NoticeRow'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -148,21 +148,31 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
   }
 
   switch (item.kind) {
-    case 'user':
+    case 'user': {
+      // Right-aligned bubble with a left indent, paired with a right-aligned avatar (docs/
+      // DESIGN.md "Self vs. other layout"): `Message align="end"` reverses the row and pushes it
+      // to the end; `w-fit max-w-[85%]` (replacing the old `w-full`) keeps the bubble sized to its
+      // own content and caps it well short of the transcript's left edge, so it never touches it
+      // regardless of message length.
+      const name = userName ?? 'You'
       return (
-        <Message>
-          <MessageContent className="w-full rounded-lg bg-accent/50 px-3 py-2">
-            <MessageHeader className="px-0 text-muted-foreground">You</MessageHeader>
-            <Markdown id={item.id} text={item.text} />
+        <Message align="end">
+          <MessageAvatar aria-hidden className="text-xs font-medium">
+            {initials(name)}
+          </MessageAvatar>
+          <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
+            <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
+            <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
           </MessageContent>
         </Message>
       )
+    }
 
     case 'assistant-text':
       return (
         <Message>
           <MessageContent className="w-full">
-            <Markdown id={item.id} text={item.text} streaming={item.streaming} />
+            <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
             {item.streaming && (
               <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
             )}
@@ -255,12 +265,57 @@ function TurnTotalLine({ turn, isLastTurn, isTurnRunning, receivedAt }: TurnTota
   const elapsedMs = Math.max(0, end - turn.userItem.at)
   const elapsed = formatElapsed(elapsedMs)
   return (
-    <div aria-hidden={running || undefined} className="px-2 py-1 text-xs text-muted-foreground">
+    <div aria-hidden={running || undefined} className="mt-6 px-2 py-1 text-xs text-muted-foreground">
       {/* Visible text stays the bare minimal duration; the sr-only text adds the framing a
        * screen reader needs once this un-hides at turn end inside the transcript's `log` live
        * region, where a bare "28s" would otherwise be announced with no context. */}
       <span aria-hidden="true">{elapsed}</span>
       <span className="sr-only">Turn took {elapsed}</span>
+    </div>
+  )
+}
+
+// Bookkeeping rows (docs/DESIGN.md "Transcript rhythm", Stuart 2026-10-04): a run of these reads
+// as compact, secondary material and must not inherit the full rhythm the turns/real messages
+// around it use. Deliberately excludes an answered `ask` question (kind stays plain `tool`, never
+// `tool-group` -- `groupToolItems` never merges `ask` calls) and a `request` card: both are a
+// direct user<->assistant exchange, not bookkeeping, so DESIGN.md's own enumeration leaves them out.
+const BOOKKEEPING_KINDS = new Set<GroupedTranscriptItem['kind']>([
+  'tool-group',
+  'thinking',
+  'advisory',
+  'notice',
+  'subagent',
+  'agent-message'
+])
+
+function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
+  return BOOKKEEPING_KINDS.has(row.kind)
+}
+
+// `MessageScrollerContent` no longer sets a uniform `gap` (see message-scroller.tsx): every row
+// gets its own top margin instead, `mt-6` for the turns/real-message rhythm and `mt-1` only
+// between two consecutive bookkeeping rows, computed once per render by `renderTurn` below.
+const TURN_GAP_CLASS = 'mt-6'
+const BOOKKEEPING_GAP_CLASS = 'mt-1'
+
+// Time-gap divider (docs/DESIGN.md "Time-gap divider", Stuart 2026-10-04, new): shown between two
+// consecutive turns that cross a calendar-day boundary, or sit more than an hour apart on the same
+// day, so a resumed-the-next-day or long-running session is visible at a glance.
+const TIME_GAP_THRESHOLD_MS = 60 * 60 * 1000
+
+function shouldShowTimeGapDivider(previousAt: number, nextAt: number): boolean {
+  if (new Date(previousAt).toDateString() !== new Date(nextAt).toDateString()) return true
+  return nextAt - previousAt > TIME_GAP_THRESHOLD_MS
+}
+
+function TimeGapDivider({ at }: { at: number }) {
+  const label = new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  return (
+    <div role="separator" aria-label={label} className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
+      <span>{label}</span>
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
     </div>
   )
 }
@@ -280,6 +335,15 @@ export function Transcript() {
   // call): never render those items over the visible Session's own transcript (bug report
   // point 5's "old Session B's header/input sit over A's empty transcript").
   const items = trackedSessionId === visibleSessionId ? storeItems : []
+  // Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
+  // 2026-10-04): the only transcript item a brand-new agent process can produce before any real
+  // exchange is a `notice` (OMP's own unsolicited startup banner -- a `command_output`/`notice`
+  // frame, same mechanism any local slash command's output uses, `transcript.ts`'s
+  // `applyPromptResultNotice`/`command_output` case -- lists every mounted MCP tool verbatim). A
+  // session "has started" the moment anything else (a user message, a tool call, ...) exists;
+  // until then the raw notice(s) stay in `items` (never dropped -- they render normally the
+  // moment real content exists) but are not displayed, replaced by a neutral placeholder instead.
+  const hasConversationStarted = items.some((item) => item.kind !== 'notice')
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = visibleSessionId ? (pendingBySession[visibleSessionId] ?? []) : []
 
@@ -307,35 +371,69 @@ export function Transcript() {
 
   const turns = React.useMemo(() => splitIntoTurns(items), [items])
 
+  // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
+  // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
+  // `isFirstRow` tracks the very first rendered row across the whole transcript (no margin at
+  // all, matching `gap`'s own "no space before the first child" behaviour this replaces);
+  // `previousRow` is declared fresh inside each turn below, since a turn always opens with its own
+  // `user` item -- never a bookkeeping kind -- so no tight-run state needs to carry across a turn
+  // boundary.
+  let isFirstRow = true
+
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="h-full flex-1">
         <MessageScrollerViewport>
           <MessageScrollerContent className="mx-auto w-full max-w-4xl px-4 py-4">
-            {items.length === 0 && (
-              <div className="px-2 py-8 text-center text-sm text-muted-foreground">No messages yet</div>
+            {!hasConversationStarted && (
+              <div className="px-2 py-8 text-center text-sm text-muted-foreground">
+                Ready. Type a message to get started.
+              </div>
             )}
-            {turns.map((turn, turnIndex) => (
-              <React.Fragment key={turn.userItem?.id ?? `turn-${turnIndex}`}>
-                {groupToolItems(turn.items).map((row) => (
-                  <MessageScrollerItem key={row.id} messageId={row.id}>
-                    <TranscriptRow
-                      item={row}
-                      sessionId={visibleSessionId}
-                      pending={pending}
-                      userName={userName}
-                      resolvedAskByRequestId={resolvedAskByRequestId}
+            {hasConversationStarted &&
+              turns.map((turn, turnIndex) => {
+                const previousTurn = turnIndex > 0 ? turns[turnIndex - 1] : undefined
+                const showTimeGapDivider =
+                  previousTurn?.userItem != null &&
+                  previousTurn.userItem.at !== 0 &&
+                  turn.userItem != null &&
+                  turn.userItem.at !== 0 &&
+                  shouldShowTimeGapDivider(previousTurn.userItem.at, turn.userItem.at)
+
+                let previousRow: GroupedTranscriptItem | undefined
+
+                return (
+                  <React.Fragment key={turn.userItem?.id ?? `turn-${turnIndex}`}>
+                    {showTimeGapDivider && turn.userItem != null && <TimeGapDivider at={turn.userItem.at} />}
+                    {groupToolItems(turn.items).map((row) => {
+                      const marginClass = isFirstRow
+                        ? undefined
+                        : previousRow && isBookkeepingRow(previousRow) && isBookkeepingRow(row)
+                          ? BOOKKEEPING_GAP_CLASS
+                          : TURN_GAP_CLASS
+                      isFirstRow = false
+                      previousRow = row
+                      return (
+                        <MessageScrollerItem key={row.id} messageId={row.id} className={marginClass}>
+                          <TranscriptRow
+                            item={row}
+                            sessionId={visibleSessionId}
+                            pending={pending}
+                            userName={userName}
+                            resolvedAskByRequestId={resolvedAskByRequestId}
+                          />
+                        </MessageScrollerItem>
+                      )
+                    })}
+                    <TurnTotalLine
+                      turn={turn}
+                      isLastTurn={turnIndex === turns.length - 1}
+                      isTurnRunning={isTurnRunning}
+                      receivedAt={receivedAt}
                     />
-                  </MessageScrollerItem>
-                ))}
-                <TurnTotalLine
-                  turn={turn}
-                  isLastTurn={turnIndex === turns.length - 1}
-                  isTurnRunning={isTurnRunning}
-                  receivedAt={receivedAt}
-                />
-              </React.Fragment>
-            ))}
+                  </React.Fragment>
+                )
+              })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton direction="end" />

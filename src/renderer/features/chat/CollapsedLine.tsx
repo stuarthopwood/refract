@@ -68,7 +68,16 @@ export function CollapsedLine({
       onOpenChange={setOpen}
       className={cn('rounded-md border border-transparent hover:border-border', className)}
     >
-      <CollapsibleTrigger className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      {/* Square choice items (docs/DESIGN.md "Look and feel"): only what's actually adjacent gets
+       * square treatment -- once open, the content panel sits flush against this trigger's own
+       * bottom edge, so its bottom corners go square instead of keeping a rounded highlight that
+       * reads as a disconnected pill floating above the content. */}
+      <CollapsibleTrigger
+        className={cn(
+          'flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+          actualOpen && 'rounded-b-none'
+        )}
+      >
         {row}
         <ChevronRightIcon className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
       </CollapsibleTrigger>

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { CollapsedLine } from './CollapsedLine'
+import { CodeBlock, inferOutputBlock } from './Markdown'
 
 type AskToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -88,7 +89,10 @@ function askAnswer(item: AskToolItem): string {
   return item.output ?? ''
 }
 
-function initials(name: string): string {
+// Exported for `Transcript.tsx`'s user-message avatar (docs/DESIGN.md "Self vs. other layout"),
+// which needs the exact same initials rendering this file already uses for the answered-question
+// avatar below.
+export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return '?'
   const first = parts[0]![0] ?? ''
@@ -158,6 +162,13 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   const [error, setError] = React.useState<string | null>(null)
   const [resolved, setResolved] = React.useState<{ kind: ResolvedKind; detail?: string } | null>(null)
   const [text, setText] = React.useState('')
+  // An approval card's detail lines are joined back into one text block and run through the same
+  // JSON/diff inference every other tool/code surface uses (docs/DESIGN.md "Every JSON-shaped
+  // tool/code surface uses `CodeBlock`") instead of rendering as a raw stack of plain `<div>`s.
+  const approvalDetailBlock = React.useMemo(
+    () => inferOutputBlock(request.kind === 'approval' ? request.details.join('\n') : ''),
+    [request]
+  )
 
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {
     setBusy(true)
@@ -185,10 +196,8 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </CardDescription>
         </CardHeader>
         {request.details.length > 0 && (
-          <CardContent className="space-y-0.5 text-xs text-muted-foreground">
-            {request.details.map((line, index) => (
-              <div key={index}>{line}</div>
-            ))}
+          <CardContent>
+            <CodeBlock code={approvalDetailBlock.code} lang={approvalDetailBlock.lang} />
           </CardContent>
         )}
         {error && (

@@ -52,10 +52,16 @@ function MessageScrollerContent({
   className,
   ...props
 }: React.ComponentProps<typeof MessageScrollerPrimitive.Content>) {
+  // No default gap: the one consumer (`Transcript.tsx`, docs/DESIGN.md "Transcript rhythm") gives
+  // every row its own top margin instead -- a run of bookkeeping rows needs a tighter rhythm than
+  // the turns/real-message spacing around it, which a single uniform `gap` cannot express, and
+  // `MessageScrollerItem`'s direct-child position (`@shadcn/react/message-scroller` enumerates
+  // only `content.children` for its scroll-anchor/visible-message tracking) rules out nesting a
+  // separate `gap-1` sub-list inside this flex container.
   return (
     <MessageScrollerPrimitive.Content
       data-slot="message-scroller-content"
-      className={cn("flex h-max min-h-full flex-col gap-6", className)}
+      className={cn("flex h-max min-h-full flex-col", className)}
       {...props}
     />
   )
