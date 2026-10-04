@@ -220,8 +220,15 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   }
 
   const recovering = recoveringId === sessionId
+  // Spec 005 (research.md Decision 4): `stopInfo` stays `{}` for a pristine pane by design (its
+  // snapshot-fetch effect is skipped) -- MessageInput's own notStarted/disabled logic needs an
+  // EXPLICIT 'not-started' stopReason, not undefined, so derive it from the Session's own
+  // already-known SessionSummary (main's sessions.list() already reports 'not-started' for any
+  // session with no live runtime this run) while pristine, instead of the live-fetched value.
+  const effectiveStopReason = isPristine ? session.stopReason : stopInfo.reason
+  const effectiveStopDetail = isPristine ? undefined : stopInfo.detail
   // `not-started` is idle-and-asleep, not an error (data-model.md); it gets no banner.
-  const showBanner = session.status === 'stopped' && !!stopInfo.reason && stopInfo.reason !== 'not-started'
+  const showBanner = session.status === 'stopped' && !!effectiveStopReason && effectiveStopReason !== 'not-started'
   // `key={sessionId}` below remounts MessageInput on every session switch, dropping its
   // textarea's focus. Reclaim it only when the switch happened while focus was already inside
   // this pane (e.g. a notification reopening the Session the user was typing in), never on
@@ -297,15 +304,15 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         <div className="shrink-0 px-4 pt-3">
           <Alert variant="destructive">
             <AlertTriangleIcon />
-            <AlertTitle>{describeStopReason(stopInfo.reason, stopInfo.detail)}</AlertTitle>
-            {stopInfo.reason === 'agent-exited' && (
+            <AlertTitle>{describeStopReason(effectiveStopReason, effectiveStopDetail)}</AlertTitle>
+            {effectiveStopReason === 'agent-exited' && (
               <AlertAction>
                 <Button size="sm" variant="outline" disabled={recovering} onClick={() => void handleRecover()}>
                   Recover
                 </Button>
               </AlertAction>
             )}
-            {stopInfo.reason === 'worktree-missing' && (
+            {effectiveStopReason === 'worktree-missing' && (
               <div className="col-start-2 mt-2 flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => void handleRecreateWorktree()}>
                   Recreate worktree
@@ -347,8 +354,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       <MessageInput
         key={sessionId}
         sessionId={sessionId}
-        stopReason={stopInfo.reason}
-        stopDetail={stopInfo.detail}
+        stopReason={effectiveStopReason}
+        stopDetail={effectiveStopDetail}
         autoFocusOnMount={autoFocusRef.current}
       />
     </div>
