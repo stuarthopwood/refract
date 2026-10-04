@@ -611,7 +611,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {thinkingLabel && (
             <span className="flex min-w-0 shrink-0 items-center gap-1">
               <GaugeIcon className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>{thinkingLabel}</span>
+              <span>
+                <span className="sr-only">Thinking level: </span>
+                {thinkingLabel}
+              </span>
             </span>
           )}
         </div>
