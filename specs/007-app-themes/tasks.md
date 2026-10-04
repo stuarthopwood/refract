@@ -308,6 +308,95 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   instance (CDP port 9343, stopped by the script itself), for both built-in themes, and asserts
   measured WCAG contrast on every colour this round found broken -- run live: `all 28 mermaid
   colour checks across 2 theme(s) PASS`, exit 0.
+  **ROUND 4 FIX (2 real High contrast regressions, caught by a reviewer building an enhanced
+  out-of-repo test harness with richer fixtures than round 3's own 28-check script could see --
+  28/28 PASS here, 18/74 FAIL against the reviewer's harness)**: BEFORE spending further effort,
+  re-measured Mermaid's stock `theme: 'dark'` with only `background`/`primaryColor`/
+  `primaryTextColor`/`textColor` overridden (the cheapest plausible alternative) against the SAME
+  richer fixtures (12-slot pie, 11-branch mindmap, multi-section timeline, Gantt with short labels
+  on long bars incl. a crit task) -- every pie/mindmap colour measured 1.01-3.80:1, WORSE than
+  this file's own palette (which already passed indices 0-7 at >=8.3:1 and only needed slots 8-11
+  filled in), confirming the fixed-palette approach was already net-better and worth completing
+  rather than reverting (`primaryColor` has to stay dark to match this app's `--card` token, so
+  Mermaid's own `primaryColor`-derived palettes collapse the same way regardless of base theme).
+  Both Highs then fixed for real:
+  1. **Gantt inside-bar text**: `taskTextDarkColor` was conflated across two different Mermaid CSS
+     contexts (inside-the-bar label, needs DARK text; outside-the-bar overflow label, needs LIGHT
+     text) that happen to share one variable name -- round 3 only ever tested the overflow case.
+     Split `taskTextOutsideColor` out as its own variable (now genuinely light) and made
+     `taskTextDarkColor` genuinely dark (pure black). Live-measured, real mermaid@11.17.2, short
+     labels on 20-day bars: done-bar text `#000000` on `#d3d3d3` = 14.03:1 (was 1.43-2.27:1); active
+     `#000000` on `#81B1DB` = 9.25:1. A plain (non-done, non-active) `:crit` task has no dedicated
+     CSS rule in Mermaid's shipped `gantt/styles.js` -- its label is actually governed by
+     `taskTextColor`/`critBkgColor` (not `taskTextDarkColor` as first assumed), measured 3.07:1
+     before either was overridden (Mermaid's default crit red, `#E83737`, can't jointly clear
+     4.5:1 with ANY light text -- even pure white only reaches 4.17:1 against it); fixed with
+     explicit `taskTextColor: '#fafafa'` and a re-narrowed `critBkgColor: '#db0000'`, measured
+     5.01:1 live. KNOWN RESIDUAL LIMITATION, documented rather than silently left: Mermaid's
+     shipped CSS only wires the outside-combinator override up for done/doneCrit tasks, not
+     active/activeCrit -- an active task's overflowing label is forced back to `taskTextDarkColor`
+     via `!important` with no theme variable able to fix it (the two requirements are provably
+     contradictory for one shared colour); see `mermaidTheme.ts`'s own header comment, point 1.
+  2. **12-slot palette**: Mermaid's `theme-dark.js` sets `THEME_COLOR_LIMIT = 12` (round 2's "8"
+     comment was stale) -- `cScale0`-`cScale7`/`pie1`-`pie8` only filled 8 of 12 slots, so slots
+     8-11 fell through to Mermaid's own hardcoded near-black defaults, measured live 1.11-3.23:1 in
+     a 12-slice pie/11-branch mindmap. Filled `cScale8`-`cScale11`/`pie9`-`pie12`
+     (`#b3b3ff`/`#7affc4`/`#ffab73` bright, plus one deliberate exception: `cScale11`/
+     `cScaleLabel11` -- Mermaid's real `timeline/styles.js` regenerates its `.lineWrapper line`
+     rule once per colour-scale slot with the SAME selector, so only the LAST slot's
+     `cScaleLabel11` wins the cascade AND is simultaneously section-10's own label text, so
+     `cScale11` is a muted `#a85400` instead of bright, freeing `cScaleLabel11` to be light enough
+     for both roles -- `pie12` has no such conflict, Mermaid's pie renderer reads it as a plain
+     array, so it stays bright, `#c9ff6b`). `cScaleInv0`-`cScaleInv11` (per-section connector
+     lines, defaulted to an algorithmic RGB-invert of each bright fill, measured 1.49-2.63:1) set
+     to explicit `#b5b5b5`/`#cecece`. Also fixed the SAME root-cause bug in two more "N-way
+     qualitative fill" variable families this round discovered, both previously undetected because
+     nothing rendered/checked them: journey/gitGraph's `fillType0`-`fillType7` (measured
+     ~1.2-1.4:1, and made journey's Mermaid-hardcoded `.label text{fill:#333}` -- no theme-variable
+     hook exists for it -- unreadable too) and gitGraph's own separate `git0`-`git7` (measured
+     2.54:1); both reuse the bright `cScale0`-`cScale7` palette. Pie slices were also only ever
+     separated by hue (adjacent slices as low as 1.00:1 for colour-blind viewers) with
+     `pieStrokeColor` matching a mid-grey border colour that cleared 3:1 against under half the
+     palette; now pure black, >=3.3:1 against every slice (most >=8:1). Live-measured with a real
+     12-slice pie, an 11-branch mindmap, and a 4-section timeline, real mermaid@11.17.2.
+  Also fixed the methodology gaps that let both regressions through undetected (the shipped
+  `check-mermaid-contrast.mjs`'s own fixtures were too narrow to catch them -- 28/28 PASS there,
+  18/74 FAIL against the reviewer's richer harness): every `if (regexMatch)` is now a declared
+  per-diagram-type MINIMUM resolved-check count, asserted after the render loop -- a diagram type
+  that resolves FEWER checks than declared is now a hard FAILURE ("insufficient checks resolved"),
+  never a silent skip (verified live: temporarily broke the Gantt crit-bar regex, confirmed the
+  script FAILED instead of silently passing, then restored it and confirmed `182/182 PASS` again);
+  the mindmap root-node regex (`\d+`-only, silently excluding `section--1`) is now `-?\d+`; every
+  check now measures against `primaryColor` (the theme's real `--card` value) instead of
+  `background`, since `Markdown.tsx` actually displays the rendered diagram `<img>` on a `bg-card`
+  div, a lighter real surface than `background` (confirmed: a crit bar measured 4.74:1 against
+  `background` but only 3.95:1 against the real `--card` before this fix); missing fixtures added
+  for timeline, journey, and gitGraph (zero assertions existed for any of them before); real
+  assertions added for flowchart/sequence/ER/xychart (rendered but unchecked before, despite a
+  stale comment claiming they were "measured correctly" -- now corrected); pie/mindmap fixtures
+  widened from 4/2 to 12/11 to reach Mermaid's own colour-scale limit. Also fixed two silent-skip
+  regex bugs discovered while building these new checks (a literal `\}` immediately after the
+  capture group fails whenever Mermaid's real CSS has a trailing `;` first, which it always does):
+  the exclude-range check and the timeline axis-line check were BOTH silently resolving zero
+  matches even before this round's other fixes. Also fixed a CSS-named-colour gap in the script's
+  own `toHex()` (`lightgrey` etc. were passed unresolved into `parseInt(..., 16)`, producing `NaN`
+  and a meaningless ratio instead of either a real number or a loud failure) discovered via the new
+  gitGraph check. Live run, real mermaid@11.17.2, real Electron renderer, not a mock:
+  `all 182 mermaid colour checks across 2 theme(s) PASS`, exit 0 (up from 28 checks round 3).
+  Two tiny Low-severity items from this round's review also fixed in passing (both corroborated,
+  both cheap, both outside the Mermaid surface but touching the same Escape-handling code T012
+  already covers): `AppMenuBar.tsx`'s Escape handler now returns early on `event.repeat` (holding
+  Escape down auto-repeats a `keydown` ~500ms after the first, by which point the bar has already
+  closed and the repeat was cancelling a preview the first Escape never touched); and
+  `AppearanceSection.tsx`'s `[role="menubar"]` Escape-guard selector is now scoped to
+  `[role="menubar"][aria-label="App menu"]` specifically, so a hypothetical future unrelated
+  menubar can't silently disable this guard too. Not actioned this round (explicitly deferred,
+  open-ended/needs-verification rather than tiny-and-specified): `--ring`'s dark-theme luminance
+  moving closer to `--border` after round 2's retune (still passes WCAG AA numerically; a specific
+  replacement value needs its own verification pass); `switch.tsx`'s stale "15% white" `--input`
+  comment (the literal value changed in round 2's retune; left for a future pass that also audits
+  the rest of that file's comments against the same retune, rather than fixing one line in
+  isolation).
 - [X] T018 [US3] Write `scripts/check-theme-contrast.mjs`: parse each theme's OKLCH token pairs
   straight out of `globals.css`, convert to sRGB and relative luminance, and assert the FR-008
   ratios (4.5:1 body text and state-colour pairs, 3:1 large text and non-text parts) for every

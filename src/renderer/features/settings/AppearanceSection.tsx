@@ -69,7 +69,12 @@ export function AppearanceSection() {
       // AFTER this component already has (the common case: Settings > Appearance opened, THEN
       // Alt pressed). Guarding on `[role="menubar"]` directly checks whether the Alt bar is
       // open right now, independent of event-listener registration order.
-      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"], [role="menubar"]')) return
+      //
+      // Quality-gate remediation (Low, round 4): scoped to AppMenuBar's own `aria-label="App
+      // menu"` specifically (set on its root alongside `role="menubar"`) -- a bare
+      // `[role="menubar"]` would also match ANY future unrelated menubar Refract adds, silently
+      // disabling this Escape-to-cancel guard for every one of them too.
+      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"], [role="menubar"][aria-label="App menu"]')) return
       if (useThemeStore.getState().previewing === null) return
       event.preventDefault()
       useThemeStore.getState().cancelPreview()
