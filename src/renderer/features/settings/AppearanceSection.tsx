@@ -4,8 +4,8 @@
 // (`previewing ?? theme`, already live the instant the user clicks/arrows onto it via
 // `ThemePicker`'s own `preview` calls -- FR-003), Cancel discards it. Escape and unmounting
 // (switching Settings sections, or leaving Settings entirely) both revert any open preview the
-// same way (FR-005) -- `cancelPreview` is a no-op once nothing is being previewed, so firing it
-// unconditionally on unmount never fights a Save that just completed.
+// same way (FR-005) -- `cancelPreview` is a genuine no-op once nothing is being previewed, so
+// firing it unconditionally on unmount never fights a Save that just completed.
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useThemeStore } from '@/state'
@@ -14,6 +14,7 @@ import { ThemePicker } from './ThemePicker'
 export function AppearanceSection() {
   const isDirty = useThemeStore((state) => state.previewing !== null)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const wasDirtyRef = useRef(false)
 
   // Matches SettingsScreen.tsx's own "Session readout" heading-focus pattern: this component
   // mounts fresh every time the developer switches to this section (SettingsScreen renders it
@@ -23,12 +24,32 @@ export function AppearanceSection() {
     headingRef.current?.focus()
   }, [])
 
+  // Quality-gate remediation (a11y, HIGH, corroborated -- this repo already treats this exact
+  // failure mode as a High fix elsewhere, SettingsScreen.tsx/lib/focus.ts): Save/Cancel use
+  // native `disabled={!isDirty}`, so the instant either completes and `isDirty` flips back to
+  // false, Chromium silently drops focus to `<body>` rather than leaving it on the button that
+  // is about to become disabled. Move focus to the picker's now-checked radio entry (falling
+  // back to this section's own heading) right after that transition, the same "focus somewhere
+  // meaningful after the blur" pattern `focusSettingsEntry`/`focusSessionsNav` already use.
+  useEffect(() => {
+    if (wasDirtyRef.current && !isDirty) {
+      const checkedRadio = document.querySelector<HTMLElement>(
+        '[role="radiogroup"][aria-label="Theme"] [role="radio"][aria-checked="true"]'
+      )
+      if (checkedRadio) checkedRadio.focus()
+      else headingRef.current?.focus()
+    }
+    wasDirtyRef.current = isDirty
+  }, [isDirty])
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      // Same dialog-open skip guard App.tsx's own window-scoped Ctrl+Shift+\ listener uses --
-      // don't steal Escape from a modal (e.g. a future confirm dialog) that should handle it.
-      if (document.querySelector('[role="alertdialog"], [role="dialog"]')) return
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      // Quality-gate remediation (HIGH): the old `[role="dialog"]` selector (and no
+      // `defaultPrevented` check) stole Escape from the Alt menu bar and any Radix
+      // menu/listbox too, silently cancelling an unrelated preview -- narrowed to spec 005's
+      // own already-fixed pattern (round-3 remediation), which only matches a REAL modal.
+      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"]')) return
       if (useThemeStore.getState().previewing === null) return
       event.preventDefault()
       useThemeStore.getState().cancelPreview()
