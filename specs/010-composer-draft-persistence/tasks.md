@@ -233,19 +233,26 @@ re-ran clean after every fix.
   above, then sent. The transcript's own user-turn bubble showed the **full, exact 967-character
   original text** substituted in place of the chip's short label -- not the label -- directly
   confirming FR-003 for a restored chip, screenshotted live.
-- **[HIGH, test-reviewer] -- partially closed.** Acceptance Scenario 2 / FR-002 (a *restored* image
-  still attaches on send) was intended to be closed in the same run by asking the agent to name the
-  pasted image's colour, but that real turn hit an unrelated OMP-side "thinking loop detected"
-  abort (a pre-existing model-flakiness failure mode, not a regression this spec introduced) before
-  replying, so the agent's own acknowledgement was not obtained this round. What *is* directly
-  confirmed: the restored `PendingImageAttachment` (same `id`/`base64`/`mimeType` as pasted) is
-  still present in `draft-store.ts`'s state at send time, and `handleSend`'s
-  `attachments.images.map(toImageContent)` / `window.refract.chat.send(sessionId, message, images)`
-  call is byte-identical to spec 009's own already-shipped, already-verified send path -- this
-  spec changes only where `attachments` is read from (the store instead of local state), never
-  what is built from it or how it is sent. Re-verifying the agent's own acknowledgement against a
-  non-flaky turn is the one piece of this round's evidence budget left undone; the code path itself
-  is unchanged from spec 009's own already-verified FR-006.
+- **[HIGH, test-reviewer] -- closed.** Acceptance Scenario 2 / FR-002 (a *restored* image still
+  attaches on send): the prior round's attempt to close this via a real agent reply (asking it to
+  name the pasted image's colour) hit an unrelated OMP-side "thinking loop detected" abort before
+  replying -- a pre-existing model-flakiness failure mode, not a regression this spec introduced,
+  and not actually what FR-002 requires (the requirement is that the image reaches the outgoing
+  send call intact, not that the agent successfully describes it). **Re-verified without the
+  agent round-trip**: in the same scratch Electron instance/repo, pasted a real 1x1 red PNG
+  (`circle-red.png`, base64 `iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==`,
+  96 base64 chars) into Session `calm-fox`'s message box, switched to `earnest-bison` and back
+  (restoring the pending image attachment via the new draft-store, not the original component
+  `useState`), confirmed the red thumbnail survived the round-trip live on screen, typed a message,
+  and sent. A temporary `console.log` placed immediately before the real
+  `window.refract.chat.send(sessionId, message, images)` call (removed again immediately after
+  capture -- `git diff` on the file is empty) captured the actual outgoing call's own `images`
+  argument at the moment of send:
+  `{"imagesLength":1,"mimeType":"image/png","dataLength":96,"dataPrefix":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"}`
+  -- `imagesLength` is exactly 1, `mimeType` is `image/png`, and `dataLength`/`dataPrefix` match
+  the original pasted image's base64 payload exactly (96 chars, identical prefix) -- not empty,
+  not a different image, not stale or duplicated. This is direct evidence the restored image
+  reached the real send call intact, independent of any agent reply; no agent turn was awaited.
 - **[MEDIUM, code-reviewer + test-reviewer, same root cause from two angles]** Because the draft
   now outlives the component, `handleSend`'s `await chat.send()` can straddle a Session switch away
   and back, or the user simply continuing to type/paste during the request; an unconditional
@@ -280,9 +287,6 @@ re-ran clean after every fix.
   pruned, which was already true either way).
 
 ### Not independently re-verified this round
-- FR-002's agent-acknowledgement half (see the High above) -- the code path is unchanged from
-  spec 009's own shipped, already-verified behaviour, but the live round-trip hit an unrelated
-  model-side abort before completing.
 - The Medium double-clear-race guard -- verified by code reading, not by an artificially stalled
   RPC repro, per this round's evidence budget.
 
