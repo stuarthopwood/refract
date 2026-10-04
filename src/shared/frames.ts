@@ -377,10 +377,26 @@ export function isKnownFrame(frame: Frame): frame is KnownFrame {
 // Commands Refract sends, per "Commands Refract sends"
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Composer attachments (spec 009): the wire-level shape OMP's own `images` field on `prompt`/
+// `steer` accepts (research.md Decisions 1-2). Refract only ever sends base64 + mimeType; it
+// never sets `detail` or `providerFile` (OpenAI-only/host-builds-this, respectively -- neither
+// applies to a renderer-pasted clipboard image).
+// ---------------------------------------------------------------------------
+
+export type SupportedImageMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+
+export interface ImageContent {
+  type: 'image';
+  data: string; // base64; the only channel OMP accepts (research.md Decision 2)
+  mimeType: SupportedImageMimeType;
+}
+
 export interface PromptCommand {
   type: 'prompt';
   id: string;
   message: string; // never `text` (constitution II)
+  images?: ImageContent[]; // spec 009, FR-006
   streamingBehavior?: 'followUp'; // present when the Session is already working
 }
 
@@ -388,6 +404,7 @@ export interface SteerCommand {
   type: 'steer';
   id: string;
   message: string;
+  images?: ImageContent[]; // spec 009, FR-006, FR-017
 }
 
 export interface AbortCommand {

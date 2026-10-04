@@ -3,7 +3,7 @@
 // renderer; this is the only file that may cross that boundary (constitution V).
 
 import type { ApprovalMode, ConversationInfo, PendingRequest, Repository, Session, SessionStatus, Settings, TranscriptItem } from './model';
-import type { SlashCommandDescriptor } from './frames';
+import type { ImageContent, SlashCommandDescriptor } from './frames';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
@@ -39,7 +39,9 @@ export type IpcErrorCode =
   | 'prompt-failed'
   | 'agent-not-running'
   | 'worktree-missing'
-  | 'clipboard-failed';
+  | 'clipboard-failed'
+  | 'unsupported-image-type'
+  | 'image-too-large';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -251,10 +253,17 @@ export interface RefractApi {
   };
 
   chat: {
-    send(sessionId: string, text: string): Promise<Result<{ queued: boolean }>>;
+    /** `images` (spec 009, FR-006): each entry already validated by the renderer's own
+     * paste-time check; the main process re-validates every one independently before building
+     * the outgoing command (FR-018), returning `unsupported-image-type`/`image-too-large` on the
+     * first failing entry and sending nothing. */
+    send(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ queued: boolean }>>;
     stop(sessionId: string): Promise<Result<void>>;
     removeQueued(sessionId: string, text: string): Promise<Result<{ removed: boolean }>>;
-    sendNow(sessionId: string, text: string): Promise<Result<{ steered: boolean }>>;
+    /** Same `images?` and the same two new error codes as `send` (contracts/ipc.md), applied
+     * before the existing `remove_queued_message` then `steer` sequence builds its `steer`
+     * command with `images` set. */
+    sendNow(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ steered: boolean }>>;
     answer(sessionId: string, requestId: string, answer: ChatAnswer): Promise<Result<void>>;
     commands(sessionId: string): Promise<Result<SlashCommand[]>>;
     /** Ghost-text composer completion (T103, FR-058): `null` whenever there is no live agent

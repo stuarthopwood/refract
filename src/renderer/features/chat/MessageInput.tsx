@@ -4,7 +4,7 @@
 // slash-command menu (T044, FR-032, FR-033) lives in SlashMenu.tsx; this file only decides when
 // to show it and handles the keys that drive it.
 import { useEffect, useRef, useState } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { ClipboardEvent as ReactClipboardEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { ArrowUpIcon, CpuIcon, GaugeIcon, SquareIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,21 @@ import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
 import { ApprovalModePill } from './ApprovalModePill'
+import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
+import {
+  buildChipLabel,
+  buildImageAttachment,
+  EMPTY_ATTACHMENTS,
+  findChipOccurrences,
+  findClipboardImageItem,
+  formatByteSize,
+  isLargePaste,
+  pruneDanglingChips,
+  substituteChips,
+  toImageContent
+} from './attachments'
+import type { AttachmentsState } from './attachments'
+import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -92,6 +107,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   sessionIdRef.current = sessionId
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  // Spec 009: pending images and oversized-text chips for the draft currently being composed
+  // (data-model.md "AttachmentsState") -- renderer-memory-only, cleared on send success (FR-007)
+  // or on this component's own remount (`key={sessionId}` in ChatPane), same lifetime as `text`.
+  const [attachments, setAttachments] = useState<AttachmentsState>(EMPTY_ATTACHMENTS)
+  // Mirrors the ghost-text overlay's own scroll-sync div (T103, FR-058) for the text-chip
+  // overlay: an inert sibling matching the textarea's box model so each chip's clickable overlay
+  // lands exactly over its label's rendered position (research.md Decision 10).
+  const chipOverlayRef = useRef<HTMLDivElement>(null)
   // T103, FR-058: ghost-text composer completion. `ghost` is the suggestion actually shown,
   // bound to the exact draft/cursor it was requested for; `ghostGenerationRef` guards a
   // predictWord response against a newer edit superseding it before it resolves (same guard as
@@ -126,6 +149,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       overlayRef.current.scrollTop = textareaRef.current.scrollTop
     }
   }, [ghost])
+
+  // Same scroll-sync reasoning as the ghost overlay above, for the text-chip overlay: pins its
+  // scroll position whenever the set of pending chips changes (the `onScroll` handler below
+  // covers scrolling while chips are already showing).
+  useEffect(() => {
+    if (chipOverlayRef.current && textareaRef.current) {
+      chipOverlayRef.current.scrollTop = textareaRef.current.scrollTop
+    }
+  }, [attachments.textChips])
 
   useEffect(() => {
     if (autoFocusOnMount) textareaRef.current?.focus()
@@ -175,8 +207,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   async function handleSend() {
     if (disabled || starting) return
-    const message = text
-    if (!message.trim()) return
+    const draftText = text
+    if (!draftText.trim()) return
     // Enter-send and the Send button both clear the draft via `setText('')` below, bypassing
     // `scheduleGhostCheck`'s onChange-driven invalidation; without this a shown suggestion would
     // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
@@ -192,15 +224,29 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (!snapshot) return
       applySnapshot(sessionId, snapshot)
     }
+    // FR-013: every pending text chip's full original text is substituted back into the draft at
+    // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
+    // sees is exactly what the developer would have gotten pasting the whole block directly.
+    const message = substituteChips(draftText, attachments.textChips)
+    // FR-006: every pending image goes out as a real `images` entry on this same call, whether it
+    // sends immediately or queues as a followUp (FR-017) -- `SessionAgent.send` decides which
+    // based on the Session's live status, not this call site.
+    const images = attachments.images.length > 0 ? attachments.images.map(toImageContent) : undefined
     // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); a listed
     // command given unverified arguments gets `unsupported-arguments` instead (issue #129); notify
-    // below shows either as a toast, same as any other IPC error.
-    const result = await window.refract.chat.send(sessionId, message)
+    // below shows either as a toast, same as any other IPC error. FR-019: a failed send (whether
+    // image-related or not) leaves the draft and every pending attachment untouched -- nothing
+    // below this `if` runs until `chat.send` actually succeeds.
+    const result = await window.refract.chat.send(sessionId, message, images)
     if (!result.ok) {
       notify(result.error)
       return
     }
     setText('')
+    // FR-007: pending image attachments clear once the send is accepted, not once the agent's
+    // turn finishes; pending text chips are a draft-only concept with nothing left to track once
+    // the draft itself is cleared.
+    setAttachments(EMPTY_ATTACHMENTS)
     // Second invalidation (#358/#359 round-3 remediation): typing during the `await open()` / `await
     // chat.send()` gap above can schedule a fresh ghost-text debounce/request -- or let one
     // already in flight resolve -- against the draft `setText('')` just wiped; the early
@@ -411,8 +457,74 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }
 
   async function handleSendNow(queuedText: string) {
-    const result = await window.refract.chat.sendNow(sessionId, queuedText)
-    if (!result.ok) notify(result.error)
+    // FR-017, contracts/ipc.md: `chat.sendNow` accepts the same `images?` as `chat.send` since
+    // its own `steer` command is built from scratch (never reusing whatever `images` the
+    // original queued `prompt` carried) -- so any image still pending in the composer right now
+    // goes out with this resend the same way it would with an idle send. Whatever image(s) were
+    // actually part of the originally-queued followUp already reached OMP as part of that
+    // earlier `chat.send` call, independently of this one (FR-007 already cleared them then).
+    const images = attachments.images.length > 0 ? attachments.images.map(toImageContent) : undefined
+    const result = await window.refract.chat.sendNow(sessionId, queuedText, images)
+    if (!result.ok) {
+      notify(result.error)
+      return
+    }
+    setAttachments((prev) => (prev.images.length > 0 ? { ...prev, images: [] } : prev))
+  }
+
+  /** FR-001 to FR-003, FR-010, FR-011, Edge Cases: an image representation always wins over a
+   * plain-text one when a paste carries both (e.g. a spreadsheet-cell copy) -- the text
+   * representation is never also turned into a chip in that case. A short paste (at or under the
+   * chip threshold) falls through untouched, landing in the textarea exactly as before (FR-010);
+   * this handler only ever intervenes for an image or an over-threshold text block. */
+  async function handlePaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const data = event.clipboardData
+    const imageFile = findClipboardImageItem(data)
+    if (imageFile) {
+      // FR-001: never let any image data reach the textarea's own text value.
+      event.preventDefault()
+      const result = await buildImageAttachment(imageFile)
+      if (!result.ok) {
+        notify({
+          code: result.reason === 'too-large' ? 'image-too-large' : 'invalid-argument',
+          message:
+            result.reason === 'too-large'
+              ? `Image is too large to attach (over the ${formatByteSize(MAX_IMAGE_INPUT_BYTES)} limit); nothing was attached.`
+              : 'That image could not be read; nothing was attached.'
+        })
+        return
+      }
+      setAttachments((prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+      return
+    }
+
+    const pastedText = data.getData('text/plain')
+    if (!isLargePaste(pastedText)) return // FR-010: at or under the threshold, paste as normal
+
+    // FR-011: collapse it into a pending text chip, replacing the raw text at the paste position
+    // with a short literal label instead of inserting the raw block.
+    event.preventDefault()
+    const target = event.currentTarget
+    const start = target.selectionStart
+    const end = target.selectionEnd
+    const existingLabels = new Set(attachments.textChips.map((chip) => chip.label))
+    const label = buildChipLabel(pastedText, existingLabels)
+    const nextText = text.slice(0, start) + label + text.slice(end)
+    const nextCursor = start + label.length
+    setText(nextText)
+    setSlashDismissed(false)
+    scheduleGhostCheck(nextText, nextCursor)
+    setAttachments((prev) => ({
+      ...prev,
+      textChips: [...prev.textChips, { kind: 'text-chip', id: crypto.randomUUID(), text: pastedText, label }]
+    }))
+    requestAnimationFrame(() => {
+      textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
+  function handleRemoveImage(id: string) {
+    setAttachments((prev) => ({ ...prev, images: prev.images.filter((image) => image.id !== id) }))
   }
 
   const placeholder = disabled
@@ -463,6 +575,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <div className="flex flex-wrap items-center gap-1.5">
         <ApprovalModePill sessionId={sessionId} />
       </div>
+      {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
+          entirely while nothing is pending. */}
+      <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} />
       {/* T063/quality-gate fix, Composer tone remediation (2026-10-04): a literal, solid
           `oklch(0.09 0 0)` fill -- strictly darker than `--background`'s `oklch(0.145 0 0)` in
           the (only, dark) theme (docs/DESIGN.md "Composer tone") -- measured at rendered pixel
@@ -508,11 +623,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               setText(value)
               setSlashDismissed(false)
               scheduleGhostCheck(value, cursor)
+              // FR-014, Edge Cases: every edit re-checks every pending chip's label against the
+              // new value -- an explicit delete and an edit that merely breaks the label both
+              // drop it from pending state the same way.
+              setAttachments((prev) => {
+                const prunedChips = pruneDanglingChips(value, prev.textChips)
+                return prunedChips.length === prev.textChips.length ? prev : { ...prev, textChips: prunedChips }
+              })
             }}
+            onPaste={(event) => void handlePaste(event)}
             onScroll={(event) => {
               // The overlay doesn't track the textarea's scroll on its own (#359 remediation):
               // without this a suggestion on a tall, scrolled draft renders on the wrong line.
-              if (overlayRef.current) overlayRef.current.scrollTop = (event.target as HTMLTextAreaElement).scrollTop
+              const scrollTop = (event.target as HTMLTextAreaElement).scrollTop
+              if (overlayRef.current) overlayRef.current.scrollTop = scrollTop
+              if (chipOverlayRef.current) chipOverlayRef.current.scrollTop = scrollTop
             }}
             onKeyDown={handleKeyDown}
             disabled={disabled}
@@ -534,6 +659,19 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             >
               <span className="invisible">{text.slice(0, ghost.cursor)}</span>
               <span className="text-muted-foreground/60">{ghost.suffix}</span>
+            </div>
+          )}
+          {/* Text-chip overlay (spec 009, FR-012, research.md Decision 10): reuses the ghost-text
+              overlay technique above -- same inert sibling, same box-model-matching classes -- so
+              each pending chip's clickable, chip-styled label lands exactly over its own rendered
+              position in the draft. Independent of `ghost`: both overlays can render at once. */}
+          {attachments.textChips.length > 0 && (
+            <div
+              ref={chipOverlayRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 py-2 pr-20 text-base md:text-sm"
+            >
+              <ChipOverlaySegments text={text} occurrences={findChipOccurrences(text, attachments.textChips)} />
             </div>
           )}
           {/* Screen reader users never heard WHAT was suggested, only a generic hint -- Tab would

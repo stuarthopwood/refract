@@ -21,6 +21,8 @@ import { IPC_REQUESTS } from '../../shared/ipc';
 import type { ChatAnswer, Result } from '../../shared/ipc';
 import { classifySlashInvocation, NATIVE_RESERVED_COMMANDS, parseSlashCommand } from '../../shared/slash-commands';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from '../omp/errors';
+import { validateImageAttachment } from '../omp/images';
+import type { ImageContent } from '../../shared/frames';
 import { invalidArgument, mapSessionThrown, notFound } from './util';
 import type { SessionManager } from '../SessionManager';
 
@@ -39,11 +41,55 @@ function isChatAnswer(value: unknown): value is ChatAnswer {
   return typeof v.approve === 'boolean' || typeof v.value === 'string' || typeof v.confirmed === 'boolean' || v.cancelled === true;
 }
 
+/** `images` (spec 009, FR-018, contracts/ipc.md): accepted as `unknown` off the wire like every
+ * other argument here, shape-checked, then independently re-validated entry by entry (mime type,
+ * decoded byte size) before anything is ever forwarded to `SessionAgent` -- the renderer's own
+ * paste-time check is never trusted alone (constitution Principle V). Runs in the same place the
+ * existing `sessionId`/argument-shape checks already do, additive to them, never replacing their
+ * failure modes; the first failing entry's code is returned and nothing is sent. `undefined`
+ * (no `images` argument at all) is valid and carries no images. */
+function parseImagesArgument(images: unknown): { ok: true; value: ImageContent[] | undefined } | Result<never> {
+  if (images === undefined) return { ok: true, value: undefined };
+  if (!Array.isArray(images)) {
+    return invalidArgument(`${IPC_REQUESTS.CHAT_SEND}/${IPC_REQUESTS.CHAT_SEND_NOW} expects images to be an array when provided`);
+  }
+  const parsed: ImageContent[] = [];
+  for (const entry of images) {
+    if (typeof entry !== 'object' || entry === null) {
+      return invalidArgument(`${IPC_REQUESTS.CHAT_SEND}/${IPC_REQUESTS.CHAT_SEND_NOW}: each image must be an object`);
+    }
+    const candidate = entry as Record<string, unknown>;
+    if (candidate.type !== 'image' || typeof candidate.data !== 'string' || typeof candidate.mimeType !== 'string') {
+      return invalidArgument(
+        `${IPC_REQUESTS.CHAT_SEND}/${IPC_REQUESTS.CHAT_SEND_NOW}: each image must be { type: 'image', data: string, mimeType: string }`
+      );
+    }
+    const image = candidate as unknown as ImageContent;
+    const validation = validateImageAttachment(image);
+    if (!validation.ok) {
+      return {
+        ok: false,
+        error: {
+          code: validation.code,
+          message:
+            validation.code === 'unsupported-image-type'
+              ? `Unsupported image type: ${image.mimeType}`
+              : 'Image exceeds the 20 MiB limit',
+        },
+      };
+    }
+    parsed.push(image);
+  }
+  return { ok: true, value: parsed };
+}
+
 export function registerChat(manager: SessionManager): void {
-  ipcMain.handle(IPC_REQUESTS.CHAT_SEND, async (_event, sessionId: unknown, text: unknown) => {
+  ipcMain.handle(IPC_REQUESTS.CHAT_SEND, async (_event, sessionId: unknown, text: unknown, images: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.CHAT_SEND} expects (sessionId, text) strings`);
     }
+    const parsedImages = parseImagesArgument(images);
+    if (!parsedImages.ok) return parsedImages;
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     const agent = manager.getOrCreateAgent(sessionId);
 
@@ -89,7 +135,7 @@ export function registerChat(manager: SessionManager): void {
     }
 
     try {
-      const result = await agent.send(text);
+      const result = await agent.send(text, parsedImages.value);
       return { ok: true, value: result };
     } catch (err) {
       return mapChatError(err);
@@ -120,13 +166,15 @@ export function registerChat(manager: SessionManager): void {
     }
   });
 
-  ipcMain.handle(IPC_REQUESTS.CHAT_SEND_NOW, async (_event, sessionId: unknown, text: unknown) => {
+  ipcMain.handle(IPC_REQUESTS.CHAT_SEND_NOW, async (_event, sessionId: unknown, text: unknown, images: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.CHAT_SEND_NOW} expects (sessionId, text) strings`);
     }
+    const parsedImages = parseImagesArgument(images);
+    if (!parsedImages.ok) return parsedImages;
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     try {
-      const result = await manager.getOrCreateAgent(sessionId).sendNow(text);
+      const result = await manager.getOrCreateAgent(sessionId).sendNow(text, parsedImages.value);
       return { ok: true, value: result };
     } catch (err) {
       return mapChatError(err);

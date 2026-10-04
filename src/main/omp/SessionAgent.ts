@@ -27,6 +27,7 @@ import type {
   Frame,
   GetMessagesResponseData,
   GetStateResponseData,
+  ImageContent,
   PredictWordResponseData,
   QueueUpdateFrame,
   SwitchSessionResponseData,
@@ -417,8 +418,13 @@ export class SessionAgent extends EventEmitter {
 
   /** `chat.send` (contracts/omp-usage.md "Send a message"): `message`, never `text`; a
    * `streamingBehavior:'followUp'` prompt while a turn is already running becomes a queue chip
-   * instead of starting a second turn. `queued` reports which case this was. */
-  async send(text: string): Promise<{ queued: boolean }> {
+   * instead of starting a second turn. `queued` reports which case this was. `images` (spec 009,
+   * FR-006, FR-017) is forwarded unchanged onto the `prompt` command either way -- an idle send
+   * and one that queues as a followUp both carry pending attachments the same way -- and is
+   * omitted from the command entirely (never sent as `images: undefined`) when there is none,
+   * matching how `streamingBehavior` itself is only set when needed. The caller (`chat.ts`) has
+   * already independently re-validated every entry (FR-018); this method never re-checks them. */
+  async send(text: string, images?: ImageContent[]): Promise<{ queued: boolean }> {
     // Marks the user's first real action in this process (see `hasUserActed`'s own doc comment)
     // before either guard below can throw: even a `send()` that ultimately fails to reach the
     // process is the user genuinely trying to do something, never OMP's own unprompted startup.
@@ -430,9 +436,10 @@ export class SessionAgent extends EventEmitter {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send, no live process`);
     }
     const working = this.runtime.status === 'working' || this.runtime.status === 'needs-you';
+    const imagesField = images && images.length > 0 ? { images } : {};
     const res = working
-      ? await this.process.request({ type: 'prompt', id: '', message: text, streamingBehavior: 'followUp' })
-      : await this.process.request({ type: 'prompt', id: '', message: text });
+      ? await this.process.request({ type: 'prompt', id: '', message: text, ...imagesField, streamingBehavior: 'followUp' })
+      : await this.process.request({ type: 'prompt', id: '', message: text, ...imagesField });
     if (!res.success) {
       this.appendNotice(`prompt failed: ${res.error ?? 'unknown error'}`, 'error');
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: prompt failed: ${res.error ?? 'unknown error'}`);
@@ -499,8 +506,12 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** `chat.sendNow` (contracts/omp-usage.md "Send now (steer)"): removes the queued chip, then
-   * steers with the same text. If it had already left the queue on its own, does nothing more. */
-  async sendNow(text: string): Promise<{ steered: boolean }> {
+   * steers with the same text. If it had already left the queue on its own, does nothing more.
+   * `images` (spec 009, contracts/ipc.md) is forwarded unchanged onto the `steer` command this
+   * builds from scratch -- that command carries no reference to whatever `images` the original
+   * queued `prompt` may have had, so a caller that wants this steer to carry attachments must
+   * pass them again here; omitted entirely (never `images: undefined`) when there are none. */
+  async sendNow(text: string, images?: ImageContent[]): Promise<{ steered: boolean }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send now, no live process`);
     }
@@ -511,7 +522,8 @@ export class SessionAgent extends EventEmitter {
     if (!(removeRes.success && (removeRes.data as { removed?: boolean } | undefined)?.removed === true)) {
       return { steered: false };
     }
-    const steerRes = await this.process.request({ type: 'steer', id: '', message: text });
+    const imagesField = images && images.length > 0 ? { images } : {};
+    const steerRes = await this.process.request({ type: 'steer', id: '', message: text, ...imagesField });
     if (!steerRes.success) {
       this.appendNotice(`steer failed: ${steerRes.error ?? 'unknown error'}`, 'error');
     }
