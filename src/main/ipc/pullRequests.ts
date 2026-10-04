@@ -47,8 +47,8 @@ function mapActor(actor: gh.GhActor | null | undefined): PullRequestActor {
 }
 
 /** A commit's GraphQL author is `{ name: string } | null` -- no `login` at all, since a commit
- * can be authored with an email that isn't linked to a GitHub account. `name` doubles as the
- * fallback `login` so the UI always has something stable to key/display on. */
+  * can be authored with an email that isn't linked to a GitHub account. `name` doubles as the
+  * fallback `login` so the UI always has something stable to key/display on. */
 function mapCommitAuthor(author: { name: string } | null | undefined): PullRequestActor {
   const name = author?.name ?? null;
   return { login: name ?? 'unknown', name };
@@ -75,11 +75,11 @@ function mapCheckState(runs: gh.GhCheckRun[] | null): CheckState | 'none' {
 }
 
 /** `PullRequestDetail.reviewDisabledReason` (FR-019): review actions (Review/Approve/Request
- * changes, and `submitReview`) are only ever disabled by the pull request's own state -- draft,
- * closed, or merged. Remediation (code-reviewer Critical): this used to be folded together with
- * merge-only concerns (BLOCKED/DIRTY/UNSTABLE via `mergeStateStatus`), which meant a repository
- * with branch-protection requiring reviews disabled the Review button by the very BLOCKED state
- * that approving would clear -- confirmed live against a real protected repository's PR. */
+  * changes, and `submitReview`) are only ever disabled by the pull request's own state -- draft,
+  * closed, or merged. Remediation (code-reviewer Critical): this used to be folded together with
+  * merge-only concerns (BLOCKED/DIRTY/UNSTABLE via `mergeStateStatus`), which meant a repository
+  * with branch-protection requiring reviews disabled the Review button by the very BLOCKED state
+  * that approving would clear -- confirmed live against a real protected repository's PR. */
 function computeReviewDisabledReason(state: PullRequestState): string | null {
   if (state === 'draft') return 'This pull request is a draft.';
   if (state === 'closed') return 'This pull request is closed.';
@@ -88,11 +88,11 @@ function computeReviewDisabledReason(state: PullRequestState): string | null {
 }
 
 /** `PullRequestDetail.mergeDisabledReason` (FR-019, FR-020): merge-only concerns layered on top of
- * the same state gate -- conflicts and a blocked merge state. `UNSTABLE` (only non-required checks
- * failing) is deliberately never folded in here: GitHub itself still allows merging in that case.
- * `BLOCKED` gets its own wording, distinct from "required checks are failing", because it is very
- * often a missing-approval state (exactly what the Review button, gated separately above, is the
- * way to clear) rather than a failing check. */
+  * the same state gate -- conflicts and a blocked merge state. `UNSTABLE` (only non-required checks
+  * failing) is deliberately never folded in here: GitHub itself still allows merging in that case.
+  * `BLOCKED` gets its own wording, distinct from "required checks are failing", because it is very
+  * often a missing-approval state (exactly what the Review button, gated separately above, is the
+  * way to clear) rather than a failing check. */
 function computeMergeDisabledReason(state: PullRequestState, mergeable: string, mergeStateStatus: string): string | null {
   const reviewReason = computeReviewDisabledReason(state);
   if (reviewReason) return reviewReason;
@@ -104,10 +104,10 @@ function computeMergeDisabledReason(state: PullRequestState, mergeable: string, 
 }
 
 /** "Also fix" remediation: `view.mergeable` is a 3-value string enum (`'MERGEABLE' |
- * 'CONFLICTING' | 'UNKNOWN'`), not a boolean -- `'UNKNOWN'` (GitHub still computing
- * mergeability in the background) used to collapse into "not mergeable" alongside real
- * conflicts. It gets its own state here so the renderer can show "still checking" rather than a
- * false conflict message. */
+  * 'CONFLICTING' | 'UNKNOWN'`), not a boolean -- `'UNKNOWN'` (GitHub still computing
+  * mergeability in the background) used to collapse into "not mergeable" alongside real
+  * conflicts. It gets its own state here so the renderer can show "still checking" rather than a
+  * false conflict message. */
 function mapMergeableState(mergeable: string): MergeableState {
   const upper = mergeable.toUpperCase();
   if (upper === 'MERGEABLE') return 'mergeable';
@@ -124,8 +124,8 @@ function mapReviewVerdict(state: string | undefined): ReviewVerdict | null {
 }
 
 /** Merges `reviewThreads` + the three relevant `timelineItems` kinds into one chronologically
- * sorted array (FR-008). `AutomatedFinding`s are always `[]` here: no dedicated GraphQL field and
- * no live Copilot-review sample exists to confirm a body convention (research.md decision 4). */
+  * sorted array (FR-008). `AutomatedFinding`s are always `[]` here: no dedicated GraphQL field and
+  * no live Copilot-review sample exists to confirm a body convention (research.md decision 4). */
 function buildTimeline(data: gh.GhThreadsAndTimeline): TimelineEntry[] {
   const withTimestamps: Array<{ entry: TimelineEntry; ts: string }> = [];
 
@@ -192,11 +192,11 @@ const SEARCH_QUALIFIER_FLAGS: Record<Exclude<FilterTab, 'open'>, gh.SearchQualif
 };
 
 /** High remediation (code-reviewer): a non-Open tab used to spawn one `gh pr view` process per
- * row sequentially (up to ~30 per tab switch, each a real process spawn) just to backfill the
- * check-state the search surface doesn't carry. A bounded `Promise.all` runs these concurrently
- * instead -- still one process per row (no GraphQL field exists on the search surface to avoid
- * that entirely), but no longer serialised, and capped so a large result page can never fan out
- * unbounded concurrent `gh` processes at once. */
+  * row sequentially (up to ~30 per tab switch, each a real process spawn) just to backfill the
+  * check-state the search surface doesn't carry. A bounded `Promise.all` runs these concurrently
+  * instead -- still one process per row (no GraphQL field exists on the search surface to avoid
+  * that entirely), but no longer serialised, and capped so a large result page can never fan out
+  * unbounded concurrent `gh` processes at once. */
 const CHECK_STATE_CONCURRENCY = 8;
 
 async function withBoundedConcurrency<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
@@ -274,9 +274,9 @@ function cacheKey(repositoryId: string, number: number): string {
 }
 
 /** "Also fix" remediation (security-auditor AND code-reviewer, corroborated): `number` was only
- * ever validated via `typeof number === 'number'`, which lets `NaN`, `Infinity`, negative, and
- * non-integer values straight through to `gh` argv construction. Used at every `number` call
- * site below instead of the bare `typeof` check. */
+  * ever validated via `typeof number === 'number'`, which lets `NaN`, `Infinity`, negative, and
+  * non-integer values straight through to `gh` argv construction. Used at every `number` call
+  * site below instead of the bare `typeof` check. */
 function isValidPullRequestNumber(number: unknown): number is number {
   return typeof number === 'number' && Number.isSafeInteger(number) && number > 0;
 }
@@ -284,7 +284,7 @@ function isValidPullRequestNumber(number: unknown): number is number {
 const VALID_FILTER_TABS = new Set<FilterTab>(['open', 'authored', 'assigned', 'involves', 'review-requested']);
 
 /** "Also fix" remediation (same corroboration): `tab` used to be cast straight to `FilterTab`
- * with no runtime check against the 5 allowed values. */
+  * with no runtime check against the 5 allowed values. */
 function isValidFilterTab(tab: unknown): tab is FilterTab {
   return typeof tab === 'string' && VALID_FILTER_TABS.has(tab as FilterTab);
 }
@@ -343,13 +343,13 @@ async function buildDetail(repoPath: string, number: number): Promise<PullReques
 }
 
 /** FR-021: re-fetches only `updatedAt`/`headSha`, compares against the cache entry left by the
- * last successful `detail()`/mutating call for this pull request. No cache entry yet (never
- * detailed before this action) is treated as "not stale" by default -- there is nothing to have
- * gone stale against, and `detail()` is always called by the renderer before any action is
- * offered. `requireCacheEntry` (security remediation, Medium-but-must-fix) flips that for
- * approve/merge specifically: those two mutations are now pinned to a cached commit (`headSha`/
- * `id`), so a missing cache entry means there is nothing to pin against, and silently proceeding
- * would be the renderer-trust gap this flag exists to close -- treated as stale instead. */
+  * last successful `detail()`/mutating call for this pull request. No cache entry yet (never
+  * detailed before this action) is treated as "not stale" by default -- there is nothing to have
+  * gone stale against, and `detail()` is always called by the renderer before any action is
+  * offered. `requireCacheEntry` (security remediation, Medium-but-must-fix) flips that for
+  * approve/merge specifically: those two mutations are now pinned to a cached commit (`headSha`/
+  * `id`), so a missing cache entry means there is nothing to pin against, and silently proceeding
+  * would be the renderer-trust gap this flag exists to close -- treated as stale instead. */
 async function checkNotStale(
   repositoryId: string,
   repoPath: string,
@@ -368,11 +368,11 @@ function rememberFresh(repositoryId: string, number: number, updatedAt: string, 
 }
 
 /** "Also fix" remediation: the cache used to be re-seeded with the PRE-mutation `fresh` values
- * right after a successful mutating call -- stale the instant that same action succeeded.
- * Deleting the entry instead forces the next `checkNotStale` to see "no cache entry" (lenient
- * for comment/reply/resolve/unresolve, strict-stale for approve/merge above); every mutating
- * handler's renderer caller already re-calls `detail()` immediately after success (`onSubmitted`/
- * `onMerged`/`onChanged` -> `void load()`), which repopulates the cache with POST-mutation data. */
+  * right after a successful mutating call -- stale the instant that same action succeeded.
+  * Deleting the entry instead forces the next `checkNotStale` to see "no cache entry" (lenient
+  * for comment/reply/resolve/unresolve, strict-stale for approve/merge above); every mutating
+  * handler's renderer caller already re-calls `detail()` immediately after success (`onSubmitted`/
+  * `onMerged`/`onChanged` -> `void load()`), which repopulates the cache with POST-mutation data. */
 function forgetCache(repositoryId: string, number: number): void {
   staleCache.delete(cacheKey(repositoryId, number));
 }
@@ -509,18 +509,18 @@ export function registerPullRequests(manager: SessionManager): void {
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW, async (_event, repositoryId: unknown, number: unknown, input: unknown) => {
     if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof input !== 'object' || input === null) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects (repositoryId, number, { verdict, body?, expectedHeadSha })`);
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects (repositoryId, number, { verdict, body?, expectedHeadSha })`);
     }
-  const { verdict, body, expectedHeadSha } = input as Partial<SubmitReviewInput>;
+    const { verdict, body, expectedHeadSha } = input as Partial<SubmitReviewInput>;
     if (verdict !== 'comment' && verdict !== 'approve' && verdict !== 'request-changes') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects verdict to be 'comment' | 'approve' | 'request-changes'`);
     }
     if (body !== undefined && typeof body !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects body to be a string when provided`);
     }
-  if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects expectedHeadSha to be a non-empty string`);
-  }
+    if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects expectedHeadSha to be a non-empty string`);
+    }
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
@@ -530,23 +530,23 @@ export function registerPullRequests(manager: SessionManager): void {
       // silently "not stale".
       const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
-   // High remediation (round 3, security-auditor): the staleness cache above is silently
-   // overwritten by `PullRequestDetail`'s own 15s background poll, which keeps running while
-   // this dialog is open -- so a push that lands between dialog-open and confirm can get
-   // re-cached as the new "known good" value, making the cache-vs-cache check above pass even
-   // though the user never saw this commit. `expectedHeadSha` is the renderer's own snapshot
-   // of `headSha` from the moment the dialog opened; comparing it to a FRESH re-fetch right
-   // here is the actual guarantee -- the cache check above only proves a cache entry exists.
-   if (fresh.headSha !== expectedHeadSha) {
-    return {
-     ok: false,
-     error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; refresh and try again.' }
-    };
-   }
+      // High remediation (round 3, security-auditor): the staleness cache above is silently
+      // overwritten by `PullRequestDetail`'s own 15s background poll, which keeps running while
+      // this dialog is open -- so a push that lands between dialog-open and confirm can get
+      // re-cached as the new "known good" value, making the cache-vs-cache check above pass even
+      // though the user never saw this commit. `expectedHeadSha` is the renderer's own snapshot
+      // of `headSha` from the moment the dialog opened; comparing it to a FRESH re-fetch right
+      // here is the actual guarantee -- the cache check above only proves a cache entry exists.
+      if (fresh.headSha !== expectedHeadSha) {
+        return {
+          ok: false,
+          error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; refresh and try again.' }
+        };
+      }
       const state = mapPullRequestState(fresh.state, fresh.isDraft);
       const reviewDisabledReason = computeReviewDisabledReason(state);
       if (reviewDisabledReason) return { ok: false, error: { code: 'disabled', message: reviewDisabledReason } };
-   const pinned = verdict === 'approve' ? { pullRequestId: fresh.id, headSha: expectedHeadSha } : undefined;
+      const pinned = verdict === 'approve' ? { pullRequestId: fresh.id, headSha: expectedHeadSha } : undefined;
       await gh.submitReview(resolved.path, number, verdict, body, pinned);
       forgetCache(repositoryId, number);
       return { ok: true, value: { id: randomUUID() } };
@@ -557,15 +557,15 @@ export function registerPullRequests(manager: SessionManager): void {
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_MERGE, async (_event, repositoryId: unknown, number: unknown, input: unknown) => {
     if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof input !== 'object' || input === null) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects (repositoryId, number, { method, expectedHeadSha })`);
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects (repositoryId, number, { method, expectedHeadSha })`);
     }
-  const { method, expectedHeadSha } = input as Partial<MergeInput>;
+    const { method, expectedHeadSha } = input as Partial<MergeInput>;
     if (method !== 'merge' && method !== 'squash' && method !== 'rebase') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects method to be 'merge' | 'squash' | 'rebase'`);
     }
-  if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects expectedHeadSha to be a non-empty string`);
-  }
+    if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects expectedHeadSha to be a non-empty string`);
+    }
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
@@ -574,38 +574,38 @@ export function registerPullRequests(manager: SessionManager): void {
       // submitReview's approve path above.
       const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
-   // High remediation (round 3, security-auditor): see submitReview's identical comment --
-   // the cache-vs-cache staleness check above does not detect a push that landed, then got
-   // re-cached as "fresh" by the 15s background poll, between this dialog opening and the
-   // user confirming. Comparing the renderer's own dialog-open-time snapshot against a fresh
-   // re-fetch right here is the real guarantee.
-   if (fresh.headSha !== expectedHeadSha) {
-    return {
-     ok: false,
-     error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; refresh and try again.' }
-    };
-   }
+      // High remediation (round 3, security-auditor): see submitReview's identical comment --
+      // the cache-vs-cache staleness check above does not detect a push that landed, then got
+      // re-cached as "fresh" by the 15s background poll, between this dialog opening and the
+      // user confirming. Comparing the renderer's own dialog-open-time snapshot against a fresh
+      // re-fetch right here is the real guarantee.
+      if (fresh.headSha !== expectedHeadSha) {
+        return {
+          ok: false,
+          error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; refresh and try again.' }
+        };
+      }
       const state = mapPullRequestState(fresh.state, fresh.isDraft);
       const mergeableState = mapMergeableState(fresh.mergeable);
-   const mergeDisabledReason = computeMergeDisabledReason(state, fresh.mergeable, fresh.mergeStateStatus);
-   if (mergeDisabledReason) {
-    // Medium remediation (code-reviewer): this reason covers two genuinely different IPC
-    // error codes per contracts/ipc.md -- merge conflicts (`not-mergeable`, FR-020, since
-    // GitHub itself refuses the merge) versus a review-state/BLOCKED gate (`disabled`,
-    // same family as `reviewDisabledReason`). The separate `mergeableState === 'conflicting'`
-    // check a round 2 regression added below this was unreachable dead code: conflicts
-    // always hit this branch first (via `mergeable.toUpperCase() === 'CONFLICTING'` above),
-    // always returning the wrong code (`disabled`) for a real conflict. Folded the
-    // distinction in here instead of leaving a second, never-executed check further down.
-    const isConflict = mergeableState === 'conflicting' || fresh.mergeStateStatus.toUpperCase() === 'DIRTY';
-    return { ok: false, error: { code: isConflict ? 'not-mergeable' : 'disabled', message: mergeDisabledReason } };
+      const mergeDisabledReason = computeMergeDisabledReason(state, fresh.mergeable, fresh.mergeStateStatus);
+      if (mergeDisabledReason) {
+        // Medium remediation (code-reviewer): this reason covers two genuinely different IPC
+        // error codes per contracts/ipc.md -- merge conflicts (`not-mergeable`, FR-020, since
+        // GitHub itself refuses the merge) versus a review-state/BLOCKED gate (`disabled`,
+        // same family as `reviewDisabledReason`). The separate `mergeableState === 'conflicting'`
+        // check a round 2 regression added below this was unreachable dead code: conflicts
+        // always hit this branch first (via `mergeable.toUpperCase() === 'CONFLICTING'` above),
+        // always returning the wrong code (`disabled`) for a real conflict. Folded the
+        // distinction in here instead of leaving a second, never-executed check further down.
+        const isConflict = mergeableState === 'conflicting' || fresh.mergeStateStatus.toUpperCase() === 'DIRTY';
+        return { ok: false, error: { code: isConflict ? 'not-mergeable' : 'disabled', message: mergeDisabledReason } };
       }
       if (mergeableState === 'unknown') {
         return { ok: false, error: { code: 'not-mergeable', message: 'GitHub is still checking whether this pull request can merge; refresh and try again shortly.' } };
       }
-   // Pinned to the renderer's own dialog-open-time snapshot (just verified identical to
-   // `fresh.headSha` above), not `fresh.headSha` alone, per the security remediation above.
-   await gh.mergePullRequest(resolved.path, number, method, expectedHeadSha);
+      // Pinned to the renderer's own dialog-open-time snapshot (just verified identical to
+      // `fresh.headSha` above), not `fresh.headSha` alone, per the security remediation above.
+      await gh.mergePullRequest(resolved.path, number, method, expectedHeadSha);
       forgetCache(repositoryId, number);
       return { ok: true, value: undefined };
     } catch (err) {

@@ -14,13 +14,13 @@ import type {
 } from './github';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
- * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
- * dev-only item (Reload, Force Reload, Toggle Developer Tools) is included or not by the one menu
- * main already builds, never a second renderer-side copy of that decision. The one shared list of
- * ids: `src/main/menu.ts` tags each template item with a matching `id` (looked up via
- * `Menu.getMenuItemById`, never by display label), `AppMenuBar.tsx` derives its own button list
- * from it, and `src/main/ipc/window.ts` validates incoming ids against it -- a single source
- * instead of three hand-maintained copies. */
+  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
+  * dev-only item (Reload, Force Reload, Toggle Developer Tools) is included or not by the one menu
+  * main already builds, never a second renderer-side copy of that decision. The one shared list of
+  * ids: `src/main/menu.ts` tags each template item with a matching `id` (looked up via
+  * `Menu.getMenuItemById`, never by display label), `AppMenuBar.tsx` derives its own button list
+  * from it, and `src/main/ipc/window.ts` validates incoming ids against it -- a single source
+  * instead of three hand-maintained copies. */
 export const APP_MENU_IDS = ['file', 'edit', 'view', 'window'] as const;
 export type AppMenuId = (typeof APP_MENU_IDS)[number];
 
@@ -83,25 +83,25 @@ export interface Readiness {
 }
 
 /** `sessions.list()` row: a Session plus its live-runtime view. `lastModel`/`lastThinkingLevel`
- * (T062) come straight through from `Session`: the last known provider/model/thinking level,
- * absent until the first `get_state`. */
+  * (T062) come straight through from `Session`: the last known provider/model/thinking level,
+  * absent until the first `get_state`. */
 export interface SessionSummary extends Session {
   status: SessionStatus;
   /** T043: surfaces `worktree-missing`/`not-started` in the list row itself, so a missing
-   * worktree shows a distinct badge without opening the Session. */
+    * worktree shows a distinct badge without opening the Session. */
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   unread: boolean;
   /** The mode the Session's live process actually launched with (settings' current mode for one
-   * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
+    * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
 }
 
 /** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base
- * with the Session's Base branch, plus new untracked files. `partial` marks that the 200-file or
- * 1 MiB-per-file cap stopped counting before the real total. Defined in `./model` (spec 004:
- * `SessionReadout.changes` also needs it) and re-exported here so every existing import from
- * `../../shared/ipc` keeps working unchanged. */
+  * with the Session's Base branch, plus new untracked files. `partial` marks that the 200-file or
+  * 1 MiB-per-file cap stopped counting before the real total. Defined in `./model` (spec 004:
+  * `SessionReadout.changes` also needs it) and re-exported here so every existing import from
+  * `../../shared/ipc` keeps working unchanged. */
 export type { DiffStat } from './model';
 
 /** The renderer-facing copy of main's in-memory SessionRuntime (data-model.md). */
@@ -119,8 +119,8 @@ export interface SessionRuntimeView {
 }
 
 /** One `repositories.branches` entry for the Base branch picker (FR-002). `name` is the git branch
- * and the value `sessions.create` takes as `baseBranch`; `sessionName` and `archived` are set only
- * for `kind: 'session'`, from the owning Session's live `name` and `archivedAt`. */
+  * and the value `sessions.create` takes as `baseBranch`; `sessionName` and `archived` are set only
+  * for `kind: 'session'`, from the owning Session's live `name` and `archivedAt`. */
 export interface BranchEntry {
   name: string;
   kind: 'default' | 'branch' | 'session';
@@ -173,24 +173,24 @@ export interface PullRequestListResult {
 }
 
 /** `pullRequests.submitReview` (FR-015): the caller-side confirmation for 'approve'/'request-changes'
- * already happened (ReviewDialog.tsx) before this is ever sent; 'comment' needs no confirmation.
- * Security remediation (round 3, High): `expectedHeadSha` is the pull request's `headSha` the
- * renderer had on screen the MOMENT the dialog opened (captured before the 15s background poll
- * can silently overwrite it) -- main refuses with `stale` unless this matches a FRESH re-fetch's
- * `headSha` taken right before the mutation, not just whatever the in-process staleness cache
- * happens to hold (which the poll keeps re-seeding even while the dialog is open). */
+  * already happened (ReviewDialog.tsx) before this is ever sent; 'comment' needs no confirmation.
+  * Security remediation (round 3, High): `expectedHeadSha` is the pull request's `headSha` the
+  * renderer had on screen the MOMENT the dialog opened (captured before the 15s background poll
+  * can silently overwrite it) -- main refuses with `stale` unless this matches a FRESH re-fetch's
+  * `headSha` taken right before the mutation, not just whatever the in-process staleness cache
+  * happens to hold (which the poll keeps re-seeding even while the dialog is open). */
 export interface SubmitReviewInput {
   verdict: ReviewVerdict;
   body?: string;
- expectedHeadSha: string;
+  expectedHeadSha: string;
 }
 
 /** `pullRequests.merge` (FR-016, FR-017): `method` must be one of the pull request's own
- * `PullRequestDetail.allowedMergeMethods`. `expectedHeadSha`: see `SubmitReviewInput`'s identical
- * reasoning -- captured when `MergeDialog` opens, checked against a fresh re-fetch, not the cache. */
+  * `PullRequestDetail.allowedMergeMethods`. `expectedHeadSha`: see `SubmitReviewInput`'s identical
+  * reasoning -- captured when `MergeDialog` opens, checked against a fresh re-fetch, not the cache. */
 export interface MergeInput {
   method: MergeMethod;
- expectedHeadSha: string;
+  expectedHeadSha: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +284,7 @@ export interface RefractApi {
     branches(id: string): Promise<Result<BranchEntry[]>>;
     pickFolder(): Promise<Result<string | null>>;
     /** `git config user.name` in the repository's own checkout, falling back to the Windows
-     * account name; cached per repository id (T072, FR-045). */
+      * account name; cached per repository id (T072, FR-045). */
     userName(id: string): Promise<Result<string>>;
   };
 
@@ -301,9 +301,9 @@ export interface RefractApi {
     recover(id: string): Promise<Result<SessionSnapshot>>;
     stopAgent(sessionId: string): Promise<Result<void>>;
     /** Spec 005 contracts/ipc.md: every session id currently shown in any pane (0, 1, or 2
-     * elements), replacing the single-id/`null` form. Selects which sessions' `transcript:patch`
-     * events are forwarded; for each id newly present, clears its `unread` and flushes a full
-     * transcript snapshot (`transcript:patch` `reset`), exactly as the single-id form did. */
+      * elements), replacing the single-id/`null` form. Selects which sessions' `transcript:patch`
+      * events are forwarded; for each id newly present, clears its `unread` and flushes a full
+      * transcript snapshot (`transcript:patch` `reset`), exactly as the single-id form did. */
     setVisible(sessionIds: string[]): Promise<Result<void>>;
     diffStat(id: string): Promise<Result<DiffStat | null>>;
     revealWorktree(id: string): Promise<Result<void>>;
@@ -311,8 +311,8 @@ export interface RefractApi {
 
   clipboard: {
     /** Fallback for a sandboxed renderer where `navigator.clipboard.writeText` is refused
-     * (`session.setPermissionRequestHandler` denies every permission): writes through main's own
-     * `electron.clipboard` instead, which needs no renderer permission. */
+      * (`session.setPermissionRequestHandler` denies every permission): writes through main's own
+      * `electron.clipboard` instead, which needs no renderer permission. */
     writeText(text: string): Promise<Result<void>>;
   };
 
@@ -324,23 +324,23 @@ export interface RefractApi {
 
   chat: {
     /** `images` (spec 009, FR-006): each entry already validated by the renderer's own
-     * paste-time check; the main process re-validates every one independently before building
-     * the outgoing command (FR-018), returning `unsupported-image-type`/`image-too-large` on the
-     * first failing entry and sending nothing. */
+      * paste-time check; the main process re-validates every one independently before building
+      * the outgoing command (FR-018), returning `unsupported-image-type`/`image-too-large` on the
+      * first failing entry and sending nothing. */
     send(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ queued: boolean }>>;
     stop(sessionId: string): Promise<Result<void>>;
     removeQueued(sessionId: string, text: string): Promise<Result<{ removed: boolean }>>;
     /** High remediation (spec 009 quality gate): no `images?` parameter -- a resend must carry
-     * the queued message's OWN images, recorded by `SessionAgent` at the moment it was queued,
-     * never whatever the caller's composer happens to have pending right now (contracts/ipc.md). */
+      * the queued message's OWN images, recorded by `SessionAgent` at the moment it was queued,
+      * never whatever the caller's composer happens to have pending right now (contracts/ipc.md). */
     sendNow(sessionId: string, text: string): Promise<Result<{ steered: boolean }>>;
     answer(sessionId: string, requestId: string, answer: ChatAnswer): Promise<Result<void>>;
     commands(sessionId: string): Promise<Result<SlashCommand[]>>;
     /** Ghost-text composer completion (T103, FR-058): `null` whenever there is no live agent
-     * process or the server's own gating yields nothing; never rejects. */
+      * process or the server's own gating yields nothing; never rejects. */
     predictWord(sessionId: string, text: string, cursor: number): Promise<Result<string | null>>;
     /** Sent once per shown-then-resolved suggestion; `accepted: true` on Tab, `false` on
-     * dismiss (Esc) or an invalidating edit. */
+      * dismiss (Esc) or an invalidating edit. */
     predictWordFeedback(
       sessionId: string,
       text: string,
@@ -349,12 +349,12 @@ export interface RefractApi {
       accepted: boolean
     ): Promise<Result<void>>;
     /** Spec 004 FR-017 to FR-020: tells main which subagent's stream to forward as
-     * `subagent:patch`; `null` stops forwarding (panel closed, or no subagent selected). Mirrors
-     * `sessions.setVisible`. */
+      * `subagent:patch`; `null` stops forwarding (panel closed, or no subagent selected). Mirrors
+      * `sessions.setVisible`. */
     setVisibleSubagent(sessionId: string, subagentId: string | null): Promise<Result<void>>;
     /** Full current stream for one subagent (spec 004 FR-018), for when the panel first selects
-     * it, before patches arrive. Error `not-found` when the id does not match a `SubagentSummary`
-     * of the current turn. */
+      * it, before patches arrive. Error `not-found` when the id does not match a `SubagentSummary`
+      * of the current turn. */
     subagentSnapshot(sessionId: string, subagentId: string): Promise<Result<TranscriptItem[]>>;
   };
 
@@ -362,19 +362,19 @@ export interface RefractApi {
     get(): Promise<Result<Settings>>;
     setApprovalMode(mode: ApprovalMode): Promise<Result<Settings>>;
     /** Spec 004 FR-012 to FR-014: persists the whole `Settings` row and returns this call's own
-     * written value, the same race-safety pattern as `setApprovalMode`. Pushes `settings:changed`,
-     * no new event. */
+      * written value, the same race-safety pattern as `setApprovalMode`. Pushes `settings:changed`,
+      * no new event. */
     setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<Result<Settings>>;
     /** Spec 005 contracts/ipc.md: persists the Split (data-model.md) to `settings.json` and
-     * broadcasts `settings:changed`; `null` means no split is open. Never starts, stops, or
-     * touches any agent -- this call only ever writes the stored layout. */
+      * broadcasts `settings:changed`; `null` means no split is open. Never starts, stops, or
+      * touches any agent -- this call only ever writes the stored layout. */
     setSplit(layout: SplitLayout | null): Promise<Result<Settings>>;
   };
 
   window: {
     /** Pops open one of the in-app menu bar's real submenus (spec 001 T100, FR-057) at `x`/`y`,
-     * window-content-relative coordinates -- exactly what the clicked button's own
-     * `getBoundingClientRect()` already gives. */
+      * window-content-relative coordinates -- exactly what the clicked button's own
+      * `getBoundingClientRect()` already gives. */
     popupMenu(menuId: AppMenuId, x: number, y: number): Promise<Result<void>>;
   };
 
@@ -383,27 +383,27 @@ export interface RefractApi {
   // only surface pull-request data crosses the renderer/main boundary through.
   pullRequests: {
     /** FR-001 to FR-006: called on open and on every explicit refresh, never polled automatically
-     * (FR-028). `query` is the FR-004 narrowing filter. */
+      * (FR-028). `query` is the FR-004 narrowing filter. */
     list(repositoryId: string, tab: FilterTab, query?: string): Promise<Result<PullRequestListResult>>;
     /** FR-007 to FR-011: called on open and again by the renderer's own polling loop while
-     * `checkState === 'pending'` (FR-010); each call refreshes the main-process staleness cache. */
+      * `checkState === 'pending'` (FR-010); each call refreshes the main-process staleness cache. */
     detail(repositoryId: string, number: number): Promise<Result<PullRequestDetail>>;
     /** FR-012: a top-level pull request comment (plain text; rendered through the sanitiser). */
     comment(repositoryId: string, number: number, body: string): Promise<Result<{ id: string }>>;
     /** FR-013: linked to the thread's opening comment (GraphQL `inReplyTo`), never a new
-     * unrelated top-level comment. */
+      * unrelated top-level comment. */
     replyToThread(repositoryId: string, number: number, threadId: string, body: string): Promise<Result<{ id: string }>>;
     /** FR-014: a single explicit action (SC-006); reversible by `unresolveThread`. */
     resolveThread(repositoryId: string, number: number, threadId: string): Promise<Result<void>>;
     unresolveThread(repositoryId: string, number: number, threadId: string): Promise<Result<void>>;
     /** FR-015, FR-017: the renderer calls this only after its own confirmation for
-     * 'approve'/'request-changes' (ReviewDialog.tsx); 'comment' needs no confirmation. */
+      * 'approve'/'request-changes' (ReviewDialog.tsx); 'comment' needs no confirmation. */
     submitReview(repositoryId: string, number: number, input: SubmitReviewInput): Promise<Result<{ id: string }>>;
     /** FR-016, FR-017, FR-020: `method` must be one of `PullRequestDetail.allowedMergeMethods`;
-     * the renderer's own confirmation (MergeDialog.tsx) names the pull request and this method. */
+      * the renderer's own confirmation (MergeDialog.tsx) names the pull request and this method. */
     merge(repositoryId: string, number: number, input: MergeInput): Promise<Result<void>>;
     /** FR-022: fetches the pull request's head branch and creates a Session exactly as
-     * `sessions.create` does, substituting the fetched branch for a new one cut from a base. */
+      * `sessions.create` does, substituting the fetched branch for a new one cut from a base. */
     newSessionFromPullRequest(repositoryId: string, number: number): Promise<Result<Session>>;
   };
 

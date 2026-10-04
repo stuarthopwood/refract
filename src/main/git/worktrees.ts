@@ -40,9 +40,9 @@ export async function branchExists(repo: string, branch: string): Promise<boolea
 }
 
 /**
- * Reads `origin/HEAD`, falling back to the current branch, then `main`, then `master`, whichever
- * exists (T011).
- */
+  * Reads `origin/HEAD`, falling back to the current branch, then `main`, then `master`, whichever
+  * exists (T011).
+  */
 export async function defaultBranch(repo: string): Promise<string> {
   const symbolic = await gitRaw(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
   if (symbolic.code === 0) {
@@ -63,9 +63,9 @@ export async function defaultBranch(repo: string): Promise<string> {
 }
 
 /**
- * Picks a readable adjective-noun name (e.g. "swift-otter"), unique against the repository's
- * local branches and the folders already under its worktrees root.
- */
+  * Picks a readable adjective-noun name (e.g. "swift-otter"), unique against the repository's
+  * local branches and the folders already under its worktrees root.
+  */
 export async function generateName(repo: string): Promise<string> {
   const branches = new Set(await listBranches(repo))
 
@@ -94,10 +94,10 @@ export interface AddWorktreeResult {
 }
 
 /**
- * Creates `<repo>/../pinion-worktrees/<repoName>/<name>` with a new branch `name` off
- * `baseBranch`. On any failure, removes the worktree and branch it created (no half-created
- * Session) and throws a `GitError` mapped to `base-missing`, `path-too-long`, or `worktree-failed`.
- */
+  * Creates `<repo>/../pinion-worktrees/<repoName>/<name>` with a new branch `name` off
+  * `baseBranch`. On any failure, removes the worktree and branch it created (no half-created
+  * Session) and throws a `GitError` mapped to `base-missing`, `path-too-long`, or `worktree-failed`.
+  */
 export async function addWorktree(repo: string, name: string, baseBranch: string): Promise<AddWorktreeResult> {
   const worktreePath = path.join(worktreesRoot(repo), name)
 
@@ -118,52 +118,52 @@ export async function addWorktree(repo: string, name: string, baseBranch: string
 }
 
 /**
- * High remediation (corroborated by 3 of 4 reviewers): `addWorktreeFromPullRequestBranch` always
- * used the fixed name `pr-<n>` with no uniqueness check, but reuses `cleanupFailedWorktree`,
- * which is only safe when the caller guarantees a brand-new name the way `addWorktree`'s own
- * `generateName` does. If `pr-<n>` already exists (an earlier session, a failed prior attempt,
- * or an unrelated branch/folder with that name), a second "New session" on the same pull request
- * could `git worktree remove --force` + `branch -D` something THIS attempt never created -- real
- * data loss. Mirrors `generateName`'s own "try the plain name, then `-2`, `-3`, ..." pattern
- * against both local branches and the worktrees-root folder, instead of assuming `pr-<n>` is
- * always free.
- */
+  * High remediation (corroborated by 3 of 4 reviewers): `addWorktreeFromPullRequestBranch` always
+  * used the fixed name `pr-<n>` with no uniqueness check, but reuses `cleanupFailedWorktree`,
+  * which is only safe when the caller guarantees a brand-new name the way `addWorktree`'s own
+  * `generateName` does. If `pr-<n>` already exists (an earlier session, a failed prior attempt,
+  * or an unrelated branch/folder with that name), a second "New session" on the same pull request
+  * could `git worktree remove --force` + `branch -D` something THIS attempt never created -- real
+  * data loss. Mirrors `generateName`'s own "try the plain name, then `-2`, `-3`, ..." pattern
+  * against both local branches and the worktrees-root folder, instead of assuming `pr-<n>` is
+  * always free.
+  */
 export async function uniquePullRequestBranchName(repo: string, number: number): Promise<string> {
- const base = `pr-${number}`
- const branches = new Set(await listBranches(repo))
- let existingFolders = new Set<string>()
+  const base = `pr-${number}`
+  const branches = new Set(await listBranches(repo))
+  let existingFolders = new Set<string>()
   try {
-  existingFolders = new Set(await fs.readdir(worktreesRoot(repo)))
+    existingFolders = new Set(await fs.readdir(worktreesRoot(repo)))
   } catch (err) {
-  if (!isEnoent(err)) throw err
+    if (!isEnoent(err)) throw err
   }
 
- if (!branches.has(base) && !existingFolders.has(base)) return base
+  if (!branches.has(base) && !existingFolders.has(base)) return base
 
- const MAX_ATTEMPTS = 1000
+  const MAX_ATTEMPTS = 1000
   for (let suffix = 2; suffix <= MAX_ATTEMPTS; suffix++) {
-  const candidate = `${base}-${suffix}`
-  if (!branches.has(candidate) && !existingFolders.has(candidate)) return candidate
+    const candidate = `${base}-${suffix}`
+    if (!branches.has(candidate) && !existingFolders.has(candidate)) return candidate
   }
 
   throw new GitError(
     'worktree-failed',
     `Could not find a free local name for pull request #${number}'s worktree: every "${base}"/"${base}-2".."${base}-${MAX_ATTEMPTS}" is already taken.`
- )
+  )
 }
 
 /**
- * Fetches a pull request's head branch and attaches it to a new worktree
- * (specs/003-pull-request-management research.md decision 6, T024, FR-022):
- * `git fetch origin pull/<number>/head:<localBranchName>` (this ref form works for both
- * same-repository and fork pull requests, confirmed live) then `git worktree add <path>
- * <localBranchName>` -- no `-b`, the branch already exists after the fetch. On any failed step,
- * removes whatever the attempt already created (branch and/or worktree directory), matching
- * `addWorktree`'s own all-or-nothing contract: no half-created Session is ever left behind.
- * `localBranchName` MUST already be collision-checked by the caller (`uniquePullRequestBranchName`
- * above) -- this function's own cleanup-on-failure is only safe for a name this exact attempt
- * created.
- */
+  * Fetches a pull request's head branch and attaches it to a new worktree
+  * (specs/003-pull-request-management research.md decision 6, T024, FR-022):
+  * `git fetch origin pull/<number>/head:<localBranchName>` (this ref form works for both
+  * same-repository and fork pull requests, confirmed live) then `git worktree add <path>
+  * <localBranchName>` -- no `-b`, the branch already exists after the fetch. On any failed step,
+  * removes whatever the attempt already created (branch and/or worktree directory), matching
+  * `addWorktree`'s own all-or-nothing contract: no half-created Session is ever left behind.
+  * `localBranchName` MUST already be collision-checked by the caller (`uniquePullRequestBranchName`
+  * above) -- this function's own cleanup-on-failure is only safe for a name this exact attempt
+  * created.
+  */
 export async function addWorktreeFromPullRequestBranch(repo: string, number: number, localBranchName: string): Promise<AddWorktreeResult> {
   const fetchResult = await gitRaw(repo, ['fetch', 'origin', `pull/${number}/head:${localBranchName}`])
   if (fetchResult.code !== 0) {
@@ -262,13 +262,13 @@ export async function deleteCheck(worktreePath: string): Promise<DeleteCheck> {
 }
 
 /**
- * Recreates a worktree at its original path, attaching the existing `branch` (no `-b`): used
- * when the worktree folder has disappeared but the branch is intact (tasks.md T043). Callers
- * check `branchExists` first; this only maps the `git worktree add` failure itself. `-f` is
- * required here (not merely permissive): git still has the original worktree registered under
- * `.git/worktrees/<name>/` even though its directory is gone, and a plain `add` refuses with
- * "is a missing but already registered worktree" until `-f`, `prune`, or `remove` clears it.
- */
+  * Recreates a worktree at its original path, attaching the existing `branch` (no `-b`): used
+  * when the worktree folder has disappeared but the branch is intact (tasks.md T043). Callers
+  * check `branchExists` first; this only maps the `git worktree add` failure itself. `-f` is
+  * required here (not merely permissive): git still has the original worktree registered under
+  * `.git/worktrees/<name>/` even though its directory is gone, and a plain `add` refuses with
+  * "is a missing but already registered worktree" until `-f`, `prune`, or `remove` clears it.
+  */
 export async function recreateWorktree(repo: string, worktreePath: string, branch: string): Promise<void> {
   try {
     await fs.mkdir(path.dirname(worktreePath), { recursive: true })
