@@ -7,6 +7,7 @@ import { app, BrowserWindow, Menu, session, shell } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { IPC_EVENTS } from '../shared/ipc'
 import { joinKillOnCloseJob } from './process/jobObject'
 import { buildAppMenu } from './menu'
 import { DARK_TITLE_BAR_OVERLAY } from './titleBarOverlay'
@@ -40,6 +41,19 @@ const BEFORE_QUIT_STOP_ALL_TIMEOUT_MS = 10_000
 
 let mainWindow: BrowserWindow | undefined
 let manager: SessionManager | undefined
+
+// Spec 005 FR-015/data-model.md: set by `validateSplitAtStartup` when a restored split drops to
+// exactly one surviving Session; sent as a one-time `ui:open-session` once the renderer's own
+// listener for it is guaranteed registered (`did-finish-load` fires only after the page's
+// top-level synchronous scripts -- including `main.tsx`'s `initStores()` call, which attaches
+// that listener before React even mounts -- have already run). `validateSplitAtStartup` itself
+// never calls `sessions.open`/starts an agent; the survivor DOES end up starting its own agent
+// shortly after, once `replaceFocused` (triggered by this event) makes it the non-pristine
+// single pane and that pane's own mount effect runs -- matching data-model.md's own restart-row
+// entry ("not pristine... keeps today's single-pane behaviour, which does open it"), not the
+// stricter never-starts-an-agent guarantee FR-014 makes specifically for restoring a real
+// 2-session split.
+let pendingSplitSurvivorId: string | undefined
 
 function getWindow(): BrowserWindow | undefined {
   return mainWindow
@@ -86,6 +100,32 @@ function isOwnOrigin(url: string): boolean {
   }
 }
 
+/** Spec 005 FR-015/data-model.md Decision 3b: validates the persisted `Settings.split` against
+ * `RegistryStore`'s already-loaded, in-memory `Session[]` -- never touches any agent. Drops any
+ * id no longer present or now archived; if both survive, the split is left unchanged; otherwise
+ * the corrected value (always `null` -- there is no one-element `SplitLayout`) is written back
+ * so a stale id is never offered again. Returns the lone surviving Session id when exactly one
+ * remains (so the caller can show it, focused, full width, once the renderer is ready --
+ * `pendingSplitSurvivorId`'s own comment), or `undefined` otherwise. */
+async function validateSplitAtStartup(manager: SessionManager): Promise<string | undefined> {
+  const split = manager.settings.get().split
+  if (!split) return undefined
+  const liveSessionIds = new Set(
+    manager.registry
+      .snapshot()
+      .sessions.filter((session) => session.archivedAt === null)
+      .map((session) => session.id)
+  )
+  const survivors = split.sessionIds.filter((id) => liveSessionIds.has(id))
+  if (survivors.length === split.sessionIds.length) return undefined // both still exist and are not archived
+  await manager.settings.setSplit(null)
+  if (survivors.length === 1) {
+    manager.setVisible(survivors)
+    return survivors[0]
+  }
+  return undefined
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -121,6 +161,14 @@ function createWindow(): void {
 
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
+  })
+
+  // Spec 005: delivers a restored split's lone surviving Session (see `pendingSplitSurvivorId`'s
+  // own comment above) the first time this window's page finishes loading.
+  window.webContents.on('did-finish-load', () => {
+    if (!pendingSplitSurvivorId) return
+    window.webContents.send(IPC_EVENTS.UI_OPEN_SESSION, { sessionId: pendingSplitSurvivorId })
+    pendingSplitSurvivorId = undefined
   })
 
   // T037: SessionAgent's unread tracking needs real OS focus, not just "a window exists".
@@ -183,6 +231,26 @@ if (!gotLock) {
     const registry = await RegistryStore.open(userDataDir)
     const settings = await SettingsStore.open(userDataDir)
     manager = new SessionManager(registry, settings)
+
+    // Spec 005 FR-015/data-model.md Decision 3b: drop any persisted split id no longer present
+    // in the registry or now archived, before the renderer ever reads `settings.get()`. Reads
+    // the registry only -- never starts an agent itself (FR-014). Quality-gate remediation
+    // (security-auditor, HIGH): `SettingsStore.open`'s own shape check already keeps a malformed
+    // `split` from ever reaching this function, but a thrown error here must still never prevent
+    // `createWindow()` below from running -- this `async whenReady` chain has no other catch, and
+    // an uncaught rejection would leave the single-instance lock held by a window-less process.
+    try {
+      pendingSplitSurvivorId = await validateSplitAtStartup(manager)
+    } catch (err) {
+      // Quality-gate remediation (code-reviewer, round 2, Low): this used to claim "continuing
+      // with no split restored", which only held for the one failure site (`setSplit(null)`
+      // throwing) where `SettingsStore`'s in-memory `data.split` is already cleared before the
+      // write it awaits. An earlier throw (e.g. `registry.snapshot()`) leaves `settings.split`
+      // completely untouched, and the renderer's own, independent `settings.get()`-driven
+      // restore still runs regardless of this catch -- so a stale/archived id this pass was
+      // meant to prune (FR-015) may still be offered this launch.
+      console.error('main: validateSplitAtStartup failed; stale-id pruning for a restored split did not run this launch', err)
+    }
 
     // T100: the one real application menu (accelerators work regardless of the merged top row
     // never showing a visible bar); the renderer's `AppMenuBar` pops its submenus by id.

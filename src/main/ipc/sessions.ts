@@ -266,11 +266,25 @@ export function registerSessions(manager: SessionManager): void {
     return { ok: true, value: undefined };
   });
 
-  ipcMain.handle(IPC_REQUESTS.SESSIONS_SET_VISIBLE, async (_event, sessionId: unknown) => {
-    if (sessionId !== null && typeof sessionId !== 'string') {
-      return invalidArgument(`${IPC_REQUESTS.SESSIONS_SET_VISIBLE} expects a string id or null`);
+  // Spec 005 contracts/ipc.md: sessionIds is every session id currently shown in any pane
+  // (0, 1, or 2 elements), replacing the single-id/null form. Quality-gate remediation
+  // (security-auditor, Low): capped at 2 (the contract's own stated maximum) and validated by
+  // direct index reads, never `.every()`, which silently skips a sparse array's holes (a hole
+  // would otherwise become a real `undefined` entry in `SessionManager`'s visible-ids Set).
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_SET_VISIBLE, async (_event, sessionIds: unknown) => {
+    let valid = Array.isArray(sessionIds) && sessionIds.length <= 2;
+    if (valid) {
+      for (let index = 0; index < (sessionIds as unknown[]).length; index += 1) {
+        if (typeof (sessionIds as unknown[])[index] !== 'string') {
+          valid = false;
+          break;
+        }
+      }
     }
-    manager.setVisible(sessionId);
+    if (!valid) {
+      return invalidArgument(`${IPC_REQUESTS.SESSIONS_SET_VISIBLE} expects a string[] of at most 2 ids`);
+    }
+    manager.setVisible(sessionIds as string[]);
     return { ok: true, value: undefined };
   });
 

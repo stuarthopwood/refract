@@ -9,7 +9,7 @@ import {
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
-import { usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
+import { EMPTY_TRANSCRIPT, usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
@@ -330,17 +330,14 @@ function TimeGapDivider({ at }: { at: number }) {
 // Follows streamed output while the user is at the bottom via shadcn Message Scroller
 // (research.md decision 2: kept after a 30-tool-row streaming smoke test, see that paragraph for
 // the evidence; react-virtuoso was the specced fallback if it had not held up).
-export function Transcript() {
-  const trackedSessionId = useTranscriptStore((state) => state.sessionId)
-  const storeItems = useTranscriptStore((state) => state.items)
-  const receivedAt = useTranscriptStore((state) => state.receivedAt)
-  const visibleSessionId = useSessionsStore((state) => state.visibleSessionId)
+export function Transcript({ sessionId }: { sessionId: string }) {
+  // Spec 005: generalised from a single store-wide field to per-session storage
+  // (transcript-store.ts), so each pane's own Session's items can never be dropped or
+  // clobbered by the other pane's.
+  const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
   const sessions = useSessionsStore((state) => state.sessions)
-  // The store may have adopted a `reset` for a Session that is not (yet) the visible one
-  // (transcript-store.ts's defense-in-depth path for a dropped/failed `sessions.setVisible`
-  // call): never render those items over the visible Session's own transcript (bug report
-  // point 5's "old Session B's header/input sit over A's empty transcript").
-  const items = trackedSessionId === visibleSessionId ? storeItems : []
+  const items = transcript.items
+  const receivedAt = transcript.receivedAt
   // Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
   // 2026-10-04; narrowed per code/test-reviewer round 2): the only transcript item a brand-new
   // agent process can produce before any real exchange is a `notice` (OMP's own unsolicited
@@ -360,11 +357,11 @@ export function Transcript() {
     (item) => item.kind !== 'notice' || item.level === 'error' || !item.id.startsWith(STARTUP_NOTICE_PREFIX)
   )
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
-  const pending = visibleSessionId ? (pendingBySession[visibleSessionId] ?? []) : []
+  const pending = pendingBySession[sessionId] ?? []
 
-  const visibleSession = visibleSessionId ? sessions.find((session) => session.id === visibleSessionId) : undefined
-  const userName = useRepositoryUserName(visibleSession?.repositoryId ?? null)
-  const isTurnRunning = visibleSession?.status === 'working' || visibleSession?.status === 'needs-you'
+  const session = sessions.find((s) => s.id === sessionId)
+  const userName = useRepositoryUserName(session?.repositoryId ?? null)
+  const isTurnRunning = session?.status === 'working' || session?.status === 'needs-you'
 
   // Re-renders the running turn's total-time line every second (T076); the running turn is the
   // only one whose elapsed time is ever recomputed from `Date.now()` rather than frozen item
@@ -432,7 +429,7 @@ export function Transcript() {
                         <MessageScrollerItem key={row.id} messageId={row.id} className={marginClass}>
                           <TranscriptRow
                             item={row}
-                            sessionId={visibleSessionId}
+                            sessionId={sessionId}
                             pending={pending}
                             userName={userName}
                             resolvedAskByRequestId={resolvedAskByRequestId}

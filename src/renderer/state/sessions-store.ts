@@ -2,17 +2,16 @@ import { create } from 'zustand'
 import type { Result, SessionSnapshot, SessionStatusEvent, SessionSummary } from '../../shared/ipc'
 import type { Session } from '../../shared/model'
 import { notify } from './notify'
+import { useSplitStore } from './split-store'
 
 interface SessionsState {
   sessions: SessionSummary[]
-  visibleSessionId: string | null
   /** Session ids with an `open()` call in flight (bug report point 4): lets a row/ChatPane show
    * "Starting the agent..." feedback and ignore a second click while the first is still opening. */
   openingIds: Set<string>
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
   refresh(): Promise<void>
-  setVisibleSessionId(id: string | null): void
   open(id: string): Promise<SessionSnapshot | null>
   create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
@@ -21,12 +20,6 @@ interface SessionsState {
   stopAgent(id: string): Promise<void>
 }
 
-// Guards `open()` against out-of-order completion: only the most recently requested `open()`
-// call may apply its snapshot and steal visibility back (bug report point 4 -- a slow `open()`
-// for a Session the user already switched away from must not clobber the one they switched to).
-// Module-level, not store state, because it is an internal sequencing detail no component reads.
-let latestOpenToken = 0
-
 // Callers that arrive while an `open(id)` is already in flight JOIN that call instead of getting
 // `null`: without this, A -> B -> A (A cold-starting) left BOTH the second `open(A)` (returns
 // null because `openingIds.has(id)`) and the first (resolves with a now-stale token, also
@@ -34,10 +27,14 @@ let latestOpenToken = 0
 // MessageInput's send-after-open were silently skipped.
 const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
 
-// The session list (contracts/ipc.md "Sessions") plus which Session the chat pane is showing.
+// The session list (contracts/ipc.md "Sessions"). Spec 005 (tasks.md T012): which Session(s) the
+// chat area shows is owned entirely by `split-store.ts` now -- this store only starts/reattaches
+// an agent and returns its snapshot; visibility is set by whichever split-store action triggers
+// the open, before `open()` is ever called (preserving `src/main/ipc/sessions.ts`'s existing
+// ordering rule: "Visibility is NOT set here... set solely by the explicit `sessions.setVisible`
+// IPC").
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
-  visibleSessionId: null,
   openingIds: new Set(),
   setSessions: (sessions) => set({ sessions }),
   applyStatus: (event) =>
@@ -52,46 +49,24 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     const result = await window.refract.sessions.list()
     if (result.ok) {
       set({ sessions: result.value })
+      // FR-016: a session only ever leaves this list via `sessions.delete` (archiving keeps it
+      // listed); prune any pane still pointing at an id that is now gone.
+      useSplitStore.getState().pruneDeleted(new Set(result.value.map((session) => session.id)))
     } else {
       notify(result.error)
     }
   },
-  // The one place that tells main which Session is visible (contracts/ipc.md `sessions.setVisible`),
-  // so every caller (here, `open` below, and `onUiOpenSession` in init-stores.ts) goes through it.
-  setVisibleSessionId: (id) => {
-    set({ visibleSessionId: id })
-    window.refract.sessions.setVisible(id).then(
-      (result) => {
-        if (!result.ok) console.error('sessions.setVisible failed', result.error)
-      },
-      (err: unknown) => console.error('sessions.setVisible threw', err)
-    )
-  },
   open: (id) => {
     const existing = openPromises.get(id)
     if (existing) return existing
-    const token = ++latestOpenToken
-    const previousVisibleId = get().visibleSessionId
     set({ openingIds: new Set(get().openingIds).add(id) })
-    // Flip visibility together with `openingIds`, before the IPC resolves (bug report point 5):
-    // main's visible Session (set by the `sessions.setVisible` call inside `setVisibleSessionId`)
-    // and the renderer's own `visibleSessionId` must never disagree, and "Starting the agent..."
-    // (gated on `openingIds.has(visibleSessionId)`) must be visible for the whole open, not just
-    // after it resolves.
-    get().setVisibleSessionId(id)
     const promise = (async () => {
       try {
         const result = await window.refract.sessions.open(id)
         if (!result.ok) {
           notify(result.error)
-          // Revert the optimistic flip -- but only if nothing newer already took over visibility.
-          if (get().visibleSessionId === id) get().setVisibleSessionId(previousVisibleId)
           return null
         }
-        // A newer open() (for a *different* id) superseded this one: only discard the snapshot
-        // when `id` is no longer the visible Session -- if the user came back to `id` (A -> B ->
-        // A), it is visible again and must still receive its snapshot.
-        if (token !== latestOpenToken && get().visibleSessionId !== id) return null
         return result.value
       } finally {
         const openingIds = new Set(get().openingIds)
@@ -104,14 +79,16 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     return promise
   },
   // The one create path for every entry point (the header's one-click + and the Base branch
-  // picker): creates the Session, refreshes the list so its row exists, then makes it visible,
-  // which ChatPane's [visibleSessionId] effect turns into an open. Returns the result so each
-  // caller reports a failure its own way (a toast for one-click, inline text in the picker).
+  // picker): creates the Session, refreshes the list so its row exists, then shows it in the
+  // focused pane (split-store's `replaceFocused`, the same ordinary single-target action a plain
+  // row click uses -- creating a Session is never itself an "Open in split" gesture), which
+  // ChatPane's per-pane effect turns into an open. Returns the result so each caller reports a
+  // failure its own way (a toast for one-click, inline text in the picker).
   create: async (repositoryId, baseBranch) => {
     const result = await window.refract.sessions.create({ repositoryId, baseBranch })
     if (result.ok) {
       await get().refresh()
-      get().setVisibleSessionId(result.value.id)
+      useSplitStore.getState().replaceFocused(result.value.id)
     }
     return result
   },

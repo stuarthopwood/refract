@@ -2,7 +2,7 @@
 // specs/001-core-session-workspace/contracts/ipc.md. Imported by main, preload, and
 // renderer; this is the only file that may cross that boundary (constitution V).
 
-import type { ApprovalMode, ConversationInfo, DiffStat, PendingRequest, ReadoutKind, Repository, Session, SessionReadout, SessionStatus, Settings, SubagentSummary, TranscriptItem } from './model';
+import type { ApprovalMode, ConversationInfo, DiffStat, PendingRequest, ReadoutKind, Repository, Session, SessionReadout, SessionStatus, Settings, SplitLayout, SubagentSummary, TranscriptItem } from './model';
 import type { ImageContent, SlashCommandDescriptor } from './frames';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
@@ -189,6 +189,7 @@ export const IPC_REQUESTS = {
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
+  SETTINGS_SET_SPLIT: 'settings.setSplit',
   WINDOW_POPUP_MENU: 'window.popupMenu',
 } as const;
 
@@ -243,7 +244,11 @@ export interface RefractApi {
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;
     stopAgent(sessionId: string): Promise<Result<void>>;
-    setVisible(sessionId: string | null): Promise<Result<void>>;
+    /** Spec 005 contracts/ipc.md: every session id currently shown in any pane (0, 1, or 2
+     * elements), replacing the single-id/`null` form. Selects which sessions' `transcript:patch`
+     * events are forwarded; for each id newly present, clears its `unread` and flushes a full
+     * transcript snapshot (`transcript:patch` `reset`), exactly as the single-id form did. */
+    setVisible(sessionIds: string[]): Promise<Result<void>>;
     diffStat(id: string): Promise<Result<DiffStat | null>>;
     revealWorktree(id: string): Promise<Result<void>>;
   };
@@ -304,6 +309,10 @@ export interface RefractApi {
      * written value, the same race-safety pattern as `setApprovalMode`. Pushes `settings:changed`,
      * no new event. */
     setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<Result<Settings>>;
+    /** Spec 005 contracts/ipc.md: persists the Split (data-model.md) to `settings.json` and
+     * broadcasts `settings:changed`; `null` means no split is open. Never starts, stops, or
+     * touches any agent -- this call only ever writes the stored layout. */
+    setSplit(layout: SplitLayout | null): Promise<Result<Settings>>;
   };
 
   window: {

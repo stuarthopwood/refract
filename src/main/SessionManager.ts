@@ -28,9 +28,11 @@ export class SessionManager {
   private readonly agents = new Map<string, SessionAgent>();
   private readonly listeners: Array<(event: ManagerEvent) => void> = [];
 
-  /** T036: the Session currently shown in the renderer; `transcript:patch` is only forwarded for
-   * this one (contracts/ipc.md). `null` when no Session is open (e.g. the readiness/empty view). */
-  private visibleSessionId: string | null = null;
+  /** T036 (spec 005 Decision 1/2: generalised from one id to a set so main never needs to know
+   * which pane is which): the Sessions currently shown, across every pane; `transcript:patch`,
+   * `readout:update`, `subagents:update`, and `subagent:patch` are only forwarded for ids in this
+   * set (contracts/ipc.md). Empty when no Session is open (e.g. the readiness/empty view). */
+  private visibleSessionIds = new Set<string>();
   /** T037: whether any Refract window currently has OS focus; set by `index.ts` on focus/blur. */
   private windowFocused = true;
 
@@ -65,14 +67,14 @@ export class SessionManager {
       registry: this.registry,
       settings: this.settings,
       ompPath: this.ompPath,
-      isVisible: () => this.visibleSessionId === sessionId,
+      isVisible: () => this.visibleSessionIds.has(sessionId),
       isWindowFocused: () => this.windowFocused,
     });
     agent.on('status', (payload) => this.emit({ type: 'status', payload }));
-    // T036: transcript:patch is only forwarded for the visible Session; a full reset is sent
+    // T036: transcript:patch is only forwarded for a visible Session; a full reset is sent
     // separately, by setVisible(), the moment a Session becomes visible.
     agent.on('patch', (payload) => {
-      if (payload.sessionId !== this.visibleSessionId) return;
+      if (!this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'patch', payload });
     });
     agent.on('queue', (payload) => this.emit({ type: 'queue', payload }));
@@ -82,17 +84,20 @@ export class SessionManager {
     // Spec 004: readout/subagents/subagentPatch follow `patch`'s own visible-Session-only rule
     // (contracts/ipc.md `readout:update`/`subagent:patch`); a background Session's chip row and
     // panel data keep computing in `SessionAgent`, just unsent until it becomes visible, at which
-    // point `sessions.open`'s `SessionSnapshot.readout` carries the current value.
+    // point `sessions.open`'s `SessionSnapshot.readout` carries the current value. Spec 005
+    // convergence (tasks.md T004): generalised to set-membership alongside `patch` above, so
+    // both panes of a split keep receiving their own chip row and Subagents data, not just
+    // whichever pane happened to be picked as "the" visible Session.
     agent.on('readout', (payload) => {
-      if (payload.sessionId !== this.visibleSessionId) return;
+      if (!this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'readout', payload });
     });
     agent.on('subagents', (payload) => {
-      if (payload.sessionId !== this.visibleSessionId) return;
+      if (!this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'subagents', payload });
     });
     agent.on('subagentPatch', (payload) => {
-      if (payload.sessionId !== this.visibleSessionId) return;
+      if (!this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'subagentPatch', payload });
     });
     // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and
@@ -106,16 +111,21 @@ export class SessionManager {
     return agent;
   }
 
-  /** `sessions.setVisible` (T036/T037): selects which Session's patches are forwarded, flushes a
-   * full transcript snapshot for it, and clears its `unread` flag. `null` means no Session is
-   * currently shown (patches are dropped until another Session becomes visible). */
-  setVisible(sessionId: string | null): void {
-    this.visibleSessionId = sessionId;
-    if (sessionId === null) return;
-    const agent = this.agents.get(sessionId);
-    if (!agent) return;
-    agent.clearUnread();
-    this.emit({ type: 'patch', payload: { sessionId, ops: [{ op: 'reset', items: agent.runtimeSnapshot.transcript }] } });
+  /** `sessions.setVisible` (T036/T037, spec 005 Decision 2): selects which Sessions' patches are
+   * forwarded; `sessionIds` is every session id currently shown in any pane (0, 1, or 2 elements).
+   * For each id newly present that was not already visible, flushes a full transcript snapshot
+   * and clears its `unread` flag, exactly as the single-id form did. An empty array means no pane
+   * is shown (patches are dropped until a Session becomes visible again). */
+  setVisible(sessionIds: string[]): void {
+    const next = new Set(sessionIds);
+    for (const sessionId of next) {
+      if (this.visibleSessionIds.has(sessionId)) continue;
+      const agent = this.agents.get(sessionId);
+      if (!agent) continue;
+      agent.clearUnread();
+      this.emit({ type: 'patch', payload: { sessionId, ops: [{ op: 'reset', items: agent.runtimeSnapshot.transcript }] } });
+    }
+    this.visibleSessionIds = next;
   }
 
   /** T037: updates every live Session's `isWindowFocused` view; called by `index.ts` on the main

@@ -1,7 +1,7 @@
-// The chat pane (docs/DESIGN.md "Chat", "Layout"): header, transcript, and message box for the
-// visible Session, plus the persistent stopped-Session banner (docs/DESIGN.md "Feedback and
-// errors"). T025 (Transcript) and T028/T029 (RequestCard, inline in the transcript) land
-// alongside this file; this owns only the pane's own composition.
+// The chat pane (docs/DESIGN.md "Chat", "Layout"): header, transcript, and message box for one
+// Session, plus the persistent stopped-Session banner (docs/DESIGN.md "Feedback and errors").
+// Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
+// `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
 import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
@@ -17,6 +17,7 @@ import {
   useQueueStore,
   useReadoutStore,
   useSessionsStore,
+  useSplitStore,
   useSubagentPanelStore,
   useTranscriptStore
 } from '@/state'
@@ -30,6 +31,38 @@ type StopReason = SessionStatusEvent['stopReason']
 interface StopInfo {
   reason?: StopReason
   detail?: string
+}
+
+/** Quality-gate remediation (accessibility-auditor, round 2, High): a stopped Session
+ * (`agent-exited`/`worktree-missing`/`start-failed`) renders MessageInput's textarea `disabled`
+ * (MessageInput.tsx), so a plain `textarea?.focus()` silently no-ops there -- both the focus-move
+ * chord/button and the close-pane refocus used that one selector, so both regressed identically
+ * for a stopped target pane. Round 3 (code-reviewer/accessibility-auditor/test-reviewer, Medium):
+ * the first version of this fallback queried the WHOLE pane region, landing on whichever enabled
+ * control happened to come first in DOM order -- `ChatHeader` renders before the stopped banner,
+ * so it actually landed on the conversation switcher or the narrow-collapse swap chip, not the
+ * banner's own Recover/Recreate worktree/Delete button this docblock and tasks.md both claimed.
+ * Now checks the banner (marked by `data-pane-banner` below) FIRST, and only falls back to the
+ * generic whole-pane scan when there is no banner to focus (there always is one whenever the
+ * textarea is actually disabled -- `showBanner` and MessageInput's own `disabled` share the same
+ * `status === 'stopped' && effectiveStopReason !== 'not-started'` condition). */
+function focusPaneContent(container: HTMLElement | null): void {
+  if (!container) return
+  const textarea = container.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')
+  if (textarea) {
+    textarea.focus()
+    return
+  }
+  const bannerButton = container.querySelector<HTMLElement>('[data-pane-banner] button:not(:disabled), [data-pane-banner] [href]')
+  if (bannerButton) {
+    bannerButton.focus()
+    return
+  }
+  container
+    .querySelector<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    )
+    ?.focus()
 }
 
 /** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
@@ -59,8 +92,8 @@ export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): voi
 }
 
 /** `SessionSummary` (the sessions-store list row) carries `status` but not `stopReason`/
- * `stopDetail` (only `SessionRuntimeView` does). This is the one place that tracks them for the
- * visible Session: seeded from the snapshot `sessions.open`/`sessions.recover` return, kept live
+ * `stopDetail` (only `SessionRuntimeView` does). This is the one place that tracks them for a
+ * pane's Session: seeded from the snapshot `sessions.open`/`sessions.recover` return, kept live
  * by a direct `onSessionStatus` subscription (contracts/ipc.md: that event is the "chat header
  * chip" source). */
 export function describeStopReason(reason: StopReason, detail?: string): string {
@@ -76,20 +109,56 @@ export function describeStopReason(reason: StopReason, detail?: string): string 
   }
 }
 
-export function ChatPane() {
-  const visibleSessionId = useSessionsStore((s) => s.visibleSessionId)
-  const session = useSessionsStore((s) => s.sessions.find((x) => x.id === s.visibleSessionId))
+interface ChatPaneProps {
+  sessionId: string
+  /** Index into `useSplitStore`'s `paneSessionIds` (0 or 1); meaningless when a split is not
+   * open, but always passed so every pane-targeting action has it ready the moment one opens. */
+  paneIndex: number
+  /** Spec 005 (ChatHeader.tsx): only the pane actually touching the window's top-right corner
+   * reserves space for the minimise/maximise/close buttons. */
+  reservesWindowControls: boolean
+  /** Spec 005 (research.md Decision 6, FR-017): set only by App.tsx's narrow-window collapse,
+   * never while both panes are genuinely shown side by side. */
+  otherSession?: { id: string; name: string } | null
+}
+
+export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession }: ChatPaneProps) {
+  const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   // bug report point 4: while `sessions-store.ts`'s `open()` is in flight for this Session (a
   // fresh click, or a not-started Session cold-starting its agent), show that here too -- not
   // just as the list row's spinner -- since the transcript would otherwise just read "No
   // messages yet" for the ~16s a cold start takes.
-  const isOpening = useSessionsStore((s) => s.visibleSessionId !== null && s.openingIds.has(s.visibleSessionId))
+  const isOpening = useSessionsStore((s) => s.openingIds.has(sessionId))
+  // Spec 005 (research.md Decision 4): a just-restored pane that has not yet been opened by a
+  // real user action skips the snapshot-fetch effect below entirely.
+  const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
+  const isSplit = useSplitStore((s) => s.paneSessionIds.length === 2)
+  const isFocused = useSplitStore((s) => s.paneSessionIds.length < 2 || s.focusedIndex === paneIndex)
+  const focusMoveSignal = useSplitStore((s) => s.focusMoveSignal)
+  const focusPane = useSplitStore((s) => s.focusPane)
+  const closePane = useSplitStore((s) => s.closePane)
+  const openInSplit = useSplitStore((s) => s.openInSplit)
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
-  const visibleSessionIdRef = useRef(visibleSessionId)
-  visibleSessionIdRef.current = visibleSessionId
+  // Quality-gate remediation (code-reviewer, round 2, High): removing `key={frontSessionId}`
+  // from App.tsx's single-pane `ChatPane` (restoring reclaim-focus-on-switch, a separate fix
+  // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
+  // the narrow-window collapse and via a notification's `ui:open-session`. An open DeleteDialog
+  // reads the live `session` prop, so it would then delete whatever Session this pane swapped
+  // to, not the one it was opened for. Closes it outright on any sessionId change. Round 3
+  // (test-reviewer, Low): closing it through this state update alone left `<DeleteDialog>`'s own
+  // internal `deletedRef` stale across the swap -- if a delete was still in flight when the pane
+  // swapped away, that flag could flip true just as this effect's close ran, and a LATER, routine
+  // Cancel on this same pane would misread it as "this delete already succeeded" and wrongly
+  // close the pane. `key={sessionId}` on `<DeleteDialog>` below forces a fresh instance (and so a
+  // fresh `deletedRef`) on the same sessionId change this effect already reacts to.
+  useEffect(() => {
+    setDeleteOpen(false)
+  }, [sessionId])
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
   // Tracks whether focus is currently somewhere inside the chat pane (the message textarea,
   // most often), kept live via a document-wide `focusin` listener rather than read at the
   // moment `sessionId` changes: by the time a session switch re-renders this component, the
@@ -109,28 +178,32 @@ export function ChatPane() {
   const prevSessionIdRef = useRef<string | null>(null)
   const autoFocusRef = useRef(false)
 
-  // Live updates to the visible Session's stop reason (e.g. the agent exits while it is open).
+  // Live updates to this pane's Session's stop reason (e.g. the agent exits while it is open).
   useEffect(
     () =>
       window.refract.onSessionStatus((event) => {
-        if (event.sessionId !== visibleSessionIdRef.current) return
+        if (event.sessionId !== sessionIdRef.current) return
         setStopInfo({ reason: event.stopReason, detail: event.stopDetail })
       }),
     []
   )
 
-  // Asks for a full snapshot whenever the visible Session changes (contracts/ipc.md: "the
+  // Asks for a full snapshot whenever this pane's Session changes (contracts/ipc.md: "the
   // renderer ... asks for a full snapshot via sessions.open when it switches"). Also covers the
-  // initial stop reason for a Session that was already stopped before this pane saw it.
+  // initial stop reason for a Session that was already stopped before this pane saw it. Spec 005
+  // (research.md Decision 4): skipped entirely while `isPristine` -- a just-restored pane renders
+  // from the Session's own already-cached SessionSummary below (empty transcript, no banner,
+  // `stopInfo` staying `{}`), the same look a never-opened Session already has elsewhere in the
+  // app, until some real action clears `isPristine`, which re-runs this effect for real.
   useEffect(() => {
-    if (!visibleSessionId) return
+    if (isPristine) return
     setStopInfo({})
     let cancelled = false
     void (async () => {
       try {
-        const snapshot = await useSessionsStore.getState().open(visibleSessionId)
+        const snapshot = await useSessionsStore.getState().open(sessionId)
         if (cancelled || !snapshot) return
-        applySnapshot(visibleSessionId, snapshot)
+        applySnapshot(sessionId, snapshot)
         setStopInfo({ reason: snapshot.runtime.stopReason, detail: snapshot.runtime.stopDetail })
         // `commands:update` only pushes on the next `available_commands_update` frame from
         // OMP (SessionAgent.ts), which may not arrive again for a Session that was already
@@ -138,9 +211,9 @@ export function ChatPane() {
         // reload while the agent stayed up. Without this, the slash menu's `aria-controls`
         // points at a listbox that never renders (SlashMenu.tsx renders no id when the
         // command list is empty), and typing `/` shows "No matching commands" forever.
-        const commandsResult = await window.refract.chat.commands(visibleSessionId)
+        const commandsResult = await window.refract.chat.commands(sessionId)
         if (!cancelled && commandsResult.ok) {
-          useCommandsStore.getState().setForSession(visibleSessionId, commandsResult.value)
+          useCommandsStore.getState().setForSession(sessionId, commandsResult.value)
         }
       } catch (error) {
         // Defense in depth: a throw here (e.g. a future `sessionsStore.open` regression) must
@@ -152,22 +225,57 @@ export function ChatPane() {
     return () => {
       cancelled = true
     }
-  }, [visibleSessionId])
+  }, [sessionId, isPristine])
+
+  // FR-016: a Session that no longer exists at all (`sessions.delete`, never just archived)
+  // closes its own pane -- `split-store.ts`'s own `pruneDeleted` (reacting to the next
+  // `sessions.list()` refresh) is the belt to this braces, for immediate responsiveness without
+  // waiting on that round trip.
+  useEffect(() => {
+    if (session) return
+    useSplitStore.getState().closePane(paneIndex)
+  }, [session, paneIndex])
 
   // Sibling case to applySnapshot's own reset (test-reviewer finding): archiving or deleting the
-  // visible Session never re-triggers a sessions.open() call for it (the effect above only fires
-  // when `visibleSessionId` itself changes), so applySnapshot's own panel reset never runs --
-  // MessageInput and the chip row unmount here (the Empty state below) while
-  // `useSubagentPanelStore`'s `open`/`sessionId` silently keep pointing at a Session that no
-  // longer exists. Closing the panel whenever that exact Session vanishes mirrors an explicit
-  // Close click instead of leaving a stale, inaccessible panel open.
+  // Session never re-triggers a sessions.open() call for it (the effect above only fires when
+  // `sessionId` itself changes), so applySnapshot's own panel reset never runs -- MessageInput
+  // and the chip row unmount here (the Empty state below) while `useSubagentPanelStore`'s
+  // `open`/`sessionId` silently keep pointing at a Session that no longer exists. Closing the
+  // panel whenever that exact Session vanishes mirrors an explicit Close click instead of
+  // leaving a stale, inaccessible panel open.
   useEffect(() => {
-    if (!visibleSessionId || session) return
+    if (session) return
     const panelState = useSubagentPanelStore.getState()
-    if (panelState.sessionId === visibleSessionId) panelState.closePanel({ restoreFocus: false })
-  }, [visibleSessionId, session])
+    if (panelState.sessionId === sessionId) panelState.closePanel({ restoreFocus: false })
+  }, [sessionId, session])
 
-  if (!visibleSessionId || !session) {
+  function handleFocusPane(): void {
+    focusPane(paneIndex)
+  }
+
+  // Quality-gate remediation (accessibility-auditor, High): the keyboard focus-move chord/button
+  // (App.tsx) only ever updated `focusedIndex` -- real keyboard/DOM focus stayed wherever it was,
+  // so the "Focused" badge and aria-live announcement could silently contradict where typing
+  // actually went. Round 2 (accessibility-auditor, High): the plain `textarea.focus()` this first
+  // shipped with silently no-op'd whenever the target pane's Session is stopped (MessageInput
+  // disables the textarea then) -- `focusPaneContent` now falls back to the stopped banner's own
+  // button. Round 2 (code-reviewer, Medium): keying this off every false->true `isFocused`
+  // transition also fired for `targetSession`'s FR-009 branch (a plain/Ctrl click, or "Open in
+  // split", on the row already shown in the unfocused pane -- that only flips `focusedIndex`,
+  // deliberately WITHOUT moving DOM focus, so the user can keep working in the session list),
+  // yanking keyboard focus out of the session list into this pane's textarea. Now keys off
+  // `focusMoveSignal` instead, which only `focusOther` (the chord and this pane's own button,
+  // App.tsx) ever increments -- never `focusPane`, never any `targetSession` branch.
+  const prevMoveSignalRef = useRef(focusMoveSignal)
+  useEffect(() => {
+    const prevSignal = prevMoveSignalRef.current
+    prevMoveSignalRef.current = focusMoveSignal
+    if (!isSplit || !isFocused || prevSignal === focusMoveSignal) return
+    if (chatPaneRef.current?.contains(document.activeElement)) return
+    focusPaneContent(chatPaneRef.current)
+  }, [isFocused, isSplit, focusMoveSignal])
+
+  if (!session) {
     return (
       <Empty className="h-full">
         <EmptyHeader>
@@ -181,10 +289,16 @@ export function ChatPane() {
     )
   }
 
-  const sessionId = session.id
   const recovering = recoveringId === sessionId
+  // Spec 005 (research.md Decision 4): `stopInfo` stays `{}` for a pristine pane by design (its
+  // snapshot-fetch effect is skipped) -- MessageInput's own notStarted/disabled logic needs an
+  // EXPLICIT 'not-started' stopReason, not undefined, so derive it from the Session's own
+  // already-known SessionSummary (main's sessions.list() already reports 'not-started' for any
+  // session with no live runtime this run) while pristine, instead of the live-fetched value.
+  const effectiveStopReason = isPristine ? session.stopReason : stopInfo.reason
+  const effectiveStopDetail = isPristine ? undefined : stopInfo.detail
   // `not-started` is idle-and-asleep, not an error (data-model.md); it gets no banner.
-  const showBanner = session.status === 'stopped' && !!stopInfo.reason && stopInfo.reason !== 'not-started'
+  const showBanner = session.status === 'stopped' && !!effectiveStopReason && effectiveStopReason !== 'not-started'
   // `key={sessionId}` below remounts MessageInput on every session switch, dropping its
   // textarea's focus. Reclaim it only when the switch happened while focus was already inside
   // this pane (e.g. a notification reopening the Session the user was typing in), never on
@@ -204,7 +318,7 @@ export function ChatPane() {
       return
     }
     applySnapshot(recoveringFor, result.value)
-    if (visibleSessionIdRef.current === recoveringFor) {
+    if (sessionIdRef.current === recoveringFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
   }
@@ -220,8 +334,47 @@ export function ChatPane() {
   }
 
   return (
-    <div ref={chatPaneRef} className="flex h-full flex-col overflow-hidden">
-      <ChatHeader sessionId={sessionId} />
+    <div
+      ref={chatPaneRef}
+      role="region"
+      aria-label={`${session.name} chat`}
+      onMouseDownCapture={handleFocusPane}
+      onFocusCapture={handleFocusPane}
+      className="relative flex h-full flex-col overflow-hidden"
+    >
+      {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
+          SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
+          "Focused" text badge so the marker is never colour alone. */}
+      {isSplit && isFocused && (
+        <span aria-hidden className="absolute inset-y-0 left-0 z-10 w-0.5 bg-active-indicator" />
+      )}
+      <ChatHeader
+        sessionId={sessionId}
+        focused={isSplit ? isFocused : undefined}
+        onClose={
+          isSplit
+            ? () => {
+                closePane(paneIndex)
+                // Quality-gate remediation (accessibility-auditor, High): closing a pane via
+                // keyboard previously dropped focus to <body> -- both panes unmount/remount
+                // across this structural layout change (App.tsx swaps the whole subtree), so
+                // there is no previous-instance ref to refocus. Waits one frame for the
+                // survivor's fresh single-pane ChatPane/MessageInput to mount, then focuses its
+                // own message box. Round 2 (accessibility-auditor, Medium): falls back past a
+                // disabled textarea (a stopped survivor Session) to the banner's own button,
+                // via the same `focusPaneContent` helper as the focus-move effect above.
+                requestAnimationFrame(() => {
+                  focusPaneContent(
+                    document.querySelector<HTMLElement>('[role="region"][aria-label$=" chat"]')
+                  )
+                })
+              }
+            : undefined
+        }
+        otherSessionName={otherSession?.name}
+        onSwapToOther={otherSession ? () => openInSplit(otherSession.id) : undefined}
+        reservesWindowControls={reservesWindowControls}
+      />
       <div
         role="status"
         className={cn(
@@ -237,18 +390,18 @@ export function ChatPane() {
         )}
       </div>
       {showBanner && (
-        <div className="shrink-0 px-4 pt-3">
+        <div data-pane-banner className="shrink-0 px-4 pt-3">
           <Alert variant="destructive">
             <AlertTriangleIcon />
-            <AlertTitle>{describeStopReason(stopInfo.reason, stopInfo.detail)}</AlertTitle>
-            {stopInfo.reason === 'agent-exited' && (
+            <AlertTitle>{describeStopReason(effectiveStopReason, effectiveStopDetail)}</AlertTitle>
+            {effectiveStopReason === 'agent-exited' && (
               <AlertAction>
                 <Button size="sm" variant="outline" disabled={recovering} onClick={() => void handleRecover()}>
                   Recover
                 </Button>
               </AlertAction>
             )}
-            {stopInfo.reason === 'worktree-missing' && (
+            {effectiveStopReason === 'worktree-missing' && (
               <div className="col-start-2 mt-2 flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => void handleRecreateWorktree()}>
                   Recreate worktree
@@ -270,23 +423,29 @@ export function ChatPane() {
         </div>
       )}
       <DeleteDialog
+        key={sessionId}
         session={session}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        onDeleted={focusSessionsNav}
+        onDeleted={() => {
+          // FR-016: deleting the Session shown in this pane closes the pane itself (a no-op when
+          // there is no split to close down to), not just a focus move inside it.
+          useSplitStore.getState().closePane(paneIndex)
+          focusSessionsNav()
+        }}
         onCancelled={() => {
           if (deleteBannerButtonRef.current?.isConnected) deleteBannerButtonRef.current.focus()
           else focusSessionsNav()
         }}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
-        <Transcript />
+        <Transcript sessionId={sessionId} />
       </div>
       <MessageInput
         key={sessionId}
         sessionId={sessionId}
-        stopReason={stopInfo.reason}
-        stopDetail={stopInfo.detail}
+        stopReason={effectiveStopReason}
+        stopDetail={effectiveStopDetail}
         autoFocusOnMount={autoFocusRef.current}
       />
     </div>

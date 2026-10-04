@@ -13,9 +13,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore } from '@/state'
+import { EMPTY_QUEUE, notify, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
-import { applySnapshot, describeStopReason } from './ChatPane'
+import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
 import { ApprovalModePill } from './ApprovalModePill'
 import {
@@ -133,6 +133,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   statusRef.current = status
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
+  // Quality-gate remediation (accessibility-auditor, High, also FR-010): this component's own
+  // Ctrl+Shift+X listener is a window-level listener, one per mounted MessageInput -- with a
+  // split open, BOTH panes' listeners used to fire on the same keypress, so Stop silently acted
+  // on whichever pane's Session happened to be `working`, including the UNFOCUSED one, with no
+  // way to target just one pane from the keyboard (the pointer-driven Stop button is already
+  // correctly scoped, since it lives inside this exact pane). Gated below so only the focused
+  // pane's own listener (or the sole listener, when there is no split) ever acts.
+  const isFocusedPane = useSplitStore((s) => s.paneSessionIds.length < 2 || s.paneSessionIds[s.focusedIndex] === sessionId)
+  const isFocusedPaneRef = useRef(isFocusedPane)
+  isFocusedPaneRef.current = isFocusedPane
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   // Spec 009: pending images and oversized-text chips for the draft currently being composed
@@ -229,11 +239,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     setSlashActiveIndex(0)
   }, [slashQuery])
 
-  // Ctrl+Shift+X stops the running turn while this pane is mounted (docs/DESIGN.md "Keyboard").
+  // Ctrl+Shift+X stops the running turn while this pane is mounted AND focused (docs/DESIGN.md
+  // "Keyboard"; spec 005 FR-010: acts only on the focused/owning pane while a split is open).
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== 'x') return
       event.preventDefault()
+      if (!isFocusedPaneRef.current) return
       if (statusRef.current !== 'working') return
       void window.refract.chat.stop(sessionIdRef.current).then((result) => {
         if (!result.ok) notify(result.error)
@@ -252,6 +264,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // outlive the send with no `accepted: false` feedback (#358/#359 remediation).
     clearGhostState()
     if (notStarted) {
+      // Spec 005 (research.md Decision 4): sending the first message to a just-restored,
+      // not-yet-opened pane is itself the "real action" that clears its pristine flag. Cleared
+      // FIRST, before awaiting open() below: this lets ChatPane's own pristine-cleared effect
+      // (triggered by this exact state change) be the SOLE place that calls `applySnapshot` for
+      // this open.
+      //
+      // Quality-gate remediation (code-reviewer, Medium): this branch used to call
+      // `applySnapshot` itself too, AFTER its own `open()` resolved -- `markOpened` then flipped
+      // `isPristine`, which re-ran ChatPane's effect, which called `open()` again (joining the
+      // same already-in-flight/dedup'd promise, harmless) and `applySnapshot` a SECOND time with
+      // the SAME pre-send snapshot, racing the real message's own `transcript:patch` events and
+      // risking a visible flash back to the pre-send transcript right after sending. Now this
+      // branch only awaits `open()` for its own completion signal (to know the agent has
+      // actually started before calling `chat.send` below) and never applies the snapshot itself.
+      useSplitStore.getState().markOpened(sessionId)
       let snapshot
       try {
         setStarting(true)
@@ -260,7 +287,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         setStarting(false)
       }
       if (!snapshot) return
-      applySnapshot(sessionId, snapshot)
     }
     // FR-013: every pending text chip's full original text is substituted back into the draft at
     // its own position before anything reaches `chat.send` -- the plain `message` string OMP ever
@@ -677,13 +703,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           chip independently hides itself when its own data is null (FR-002 to FR-007, FR-021). */}
       <div className="flex flex-wrap items-center gap-1.5">
         <ApprovalModePill sessionId={sessionId} />
-        {sessionReadout.changes && <ChangesChip />}
-        {sessionReadout['context-usage'] && <ContextUsageChip />}
-        {sessionReadout['turn-time'] && <TurnTimeChip />}
+        {sessionReadout.changes && <ChangesChip sessionId={sessionId} />}
+        {sessionReadout['context-usage'] && <ContextUsageChip sessionId={sessionId} />}
+        {sessionReadout['turn-time'] && <TurnTimeChip sessionId={sessionId} />}
         {sessionReadout['current-time'] && <CurrentTimeChip />}
-        {sessionReadout['pull-request'] && <PullRequestChip />}
-        {sessionReadout.subagents && <SubagentsChip />}
-        {sessionReadout['todo-progress'] && <TodoProgressChip />}
+        {sessionReadout['pull-request'] && <PullRequestChip sessionId={sessionId} />}
+        {sessionReadout.subagents && <SubagentsChip sessionId={sessionId} />}
+        {sessionReadout['todo-progress'] && <TodoProgressChip sessionId={sessionId} />}
       </div>
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}

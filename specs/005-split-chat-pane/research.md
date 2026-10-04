@@ -222,3 +222,30 @@ feature.
 two panes are not tabs (both are visible and interactive simultaneously, per FR-004); `region`
 with a live-region announcement better matches "two independent, always-visible documents, one of
 which currently has input focus".
+
+## Decision 10: the shared Subagents panel (spec 004) is bound by explicit activation, not focus (convergence, 2026-10-04)
+
+**Decision**: spec 004's Subagents panel stays the one shared, single right-side panel it
+already is -- this spec does not duplicate it per pane. It is bound to whichever pane's Subagents
+chip was last clicked (`useSubagentPanelStore.openPanel(sessionId)`, unchanged signature); moving
+focus between panes (the focus-move chord, FR-007/FR-008/FR-009's row-click and Ctrl+click
+targeting) never retargets an already-open panel on its own. `src/renderer/App.tsx`'s `onResize`
+drag-collapse fallback (dragging the panel open directly, not via a chip, data-model.md/spec 004
+Decision already covers the chip path) falls back to opening for the **focused** pane's session,
+the same default-target rule FR-008 already uses for an ambiguous row click.
+
+**Rationale**: spec 005's own tasks.md and spec.md Assumptions were written 2026-10-02, before
+spec 004 landed; spec 004 already established "the panel only ever changes what it shows on an
+explicit user action" (its own quality-gate remediation: a new turn starting, a vanished Session,
+or an explicit Close all close or retarget it, nothing else does). Extending that same rule to
+"which pane" keeps the single panel predictable across a split instead of silently following
+focus and yanking a developer's attention off a stream they were reading in the unfocused pane.
+A per-pane panel (two Subagents panels, one per pane) was rejected as unnecessary duplication of
+spec 004's existing single right-side region for a case the spec's own layout (session list,
+chat, one right region) was never designed to show twice at once.
+
+**Alternatives considered**: always bind the panel to the focused pane, re-pointing it silently
+on every focus-move -- rejected, it would close or swap the developer's open subagent stream out
+from under them the instant they used the focus-move command for an unrelated reason (reading the
+other pane's transcript), the same kind of silent-retarget bug spec 004's own remediation rounds
+already fixed once for a different trigger (a new turn, a vanished Session).
