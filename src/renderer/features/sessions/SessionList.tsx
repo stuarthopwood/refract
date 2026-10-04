@@ -233,7 +233,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   return (
     <li ref={rowRef} className="group relative w-full rounded-md">
       {isVisible && (
-        <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-sidebar-primary" />
+        <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
       )}
       <ContextMenu>
         <ContextMenuTrigger asChild>

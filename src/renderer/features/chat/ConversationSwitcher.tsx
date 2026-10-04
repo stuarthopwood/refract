@@ -110,7 +110,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
                       void handleOpenConversation(conversation.file)
                     }}
                     data-choice-item
-                    className="flex w-full flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left hover:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-primary aria-[current=true]:bg-muted"
+                    className="flex w-full flex-col gap-0.5 border-l-2 border-transparent px-2.5 py-2 text-left hover:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted"
                   >
                     <span className="flex items-center gap-2 text-sm font-medium">
                       <span className="truncate">{conversation.title || 'Untitled conversation'}</span>

@@ -78,7 +78,7 @@ export function SlashMenu({ id, commands, activeIndex, onSelect, onActiveIndexCh
           }}
           className={cn(
             'flex cursor-default items-center justify-between gap-3 border-l-2 border-transparent px-2 py-1.5',
-            index === activeIndex && 'border-l-primary bg-accent text-accent-foreground'
+            index === activeIndex && 'border-l-active-indicator bg-accent text-accent-foreground'
           )}
         >
           <span className="shrink-0 font-medium">/{command.name}</span>
