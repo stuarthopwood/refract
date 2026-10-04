@@ -37,12 +37,28 @@ One continuous exchange with the agent inside a **Session**. A **Session** has m
 _Avoid_: Session (in the agent's own sense), transcript
 
 **Readout chip**:
-One entry in the row above the message box (spec 004) showing one glanceable fact about the visible **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Which kinds show is chosen per-kind in Settings.
+One entry in the row above the message box (spec 004) showing one glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently.
 _Avoid_: Status chip, badge (for this row specifically)
 
 **Subagent panel**:
 The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: lists the current turn's subagents by name/task with a state icon plus the state word, and shows a selected one's live stream (text and tool calls) updating as it runs.
 _Avoid_: Subagent sidebar, task panel
+
+**Chat pane**:
+One half of the split chat area (spec 005): a complete chat for one **Session** -- header, transcript, message box, queued messages, pending approvals and questions, and the **Readout chip** row -- matching what a single, unsplit chat pane shows for that **Session**. One or two show at once; the same **Session** is never shown in two panes at the same time.
+_Avoid_: Chat panel, pane (alone, when a **Split** is in scope)
+
+**Split**:
+The app-wide arrangement of two **Chat panes** side by side (spec 005): which two **Sessions** are shown, the **Divider**'s position, and which pane is **Focused**. Persists across a restart (`Settings.split`); opened via "Open in split" or Ctrl+click on a session row, closed by closing either pane.
+_Avoid_: Split view, dual pane
+
+**Divider**:
+The draggable boundary between a **Split**'s two **Chat panes** (spec 005): draggable with the pointer, adjustable from the keyboard, stops at a minimum width per pane, carries the focus-move button.
+_Avoid_: Splitter, resize handle (for this boundary specifically)
+
+**Focused pane**:
+Whichever of a **Split**'s two **Chat panes** currently receives a session-row click, the message box, Stop, the queue, and approvals (spec 005). Exactly one pane is focused at a time, marked by a left-edge accent bar plus a visible "Focused" text badge (never colour alone); clicking, typing, or Ctrl+Shift+\ moves it.
+_Avoid_: Active pane, selected pane
 
 ## Flagged ambiguities
 
