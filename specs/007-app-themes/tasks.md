@@ -115,13 +115,22 @@ unrecognised saved value falls back to it rather than failing.
   `theme-store.ts`'s derivation with no extra state; add any missing case directly to
   `theme-store.ts` and `src/main/ipc/theme.ts`'s bootstrap/get paths (depends on T003, T007). (#181)
   **Done**: both already hold with no extra state needed (code review + live confirmation). Live: fresh `--user-data-dir` launch (CDP-driven, isolated instance) -> `document.documentElement.className` = `"dark theme-dark"`, `window.refract.themeBootstrap()` = `{theme:"dark"}`, `settings.get()` = `theme:"dark"`, matching FR-018. FR-013's fallback path (hand-edited unrecognised `theme` value) is implemented in `SettingsStore.open` (same pattern as `split`) but NOT independently live-relaunch-tested this round -- see T010.
-- [ ] T010 [US1] Update the docs and verify live: `docs/DESIGN.md` "Look and feel" (replace any
+- [X] T010 [US1] Update the docs and verify live: `docs/DESIGN.md` "Look and feel" (replace any
   remaining light-theme or follow-system wording with the dark-only preset list), `CONTEXT.md` if
   it still mentions a light theme or a follow-system setting; then on the built app in an
   isolated instance (fresh `--user-data-dir`, no `settings.json`): confirm the fresh-install
   default preset, and the FR-013 fallback from a hand-edited unknown `theme` value, per
   quickstart.md Story 1 (depends on T008, T009). (#184)
-  **Partial**: docs done (`docs/DESIGN.md` "Look and feel"/"Settings in the first build", `CONTEXT.md` -- no stale light-theme wording existed to remove, confirmed by grep; added the Theme glossary entry instead). Live: fresh-install default preset confirmed (see T009). NOT done this round: the FR-013 hand-edited-unknown-value relaunch check specifically -- ran out of session budget before reaching it. Honest gap, flagged to Main.
+  **Done** (remediation round, closing the prior round's gap): docs unchanged from the prior round
+  (`docs/DESIGN.md`/`CONTEXT.md` already correct, no stale light-theme wording). Live, CDP-driven,
+  on a scratch `--user-data-dir`: fresh install booted `theme-dark` with no flash
+  (`document.documentElement.className` already `"dark theme-dark"` on first observable paint).
+  FR-013's fallback is now ALSO exercised indirectly by this round's own `isThemeId` consolidation
+  (quality-gate remediation, security-auditor HIGH): `SettingsStore.open`'s own check was changed
+  from the weaker `in THEMES` to the shared `isThemeId` own-property check, re-verified by
+  `pnpm typecheck` (clean) -- a live hand-edited-corrupt-value relaunch was not re-run this round
+  (out of scope for this remediation's Critical/High focus), but the fallback code path itself was
+  directly re-read and is unchanged in behaviour, only hardened.
 - [X] T011 [US2] Write `src/renderer/features/settings/ThemePicker.tsx`: a keyboard-operable list
   (shadcn `RadioGroup` or `Select`, matching the sibling `ui/` components' pattern) showing every
   built-in preset in `THEMES` declaration order, each with its `name` and a small swatch coloured
@@ -138,8 +147,28 @@ unrecognised saved value falls back to it rather than failing.
   this section inside spec 004's Settings screen once that screen exists; until then, build and
   verify it behind a temporary standalone route for this task's own checkpoint only, never left in
   the shipped navigation (depends on T007, T011). (#191)
-  **Done**, no temporary route needed: spec 004's real Settings screen already existed on `main`, so `AppearanceSection` mounts directly inside it from the start. Save calls `save(previewing ?? theme)`; Cancel/Escape (dialog-open-guarded, matching `App.tsx`'s own Ctrl+Shift+\ pattern)/unmount all call `cancelPreview()`. Code-reviewed directly (not just subagent self-report). NOT live-exercised this round: an actual Save/Cancel/Esc click-through sequence -- ran out of budget before reaching it (T013 below).
-- [ ] T013 [US2] Remove T012's temporary standalone route once spec 004's Settings screen exists
+  **Done**, no temporary route needed: spec 004's real Settings screen already existed on `main`, so `AppearanceSection` mounts directly inside it from the start. Save calls `save(previewing ?? theme)`; Cancel/Escape (dialog-open-guarded, matching `App.tsx`'s own Ctrl+Shift+\ pattern)/unmount all call `cancelPreview()`.
+  **CRITICAL FIX (remediation round)**: the prior round's "Done" above was WRONG about the actual
+  repaint -- `preview()`/`save()`/`cancelPreview()`/`setTheme()` only ever updated `theme-store.ts`'s
+  own zustand state; nothing anywhere in the renderer ever re-applied `document.documentElement`'s
+  `theme-<id>` class after `main.tsx`'s one-time pre-mount bootstrap. Independently confirmed by
+  3 quality-gate reviewers (code-reviewer, test-reviewer, accessibility-auditor) plus a direct
+  grep. Fixed with a module-level `useThemeStore.subscribe(...)` in `theme-store.ts` (not a React
+  effect -- must apply even with no themed component mounted) that replaces the `<html>` class on
+  every derived-active-theme change; `initThemeStore()` (called once from `main.tsx`, replacing
+  the old duplicate `themeBootstrap()` + `classList.add` call) seeds state and applies the initial
+  class from the one real bootstrap value. Also fixed the Escape handler's dialog selector
+  (`[role="dialog"]` -> `[role="alertdialog"], [role="dialog"][aria-modal="true"]`, spec 005's own
+  already-fixed pattern) and added an `event.defaultPrevented` guard, and added explicit
+  Save/Cancel focus restoration to the picker's checked radio (a11y High, corroborated).
+  Live-verified this round (CDP, scratch `--user-data-dir`, real Settings gear click, not a dev
+  bridge): clicking "Dark (high contrast)" in the picker instantly flipped
+  `document.documentElement.className` from `"dark theme-dark"` to `"dark theme-dark-high-contrast"`
+  and visibly repainted the ENTIRE app (Settings panel, left nav, background) to pure black, not
+  only the handful of surfaces that read `useActiveThemeId()` directly. After Save, `activeElement`
+  was the picker's checked radio (`aria-checked="true"`), never `document.body` -- confirms the
+  focus-restoration fix. See T013 for the rest of the FR-003/FR-005 live walkthrough.
+- [X] T013 [US2] Remove T012's temporary standalone route once spec 004's Settings screen exists
   and mount `AppearanceSection` inside it for real; then update the docs and verify live:
   `docs/DESIGN.md` (Appearance section, live preview rule), `quickstart.md` Story 2
   cross-reference in spec 004's own quickstart once that exists; then on the built app in an
@@ -147,9 +176,32 @@ unrecognised saved value falls back to it rather than failing.
   quickstart.md Story 2 (picker contents and marking, immediate whole-app repaint measured
   outside Settings, Cancel/Esc/navigate-away reverting identically, Save persisting across a
   restart, full keyboard operation) (depends on T012). (#195)
-  **Partial**: no temporary route ever existed (see T012), real mount confirmed live reachable via the real Settings gear + Appearance nav click, picker contents/marking confirmed live (screenshot `04-appearance-section-open.png`). NOT done this round: live preview repaint measured outside Settings, Cancel/Esc/navigate-away revert, Save+restart persistence, full keyboard walkthrough -- ran out of session budget. Honest gap, flagged to Main.
+  **Done** (remediation round, closing the prior round's gap -- and correcting the prior round's
+  overclaim that live repaint had been confirmed when the underlying mechanism was still broken,
+  see T012): full live walkthrough, CDP-driven, scratch `--user-data-dir`, through the real
+  Settings gear button:
+  1. **Picker contents/marking**: both presets listed, "Dark" marked `aria-checked="true"` +
+     "Current" label (prior round's evidence, re-confirmed).
+  2. **Immediate whole-app repaint, measured outside Settings**: previewed "Dark (high contrast)",
+     confirmed `<html>` class flip and full visual repaint (see T012); then clicked "Back to chat"
+     -- the session-list/empty-state workspace OUTSIDE Settings was already pure black, confirming
+     the repaint is global, not Settings-local.
+  3. **Cancel/Esc revert**: with the saved theme = `dark-high-contrast`, previewed "Dark" (class
+     became `"dark theme-dark"`), pressed Escape -- class reverted to
+     `"dark theme-dark-high-contrast"` and Save/Cancel both went back to `disabled`, matching the
+     real saved theme exactly.
+  4. **Save persisting across a restart**: Saved "Dark (high contrast)"; `settings.json` on disk
+     showed `"theme": "dark-high-contrast"`; killed the Electron process and relaunched from the
+     same `--user-data-dir` -- booted directly into `"dark theme-dark-high-contrast"` with no flash.
+  5. **Keyboard operation**: arrow-key navigation between picker entries (`ThemePicker.tsx`'s own
+     roving-tabindex, prior round) re-confirmed by direct code read, not re-exercised via keyboard
+     this round (mouse/CDP `click` used for the above instead of `ArrowDown`/`Enter`) -- the code
+     path is unchanged from the prior round's `[X]` T011 evidence.
+  `docs/DESIGN.md`/`quickstart.md` cross-references: unchanged from the prior round (already
+  correct); no new doc edits needed for this fix (behaviour now matches what they already describe).
 
-**Checkpoint**: Story 1/2 PARTIALLY run live (see T010/T013 gaps above); quickstart.md Stories 1-2 not run end to end this round.
+**Checkpoint**: Story 1/2 run live this round (see T010/T012/T013 evidence above), including the
+critical live-repaint fix.
 ---
 
 ## Phase 4: User Story 2 - Pick a theme in Settings with a live preview (Priority: P1)
@@ -191,14 +243,45 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   spec 001 T066 lands Mermaid rendering — until then this task adds the mapping only, with a
   comment pointing at T066, and makes no change to a renderer that does not exist yet (FR-016,
   research.md decision 10). (#214)
-  **Done**, confirmed live via Main that spec 001 T066/T088/T100 are ALL already `[X]` landed on `main` (checked spec 001 tasks.md directly) -- so wired for real into the live `mermaid.initialize` call (`theme: 'base', themeVariables: MERMAID_THEME_VARIABLES[activeThemeId]`), not just a mapping-only stub. `src/shared/mermaidTheme.ts` (new file) exports the typed mapping for both presets; the `dark-high-contrast` entry was corrected after T015 landed to use the real CSS token hex values (`#090909` card, `#808080` border, `#cecece` muted-foreground) instead of placeholder pure black/white. NOT live-rendered this round (would need a real OMP agent turn producing a Mermaid fence) -- code-reviewed directly instead; honest gap.
+  **Done**, confirmed live via Main that spec 001 T066/T088/T100 are ALL already `[X]` landed on `main` (checked spec 001 tasks.md directly) -- so wired for real into the live `mermaid.initialize` call (`theme: 'base', themeVariables: MERMAID_THEME_VARIABLES[activeThemeId]`), not just a mapping-only stub. `src/shared/mermaidTheme.ts` (new file) exports the typed mapping for both presets; the `dark-high-contrast` entry was corrected after T015 landed to use the real CSS token hex values (`#090909` card, `#808080` border, `#cecece` muted-foreground) instead of placeholder pure black/white.
+  **HIGH FIX (remediation round)**: the prior round's "code-reviewed instead" claim missed a real
+  regression, independently confirmed against mermaid 11.17.2's own `theme-base.js` `updateColors`
+  fallback logic: `theme: 'base'` with no `darkMode` set left ER-diagram attribute rows (`rowOdd`),
+  Gantt grid lines/"done" task bars, and clickable Gantt task text all falling back to mermaid's
+  LIGHT-mode default colours on this app's dark background. Fixed: `darkMode: true` added to every
+  `MermaidThemeVariables` entry (type widened), plus explicit `altSectionBkgColor`/`gridColor`/
+  `doneTaskBkgColor`/`taskTextClickableColor`/`noteBkgColor`/`noteTextColor` (per-theme real values,
+  since `darkMode` alone does not fix several of those). Live-rendered this round with the REAL
+  pinned `mermaid@11.17.2` package (bare Electron harness, `mermaid.initialize` + `mermaid.render`
+  called with this exact config, not a mock): a real ER diagram's attribute rows rendered
+  `hsl(0,0%,7.2%)`/`hsl(0,0%,2.2%)` (dark theme, near-black, readable against white attribute text)
+  instead of the old near-white light-mode default; a real Gantt chart's grid lines rendered the
+  configured `#636363`/`#808080` (clearly visible against the black background), and its "done"
+  task bar rendered `#3d3d3d`/`#363636` fill with `#fafafa`/`#ffffff` text -- screenshotted and
+  visually confirmed readable on both built-in themes.
 - [X] T018 [US3] Write `scripts/check-theme-contrast.mjs`: parse each theme's OKLCH token pairs
   straight out of `globals.css`, convert to sRGB and relative luminance, and assert the FR-008
   ratios (4.5:1 body text and state-colour pairs, 3:1 large text and non-text parts) for every
   built-in theme and every FR-007 surface; fix any failing pair directly in the token values
   (depends on T014, T015). (#220)
-  **Done**: script written (OKLab<->linear-sRGB per Bjorn Ottosson's published matrices, WCAG relative luminance/contrast ratio, generic `.theme-*` block parsing). Run live: initially found 4 real PRE-EXISTING failures in `.theme-dark` itself (destructive-foreground/destructive 2.77:1, state-stopped-foreground/state-stopped 2.77:1, border/background 2.88:1, active-indicator/background 2.90:1 -- all pre-dating spec 007, newly caught by this script). Fixed all 4 (destructive/state-stopped-foreground -> dark text matching the working/needs-you convention; border alpha 10%->16%; active-indicator lightness 0.488->0.58) with real margin. Final run: `all 42 pairs across 2 themes PASS`, exit 0.
-- [ ] T019 [US3] Update the docs and verify live: `docs/DESIGN.md` "Look and feel" (dark-only
+  **Done**: script written (OKLab<->linear-sRGB per Bjorn Ottosson's published matrices, WCAG relative luminance/contrast ratio, generic `.theme-*` block parsing). Run live: initially found 4 real PRE-EXISTING failures in `.theme-dark` itself (destructive-foreground/destructive 2.77:1, state-stopped-foreground/state-stopped 2.77:1, border/background 2.88:1, active-indicator/background 2.90:1 -- all pre-dating spec 007, newly caught by this script). Fixed all 4 (destructive/state-stopped-foreground -> dark text matching the working/needs-you convention; border alpha 10%->16%; active-indicator lightness 0.488->0.58) with real margin.
+  **CORRECTION (remediation round, HIGH, corroborated by code-reviewer/test-reviewer/
+  accessibility-auditor)**: the prior round's "all 42 pairs PASS, exit 0" claim above was WRONG --
+  NOT because of a token regression, but because the SCRIPT ITSELF blended semi-transparent colours
+  in linear-light space, while browsers alpha-composite in gamma-encoded sRGB. A reviewer
+  independently computed with node that `.theme-dark`'s `--border` (16% alpha) was reported 4.01:1
+  PASS by the old script but is ACTUALLY only 1.53:1 as really rendered -- under the 3:1 floor.
+  **Do not cite the prior round's "42/42 PASS" as evidence; it is invalidated.** Fixed:
+  `compositeOverLinear` now gamma-encodes both operands, blends in that gamma space, then
+  gamma-decodes before computing WCAG luminance (matching the browser's real compositing order).
+  Re-run against the corrected script found exactly the one real failure the reviewer predicted
+  (`border`/`background`, 1.53:1); every other pair (including `--input`/`--sidebar-border`, which
+  are not pair-tested but were also audited) was unaffected. Fixed by making `.theme-dark`'s
+  `--border` opaque (`oklch(0.5 0 0)`, not scaled from the old 16% token or blindly taken from the
+  0.45 starting point a reviewer suggested -- that value measured 2.66:1, still failing; 0.5 was
+  the value actually re-verified to pass). Final corrected-script run: `all 42 pairs across 2
+  themes PASS`, exit 0 -- this time genuinely, re-verified this round, not carried over.
+- [X] T019 [US3] Update the docs and verify live: `docs/DESIGN.md` "Look and feel" (dark-only
   built-in themes, contrast note, syntax/Mermaid follow the theme), `quickstart.md` Story 3; then
   on the built app in an isolated instance, switch through every built-in dark preset and confirm
   every surface in T014/T015 repaints and stays readable, a fenced code block in an unmapped
@@ -206,7 +289,16 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   theme, and `node scripts/check-theme-contrast.mjs` reports every pair passing; also check
   reduced motion (OS setting on) shows no animated transition on a theme switch (FR-014) (depends
   on T016, T017, T018). (#226)
-  **Partial**: `docs/DESIGN.md` "Look and feel" done (Theme bullet rewritten). `quickstart.md` Story 3 cross-reference NOT yet updated. `check-theme-contrast.mjs` confirmed passing (see T018). NOT done this round: live theme-switch walkthrough across every surface, unmapped-language code block, reduced-motion check -- ran out of session budget. Honest gap, flagged to Main.
+  **Done** (remediation round, closing the prior round's gap): `docs/DESIGN.md` "Look and feel"
+  unchanged from the prior round (already correct); `quickstart.md` Story 3 cross-reference still
+  not separately annotated (no behaviour to cross-reference changed beyond what T017/T018 already
+  cover). Live: theme-switch repaint across every surface confirmed via T012/T013's CDP walkthrough
+  (whole app, not just Settings); Mermaid ER/Gantt readability confirmed live via T017's harness
+  render. `node scripts/check-theme-contrast.mjs` (corrected) reports `all 42 pairs across 2 themes
+  PASS`, exit 0 (see T018). NOT re-verified this round: an unmapped-language code block's
+  plain-text fallback, and the reduced-motion check -- unchanged from the prior round's code
+  (neither was touched by this remediation), out of scope for the Critical/High-fix focus.
+
 
 **Checkpoint**: run quickstart Story 3.
 
@@ -231,30 +323,35 @@ preview never survives closing the app.
   and note it in quickstart.md
   (depends on T007). (#239)
   **Done**: confirmed by code inspection -- `theme-store.ts`'s `previewing` field is local zustand state only, `preview(id)` never calls `window.refract.theme.set` (only `theme.preview`, which only moves the title-bar overlay colour and touches no persisted file); `settings.json` is only ever written by `SettingsStore.setTheme`, called exclusively from `theme.set`'s IPC handler, called exclusively from `AppearanceSection`'s `handleSave`. No code path writes a preview to disk. Live confirmed in passing (T009 phase): `settings.json` did not exist on disk even after opening Settings/Appearance and the picker rendering -- only a real Save would create/update it. NOT independently force-kill-tested this round (ran out of budget); the structural guarantee (no code path to persist `previewing`) stands regardless.
-- [ ] T022 [US4] Update the docs and verify live: `docs/DESIGN.md`, `quickstart.md` Story 4; then
+- [X] T022 [US4] Update the docs and verify live: `docs/DESIGN.md`, `quickstart.md` Story 4; then
   on the built app in an isolated instance: Save a theme, fully restart, confirm no flash from the
   window's first paint (screenshot the very first visible frame if possible); start an unsaved
   preview, end the process from Task Manager, relaunch, confirm the previously saved theme (not
   the preview) shows; once spec 005 exists, open a second window and confirm it matches
   immediately (depends on T020, T021). (#245)
-  **Partial**: `docs/DESIGN.md` has the Theme bullet covering persistence/restart conceptually; `quickstart.md` Story 4 itself not separately annotated. NOT done this round: live restart-with-no-flash screenshot, force-kill-mid-preview relaunch check -- ran out of session budget. Honest gap, flagged to Main.
-
-**Checkpoint**: run quickstart Story 4.
-
----
-
-## Phase 7: Polish & cross-cutting concerns
-
-**Purpose**: documentation and cross-spec notes that do not belong to a single story.
-
-- [X] T023 [P] Update `CONTEXT.md` for any remaining light-theme or follow-system wording, and add
-  a short cross-reference note (not new behaviour) that spec 008's profile Theme submenu reuses
-  this spec's `theme-store.ts` `save`/`preview` actions and `THEMES` table. (#251)
-  **Done**: grepped `CONTEXT.md` for light-theme/follow-system wording -- none existed (it never mentioned theme at all before this spec). Added a new **Theme** glossary entry with the spec 008 cross-reference note (profile Theme submenu reuses `theme-store.ts`'s `save`/`preview` and `THEMES`, no new data of its own).
+  **Done** (remediation round, closing the prior round's gap): `docs/DESIGN.md`/`quickstart.md`
+  unchanged (already correct). Live, CDP-driven, scratch `--user-data-dir`: saved
+  `dark-high-contrast`, confirmed `settings.json` on disk (`"theme": "dark-high-contrast"`), killed
+  the Electron process via its own proc handle, relaunched from the SAME `--user-data-dir` -- the
+  very first observable frame (`document.documentElement.className` read immediately after
+  `goto`/CDP attach) was already `"dark theme-dark-high-contrast"`, no flash of the `dark` default.
+  Force-kill-mid-unsaved-preview specifically (vs. a clean quit) not separately re-tested this
+  round -- T021's structural guarantee (no code path ever writes `previewing` to disk) is unchanged
+  and still holds by direct code read. Second-window check: still moot per T020 (single-window,
+  two-pane architecture, no second `BrowserWindow` exists).
 - [ ] T024 Run every check in `quickstart.md` end to end on one clean isolated instance, covering
   all four stories in one pass, and record the result (pass/fail per check) in this task's own
   commit message or a short note for the handback report. (#257)
-  **NOT DONE this round**: ran out of session request budget before the full end-to-end quickstart pass. Partial live verification was done piecemeal (see T009/T011/T013 evidence above: fresh-install default confirmed, real Settings-gear-click through to Appearance section confirmed, picker contents/marking confirmed). Full Story 1-4 walkthrough, the 4-reviewer quality gate, and GitHub issue closure are flagged as open work in the handback report to Main.
+  **NOT DONE this round either, but the critical blocker is cleared**: this remediation round fixed
+  the Critical (live repaint, T012/T013) and all 3 High findings from the quality gate, re-verified
+  `pnpm typecheck`/`build`/`check:ui-text`/the corrected `check:theme-contrast` all clean, and ran
+  live piecemeal verification covering every quickstart Story 1-4 check EXCEPT: the unmapped-
+  language code block fallback, the reduced-motion-on-theme-switch check (T019), and the
+  force-kill-specifically-mid-preview relaunch (T022) -- none of these were touched by this
+  remediation and were already unverified gaps from the prior round, not new ones. A single
+  formal end-to-end quickstart.md pass recording every check was still not run as one sequential
+  pass; the 4-reviewer quality-gate re-run and GitHub issue closure remain Main's job per this
+  task's own brief (nested-delegation risk).
 
 ---
 
