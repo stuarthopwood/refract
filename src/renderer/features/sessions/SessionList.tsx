@@ -54,17 +54,11 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const isSplitOpen = useSplitStore((state) => state.paneSessionIds.length === 2)
   const replaceFocused = useSplitStore((state) => state.replaceFocused)
   const openInSplit = useSplitStore((state) => state.openInSplit)
-  // High remediation (functional, found by a11y reviewer): these three session-targeting
-  // actions (plain click, Ctrl+click, and the 'Open in split' menu item below) used to only
-  // update split-store while `view === 'pull-requests'`, leaving the user stuck looking at the
-  // Pull requests panel with no way back to the Session they just picked except 'New session'
-  // or Settings -> Back to chat. Returning to chat here mirrors what already happens from the
-  // chat view itself (view is already 'chat' there, so this is a no-op in that case).
-  const view = useViewStore((state) => state.view)
-  const openChat = useViewStore((state) => state.openChat)
-  function returnToChatIfNeeded(): void {
-    if (view === 'pull-requests') openChat()
-  }
+  // Quality-gate remediation (round 3): the "return to chat" behavior these three
+  // session-targeting actions (plain click, Ctrl+click, and the 'Open in split' menu item
+  // below) need now lives centrally in split-store.ts's `targetSession` -- the one function
+  // both `openInSplit` and `replaceFocused` funnel through -- so it applies to every caller of
+  // either, not just the ones wired up here by hand.
   const open = useSessionsStore((state) => state.open)
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
@@ -191,7 +185,6 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       key: 'open-in-split',
       label: 'Open in split',
       onSelect: () => {
-        returnToChatIfNeeded()
         openInSplit(session.id)
       }
     },
@@ -201,25 +194,25 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     { kind: 'item', key: 'reveal', label: 'Open worktree folder', onSelect: () => void reveal() },
     isArchived
       ? {
-          kind: 'item',
-          key: 'restore',
-          label: 'Restore',
-          onSelect: () => {
-            listFocusRequestedRef.current = true
-            captureFocusFallback()
-            void restore(session.id)
-          }
+        kind: 'item',
+        key: 'restore',
+        label: 'Restore',
+        onSelect: () => {
+          listFocusRequestedRef.current = true
+          captureFocusFallback()
+          void restore(session.id)
         }
+      }
       : {
-          kind: 'item',
-          key: 'archive',
-          label: 'Archive',
-          onSelect: () => {
-            listFocusRequestedRef.current = true
-            captureFocusFallback()
-            void archive(session.id)
-          }
-        },
+        kind: 'item',
+        key: 'archive',
+        label: 'Archive',
+        onSelect: () => {
+          listFocusRequestedRef.current = true
+          captureFocusFallback()
+          void archive(session.id)
+        }
+      },
     ...(session.status !== 'stopped'
       ? ([{ kind: 'item', key: 'stop', label: 'Stop agent', onSelect: () => void stopAgent(session.id) }] as const)
       : []),
@@ -303,12 +296,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   // Spec 005 (FR-001, FR-008, FR-009, data-model.md transition table): Ctrl+click
                   // always opens a split (or replaces the unfocused pane / focuses it, per
                   // `openInSplit`'s own rules). A plain click on the already-focused pane's own
-                  // row only flips visibility by waking it directly (nothing else will fire
-                  // ChatPane's own effect for an unchanged sessionId); every other plain click
-                  // goes through `replaceFocused`, which also clears this id's pristine flag
-                  // (research.md Decision 4) regardless of which of its own branches fires.
                   onClick={(event) => {
-                    returnToChatIfNeeded()
                     if (event.ctrlKey) {
                       openInSplit(session.id)
                       return

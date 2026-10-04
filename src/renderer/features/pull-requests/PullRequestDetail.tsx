@@ -61,6 +61,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const headingRef = useRef<HTMLHeadingElement>(null)
   const reviewButtonRef = useRef<HTMLButtonElement>(null)
   const mergeButtonRef = useRef<HTMLButtonElement>(null)
+  const newSessionButtonRef = useRef<HTMLButtonElement>(null)
   // High remediation (code-reviewer): `load()`'s own closure-captured `repositoryId`/`number`
   // can't detect that the user has since selected a DIFFERENT pull request by the time its
   // `await` resolves -- selecting A then quickly B could let A's slower response overwrite B's
@@ -68,15 +69,29 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   // `sessionIdRef` pattern), so a stale response is recognised and dropped instead of applied.
   const identityRef = useRef({ repositoryId, number })
   identityRef.current = { repositoryId, number }
-
+  // Medium remediation (round 3, code-reviewer): `identityRef` alone only tells apart responses
+  // for a DIFFERENT pull request -- it says nothing about which of several overlapping requests
+  // FOR THE SAME pull request is newest. The 15s poll, the manual refresh button, and a
+  // post-mutation reload (`onMerged`/`onSubmitted` below) can all be in flight at once; without
+  // this, a slower poll response landing after a faster manual refresh could silently roll the
+  // view back to stale data. Matches `pull-requests-store.ts`'s own `refreshSequence` pattern,
+  // scoped per-component instead of per-repository since this component already owns one PR.
+  const loadSequenceRef = useRef(0)
   async function load(): Promise<void> {
     const requestedFor = { repositoryId, number }
+    loadSequenceRef.current += 1
+    const sequence = loadSequenceRef.current
     setLoading(true)
     setError(null)
     const result = await window.refract.pullRequests.detail(repositoryId, number)
     if (identityRef.current.repositoryId !== requestedFor.repositoryId || identityRef.current.number !== requestedFor.number) {
       return
     }
+    // See `loadSequenceRef`'s own doc comment above: a response that is no longer the newest
+    // in-flight request for this exact pull request is dropped, even though it's for the right
+    // one -- an older, slower poll tick can resolve after a newer manual refresh or post-mutation
+    // reload already landed.
+    if (loadSequenceRef.current !== sequence) return
     setLoading(false)
     if (!result.ok) {
       setError(result.error.message)
@@ -206,6 +221,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
               <RefreshCwIcon aria-hidden className={cn('size-4', loading && 'animate-spin')} />
             </Button>
             <Button
+              ref={newSessionButtonRef}
               size="sm"
               variant="outline"
               onClick={handleNewSessionClick}
@@ -308,6 +324,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
         repositoryId={repositoryId}
         number={number}
         title={title}
+        headSha={detail.headSha}
         open={reviewOpen}
         onOpenChange={setReviewOpen}
         onSubmitted={() => void load()}
@@ -318,6 +335,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
         repositoryId={repositoryId}
         number={number}
         title={title}
+        headSha={detail.headSha}
         allowedMergeMethods={detail.allowedMergeMethods}
         open={mergeOpen}
         onOpenChange={setMergeOpen}
@@ -328,7 +346,18 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
       <AlertDialog open={forkWarningOpen} onOpenChange={setForkWarningOpen}>
         <AlertDialogContent
           onCloseAutoFocus={(event) => {
+            // Medium remediation (round 3, a11y: new regression introduced alongside this
+            // round's security fix): this dialog only called `preventDefault()` with no actual
+            // focus target, unlike `MergeDialog`/`ReviewDialog`'s identical sibling dialogs
+            // (correctly fixed this same round) -- dropping focus to `<body>` on every close,
+            // Cancel or "Start Session anyway" alike. Restores to the "New session" button that
+            // opened it, falling back to the detail heading if that button is now disabled
+            // (e.g. the pull request closed while this was open), matching `MergeDialog`'s
+            // exact pattern.
             event.preventDefault()
+            const button = newSessionButtonRef.current
+            if (button && !button.disabled) button.focus()
+            else headingRef.current?.focus()
           }}
         >
           <AlertDialogHeader>
