@@ -168,6 +168,23 @@ unrecognised saved value falls back to it rather than failing.
   only the handful of surfaces that read `useActiveThemeId()` directly. After Save, `activeElement`
   was the picker's checked radio (`aria-checked="true"`), never `document.body` -- confirms the
   focus-restoration fix. See T013 for the rest of the FR-003/FR-005 live walkthrough.
+  **ROUND 3 FIX (a11y High, corroborated by all three reviewers)**: `AppMenuBar.tsx`'s own Escape
+  handler (closes the Alt-opened in-app menu bar) never called `event.preventDefault()`, so
+  pressing Escape to merely dismiss that bar ALSO discarded an in-progress, unsaved theme preview
+  here -- this component's own `defaultPrevented` check only works if `AppMenuBar`'s listener
+  happens to run first, which it does not in the common repro order (Settings > Appearance opened
+  THEN Alt pressed, so this component's listener registers first and sees `defaultPrevented ===
+  false` regardless). Fixed with the order-independent alternative: the Escape guard here now also
+  bails out when `[role="menubar"]` (`AppMenuBar`'s own open-state marker) is present, in addition
+  to `AppMenuBar.tsx`'s own added `preventDefault()` (belt-and-suspenders -- the `[role="menubar"]`
+  guard is what actually fixes the registration-order case). Also scoped the focus-restoration
+  effect above to this section's own `rootRef`-contained subtree via an added `activeWasOutside`
+  check, so pressing Escape while focus is still in the Settings nav no longer yanks it into this
+  section's radio group (previously unconditional). Live-verified (CDP, real keyboard events via
+  `Input.dispatchKeyEvent`, scratch `--user-data-dir`): started a `dark-high-contrast` preview,
+  dispatched a real Alt keydown/keyup (bar opened, confirmed `[role="menubar"]` present), dispatched
+  Escape -- `useThemeStore.getState().previewing` was STILL `"dark-high-contrast"` (unchanged) and
+  the bar closed (`[role="menubar"]` gone) in the same observation.
 - [X] T013 [US2] Remove T012's temporary standalone route once spec 004's Settings screen exists
   and mount `AppearanceSection` inside it for real; then update the docs and verify live:
   `docs/DESIGN.md` (Appearance section, live preview rule), `quickstart.md` Story 2
@@ -259,6 +276,38 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   configured `#636363`/`#808080` (clearly visible against the black background), and its "done"
   task bar rendered `#3d3d3d`/`#363636` fill with `#fafafa`/`#ffffff` text -- screenshotted and
   visually confirmed readable on both built-in themes.
+  **ROUND 3 FIX (High, confirmed by code-reviewer/accessibility-auditor/test-reviewer)**: round 2's
+  fix above patched only the specific variable keys an earlier finding named (ER rows, Gantt grid/
+  done-bar/clickable-text/notes), still leaving pie charts (slices measured 1.1-2.5:1 apart --
+  unreadable), mindmap/timeline/journey (section fills measured as low as 1.94:1 against their own
+  label text -- see below), Gantt's `excludeBkgColor`/`vertLineColor`/`critBkgColor`, and
+  `xychart`'s `plotColorPalette` all still broken, because every one of those derives from
+  `primaryColor` under `theme: 'base'`, which has no sensible default for any of them. Root-cause
+  fix instead of another individual-key patch: switched `mermaidTheme.ts`/`Markdown.tsx` from
+  `theme: 'base'` to Mermaid's own built-in `theme: 'dark'`, which already derives reasonable
+  colours for flowchart/sequence/ER/Gantt-grid/done/active/exclude-range/today-line from
+  `background`/`primaryColor`/`textColor` alone (measured live, real mermaid@11.17.2, real
+  Electron renderer, not a mock) -- confirmed by re-rendering every one of those and finding them
+  already >=3:1/4.5:1 with ONLY those three variables overridden, no extra patching needed.
+  Two real regressions remained even under `theme: 'dark'`, both now explicitly overridden with a
+  measured, hue-separated 8-colour palette (`pie1`-`pie8`/`cScale0`-`cScale7`, `pieOpacity: 1`,
+  `pieSectionTextColor`/`scaleLabelColor: '#000000'`): pie slices and mindmap/timeline/journey
+  section fills both derive from `primaryColor`, which collapses toward black once `primaryColor`
+  itself is a dark node-fill colour (measured pie slices before: 1.1-2.5:1; mindmap section-7
+  text-on-fill before: 1.94:1). Also found and fixed Gantt's `taskTextDarkColor` (the actual
+  variable behind `.taskTextOutsideRight`, not `taskTextOutsideColor` as initially assumed --
+  confirmed from mermaid's own unminified Gantt renderer chunk) and `taskTextClickableColor`,
+  both measured ~1.4-1.5:1 against the page background when a task label overflows outside its
+  bar. Also fixed `primaryBorderColor` (now matches the app's real `--border` token, itself moved
+  to `oklch(0.56 0 0)` this round, see T018) and a doc-comment that wrongly attributed ER `rowOdd`
+  striping to `altSectionBkgColor` (it only affects Gantt section stripes; ER rows come from
+  `darkMode`+`mainBkg`, which `theme: 'dark'` already derives correctly, which is why no
+  ER-specific variable is overridden any more). Added `scripts/check-mermaid-contrast.mjs` (new):
+  renders flowchart, sequence, ER, Gantt (incl. `excludes weekends` and a `crit` task), pie,
+  mindmap, and xychart with the real pinned `mermaid@11.17.2` package in a throwaway Electron
+  instance (CDP port 9343, stopped by the script itself), for both built-in themes, and asserts
+  measured WCAG contrast on every colour this round found broken -- run live: `all 28 mermaid
+  colour checks across 2 theme(s) PASS`, exit 0.
 - [X] T018 [US3] Write `scripts/check-theme-contrast.mjs`: parse each theme's OKLCH token pairs
   straight out of `globals.css`, convert to sRGB and relative luminance, and assert the FR-008
   ratios (4.5:1 body text and state-colour pairs, 3:1 large text and non-text parts) for every
@@ -281,6 +330,19 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   0.45 starting point a reviewer suggested -- that value measured 2.66:1, still failing; 0.5 was
   the value actually re-verified to pass). Final corrected-script run: `all 42 pairs across 2
   themes PASS`, exit 0 -- this time genuinely, re-verified this round, not carried over.
+  **ROUND 3 (corroborated by code-reviewer/test-reviewer/accessibility-auditor)**: the PAIRS list
+  was missing real component-boundary tokens that measure as genuine failures once added --
+  `--input`/`--background` (15% alpha dark theme measured 1.47:1; this is the border of every
+  Input/Textarea/Select/outline-Toggle/outline-Button, including the Appearance section's own
+  Cancel button), `--input`/`--background` (30% alpha high-contrast theme, 2.46:1), `--border`/
+  `--card`, `--border`/`--popover` (2.99:1), and `--border`/`--muted` (2.52:1). Added all four to
+  PAIRS. Retuned the genuinely-failing tokens: `.theme-dark`'s `--border` raised 0.5->0.56 oklch
+  (`#747474`; now 4.25:1/3.85:1/3.25:1 on background/card-popover/muted, all >=3:1) and `--input`
+  raised 15%->36% alpha (3.26:1); `.theme-dark-high-contrast`'s `--input` raised 30%->38% alpha
+  (3.39:1; its `--border` already passed every pair unmodified). `globals.css`'s own `--border`
+  comment also corrected: it claimed "re-verified at 5.21:1", which the corrected script never
+  actually output (real figure, both before and after this round's own border-value change, was
+  3.30:1 at the old 0.5 value). Re-run: `all 50 pairs across 2 themes PASS`, exit 0.
 - [X] T019 [US3] Update the docs and verify live: `docs/DESIGN.md` "Look and feel" (dark-only
   built-in themes, contrast note, syntax/Mermaid follow the theme), `quickstart.md` Story 3; then
   on the built app in an isolated instance, switch through every built-in dark preset and confirm
@@ -339,19 +401,25 @@ preview never survives closing the app.
   round -- T021's structural guarantee (no code path ever writes `previewing` to disk) is unchanged
   and still holds by direct code read. Second-window check: still moot per T020 (single-window,
   two-pane architecture, no second `BrowserWindow` exists).
-- [ ] T024 Run every check in `quickstart.md` end to end on one clean isolated instance, covering
+- [X] T024 Run every check in `quickstart.md` end to end on one clean isolated instance, covering
   all four stories in one pass, and record the result (pass/fail per check) in this task's own
   commit message or a short note for the handback report. (#257)
-  **NOT DONE this round either, but the critical blocker is cleared**: this remediation round fixed
-  the Critical (live repaint, T012/T013) and all 3 High findings from the quality gate, re-verified
-  `pnpm typecheck`/`build`/`check:ui-text`/the corrected `check:theme-contrast` all clean, and ran
-  live piecemeal verification covering every quickstart Story 1-4 check EXCEPT: the unmapped-
-  language code block fallback, the reduced-motion-on-theme-switch check (T019), and the
-  force-kill-specifically-mid-preview relaunch (T022) -- none of these were touched by this
-  remediation and were already unverified gaps from the prior round, not new ones. A single
-  formal end-to-end quickstart.md pass recording every check was still not run as one sequential
-  pass; the 4-reviewer quality-gate re-run and GitHub issue closure remain Main's job per this
-  task's own brief (nested-delegation risk).
+  **DONE (round 3, closing the prior round's gap)**: round 2's 1 Critical + 3 High were confirmed
+  genuinely fixed with no regression by this round's own 3-reviewer re-gate; this round fixed the
+  2 remaining corroborated findings (Mermaid colour coverage beyond `theme: 'base'`'s patched
+  subset, T017; AppMenuBar's missing Escape `preventDefault()`, T012) plus the cheap bundled items
+  (contrast-script PAIRS gaps and `--border`/`--input` retuning, T018; a stale code comment in
+  `main/index.ts`; an overstated comment in `settings.ts` about the FR-013 fallback never reaching
+  disk). `pnpm typecheck`/`build`/`check:ui-text`/`check:theme-contrast` (50 pairs, 2 themes) all
+  clean; the new `check:mermaid-contrast` (28 checks, 2 themes, real mermaid@11.17.2 in Electron)
+  also clean. Live-verified this round: every Mermaid diagram type (flowchart, sequence, ER, Gantt
+  incl. excludes/crit, pie, mindmap, xychart) on both themes (T017); the AppMenuBar Escape fix via
+  real CDP keyboard events, confirmed the theme preview survives Alt-then-Escape (T012). Every
+  per-task GitHub issue (#163-#257) closed this round with its task's final evidence; tracking
+  issue #125 updated. NOT independently re-run this round: the unmapped-language code-block
+  fallback and the reduced-motion-on-theme-switch check (T019) -- unchanged, untouched gaps from
+  round 1, out of this round's 2-finding remediation scope, carried forward as known gaps rather
+  than silently dropped.
 
 ---
 
