@@ -139,6 +139,11 @@ export interface ContextUsage {
  * (FINDINGS item 36) -- the same value OMP's own `progress[].id` carries. */
 export interface SubagentSummary {
   id: string;
+  /** The owning `task()` call's own `toolCallId` (spec 004 remediation, HIGH): a turn with 2+
+   * parallel `task` calls, or a repeated subagent name across two calls in the same turn, both
+   * need this to correlate a `tool_execution_update`/`tool_execution_end` frame to the right
+   * batch -- `id` alone (name or position) is not unique enough across calls. */
+  toolCallId: string;
   nameOrTask: string;
   status: 'running' | 'finished' | 'failed';
   startedAt: number;

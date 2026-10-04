@@ -1,12 +1,15 @@
 // Assembles the chip row's live SessionReadout bundle (spec 004 FR-002 to FR-008, FR-021,
 // data-model.md "SessionReadout"). Called by SessionAgent.scheduleReadoutUpdate() after any
 // state change that could move a readout (a tool call ending, a turn starting/ending, a
-// get_state sync, or the pull-request poll timer); itself does the git/gh lookups (diffStat,
-// pullRequestForBranch), so it is async -- scheduleReadoutUpdate's own in-flight guard keeps two
-// calls for one Session from overlapping, never this module's concern.
+// get_state sync); itself only does the `diffStat` lookup now -- the pull-request lookup moved
+// out to `SessionAgent.refreshPullRequest` (spec 004 remediation, HIGH: a `gh pr list` network
+// call on every readout trigger, including every `tool_execution_update` during a subagent-heavy
+// turn, could hammer Stuart's own GitHub API rate limit; see that method's own doc comment for
+// where it actually runs instead) -- so this stays async only for `diffStat`, and
+// scheduleReadoutUpdate's own in-flight guard keeps two calls for one Session from overlapping,
+// never this module's concern.
 
 import { diffStat } from '../git/diffStat';
-import { pullRequestForBranch } from '../git/github';
 import type { Session, SessionReadout, SubagentSummary } from '../../shared/model';
 
 export interface ReadoutState {
@@ -20,6 +23,10 @@ export interface ReadoutState {
   stateSynced: boolean;
   /** `get_state().todoPhases` (FINDINGS item 35), when the most recent sync reported one. */
   todoPhases?: Array<{ name: string; tasks: Array<{ content: string; status: string }> }>;
+  /** `SessionAgent.cachedPullRequest` (spec 004 remediation, HIGH): already resolved and
+   * retention-adjusted by `refreshPullRequest` -- passed straight through to the built
+   * `SessionReadout` below, never looked up fresh here. */
+  pullRequest: SessionReadout['pullRequest'];
 }
 
 /** Builds a fresh `SessionReadout` from `previous` (for retention) and the current `state`
@@ -40,15 +47,6 @@ export async function assembleReadout(session: Session, previous: SessionReadout
     : state.stateSynced
       ? ('not-available' as const) // a sync happened but the agent never reported it (FR-003's own escape hatch)
       : previous.contextUsage; // no sync yet this run; keep whatever the last run (or null) had
-
-  // Judgment call (data-model.md's retention rule vs spec.md's edge-case wording, both ambiguous
-  // together): a clean lookup that finds no open PR for this branch (a PR closed/merged, or a
-  // branch that never had one) actively hides the chip (quickstart Story 1 point 6, "Switch to a
-  // branch with no pull request... the chip disappears"); only a genuinely indeterminate lookup
-  // (gh missing, offline, rate limited, no recognisable remote) retains the previous reading,
-  // per data-model.md's "a lookup momentarily fails" wording.
-  const lookup = await pullRequestForBranch(session.worktreePath, session.branch);
-  const pullRequest = lookup.status === 'found' ? lookup.pr : lookup.status === 'none' ? null : previous.pullRequest;
 
   // FR-007/T008: the count reflects the *current* turn's subagents -- it MUST persist after
   // that turn settles (a developer still asking "what did it delegate to" after the fact) and
@@ -76,7 +74,7 @@ export async function assembleReadout(session: Session, previous: SessionReadout
     changes,
     contextUsage,
     turnTime: state.turnStartedAt !== null ? { startedAt: state.turnStartedAt } : null,
-    pullRequest,
+    pullRequest: state.pullRequest,
     subagentCount,
     todoProgress,
   };

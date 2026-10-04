@@ -43,6 +43,7 @@ import type { SettingsStore } from '../store/settings';
 import { assembleReadout } from './readout';
 import type { ReadoutState } from './readout';
 import { applySubagentProgress } from './subagentStream';
+import { pullRequestForBranch } from '../git/github';
 
 const ABORT_SETTLE_TIMEOUT_MS = 60_000;
 /** `predict_word`'s own worst case (rpc.md "Word prediction": "about two minutes" for a cold
@@ -185,6 +186,16 @@ export class SessionAgent extends EventEmitter {
   private readoutInFlight = false;
   private readoutPending = false;
   private prPollTimer: NodeJS.Timeout | undefined;
+  /** Spec 004 remediation (HIGH): the PR lookup's own cache, refreshed only by
+   * `refreshPullRequest` (the poll timer, once at Session open, or a branch change noticed in
+   * `computeReadout`) -- never looked up fresh per readout trigger; see that method's own doc
+   * comment. `null` until the first refresh resolves, same "not read yet" meaning every other
+   * readout field's `null` already carries. */
+  private cachedPullRequest: SessionReadout['pullRequest'] = null;
+  /** The branch `cachedPullRequest` was last computed for; a mismatch against the registry's
+   * current `session.branch` is `computeReadout`'s own signal to kick off a fresh
+   * `refreshPullRequest` outside the poll timer. */
+  private pullRequestBranch: string | undefined;
   /** Set once the first `get_state` syncs this run (constructor/launch/settle); before that,
    * `contextUsage`/`todoProgress` stay at whatever `assembleReadout` already had rather than
    * jumping to `'not-available'` -- no reading was ever expected yet. */
@@ -372,8 +383,12 @@ export class SessionAgent extends EventEmitter {
     this.emitPatchReset();
     // Spec 004: the pull-request chip has no OMP frame to react to, so it is polled on a timer
     // once a Session has been opened (started here, never for a Session nobody opened this run).
+    // Spec 004 remediation (HIGH): the timer (and this one-off open-time refresh) is now the
+    // *only* place that actually calls `gh pr list` -- see `refreshPullRequest`'s own doc
+    // comment for why every other readout trigger must not.
     if (!this.prPollTimer) {
-      this.prPollTimer = setInterval(() => this.scheduleReadoutUpdate(), PR_POLL_INTERVAL_MS);
+      void this.refreshPullRequest();
+      this.prPollTimer = setInterval(() => void this.refreshPullRequest(), PR_POLL_INTERVAL_MS);
     }
     return { ok: true };
   }
@@ -430,6 +445,13 @@ export class SessionAgent extends EventEmitter {
     if (this.prPollTimer) {
       clearInterval(this.prPollTimer);
       this.prPollTimer = undefined;
+    }
+    // Low finding (spec 004 remediation): a debounced readout already queued by
+    // `scheduleReadoutUpdate` still ran `computeReadout` (git/gh calls included) and emitted
+    // after `shutdown()`, for a Session nothing is listening to any more.
+    if (this.readoutTimer) {
+      clearTimeout(this.readoutTimer);
+      this.readoutTimer = undefined;
     }
     await stopIfRunning(this.process);
   }
@@ -841,6 +863,14 @@ export class SessionAgent extends EventEmitter {
         this.turnSettleHandled = false;
         this.setStatus('working');
         this.subagentStreams.clear();
+        // Spec 004 remediation (HIGH): the previous turn's selected-subagent id and any patches
+        // still coalescing for it are stale the instant a new turn starts -- the renderer's own
+        // panel does the matching reset of its selection/stream cache on this same signal
+        // (readout-store.ts's `applySubagents`), so main must stop forwarding/queuing for an id
+        // no later `tool_execution_update` will ever match again (ids are now per-toolCallId,
+        // never reused across turns) rather than just letting it quietly go dead.
+        this.visibleSubagentId = null;
+        this.subagentPatches.clear();
         this.runtime = { ...this.runtime, turnStartedAt: Date.now(), subagents: [] };
         this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
         this.scheduleReadoutUpdate();
@@ -1067,28 +1097,66 @@ export class SessionAgent extends EventEmitter {
       return;
     }
     this.readoutInFlight = true;
-    void this.computeReadout().finally(() => {
-      this.readoutInFlight = false;
-      if (this.readoutPending) {
-        this.readoutPending = false;
-        this.runReadoutUpdate();
-      }
-    });
+    // Low finding (spec 004 remediation): neither `computeReadout` nor this `.finally` ever had
+    // a `.catch` -- a rejection (a future `assembleReadout`/`diffStat` regression) was an
+    // unhandled promise rejection instead of a logged, contained failure.
+    void this.computeReadout()
+      .catch((err) => console.error(`SessionAgent ${this.sessionId}: computeReadout failed`, err))
+      .finally(() => {
+        this.readoutInFlight = false;
+        if (this.readoutPending) {
+          this.readoutPending = false;
+          this.runReadoutUpdate();
+        }
+      });
   }
 
   private async computeReadout(): Promise<void> {
     const session = this.registry.getSession(this.sessionId);
     if (!session) return;
+    // Spec 004 remediation (HIGH): a genuine branch change is the one non-timer, non-open
+    // trigger that still deserves a fresh `gh pr list` -- every *other* readout trigger below
+    // (a tool call ending, a turn starting/ending, a get_state sync) must only ever read
+    // `cachedPullRequest`, never look up fresh; see `refreshPullRequest`'s own doc comment.
+    if (session.branch !== this.pullRequestBranch) void this.refreshPullRequest();
     const state: ReadoutState = {
       turnStartedAt: this.runtime.turnStartedAt,
       subagents: this.runtime.subagents,
       contextUsage: this.lastContextUsage,
       stateSynced: this.stateSynced,
       todoPhases: this.lastTodoPhases,
+      pullRequest: this.cachedPullRequest,
     };
     const readout = await assembleReadout(session, this.runtime.readout, state);
     this.runtime = { ...this.runtime, readout };
     this.emit('readout', { sessionId: this.sessionId, readout });
+  }
+
+  /** Spec 004 FR-006 remediation (HIGH, code-reviewer): the *only* place that actually calls
+   * `gh pr list` over the network. Before this fix, `assembleReadout` looked the PR up fresh on
+   * every readout trigger -- which includes every `tool_execution_update` during a streaming
+   * subagent turn -- hammering Stuart's own GitHub API rate limit on a long subagent-heavy turn
+   * instead of only on the intended `PR_POLL_INTERVAL_MS` timer. Runs only from: the
+   * `prPollTimer` tick (`launch()`), once when a Session is opened (`launch()`, same call site,
+   * before the timer's own first tick), and a genuine `session.branch` change noticed by
+   * `computeReadout`. Every other trigger reads `cachedPullRequest` instead. Sets
+   * `pullRequestBranch` before awaiting the lookup (not after), so a `computeReadout` branch
+   * check racing the same tick never fires a redundant second lookup for the branch already
+   * in flight. */
+  private async refreshPullRequest(): Promise<void> {
+    const session = this.registry.getSession(this.sessionId);
+    if (!session) return;
+    this.pullRequestBranch = session.branch;
+    const lookup = await pullRequestForBranch(session.worktreePath, session.branch);
+    // Judgment call (data-model.md's retention rule vs spec.md's edge-case wording, both
+    // ambiguous together): a clean lookup that finds no open PR for this branch (a PR
+    // closed/merged, or a branch that never had one) actively hides the chip (quickstart Story 1
+    // point 6, "Switch to a branch with no pull request... the chip disappears"); only a
+    // genuinely indeterminate lookup (gh missing, offline, rate limited, no recognisable remote)
+    // retains the previous reading, per data-model.md's "a lookup momentarily fails" wording.
+    this.cachedPullRequest =
+      lookup.status === 'found' ? lookup.pr : lookup.status === 'none' ? null : this.cachedPullRequest;
+    this.scheduleReadoutUpdate();
   }
 
   // --- Spec 004: subagent tracking (FR-007, FR-017 to FR-020) -----------------------------
@@ -1108,16 +1176,20 @@ export class SessionAgent extends EventEmitter {
     return task.length > 60 ? `${task.slice(0, 60)}...` : task || 'Subagent';
   }
 
-  /** `tool_execution_start` for the `task` tool: creates one `SubagentSummary` per spec, `id`
-   * set to the spec's own `name` (FINDINGS item 36: OMP's own `progress[].id` echoes it back
-   * unchanged) falling back to the same text `nameOrTask` uses when unnamed -- the index-based
-   * correlation in `handleTaskUpdate` is the authoritative match either way. */
+  /** `tool_execution_start` for the `task` tool: creates one `SubagentSummary` per spec. `id` is
+   * `${toolCallId}:${name-or-fallback}` (spec 004 remediation, HIGH) -- prefixing with the
+   * owning call's own `toolCallId` keeps it globally unique across both a turn with 2+ parallel
+   * `task` calls and a repeated subagent name reused in a later turn, neither of which a bare
+   * name (FINDINGS item 36: OMP's own `progress[].id` echoes it back unchanged) can tell apart
+   * on its own; `toolCallId` is also kept as its own field so `handleTaskUpdate`/`handleTaskEnd`
+   * can scope their own correlation to the right batch before ever falling back to name/position. */
   private handleTaskStart(frame: ToolExecutionStartFrame): void {
     const specs = this.readTaskSpecs(frame.args);
     if (specs.length === 0) return;
     const startedAt = Date.now();
     const created: SubagentSummary[] = specs.map((spec) => ({
-      id: spec.name ?? this.subagentNameOrTask(spec),
+      id: `${frame.toolCallId}:${spec.name ?? this.subagentNameOrTask(spec)}`,
+      toolCallId: frame.toolCallId,
       nameOrTask: this.subagentNameOrTask(spec),
       status: 'running',
       startedAt,
@@ -1130,22 +1202,33 @@ export class SessionAgent extends EventEmitter {
     this.scheduleReadoutUpdate();
   }
 
-  /** `tool_execution_update` for the `task` tool (FINDINGS item 36): correlates each
-   * `progress[]` entry to a tracked `SubagentSummary` by `id` first, falling back to array
-   * position (`index`) when no id match is found (an unnamed subagent whose fallback id never
-   * matched OMP's own choice) -- never silently drops an entry. Updates status/duration and
-   * patches that subagent's own stream from `recentTools`/`recentOutput`. */
+  /** `tool_execution_update` for the `task` tool (FINDINGS item 36, spec 004 remediation HIGH):
+   * scoped first to only the `SubagentSummary` entries whose own `toolCallId` matches this
+   * frame's -- a turn with 2+ parallel `task` calls must never let one call's progress entries
+   * match another's subagents, which a global (whole-turn) id-or-position search used to allow.
+   * Within that one batch, each `progress[]` entry correlates by `id` first (`progress.id` is
+   * the bare, un-prefixed name OMP echoes back), falling back to position *within the batch*
+   * when no id match is found (an unnamed subagent whose fallback id never matched OMP's own
+   * choice) -- never silently drops an entry, and never reaches into a different call's batch
+   * to do it. Updates status/duration and patches that subagent's own stream from
+   * `recentTools`/`recentOutput`. */
   private handleTaskUpdate(frame: ToolExecutionUpdateFrame): void {
     const progressList = frame.partialResult.details.progress;
     if (!Array.isArray(progressList) || progressList.length === 0) return;
     let subagents = this.runtime.subagents;
     let changed = false;
+    const batchIndices: number[] = [];
+    for (let i = 0; i < subagents.length; i++) {
+      if (subagents[i]?.toolCallId === frame.toolCallId) batchIndices.push(i);
+    }
+    if (batchIndices.length === 0) return;
     for (let i = 0; i < progressList.length; i++) {
       const progress = progressList[i];
       if (!progress) continue;
-      const matchIndex = subagents.findIndex((s) => s.id === progress.id);
-      const targetIndex = matchIndex !== -1 ? matchIndex : i < subagents.length ? i : -1;
-      if (targetIndex === -1) continue;
+      const compositeId = `${frame.toolCallId}:${progress.id}`;
+      const matchIndex = batchIndices.find((idx) => subagents[idx]?.id === compositeId);
+      const targetIndex = matchIndex !== undefined ? matchIndex : i < batchIndices.length ? batchIndices[i] : undefined;
+      if (targetIndex === undefined) continue;
       const existing = subagents[targetIndex];
       if (!existing) continue;
       const status = progress.status === 'completed' ? 'finished' : /failed|cancelled|error/i.test(progress.status) ? 'failed' : 'running';
@@ -1172,13 +1255,16 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** `tool_execution_end` for the `task` tool: a safety net in case a final `completed`/`failed`
-   * `tool_execution_update` was somehow missed -- marks every still-`running` subagent from this
-   * batch `finished` (or `failed` when the whole call errored), per FR-007's own wording. */
+   * `tool_execution_update` was somehow missed -- marks every still-`running` subagent *from
+   * this call's own batch* (spec 004 remediation, HIGH: scoped by `toolCallId`, never every
+   * still-running subagent across the whole turn, which used to mark a different call's own
+   * still-in-progress batch finished/failed too when a turn had 2+ parallel `task` calls)
+   * `finished` (or `failed` when the whole call errored), per FR-007's own wording. */
   private handleTaskEnd(frame: ToolExecutionEndFrame): void {
     const fallbackStatus: SubagentSummary['status'] = frame.isError ? 'failed' : 'finished';
     let changed = false;
     const subagents = this.runtime.subagents.map((s) => {
-      if (s.status !== 'running') return s;
+      if (s.toolCallId !== frame.toolCallId || s.status !== 'running') return s;
       changed = true;
       return { ...s, status: fallbackStatus, durationMs: s.durationMs ?? Date.now() - s.startedAt };
     });

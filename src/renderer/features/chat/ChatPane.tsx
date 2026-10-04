@@ -47,9 +47,15 @@ export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): voi
   // `readout.subagentCount` kept showing the real count the whole time); live updates still fold
   // on top via `subagents:update`.
   useReadoutStore.getState().reset(sessionId, snapshot.readout, snapshot.subagents)
-  // Spec 004 FR-020: a Session switch (or a reopen) leaves no stale subagent panel open for a
-  // different Session's turn.
-  useSubagentPanelStore.getState().reset()
+  // Spec 004 FR-020: a Session switch leaves no stale subagent panel open for a different
+  // Session's turn. Medium remediation (code-reviewer): only actually reset when this snapshot
+  // is for a DIFFERENT Session than the panel was last open for -- a Settings round-trip (or any
+  // other remount that re-applies a snapshot for the Session already visible, e.g. ChatPane
+  // remounting on return from Settings) must never drop a panel the user deliberately opened for
+  // a turn still in progress just because `sessions.open` ran again for the same Session.
+  if (useSubagentPanelStore.getState().sessionId !== sessionId) {
+    useSubagentPanelStore.getState().reset()
+  }
 }
 
 /** `SessionSummary` (the sessions-store list row) carries `status` but not `stopReason`/
@@ -147,6 +153,19 @@ export function ChatPane() {
       cancelled = true
     }
   }, [visibleSessionId])
+
+  // Sibling case to applySnapshot's own reset (test-reviewer finding): archiving or deleting the
+  // visible Session never re-triggers a sessions.open() call for it (the effect above only fires
+  // when `visibleSessionId` itself changes), so applySnapshot's own panel reset never runs --
+  // MessageInput and the chip row unmount here (the Empty state below) while
+  // `useSubagentPanelStore`'s `open`/`sessionId` silently keep pointing at a Session that no
+  // longer exists. Closing the panel whenever that exact Session vanishes mirrors an explicit
+  // Close click instead of leaving a stale, inaccessible panel open.
+  useEffect(() => {
+    if (!visibleSessionId || session) return
+    const panelState = useSubagentPanelStore.getState()
+    if (panelState.sessionId === visibleSessionId) panelState.closePanel()
+  }, [visibleSessionId, session])
 
   if (!visibleSessionId || !session) {
     return (

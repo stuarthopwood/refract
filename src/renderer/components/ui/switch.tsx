@@ -4,6 +4,20 @@ import * as React from "react"
 import { cn } from "cn"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
+// High remediation (a11y): the Off-state track was ~1.5:1 against the page (bg-input, 15%
+// white over the dark background) and the focus ring ~1.9:1 at best (ring-ring/50, 50% opacity,
+// with no solid focus-visible:border-ring the way Button/Badge both already have) -- both well
+// under WCAG 1.4.11's 3:1 non-text-contrast minimum for a component/focus indicator.
+// `dark:data-[state=unchecked]:bg-foreground/40` (computed via the OKLab->linear-sRGB->WCAG
+// relative-luminance pipeline docs/DESIGN.md's "Chat text colour" note already uses: ~3.66:1
+// against the page, confirmed live) raises the Off track's own contrast well past 3:1 -- an
+// EARLIER attempt here used `bg-input/80`, which Tailwind composites as 80% of `--input`'s own
+// *already* mostly-transparent 15%-alpha value (0.15 * 0.8 = 0.12 effective alpha), actually
+// *lowering* contrast to ~1.33:1; caught live via a real `getComputedStyle` read, not just
+// visual inspection. The solid `dark:data-[state=unchecked]:bg-foreground` thumb reaches ~5.2:1
+// against that now-lighter track (and ~19:1 against the page). `focus-visible:border-ring`
+// matches the solid full-opacity ring Button/Badge both already use alongside their own
+// low-opacity glow.
 function Switch({
   className,
   ...props
@@ -12,7 +26,7 @@ function Switch({
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "peer inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
+        "peer inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-foreground/40",
         className
       )}
       {...props}
@@ -20,7 +34,7 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "pointer-events-none block size-4 rounded-full bg-background shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
+          "pointer-events-none block size-4 rounded-full bg-background shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 dark:data-[state=unchecked]:bg-foreground"
         )}
       />
     </SwitchPrimitive.Root>

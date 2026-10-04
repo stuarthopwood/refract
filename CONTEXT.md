@@ -36,6 +36,14 @@ _Avoid_: Permission level, yolo (internal OMP name for Auto)
 One continuous exchange with the agent inside a **Session**. A **Session** has many **Conversations**, one of which is current; starting a fresh one keeps the same **Session** and **Worktree** and keeps the earlier ones reachable as history.
 _Avoid_: Session (in the agent's own sense), transcript
 
+**Readout chip**:
+One entry in the row above the message box (spec 004) showing one glanceable fact about the visible **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Which kinds show is chosen per-kind in Settings.
+_Avoid_: Status chip, badge (for this row specifically)
+
+**Subagent panel**:
+The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: lists the current turn's subagents by name/task with a state icon plus the state word, and shows a selected one's live stream (text and tool calls) updating as it runs.
+_Avoid_: Subagent sidebar, task panel
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.

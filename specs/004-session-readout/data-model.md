@@ -108,7 +108,8 @@ from.
 
 ```ts
 interface SubagentSummary {
-  id: string;                               // stable within one turn; from the probe in research.md item 9
+  id: string;                               // `${toolCallId}:${name-or-fallback}` (remediation round, see tasks.md) -- globally unique, not just stable within one turn
+  toolCallId: string;                       // the owning task() call's own id; scopes correlation across 2+ parallel task calls in one turn
   nameOrTask: string;                       // the subagent's name, or its task text when unnamed
   status: 'running' | 'finished' | 'failed';
   startedAt: number;

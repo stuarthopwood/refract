@@ -8,7 +8,7 @@ import { Readiness } from '@/features/readiness/Readiness'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { StatusBar } from '@/features/status-bar/StatusBar'
-import { useRepositoriesStore, useSubagentPanelStore, useViewStore } from '@/state'
+import { useRepositoriesStore, useSessionsStore, useSubagentPanelStore, useViewStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 
 // Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and the right region --
@@ -30,6 +30,7 @@ export function App() {
   const view = useViewStore((state) => state.view)
   const panelOpen = useSubagentPanelStore((state) => state.open)
   const panelSessionId = useSubagentPanelStore((state) => state.sessionId)
+  const visibleSessionId = useSessionsStore((state) => state.visibleSessionId)
   const subagentPanelRef = useRef<PanelImperativeHandle>(null)
 
   // Keeps the subagents Panel mounted at all times (collapsible/collapsedSize=0, same pattern
@@ -98,8 +99,35 @@ export function App() {
               maxSize={520}
               collapsible
               collapsedSize={0}
+              onResize={(size, _id, prevSize) => {
+                // High remediation (code-reviewer): the handle stays draggable even while
+                // "collapsed" (nothing else disables it), so dragging it directly -- rather than
+                // through the Subagents chip/Close button -- used to desync the real rendered
+                // size from `useSubagentPanelStore`'s own `open` boolean: dragging an open panel
+                // shut left `open: true` with no way back in (the chip's `openPanel` call is
+                // already `true`, so nothing re-triggers the layout effect above), and dragging a
+                // closed panel open showed an empty panel (`panelSessionId` stays `null`). This
+                // keeps the store in sync with the panel's REAL rendered state on every resize,
+                // not just the state the store thinks it last commanded; `prevSize === undefined`
+                // is the initial mount, which the layout effect above already owns.
+                if (prevSize === undefined) return
+                const collapsed = size.inPixels <= 0
+                const wasCollapsed = prevSize.inPixels <= 0
+                if (collapsed === wasCollapsed) return
+                const panelState = useSubagentPanelStore.getState()
+                if (collapsed && panelState.open) panelState.closePanel()
+                else if (!collapsed && !panelState.open && visibleSessionId) panelState.openPanel(visibleSessionId)
+              }}
             >
-              <ErrorBoundary>{panelSessionId && <SubagentPanel sessionId={panelSessionId} />}</ErrorBoundary>
+              {/* Critical remediation (a11y + test-reviewer, same root cause from two angles):
+                  gated on `panelOpen` too, not just `panelSessionId` -- collapsing this Panel to
+                  zero width never unmounts its content (react-resizable-panels sets no
+                  inert/hidden/display:none on a collapsed Panel), so the Close button and every
+                  subagent row button stayed in the Tab order and in screen-reader browse mode
+                  even while visually hidden. The `ResizablePanel` wrapper itself stays always
+                  mounted either way (FR-020's pixel-exact sizing fix depends on that, see the
+                  comment above); only the content inside now actually unmounts when closed. */}
+              <ErrorBoundary>{panelOpen && panelSessionId && <SubagentPanel sessionId={panelSessionId} />}</ErrorBoundary>
             </ResizablePanel>
           </ResizablePanelGroup>
         )}

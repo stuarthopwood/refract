@@ -461,6 +461,7 @@ export function SessionList() {
           variant="ghost"
           size="sm"
           className="no-drag-region ml-auto h-7 gap-1.5 px-2 text-muted-foreground"
+          aria-label="Settings"
           onClick={() => openSettings()}
         >
           <SettingsIcon aria-hidden className="size-3.5" />

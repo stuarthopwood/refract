@@ -38,4 +38,16 @@ export class PatchCoalescer {
     this.pendingOps = [];
     this.emit([{ op: 'reset', items }]);
   }
+
+  /** Drops any still-pending coalesced ops without emitting them (spec 004 remediation, HIGH):
+   * used when the whole context they'd patch has gone stale on its own (a turn ending, a
+   * Session no longer being watched) and a stray emit right after would patch a subscriber that
+   * no longer wants updates at all, rather than genuinely resetting it to a fresh snapshot. */
+  clear(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.pendingOps = [];
+  }
 }

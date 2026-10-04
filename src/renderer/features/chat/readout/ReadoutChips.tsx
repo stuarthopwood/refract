@@ -81,6 +81,10 @@ export function TurnTimeChip() {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (startedAt === null) return
+    // Low remediation: a stale `now` from the *previous* turn (or mount) otherwise shows for up
+    // to a full second before the first interval tick, briefly reading an elapsed time that
+    // doesn't belong to this turn at all.
+    setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [startedAt])
@@ -112,7 +116,15 @@ export function CurrentTimeChip() {
   }, [])
   const formatted = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(now)
   return (
-    <ReadoutChip icon={ClockIcon} accessibleName={`Current time: ${formatted}`}>
+    <ReadoutChip icon={ClockIcon}>
+      {/* High remediation (a11y): a plain, non-interactive, role-less <span> cannot be named by
+          aria-label per ARIA 1.2 -- several real screen readers (NVDA in browse mode, often
+          Narrator/JAWS) read visible content instead, and this span's only content used to be
+          aria-hidden, so the chip could read as nothing. Real, always-present text in a visually-
+          hidden sibling span (the same sr-only-text-plus-aria-hidden-visual-duplicate pattern
+          ToolRow.tsx/NoticeRow.tsx already use) is readable regardless of how a given screen
+          reader treats aria-label on a generic element. */}
+      <span className="sr-only">{`Current time: ${formatted}`}</span>
       <span aria-hidden>{formatted}</span>
     </ReadoutChip>
   )
@@ -158,7 +170,10 @@ export function TodoProgressChip() {
   const todoProgress = useReadoutStore((s) => s.readout.todoProgress)
   if (todoProgress === null) return null
   return (
-    <ReadoutChip icon={ListTodoIcon} accessibleName={`Todo: ${todoProgress.done} of ${todoProgress.total} tasks done`}>
+    <ReadoutChip icon={ListTodoIcon}>
+      {/* High remediation (a11y): see CurrentTimeChip's own comment above -- same bug, same
+          sr-only fix. */}
+      <span className="sr-only">{`Todo: ${todoProgress.done} of ${todoProgress.total} tasks done`}</span>
       <span aria-hidden>
         Todo {todoProgress.done}/{todoProgress.total}
       </span>

@@ -2,10 +2,12 @@
 // left-section-list layout, one section today ("Session readout"); spec 007 adds "appearance"
 // later without redesigning this screen (FR-015). Reached via the temporary gear control in
 // SessionList.tsx (research.md decision 7) until spec 008's profile-item cog supersedes it.
+import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeftIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { focusSettingsEntry } from '@/lib/focus'
 import { useSettingsStore, useViewStore } from '@/state'
 import type { ReadoutKind } from '../../../shared/model'
 import type { SettingsSectionId } from '../../state/view-store'
@@ -43,6 +45,25 @@ export function SettingsScreen() {
   const openChat = useViewStore((state) => state.openChat)
   const sessionReadout = useSettingsStore((state) => state.settings.sessionReadout)
   const setReadoutVisibility = useSettingsStore((state) => state.setReadoutVisibility)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+
+  // High remediation (a11y): the Settings entry point (SessionList.tsx's gear button) unmounts
+  // the instant this screen shows (App.tsx swaps the whole main area on `view`), and nothing
+  // here claimed focus -- it silently dropped to `<body>` on every entry. Focusing this screen's
+  // own heading (already a real `<h2>`, `tabIndex={-1}` so it accepts programmatic focus without
+  // joining the Tab order) lands keyboard/screen-reader users somewhere meaningful instead.
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
+  function handleBackToChat(): void {
+    openChat()
+    // The SessionList row this returns focus to doesn't exist yet -- App.tsx remounts the whole
+    // SessionList+ChatPane workspace on the same `view` flip this triggers, so the query has to
+    // run after that remount commits, not synchronously here (see `focusSettingsEntry`'s own
+    // doc comment).
+    requestAnimationFrame(() => focusSettingsEntry())
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -52,7 +73,7 @@ export function SettingsScreen() {
           size="icon"
           className="no-drag-region size-7"
           aria-label="Back to chat"
-          onClick={() => openChat()}
+          onClick={handleBackToChat}
         >
           <ArrowLeftIcon aria-hidden className="size-4" />
         </Button>
@@ -77,7 +98,9 @@ export function SettingsScreen() {
           </ul>
         </nav>
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          <h2 className="mb-1 text-base font-semibold">Session readout</h2>
+          <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
+            Session readout
+          </h2>
           <p className="mb-4 text-sm text-muted-foreground">
             Choose which readouts show in the chip row above the message box, for every open Session.
           </p>
