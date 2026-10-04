@@ -79,66 +79,13 @@
 }
 
 :root {
-  color-scheme: light;
-  --scrollbar-thumb: #8a8a8a;
-  --scrollbar-thumb-hover: #6e6e6e;
-  --scrollbar-track: transparent;
+  /* Theme-independent values only (spec 007 T008): everything else that used to live here as an
+     unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
+     light theme) now lives only inside each `.theme-<id>` block below. */
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  /* Chat prose colour (docs/DESIGN.md "Chat text colour", Stuart 2026-10-04): a dedicated token
-   * for user/assistant message text, perceptibly softer than --foreground while staying well
-   * clear of --muted-foreground; unused while the app ships dark-only but kept in step with the
-   * light-theme block's existing pattern. */
-  --chat-foreground: oklch(0.23 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.65 0 0);
-  /* Active/selected indicator (docs/DESIGN.md "Active/selected indicator"): one shared
-   * token for the 2px left-edge accent border/bar marking the current/selected item
-   * everywhere it appears (session list, conversation history, slash menu), so every
-   * surface resolves to the identical colour instead of two merely similar-looking ones. */
-  --active-indicator: oklch(0.361 0.243 264.376);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-
-  /* State colour roles (docs/DESIGN.md "Look and feel"): working, idle, needs-you, stopped.
-   * Every state also gets a distinct icon, so colour is never the only signal. */
-  --state-working: oklch(0.6 0.118 184.704);
-  --state-working-foreground: oklch(0.985 0 0);
-  --state-idle: oklch(0.556 0 0);
-  --state-needs-you: oklch(0.769 0.188 70.08);
-  --state-needs-you-foreground: oklch(0.145 0 0);
-  --state-stopped: oklch(0.577 0.245 27.325);
-  --state-stopped-foreground: oklch(0.985 0 0);
 }
 
-.dark {
+.theme-dark {
   color-scheme: dark;
   --scrollbar-thumb: #757575;
   --scrollbar-thumb-hover: #8c8c8c;
@@ -191,6 +138,13 @@
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: oklch(0.704 0.191 22.216);
   --state-stopped-foreground: oklch(0.985 0 0);
+}
+
+/* Spec 007 T015 fills this in: base, state-colour, border, focus-ring, and scrollbar tokens for
+   the dedicated high-contrast dark preset (FR-008, FR-010). Deliberately empty until then --
+   T008 only adds the selector so `.theme-dark-high-contrast` is a valid, selectable class the
+   moment `THEMES['dark-high-contrast']` can be chosen. */
+.theme-dark-high-contrast {
 }
 
 @layer base {

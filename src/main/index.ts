@@ -8,9 +8,10 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { IPC_EVENTS } from '../shared/ipc'
+import { THEMES } from '../shared/themes'
 import { joinKillOnCloseJob } from './process/jobObject'
 import { buildAppMenu } from './menu'
-import { DARK_TITLE_BAR_OVERLAY } from './titleBarOverlay'
+import { TITLE_BAR_OVERLAY_HEIGHT } from './titleBarOverlay'
 import { initPidRecords, reapStale } from './process/pidRecords'
 import { RegistryStore } from './store/registry'
 import { SettingsStore } from './store/settings'
@@ -126,6 +127,18 @@ async function validateSplitAtStartup(manager: SessionManager): Promise<string |
   return undefined
 }
 
+// Spec 007 FR-011/FR-012: every `BrowserWindow` Refract creates must start already in the saved
+// theme's title-bar overlay colours, from its very first paint -- never the hardcoded dark one
+// swapped in later. `manager` is already assigned (`SessionManager` constructed, which in turn
+// already holds the fully-loaded `SettingsStore`) by the time this is ever called; the `?? 'dark'`
+// fallback only guards a theoretical call before that, and `in THEMES` repeats `SettingsStore`
+// .open's own FR-013 fallback defensively rather than trusting a value that already should be valid.
+function currentTitleBarOverlay(): { color: string; symbolColor: string; height: number } {
+  const savedTheme = manager?.settings.get().theme
+  const themeId = savedTheme && savedTheme in THEMES ? savedTheme : 'dark'
+  return { ...THEMES[themeId].titleBarOverlay, height: TITLE_BAR_OVERLAY_HEIGHT }
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -136,9 +149,10 @@ function createWindow(): void {
     // docs/spike/FINDINGS.md item 33), so the renderer draws its own File/Edit/View/Window bar
     // instead (`AppMenuBar.tsx`, `menu.ts`'s `Menu.setApplicationMenu` keeps every accelerator
     // working regardless). `titleBarOverlay` paints the minimise/maximise/close buttons in the
-    // active theme's colours (dark-only today, `titleBarOverlay.ts`).
+    // active theme's colours (spec 007: read from the saved theme at creation time, kept in sync
+    // afterward by `theme.preview`/`theme.set`'s own `applyTitleBarOverlay` calls).
     titleBarStyle: 'hidden',
-    titleBarOverlay: DARK_TITLE_BAR_OVERLAY,
+    titleBarOverlay: currentTitleBarOverlay(),
     // The dev-time window icon: `build/icon.ico` resolves relative to `out/main`, so this path
     // only exists when running unpackaged. Once spec 006's T006 adds electron-builder, it will
     // embed this same build/icon.ico in the packaged exe's own resource instead, wired through

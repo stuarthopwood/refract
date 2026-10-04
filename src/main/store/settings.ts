@@ -4,6 +4,8 @@ import path from 'node:path'
 import { readJsonFile, writeJsonFile } from './atomicJson'
 import { DEFAULT_SESSION_READOUT } from '../../shared/model'
 import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model'
+import { THEMES } from '../../shared/themes'
+import type { ThemeId } from '../../shared/themes'
 
 // Quality-gate remediation (security-auditor, HIGH, independent of ipc/settings.ts's own
 // validation): a hand-edited or already-corrupt settings.json bypasses the IPC handler entirely
@@ -30,7 +32,7 @@ export class SettingsStore {
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark' }))
     // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
     // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
     // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
@@ -44,6 +46,17 @@ export class SettingsStore {
     // build) is reset to `null` rather than trusted -- see `isValidSplitLayout`'s own comment.
     if (data.split !== null && !isValidSplitLayout(data.split)) {
       data.split = null
+    }
+    // Spec 007 data-model.md "Extended Settings", FR-013: an existing settings.json written
+    // before this spec has no `theme` key at all (the same missing-key migration as
+    // `sessionReadout`/`split` above), and a value that IS present but is not a key of `THEMES`
+    // (a theme a later app update removed) is treated as the default preset for every read --
+    // the bootstrap read, the picker's marked entry, and `theme-store.ts`'s derivation -- without
+    // requiring a save; this in-memory correction does not rewrite the file until the developer
+    // actually saves a theme choice (data-model.md), the same lazy-correction pattern
+    // `isValidSplitLayout` above already uses for `split`.
+    if (!data.theme || !(data.theme in THEMES)) {
+      data.theme = 'dark'
     }
     return new SettingsStore(file, data)
   }
@@ -82,6 +95,18 @@ export class SettingsStore {
    * starts, stops, or touches any agent -- this call only ever writes the stored layout. */
   async setSplit(layout: SplitLayout | null): Promise<Settings> {
     const next = { ...this.data, split: layout }
+    this.data = next
+    await writeJsonFile(this.file, next)
+    return { ...next }
+  }
+
+  /** `theme.set(themeId)` (spec 007 FR-004, contracts/ipc.md): persists the chosen theme as the
+   * one Refract starts in and follows afterwards, the same race-safety pattern as every setter
+   * above (returns this call's own written value, never a possibly-superseded shared read). The
+   * caller (`src/main/ipc/theme.ts`) validates `themeId` against `THEMES` before calling this --
+   * this method trusts it, same division of responsibility as `setApprovalMode`/`APPROVAL_MODES`. */
+  async setTheme(themeId: ThemeId): Promise<Settings> {
+    const next = { ...this.data, theme: themeId }
     this.data = next
     await writeJsonFile(this.file, next)
     return { ...next }

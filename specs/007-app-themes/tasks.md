@@ -52,37 +52,43 @@ corrected.
 **Purpose**: the shared theme data, the extended `Settings` field, the new IPC surface, and the
 renderer store every story builds on.
 
-- [ ] T002 [P] Write `src/shared/themes.ts`: `ThemeId`, `ThemeDefinition` (`id`, `name`, `swatch`,
+- [X] T002 [P] Write `src/shared/themes.ts`: `ThemeId`, `ThemeDefinition` (`id`, `name`, `swatch`,
   `syntaxTheme`, `titleBarOverlay: { color, symbolColor }` — no `mode` field, since every built-in
   theme is dark-toned), and the `THEMES` table with at least two entries — `dark` and
   `dark-high-contrast` — per research.md decision 1 and data-model.md (depends on T001 for the
   confirmed `syntaxTheme` ids). (#164)
-- [ ] T003 Extend `src/shared/model.ts`'s `Settings` interface with `theme: ThemeId`
+  **Done**: `src/shared/themes.ts` written with `ThemeId`, `ThemeDefinition`, and `THEMES` (`dark`, `dark-high-contrast`), `syntaxTheme` ids `github-dark`/`github-dark-high-contrast` per T001's confirmed probe.
+- [X] T003 Extend `src/shared/model.ts`'s `Settings` interface with `theme: ThemeId`
   (default `'dark'`) and update `src/main/store/settings.ts`'s `readJsonFile` default to include
   it; treat a loaded value that is not a key of `THEMES` as `'dark'` for every read (FR-013,
   data-model.md) (depends on T002). (#166)
-- [ ] T004 Extend `src/shared/ipc.ts`: add `IPC_REQUESTS.THEME_PREVIEW`/`THEME_SET`, the
+  **Done**: `Settings.theme: ThemeId` added; `readJsonFile` default includes `theme: 'dark'`; `SettingsStore.open` resets an unrecognised/missing `data.theme` to `'dark'` in memory (same lazy-correction pattern as `split`), satisfying FR-013 without forcing a write.
+- [X] T004 Extend `src/shared/ipc.ts`: add `IPC_REQUESTS.THEME_PREVIEW`/`THEME_SET`, the
   `theme: { preview(themeId: ThemeId | null): Promise<Result<void>>; set(themeId: ThemeId):
   Promise<Result<Settings>> }` shape on `RefractApi`, and the `invalid-theme` error code, per
   contracts/ipc.md (depends on T002, T003). (#167)
-- [ ] T005 Write `src/main/ipc/theme.ts`: `registerTheme(manager, getWindow)` with handlers for
+  **Done**: `IPC_REQUESTS.THEME_PREVIEW`/`THEME_SET` added, `invalid-theme` added to `IpcErrorCode`, `RefractApi.theme.{preview,set}` and `RefractApi.themeBootstrap()` added, plus a dedicated `THEME_BOOTSTRAP_CHANNEL` constant for the non-`Result<T>` sync channel.
+- [X] T005 Write `src/main/ipc/theme.ts`: `registerTheme(manager, getWindow)` with handlers for
   `theme.preview` and `theme.set` (persist via `SettingsStore`, call
   `getWindow()?.setTitleBarOverlay(...)` guarded by a capability check so a pre-T100 build is a
   silent no-op, broadcast `settings:changed` on `set`, validate the id against `THEMES`
   returning `invalid-theme` otherwise); and one synchronous `ipcMain.on('theme:bootstrap', ...)`
   handler returning `{ theme }` read from the already-loaded `SettingsStore` (contracts/ipc.md
   "Bootstrap") (depends on T002, T003, T004). (#169)
-- [ ] T006 Wire `src/main/index.ts` (call `registerTheme(...)` beside the existing
+  **Done**: `src/main/ipc/theme.ts` written exactly as specified. No pre-T100 guard needed: confirmed live (spec 001 tasks.md) that T100 (hidden title bar/titleBarOverlay) is already `[X]` landed on `main`, so `applyTitleBarOverlay` is called unconditionally (window-existence-guarded only, matching every other handler's `window && !window.isDestroyed()` pattern).
+- [X] T006 Wire `src/main/index.ts` (call `registerTheme(...)` beside the existing
   `registerSettings(...)` call, at the same point in the startup sequence as
   `joinKillOnCloseJob()`/`reapStale()`) and `src/preload/index.ts` (expose `theme.preview`,
   `theme.set`, and a synchronous `themeBootstrap()` wrapper over
   `ipcRenderer.sendSync('theme:bootstrap')`) (depends on T004, T005). (#170)
-- [ ] T007 Write `src/renderer/state/theme-store.ts` (zustand): state `{ theme, previewing }`
+  **Done**: `registerTheme(manager, getWindow)` wired into `src/main/ipc/register.ts`'s `registerIpc` beside `registerSettings` (the real call site — `registerSettings` itself is called from `register.ts`, not directly from `index.ts`, so this is where every other area handler is registered too). Preload exposes `theme.preview`/`theme.set`/`themeBootstrap()`. Also made `index.ts`'s `createWindow` read the SAVED theme's `titleBarOverlay` at construction time (FR-011/FR-012) instead of the old hardcoded `DARK_TITLE_BAR_OVERLAY` constant, so a window never launches with the wrong theme's title-bar colours even before any preview/set call.
+- [X] T007 Write `src/renderer/state/theme-store.ts` (zustand): state `{ theme, previewing }`
   seeded once from `window.refract.themeBootstrap()`, an `activeThemeId()` derivation
   (data-model.md), and actions `preview(id | null)` (updates `previewing` and calls
   `theme.preview`), `save(id)` (calls `theme.set`, updates `theme`, clears `previewing`),
   `cancelPreview()` (`preview(null)`) (depends on T006). (#173)
-- [ ] T008 Replace `src/renderer/main.tsx`'s hardcoded
+  **Done**: `src/renderer/state/theme-store.ts` written exactly as specified, plus a `useActiveThemeId()` convenience hook and a `themeClassName()` helper (see T008 note). `init-stores.ts`'s `onSettingsChanged` handler now also calls `useThemeStore.getState().setTheme(settings.theme)` so a save stays in sync app-wide the same way `useSettingsStore` already does.
+- [X] T008 Replace `src/renderer/main.tsx`'s hardcoded
   `document.documentElement.classList.add('dark')` with the bootstrap-derived class
   (`theme-${activeThemeId(...)}`) set before `createRoot().render()`; no `ThemeProvider` wrapping
   needed (research.md decision 11, moot -- `sonner.tsx` already pins `theme="dark"` directly, no
@@ -90,6 +96,7 @@ renderer store every story builds on.
   `.dark` block to `.theme-dark` (`:root` keeps only truly theme-independent values, e.g.
   `--radius`, `--font-ui`, `--font-code`), and add an empty `.theme-dark-high-contrast` block for
   T015 to fill in (depends on T002, T007). (#176)
+  **Done**, with one deliberate deviation from data-model.md's literal wording, documented in code: `document.documentElement`'s class list is `['dark', themeClassName(theme)]`, NOT only the per-theme class. Reason (grep-verified): `globals.css`'s `@custom-variant dark (&:is(.dark *))` drives every shadcn component's own `dark:` utility classes (`Button`, `Badge`, `Switch`, `Textarea`, `Kbd`, and more — grep-confirmed real, extensive usage) off the literal `.dark` class, not off a per-theme one; dropping it would have silently reverted every one of those components to light-mode styling, which no FR asks for and which data-model.md's author could not have intended (every built-in theme IS dark-toned, so the two classes coexisting is exactly correct, never contradictory). `.theme-dark`/`.theme-dark-high-contrast` (the latter empty, for T015) added to `globals.css`; `:root` now holds only `--radius`. `pnpm typecheck` and `pnpm build` both pass clean.
 
 **Checkpoint**: `pnpm typecheck` and `pnpm build` pass; a scratch run that hand-edits
 `settings.json`'s `theme` field and relaunches shows the matching class with no flash.

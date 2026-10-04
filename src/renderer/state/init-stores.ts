@@ -11,6 +11,7 @@ import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSplitStore } from './split-store'
+import { useThemeStore } from './theme-store'
 
 // Awaits an initial-load request; an error or a rejected invoke falls back to an empty/default
 // value instead of a toast on every cold start. `ok` reports whether the real value loaded
@@ -54,6 +55,7 @@ export function initStores(): void {
   })
   window.refract.onSettingsChanged((settings) => {
     useSettingsStore.getState().setSettings(settings)
+    useThemeStore.getState().setTheme(settings.theme)
   })
   window.refract.onReadoutUpdate(({ sessionId, readout }) => {
     useReadoutStore.getState().applyReadout(sessionId, readout)
