@@ -21,6 +21,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-chat-foreground: var(--chat-foreground);
+  --color-composer-background: var(--composer-background);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -99,6 +100,13 @@
    * reads as indistinguishable from pure white) and well short of --muted-foreground's 0.708
    * (~7.6:1, reserved for secondary/meta text). */
   --chat-foreground: oklch(0.90 0 0);
+  /* Composer fill (docs/DESIGN.md "Composer tone"; MessageInput.tsx): a literal, solid colour
+   * rather than an alpha composite over --card/--muted, matched exactly to this theme's previous
+   * hardcoded `bg-[oklch(0.09_0_0)]` so nothing visibly changes now that it is a token
+   * (MessageInput.tsx's own comment records why an alpha composite doesn't work here). Must stay
+   * strictly darker than --background (0.145) so the composer reads as the page's most recessive
+   * field; 0.09 clears that with room to spare. */
+  --composer-background: oklch(0.09 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -140,11 +148,76 @@
   --state-stopped-foreground: oklch(0.985 0 0);
 }
 
-/* Spec 007 T015 fills this in: base, state-colour, border, focus-ring, and scrollbar tokens for
-   the dedicated high-contrast dark preset (FR-008, FR-010). Deliberately empty until then --
-   T008 only adds the selector so `.theme-dark-high-contrast` is a valid, selectable class the
-   moment `THEMES['dark-high-contrast']` can be chosen. */
+/* Spec 007 T015 (FR-008, FR-009, FR-010): a dedicated high-contrast dark preset, not a scaled
+ * copy of `.theme-dark` above -- every value here is deliberately pushed further from its paired
+ * background/foreground than `.theme-dark`'s own margins, verified pair-by-pair against WCAG AA
+ * (4.5:1 text, 3:1 non-text/large-text) by `scripts/check-theme-contrast.mjs` (FR-008). The base
+ * surface is pure black/white (`oklch(0 0 0)` / `oklch(1 0 0)`), matching `src/shared/themes.ts`'s
+ * `dark-high-contrast` swatch comment, so every other token's margin is measured against the
+ * starkest possible background this design system can express. */
 .theme-dark-high-contrast {
+  color-scheme: dark;
+  --scrollbar-thumb: #d4d4d4;
+  --scrollbar-thumb-hover: #ffffff;
+  --scrollbar-track: transparent;
+  --background: oklch(0 0 0);
+  --foreground: oklch(1 0 0);
+  /* Dimmer than --foreground (so chat prose still reads as distinct from UI chrome text, same
+   * intent as .theme-dark's own --chat-foreground) but still far above the 4.5:1 floor against
+   * pure black. */
+  --chat-foreground: oklch(0.96 0 0);
+  /* Composer fill, high-contrast edge case: --background here is literal pure black
+   * (oklch(0 0 0)), so there is no lightness value strictly below it for the composer to be
+   * "darker than the page" the way .theme-dark's own --composer-background is (docs/DESIGN.md
+   * "Composer tone"). Resolving that by inverting the technique instead of the darkness: the
+   * composer reads as a raised surface (matching --card/--popover's own 0.14 "panel" tone, one
+   * step lighter than the page) bounded by the field's existing visible border
+   * (border-muted-foreground/85 in MessageInput.tsx, itself >=3:1 against both this fill and
+   * --background), so it still reads as a clearly bounded, recessive-from-the-content field --
+   * just demarcated by a border against a lighter fill rather than by a darker fill against no
+   * border, which pure black makes impossible. Picking a value darker than --card (0.08, versus
+   * --card's 0.14) keeps the composer visually distinct from (not identical to) dialogs/popovers
+   * while staying lighter than --background. */
+  --composer-background: oklch(0.08 0 0);
+  --card: oklch(0.14 0 0);
+  --card-foreground: oklch(1 0 0);
+  --popover: oklch(0.14 0 0);
+  --popover-foreground: oklch(1 0 0);
+  --primary: oklch(1 0 0);
+  --primary-foreground: oklch(0 0 0);
+  --secondary: oklch(0.26 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.26 0 0);
+  --muted-foreground: oklch(0.85 0 0);
+  --accent: oklch(0.26 0 0);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.78 0.17 22);
+  --destructive-foreground: oklch(0 0 0);
+  --border: oklch(0.6 0 0);
+  --input: oklch(1 0 0 / 30%);
+  --ring: oklch(0.9 0 0);
+  --active-indicator: oklch(0.75 0.17 264);
+  --chart-1: oklch(0.75 0.17 264);
+  --chart-2: oklch(0.8 0.17 162);
+  --chart-3: oklch(0.85 0.17 70);
+  --chart-4: oklch(0.78 0.2 304);
+  --chart-5: oklch(0.78 0.17 16);
+  --sidebar: oklch(0.1 0 0);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(0.75 0.17 264);
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --sidebar-accent: oklch(0.26 0 0);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(0.6 0 0);
+  --sidebar-ring: oklch(0.9 0 0);
+
+  --state-working: oklch(0.8 0.17 162);
+  --state-working-foreground: oklch(0 0 0);
+  --state-idle: oklch(0.85 0 0);
+  --state-needs-you: oklch(0.85 0.17 70);
+  --state-needs-you-foreground: oklch(0 0 0);
+  --state-stopped: oklch(0.78 0.17 22);
+  --state-stopped-foreground: oklch(0 0 0);
 }
 
 @layer base {
