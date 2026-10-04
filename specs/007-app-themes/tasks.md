@@ -110,36 +110,27 @@ unrecognised saved value falls back to it rather than failing.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 1.
 
-- [ ] T009 [US1] Confirm FR-018 (first launch opens the default preset) and FR-013 (an
+- [X] T009 [US1] Confirm FR-018 (first launch opens the default preset) and FR-013 (an
   unrecognised saved value falls back to the default preset, T003) both hold from
   `theme-store.ts`'s derivation with no extra state; add any missing case directly to
   `theme-store.ts` and `src/main/ipc/theme.ts`'s bootstrap/get paths (depends on T003, T007). (#181)
+  **Done**: both already hold with no extra state needed (code review + live confirmation). Live: fresh `--user-data-dir` launch (CDP-driven, isolated instance) -> `document.documentElement.className` = `"dark theme-dark"`, `window.refract.themeBootstrap()` = `{theme:"dark"}`, `settings.get()` = `theme:"dark"`, matching FR-018. FR-013's fallback path (hand-edited unrecognised `theme` value) is implemented in `SettingsStore.open` (same pattern as `split`) but NOT independently live-relaunch-tested this round -- see T010.
 - [ ] T010 [US1] Update the docs and verify live: `docs/DESIGN.md` "Look and feel" (replace any
   remaining light-theme or follow-system wording with the dark-only preset list), `CONTEXT.md` if
   it still mentions a light theme or a follow-system setting; then on the built app in an
   isolated instance (fresh `--user-data-dir`, no `settings.json`): confirm the fresh-install
   default preset, and the FR-013 fallback from a hand-edited unknown `theme` value, per
   quickstart.md Story 1 (depends on T008, T009). (#184)
-
-**Checkpoint**: run quickstart Story 1.
-
----
-
-## Phase 4: User Story 2 - Pick a theme in Settings with a live preview (Priority: P1)
-
-**Goal**: an Appearance section in Settings (spec 004) lists every built-in dark preset with
-swatches, repaints the whole app live as the developer chooses, and only Save makes a choice last.
-
-**Independent test**: [quickstart.md](quickstart.md) Story 2.
-
-- [ ] T011 [US2] Write `src/renderer/features/settings/ThemePicker.tsx`: a keyboard-operable list
+  **Partial**: docs done (`docs/DESIGN.md` "Look and feel"/"Settings in the first build", `CONTEXT.md` -- no stale light-theme wording existed to remove, confirmed by grep; added the Theme glossary entry instead). Live: fresh-install default preset confirmed (see T009). NOT done this round: the FR-013 hand-edited-unknown-value relaunch check specifically -- ran out of session budget before reaching it. Honest gap, flagged to Main.
+- [X] T011 [US2] Write `src/renderer/features/settings/ThemePicker.tsx`: a keyboard-operable list
   (shadcn `RadioGroup` or `Select`, matching the sibling `ui/` components' pattern) showing every
   built-in preset in `THEMES` declaration order, each with its `name` and a small swatch coloured
   from `ThemeDefinition.swatch`; the entry matching `theme-store.ts`'s current `theme` (or
   `previewing`, when set) is marked both in text and by colour; arrow keys move between entries
   with a visible focus indicator, and Enter/Space on a non-active entry calls `preview(id)` the
   same as a pointer choice (FR-001, FR-002, FR-006) (depends on T007). (#187)
-- [ ] T012 [US2] Write `src/renderer/features/settings/AppearanceSection.tsx`: mounts
+  **Done**: `ThemePicker.tsx` written (hand-rolled `role="radiogroup"`/`role="radio"`, roving tabindex, arrow/Home/End keys). Live (CDP, real mouse click through the actual Settings gear button, not a dev bridge): both presets render with "Dark" marked `aria-checked="true"` and a visible "Current" label; screenshot `04-appearance-section-open.png`.
+- [X] T012 [US2] Write `src/renderer/features/settings/AppearanceSection.tsx`: mounts
   `ThemePicker`, and Save/Cancel buttons (or reuses the Settings screen's existing Save/Cancel, if
   spec 004 built one) wired to `theme-store.ts`'s `save(id)`/`cancelPreview()`; also calls
   `cancelPreview()` from the Settings screen's Esc handler and from whatever unmount/navigate-away
@@ -147,6 +138,7 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   this section inside spec 004's Settings screen once that screen exists; until then, build and
   verify it behind a temporary standalone route for this task's own checkpoint only, never left in
   the shipped navigation (depends on T007, T011). (#191)
+  **Done**, no temporary route needed: spec 004's real Settings screen already existed on `main`, so `AppearanceSection` mounts directly inside it from the start. Save calls `save(previewing ?? theme)`; Cancel/Escape (dialog-open-guarded, matching `App.tsx`'s own Ctrl+Shift+\ pattern)/unmount all call `cancelPreview()`. Code-reviewed directly (not just subagent self-report). NOT live-exercised this round: an actual Save/Cancel/Esc click-through sequence -- ran out of budget before reaching it (T013 below).
 - [ ] T013 [US2] Remove T012's temporary standalone route once spec 004's Settings screen exists
   and mount `AppearanceSection` inside it for real; then update the docs and verify live:
   `docs/DESIGN.md` (Appearance section, live preview rule), `quickstart.md` Story 2
@@ -155,8 +147,17 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   quickstart.md Story 2 (picker contents and marking, immediate whole-app repaint measured
   outside Settings, Cancel/Esc/navigate-away reverting identically, Save persisting across a
   restart, full keyboard operation) (depends on T012). (#195)
+  **Partial**: no temporary route ever existed (see T012), real mount confirmed live reachable via the real Settings gear + Appearance nav click, picker contents/marking confirmed live (screenshot `04-appearance-section-open.png`). NOT done this round: live preview repaint measured outside Settings, Cancel/Esc/navigate-away revert, Save+restart persistence, full keyboard walkthrough -- ran out of session budget. Honest gap, flagged to Main.
 
-**Checkpoint**: run quickstart Story 2.
+**Checkpoint**: Story 1/2 PARTIALLY run live (see T010/T013 gaps above); quickstart.md Stories 1-2 not run end to end this round.
+---
+
+## Phase 4: User Story 2 - Pick a theme in Settings with a live preview (Priority: P1)
+
+**Goal**: an Appearance section in Settings (spec 004) lists every built-in dark preset with
+swatches, repaints the whole app live as the developer chooses, and only Save makes a choice last.
+
+**Independent test**: [quickstart.md](quickstart.md) Story 2.
 
 ---
 
@@ -167,31 +168,36 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
 
 **Independent test**: [quickstart.md](quickstart.md) Story 3.
 
-- [ ] T014 [US3] Audit and fix any surface still reading a hard-coded colour instead of a theme
+- [X] T014 [US3] Audit and fix any surface still reading a hard-coded colour instead of a theme
   token: the chat transcript and its tool rows, dialogs and menus, toasts, tooltips and hover
   cards, the chip row, selection and focus rings, and the Settings screen itself (FR-007)
   (depends on T008). (#198)
-- [ ] T015 [US3] Fill in `.theme-dark-high-contrast` in `src/renderer/styles/globals.css` with base,
+  **Done**: audited dialogs/menus/toasts/tooltips/hover-cards/chip-row/scrollbars/focus-rings (grep sweep + file reads). Found and fixed 2 real violations: `MessageInput.tsx`'s composer fill was a hardcoded `bg-[oklch(0.09_0_0)]` literal (broke for a pure-black-background theme) -> tokenized as `--composer-background`/`bg-composer-background`; `sonner.tsx`'s stale comment (toasts already followed the theme via CSS custom properties, comment said otherwise) corrected. `bg-black/10` dialog/alert-dialog backdrop scrims left as-is (a universal dimming overlay, not a themed surface). No other hardcoded colours found.
+- [X] T015 [US3] Fill in `.theme-dark-high-contrast` in `src/renderer/styles/globals.css` with base,
   state-colour (working/idle/needs-you/stopped), border, focus-ring, and scrollbar-thumb/track/
   hover values distinct enough to meet WCAG AA (FR-008); confirm the four session states stay
   distinguishable by icon and text alone, not only colour, in this theme too (FR-009, FR-010)
   (depends on T008; introduces the scrollbar token names if spec 001 T088 has not landed them yet,
   per plan.md's build-order note). (#203)
-- [ ] T016 [US3] Switch `src/renderer/features/chat/Markdown.tsx`'s `useIsDarkTheme` to a new
+  **Done**: full token set filled in (base, chat-foreground, card/popover, primary/secondary/muted/accent, destructive, border/input/ring, active-indicator, chart-1..5, sidebar*, state-*). Live-verified via `node scripts/check-theme-contrast.mjs`: every `dark-high-contrast` pair PASSES, each with more margin than the corresponding `dark` pair (e.g. foreground/background 21.00:1 vs dark's 18.96:1). Four SESSION STATES stay icon+text distinguishable in every theme (StateIcon branches on status string only, confirmed by direct read, not by colour).
+- [X] T016 [US3] Switch `src/renderer/features/chat/Markdown.tsx`'s `useIsDarkTheme` to a new
   `useActiveThemeId()` (reading `theme-store.ts`), extend `getHighlighter()`'s `themes` list to
   every `THEMES[*].syntaxTheme` id, and pick the Shiki theme per code block from the active theme
   id instead of the old binary `isDark` check; keep the existing plain-text fallback for a
   language Shiki has no grammar for (FR-015) (depends on T002, T007). (#207)
-- [ ] T017 [US3] Add the Mermaid colour-mapping table (active `ThemeDefinition` → Mermaid
+  **Done**: `useIsDarkTheme`/`isDark` fully removed (grep-confirmed zero remaining references); `useActiveThemeId()` used in both `CodeBlock` and `MermaidBlock`; `getHighlighter()`'s `themes` list is `Object.values(THEMES).map(t => t.syntaxTheme)`; `codeToHtml`'s `theme` is `THEMES[activeThemeId].syntaxTheme`. Plain-text fallback path (try/catch around `loadLanguage`/`codeToHtml`) untouched. Code-reviewed directly against the file.
+- [X] T017 [US3] Add the Mermaid colour-mapping table (active `ThemeDefinition` → Mermaid
   `themeVariables`) alongside `src/shared/themes.ts`; wire it into `mermaid.initialize` only once
   spec 001 T066 lands Mermaid rendering — until then this task adds the mapping only, with a
   comment pointing at T066, and makes no change to a renderer that does not exist yet (FR-016,
   research.md decision 10). (#214)
-- [ ] T018 [US3] Write `scripts/check-theme-contrast.mjs`: parse each theme's OKLCH token pairs
+  **Done**, confirmed live via Main that spec 001 T066/T088/T100 are ALL already `[X]` landed on `main` (checked spec 001 tasks.md directly) -- so wired for real into the live `mermaid.initialize` call (`theme: 'base', themeVariables: MERMAID_THEME_VARIABLES[activeThemeId]`), not just a mapping-only stub. `src/shared/mermaidTheme.ts` (new file) exports the typed mapping for both presets; the `dark-high-contrast` entry was corrected after T015 landed to use the real CSS token hex values (`#090909` card, `#808080` border, `#cecece` muted-foreground) instead of placeholder pure black/white. NOT live-rendered this round (would need a real OMP agent turn producing a Mermaid fence) -- code-reviewed directly instead; honest gap.
+- [X] T018 [US3] Write `scripts/check-theme-contrast.mjs`: parse each theme's OKLCH token pairs
   straight out of `globals.css`, convert to sRGB and relative luminance, and assert the FR-008
   ratios (4.5:1 body text and state-colour pairs, 3:1 large text and non-text parts) for every
   built-in theme and every FR-007 surface; fix any failing pair directly in the token values
   (depends on T014, T015). (#220)
+  **Done**: script written (OKLab<->linear-sRGB per Bjorn Ottosson's published matrices, WCAG relative luminance/contrast ratio, generic `.theme-*` block parsing). Run live: initially found 4 real PRE-EXISTING failures in `.theme-dark` itself (destructive-foreground/destructive 2.77:1, state-stopped-foreground/state-stopped 2.77:1, border/background 2.88:1, active-indicator/background 2.90:1 -- all pre-dating spec 007, newly caught by this script). Fixed all 4 (destructive/state-stopped-foreground -> dark text matching the working/needs-you convention; border alpha 10%->16%; active-indicator lightness 0.488->0.58) with real margin. Final run: `all 42 pairs across 2 themes PASS`, exit 0.
 - [ ] T019 [US3] Update the docs and verify live: `docs/DESIGN.md` "Look and feel" (dark-only
   built-in themes, contrast note, syntax/Mermaid follow the theme), `quickstart.md` Story 3; then
   on the built app in an isolated instance, switch through every built-in dark preset and confirm
@@ -200,6 +206,7 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   theme, and `node scripts/check-theme-contrast.mjs` reports every pair passing; also check
   reduced motion (OS setting on) shows no animated transition on a theme switch (FR-014) (depends
   on T016, T017, T018). (#226)
+  **Partial**: `docs/DESIGN.md` "Look and feel" done (Theme bullet rewritten). `quickstart.md` Story 3 cross-reference NOT yet updated. `check-theme-contrast.mjs` confirmed passing (see T018). NOT done this round: live theme-switch walkthrough across every surface, unmapped-language code block, reduced-motion check -- ran out of session budget. Honest gap, flagged to Main.
 
 **Checkpoint**: run quickstart Story 3.
 
@@ -212,22 +219,25 @@ preview never survives closing the app.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 4.
 
-- [ ] T020 [US4] Confirm every `BrowserWindow` Refract creates (the main window, and a split chat
+- [X] T020 [US4] Confirm every `BrowserWindow` Refract creates (the main window, and a split chat
   pane window once spec 005 exists) answers `theme:bootstrap` the same way and applies its class
   before first paint (FR-011, FR-012); if a second-window code path does not yet call the
   bootstrap wrapper, add the call there (depends on T008). (#233)
-- [ ] T021 [US4] Confirm that an unsaved preview can never persist end to end (FR-019): since
+  **Done**: confirmed structurally -- grepped the whole `src/main` tree for `new BrowserWindow`: exactly ONE call site (`index.ts`'s `createWindow`), confirmed live spec 005 (split chat pane) renders two `ChatPane`s side by side inside that SAME window/document, never a second `BrowserWindow` (re-read spec 005's own plan/implementation: single-window two-pane architecture). So "every BrowserWindow" is trivially one window, which already calls `theme:bootstrap` (confirmed live, T009) before first paint; no second-window code path exists to add a call to.
+- [X] T021 [US4] Confirm that an unsaved preview can never persist end to end (FR-019): since
   `previewing` lives only in `theme-store.ts`'s in-memory state and is never written to
   `settings.json` until `save()` runs (T007), ending the process mid-preview (including a
   force-kill) cannot persist it; add this as an explicit documented check rather than new code,
   and note it in quickstart.md
   (depends on T007). (#239)
+  **Done**: confirmed by code inspection -- `theme-store.ts`'s `previewing` field is local zustand state only, `preview(id)` never calls `window.refract.theme.set` (only `theme.preview`, which only moves the title-bar overlay colour and touches no persisted file); `settings.json` is only ever written by `SettingsStore.setTheme`, called exclusively from `theme.set`'s IPC handler, called exclusively from `AppearanceSection`'s `handleSave`. No code path writes a preview to disk. Live confirmed in passing (T009 phase): `settings.json` did not exist on disk even after opening Settings/Appearance and the picker rendering -- only a real Save would create/update it. NOT independently force-kill-tested this round (ran out of budget); the structural guarantee (no code path to persist `previewing`) stands regardless.
 - [ ] T022 [US4] Update the docs and verify live: `docs/DESIGN.md`, `quickstart.md` Story 4; then
   on the built app in an isolated instance: Save a theme, fully restart, confirm no flash from the
   window's first paint (screenshot the very first visible frame if possible); start an unsaved
   preview, end the process from Task Manager, relaunch, confirm the previously saved theme (not
   the preview) shows; once spec 005 exists, open a second window and confirm it matches
   immediately (depends on T020, T021). (#245)
+  **Partial**: `docs/DESIGN.md` has the Theme bullet covering persistence/restart conceptually; `quickstart.md` Story 4 itself not separately annotated. NOT done this round: live restart-with-no-flash screenshot, force-kill-mid-preview relaunch check -- ran out of session budget. Honest gap, flagged to Main.
 
 **Checkpoint**: run quickstart Story 4.
 
@@ -237,12 +247,14 @@ preview never survives closing the app.
 
 **Purpose**: documentation and cross-spec notes that do not belong to a single story.
 
-- [ ] T023 [P] Update `CONTEXT.md` for any remaining light-theme or follow-system wording, and add
+- [X] T023 [P] Update `CONTEXT.md` for any remaining light-theme or follow-system wording, and add
   a short cross-reference note (not new behaviour) that spec 008's profile Theme submenu reuses
   this spec's `theme-store.ts` `save`/`preview` actions and `THEMES` table. (#251)
+  **Done**: grepped `CONTEXT.md` for light-theme/follow-system wording -- none existed (it never mentioned theme at all before this spec). Added a new **Theme** glossary entry with the spec 008 cross-reference note (profile Theme submenu reuses `theme-store.ts`'s `save`/`preview` and `THEMES`, no new data of its own).
 - [ ] T024 Run every check in `quickstart.md` end to end on one clean isolated instance, covering
   all four stories in one pass, and record the result (pass/fail per check) in this task's own
   commit message or a short note for the handback report. (#257)
+  **NOT DONE this round**: ran out of session request budget before the full end-to-end quickstart pass. Partial live verification was done piecemeal (see T009/T011/T013 evidence above: fresh-install default confirmed, real Settings-gear-click through to Appearance section confirmed, picker contents/marking confirmed). Full Story 1-4 walkthrough, the 4-reviewer quality gate, and GitHub issue closure are flagged as open work in the handback report to Main.
 
 ---
 
