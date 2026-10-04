@@ -8,6 +8,8 @@ import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
+import { useReadoutStore } from './readout-store'
+import { useSubagentPanelStore } from './subagent-store'
 
 // Awaits an initial-load request; an error or a rejected invoke falls back to an empty/default
 // value instead of a toast on every cold start.
@@ -49,6 +51,15 @@ export function initStores(): void {
   })
   window.refract.onSettingsChanged((settings) => {
     useSettingsStore.getState().setSettings(settings)
+  })
+  window.refract.onReadoutUpdate(({ sessionId, readout }) => {
+    useReadoutStore.getState().applyReadout(sessionId, readout)
+  })
+  window.refract.onSubagentsUpdate(({ sessionId, subagents }) => {
+    useReadoutStore.getState().applySubagents(sessionId, subagents)
+  })
+  window.refract.onSubagentPatch(({ sessionId, subagentId, ops }) => {
+    useSubagentPanelStore.getState().applyPatch(sessionId, subagentId, ops)
   })
   window.refract.onUiOpenSession(({ sessionId }) => {
     useSessionsStore.getState().setVisibleSessionId(sessionId)

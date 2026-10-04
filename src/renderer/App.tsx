@@ -5,11 +5,14 @@ import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
 import { SessionList } from '@/features/sessions/SessionList'
+import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { StatusBar } from '@/features/status-bar/StatusBar'
-import { useRepositoriesStore } from '@/state'
+import { useRepositoriesStore, useSubagentPanelStore, useViewStore } from '@/state'
+import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 
-// Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and a reserved right
-// region for the later changes/files/side-chat pane, left unrendered until that spec ships. A
+// Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and the right region --
+// spec 004's Subagents panel is its first occupant (FR-017 to FR-020), rendered only while open;
+// a file browser and side chat (backlog issue #1) remain later tenants of the same region. A
 // fixed status bar runs along the bottom, outside the resizable regions. Before the readiness
 // checklist passes or before a repository exists, this area shows the readiness screen instead
 // (docs/DESIGN.md "First run and empty states"). Each region has its own ErrorBoundary so a
@@ -22,6 +25,9 @@ export function App() {
   const [ready, setReady] = useState(false)
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
   const showReadiness = !ready || !hasRepositories
+  const view = useViewStore((state) => state.view)
+  const panelOpen = useSubagentPanelStore((state) => state.open)
+  const panelSessionId = useSubagentPanelStore((state) => state.sessionId)
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -44,6 +50,10 @@ export function App() {
       <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
+        ) : view === 'settings' ? (
+          <ErrorBoundary>
+            <SettingsScreen />
+          </ErrorBoundary>
         ) : (
           <ResizablePanelGroup orientation="horizontal" className="h-full">
             <ResizablePanel id="session-list" defaultSize={280} minSize={220} maxSize={480} collapsible collapsedSize={0}>
@@ -57,6 +67,16 @@ export function App() {
                 <ChatPane />
               </ErrorBoundary>
             </ResizablePanel>
+            {panelOpen && panelSessionId && (
+              <>
+                <ResizableHandle withHandle />
+                <ResizablePanel id="subagents" defaultSize={320} minSize={240} maxSize={520}>
+                  <ErrorBoundary>
+                    <SubagentPanel sessionId={panelSessionId} />
+                  </ErrorBoundary>
+                </ResizablePanel>
+              </>
+            )}
           </ResizablePanelGroup>
         )}
       </div>

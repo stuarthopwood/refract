@@ -158,6 +158,13 @@ export interface GetStateResponseData {
    * reports one; OMP's own `ThinkingLevel` string union (`"off" | "inherit" | "minimal" |
    * "low" | "medium" | "high" | "xhigh" | "max"`), carried verbatim. */
   thinkingLevel?: string;
+  /** Spec 004 FR-003, FINDINGS item 34: `percent` is computed and reported by OMP itself, never
+   * derived by Refract. Confirmed present both before and after a turn runs. */
+  contextUsage?: { tokens: number; contextWindow: number; percent: number };
+  /** Spec 004 FR-021, FINDINGS item 35: the agent's own task list, one entry per phase. `status`
+   * observed values: 'completed' | 'in_progress' | 'pending' (carried as a plain string, not a
+   * narrowed union, since an unobserved future value must never throw). */
+  todoPhases?: Array<{ name: string; tasks: Array<{ content: string; status: string }> }>;
   [key: string]: unknown;
 }
 
@@ -254,6 +261,36 @@ export interface ToolExecutionEndFrame {
   isError: boolean;
 }
 
+/** Spec 004 FR-007, FR-017 to FR-020, FINDINGS item 36 (extends C6): live progress for a batch
+ * `task()` call, sent for the `task` tool's own `toolCallId` with no subscription needed. Each
+ * `progress[]` entry is keyed by `id`, confirmed stable and equal to that subagent's own `name`
+ * from the originating `tasks[]` entry. `recentTools`/`recentOutput` grow incrementally as the
+ * subagent runs -- the per-subagent live stream this spec's panel reads. */
+export interface ToolExecutionUpdateFrame {
+  type: 'tool_execution_update';
+  toolCallId: string;
+  toolName: string;
+  args: unknown;
+  partialResult: {
+    content: OmpTextPart[];
+    details: {
+      progress: Array<{
+        index: number;
+        id: string;
+        status: string;
+        task?: string;
+        assignment?: string;
+        recentTools?: Array<{ tool: string; args?: unknown; argsKey?: string; intent?: string; isError: boolean; endMs: number }>;
+        recentOutput?: unknown[];
+        durationMs?: number;
+        extractedToolData?: Record<string, Array<{ data: unknown; status: string }>>;
+        [key: string]: unknown;
+      }>;
+      [key: string]: unknown;
+    };
+  };
+}
+
 export interface QueueUpdateFrame {
   type: 'queue_update';
   followUp: string[];
@@ -332,6 +369,7 @@ export type KnownFrame =
   | MessageEndFrame
   | ToolExecutionStartFrame
   | ToolExecutionEndFrame
+  | ToolExecutionUpdateFrame
   | QueueUpdateFrame
   | ExtensionUiRequestFrame
   | PromptResultFrame
@@ -359,6 +397,7 @@ const KNOWN_FRAME_TYPES: Record<KnownFrame['type'], true> = {
   message_end: true,
   tool_execution_start: true,
   tool_execution_end: true,
+  tool_execution_update: true,
   queue_update: true,
   extension_ui_request: true,
   prompt_result: true,

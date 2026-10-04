@@ -2,7 +2,7 @@
 // specs/001-core-session-workspace/contracts/ipc.md. Imported by main, preload, and
 // renderer; this is the only file that may cross that boundary (constitution V).
 
-import type { ApprovalMode, ConversationInfo, PendingRequest, Repository, Session, SessionStatus, Settings, TranscriptItem } from './model';
+import type { ApprovalMode, ConversationInfo, DiffStat, PendingRequest, ReadoutKind, Repository, Session, SessionReadout, SessionStatus, Settings, SubagentSummary, TranscriptItem } from './model';
 import type { ImageContent, SlashCommandDescriptor } from './frames';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
@@ -83,13 +83,10 @@ export interface SessionSummary extends Session {
 
 /** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base
  * with the Session's Base branch, plus new untracked files. `partial` marks that the 200-file or
- * 1 MiB-per-file cap stopped counting before the real total. */
-export interface DiffStat {
-  files: number;
-  additions: number;
-  deletions: number;
-  partial: boolean;
-}
+ * 1 MiB-per-file cap stopped counting before the real total. Defined in `./model` (spec 004:
+ * `SessionReadout.changes` also needs it) and re-exported here so every existing import from
+ * `../../shared/ipc` keeps working unchanged. */
+export type { DiffStat } from './model';
 
 /** The renderer-facing copy of main's in-memory SessionRuntime (data-model.md). */
 export interface SessionRuntimeView {
@@ -119,6 +116,7 @@ export interface BranchEntry {
 export interface SessionSnapshot {
   runtime: SessionRuntimeView;
   conversations: ConversationInfo[];
+  readout: SessionReadout; // spec 004: initial chip-row bundle; subsequent changes via readout:update
 }
 
 export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] };
@@ -181,8 +179,11 @@ export const IPC_REQUESTS = {
   CHAT_COMMANDS: 'chat.commands',
   CHAT_PREDICT_WORD: 'chat.predictWord',
   CHAT_PREDICT_WORD_FEEDBACK: 'chat.predictWordFeedback',
+  CHAT_SET_VISIBLE_SUBAGENT: 'chat.setVisibleSubagent',
+  CHAT_SUBAGENT_SNAPSHOT: 'chat.subagentSnapshot',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
+  SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   WINDOW_POPUP_MENU: 'window.popupMenu',
 } as const;
 
@@ -197,6 +198,9 @@ export const IPC_EVENTS = {
   SETTINGS_CHANGED: 'settings:changed',
   UI_OPEN_SESSION: 'ui:open-session',
   MEMORY_WARNING: 'memory:warning',
+  READOUT_UPDATE: 'readout:update',
+  SUBAGENTS_UPDATE: 'subagents:update',
+  SUBAGENT_PATCH: 'subagent:patch',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -278,11 +282,23 @@ export interface RefractApi {
       suggestion: string,
       accepted: boolean
     ): Promise<Result<void>>;
+    /** Spec 004 FR-017 to FR-020: tells main which subagent's stream to forward as
+     * `subagent:patch`; `null` stops forwarding (panel closed, or no subagent selected). Mirrors
+     * `sessions.setVisible`. */
+    setVisibleSubagent(sessionId: string, subagentId: string | null): Promise<Result<void>>;
+    /** Full current stream for one subagent (spec 004 FR-018), for when the panel first selects
+     * it, before patches arrive. Error `not-found` when the id does not match a `SubagentSummary`
+     * of the current turn. */
+    subagentSnapshot(sessionId: string, subagentId: string): Promise<Result<TranscriptItem[]>>;
   };
 
   settings: {
     get(): Promise<Result<Settings>>;
     setApprovalMode(mode: ApprovalMode): Promise<Result<Settings>>;
+    /** Spec 004 FR-012 to FR-014: persists the whole `Settings` row and returns this call's own
+     * written value, the same race-safety pattern as `setApprovalMode`. Pushes `settings:changed`,
+     * no new event. */
+    setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<Result<Settings>>;
   };
 
   window: {
@@ -302,6 +318,9 @@ export interface RefractApi {
   onSettingsChanged(handler: (payload: Settings) => void): Unsubscribe;
   onUiOpenSession(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
+  onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
+  onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
+  onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
 }
 
 declare global {

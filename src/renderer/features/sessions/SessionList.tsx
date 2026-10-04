@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon, SettingsIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.png'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
-import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
+import { notify, useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { SessionDetailsCard } from './SessionDetailsCard'
@@ -438,6 +438,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
 export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
+  const openSettings = useViewStore((state) => state.openSettings)
 
   return (
     <nav
@@ -453,6 +454,18 @@ export function SessionList() {
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0 rounded-md" />
         <span className="text-sm font-semibold">Refract</span>
+        {/* Spec 004 FR-011, research.md decision 7: a temporary, plainly-labelled entry point to
+            Settings (not styled as a profile item) -- spec 008's profile-item cog supersedes
+            this once it lands. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="no-drag-region ml-auto h-7 gap-1.5 px-2 text-muted-foreground"
+          onClick={() => openSettings()}
+        >
+          <SettingsIcon aria-hidden className="size-3.5" />
+          Settings
+        </Button>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-2">

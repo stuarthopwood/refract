@@ -17,7 +17,16 @@ import type {
   Unsubscribe
 } from '../shared/ipc'
 import type { ImageContent } from '../shared/frames'
-import type { ConversationInfo, PendingRequest, Repository, Session, Settings } from '../shared/model'
+import type {
+  ConversationInfo,
+  PendingRequest,
+  Repository,
+  Session,
+  SessionReadout,
+  Settings,
+  SubagentSummary,
+  TranscriptItem
+} from '../shared/model'
 
 // window.refract: the sole renderer-to-main bridge (contracts/ipc.md). The renderer never sees
 // ipcRenderer or a raw channel string; every method below is a fixed, typed call.
@@ -95,12 +104,18 @@ const refract: RefractApi = {
     predictWord: (sessionId, text, cursor) =>
       request<string | null>(IPC_REQUESTS.CHAT_PREDICT_WORD, sessionId, text, cursor),
     predictWordFeedback: (sessionId, text, cursor, suggestion, accepted) =>
-      request<void>(IPC_REQUESTS.CHAT_PREDICT_WORD_FEEDBACK, sessionId, text, cursor, suggestion, accepted)
+      request<void>(IPC_REQUESTS.CHAT_PREDICT_WORD_FEEDBACK, sessionId, text, cursor, suggestion, accepted),
+    setVisibleSubagent: (sessionId, subagentId) =>
+      request<void>(IPC_REQUESTS.CHAT_SET_VISIBLE_SUBAGENT, sessionId, subagentId),
+    subagentSnapshot: (sessionId, subagentId) =>
+      request<TranscriptItem[]>(IPC_REQUESTS.CHAT_SUBAGENT_SNAPSHOT, sessionId, subagentId)
   },
 
   settings: {
     get: () => request<Settings>(IPC_REQUESTS.SETTINGS_GET),
-    setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode)
+    setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode),
+    setReadoutVisibility: (kind, visible) =>
+      request<Settings>(IPC_REQUESTS.SETTINGS_SET_READOUT_VISIBILITY, kind, visible)
   },
 
   window: {
@@ -119,7 +134,12 @@ const refract: RefractApi = {
     on<{ sessionId: string; commands: SlashCommand[] }>(IPC_EVENTS.COMMANDS_UPDATE, handler),
   onSettingsChanged: (handler) => on<Settings>(IPC_EVENTS.SETTINGS_CHANGED, handler),
   onUiOpenSession: (handler) => on<{ sessionId: string }>(IPC_EVENTS.UI_OPEN_SESSION, handler),
-  onMemoryWarning: (handler) => on<LowMemoryWarning>(IPC_EVENTS.MEMORY_WARNING, handler)
+  onMemoryWarning: (handler) => on<LowMemoryWarning>(IPC_EVENTS.MEMORY_WARNING, handler),
+  onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
+  onSubagentsUpdate: (handler) =>
+    on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
+  onSubagentPatch: (handler) =>
+    on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler)
 }
 
 contextBridge.exposeInMainWorld('refract', refract)

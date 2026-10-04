@@ -27,7 +27,11 @@ export function mapStoreThrown(err: unknown): Result<never> {
 }
 
 export async function buildSnapshot(agent: SessionAgent, session: Session): Promise<SessionSnapshot> {
-  const runtime: SessionRuntimeView = { ...agent.runtimeSnapshot };
+  // Spec 004: `turnStartedAt`/`subagents` are main-only bookkeeping (the renderer reads the
+  // derived `readout`/`subagents:update` instead), so they are excluded from `SessionRuntimeView`
+  // rather than sent twice over IPC.
+  const { turnStartedAt: _turnStartedAt, readout, subagents: _subagents, ...runtimeFields } = agent.runtimeSnapshot;
+  const runtime: SessionRuntimeView = runtimeFields;
   const conversations = await listConversations(session.sessionDir, session.currentConversation);
-  return { runtime, conversations };
+  return { runtime, conversations, readout };
 }

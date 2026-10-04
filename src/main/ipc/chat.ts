@@ -243,4 +243,30 @@ export function registerChat(manager: SessionManager): void {
       return { ok: true, value: undefined };
     }
   );
+
+  // Spec 004 FR-017 to FR-020: tells main which subagent's stream to forward as
+  // `subagent:patch`; `null` stops forwarding (panel closed, or no subagent selected).
+  ipcMain.handle(IPC_REQUESTS.CHAT_SET_VISIBLE_SUBAGENT, async (_event, sessionId: unknown, subagentId: unknown) => {
+    if (typeof sessionId !== 'string' || (subagentId !== null && typeof subagentId !== 'string')) {
+      return invalidArgument(`${IPC_REQUESTS.CHAT_SET_VISIBLE_SUBAGENT} expects (sessionId, subagentId | null)`);
+    }
+    if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
+    manager.getOrCreateAgent(sessionId).setVisibleSubagent(subagentId);
+    return { ok: true, value: undefined };
+  });
+
+  // Spec 004 FR-018: full current stream for one subagent, for when the panel first selects it,
+  // before patches arrive. `not-found` for an id that does not match a SubagentSummary of the
+  // current turn.
+  ipcMain.handle(IPC_REQUESTS.CHAT_SUBAGENT_SNAPSHOT, async (_event, sessionId: unknown, subagentId: unknown) => {
+    if (typeof sessionId !== 'string' || typeof subagentId !== 'string') {
+      return invalidArgument(`${IPC_REQUESTS.CHAT_SUBAGENT_SNAPSHOT} expects (sessionId, subagentId) strings`);
+    }
+    if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
+    try {
+      return { ok: true, value: manager.getOrCreateAgent(sessionId).subagentSnapshot(subagentId) };
+    } catch (err) {
+      return notFound(err instanceof Error ? err.message : String(err));
+    }
+  });
 }

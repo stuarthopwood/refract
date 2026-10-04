@@ -8,6 +8,9 @@ import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
+import { useViewStore } from './view-store'
+import { EMPTY_READOUT, useReadoutStore } from './readout-store'
+import { useSubagentPanelStore } from './subagent-store'
 
 export { initStores }
 export { notify }
@@ -19,6 +22,10 @@ export { useRepositoriesStore }
 export { DEFAULT_SETTINGS, useSettingsStore }
 export { useSessionsStore }
 export { useTranscriptStore }
+export { useViewStore }
+export type { MainView, SettingsSectionId } from './view-store'
+export { EMPTY_READOUT, useReadoutStore }
+export { useSubagentPanelStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -30,6 +37,9 @@ export interface RefractDevStores {
   settings: typeof useSettingsStore
   sessions: typeof useSessionsStore
   transcript: typeof useTranscriptStore
+  view: typeof useViewStore
+  readout: typeof useReadoutStore
+  subagentPanel: typeof useSubagentPanelStore
 }
 
 declare global {
@@ -50,6 +60,9 @@ if (import.meta.env.DEV) {
     repositories: useRepositoriesStore,
     settings: useSettingsStore,
     sessions: useSessionsStore,
-    transcript: useTranscriptStore
+    transcript: useTranscriptStore,
+    view: useViewStore,
+    readout: useReadoutStore,
+    subagentPanel: useSubagentPanelStore
   }
 }

@@ -2,7 +2,8 @@
 
 import path from 'node:path'
 import { readJsonFile, writeJsonFile } from './atomicJson'
-import type { ApprovalMode, Settings } from '../../shared/model'
+import { DEFAULT_SESSION_READOUT } from '../../shared/model'
+import type { ApprovalMode, ReadoutKind, Settings } from '../../shared/model'
 
 export class SettingsStore {
   private constructor(
@@ -12,7 +13,14 @@ export class SettingsStore {
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask' }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT }))
+    // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
+    // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
+    // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
+    // or corrupt file above.
+    if (!data.sessionReadout) {
+      data.sessionReadout = DEFAULT_SESSION_READOUT
+    }
     return new SettingsStore(file, data)
   }
 
@@ -30,6 +38,17 @@ export class SettingsStore {
     // (wrong, most-recent) mode instead of the one it actually asked to set -- and
     // `ipc/settings.ts` feeds that value straight into `applyPendingModeChange`, so a stale
     // read there could launch a live Session in someone else's requested mode.
+    return { ...next }
+  }
+
+  /** `settings.setReadoutVisibility(kind, visible)` (spec 004 FR-012 to FR-014, contracts/ipc.md):
+   * replaces one `sessionReadout` entry and persists the whole row, the same race-safety pattern
+   * as `setApprovalMode` above (returns this call's own written value, never a possibly-superseded
+   * shared read). */
+  async setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<Settings> {
+    const next = { ...this.data, sessionReadout: { ...this.data.sessionReadout, [kind]: visible } }
+    this.data = next
+    await writeJsonFile(this.file, next)
     return { ...next }
   }
 }

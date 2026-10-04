@@ -31,12 +31,18 @@ import type {
   PredictWordResponseData,
   QueueUpdateFrame,
   SwitchSessionResponseData,
+  ToolExecutionEndFrame,
+  ToolExecutionStartFrame,
+  ToolExecutionUpdateFrame,
 } from '../../shared/frames';
-import type { ApprovalMode, PendingRequest, Session, SessionRuntime, SessionStatus, TranscriptItem } from '../../shared/model';
+import type { ApprovalMode, PendingRequest, Session, SessionReadout, SessionRuntime, SessionStatus, SubagentSummary, TranscriptItem } from '../../shared/model';
 import type { ChatAnswer, SessionStatusEvent, SlashCommand, TranscriptOp } from '../../shared/ipc';
 import { filterSupportedCommands } from '../../shared/slash-commands';
 import type { RegistryStore } from '../store/registry';
 import type { SettingsStore } from '../store/settings';
+import { assembleReadout } from './readout';
+import type { ReadoutState } from './readout';
+import { applySubagentProgress } from './subagentStream';
 
 const ABORT_SETTLE_TIMEOUT_MS = 60_000;
 /** `predict_word`'s own worst case (rpc.md "Word prediction": "about two minutes" for a cold
@@ -50,6 +56,25 @@ const PREDICT_WORD_TIMEOUT_MS = 150_000;
  * `formatModelLabel`/`formatThinkingLevelLabel` on every later read, persisting across a restart.
  * Capped length guards against one session's registry row growing unboundedly from a single oversized field. */
 const MAX_MODEL_FIELD_LENGTH = 256;
+
+/** Spec 004 contracts/ipc.md `readout:update`: coalesced to at most one per Session per this
+ * window, matching `transcript:patch`'s own discipline (patchCoalescer.ts). */
+const READOUT_COALESCE_MS = 50;
+
+/** Spec 004 research.md decision: the pull-request chip is "polled on a timer" since no OMP
+ * frame ever signals a GitHub-side PR change; my default, not confirmed with Stuart. */
+const PR_POLL_INTERVAL_MS = 60_000;
+
+/** The chip row's bundle before any readout has ever been assembled (data-model.md: every field
+ * `null` means "not yet read" / "chip hidden", never a guessed value). */
+const EMPTY_READOUT: SessionReadout = {
+  changes: null,
+  contextUsage: null,
+  turnTime: null,
+  pullRequest: null,
+  subagentCount: null,
+  todoProgress: null,
+};
 
 function isValidModelRef(model: unknown): model is { provider: string; id: string; name?: string } {
   if (typeof model !== 'object' || model === null) return false;
@@ -70,6 +95,12 @@ export interface SessionAgentEvents {
   request: (payload: { sessionId: string; request: PendingRequest }) => void;
   requestResolved: (payload: { sessionId: string; requestId: string }) => void;
   commands: (payload: { sessionId: string; commands: SlashCommand[] }) => void;
+  /** Spec 004 `readout:update`: the chip row's live bundle, coalesced per READOUT_COALESCE_MS. */
+  readout: (payload: { sessionId: string; readout: SessionReadout }) => void;
+  /** Spec 004 `subagents:update`: the current turn's subagent list, whole-array replace. */
+  subagents: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void;
+  /** Spec 004 `subagent:patch`: only for whichever subagent `setVisibleSubagent` last named. */
+  subagentPatch: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void;
   /** Fired whenever `syncFromState` writes a registry patch (after the initial `get_state`, every
    * `session_settled`, a Conversation switch, or a mode-change restart) -- i.e. whenever
    * `lastModel`/`lastThinkingLevel`/`currentConversation`/... may have changed. `SessionManager`
@@ -149,6 +180,28 @@ export class SessionAgent extends EventEmitter {
    * before that very first `send()` ever gets the startup prefix. */
   private hasUserActed = false;
 
+  // --- Spec 004: readout + subagent tracking ---------------------------------------------
+  private readoutTimer: NodeJS.Timeout | undefined;
+  private readoutInFlight = false;
+  private readoutPending = false;
+  private prPollTimer: NodeJS.Timeout | undefined;
+  /** Set once the first `get_state` syncs this run (constructor/launch/settle); before that,
+   * `contextUsage`/`todoProgress` stay at whatever `assembleReadout` already had rather than
+   * jumping to `'not-available'` -- no reading was ever expected yet. */
+  private stateSynced = false;
+  private lastContextUsage: { tokens: number; contextWindow: number; percent: number } | undefined;
+  private lastTodoPhases: Array<{ name: string; tasks: Array<{ content: string; status: string }> }> | undefined;
+  /** One `TranscriptItem[]` stream per subagent id, built the same way the main transcript is
+   * (data-model.md): requested on demand via `chat.subagentSnapshot`, patched via
+   * `subagent:patch` for whichever one `setVisibleSubagent` last named. Cleared per-id when its
+   * owning turn ends (next `agent_start`), alongside `runtime.subagents`. */
+  private readonly subagentStreams = new Map<string, TranscriptItem[]>();
+  private visibleSubagentId: string | null = null;
+  private readonly subagentPatches = new PatchCoalescer((ops) => {
+    if (this.visibleSubagentId === null) return;
+    this.emit('subagentPatch', { sessionId: this.sessionId, subagentId: this.visibleSubagentId, ops });
+  });
+
   constructor(opts: SessionAgentOptions) {
     super();
     this.sessionId = opts.sessionId;
@@ -167,6 +220,9 @@ export class SessionAgent extends EventEmitter {
       transcript: [],
       queue: { followUp: [], steering: [] },
       pending: [],
+      turnStartedAt: null,
+      readout: EMPTY_READOUT,
+      subagents: [],
     };
   }
 
@@ -314,6 +370,11 @@ export class SessionAgent extends EventEmitter {
     if (exitedDuringStart2) return exitedDuringStart2;
     this.emitStatus();
     this.emitPatchReset();
+    // Spec 004: the pull-request chip has no OMP frame to react to, so it is polled on a timer
+    // once a Session has been opened (started here, never for a Session nobody opened this run).
+    if (!this.prPollTimer) {
+      this.prPollTimer = setInterval(() => this.scheduleReadoutUpdate(), PR_POLL_INTERVAL_MS);
+    }
     return { ok: true };
   }
 
@@ -365,6 +426,10 @@ export class SessionAgent extends EventEmitter {
     this.stopRequested = true;
     while (this.startPromise || this.restartPromise) {
       await (this.startPromise ?? this.restartPromise)?.catch(() => undefined);
+    }
+    if (this.prPollTimer) {
+      clearInterval(this.prPollTimer);
+      this.prPollTimer = undefined;
     }
     await stopIfRunning(this.process);
   }
@@ -711,6 +776,13 @@ export class SessionAgent extends EventEmitter {
     } catch (err) {
       console.error(`SessionAgent ${this.sessionId}: failed to update registry from get_state`, err);
     }
+    // Spec 004 FR-003/FR-021, FINDINGS items 34/35: `get_state` is the only source for both the
+    // Context window usage and Todo progress chips; captured here so `assembleReadout` never
+    // needs its own `get_state` round trip.
+    this.stateSynced = true;
+    this.lastContextUsage = state.contextUsage;
+    this.lastTodoPhases = state.todoPhases;
+    this.scheduleReadoutUpdate();
   }
 
   private async onSessionSettled(): Promise<void> {
@@ -736,6 +808,9 @@ export class SessionAgent extends EventEmitter {
     this.turnSettleHandled = true;
     this.settleTurnPendingRequests('Request withdrawn: the turn ended.');
     this.setStatus('idle');
+    // Spec 004 data-model.md: turnTime/subagentCount are always null outside a running turn.
+    this.runtime = { ...this.runtime, turnStartedAt: null };
+    this.scheduleReadoutUpdate();
     void this.onSessionSettled().then(() => this.maybeRestartForPendingMode());
   }
 
@@ -744,6 +819,10 @@ export class SessionAgent extends EventEmitter {
     this.finalizeLiveItems();
     if (this.restarting && info.requested) return; // restart() owns this transition; see its doc comment.
     this.settleTurnPendingRequests('Request withdrawn: the agent process exited.');
+    if (this.runtime.turnStartedAt !== null) {
+      this.runtime = { ...this.runtime, turnStartedAt: null };
+      this.scheduleReadoutUpdate();
+    }
     if (info.requested) {
       this.setStatus('stopped', { stopReason: 'not-started' });
     } else {
@@ -761,6 +840,10 @@ export class SessionAgent extends EventEmitter {
       case 'agent_start':
         this.turnSettleHandled = false;
         this.setStatus('working');
+        this.subagentStreams.clear();
+        this.runtime = { ...this.runtime, turnStartedAt: Date.now(), subagents: [] };
+        this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
+        this.scheduleReadoutUpdate();
         return;
       case 'session_settled':
         this.handleTurnSettled();
@@ -811,12 +894,29 @@ export class SessionAgent extends EventEmitter {
       case 'message_start':
       case 'message_update':
       case 'message_end':
-      case 'tool_execution_start':
-      case 'tool_execution_end':
       case 'command_output':
       case 'notice':
         this.applyTranscriptFrame(frame);
         return;
+      case 'tool_execution_start': {
+        this.applyTranscriptFrame(frame);
+        const startFrame = frame as ToolExecutionStartFrame;
+        if (startFrame.toolName === 'task') this.handleTaskStart(startFrame);
+        else this.scheduleReadoutUpdate(); // spec 004 FR-002: a non-task tool call may change Changes
+        return;
+      }
+      case 'tool_execution_end': {
+        this.applyTranscriptFrame(frame);
+        const endFrame = frame as ToolExecutionEndFrame;
+        if (endFrame.toolName === 'task') this.handleTaskEnd(endFrame);
+        this.scheduleReadoutUpdate();
+        return;
+      }
+      case 'tool_execution_update': {
+        const updateFrame = frame as ToolExecutionUpdateFrame;
+        if (updateFrame.toolName === 'task') this.handleTaskUpdate(updateFrame);
+        return;
+      }
       default: {
         // agent_end (Refract tracks history incrementally, not from the final snapshot),
         // rpc_chunk/response (consumed inside OmpProcess and never emitted as 'frame'), and
@@ -946,6 +1046,163 @@ export class SessionAgent extends EventEmitter {
 
   private queuePatch(ops: TranscriptOp[]): void {
     this.patches.queue(ops);
+  }
+
+  // --- Spec 004: readout assembly ---------------------------------------------------------
+
+  /** Debounced to `READOUT_COALESCE_MS`, then single-flight (a trigger arriving while a
+   * computation is already in progress joins the next run instead of starting a second
+   * overlapping one), matching `transcript:patch`'s own coalescing discipline. */
+  private scheduleReadoutUpdate(): void {
+    if (this.readoutTimer) return;
+    this.readoutTimer = setTimeout(() => {
+      this.readoutTimer = undefined;
+      this.runReadoutUpdate();
+    }, READOUT_COALESCE_MS);
+  }
+
+  private runReadoutUpdate(): void {
+    if (this.readoutInFlight) {
+      this.readoutPending = true;
+      return;
+    }
+    this.readoutInFlight = true;
+    void this.computeReadout().finally(() => {
+      this.readoutInFlight = false;
+      if (this.readoutPending) {
+        this.readoutPending = false;
+        this.runReadoutUpdate();
+      }
+    });
+  }
+
+  private async computeReadout(): Promise<void> {
+    const session = this.registry.getSession(this.sessionId);
+    if (!session) return;
+    const state: ReadoutState = {
+      turnStartedAt: this.runtime.turnStartedAt,
+      subagents: this.runtime.subagents,
+      contextUsage: this.lastContextUsage,
+      stateSynced: this.stateSynced,
+      todoPhases: this.lastTodoPhases,
+    };
+    const readout = await assembleReadout(session, this.runtime.readout, state);
+    this.runtime = { ...this.runtime, readout };
+    this.emit('readout', { sessionId: this.sessionId, readout });
+  }
+
+  // --- Spec 004: subagent tracking (FR-007, FR-017 to FR-020) -----------------------------
+
+  /** `args.tasks[]` entries, read the same defensive way `transcript.ts`'s `readTaskSpecs`
+   * already does for the existing collapsed chat line (not duplicated here, just mirrored). */
+  private readTaskSpecs(args: unknown): Array<{ name?: string; task?: string }> {
+    if (typeof args !== 'object' || args === null) return [];
+    const tasks = (args as Record<string, unknown>).tasks;
+    if (!Array.isArray(tasks)) return [];
+    return tasks.filter((t): t is { name?: string; task?: string } => typeof t === 'object' && t !== null);
+  }
+
+  private subagentNameOrTask(spec: { name?: string; task?: string }): string {
+    if (spec.name) return spec.name;
+    const task = spec.task ?? '';
+    return task.length > 60 ? `${task.slice(0, 60)}...` : task || 'Subagent';
+  }
+
+  /** `tool_execution_start` for the `task` tool: creates one `SubagentSummary` per spec, `id`
+   * set to the spec's own `name` (FINDINGS item 36: OMP's own `progress[].id` echoes it back
+   * unchanged) falling back to the same text `nameOrTask` uses when unnamed -- the index-based
+   * correlation in `handleTaskUpdate` is the authoritative match either way. */
+  private handleTaskStart(frame: ToolExecutionStartFrame): void {
+    const specs = this.readTaskSpecs(frame.args);
+    if (specs.length === 0) return;
+    const startedAt = Date.now();
+    const created: SubagentSummary[] = specs.map((spec) => ({
+      id: spec.name ?? this.subagentNameOrTask(spec),
+      nameOrTask: this.subagentNameOrTask(spec),
+      status: 'running',
+      startedAt,
+    }));
+    for (const summary of created) {
+      if (!this.subagentStreams.has(summary.id)) this.subagentStreams.set(summary.id, []);
+    }
+    this.runtime = { ...this.runtime, subagents: [...this.runtime.subagents, ...created] };
+    this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
+    this.scheduleReadoutUpdate();
+  }
+
+  /** `tool_execution_update` for the `task` tool (FINDINGS item 36): correlates each
+   * `progress[]` entry to a tracked `SubagentSummary` by `id` first, falling back to array
+   * position (`index`) when no id match is found (an unnamed subagent whose fallback id never
+   * matched OMP's own choice) -- never silently drops an entry. Updates status/duration and
+   * patches that subagent's own stream from `recentTools`/`recentOutput`. */
+  private handleTaskUpdate(frame: ToolExecutionUpdateFrame): void {
+    const progressList = frame.partialResult.details.progress;
+    if (!Array.isArray(progressList) || progressList.length === 0) return;
+    let subagents = this.runtime.subagents;
+    let changed = false;
+    for (let i = 0; i < progressList.length; i++) {
+      const progress = progressList[i];
+      if (!progress) continue;
+      const matchIndex = subagents.findIndex((s) => s.id === progress.id);
+      const targetIndex = matchIndex !== -1 ? matchIndex : i < subagents.length ? i : -1;
+      if (targetIndex === -1) continue;
+      const existing = subagents[targetIndex];
+      if (!existing) continue;
+      const status = progress.status === 'completed' ? 'finished' : /failed|cancelled|error/i.test(progress.status) ? 'failed' : 'running';
+      const durationMs = typeof progress.durationMs === 'number' && progress.durationMs > 0 ? progress.durationMs : existing.durationMs;
+      if (existing.status !== status || existing.durationMs !== durationMs) {
+        subagents = subagents.map((s, idx) => (idx === targetIndex ? { ...s, status, durationMs } : s));
+        changed = true;
+      }
+      const streamId = existing.id;
+      const currentStream = this.subagentStreams.get(streamId) ?? [];
+      const nextStream = applySubagentProgress(currentStream, streamId, progress);
+      if (nextStream !== currentStream) {
+        this.subagentStreams.set(streamId, nextStream);
+        if (streamId === this.visibleSubagentId) {
+          this.subagentPatches.queue(diffTranscript(currentStream, nextStream));
+        }
+      }
+    }
+    if (changed) {
+      this.runtime = { ...this.runtime, subagents };
+      this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
+    }
+    this.scheduleReadoutUpdate();
+  }
+
+  /** `tool_execution_end` for the `task` tool: a safety net in case a final `completed`/`failed`
+   * `tool_execution_update` was somehow missed -- marks every still-`running` subagent from this
+   * batch `finished` (or `failed` when the whole call errored), per FR-007's own wording. */
+  private handleTaskEnd(frame: ToolExecutionEndFrame): void {
+    const fallbackStatus: SubagentSummary['status'] = frame.isError ? 'failed' : 'finished';
+    let changed = false;
+    const subagents = this.runtime.subagents.map((s) => {
+      if (s.status !== 'running') return s;
+      changed = true;
+      return { ...s, status: fallbackStatus, durationMs: s.durationMs ?? Date.now() - s.startedAt };
+    });
+    if (changed) {
+      this.runtime = { ...this.runtime, subagents };
+      this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
+    }
+    this.scheduleReadoutUpdate();
+  }
+
+  /** `chat.setVisibleSubagent` (FR-017 to FR-020): no immediate push -- the caller fetches the
+   * current snapshot via `subagentSnapshot` first; only subsequent changes arrive as patches. */
+  setVisibleSubagent(subagentId: string | null): void {
+    this.visibleSubagentId = subagentId;
+  }
+
+  /** `chat.subagentSnapshot` (FR-018): throws for an id that never matched a `SubagentSummary`
+   * of the current turn, mapped to `not-found` by the IPC layer. */
+  subagentSnapshot(subagentId: string): TranscriptItem[] {
+    const stream = this.subagentStreams.get(subagentId);
+    if (!stream) {
+      throw new Error(`SessionAgent ${this.sessionId}: no subagent ${subagentId} in the current turn`);
+    }
+    return stream;
   }
 
 }

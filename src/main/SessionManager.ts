@@ -6,7 +6,7 @@
 // never needs to know about Electron.
 
 import { existsSync } from 'node:fs';
-import type { ApprovalMode, PendingRequest } from '../shared/model';
+import type { ApprovalMode, PendingRequest, SessionReadout, SubagentSummary } from '../shared/model';
 import type { SessionStatusEvent, SessionSummary, SlashCommand, TranscriptOp } from '../shared/ipc';
 import { SessionAgent } from './omp/SessionAgent';
 import type { RegistryStore } from './store/registry';
@@ -19,6 +19,9 @@ export type ManagerEvent =
   | { type: 'request'; payload: { sessionId: string; request: PendingRequest } }
   | { type: 'requestResolved'; payload: { sessionId: string; requestId: string } }
   | { type: 'commands'; payload: { sessionId: string; commands: SlashCommand[] } }
+  | { type: 'readout'; payload: { sessionId: string; readout: SessionReadout } }
+  | { type: 'subagents'; payload: { sessionId: string; subagents: SubagentSummary[] } }
+  | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
   | { type: 'list-changed' };
 
 export class SessionManager {
@@ -76,6 +79,22 @@ export class SessionManager {
     agent.on('request', (payload) => this.emit({ type: 'request', payload }));
     agent.on('requestResolved', (payload) => this.emit({ type: 'requestResolved', payload }));
     agent.on('commands', (payload) => this.emit({ type: 'commands', payload }));
+    // Spec 004: readout/subagents/subagentPatch follow `patch`'s own visible-Session-only rule
+    // (contracts/ipc.md `readout:update`/`subagent:patch`); a background Session's chip row and
+    // panel data keep computing in `SessionAgent`, just unsent until it becomes visible, at which
+    // point `sessions.open`'s `SessionSnapshot.readout` carries the current value.
+    agent.on('readout', (payload) => {
+      if (payload.sessionId !== this.visibleSessionId) return;
+      this.emit({ type: 'readout', payload });
+    });
+    agent.on('subagents', (payload) => {
+      if (payload.sessionId !== this.visibleSessionId) return;
+      this.emit({ type: 'subagents', payload });
+    });
+    agent.on('subagentPatch', (payload) => {
+      if (payload.sessionId !== this.visibleSessionId) return;
+      this.emit({ type: 'subagentPatch', payload });
+    });
     // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and
     // `currentConversation`/...) to the registry on every settle, Conversation switch, and
     // mode-change restart -- not just on start, which `ipc/sessions.ts`'s `open` handler already

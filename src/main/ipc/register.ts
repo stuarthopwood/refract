@@ -53,6 +53,15 @@ function forwardEvent(event: ManagerEvent, getWindow: () => BrowserWindow | unde
       case 'commands':
         window.webContents.send(IPC_EVENTS.COMMANDS_UPDATE, event.payload);
         return;
+      case 'readout':
+        window.webContents.send(IPC_EVENTS.READOUT_UPDATE, event.payload);
+        return;
+      case 'subagents':
+        window.webContents.send(IPC_EVENTS.SUBAGENTS_UPDATE, event.payload);
+        return;
+      case 'subagentPatch':
+        window.webContents.send(IPC_EVENTS.SUBAGENT_PATCH, event.payload);
+        return;
       case 'list-changed':
         window.webContents.send(IPC_EVENTS.SESSION_LIST_CHANGED);
         return;

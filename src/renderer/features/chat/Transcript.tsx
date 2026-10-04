@@ -56,8 +56,9 @@ function formatThinkingSeconds(ms: number): string {
   return `${Math.max(1, Math.round(ms / 1000))}`
 }
 
-// "28s", "1m 14s", "2h 3m" (T076, FR-046).
-function formatElapsed(ms: number): string {
+// "28s", "1m 14s", "2h 3m" (T076, FR-046). Exported for spec 004's Turn time chip (T013), which
+// must match this exact formatting.
+export function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000))
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)

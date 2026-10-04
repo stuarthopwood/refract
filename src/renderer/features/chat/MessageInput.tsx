@@ -13,11 +13,20 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
+import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore, useSettingsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
 import { ApprovalModePill } from './ApprovalModePill'
+import {
+  ChangesChip,
+  ContextUsageChip,
+  CurrentTimeChip,
+  PullRequestChip,
+  SubagentsChip,
+  TodoProgressChip,
+  TurnTimeChip
+} from './readout/ReadoutChips'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import {
   buildChipLabel,
@@ -84,6 +93,7 @@ interface MessageInputProps {
 
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
+  const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
   // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
   // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
   // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
@@ -636,9 +646,19 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           : ''}
       </span>
       {/* Chip row (docs/DESIGN.md "Chat"; spec 004 appends readout chips after the pill): the
-          Approval mode pill is always the first item, FR-056. */}
+          Approval mode pill is always the first item, FR-056; `flex-wrap` lets the row wrap onto
+          a further line at any window width rather than ever hiding or overlapping the box below
+          it (FR-009). Which readout chips render is gated by Settings (FR-012 to FR-014); each
+          chip independently hides itself when its own data is null (FR-002 to FR-007, FR-021). */}
       <div className="flex flex-wrap items-center gap-1.5">
         <ApprovalModePill sessionId={sessionId} />
+        {sessionReadout.changes && <ChangesChip />}
+        {sessionReadout['context-usage'] && <ContextUsageChip />}
+        {sessionReadout['turn-time'] && <TurnTimeChip />}
+        {sessionReadout['current-time'] && <CurrentTimeChip />}
+        {sessionReadout['pull-request'] && <PullRequestChip />}
+        {sessionReadout.subagents && <SubagentsChip />}
+        {sessionReadout['todo-progress'] && <TodoProgressChip />}
       </div>
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}

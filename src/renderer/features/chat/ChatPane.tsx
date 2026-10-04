@@ -10,7 +10,16 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { cn } from '@/lib/utils'
 import { focusSessionsNav } from '@/lib/focus'
-import { notify, useCommandsStore, usePendingRequestsStore, useQueueStore, useSessionsStore, useTranscriptStore } from '@/state'
+import {
+  notify,
+  useCommandsStore,
+  usePendingRequestsStore,
+  useQueueStore,
+  useReadoutStore,
+  useSessionsStore,
+  useSubagentPanelStore,
+  useTranscriptStore
+} from '@/state'
 import type { SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -30,6 +39,12 @@ export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): voi
   useTranscriptStore.getState().reset(sessionId, snapshot.runtime.transcript)
   useQueueStore.getState().apply(sessionId, snapshot.runtime.queue.followUp, snapshot.runtime.queue.steering)
   usePendingRequestsStore.getState().setForSession(sessionId, snapshot.runtime.pending)
+  // Spec 004: the chip row's initial bundle; subagents seed empty here and fill in from the
+  // first `subagents:update` once a turn actually starts (contracts/ipc.md).
+  useReadoutStore.getState().reset(sessionId, snapshot.readout, [])
+  // Spec 004 FR-020: a Session switch (or a reopen) leaves no stale subagent panel open for a
+  // different Session's turn.
+  useSubagentPanelStore.getState().reset()
 }
 
 /** `SessionSummary` (the sessions-store list row) carries `status` but not `stopReason`/

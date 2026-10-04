@@ -6,55 +6,72 @@ constitution IV; each is resolved by a Phase 1 probe task in `tasks.md`, which u
 with the exact field or frame name once run. Nothing below is a field name yet — these are the
 questions the probes answer, not an assumed answer.
 
-## Unverified wire usage, resolved by Phase 1 probes
+## Resolved by Phase 1 probes (FINDINGS items 34 to 36, 2026-10-04, omp 18.5.1)
 
 ### a. Context window usage (Context window usage chip, FR-003)
 
-**Question**: does OMP report the running agent's context-window usage at all, and if so where —
-an existing `get_state` field (the response type already has `[key: string]: unknown`, so an
-undocumented field is possible today), a dedicated request such as `get_session_stats`, or only as
-a side effect of a `/context` slash command's `command_output` (FINDINGS "Available over RPC":
-`/context` is already listed as available)?
-
-**Probe**: `docs/spike/context-usage-probe.mjs` — start a Session, run a turn of some size, call
-`get_state` and (if it exists) `get_session_stats`, and also run `/context` and capture its
-`command_output`, comparing all three for a consistent token-used/window-size pair.
-
-**Recorded as**: a new numbered FINDINGS item, plus the resolved field/request name entered here.
+**Resolved**: `get_state().contextUsage` is a plain object already present on the response,
+`{ tokens: number, contextWindow: number, percent: number }` — `percent` is computed and reported
+by OMP itself, never derived by Refract. Confirmed present both before any turn (system-prompt
+baseline) and after. `get_session_stats` also exists as a real request and nests the identical
+`contextUsage` shape inside a richer per-Session stats object, but is not needed: `get_state` alone
+is sufficient and is already read on every settle. `assembleReadout` (T007) reads
+`state.contextUsage.tokens`/`.contextWindow`/`.percent` directly (no independent derivation),
+retaining the last non-null reading per data-model.md's retention rule; `'not-available'` is used
+only if a sync happens and the field is absent (not observed on the supported versions, but the
+spec's own escape hatch for a future OMP that omits it). FINDINGS item 34.
 
 ### b. Task-list ("todo") progress (Todo progress chip, FR-021)
 
-**Question**: spec 001 FR-052 already hides the agent's own `todo` tool calls from the chat
-(spec 001 task T086). Does OMP expose the resulting task list's done/total counts anywhere a
-client can read them without parsing the hidden tool calls itself — a `get_state` field (the
-spec's own wording, "todoPhases", names the shape to look for first), a frame pushed alongside
-`tool_execution_end` for the `todo` tool, or only the hidden tool call's own `args`/`result`
-(meaning Refract must read the hidden call after all, just not render it)?
-
-**Probe**: `docs/spike/todo-progress-probe.mjs` — run a turn that creates and partially completes
-a task list, and inspect `get_state` and the `todo` tool's own call/result for a done/total shape.
-
-**Recorded as**: a new numbered FINDINGS item, plus the resolved source entered here.
+**Resolved**: `get_state().todoPhases` is `Array<{ name: string, tasks: Array<{ content: string,
+status: string }> }>`, matching the spec's own guessed field name exactly. `status` observed values:
+`"completed"`, `"in_progress"`, `"pending"` (the `todo` tool's own documented "earliest pending
+starts" behaviour can auto-advance a task to `in_progress`, not just leave it `pending`).
+`todoProgress.done` is the count of `status === 'completed'` across every phase's `tasks`;
+`todoProgress.total` is the flat count of all tasks across every phase; `null` (chip hidden) when
+`todoPhases` is absent or empty. The hidden `todo` tool's own `tool_execution_end.result.details`
+carries the identical `phases` array as a side effect, confirming agreement, but Refract reads only
+`get_state().todoPhases`. FINDINGS item 35.
 
 ### c. Per-subagent id, status, timing, and live stream (Subagents chip and panel, FR-007, FR-017 to FR-020)
 
-**Question**: FINDINGS C6 already proves subagent progress exists as `tool_call_update` progress
-on the `task` tool, and spec 001 task T071(d) separately probes just enough of this for one
-collapsed chat line per subagent. This spec needs more: a *stable id* per subagent usable as a
-React key and as the argument to `chat.setVisibleSubagent`, and the *live stream* of a selected
-subagent — its own text and tool calls, not just its overall status — arriving incrementally
-enough to drive `subagent:patch` within SC-006's 2 s. Does `tool_call_update` progress (or a
-`set_subagent_subscription` frame, named in FINDINGS C6) carry a per-subagent text/tool-call
-stream, or only a status/timing summary (in which case per-subagent text must come from somewhere
-else, such as nested `message_start`/`message_end` frames scoped to the subagent)?
+**Resolved**: the live per-subagent frame is **`tool_execution_update`** (not `tool_call_update` as
+FINDINGS C6's original note and this section's own question both guessed), sent for the `task`
+tool's own `toolCallId` with no subscription call needed (`set_subagent_subscription` is a real
+request but takes a `level` argument this probe did not resolve, and is not required — the update
+frames stream by default). Shape: `{ type: 'tool_execution_update', toolCallId, toolName: 'task',
+args, partialResult: { content, details: { progress: SubagentProgress[], results, totalDurationMs,
+async, projectAgentsDir } } }`. Each `progress[]` entry is keyed by a **stable id that is literally
+the subagent's own `name`** (e.g. `"Alpha"`), usable directly as `SubagentSummary.id` and as
+`chat.setVisibleSubagent`'s argument (falling back to `${id}:${index}` only if a duplicate name is
+ever seen within one batch, not observed in the probe):
 
-**Probe**: extends spec 001 task T071(d)'s probe run rather than repeating it — start a turn with
-two or more subagents, subscribe with `set_subagent_subscription`, and specifically check whether
-each `tool_call_update` (or any other frame received while subagents run) carries enough to build
-a per-subagent `TranscriptItem[]` stream, not just a count.
+```ts
+interface SubagentProgress {
+  index: number;
+  id: string;             // the subagent's own name; stable across every update
+  status: 'pending' | 'running' | 'completed' | string; // 'failed'/'cancelled' not observed live
+  task: string;            // full composed assignment text
+  assignment: string;      // the task's own, shorter assignment text
+  recentTools: Array<{ tool: string; args: string; argsKey?: string; intent?: string; isError: boolean; endMs: number }>;
+  recentOutput: unknown[];  // never observed non-empty (both probe subagents replied via `yield`); element shape unconfirmed
+  toolCount: number;
+  durationMs: number;      // 0 while running
+  resolvedModel?: string;
+  contextTokens?: number;
+  contextWindow?: number;
+  lastIntent?: string;
+  extractedToolData?: Record<string, Array<{ data: unknown; status: string }>>;
+}
+```
 
-**Recorded as**: an extension to FINDINGS C6 (not a new row — C6 already exists for this frame
-family) noting the additional fields found, plus the resolved shape entered here.
+`recentTools[]` is the live, incrementally-growing per-subagent tool-call stream FR-018 needs
+(confirmed growing across successive frames as a subagent made more calls); no nested
+`message_start`/`message_update`/`message_end` frame was ever scoped to a subagent id — the
+fallback hypothesis (nested message frames) is confirmed NOT how OMP exposes this. `subagent:patch`
+(T008) is built by diffing `recentTools[]` (and `recentOutput[]`, defensively, if ever non-empty)
+into synthetic `TranscriptItem`-shaped rows per subagent id, the same upsert-by-stable-id pattern
+`transcript.ts` already uses elsewhere. FINDINGS item 36 (extends C6).
 
 ## Verified, reused from spec 001 — not re-probed
 

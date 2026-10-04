@@ -36,10 +36,32 @@ export interface Session {
 /** The app-wide setting for how much the agent may do without asking. Reads are never prompted. */
 export type ApprovalMode = 'ask' | 'edit-freely' | 'auto';
 
+/** One readout chip kind (spec 004 FR-001 to FR-010, FR-021); the chip row's own order. */
+export type ReadoutKind =
+  | 'changes'
+  | 'context-usage'
+  | 'turn-time'
+  | 'current-time'
+  | 'pull-request'
+  | 'subagents'
+  | 'todo-progress';
+
 export interface Settings {
   version: 1;
   approvalMode: ApprovalMode; // default 'ask'
+  sessionReadout: Record<ReadoutKind, boolean>; // spec 004 FR-012 to FR-014
 }
+
+/** Defaults (spec 004 FR-013): every kind on except Current time. */
+export const DEFAULT_SESSION_READOUT: Record<ReadoutKind, boolean> = {
+  changes: true,
+  'context-usage': true,
+  'turn-time': true,
+  'current-time': false,
+  'pull-request': true,
+  subagents: true,
+  'todo-progress': true,
+};
 
 /** Maps Settings.approvalMode to the value OMP's `--approval-mode` flag expects. */
 export const OMP_APPROVAL_MODE: Record<ApprovalMode, string> = {
@@ -76,6 +98,51 @@ export interface SessionRuntime {
   transcript: TranscriptItem[]; // current Conversation, normalised
   queue: { followUp: string[]; steering: string[] }; // mirrors OMP queue_update
   pending: PendingRequest[]; // approvals and questions waiting for the user
+  turnStartedAt: number | null; // spec 004: epoch ms; set on agent_start, cleared on session_settled/stop
+  readout: SessionReadout; // spec 004: last assembled bundle; never persisted
+  subagents: SubagentSummary[]; // spec 004: current turn's subagents; cleared when a new turn starts
+}
+
+/** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base
+ * with the Session's Base branch, plus new untracked files. `partial` marks that the 200-file or
+ * 1 MiB-per-file cap stopped counting before the real total. Re-exported from `./ipc` so every
+ * existing import from `../../shared/ipc` keeps working unchanged. */
+export interface DiffStat {
+  files: number;
+  additions: number;
+  deletions: number;
+  partial: boolean;
+}
+
+/** Spec 004 FR-002 to FR-008, FR-021: the chip row's live data, assembled in main
+ * (`src/main/omp/readout.ts`) and pushed via `readout:update`. Current time is deliberately
+ * absent: it is a pure client clock the renderer computes itself (FR-005). */
+export interface SessionReadout {
+  changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
+  contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
+  turnTime: { startedAt: number } | null; // null = no turn running (chip hidden)
+  pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
+  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed
+  todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
+}
+
+/** `get_state().contextUsage` (FINDINGS item 34): OMP reports `percent` itself, never derived here. */
+export interface ContextUsage {
+  usedTokens: number;
+  windowTokens: number;
+  percent: number; // 0-100, reported by OMP (get_state().contextUsage.percent)
+}
+
+/** Spec 004 FR-007, FR-017 to FR-020: one row in the Subagents panel and the source the
+ * Subagents chip's count is computed from. `id` is the subagent's own `name` from the batch
+ * `task()` call's `tasks[]` entry, confirmed stable across every `tool_execution_update`
+ * (FINDINGS item 36) -- the same value OMP's own `progress[].id` carries. */
+export interface SubagentSummary {
+  id: string;
+  nameOrTask: string;
+  status: 'running' | 'finished' | 'failed';
+  startedAt: number;
+  durationMs?: number; // present once status is finished or failed
 }
 
 /** Built in the main process from OMP frames; the renderer only renders items. */
