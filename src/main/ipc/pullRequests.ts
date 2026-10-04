@@ -25,7 +25,6 @@ import type {
 } from '../../shared/github';
 import type { Session } from '../../shared/model';
 import * as gh from '../github/gh';
-import { GhError } from '../github/gh';
 import { addWorktreeFromPullRequestBranch } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
