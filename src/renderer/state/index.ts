@@ -13,6 +13,7 @@ import { useViewStore } from './view-store'
 import { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSplitStore } from './split-store'
+import { usePullRequestsStore } from './pull-requests-store'
 
 export { initStores }
 export { notify }
@@ -30,6 +31,8 @@ export type { MainView, SettingsSectionId } from './view-store'
 export { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore }
 export { useSubagentPanelStore }
 export { useSplitStore }
+export { usePullRequestsStore }
+export type { PullRequestsRepoState } from './pull-requests-store'
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -46,6 +49,7 @@ export interface RefractDevStores {
   readout: typeof useReadoutStore
   subagentPanel: typeof useSubagentPanelStore
   split: typeof useSplitStore
+  pullRequests: typeof usePullRequestsStore
 }
 
 declare global {
@@ -71,6 +75,7 @@ if (import.meta.env.DEV) {
     view: useViewStore,
     readout: useReadoutStore,
     subagentPanel: useSubagentPanelStore,
-    split: useSplitStore
+    split: useSplitStore,
+    pullRequests: usePullRequestsStore
   }
 }

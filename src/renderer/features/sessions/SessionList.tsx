@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon, SettingsIcon } from 'lucide-react'
+import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, SettingsIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.png'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
-import { notify, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { SessionDetailsCard } from './SessionDetailsCard'
@@ -468,6 +468,28 @@ export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
   const openSettings = useViewStore((state) => state.openSettings)
+  const openPullRequests = useViewStore((state) => state.openPullRequests)
+  const view = useViewStore((state) => state.view)
+  const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
+
+  // specs/003-pull-request-management FR-001, T011: the left-nav entry has no row of its own to
+  // scope a repository from, unlike a Session row -- defaults to the currently focused pane's
+  // Session's repository (App.tsx's own `frontSessionId` derivation), falling back to the first
+  // added repository. `PullRequestsView.tsx`'s own repository dropdown (T012) is where the
+  // developer changes this afterward.
+  function defaultRepositoryId(): string | undefined {
+    const splitState = useSplitStore.getState()
+    const focusedSessionId = splitState.paneSessionIds[splitState.focusedIndex] ?? splitState.paneSessionIds[0]
+    const focusedSession = sessions.find((session) => session.id === focusedSessionId)
+    return focusedSession?.repositoryId ?? repositories[0]?.id
+  }
+
+  function handleOpenPullRequests(): void {
+    const repositoryId = defaultRepositoryId()
+    if (!repositoryId) return
+    selectPullRequest(repositoryId, null)
+    openPullRequests(repositoryId)
+  }
 
   return (
     <nav
@@ -497,6 +519,22 @@ export function SessionList() {
           Settings
         </Button>
       </div>
+      {/* specs/003-pull-request-management FR-001, T011: above the repository groups, Stuart's
+          placement answer (spec 003 Clarifications). `aria-current` gives the selected state a
+          visible AND accessible signal while the view is open, never colour alone (FR-030). */}
+      <Button
+        variant="ghost"
+        aria-current={view === 'pull-requests' ? 'page' : undefined}
+        className={cn(
+          'mx-2 mt-2 h-8 justify-start gap-2 px-2 text-sm font-medium',
+          view === 'pull-requests' && 'bg-sidebar-accent text-sidebar-accent-foreground'
+        )}
+        aria-label="Pull requests"
+        onClick={handleOpenPullRequests}
+      >
+        <GitPullRequestIcon aria-hidden className="size-4" />
+        Pull requests
+      </Button>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-2">
           {repositories.map((repository) => (

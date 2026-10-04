@@ -223,12 +223,22 @@ function cacheKey(repositoryId: string, number: number): string {
   return `${repositoryId}:${number}`;
 }
 
+function mapChangedFiles(view: gh.GhPrViewDetail, restFiles: gh.GhRestFile[] | null): ChangedFile[] {
+  if (restFiles) {
+    return restFiles.map((file) => ({ path: file.filename, additions: file.additions, deletions: file.deletions, patch: file.patch ?? null }));
+  }
+  // REST call failed entirely: fall back to the porcelain `files` field (never carries `patch`),
+  // so every file reads as truncated (FR-011's banner) rather than losing the file list too.
+  return view.files.map((file) => ({ path: file.path, additions: file.additions, deletions: file.deletions, patch: null }));
+}
+
 async function buildDetail(repoPath: string, number: number): Promise<PullRequestDetail> {
-  const [view, filesWithPatch, threadsAndTimeline, allowedMergeMethods] = await Promise.all([
+  const [view, filesWithPatch, threadsAndTimeline, allowedMergeMethods, ownerRepo] = await Promise.all([
     gh.viewPullRequestDetail(repoPath, number),
     gh.getChangedFilesWithPatch(repoPath, number),
     gh.getReviewThreadsAndTimeline(repoPath, number),
-    gh.getAllowedMergeMethods(repoPath)
+    gh.getAllowedMergeMethods(repoPath),
+    gh.ownerRepoFor(repoPath)
   ]);
 
   const state = mapPullRequestState(view.state, view.isDraft);
@@ -255,27 +265,11 @@ async function buildDetail(repoPath: string, number: number): Promise<PullReques
     additions: view.additions,
     deletions: view.deletions,
     changedFilesCount: view.changedFiles,
+    files: mapChangedFiles(view, filesWithPatch),
+    url: `https://github.com/${ownerRepo.owner}/${ownerRepo.repo}/pull/${number}`,
     updatedAt: view.updatedAt,
     headSha: view.headRefOid
   };
-}
-
-/** The Changes tab's data (FR-009, FR-011), built separately from `buildDetail` because it needs
- * its own REST call (`getChangedFilesWithPatch`) plus the porcelain fallback. */
-async function buildChangedFiles(repoPath: string, number: number): Promise<ChangedFile[]> {
-  const restFiles = await gh.getChangedFilesWithPatch(repoPath, number);
-  if (restFiles) {
-    return restFiles.map((file) => ({
-      path: file.filename,
-      additions: file.additions,
-      deletions: file.deletions,
-      patch: file.patch ?? null
-    }));
-  }
-  // REST call failed entirely: fall back to the porcelain `files` field (never carries `patch`),
-  // so every file reads as truncated (FR-011's banner), rather than losing the file list too.
-  const view = await gh.viewPullRequestDetail(repoPath, number);
-  return view.files.map((file) => ({ path: file.path, additions: file.additions, deletions: file.deletions, patch: null }));
 }
 
 /** FR-021: re-fetches only `updatedAt`/`headSha`, compares against the cache entry left by the
