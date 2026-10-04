@@ -21,6 +21,13 @@ function emptyRepoState(): PullRequestsRepoState {
   return { tab: 'open', query: '', items: [], fetchedAt: null, loading: false, error: null, selectedNumber: null }
 }
 
+// Stable reference for a repository with no store entry yet, so `stateFor` never returns a fresh
+// object on every render -- a fresh `{}` literal here breaks Zustand's snapshot stability and
+// causes a real "Maximum update depth exceeded" crash the instant a selector reads this for a
+// repository with no entry (same pattern as queue-store's EMPTY_QUEUE / readout-store's
+// EMPTY_READOUT_ENTRY / draft-store's EMPTY_DRAFT).
+export const EMPTY_PULL_REQUESTS_REPO_STATE: PullRequestsRepoState = emptyRepoState()
+
 interface PullRequestsState {
   byRepository: Record<string, PullRequestsRepoState>
   stateFor(repositoryId: string): PullRequestsRepoState
@@ -41,7 +48,7 @@ function patch(
 
 export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   byRepository: {},
-  stateFor: (repositoryId) => get().byRepository[repositoryId] ?? emptyRepoState(),
+  stateFor: (repositoryId) => get().byRepository[repositoryId] ?? EMPTY_PULL_REQUESTS_REPO_STATE,
   setTab: (repositoryId, tab) => {
     set({ byRepository: patch(get().byRepository, repositoryId, { tab, selectedNumber: null }) })
     void get().refresh(repositoryId)

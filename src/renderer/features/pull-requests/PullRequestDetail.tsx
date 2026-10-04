@@ -5,9 +5,20 @@
 // while a check is pending -- FR-010, FR-028), the header action row (New session, Review,
 // merge/checks status), and a top-level comment composer (FR-012). Every action result (success
 // or the exact failure, including `stale`) is shown inline (FR-018); draft/closed/merged pull
-// requests show `disabledReason` next to each disabled action (FR-019), and a not-mergeable
-// pull request shows that reason instead of offering Merge (FR-020).
+// requests show `reviewDisabledReason`/`mergeDisabledReason` next to each disabled action
+// (FR-019), and a not-mergeable pull request shows that reason instead of offering Merge (FR-020).
 import { useEffect, useRef, useState } from 'react'
+import { RefreshCwIcon } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,7 +27,7 @@ import { Markdown } from '@/features/chat/Markdown'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { cn } from '@/lib/utils'
 import type { PullRequestDetail as PullRequestDetailData } from '../../../shared/github'
-import { CHECK_STATE_DISPLAY } from './PullRequestRow'
+import { CHECK_STATE_DISPLAY, PULL_REQUEST_STATE_DISPLAY } from './PullRequestRow'
 import { Timeline } from './Timeline'
 import { ChangesTab } from './ChangesTab'
 import { ReviewDialog } from './ReviewDialog'
@@ -39,6 +50,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const [error, setError] = useState<string | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
+  const [forkWarningOpen, setForkWarningOpen] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
   const [commentError, setCommentError] = useState<string | null>(null)
@@ -46,11 +58,25 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const [newSessionError, setNewSessionError] = useState<string | null>(null)
   const openChat = useViewStore((s) => s.openChat)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const reviewButtonRef = useRef<HTMLButtonElement>(null)
+  const mergeButtonRef = useRef<HTMLButtonElement>(null)
+  // High remediation (code-reviewer): `load()`'s own closure-captured `repositoryId`/`number`
+  // can't detect that the user has since selected a DIFFERENT pull request by the time its
+  // `await` resolves -- selecting A then quickly B could let A's slower response overwrite B's
+  // already-rendered data. This ref is reassigned every render (`DeleteDialog.tsx`'s own
+  // `sessionIdRef` pattern), so a stale response is recognised and dropped instead of applied.
+  const identityRef = useRef({ repositoryId, number })
+  identityRef.current = { repositoryId, number }
 
   async function load(): Promise<void> {
+    const requestedFor = { repositoryId, number }
     setLoading(true)
     setError(null)
     const result = await window.refract.pullRequests.detail(repositoryId, number)
+    if (identityRef.current.repositoryId !== requestedFor.repositoryId || identityRef.current.number !== requestedFor.number) {
+      return
+    }
     setLoading(false)
     if (!result.ok) {
       setError(result.error.message)
@@ -111,6 +137,17 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
     openChat()
   }
 
+  function handleNewSessionClick(): void {
+    // Security remediation (Medium-but-must-fix): a fork pull request's head branch runs
+    // whatever code (and AGENTS.md/prompt content) its author wrote -- starting a Session on it
+    // used to happen with no warning at all.
+    if (detail?.isFork) {
+      setForkWarningOpen(true)
+      return
+    }
+    void handleNewSession()
+  }
+
   if (loading && !detail) {
     return <div className="p-4 text-sm text-muted-foreground">Loading…</div>
   }
@@ -126,14 +163,21 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
   const title = `pull request #${detail.number}`
   const check = CHECK_STATE_DISPLAY[detail.checkState]
   const CheckIcon = check.icon
-  const notMergeableReason = !detail.disabledReason && !detail.mergeable ? 'This pull request has merge conflicts or a failing required check.' : null
+  const state = PULL_REQUEST_STATE_DISPLAY[detail.state]
+  const StateIcon = state.icon
+  // "Also fix" remediation: `mergeableState === 'unknown'` (GitHub still computing mergeability)
+  // used to collapse into the same "not mergeable" message as a real conflict; it gets its own
+  // "still checking" text instead, and only disables Merge when nothing else already explains why.
+  const mergeStillChecking = detail.mergeDisabledReason === null && detail.mergeableState === 'unknown'
+  const mergeDisabledReason = detail.mergeDisabledReason ?? (mergeStillChecking ? 'GitHub is still checking whether this pull request can merge.' : null)
+  const mergeBlocked = detail.mergeDisabledReason !== null || detail.mergeableState !== 'mergeable'
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 border-b border-border p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold">
+            <h2 ref={headingRef} tabIndex={-1} className="truncate text-base font-semibold outline-none">
               {detail.title} <span className="font-normal text-muted-foreground">#{detail.number}</span>
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -141,44 +185,68 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {/* High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged
+                was never visibly conveyed in the detail header at all. */}
+            <Badge variant="outline" className="gap-1">
+              <StateIcon aria-hidden className="size-3.5" />
+              {state.label}
+            </Badge>
             <Badge variant="outline" className="gap-1">
               <CheckIcon aria-hidden className={cn('size-3.5', detail.checkState === 'pending' && 'animate-spin')} />
               {check.label}
             </Badge>
             <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => void load()}
+              disabled={loading}
+              aria-label="Refresh this pull request"
+              title="Refresh this pull request"
+            >
+              <RefreshCwIcon aria-hidden className={cn('size-4', loading && 'animate-spin')} />
+            </Button>
+            <Button
               size="sm"
               variant="outline"
-              onClick={() => void handleNewSession()}
+              onClick={handleNewSessionClick}
               disabled={newSessionBusy || detail.state !== 'open'}
               title={detail.state !== 'open' ? 'Only an open pull request can start a Session.' : undefined}
             >
               {newSessionBusy ? 'Starting…' : 'New session'}
             </Button>
             <Button
+              ref={reviewButtonRef}
               size="sm"
               variant="outline"
               onClick={() => setReviewOpen(true)}
-              disabled={detail.disabledReason !== null}
-              title={detail.disabledReason ?? undefined}
+              disabled={detail.reviewDisabledReason !== null}
+              title={detail.reviewDisabledReason ?? undefined}
             >
               Review
             </Button>
             <Button
+              ref={mergeButtonRef}
               size="sm"
               onClick={() => setMergeOpen(true)}
-              disabled={detail.disabledReason !== null || !detail.mergeable}
-              title={detail.disabledReason ?? notMergeableReason ?? undefined}
+              disabled={mergeBlocked}
+              title={mergeDisabledReason ?? undefined}
             >
               Merge
             </Button>
           </div>
         </div>
-        {(detail.disabledReason ?? notMergeableReason) && (
-          <p className="mt-1 text-xs text-muted-foreground">{detail.disabledReason ?? notMergeableReason}</p>
-        )}
+        {mergeDisabledReason && <p className="mt-1 text-xs text-muted-foreground">{mergeDisabledReason}</p>}
         {newSessionError && (
           <p role="alert" className="mt-1 text-xs text-destructive">
             {newSessionError}
+          </p>
+        )}
+        {error && detail && (
+          // "Also fix" remediation: a `stale` (or any other) detail-level failure used to have no
+          // recovery short of navigating away and back -- the refresh button above now covers
+          // this, but the failure itself still needs to be shown.
+          <p role="alert" className="mt-1 text-xs text-destructive">
+            {error}
           </p>
         )}
         {detail.labels.length > 0 && (
@@ -227,7 +295,13 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
           </div>
         </TabsContent>
         <TabsContent value="changes" className="min-h-0 flex-1 overflow-auto">
-          <ChangesTab additions={detail.additions} deletions={detail.deletions} files={detail.files} url={detail.url} />
+          <ChangesTab
+            additions={detail.additions}
+            deletions={detail.deletions}
+            changedFilesCount={detail.changedFilesCount}
+            files={detail.files}
+            url={detail.url}
+          />
         </TabsContent>
       </Tabs>
       <ReviewDialog
@@ -237,6 +311,8 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
         open={reviewOpen}
         onOpenChange={setReviewOpen}
         onSubmitted={() => void load()}
+        restoreFocusTo={reviewButtonRef}
+        restoreFocusFallbackTo={headingRef}
       />
       <MergeDialog
         repositoryId={repositoryId}
@@ -246,7 +322,37 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
         open={mergeOpen}
         onOpenChange={setMergeOpen}
         onMerged={() => void load()}
+        restoreFocusTo={mergeButtonRef}
+        restoreFocusFallbackTo={headingRef}
       />
+      <AlertDialog open={forkWarningOpen} onOpenChange={setForkWarningOpen}>
+        <AlertDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start a Session on untrusted code?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {title} comes from a fork{detail.headRepositoryOwner ? ` owned by ${detail.headRepositoryOwner}` : ''}, not this repository.
+              Its branch may contain code, commit messages, or an AGENTS.md written by someone you don't control, which an agent session
+              would then read and could act on. Only continue if you trust this pull request's author.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                setForkWarningOpen(false)
+                void handleNewSession()
+              }}
+            >
+              Start Session anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

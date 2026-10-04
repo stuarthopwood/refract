@@ -2,6 +2,7 @@
 // `AlertDialog` naming the pull request and the chosen merge method, with a method picker limited
 // to `PullRequestDetail.allowedMergeMethods` (only the methods this repository allows).
 import { useState } from 'react'
+import type { RefObject } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +25,15 @@ export interface MergeDialogProps {
   open: boolean
   onOpenChange(open: boolean): void
   onMerged(): void
+  /** High remediation (accessibility-auditor): this dialog's own opening "Merge" button, so
+   * closing it (Cancel, Escape, or a successful merge) returns focus there instead of Radix's
+   * default (which lands on `<body>` once the opening button is re-rendered disabled after a
+   * successful merge, since Radix can't restore focus to a disabled element). */
+  restoreFocusTo: RefObject<HTMLButtonElement | null>
+  /** Falls back here (the detail view's own `<h2>`) when `restoreFocusTo`'s button is now
+   * disabled -- e.g. right after a successful merge, when the Merge button itself disappears
+   * behind `disabledReason`. */
+  restoreFocusFallbackTo: RefObject<HTMLElement | null>
 }
 
 const METHOD_LABEL: Record<MergeMethod, string> = {
@@ -32,7 +42,17 @@ const METHOD_LABEL: Record<MergeMethod, string> = {
   rebase: 'Rebase and merge'
 }
 
-export function MergeDialog({ repositoryId, number, title, allowedMergeMethods, open, onOpenChange, onMerged }: MergeDialogProps) {
+export function MergeDialog({
+  repositoryId,
+  number,
+  title,
+  allowedMergeMethods,
+  open,
+  onOpenChange,
+  onMerged,
+  restoreFocusTo,
+  restoreFocusFallbackTo
+}: MergeDialogProps) {
   const [method, setMethod] = useState<MergeMethod>(allowedMergeMethods[0] ?? 'merge')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -58,7 +78,20 @@ export function MergeDialog({ repositoryId, number, title, allowedMergeMethods, 
         onOpenChange(next)
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          const button = restoreFocusTo.current
+          if (button && !button.disabled) button.focus()
+          else restoreFocusFallbackTo.current?.focus()
+        }}
+        onEscapeKeyDown={(event) => {
+          // High remediation (accessibility-auditor, also code-reviewer): an in-flight merge
+          // used to be silently abandonable via Escape, Close, or a click outside -- its result
+          // (including a `stale` refusal) was then lost with no announcement at all.
+          if (submitting) event.preventDefault()
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>Merge {title}?</AlertDialogTitle>
           <AlertDialogDescription>Choose a merge method, then confirm.</AlertDialogDescription>

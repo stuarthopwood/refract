@@ -10,12 +10,18 @@ import { DiffViewFromPatch } from '@/features/chat/DiffView'
 interface ChangesTabProps {
   additions: number
   deletions: number
+  /** The pull request's own total changed-file count (FR-009); compared against `files.length`
+   * to show a list-level truncation note when the REST files call itself failed entirely (its own
+   * `--paginate` fix covers the common "more than one page" case -- this is the remaining,
+   * rarer "REST call failed, fell back to the porcelain field" case, distinct from the existing
+   * per-file `patch === null` truncation banner). */
+  changedFilesCount: number
   files: ChangedFile[]
   /** The pull request's own GitHub URL; the Files tab anchor for a specific path is appended. */
   url: string
 }
 
-export function ChangesTab({ additions, deletions, files, url }: ChangesTabProps) {
+export function ChangesTab({ additions, deletions, changedFilesCount, files, url }: ChangesTabProps) {
   if (files.length === 0) {
     return <p className="p-3 text-sm text-muted-foreground">No changed files.</p>
   }
@@ -26,6 +32,17 @@ export function ChangesTab({ additions, deletions, files, url }: ChangesTabProps
         {files.length} file{files.length === 1 ? '' : 's'} changed, <span className="text-green-600">+{additions}</span>{' '}
         <span className="text-destructive">-{deletions}</span>
       </p>
+      {files.length < changedFilesCount && (
+        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+          <span>
+            Only {files.length} of {changedFilesCount} changed files are shown.
+          </span>
+          <a href={`${url}/files`} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 underline underline-offset-2">
+            Open in browser
+            <ExternalLinkIcon aria-hidden className="size-3" />
+          </a>
+        </div>
+      )}
       {files.map((file) => (
         <div key={file.path} className="flex flex-col gap-1">
           {file.patch === null && (

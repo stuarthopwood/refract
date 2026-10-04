@@ -39,11 +39,21 @@ export interface ChangedFile {
   patch: string | null; // null = too large to show in full (FR-011)
 }
 
+/** `view.mergeable`'s three real states (`gh pr view --json mergeable` is a string enum, never
+ * just a boolean): `'unknown'` means GitHub is still computing mergeability in the background,
+ * not that the pull request has conflicts -- it gets its own "still checking" treatment rather
+ * than being folded into "not mergeable". */
+export type MergeableState = 'mergeable' | 'conflicting' | 'unknown';
+
 /** The Overview tab's content plus everything the detail view's header actions need to decide
- * what's offered (FR-007, FR-016, FR-019, FR-020). `disabledReason` is the single source of truth
- * for why Review/merge actions are unavailable -- the renderer never re-derives it from
- * `state`/`mergeable` itself, so the displayed reason and the actual gate can never disagree
- * (FR-019, FR-020). */
+ * what's offered (FR-007, FR-016, FR-019, FR-020). `reviewDisabledReason`/`mergeDisabledReason`
+ * are the single source of truth for why Review/merge actions are unavailable -- the renderer
+ * never re-derives either from `state`/`mergeableState` itself, so the displayed reason and the
+ * actual gate can never disagree (FR-019, FR-020). Split into two reasons (remediation,
+ * code-reviewer Critical) because they gate different actions on different conditions:
+ * `reviewDisabledReason` is state-only (draft/closed/merged, FR-019); `mergeDisabledReason` adds
+ * conflicts and a blocked merge state on top (FR-020), and never folds in `UNSTABLE` (GitHub
+ * still allows merging when only non-required checks fail). */
 export interface PullRequestDetail {
   number: number;
   title: string;
@@ -57,9 +67,11 @@ export interface PullRequestDetail {
   description: string; // markdown; rendered through Markdown.tsx, never raw HTML (FR-023)
   timeline: TimelineEntry[];
   checkState: CheckState | 'none';
-  mergeable: boolean;
-  disabledReason: string | null; // e.g. "This pull request is a draft.", "Checks are failing.",
-  // "This pull request has merge conflicts."; null when every review/merge action is available
+  mergeableState: MergeableState;
+  reviewDisabledReason: string | null; // e.g. "This pull request is a draft."; null when Review/
+  // Approve/Request changes are available (FR-019)
+  mergeDisabledReason: string | null; // adds "This pull request has merge conflicts.", a blocked
+  // state's own reason, etc. on top of reviewDisabledReason; null when Merge is available (FR-020)
   allowedMergeMethods: MergeMethod[]; // only the methods this repository allows for this pull request
   additions: number;
   deletions: number;
@@ -73,6 +85,11 @@ export interface PullRequestDetail {
   url: string;
   updatedAt: string; // staleness marker (FR-021), compared on every mutating request
   headSha: string; // staleness marker (FR-021); a force-push changes this even if updatedAt lags
+  // Security remediation (Medium-but-must-fix): true for a fork pull request -- "New session"
+  // shows an untrusted-code warning (prompt-injection/AGENTS.md risk from an unknown author)
+  // before checking out and running an agent against this branch.
+  isFork: boolean;
+  headRepositoryOwner: string | null;
 }
 
 export type ReviewVerdict = 'comment' | 'approve' | 'request-changes';

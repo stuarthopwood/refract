@@ -54,6 +54,17 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const isSplitOpen = useSplitStore((state) => state.paneSessionIds.length === 2)
   const replaceFocused = useSplitStore((state) => state.replaceFocused)
   const openInSplit = useSplitStore((state) => state.openInSplit)
+  // High remediation (functional, found by a11y reviewer): these three session-targeting
+  // actions (plain click, Ctrl+click, and the 'Open in split' menu item below) used to only
+  // update split-store while `view === 'pull-requests'`, leaving the user stuck looking at the
+  // Pull requests panel with no way back to the Session they just picked except 'New session'
+  // or Settings -> Back to chat. Returning to chat here mirrors what already happens from the
+  // chat view itself (view is already 'chat' there, so this is a no-op in that case).
+  const view = useViewStore((state) => state.view)
+  const openChat = useViewStore((state) => state.openChat)
+  function returnToChatIfNeeded(): void {
+    if (view === 'pull-requests') openChat()
+  }
   const open = useSessionsStore((state) => state.open)
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
@@ -175,7 +186,15 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       }
     },
     // Spec 005: same effect as Ctrl+click on the row's open button below.
-    { kind: 'item', key: 'open-in-split', label: 'Open in split', onSelect: () => openInSplit(session.id) },
+    {
+      kind: 'item',
+      key: 'open-in-split',
+      label: 'Open in split',
+      onSelect: () => {
+        returnToChatIfNeeded()
+        openInSplit(session.id)
+      }
+    },
     // The same two actions the details card offers, kept here too since Radix hover
     // cards are not keyboard-reachable.
     { kind: 'item', key: 'copy-path', label: 'Copy worktree path', onSelect: () => void copyPath() },
@@ -289,6 +308,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   // goes through `replaceFocused`, which also clears this id's pristine flag
                   // (research.md Decision 4) regardless of which of its own branches fires.
                   onClick={(event) => {
+                    returnToChatIfNeeded()
                     if (event.ctrlKey) {
                       openInSplit(session.id)
                       return

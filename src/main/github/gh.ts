@@ -176,9 +176,13 @@ export interface GhPrListEntry {
 const LIST_FIELDS =
   'number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,statusCheckRollup,labels,reviewRequests,assignees';
 
+/** High remediation (code-reviewer): `--state open` directly, not `--state all --limit 50`
+ * filtered client-side to OPEN afterward -- the old form missed any open pull request older than
+ * the 50 most-recently-updated pull requests of ANY state. `--state open` scopes the whole
+ * 50-row limit to open pull requests only. */
 export async function listOpenPullRequests(repoPath: string): Promise<GhPrListEntry[]> {
   const { owner, repo } = await ownerRepoFor(repoPath);
-  return ghJson<GhPrListEntry[]>(repoPath, ['pr', 'list', '--repo', `${owner}/${repo}`, '--state', 'all', '--limit', '50', '--json', LIST_FIELDS]);
+  return ghJson<GhPrListEntry[]>(repoPath, ['pr', 'list', '--repo', `${owner}/${repo}`, '--state', 'open', '--limit', '50', '--json', LIST_FIELDS]);
 }
 
 /** `gh search prs --repo <repo> "<qualifier>" --json <SEARCH_FIELDS>` (row 37, T001): a narrower,
@@ -196,21 +200,38 @@ export interface GhSearchEntry {
 
 const SEARCH_FIELDS = 'number,title,state,author,url,updatedAt,labels';
 
-export async function searchPullRequests(repoPath: string, qualifier: string): Promise<GhSearchEntry[]> {
+/** One of the 4 built-in narrowing qualifiers this feature offers (data-model.md's own list):
+ * `--author @me` / `--assignee @me` / `--involves @me` / `--review-requested @me`, never the
+ * bare `author:@me` qualifier string -- `gh search prs` has its own named flag per qualifier. */
+export type SearchQualifierFlag = '--author' | '--assignee' | '--involves' | '--review-requested';
+
+/** High remediation (code-reviewer Critical-adjacent): the qualifier and the user's free-text
+ * narrowing query used to be joined into one argv entry (`"author:@me foo"`), which `gh search
+ * prs` genuinely misparses -- confirmed live: it quotes the ENTIRE string as the `author:` value
+ * (`author:"@me foo"`), rejecting it outright as an unknown user. Passing the qualifier via its
+ * own named flag and the free text as a separate positional argv entry is what `gh search prs
+ * --author @me foo` does at a real shell, and is the form gh's parser actually expects. */
+export async function searchPullRequests(repoPath: string, qualifierFlag: SearchQualifierFlag, query?: string): Promise<GhSearchEntry[]> {
   const { owner, repo } = await ownerRepoFor(repoPath);
-  return ghJson<GhSearchEntry[]>(repoPath, ['search', 'prs', '--repo', `${owner}/${repo}`, qualifier, '--json', SEARCH_FIELDS]);
+  const args = ['search', 'prs', '--repo', `${owner}/${repo}`, qualifierFlag, '@me'];
+  if (query) args.push(query);
+  args.push('--json', SEARCH_FIELDS);
+  return ghJson<GhSearchEntry[]>(repoPath, args);
 }
 
 /** The search surface has no `statusCheckRollup` (row 37); fetched per-row via a second
- * `gh pr view --json statusCheckRollup` call for the non-Open tabs only (small result counts). */
-export async function viewCheckState(repoPath: string, number: number): Promise<GhCheckRun[] | null> {
-  const { owner, repo } = await ownerRepoFor(repoPath);
+ * `gh pr view --json statusCheckRollup` call for the non-Open tabs only (small result counts).
+ * High remediation (code-reviewer): takes an already-resolved `owner/repo` rather than a
+ * `repoPath`, so the caller resolves it ONCE per request (`ownerRepoFor` itself runs a real `git
+ * remote get-url` process) instead of once per row -- up to ~30 redundant git spawns per tab
+ * switch, on top of the ~30 `gh pr view` spawns this function already makes. */
+export async function viewCheckState(repoPath: string, ownerRepo: string, number: number): Promise<GhCheckRun[] | null> {
   const result = await ghJson<{ statusCheckRollup: GhCheckRun[] | null }>(repoPath, [
     'pr',
     'view',
     String(number),
     '--repo',
-    `${owner}/${repo}`,
+    ownerRepo,
     '--json',
     'statusCheckRollup'
   ]);
@@ -245,12 +266,17 @@ export interface GhPrViewDetail {
   updatedAt: string;
   headRefOid: string;
   body: string;
+  // Security remediation (Medium-but-must-fix): `isCrossRepository` is `gh`'s own documented
+  // "head and base are in different repositories" flag -- true for a fork pull request, whose
+  // code a "New session" would check out and run an agent against untrusted.
+  isCrossRepository: boolean;
+  headRepositoryOwner: GhActor | null;
 }
 
 const VIEW_FIELDS =
   'title,number,state,author,baseRefName,headRefName,reviews,reviewRequests,assignees,labels,commits,' +
   'mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,' +
-  'updatedAt,headRefOid,body';
+  'updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner';
 
 export async function viewPullRequestDetail(repoPath: string, number: number): Promise<GhPrViewDetail> {
   const { owner, repo } = await ownerRepoFor(repoPath);
@@ -258,8 +284,12 @@ export async function viewPullRequestDetail(repoPath: string, number: number): P
 }
 
 /** Cheap staleness re-fetch (FR-021): only the fields a mutating action compares against the
- * cache or needs to re-derive `disabledReason`, never the full detail. */
+ * cache or needs to re-derive `reviewDisabledReason`/`mergeDisabledReason`, never the full
+ * detail. `id` (the GraphQL node id) is included so `submitReview`'s approve path can pin its
+ * mutation to the exact reviewed commit via `commitOID` (security remediation, Medium-but-must-
+ * fix: approve/merge must never act on a head that moved since the renderer last saw it). */
 export interface GhStalenessCheck {
+  id: string;
   updatedAt: string;
   headSha: string;
   mergeable: string;
@@ -270,11 +300,17 @@ export interface GhStalenessCheck {
 
 export async function viewStalenessCheck(repoPath: string, number: number): Promise<GhStalenessCheck> {
   const { owner, repo } = await ownerRepoFor(repoPath);
-  const result = await ghJson<{ updatedAt: string; headRefOid: string; mergeable: string; mergeStateStatus: string; isDraft: boolean; state: string }>(
-    repoPath,
-    ['pr', 'view', String(number), '--repo', `${owner}/${repo}`, '--json', 'updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state']
-  );
+  const result = await ghJson<{
+    id: string;
+    updatedAt: string;
+    headRefOid: string;
+    mergeable: string;
+    mergeStateStatus: string;
+    isDraft: boolean;
+    state: string;
+  }>(repoPath, ['pr', 'view', String(number), '--repo', `${owner}/${repo}`, '--json', 'id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state']);
   return {
+    id: result.id,
     updatedAt: result.updatedAt,
     headSha: result.headRefOid,
     mergeable: result.mergeable,
@@ -296,10 +332,20 @@ export interface GhRestFile {
   status: string;
 }
 
+/** High remediation (code-reviewer): `--paginate` (gh's own documented way to follow every
+ * `Link: rel="next"` page) plus `per_page=100`, so a pull request with more than GitHub's default
+ * 30-per-page REST limit no longer silently drops files past the first page -- `gh api --paginate`
+ * concatenates every page's JSON array into one before this ever sees it. */
 export async function getChangedFilesWithPatch(repoPath: string, number: number): Promise<GhRestFile[] | null> {
   try {
     const { owner, repo } = await ownerRepoFor(repoPath);
-    return await ghJson<GhRestFile[]>(repoPath, ['api', `repos/${owner}/${repo}/pulls/${number}/files`]);
+    return await ghJson<GhRestFile[]>(repoPath, [
+      'api',
+      `repos/${owner}/${repo}/pulls/${number}/files`,
+      '--paginate',
+      '-f',
+      'per_page=100'
+    ]);
   } catch {
     return null;
   }
@@ -343,11 +389,11 @@ const THREADS_AND_TIMELINE_QUERY =
   'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { ' +
   'pullRequest(number: $number) { id ' +
   'reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide ' +
-  'comments(first: 50) { nodes { id author { login name } body createdAt } } } } ' +
-  'timelineItems(first: 100, itemTypes: [COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ' +
+  'comments(first: 50) { nodes { id author { login ... on User { name } } body createdAt } } } } ' +
+  'timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ' +
   '... on PullRequestCommit { commit { oid message committedDate author { name } } } ' +
-  '... on IssueComment { id author { login name } body createdAt } ' +
-  '... on PullRequestReview { id author { login name } state body submittedAt } } } } } }';
+  '... on IssueComment { id author { login ... on User { name } } body createdAt } ' +
+  '... on PullRequestReview { id author { login ... on User { name } } state body submittedAt } } } } } }';
 
 export async function getReviewThreadsAndTimeline(repoPath: string, number: number): Promise<GhThreadsAndTimeline> {
   const { owner, repo } = await ownerRepoFor(repoPath);
@@ -400,9 +446,33 @@ export async function commentOnPullRequest(repoPath: string, number: number, bod
   if (code !== 0) throw mapGhFailure(stderr, stdout);
 }
 
-/** `gh pr review` (FR-015): documented porcelain command, not independently live-probed this
- * session (a mutating action; never executed here). */
-export async function submitReview(repoPath: string, number: number, verdict: ReviewVerdict, body?: string): Promise<void> {
+const ADD_REVIEW_MUTATION =
+  'mutation($pullRequestId: ID!, $commitOID: GitObjectID!, $event: PullRequestReviewEvent!, $body: String) { ' +
+  'addPullRequestReview(input: { pullRequestId: $pullRequestId, commitOID: $commitOID, event: $event, body: $body }) { clientMutationId } }';
+
+/** `gh pr review` (FR-015): documented porcelain command for comment/request-changes (not
+ * independently live-probed this session; a mutating action, never executed here). Approve is
+ * pinned to the exact reviewed commit (security remediation, Medium-but-must-fix) via the
+ * `addPullRequestReview` GraphQL mutation's `commitOID`, which GitHub refuses if the head has
+ * moved since `pullRequestId`/`commitOID` were read -- `gh pr review --approve` has no equivalent
+ * pinning flag, unlike `gh pr merge --match-head-commit`. */
+export async function submitReview(
+  repoPath: string,
+  number: number,
+  verdict: ReviewVerdict,
+  body: string | undefined,
+  pinned?: { pullRequestId: string; headSha: string }
+): Promise<void> {
+  if (verdict === 'approve' && pinned) {
+    const variables: Record<string, string> = {
+      pullRequestId: pinned.pullRequestId,
+      commitOID: pinned.headSha,
+      event: 'APPROVE'
+    };
+    if (body) variables.body = body;
+    await ghGraphql(repoPath, ADD_REVIEW_MUTATION, variables);
+    return;
+  }
   const { owner, repo } = await ownerRepoFor(repoPath);
   const flag = verdict === 'approve' ? '--approve' : verdict === 'request-changes' ? '--request-changes' : '--comment';
   const args = ['pr', 'review', String(number), '--repo', `${owner}/${repo}`, flag];
@@ -430,13 +500,25 @@ export async function getAllowedMergeMethods(repoPath: string): Promise<MergeMet
   return methods;
 }
 
-export async function mergePullRequest(repoPath: string, number: number, method: MergeMethod): Promise<void> {
+/** `headSha` is always passed (security remediation, Medium-but-must-fix): `--match-head-commit`
+ * makes GitHub itself refuse the merge if the pull request's head has moved since the renderer
+ * last saw it, independent of (and a stronger guarantee than) the in-process staleness cache. */
+export async function mergePullRequest(repoPath: string, number: number, method: MergeMethod, headSha: string): Promise<void> {
   const { owner, repo } = await ownerRepoFor(repoPath);
   const flag = method === 'merge' ? '--merge' : method === 'squash' ? '--squash' : '--rebase';
-  const { code, stderr, stdout } = await ghRaw(repoPath, ['pr', 'merge', String(number), '--repo', `${owner}/${repo}`, flag]);
+  const { code, stderr, stdout } = await ghRaw(repoPath, [
+    'pr',
+    'merge',
+    String(number),
+    '--repo',
+    `${owner}/${repo}`,
+    flag,
+    '--match-head-commit',
+    headSha
+  ]);
   if (code !== 0) {
     const text = `${stderr}\n${stdout}`;
-    if (/not mergeable|conflict|required status check|review.*required|changes.*requested/i.test(text)) {
+    if (/not mergeable|conflict|required status check|review.*required|changes.*requested|match-head-commit|head commit/i.test(text)) {
       throw new GhError('not-mergeable', stderr.trim() || stdout.trim() || 'This pull request cannot be merged.');
     }
     throw mapGhFailure(stderr, stdout);

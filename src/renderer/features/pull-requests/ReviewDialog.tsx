@@ -4,6 +4,7 @@
 // pattern) naming the pull request and the exact action first; Comment submits immediately, with
 // no confirmation (FR-017 names only approve, request changes, and merge).
 import { useState } from 'react'
+import type { RefObject } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +29,11 @@ export interface ReviewDialogProps {
   open: boolean
   onOpenChange(open: boolean): void
   onSubmitted(): void
+  /** High remediation (accessibility-auditor): this dialog's own opening "Review" button -- see
+   * `MergeDialog.tsx`'s identical props for the exact reasoning (Radix can't restore focus to a
+   * now-disabled trigger, e.g. right after an Approve closes out the pull request). */
+  restoreFocusTo: RefObject<HTMLButtonElement | null>
+  restoreFocusFallbackTo: RefObject<HTMLElement | null>
 }
 
 const VERDICTS: Array<{ value: ReviewVerdict; label: string }> = [
@@ -36,7 +42,16 @@ const VERDICTS: Array<{ value: ReviewVerdict; label: string }> = [
   { value: 'request-changes', label: 'Request changes' }
 ]
 
-export function ReviewDialog({ repositoryId, number, title, open, onOpenChange, onSubmitted }: ReviewDialogProps) {
+export function ReviewDialog({
+  repositoryId,
+  number,
+  title,
+  open,
+  onOpenChange,
+  onSubmitted,
+  restoreFocusTo,
+  restoreFocusFallbackTo
+}: ReviewDialogProps) {
   const [verdict, setVerdict] = useState<ReviewVerdict>('comment')
   const [body, setBody] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -50,12 +65,19 @@ export function ReviewDialog({ repositoryId, number, title, open, onOpenChange, 
     setConfirming(false)
   }
 
+  // "Also fix" remediation: `gh pr review --comment`/`--request-changes` themselves reject an
+  // empty body -- blocked client-side first, with a clear reason, rather than round-tripping to
+  // `gh` just to surface its own rejection. Approve is the only verdict GitHub allows with no body.
+  const trimmedBody = body.trim()
+  const bodyRequired = verdict !== 'approve'
+  const bodyMissing = bodyRequired && trimmedBody.length === 0
+
   async function submit(): Promise<void> {
     setSubmitting(true)
     setError(null)
     const result = await window.refract.pullRequests.submitReview(repositoryId, number, {
       verdict,
-      body: body.trim() || undefined
+      body: trimmedBody || undefined
     })
     setSubmitting(false)
     if (!result.ok) {
@@ -68,6 +90,10 @@ export function ReviewDialog({ repositoryId, number, title, open, onOpenChange, 
   }
 
   function handlePrimaryClick(): void {
+    if (bodyMissing) {
+      setError(verdict === 'comment' ? 'A comment needs a body.' : 'Explain what changes are needed before requesting changes.')
+      return
+    }
     if (verdict === 'comment') {
       void submit()
     } else {
@@ -80,12 +106,30 @@ export function ReviewDialog({ repositoryId, number, title, open, onOpenChange, 
     onOpenChange(next)
   }
 
+  function focusTrigger(event: { preventDefault(): void }): void {
+    event.preventDefault()
+    const button = restoreFocusTo.current
+    if (button && !button.disabled) button.focus()
+    else restoreFocusFallbackTo.current?.focus()
+  }
+
   const actionLabel = verdict === 'approve' ? 'Approve' : 'Request changes'
 
   return (
     <>
       <Dialog open={open && !confirming} onOpenChange={handleClose}>
-        <DialogContent>
+        <DialogContent
+          showCloseButton={!submitting}
+          onCloseAutoFocus={focusTrigger}
+          onEscapeKeyDown={(event) => {
+            // High remediation (accessibility-auditor, also code-reviewer): matches
+            // MergeDialog.tsx's own guard -- an in-flight submit must not be silently abandonable.
+            if (submitting) event.preventDefault()
+          }}
+          onInteractOutside={(event) => {
+            if (submitting) event.preventDefault()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Review {title}</DialogTitle>
             <DialogDescription>Choose a verdict and, optionally, a body.</DialogDescription>
@@ -98,7 +142,10 @@ export function ReviewDialog({ repositoryId, number, title, open, onOpenChange, 
                 variant={verdict === option.value ? 'default' : 'outline'}
                 aria-pressed={verdict === option.value}
                 size="sm"
-                onClick={() => setVerdict(option.value)}
+                onClick={() => {
+                  setVerdict(option.value)
+                  setError(null)
+                }}
               >
                 {option.label}
               </Button>
@@ -110,6 +157,7 @@ export function ReviewDialog({ repositoryId, number, title, open, onOpenChange, 
             placeholder={verdict === 'request-changes' ? 'Explain what changes are needed' : 'Optional comment'}
             aria-label="Review body"
             className="min-h-24"
+            disabled={submitting}
           />
           <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
             {error ?? ''}
@@ -139,7 +187,12 @@ export function ReviewDialog({ repositoryId, number, title, open, onOpenChange, 
           if (!next) setConfirming(false)
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={focusTrigger}
+          onEscapeKeyDown={(event) => {
+            if (submitting) event.preventDefault()
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>
               {actionLabel} {title}?

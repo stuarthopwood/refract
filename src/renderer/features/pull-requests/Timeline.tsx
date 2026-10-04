@@ -167,10 +167,25 @@ function ThreadRow({
           disabled={busy}
         />
         <div className="flex shrink-0 flex-col gap-1">
-          <Button size="sm" variant="outline" onClick={() => void handleReply()} disabled={busy || !replyText.trim()}>
+          {/* "Also fix" remediation (a11y AND code-reviewer, corroborated): a screen-reader user
+              with several threads open hears identical "Reply"/"Resolve" names with no way to
+              tell them apart -- the file path (and line, when known) disambiguates each one. */}
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label={`Reply to ${thread.path}${thread.line !== null ? `:${thread.line}` : ''}`}
+            onClick={() => void handleReply()}
+            disabled={busy || !replyText.trim()}
+          >
             Reply
           </Button>
-          <Button size="sm" variant="outline" onClick={() => void handleToggleResolve()} disabled={busy}>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label={`${thread.resolved ? 'Unresolve' : 'Resolve'} thread on ${thread.path}${thread.line !== null ? `:${thread.line}` : ''}`}
+            onClick={() => void handleToggleResolve()}
+            disabled={busy}
+          >
             {thread.resolved ? 'Unresolve' : 'Resolve'}
           </Button>
         </div>

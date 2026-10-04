@@ -13,6 +13,7 @@ import type {
   ChangedFile,
   CheckState,
   FilterTab,
+  MergeableState,
   PullRequestActor,
   PullRequestDetail,
   PullRequestState,
@@ -25,7 +26,7 @@ import type {
 } from '../../shared/github';
 import type { Session } from '../../shared/model';
 import * as gh from '../github/gh';
-import { addWorktreeFromPullRequestBranch } from '../git/worktrees';
+import { addWorktreeFromPullRequestBranch, uniquePullRequestBranchName } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
 
@@ -73,17 +74,45 @@ function mapCheckState(runs: gh.GhCheckRun[] | null): CheckState | 'none' {
   return 'passed';
 }
 
-const BLOCKED_MERGE_STATE_STATUSES = new Set(['BLOCKED', 'DIRTY', 'UNSTABLE']);
-
-/** `PullRequestDetail.disabledReason` (FR-019, FR-020): the single source of truth the renderer
- * displays verbatim -- it never re-derives this from `state`/`mergeable` itself. */
-function computeDisabledReason(state: PullRequestState, mergeable: string, mergeStateStatus: string): string | null {
+/** `PullRequestDetail.reviewDisabledReason` (FR-019): review actions (Review/Approve/Request
+ * changes, and `submitReview`) are only ever disabled by the pull request's own state -- draft,
+ * closed, or merged. Remediation (code-reviewer Critical): this used to be folded together with
+ * merge-only concerns (BLOCKED/DIRTY/UNSTABLE via `mergeStateStatus`), which meant a repository
+ * with branch-protection requiring reviews disabled the Review button by the very BLOCKED state
+ * that approving would clear -- confirmed live against a real protected repository's PR. */
+function computeReviewDisabledReason(state: PullRequestState): string | null {
   if (state === 'draft') return 'This pull request is a draft.';
   if (state === 'closed') return 'This pull request is closed.';
   if (state === 'merged') return 'This pull request is already merged.';
-  if (mergeable.toUpperCase() === 'CONFLICTING') return 'This pull request has merge conflicts.';
-  if (BLOCKED_MERGE_STATE_STATUSES.has(mergeStateStatus.toUpperCase())) return 'Required checks are failing.';
   return null;
+}
+
+/** `PullRequestDetail.mergeDisabledReason` (FR-019, FR-020): merge-only concerns layered on top of
+ * the same state gate -- conflicts and a blocked merge state. `UNSTABLE` (only non-required checks
+ * failing) is deliberately never folded in here: GitHub itself still allows merging in that case.
+ * `BLOCKED` gets its own wording, distinct from "required checks are failing", because it is very
+ * often a missing-approval state (exactly what the Review button, gated separately above, is the
+ * way to clear) rather than a failing check. */
+function computeMergeDisabledReason(state: PullRequestState, mergeable: string, mergeStateStatus: string): string | null {
+  const reviewReason = computeReviewDisabledReason(state);
+  if (reviewReason) return reviewReason;
+  if (mergeable.toUpperCase() === 'CONFLICTING') return 'This pull request has merge conflicts.';
+  const upperStatus = mergeStateStatus.toUpperCase();
+  if (upperStatus === 'DIRTY') return 'This pull request has merge conflicts.';
+  if (upperStatus === 'BLOCKED') return 'This pull request is blocked: required reviews or required checks have not been satisfied yet.';
+  return null;
+}
+
+/** "Also fix" remediation: `view.mergeable` is a 3-value string enum (`'MERGEABLE' |
+ * 'CONFLICTING' | 'UNKNOWN'`), not a boolean -- `'UNKNOWN'` (GitHub still computing
+ * mergeability in the background) used to collapse into "not mergeable" alongside real
+ * conflicts. It gets its own state here so the renderer can show "still checking" rather than a
+ * false conflict message. */
+function mapMergeableState(mergeable: string): MergeableState {
+  const upper = mergeable.toUpperCase();
+  if (upper === 'MERGEABLE') return 'mergeable';
+  if (upper === 'CONFLICTING') return 'conflicting';
+  return 'unknown';
 }
 
 function mapReviewVerdict(state: string | undefined): ReviewVerdict | null {
@@ -155,12 +184,35 @@ function buildTimeline(data: gh.GhThreadsAndTimeline): TimelineEntry[] {
 // List (FR-001 to FR-006)
 // ---------------------------------------------------------------------------
 
-const SEARCH_QUALIFIERS: Record<Exclude<FilterTab, 'open'>, string> = {
-  authored: 'author:@me',
-  assigned: 'assignee:@me',
-  involves: 'involves:@me',
-  'review-requested': 'review-requested:@me'
+const SEARCH_QUALIFIER_FLAGS: Record<Exclude<FilterTab, 'open'>, gh.SearchQualifierFlag> = {
+  authored: '--author',
+  assigned: '--assignee',
+  involves: '--involves',
+  'review-requested': '--review-requested'
 };
+
+/** High remediation (code-reviewer): a non-Open tab used to spawn one `gh pr view` process per
+ * row sequentially (up to ~30 per tab switch, each a real process spawn) just to backfill the
+ * check-state the search surface doesn't carry. A bounded `Promise.all` runs these concurrently
+ * instead -- still one process per row (no GraphQL field exists on the search surface to avoid
+ * that entirely), but no longer serialised, and capped so a large result page can never fan out
+ * unbounded concurrent `gh` processes at once. */
+const CHECK_STATE_CONCURRENCY = 8;
+
+async function withBoundedConcurrency<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function runNext(): Promise<void> {
+    const index = next++;
+    if (index >= items.length) return;
+    const item = items[index];
+    if (item === undefined) return;
+    results[index] = await worker(item);
+    await runNext();
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => runNext()));
+  return results;
+}
 
 async function listPullRequests(repoPath: string, repoLabel: string, tab: FilterTab, query?: string): Promise<PullRequestSummary[]> {
   if (tab === 'open') {
@@ -168,7 +220,6 @@ async function listPullRequests(repoPath: string, repoLabel: string, tab: Filter
     const needle = query?.toLowerCase();
     const items: PullRequestSummary[] = [];
     for (const entry of entries) {
-      if (entry.state.toUpperCase() !== 'OPEN') continue;
       if (needle && !entry.title.toLowerCase().includes(needle) && !entry.labels.some((label) => label.name.toLowerCase().includes(needle))) continue;
       items.push({
         number: entry.number,
@@ -183,28 +234,28 @@ async function listPullRequests(repoPath: string, repoLabel: string, tab: Filter
     return items;
   }
 
-  const qualifier = SEARCH_QUALIFIERS[tab];
-  const fullQualifier = query ? `${qualifier} ${query}` : qualifier;
-  const entries = await gh.searchPullRequests(repoPath, fullQualifier);
-  const items: PullRequestSummary[] = [];
-  for (const entry of entries) {
-    // The search surface has no `statusCheckRollup` (docs/spike/FINDINGS.md row 37); fetched
-    // per-row for these smaller, non-Open tab result counts. A failed per-row fetch degrades to
-    // 'none' rather than failing the whole tab.
-    const checkRuns = await gh.viewCheckState(repoPath, entry.number).catch(() => null);
-    items.push({
-      number: entry.number,
-      title: entry.title,
-      // The search surface has no `isDraft`/mergedAt distinction (row 37): a merged pull request
-      // may show here as 'closed' rather than 'merged' -- a documented, known simplification.
-      state: mapPullRequestState(entry.state, false),
-      checkState: mapCheckState(checkRuns),
-      repository: repoLabel,
-      updatedAt: entry.updatedAt,
-      author: mapActor(entry.author)
-    });
-  }
-  return items;
+  const entries = await gh.searchPullRequests(repoPath, SEARCH_QUALIFIER_FLAGS[tab], query);
+  // The search surface has no `statusCheckRollup` (docs/spike/FINDINGS.md row 37); fetched
+  // per-row for these smaller, non-Open tab result counts. A failed per-row fetch degrades to
+  // 'none' rather than failing the whole tab. `ownerRepo` is resolved ONCE here (High
+  // remediation, code-reviewer), not inside `viewCheckState` per row -- `ownerRepoFor` runs a
+  // real `git remote get-url` process every call.
+  const { owner, repo } = await gh.ownerRepoFor(repoPath);
+  const ownerRepo = `${owner}/${repo}`;
+  const checkStates = await withBoundedConcurrency(entries, CHECK_STATE_CONCURRENCY, (entry) =>
+    gh.viewCheckState(repoPath, ownerRepo, entry.number).catch(() => null)
+  );
+  return entries.map((entry, index) => ({
+    number: entry.number,
+    title: entry.title,
+    // The search surface has no `isDraft`/mergedAt distinction (row 37): a merged pull request
+    // may show here as 'closed' rather than 'merged' -- a documented, known simplification.
+    state: mapPullRequestState(entry.state, false),
+    checkState: mapCheckState(checkStates[index] ?? null),
+    repository: repoLabel,
+    updatedAt: entry.updatedAt,
+    author: mapActor(entry.author)
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +271,22 @@ const staleCache = new Map<string, StalenessEntry>();
 
 function cacheKey(repositoryId: string, number: number): string {
   return `${repositoryId}:${number}`;
+}
+
+/** "Also fix" remediation (security-auditor AND code-reviewer, corroborated): `number` was only
+ * ever validated via `typeof number === 'number'`, which lets `NaN`, `Infinity`, negative, and
+ * non-integer values straight through to `gh` argv construction. Used at every `number` call
+ * site below instead of the bare `typeof` check. */
+function isValidPullRequestNumber(number: unknown): number is number {
+  return typeof number === 'number' && Number.isSafeInteger(number) && number > 0;
+}
+
+const VALID_FILTER_TABS = new Set<FilterTab>(['open', 'authored', 'assigned', 'involves', 'review-requested']);
+
+/** "Also fix" remediation (same corroboration): `tab` used to be cast straight to `FilterTab`
+ * with no runtime check against the 5 allowed values. */
+function isValidFilterTab(tab: unknown): tab is FilterTab {
+  return typeof tab === 'string' && VALID_FILTER_TABS.has(tab as FilterTab);
 }
 
 function mapChangedFiles(view: gh.GhPrViewDetail, restFiles: gh.GhRestFile[] | null): ChangedFile[] {
@@ -241,8 +308,9 @@ async function buildDetail(repoPath: string, number: number): Promise<PullReques
   ]);
 
   const state = mapPullRequestState(view.state, view.isDraft);
-  const mergeable = view.mergeable.toUpperCase() === 'MERGEABLE';
-  const disabledReason = computeDisabledReason(state, view.mergeable, view.mergeStateStatus);
+  const mergeableState = mapMergeableState(view.mergeable);
+  const reviewDisabledReason = computeReviewDisabledReason(state);
+  const mergeDisabledReason = computeMergeDisabledReason(state, view.mergeable, view.mergeStateStatus);
   const timeline = buildTimeline(threadsAndTimeline);
 
   return {
@@ -258,8 +326,9 @@ async function buildDetail(repoPath: string, number: number): Promise<PullReques
     description: view.body,
     timeline,
     checkState: mapCheckState(view.statusCheckRollup),
-    mergeable,
-    disabledReason,
+    mergeableState,
+    reviewDisabledReason,
+    mergeDisabledReason,
     allowedMergeMethods,
     additions: view.additions,
     deletions: view.deletions,
@@ -267,23 +336,45 @@ async function buildDetail(repoPath: string, number: number): Promise<PullReques
     files: mapChangedFiles(view, filesWithPatch),
     url: `https://github.com/${ownerRepo.owner}/${ownerRepo.repo}/pull/${number}`,
     updatedAt: view.updatedAt,
-    headSha: view.headRefOid
+    headSha: view.headRefOid,
+    isFork: view.isCrossRepository,
+    headRepositoryOwner: view.headRepositoryOwner?.login ?? null
   };
 }
 
 /** FR-021: re-fetches only `updatedAt`/`headSha`, compares against the cache entry left by the
  * last successful `detail()`/mutating call for this pull request. No cache entry yet (never
- * detailed before this action) is treated as "not stale" -- there is nothing to have gone stale
- * against, and `detail()` is always called by the renderer before any action is offered. */
-async function checkNotStale(repositoryId: string, repoPath: string, number: number): Promise<{ stale: boolean; fresh: gh.GhStalenessCheck }> {
+ * detailed before this action) is treated as "not stale" by default -- there is nothing to have
+ * gone stale against, and `detail()` is always called by the renderer before any action is
+ * offered. `requireCacheEntry` (security remediation, Medium-but-must-fix) flips that for
+ * approve/merge specifically: those two mutations are now pinned to a cached commit (`headSha`/
+ * `id`), so a missing cache entry means there is nothing to pin against, and silently proceeding
+ * would be the renderer-trust gap this flag exists to close -- treated as stale instead. */
+async function checkNotStale(
+  repositoryId: string,
+  repoPath: string,
+  number: number,
+  requireCacheEntry = false
+): Promise<{ stale: boolean; fresh: gh.GhStalenessCheck }> {
   const fresh = await gh.viewStalenessCheck(repoPath, number);
   const cached = staleCache.get(cacheKey(repositoryId, number));
-  const stale = cached !== undefined && (cached.updatedAt !== fresh.updatedAt || cached.headSha !== fresh.headSha);
+  if (cached === undefined) return { stale: requireCacheEntry, fresh };
+  const stale = cached.updatedAt !== fresh.updatedAt || cached.headSha !== fresh.headSha;
   return { stale, fresh };
 }
 
 function rememberFresh(repositoryId: string, number: number, updatedAt: string, headSha: string): void {
   staleCache.set(cacheKey(repositoryId, number), { updatedAt, headSha });
+}
+
+/** "Also fix" remediation: the cache used to be re-seeded with the PRE-mutation `fresh` values
+ * right after a successful mutating call -- stale the instant that same action succeeded.
+ * Deleting the entry instead forces the next `checkNotStale` to see "no cache entry" (lenient
+ * for comment/reply/resolve/unresolve, strict-stale for approve/merge above); every mutating
+ * handler's renderer caller already re-calls `detail()` immediately after success (`onSubmitted`/
+ * `onMerged`/`onChanged` -> `void load()`), which repopulates the cache with POST-mutation data. */
+function forgetCache(repositoryId: string, number: number): void {
+  staleCache.delete(cacheKey(repositoryId, number));
 }
 
 // ---------------------------------------------------------------------------
@@ -298,7 +389,7 @@ export function registerPullRequests(manager: SessionManager): void {
   }
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_LIST, async (_event, repositoryId: unknown, tab: unknown, query: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof tab !== 'string') {
+    if (typeof repositoryId !== 'string' || !isValidFilterTab(tab)) {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_LIST} expects (repositoryId, tab, query?)`);
     }
     if (query !== undefined && typeof query !== 'string') {
@@ -307,7 +398,7 @@ export function registerPullRequests(manager: SessionManager): void {
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
-      const items = await listPullRequests(resolved.path, resolved.label, tab as FilterTab, query);
+      const items = await listPullRequests(resolved.path, resolved.label, tab, query);
       const result: PullRequestListResult = { items, fetchedAt: new Date().toISOString() };
       return { ok: true, value: result };
     } catch (err) {
@@ -316,7 +407,7 @@ export function registerPullRequests(manager: SessionManager): void {
   });
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_DETAIL, async (_event, repositoryId: unknown, number: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof number !== 'number') {
+    if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number)) {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_DETAIL} expects (repositoryId, number)`);
     }
     const resolved = repoPathFor(repositoryId);
@@ -331,16 +422,16 @@ export function registerPullRequests(manager: SessionManager): void {
   });
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_COMMENT, async (_event, repositoryId: unknown, number: unknown, body: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof number !== 'number' || typeof body !== 'string') {
+    if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof body !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_COMMENT} expects (repositoryId, number, body)`);
     }
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
-      const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number);
+      const { stale } = await checkNotStale(repositoryId, resolved.path, number);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
       await gh.commentOnPullRequest(resolved.path, number, body);
-      rememberFresh(repositoryId, number, fresh.updatedAt, fresh.headSha);
+      forgetCache(repositoryId, number);
       return { ok: true, value: { id: randomUUID() } };
     } catch (err) {
       return mapStoreThrown(err);
@@ -350,20 +441,20 @@ export function registerPullRequests(manager: SessionManager): void {
   ipcMain.handle(
     IPC_REQUESTS.PULL_REQUESTS_REPLY_TO_THREAD,
     async (_event, repositoryId: unknown, number: unknown, threadId: unknown, body: unknown) => {
-      if (typeof repositoryId !== 'string' || typeof number !== 'number' || typeof threadId !== 'string' || typeof body !== 'string') {
+      if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof threadId !== 'string' || typeof body !== 'string') {
         return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_REPLY_TO_THREAD} expects (repositoryId, number, threadId, body)`);
       }
       const resolved = repoPathFor(repositoryId);
       if (!resolved.ok) return resolved.error;
       try {
-        const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number);
+        const { stale } = await checkNotStale(repositoryId, resolved.path, number);
         if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
         const threadsAndTimeline = await gh.getReviewThreadsAndTimeline(resolved.path, number);
         const thread = threadsAndTimeline.reviewThreads.nodes.find((node) => node.id === threadId);
         if (!thread || thread.comments.nodes.length === 0) return notFound(`Review thread not found: ${threadId}`);
         const openingCommentId = thread.comments.nodes[0]!.id;
         const reply = await gh.replyToThreadMutation(resolved.path, threadsAndTimeline.id, openingCommentId, body);
-        rememberFresh(repositoryId, number, fresh.updatedAt, fresh.headSha);
+        forgetCache(repositoryId, number);
         return { ok: true, value: reply };
       } catch (err) {
         return mapStoreThrown(err);
@@ -372,16 +463,23 @@ export function registerPullRequests(manager: SessionManager): void {
   );
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_RESOLVE_THREAD, async (_event, repositoryId: unknown, number: unknown, threadId: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof number !== 'number' || typeof threadId !== 'string') {
+    if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof threadId !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_RESOLVE_THREAD} expects (repositoryId, number, threadId)`);
     }
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
-      const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number);
+      const { stale } = await checkNotStale(repositoryId, resolved.path, number);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
+      // Security remediation (Constitution Principle V, Medium-but-must-fix): `threadId` used to
+      // be handed straight to the mutation with no check that it actually belongs to THIS pull
+      // request -- `replyToThread` above already verifies this correctly; this copies that exact
+      // pattern rather than trusting a renderer-supplied id across pull requests.
+      const threadsAndTimeline = await gh.getReviewThreadsAndTimeline(resolved.path, number);
+      const thread = threadsAndTimeline.reviewThreads.nodes.find((node) => node.id === threadId);
+      if (!thread) return notFound(`Review thread not found: ${threadId}`);
       await gh.resolveReviewThreadMutation(resolved.path, threadId);
-      rememberFresh(repositoryId, number, fresh.updatedAt, fresh.headSha);
+      forgetCache(repositoryId, number);
       return { ok: true, value: undefined };
     } catch (err) {
       return mapStoreThrown(err);
@@ -389,16 +487,20 @@ export function registerPullRequests(manager: SessionManager): void {
   });
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_UNRESOLVE_THREAD, async (_event, repositoryId: unknown, number: unknown, threadId: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof number !== 'number' || typeof threadId !== 'string') {
+    if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof threadId !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_UNRESOLVE_THREAD} expects (repositoryId, number, threadId)`);
     }
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
-      const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number);
+      const { stale } = await checkNotStale(repositoryId, resolved.path, number);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
+      // Same ownership check as resolveThread above, same Constitution Principle V reasoning.
+      const threadsAndTimeline = await gh.getReviewThreadsAndTimeline(resolved.path, number);
+      const thread = threadsAndTimeline.reviewThreads.nodes.find((node) => node.id === threadId);
+      if (!thread) return notFound(`Review thread not found: ${threadId}`);
       await gh.unresolveReviewThreadMutation(resolved.path, threadId);
-      rememberFresh(repositoryId, number, fresh.updatedAt, fresh.headSha);
+      forgetCache(repositoryId, number);
       return { ok: true, value: undefined };
     } catch (err) {
       return mapStoreThrown(err);
@@ -406,7 +508,7 @@ export function registerPullRequests(manager: SessionManager): void {
   });
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW, async (_event, repositoryId: unknown, number: unknown, input: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof number !== 'number' || typeof input !== 'object' || input === null) {
+    if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof input !== 'object' || input === null) {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects (repositoryId, number, { verdict, body? })`);
     }
     const { verdict, body } = input as Partial<SubmitReviewInput>;
@@ -419,13 +521,18 @@ export function registerPullRequests(manager: SessionManager): void {
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
-      const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number);
+      // Security remediation (Medium-but-must-fix): requires a cache entry (`detail()` must have
+      // been called for this exact pull request before any review is submitted) so approve has a
+      // known `headSha`/`id` to pin its commitOID to -- a missing entry is now `stale`, not
+      // silently "not stale".
+      const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
       const state = mapPullRequestState(fresh.state, fresh.isDraft);
-      const disabledReason = computeDisabledReason(state, fresh.mergeable, fresh.mergeStateStatus);
-      if (disabledReason) return { ok: false, error: { code: 'disabled', message: disabledReason } };
-      await gh.submitReview(resolved.path, number, verdict, body);
-      rememberFresh(repositoryId, number, fresh.updatedAt, fresh.headSha);
+      const reviewDisabledReason = computeReviewDisabledReason(state);
+      if (reviewDisabledReason) return { ok: false, error: { code: 'disabled', message: reviewDisabledReason } };
+      const pinned = verdict === 'approve' ? { pullRequestId: fresh.id, headSha: fresh.headSha } : undefined;
+      await gh.submitReview(resolved.path, number, verdict, body, pinned);
+      forgetCache(repositoryId, number);
       return { ok: true, value: { id: randomUUID() } };
     } catch (err) {
       return mapStoreThrown(err);
@@ -433,7 +540,7 @@ export function registerPullRequests(manager: SessionManager): void {
   });
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_MERGE, async (_event, repositoryId: unknown, number: unknown, input: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof number !== 'number' || typeof input !== 'object' || input === null) {
+    if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof input !== 'object' || input === null) {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects (repositoryId, number, { method })`);
     }
     const { method } = input as Partial<MergeInput>;
@@ -443,16 +550,23 @@ export function registerPullRequests(manager: SessionManager): void {
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
-      const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number);
+      // Security remediation (Medium-but-must-fix): a missing cache entry means there is no
+      // known `headSha` to pin `--match-head-commit` to -- treated as stale, same reasoning as
+      // submitReview's approve path above.
+      const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
       const state = mapPullRequestState(fresh.state, fresh.isDraft);
-      const disabledReason = computeDisabledReason(state, fresh.mergeable, fresh.mergeStateStatus);
-      if (disabledReason) return { ok: false, error: { code: 'disabled', message: disabledReason } };
-      if (fresh.mergeable.toUpperCase() !== 'MERGEABLE') {
-        return { ok: false, error: { code: 'not-mergeable', message: 'This pull request has merge conflicts or a failing required check.' } };
+      const mergeDisabledReason = computeMergeDisabledReason(state, fresh.mergeable, fresh.mergeStateStatus);
+      if (mergeDisabledReason) return { ok: false, error: { code: 'disabled', message: mergeDisabledReason } };
+      const mergeableState = mapMergeableState(fresh.mergeable);
+      if (mergeableState === 'conflicting') {
+        return { ok: false, error: { code: 'not-mergeable', message: 'This pull request has merge conflicts.' } };
       }
-      await gh.mergePullRequest(resolved.path, number, method);
-      rememberFresh(repositoryId, number, fresh.updatedAt, fresh.headSha);
+      if (mergeableState === 'unknown') {
+        return { ok: false, error: { code: 'not-mergeable', message: 'GitHub is still checking whether this pull request can merge; refresh and try again shortly.' } };
+      }
+      await gh.mergePullRequest(resolved.path, number, method, fresh.headSha);
+      forgetCache(repositoryId, number);
       return { ok: true, value: undefined };
     } catch (err) {
       return mapStoreThrown(err);
@@ -460,20 +574,23 @@ export function registerPullRequests(manager: SessionManager): void {
   });
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST, async (_event, repositoryId: unknown, number: unknown) => {
-    if (typeof repositoryId !== 'string' || typeof number !== 'number') {
+    if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number)) {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST} expects (repositoryId, number)`);
     }
     const repository = manager.registry.getRepository(repositoryId);
     if (!repository) return notFound(`Repository not found: ${repositoryId}`);
     try {
-      const localBranchName = `pr-${number}`;
+      // High remediation (corroborated by 3 of 4 reviewers): resolves a collision-free name
+      // FIRST (pr-<n>, pr-<n>-2, ...) instead of assuming the fixed `pr-<n>` is always free --
+      // see `uniquePullRequestBranchName`'s own doc comment for the exact data-loss scenario.
+      const localBranchName = await uniquePullRequestBranchName(repository.path, number);
       const { worktreePath, branch } = await addWorktreeFromPullRequestBranch(repository.path, number, localBranchName);
       const view = await gh.viewPullRequestDetail(repository.path, number).catch(() => null);
       const now = new Date().toISOString();
       const session: Session = {
         id: randomUUID(),
         repositoryId,
-        name: `pr-${number}`,
+        name: branch,
         branch,
         baseBranch: view?.baseRefName ?? branch,
         worktreePath,
