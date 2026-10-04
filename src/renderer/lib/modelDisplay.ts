@@ -18,19 +18,36 @@ const THINKING_LEVEL_LABEL: Record<string, string> = {
  max: 'Max'
 }
 
-/** "provider/model-name (Effort)" for a Session's last known model, or the documented
- * placeholder before any `get_state` has ever reported one (T063). */
-export function formatModelReadout(session: Pick<Session, 'lastModel' | 'lastThinkingLevel'>): string {
- if (!session.lastModel) return 'Model not known yet'
+/** "provider/model-name" for a Session's last known model, or `null` before any `get_state`
+ * has ever reported one (T063). Split out from `formatModelReadout` so the message box
+ * (MessageInput.tsx) can pair this with a leading icon instead of composing plain text. */
+export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | null {
+ if (!session.lastModel) return null
  const { provider, id, name } = session.lastModel
- const label = `${provider}/${name ?? id}`
- if (!session.lastThinkingLevel) return label
+ return `${provider}/${name ?? id}`
+}
+
+/** The human label for a Session's last known thinking level, or `null` if none has been
+ * reported yet. */
+export function formatThinkingLevelLabel(session: Pick<Session, 'lastThinkingLevel'>): string | null {
+ if (!session.lastThinkingLevel) return null
  // Security audit finding (2026-10-03, Low): a plain object literal lookup also returns
  // inherited Object.prototype properties for a key like "constructor" or "toString" --
  // `Object.hasOwn` keeps the fallback to the raw string for any key that isn't a real,
  // own-declared effort label.
- const effort = Object.hasOwn(THINKING_LEVEL_LABEL, session.lastThinkingLevel)
-  ? THINKING_LEVEL_LABEL[session.lastThinkingLevel]
+ return Object.hasOwn(THINKING_LEVEL_LABEL, session.lastThinkingLevel)
+  ? (THINKING_LEVEL_LABEL[session.lastThinkingLevel] ?? session.lastThinkingLevel)
   : session.lastThinkingLevel
- return `${label} (${effort})`
+}
+
+/** "provider/model-name (Effort)" for a Session's last known model, or the documented
+ * placeholder before any `get_state` has ever reported one (T063). Used by surfaces that show
+ * plain text only (SessionDetailsCard.tsx); the message box uses the two label helpers above
+ * instead so it can show icons rather than a bracketed effort (docs/DESIGN.md "No
+ * bracket/parenthetical UI copy"). */
+export function formatModelReadout(session: Pick<Session, 'lastModel' | 'lastThinkingLevel'>): string {
+ const label = formatModelLabel(session)
+ if (!label) return 'Model not known yet'
+ const effort = formatThinkingLevelLabel(session)
+ return effort ? `${label} (${effort})` : label
 }

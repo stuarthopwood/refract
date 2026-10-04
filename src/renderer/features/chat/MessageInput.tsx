@@ -5,14 +5,14 @@
 // to show it and handles the keys that drive it.
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { SendIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, CpuIcon, GaugeIcon, SquareIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { formatModelReadout } from '@/lib/modelDisplay'
+import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
 import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
@@ -70,9 +70,13 @@ interface MessageInputProps {
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
   // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
-  // `SessionSummary` row), never a separate live-only source -- "Model not known yet" before the
-  // first `get_state` this Session has ever reported one.
-  const modelReadout = useSessionsStore((s) => formatModelReadout(s.sessions.find((x) => x.id === sessionId) ?? {}))
+  // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
+  // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
+  // (docs/DESIGN.md "No bracket/parenthetical UI copy"). `null` before the first `get_state`
+  // this Session has ever reported one.
+  const modelSession = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
+  const modelLabel = formatModelLabel(modelSession ?? {})
+  const thinkingLabel = formatThinkingLevelLabel(modelSession ?? {})
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
   const [text, setText] = useState('')
@@ -413,7 +417,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   const placeholder = disabled
     ? describeStopReason(stopReason, stopDetail)
-    : 'Message the agent… (/ for commands)'
+    // Slash commands are discoverable by typing '/' itself (SlashMenu.tsx opens on it), so no
+    // parenthetical hint is needed here (docs/DESIGN.md "No bracket/parenthetical UI copy").
+    : 'Message the agent…'
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-border px-4 py-3">
@@ -457,15 +463,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <div className="flex flex-wrap items-center gap-1.5">
         <ApprovalModePill sessionId={sessionId} />
       </div>
-      {/* T063/quality-gate fix: a real `bg-muted/60` fill (distinct from the page's own
-          `bg-background` -- `ChatPane.tsx` sets no background of its own, so a translucent
-          `bg-background/40` here composited to literally the same colour as the page, a no-op)
-          plus a `border-muted-foreground/85` border re-measured at >=3:1 against both the page
-          background and this fill (WCAG 1.4.11), Send/Stop moved inside as round icon-only
-          buttons, and the provider/model/effort readout along the bottom. `focus-within` replaces
-          the Textarea's own (now removed) focus ring so the whole field, not just the text area,
-          shows the focus state. */}
-      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-muted/60 pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      {/* T063/quality-gate fix, Composer tone remediation (2026-10-04): a literal, solid
+          `oklch(0.09 0 0)` fill -- strictly darker than `--background`'s `oklch(0.145 0 0)` in
+          the (only, dark) theme (docs/DESIGN.md "Composer tone") -- measured at rendered pixel
+          rgb(23,23,23) vs the page's rgb(10,10,10) for the previous attempt, `bg-black/20`,
+          which actually read LIGHTER once composited (Chromium's `color-mix(in oklab, black 20%,
+          transparent)` resolves missing "transparent" channels to the *other* operand's lightness
+          at zero weight, not literally black, so the alpha-blend math this file originally relied
+          on does not hold -- confirmed empirically via a scratch-instance pixel sample, not by
+          reasoning about the spec). A literal solid colour sidesteps that entirely: no alpha
+          compositing, no ambiguity. The previous `bg-muted/60` was an alpha composite of
+          `--muted`, which sits *lighter* than `--background` in the dark theme, so it read as a
+          no-op lightening instead of the intended recessive fill. Plus a `border-muted-foreground/85`
+          border re-measured at >=3:1 against both the page background and this fill (WCAG 1.4.11),
+          Send/Stop moved inside as round icon-only buttons, and the provider/model/effort
+          readout along the bottom. `focus-within` replaces the Textarea's own (now removed)
+          focus ring so the whole field, not just the text area, shows the focus state. */}
+      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-[oklch(0.09_0_0)] pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         <div className="relative flex items-end">
           {showSlashMenu && (
             <SlashMenu
@@ -531,7 +545,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           <div id={ghostHintId} role="status" aria-live="polite" className="sr-only">
             {announcedSuggestion ? `Suggestion: "${announcedSuggestion}". Tab to accept, Escape to dismiss.` : ''}
           </div>
-          <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
+          {/* Vertically centered on the field's right edge via `top-1/2 -translate-y-1/2`
+              rather than `bottom-1.5`, so the button stays centered as the textarea grows to
+              multiple lines instead of drifting toward the bottom (morning UI feedback,
+              2026-10-04). Send and Stop share the exact same `variant="outline"` + `size="icon-sm"`
+              treatment -- only the icon inside differs -- so neither reads as a different size or
+              weight than the other. */}
+          <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
             {isWorking && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -560,6 +580,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               <TooltipTrigger asChild>
                 <Button
                   type="button"
+                  variant="outline"
                   size="icon-sm"
                   className="rounded-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   aria-label="Send message"
@@ -570,7 +591,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                     void handleSend()
                   }}
                 >
-                  <SendIcon />
+                  <ArrowUpIcon />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -579,7 +600,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             </Tooltip>
           </div>
         </div>
-        <p className="truncate px-2.5 pb-1 text-xs text-muted-foreground">{modelReadout}</p>
+        {/* Model-in-use and thinking-level readout (T062/T063): a leading icon for each instead
+            of a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy").
+            */}
+        <div className="flex items-center gap-3 truncate px-2.5 pb-1 text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            <CpuIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">{modelLabel ?? 'Model not known yet'}</span>
+          </span>
+          {thinkingLabel && (
+            <span className="flex min-w-0 shrink-0 items-center gap-1">
+              <GaugeIcon className="size-3.5 shrink-0" aria-hidden="true" />
+              <span>{thinkingLabel}</span>
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
