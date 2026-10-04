@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useCommandsStore, useQueueStore, useSessionsStore, useSettingsStore } from '@/state'
+import { EMPTY_QUEUE, notify, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { applySnapshot, describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
@@ -40,7 +40,7 @@ import {
   substituteChips,
   toImageContent
 } from './attachments'
-import type { AttachmentsState, PendingTextChip } from './attachments'
+import type { PendingTextChip } from './attachments'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -104,7 +104,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const thinkingLabel = formatThinkingLevelLabel(modelSession ?? {})
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
-  const [text, setText] = useState('')
+  // Spec 010: draft text lives in draft-store.ts, keyed by sessionId, instead of local useState,
+  // so it survives this component unmounting (a ChatPane.tsx `key={sessionId}` Session switch,
+  // or App.tsx's Settings view-swap) rather than being silently discarded (FR-001).
+  const text = useDraftStore((s) => s.bySession[sessionId]?.text ?? '')
   const [starting, setStarting] = useState(false)
   const [slashActiveIndex, setSlashActiveIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
@@ -133,9 +136,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   // Spec 009: pending images and oversized-text chips for the draft currently being composed
-  // (data-model.md "AttachmentsState") -- renderer-memory-only, cleared on send success (FR-007)
-  // or on this component's own remount (`key={sessionId}` in ChatPane), same lifetime as `text`.
-  const [attachments, setAttachments] = useState<AttachmentsState>(EMPTY_ATTACHMENTS)
+  // (data-model.md "AttachmentsState"). Spec 010: held in draft-store.ts alongside `text`
+  // above, keyed by sessionId -- renderer-memory-only, cleared on send success (FR-007) but no
+  // longer on this component's own remount (spec 010 FR-002, FR-003).
+  const attachments = useDraftStore((s) => s.bySession[sessionId]?.attachments ?? EMPTY_ATTACHMENTS)
   // Mirrors the ghost-text overlay's own scroll-sync div (T103, FR-058) for the text-chip
   // overlay: an inert sibling matching the textarea's box model so each chip's clickable overlay
   // lands exactly over its label's rendered position (research.md Decision 10).
@@ -267,14 +271,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       notify(result.error)
       return
     }
-    setText('')
-    // FR-007: pending image attachments clear once the send is accepted, not once the agent's
-    // turn finishes; pending text chips are a draft-only concept with nothing left to track once
-    // the draft itself is cleared.
-    setAttachments(EMPTY_ATTACHMENTS)
+    // Spec 010 FR-005: one atomic clear for both text and attachments (replacing the former
+    // separate `setText('')`/`setAttachments(EMPTY_ATTACHMENTS)` calls) -- FR-007: pending image
+    // attachments clear once the send is accepted, not once the agent's turn finishes; pending
+    // text chips are a draft-only concept with nothing left to track once the draft is cleared.
+    useDraftStore.getState().clear(sessionId)
     // Second invalidation (#358/#359 round-3 remediation): typing during the `await open()` / `await
     // chat.send()` gap above can schedule a fresh ghost-text debounce/request -- or let one
-    // already in flight resolve -- against the draft `setText('')` just wiped; the early
+    // already in flight resolve -- against the draft `clear(sessionId)` just wiped; the early
     // `clearGhostState()` above ran before those awaits and can't see state that changed during
     // them. Calling it again here bumps the generation ref (dropping/cancelling anything from the
     // gap), and `dismissGhost` reads through `ghostRef` so this acts on whatever ghost is actually
@@ -287,7 +291,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   function completeSlashCommand(command: SlashCommand) {
     clearGhostState() // bypasses the normal onChange path too (#358/#359 remediation)
     const nextText = `/${command.name} `
-    setText(nextText)
+    useDraftStore.getState().setText(sessionId, nextText)
     setSlashDismissed(false)
     // Medium remediation (test-reviewer): this also bypasses onChange's own `pruneDanglingChips`
     // call the same way Enter-send and Esc-clear do -- without this a chip whose label no longer
@@ -297,7 +301,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const prunedChips = pruneDanglingChips(nextText, attachments.textChips)
     if (prunedChips.length !== attachments.textChips.length) {
       announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
-      setAttachments((prev) => ({ ...prev, textChips: prunedChips }))
+      useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, textChips: prunedChips }))
     }
   }
 
@@ -454,7 +458,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       ghostRef.current = null
       setGhost(null)
       setAnnouncedSuggestion(null)
-      setText(nextText)
+      useDraftStore.getState().setText(sessionId, nextText)
       requestAnimationFrame(() => {
         textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
       })
@@ -478,7 +482,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (event.key === 'Escape') {
       event.preventDefault()
       clearGhostState()
-      setText('')
+      useDraftStore.getState().setText(sessionId, '')
       // Medium remediation (test-reviewer): same bypass as `completeSlashCommand` above --
       // plain Esc-clear calls `setText` directly too, skipping onChange's own
       // `pruneDanglingChips`. Every chip's label is gone from the (now-empty) draft, so this
@@ -486,7 +490,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       const prunedChips = pruneDanglingChips('', attachments.textChips)
       if (prunedChips.length !== attachments.textChips.length) {
         announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
-        setAttachments((prev) => ({ ...prev, textChips: prunedChips }))
+        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, textChips: prunedChips }))
       }
     }
   }
@@ -551,7 +555,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         })
         return
       }
-      setAttachments((prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+      useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
       announceAttachment(`Image attached, ${formatByteSize(result.attachment.byteLength)}.`)
       return
     }
@@ -569,10 +573,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const label = buildChipLabel(pastedText, existingLabels)
     const nextText = text.slice(0, start) + label + text.slice(end)
     const nextCursor = start + label.length
-    setText(nextText)
+    useDraftStore.getState().setText(sessionId, nextText)
     setSlashDismissed(false)
     scheduleGhostCheck(nextText, nextCursor)
-    setAttachments((prev) => ({
+    useDraftStore.getState().setAttachments(sessionId, (prev) => ({
       ...prev,
       textChips: [...prev.textChips, { kind: 'text-chip', id: crypto.randomUUID(), text: pastedText, label }]
     }))
@@ -583,7 +587,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }
 
   function handleRemoveImage(id: string) {
-    setAttachments((prev) => ({ ...prev, images: prev.images.filter((image) => image.id !== id) }))
+    useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: prev.images.filter((image) => image.id !== id) }))
   }
 
   const placeholder = disabled
@@ -705,7 +709,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             onChange={(event) => {
               const value = event.target.value
               const cursor = event.target.selectionStart ?? value.length
-              setText(value)
+              useDraftStore.getState().setText(sessionId, value)
               setSlashDismissed(false)
               scheduleGhostCheck(value, cursor)
               // FR-014, Edge Cases: every edit re-checks every pending chip's label against the
@@ -716,7 +720,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               const prunedChips = pruneDanglingChips(value, attachments.textChips)
               if (prunedChips.length !== attachments.textChips.length) {
                 announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
-                setAttachments((prev) => ({ ...prev, textChips: prunedChips }))
+                useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, textChips: prunedChips }))
               }
             }}
             onPaste={(event) => void handlePaste(event)}

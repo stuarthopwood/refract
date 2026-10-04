@@ -1,6 +1,7 @@
 import { initStores } from './init-stores'
 import { notify } from './notify'
 import { useCommandsStore } from './commands-store'
+import { useDraftStore } from './draft-store'
 import { useMemoryStore } from './memory-store'
 import { usePendingRequestsStore } from './pending-requests-store'
 import { EMPTY_QUEUE, useQueueStore } from './queue-store'
@@ -15,6 +16,7 @@ import { useSubagentPanelStore } from './subagent-store'
 export { initStores }
 export { notify }
 export { useCommandsStore }
+export { useDraftStore }
 export { useMemoryStore }
 export { usePendingRequestsStore }
 export { EMPTY_QUEUE, useQueueStore }
@@ -30,6 +32,7 @@ export { useSubagentPanelStore }
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
   commands: typeof useCommandsStore
+  draft: typeof useDraftStore
   memory: typeof useMemoryStore
   pendingRequests: typeof usePendingRequestsStore
   queue: typeof useQueueStore
@@ -54,6 +57,7 @@ declare global {
 if (import.meta.env.DEV) {
   window.__refractStores = {
     commands: useCommandsStore,
+    draft: useDraftStore,
     memory: useMemoryStore,
     pendingRequests: usePendingRequestsStore,
     queue: useQueueStore,
