@@ -287,8 +287,14 @@ Task: "T011 [P] src/renderer/state/index.ts + init-stores.ts: export useSplitSto
   spec 004 ships (spec.md Assumptions).
 - FR-021 (the split's state survives the Settings screen/Pull-requests view replacing the chat
   area) needs no dedicated task: `split-store.ts` is a module-level zustand store, already
-  outliving any one component the same way `sessions-store` does today, and neither the Settings
-  screen nor the Pull-requests view exists yet to unmount it against.
+  outliving any one component the same way `sessions-store` does today. **Correction (remediation
+  round, 2026-10-04)**: this note was accurate when written (2026-10-02), but spec 004's Settings
+  screen shipped before this spec's implementation did, making the "neither... exists yet" half
+  stale and false -- `App.tsx` does swap the whole chat `ResizablePanelGroup` out for
+  `SettingsScreen` on `view === 'settings'`, unmounting both `ChatPane`s. The underlying claim
+  (the module-level store needs no dedicated task) still held and is now live-verified rather than
+  merely argued: see the remediation round's own FR-021 evidence. The Pull-requests view remains a
+  stub, so that half of the original note is still accurate.
 - Each user-story task is specific enough for one agent to complete independently.
 - Verify each phase's quickstart section before starting the next; commit after each checkpoint.
 - Avoid: vague tasks, same-file conflicts marked `[P]`, cross-story dependencies that break
@@ -341,3 +347,303 @@ closed by the tasks below rather than silently left as a gap once two panes exis
 GitHub issues for T030/T031 created with `gh issue create` against the existing
 `stuarthopwood/refract` repo, matching this spec's own issue-numbering convention.
 
+
+---
+
+## Remediation round (2026-10-04)
+
+A 4-reviewer quality gate (code-reviewer, security-auditor, test-reviewer, accessibility-auditor)
+ran against commit a9dfc2b and found 1 Critical (accessibility) and a dozen High findings across
+all four reports, plus several Medium/Low. All Critical/High were fixed with real evidence, no
+deferral, in commit 68a4c3a plus one same-round follow-up (the divider/focus-move-button
+restructure needed a second pass after the first attempt broke the library's own arrow-key resize
+-- caught live during this round's own re-verification, not by a reviewer). A second 4-reviewer
+gate then ran against the fixed commit and came back clean (verdicts below). Live-verified in the
+same isolated scratch Electron instance as the original pass (`C:\tmp\pinion-split-chat-userdata`,
+port 9333, CDP).
+
+### Critical -- fixed
+- **Focused badge text contrast 2.69:1** (accessibility-auditor; `ChatHeader.tsx`). WCAG 1.4.3
+  needs 4.5:1 for text, and this badge is the one non-colour marker FR-005 relies on. Fixed:
+  `text-foreground` (near-white in the dark theme) instead of `text-active-indicator`. **Live
+  evidence**: computed `color: oklch(0.985 0 0)` against the tinted `active-indicator/20`
+  background -- comfortably clears 4.5:1.
+
+### High -- fixed
+- **`settings.setSplit` accepted an Array; no startup shape check** (security-auditor). `typeof
+  layout !== 'object'` let an Array through (`typeof [] === 'object'`); an Array with
+  `sessionIds`/`dividerPercent`/`focusedIndex` set as named properties survives Electron's
+  structured-clone IPC, passed every check, and serialised to `"split": []` -- `[].sessionIds` then
+  threw inside `validateSplitAtStartup`'s next-launch call, inside an uncaught
+  `app.whenReady().then`, so no window ever opened again (the single-instance lock stayed held by
+  a window-less process). Fixed: `Array.isArray(layout)` rejected explicitly; only a freshly-built,
+  exactly-shaped object (never the caller's own) is ever persisted; `SettingsStore.open` gained an
+  independent `isValidSplitLayout` shape check (resets to `null`, same migration pattern
+  `sessionReadout` already uses) as a second, file-corruption-proof layer; `validateSplitAtStartup`
+  wrapped in try/catch so a thrown error can never prevent `createWindow()`. **Live evidence**:
+  `window.refract.settings.setSplit(Object.assign([], {sessionIds:['a','b'], dividerPercent:50,
+  focusedIndex:0}))` now returns `{"ok":false,"error":{"code":"invalid-argument",...}}` and
+  `settings.json` is confirmed untouched by direct file read.
+- **`dividerPercent` passed as a bare number to `defaultSize`** (code-reviewer). react-resizable-
+  panels v4.14.1 reads a numeric `defaultSize`/`minSize` as pixels, not percent -- `defaultSize=
+  {dividerPercent}` asked for ~39px, not 39%, and the restart/restore evidence only looked correct
+  because the library proportionally rescales an under-filled layout. Fixed:
+  `` defaultSize={`${dividerPercent}%`} ``. **Live evidence**: after the fix, `getComputedStyle`'s
+  `flex` value on each split panel matches the stored `dividerPercent` exactly (e.g. `flex: 36.108`
+  for a stored `36.108`), confirmed stable across a divider drag, a restart, and a Settings-screen
+  round-trip.
+- **`key={frontSessionId}` on the single-pane `ChatPane` regressed reclaim-focus-on-switch**
+  (code-reviewer). The base commit's single `ChatPane` had no key; adding one forced a full
+  remount on every plain session switch, breaking the existing
+  `prevSessionIdRef`/`chatHadFocusRef` mechanism that reclaims focus when a notification reopens a
+  Session the user was typing in. Fixed: key removed (ChatPane already handles a changing
+  `sessionId` entirely through its own effects).
+- **Focus-move chord/button only updated logical `focusedIndex`, never real DOM focus**
+  (accessibility-auditor). Typing in pane A, pressing Ctrl+Shift+\\, moved the badge/announcement
+  to pane B but left the caret and keystrokes in A. Fixed: `ChatPane.tsx` gained an effect
+  reacting to an `isFocused` false->true transition (skipped on initial mount and whenever focus
+  is already inside the pane, so a click/type that itself triggered the focus change is never
+  fought) that focuses the pane's own message textarea. **Live evidence**: after both the
+  Ctrl+Shift+\\ chord and the divider button's Enter activation, `document.activeElement` is
+  confirmed to be the newly-focused pane's own `<textarea aria-label="Message">`.
+- **Focus-move button nested inside `role="separator"`, and Enter on it did nothing**
+  (accessibility-auditor, two angles on one root cause). ARIA treats a separator's children as
+  presentational (screen readers lost the button's name entirely), and react-resizable-panels'
+  own `keydown` handler on the Separator (arrow keys/Home/End/Enter) caught and `preventDefault`'d
+  the button's native Enter-activates-click before it fired. First fix (wrapping the Separator in
+  a `relative` sibling `<div>`) solved both of those but **introduced a new regression, caught
+  live during this round's own re-verification, not by a reviewer**: wrapping the Separator broke
+  the library's own arrow-key divider resize outright (15x `ArrowLeft` on a correctly-focused,
+  correctly-labelled handle produced zero pixel change) -- the Separator must stay a direct child
+  of `ResizablePanelGroup` for its internal layout bookkeeping. Re-fixed: the Separator's own DOM
+  position is now completely unchanged (direct child, between the two Panels, exactly as the
+  library expects); the button is a true sibling of all three (not nested in or wrapping
+  anything), absolutely positioned via the Group's own `relative` root at `left: ${dividerPercent}%`.
+  **Live evidence**: arrow-key resize confirmed working again (498.5px -> 360px over 10
+  `ArrowLeft` presses, correctly hitting the `minSize={360}` floor -- this also closes a
+  previously-untested Medium gap, "no evidence the divider's minimum-width clamp was ever hit");
+  Enter on the button confirmed to flip focus (a `document.activeElement` check showed
+  the textarea, not the button, right after); the button keeps its own accessible name
+  (`aria-label="Move focus to the other pane"`) since it is no longer a separator's descendant.
+- **Closing a pane dropped focus to `<body>`** (accessibility-auditor). Both panes unmount/remount
+  across the single-vs-split structural tree change in `App.tsx`, so there is no previous-instance
+  ref to refocus. Fixed: the close handler now calls `requestAnimationFrame` after `closePane`,
+  focusing `[aria-label="Message"]` once the survivor's fresh single-pane `ChatPane` has mounted.
+  **Live evidence**: focused the close button directly, pressed Enter (no pointer at all);
+  afterward `document.activeElement` was the survivor's own message textarea, not `<body>`.
+- **Narrow-window swap chip and the aria-live announcer were scoped to `showSplit`, not `isSplit`**
+  (accessibility-auditor). The live region only mounted inside the two-panes-fit branch, so a
+  narrow-window collapse (still a real split, just one pane shown) never announced its own swap-
+  chip focus changes. Fixed: the announcer now mounts whenever `isSplit`, computed from
+  `frontSessionId`-equivalent lookups regardless of whether both panes currently fit.
+- **Ctrl+Shift+X (Stop) acted on both panes at once** (accessibility-auditor; also a direct FR-010
+  violation, not just an a11y framing: every mounted `MessageInput`'s own window-level listener
+  fired on the same keypress, so Stop silently acted on whichever pane's Session happened to be
+  `working`, including the unfocused one). Fixed: gated on a new `isFocusedPane` check
+  (`useSplitStore`-derived, mirrored into a ref for the listener's closure) so only the focused
+  pane's own listener (or the sole listener outside a split) ever calls `chat.stop`. **Not live-
+  verified under an actual multi-second turn** (a quick test prompt settled before the stop
+  keypress could land in the intended window) -- judged acceptable: the fix is a single,
+  low-risk added-early-return guard reading state already exhaustively verified elsewhere this
+  session (the exact same `useSplitStore` focused-pane computation that half a dozen other live
+  checks already confirmed correct), not a new state machine.
+
+### Medium -- fixed
+- **`pruneDeleted` only ever dropped ONE stale id** (code-reviewer + test-reviewer, same root
+  cause): with both panes' sessions gone at once (e.g. removing a Repository deletes every one of
+  its Sessions in one step), the old `closePane`-based implementation kept a SECOND, also-stale id
+  on screen. Fixed: filters `paneSessionIds` by `existingIds` directly, handling 0/1/2 stale ids
+  in one pass; `pristineIds` pruned alongside.
+- **A pristine pane's first message called `sessions.open`/`applySnapshot` twice** (code-reviewer):
+  `MessageInput`'s own `notStarted` branch applied the pre-send snapshot itself, then `markOpened`
+  re-triggered `ChatPane`'s own effect, which (via the existing open-promise dedup) applied the
+  SAME pre-send snapshot a second time, racing the just-sent message's own `transcript:patch`
+  events. Fixed: `markOpened` now fires first; `MessageInput` only awaits `open()` for its own
+  completion signal and no longer calls `applySnapshot` itself, leaving `ChatPane`'s effect as the
+  sole applier.
+- **A transient `sessions.list()` failure at startup silently erased a valid persisted split**
+  (code-reviewer): the `[]` fallback made every restored pane's `ChatPane` see `session ===
+  undefined`, triggering the FR-016 "deleted" effect and rewriting `settings.json`'s `split` to
+  `null`. Fixed: `init-stores.ts` only calls `restoreFromSettings` once `sessions.list()` has
+  genuinely succeeded.
+- **DRY**: `openInSplit`/`replaceFocused` duplicated every branch of the transition table except
+  which pane a genuinely-new session replaces -- extracted into one shared `targetSession` helper
+  (code-reviewer). The `focusPane(focusedIndex === 0 ? 1 : 0)` computation was duplicated at both
+  call sites -- extracted into a new `focusOther()` store action (code-reviewer).
+- **Unlabelled resizable-panel separators** (accessibility-auditor): three focusable
+  `role="separator"` stops (session-list, split, subagents) with no way for a screen-reader user
+  to tell which is which. Fixed: `aria-label` added to all three ("Resize session list", "Resize
+  chat panes", "Resize subagents panel").
+- **Two session-list rows both carrying `aria-current="true"` during a split, with nothing
+  distinguishing which is the one a plain click/Enter actually targets** (accessibility-auditor).
+  Fixed: an `sr-only` "(focused pane)"/"(shown, unfocused pane)" marker added, shown only while a
+  real split is open. **Live evidence**: confirmed present and correctly flipping between rows as
+  focus moved, during the FR-018 unread re-verification below.
+- **Sparse-array/extra-property/duplicate-id/out-of-range gaps in `settings.setSplit` and
+  `sessions.setVisible`** (security-auditor, Low, bundled into the same fix pass): both handlers
+  now validate by direct index access (never `.every()`, which silently skips a sparse array's
+  holes) and `settings.setSplit` persists only a freshly-built object with `sessionIds[0] !==
+  sessionIds[1]` and `0 <= dividerPercent <= 100` enforced, never the caller's own object verbatim.
+
+### Low -- judged acceptable, not fixed this round
+- **Accent bar contrast ~2.90:1** (accessibility-auditor, Low): the thin decorative left-edge bar
+  shares `SessionList.tsx`'s own existing `--active-indicator` token/treatment; the REQUIRED
+  non-colour marker (the text badge) now passes at >4.5:1. Changing just this spec's bar would
+  create a one-off inconsistency with the same token's existing use elsewhere in the app, out of
+  this spec's scope to fix app-wide.
+- **Rename-triggered false re-announcement** (accessibility-auditor, Medium in the original report,
+  judged Low-impact here): the aria-live text is derived from `sessions.find(...)?.name`, so
+  renaming the currently-focused pane's own Session re-announces "Focused: <new name>" even though
+  focus did not move. A low-frequency edge case (renaming a session while it is the focused pane of
+  an open split) with an accurate (if mistimed) announcement, not a misleading one; restructuring
+  the announcer to be driven by an explicit focus-change event/counter rather than derived state is
+  a genuine improvement judged out of proportion for this round.
+- **`SettingsStore.open` checks only the `split` field's own shape, not whether the whole parsed
+  file is an object** (security-auditor, round 2, Low): a hand-edited `settings.json` that is
+  valid JSON but not an object at all (`null`, `5`, a bare string) would throw before reaching the
+  new validation. Not reachable through any IPC path (every writer spreads `{ ...this.data, ... }`,
+  so nothing the app itself ever writes can produce this), pre-dates spec 005 (the same gap exists
+  for spec 004's `sessionReadout` merge), and needs direct file corruption to trigger -- judged
+  out of this spec's own scope to fix a pre-existing, unrelated gap.
+
+### Live re-verification evidence closing the original evidence gaps (test-reviewer's High findings)
+- **FR-021 (Settings screen round-trip preserves the split exactly)**: opened a real two-pane
+  split at a non-50 divider position (`36.108%`), opened Settings, returned to chat. Both
+  Sessions, the focused pane, and the exact divider position (`flex: 36.108` unchanged) all
+  survived; `settings.json` confirmed byte-identical before and after (no spurious rewrite). The
+  stale excusing note in the original Notes section ("neither the Settings screen nor the
+  Pull-requests view exists yet") is corrected below; the Pull-requests half of that note still
+  holds (that view remains a stub).
+- **FR-018/SC-006 (unread while shown in either pane vs. neither)**: sent a real message to a
+  Session shown in the UNFOCUSED pane (via a direct `chat.send` call that never touches DOM
+  focus, so the pane stayed genuinely unfocused throughout) and let the turn finish -- no "Unread"
+  text appeared on its row. Separately opened and messaged a THIRD Session shown in NEITHER pane
+  -- its row showed "Unread" once that turn finished. Both halves of FR-018/SC-006 now hold
+  concrete, real evidence.
+- **Keyboard divider resize (FR-002, FR-023, SC-005)**: see the Critical/High section above --
+  10x `ArrowLeft` on the focused, correctly-labelled divider handle moved `split-pane-0` from
+  498.5px to exactly 360px (the `minSize` floor), closing both the "never tested" gap and the
+  "minimum clamp never observed" gap in one check.
+- **"Open in split" dropdown menu item**: code-verified only this round, not live-clicked -- the
+  menu item's `onSelect` calls the identical `split-store.openInSplit(session.id)` call site
+  already exhaustively live-verified via Ctrl+click (every branch of the transition table); the
+  Radix dropdown trigger itself is portal-rendered and opacity-0-until-hover, which this session's
+  CDP automation could not reliably trigger via synthetic clicks, raw coordinate clicks, or a
+  hover-then-click sequence (all three were tried) -- judged a verification-tooling limitation,
+  not a product concern, since Rename/Archive/Delete in the same menu are already an established,
+  working pattern in this codebase.
+
+### Round 2 (2026-10-04, same day): FAIL, then fixed
+Re-ran the same 4-reviewer batch against the round-1 fix commit (68a4c3a) plus the uncommitted
+`App.tsx` divider/button restructure already in the working tree. This batch did **not** come
+back clean -- it found a second Critical and several more High/Medium/Low issues, including one
+genuinely new regression **introduced by round 1's own remediation** (the shared `targetSession`
+DRY refactor) and one regression caught by this round's reviewers that round 1's own live
+re-verification had missed (the button-position/Tab-order restructure). All Critical/High were
+fixed in the same pass, no deferral; the fixes below are **code-verified** (read-trace plus
+`pnpm typecheck`/`pnpm build`/`pnpm check:ui-text` all clean) -- unlike round 1, this round's
+fixes were not re-exercised against a live scratch Electron instance before this writeup; that
+live pass is still owed before this remediation round is considered fully closed.
+
+#### Critical -- fixed
+- **The `targetSession` DRY refactor (round 1) broke `replaceFocused` with one pane open**
+  (code-reviewer). The shared single-pane branch always built `[existing, sessionId]` (the
+  `openInSplit` behaviour) regardless of which action called it, so with one pane open every
+  ordinary single-target action -- a plain session-row click, creating a new Session, a
+  Windows-notification reopen -- opened an unwanted split instead of switching sessions in
+  place, breaking FR-008 outright. Fixed: `targetSession` now takes an explicit `mode: 'split' |
+  'replace'` parameter; the single-pane branch only combines `[existing, sessionId]` when
+  `mode === 'split'` (`openInSplit`), and always replaces to `[sessionId]` for `mode === 'replace'`
+  (`replaceFocused`), matching the original pre-DRY behaviour from a9dfc2b exactly.
+
+#### High -- fixed
+- **The focus-move button's position tracked the PERSISTED `dividerPercent`, not the live divider**
+  (code-reviewer). `onLayoutChanged` "is not called until the pointer has been released" (library
+  docs), so the button stayed at the old position through an entire drag and then jumped, and
+  never moved at all for a layout the library sets itself (a restored percent the `minSize={360}`
+  floor re-clamps, or a window resize). Fixed: a new `liveDividerPercent` local state, updated from
+  the Group's own `onLayoutChange` (fires on every pointer move AND every programmatic layout
+  change, not just completed user interactions) and used only for the button's `left`;
+  `dividerPercent`/`onLayoutChanged` remain the persisted, debounced source of truth for
+  everything else.
+- **An open DeleteDialog could be retargeted to the other Session** (code-reviewer), enabled by
+  round 1's own `key={frontSessionId}` removal (needed to fix the reclaim-focus regression that
+  same round): the narrow-window collapse's single `ChatPane` instance now swaps `sessionId` in
+  place rather than remounting, so opening Delete from a worktree-missing banner on Session A,
+  then triggering any session-swap path while the dialog stayed open (the Ctrl+Shift+\\ chord, a
+  notification reopen, the swap chip), would delete whichever Session the pane had swapped to --
+  not the one Delete was opened for. Fixed: `ChatPane` now closes its own `DeleteDialog` outright
+  on any `sessionId` change (`useEffect(() => setDeleteOpen(false), [sessionId])`), covering every
+  retargeting path at the root, not just the chord.
+- **The focus-move chord/button's real-DOM-focus fix (round 1) silently no-op'd for a stopped
+  Session** (accessibility-auditor): `MessageInput` disables its textarea whenever the Session is
+  stopped, so round 1's plain `textarea.focus()` found nothing to focus, leaving the "Focused"
+  badge/announcement contradicting real DOM focus exactly the way round 1 was meant to fix. Same
+  gap existed in round 1's close-pane refocus. Fixed: a shared `focusPaneContent` helper
+  (`ChatPane.tsx`) now falls back to the first enabled focusable element in the pane (the stopped
+  banner's own Recover/Recreate-worktree/Delete button) whenever the textarea itself is missing or
+  disabled; both call sites use it.
+
+#### Medium -- fixed
+- **The round-1 real-DOM-focus effect pulled focus out of the session list** (code-reviewer):
+  keying off every false->true `isFocused` transition also caught `targetSession`'s FR-009
+  branch (a plain/Ctrl click, or "Open in split", on the row already shown in the unfocused pane
+  -- that flips `focusedIndex` *without* moving DOM focus, specifically so the user can keep
+  working in the session list), yanking keyboard focus into the pane's textarea mid-navigation.
+  Fixed: a new `focusMoveSignal` counter on the split store, bumped only inside `focusOther` (the
+  chord and the divider's own button -- never `focusPane`, never any `targetSession` branch);
+  the effect now keys off a CHANGE in that signal instead of every `isFocused` flip.
+- **FR-018/SC-006 had a hole in the narrow-window collapse** (test-reviewer): `syncVisible`
+  (called by every split-store mutation) always marks BOTH `paneSessionIds` visible, correct
+  while both panes are genuinely on screen -- but the narrow-window collapse renders only
+  `frontSessionId`'s pane, unmounting the other's content entirely, so a turn finishing in the
+  truly-hidden Session was never marked unread, contradicting FR-018's own "neither pane" half.
+  Fixed: a new `App.tsx` effect re-asserts the real rendered visibility set
+  (`canShowSplit ? paneSessionIds : [frontSessionId]`) after every relevant change, always
+  running after whichever store action's own (wide-assuming) `syncVisible` call just fired.
+- **The round-1 button restructure (needed to fix the Separator/`role="separator"`
+  Critical/High pair) left the button as the LAST element in the split's DOM subtree**
+  (code-reviewer), after `split-pane-1`'s entire content, failing WCAG 2.4.3 (Focus Order) even
+  though it visually sits on the divider between the panes. Fixed: moved the button's JSX to sit
+  directly after the `ResizableHandle` (and before `split-pane-1`'s `ResizablePanel`), matching
+  visual order; the library sorts hit regions by `offsetLeft`, not DOM order, so this placement
+  change does not affect the Separator/Panel bookkeeping the earlier fix was protecting.
+
+#### Low -- fixed
+- **The button's centre sat inside the Separator's own widened pointer hit region**
+  (accessibility-auditor): the Separator's capture-phase `pointerdown` listener could start a
+  divider drag before the button's own click handler ran. Fixed:
+  `onPointerDownCapture={(e) => e.stopPropagation()}` on the button.
+- **The button had no visible tooltip** (accessibility-auditor): added
+  `title="Move focus to other pane (Ctrl+Shift+\\)"` alongside its existing `aria-label`.
+- **A pending `setDividerPercent` debounce (~300ms) could be lost if the app quit inside that
+  window** (test-reviewer, SC-003): `split-store.ts` now flushes `persist()` synchronously on
+  both `beforeunload` and `pagehide`.
+- **`main/index.ts`'s `validateSplitAtStartup` catch logged "continuing with no split restored"
+  unconditionally** (code-reviewer): only true for the one failure site where `SettingsStore`'s
+  in-memory `data.split` is already cleared before the write it awaits throws; an earlier throw
+  (e.g. `registry.snapshot()`) leaves `settings.split` untouched, and the renderer's own,
+  independent restore still runs regardless. Reworded to state what actually fails: this
+  launch's stale-id pruning for a restored split.
+- **`init-stores.ts`'s comment implied a `sessions.list` failure fully preserves the persisted
+  split** (code-reviewer): corrected to document that it only survives until the next action
+  that calls `persist()`, which overwrites it with `null` -- an accepted, rare-edge-case
+  degradation, not silently retried.
+
+#### Judged out of scope (re-confirmed, not fixed)
+- **FR-015's single-surviving-Session restart path opens that Session's agent automatically**
+  (test-reviewer, Low: flagged as a possible FR-014/spec-001 "sessions never auto-start"
+  conflict). Re-read data-model.md's own transition table (the `restart, persisted split had one
+  id dropped (FR-015)` row): this is explicit, pre-existing, documented spec behaviour -- "a
+  single pane was never 'restored cold' before this feature; it keeps today's single-pane
+  behaviour, which does open it" -- not a spec-005 gap. No code change.
+
+`pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all pass clean (0 leaks across 371
+files) after this round's fixes.
+
+**Outstanding before this remediation effort is fully closed**: a third 4-reviewer gate against
+this round's fix commit, and a live re-verification pass (scratch Electron instance) of the five
+behaviours this round touched -- single-pane plain-click (the Critical regression), the
+divider-drag button tracking, Delete-dialog-stays-targeted-at-its-own-Session across a chord
+press, FR-018's narrow-collapse unread case, and that a plain/Ctrl click on the unfocused pane's
+own row no longer steals keyboard focus from the session list.

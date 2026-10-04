@@ -16,6 +16,13 @@ interface SplitState {
   /** Session ids whose pane was populated by restoring a persisted split and has not yet been
    * opened by a real user action (research.md Decision 4). */
   pristineIds: Set<string>
+  /** Quality-gate remediation (code-reviewer, round 2, Medium): bumped only by `focusOther` (the
+   * Ctrl+Shift+\ chord and the divider's focus-move button), never by `focusPane` or any
+   * `targetSession` branch (a plain/Ctrl click, "Open in split", a notification). ChatPane's
+   * real-DOM-focus-follows effect keys off a CHANGE in this value, not every `focusedIndex`
+   * flip, so a click on the row already shown in the unfocused pane (FR-009: focuses it without
+   * moving DOM focus) can no longer yank keyboard focus out of the session list. */
+  focusMoveSignal: number
   /** "Open in split" / Ctrl+click (FR-001, FR-009, FR-012, research.md Decision 7). */
   openInSplit(sessionId: string): void
   /** A plain session-row click (FR-008, FR-009). */
@@ -84,6 +91,16 @@ export const useSplitStore = create<SplitState>((set, get) => {
     else persistTimer = setTimeout(run, 300)
   }
 
+  // Quality-gate remediation (test-reviewer, round 2, Low; SC-003): `setDividerPercent`'s ~300ms
+  // debounce can lose a drag made just before the app quits -- a user drags the divider, then
+  // closes the window inside that window, and the pending timer's own write never runs. Flushes
+  // immediately (synchronously, before the page is torn down) on both events Chromium/Electron
+  // fire for a closing window.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => persist())
+    window.addEventListener('pagehide', () => persist())
+  }
+
   function withoutPristine(sessionId: string): Set<string> {
     const pristineIds = new Set(get().pristineIds)
     pristineIds.delete(sessionId)
@@ -101,9 +118,13 @@ export const useSplitStore = create<SplitState>((set, get) => {
 
   // Quality-gate remediation (code-reviewer, Medium, DRY): `openInSplit` and `replaceFocused`
   // shared every branch of data-model.md's transition table except which pane a genuinely-new
-  // session replaces -- the unfocused pane (FR-012) or the focused one (FR-008). One shared
-  // implementation, parameterised by that one difference, so the table is encoded exactly once.
-  function targetSession(sessionId: string, replaceIndex: 0 | 1): void {
+  // session replaces -- the unfocused pane (FR-012) or the focused one (FR-008) -- AND, while
+  // only one pane is open, whether a genuinely-new session opens a second pane (openInSplit)
+  // or replaces the lone pane in place (replaceFocused). Second remediation round
+  // (code-reviewer, Critical): the first version of this DRY merge dropped that single-pane
+  // distinction entirely and always opened a split, turning every plain single-pane session
+  // click into an unwanted split -- mode restores it explicitly.
+  function targetSession(sessionId: string, replaceIndex: 0 | 1, mode: 'split' | 'replace'): void {
     const { paneSessionIds, focusedIndex } = get()
     const pristineIds = withoutPristine(sessionId)
 
@@ -113,7 +134,7 @@ export const useSplitStore = create<SplitState>((set, get) => {
         set({ pristineIds })
         return
       }
-      const next = existing ? [existing, sessionId] : [sessionId]
+      const next = mode === 'split' && existing ? [existing, sessionId] : [sessionId]
       set({ paneSessionIds: next, pristineIds })
       syncVisible(next)
       persist()
@@ -144,17 +165,18 @@ export const useSplitStore = create<SplitState>((set, get) => {
     focusedIndex: 0,
     dividerPercent: 50,
     pristineIds: new Set<string>(),
+    focusMoveSignal: 0,
 
     // Spec 005 (data-model.md): replaces the unfocused pane; the focused pane and its session are unchanged.
     openInSplit: (sessionId) => {
       const { focusedIndex } = get()
-      targetSession(sessionId, focusedIndex === 0 ? 1 : 0)
+      targetSession(sessionId, focusedIndex === 0 ? 1 : 0, 'split')
     },
 
     // Spec 005 (data-model.md): replaces whatever the focused pane showed; the unfocused pane is unaffected.
     replaceFocused: (sessionId) => {
       const { focusedIndex } = get()
-      targetSession(sessionId, focusedIndex === 0 ? 0 : 1)
+      targetSession(sessionId, focusedIndex === 0 ? 0 : 1, 'replace')
     },
 
     focusPane: (index) => {
@@ -165,9 +187,9 @@ export const useSplitStore = create<SplitState>((set, get) => {
     },
 
     focusOther: () => {
-      const { paneSessionIds, focusedIndex } = get()
+      const { paneSessionIds, focusedIndex, focusMoveSignal } = get()
       if (paneSessionIds.length !== 2) return
-      set({ focusedIndex: focusedIndex === 0 ? 1 : 0 })
+      set({ focusedIndex: focusedIndex === 0 ? 1 : 0, focusMoveSignal: focusMoveSignal + 1 })
       persist()
     },
 

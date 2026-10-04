@@ -242,7 +242,14 @@ if (!gotLock) {
     try {
       pendingSplitSurvivorId = await validateSplitAtStartup(manager)
     } catch (err) {
-      console.error('main: validateSplitAtStartup failed, continuing with no split restored', err)
+      // Quality-gate remediation (code-reviewer, round 2, Low): this used to claim "continuing
+      // with no split restored", which only held for the one failure site (`setSplit(null)`
+      // throwing) where `SettingsStore`'s in-memory `data.split` is already cleared before the
+      // write it awaits. An earlier throw (e.g. `registry.snapshot()`) leaves `settings.split`
+      // completely untouched, and the renderer's own, independent `settings.get()`-driven
+      // restore still runs regardless of this catch -- so a stale/archived id this pass was
+      // meant to prune (FR-015) may still be offered this launch.
+      console.error('main: validateSplitAtStartup failed; stale-id pruning for a restored split did not run this launch', err)
     }
 
     // T100: the one real application menu (accelerators work regardless of the merged top row

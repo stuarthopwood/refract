@@ -89,7 +89,15 @@ export function initStores(): void {
     // when `sessions.list` genuinely loaded -- restoring against the `[]` FALLBACK (used only
     // when that call itself failed) would make every restored pane's `ChatPane` see
     // `session === undefined`, triggering the FR-016 "deleted" effect and silently erasing a
-    // perfectly valid persisted split from settings.json on a transient list failure.
+    // perfectly valid persisted split from settings.json on a transient list failure. Round 2
+    // (code-reviewer, Low): this skip is accepted degradation, not a deferred retry -- on a
+    // `sessions.list` failure the split stays un-restored for this run, and `settings.json`'s
+    // own on-disk copy survives only until the next action that calls `persist()` (any single-
+    // pane targeting action, a divider drag, etc.), which overwrites it with `null`. A failed
+    // initial `sessions.list` is already a degraded-start condition the user can see and retry
+    // (the Readiness/empty-session-list screen); re-restoring after a later successful
+    // `refresh()` would need its own one-shot "haven't restored yet" flag, judged out of
+    // proportion for this already-rare case.
     if (sessionsLoad.ok) {
       useSplitStore.getState().restoreFromSettings(settingsLoad.value.split)
     }

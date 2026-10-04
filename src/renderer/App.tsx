@@ -49,6 +49,19 @@ export function App() {
   const dividerPercent = useSplitStore((state) => state.dividerPercent)
   const subagentPanelRef = useRef<PanelImperativeHandle>(null)
   const [chatWidthPx, setChatWidthPx] = useState<number>(Number.POSITIVE_INFINITY)
+  // Quality-gate remediation (code-reviewer, round 2, High): the focus-move button's `left` was
+  // reading the PERSISTED `dividerPercent`, which `onLayoutChanged` only updates once a drag or
+  // keyboard resize finishes (the library's own docs: "not called until the pointer has been
+  // released") -- so the button stayed at the old position for the whole drag, then jumped, and
+  // never moved at all for a layout the library sets itself (a restored `dividerPercent` the
+  // `minSize={360}` floor re-clamps, or a window resize). Tracks the Group's own `onLayoutChange`
+  // instead (fires on every pointer move AND every programmatic layout change, not just completed
+  // user interactions) purely for the button's own position; `dividerPercent`/`onLayoutChanged`
+  // remain the persisted, debounced source of truth for everything else.
+  const [liveDividerPercent, setLiveDividerPercent] = useState(dividerPercent)
+  useEffect(() => {
+    setLiveDividerPercent(dividerPercent)
+  }, [dividerPercent])
 
   const isSplit = paneSessionIds.length === 2
   const canShowSplit = chatWidthPx >= MIN_SPLIT_WIDTH_PX
@@ -82,6 +95,26 @@ export function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isSplit])
+
+  // Quality-gate remediation (test-reviewer, round 2, Medium): FR-018 ("a session shown in
+  // either pane counts as viewed") is implemented by `split-store.ts`'s own `syncVisible` calls,
+  // which always mark BOTH `paneSessionIds` visible -- correct while both panes are genuinely
+  // on screen, but during the narrow-window collapse only `frontSessionId`'s pane actually
+  // renders (the other pane's content is unmounted, reachable only via the swap chip), so a turn
+  // finishing in the truly-hidden Session was never marked unread, contradicting FR-018/SC-006's
+  // own "neither pane" half. Re-asserts the REAL rendered visibility set after every relevant
+  // change; this always runs after whichever store action's own (wide-assuming) `syncVisible`
+  // call just fired, narrowing it back down to one id whenever the collapse is active.
+  useEffect(() => {
+    if (!isSplit) return
+    const visible = canShowSplit ? paneSessionIds : frontSessionId ? [frontSessionId] : []
+    window.refract.sessions.setVisible(visible).then(
+      (result) => {
+        if (!result.ok) console.error('sessions.setVisible failed', result.error)
+      },
+      (err: unknown) => console.error('sessions.setVisible threw', err)
+    )
+  }, [isSplit, canShowSplit, frontSessionId, paneSessionIds])
 
   // Keeps the subagents Panel mounted at all times (collapsible/collapsedSize=0, same pattern
   // as SessionList's own left-nav panel) rather than conditionally mounting/unmounting it --
@@ -157,7 +190,11 @@ export function App() {
                 ) : (
                   <ResizablePanelGroup
                     orientation="horizontal"
-                    className="h-full"
+                    className="relative h-full"
+                    onLayoutChange={(layout) => {
+                      const percent = layout['split-pane-0']
+                      if (typeof percent === 'number') setLiveDividerPercent(percent)
+                    }}
                     onLayoutChanged={(layout, meta) => {
                       // research.md Decision 5: only a real drag or keyboard resize persists;
                       // the initial/restored mount's own layout-settle call is not a user
@@ -174,29 +211,45 @@ export function App() {
                         <ChatPane sessionId={paneA} paneIndex={0} reservesWindowControls={false} />
                       </ErrorBoundary>
                     </ResizablePanel>
-                    {/* Quality-gate remediation (accessibility-auditor, High x2): the focus-move
-                        button previously rendered INSIDE the Separator (`handleContent`), which
-                        (a) made it a child of `role="separator"`, a widget whose children ARIA
-                        treats as presentational, so screen readers announced only the separator
-                        and lost the button's own name entirely, and (b) let the library's own
-                        `keydown` handler on the Separator (registered for arrow keys/Home/End/
-                        Enter) catch and `preventDefault` the button's native Enter-activates-click
-                        behaviour before it ever fired. Now a true sibling, absolutely positioned
-                        over the handle from a `relative` wrapper -- not a descendant of the
-                        separator at all -- so it keeps its own name/role and its own native Enter
-                        handling. */}
-                    <div className="relative flex w-px shrink-0">
-                      <ResizableHandle withHandle aria-label="Resize chat panes" />
-                      <button
-                        type="button"
-                        className="absolute left-1/2 top-1/2 z-20 flex size-6 -translate-x-1/2 -translate-y-10 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                        aria-label="Move focus to the other pane"
-                        aria-keyshortcuts="Control+Shift+\"
-                        onClick={() => useSplitStore.getState().focusOther()}
-                      >
-                        <ArrowLeftRightIcon aria-hidden className="size-3.5" />
-                      </button>
-                    </div>
+                    <ResizableHandle withHandle aria-label="Resize chat panes" />
+                    {/* Quality-gate remediation (accessibility-auditor, High x2; then a real
+                        regression caught live during remediation re-verification; then a Tab-order
+                        regression from the code-reviewer, round 2, Medium): the focus-move button
+                        first lived INSIDE the Separator (`handleContent`), which made it a child of
+                        `role="separator"` (ARIA: children presentational -- screen readers lost its
+                        name) and let the library's own `keydown` handler on the Separator swallow
+                        the button's native Enter activation. Wrapping the Separator itself in a
+                        `relative` DIV sibling-fixed both of those but silently broke the library's
+                        OWN arrow-key resize (confirmed live: 15x ArrowLeft on a correctly-focused,
+                        correctly-labelled handle produced zero pixel change) -- the Separator must
+                        stay a DIRECT child of this Group for its internal layout bookkeeping. This
+                        button is a true sibling of both ResizablePanels and the Separator (not
+                        wrapping anything), absolutely positioned via the Group's own `relative` root
+                        at the live divider position -- not a descendant of the separator, and the
+                        Separator's own DOM position in the Group is completely unchanged from the
+                        library's expectations. It sits here, between the Separator and the second
+                        Panel, so Tab order follows the divider's visual position (pane 0 ->
+                        Separator -> this button -> pane 1) instead of landing after the entire
+                        second pane's own content; the library's hit-region scan sorts by
+                        `offsetLeft`, not DOM order, so this placement does not affect it. */}
+                    <button
+                      type="button"
+                      className="absolute top-1/2 z-20 flex size-6 -translate-x-1/2 -translate-y-10 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      style={{ left: `${liveDividerPercent}%` }}
+                      title="Move focus to other pane (Ctrl+Shift+\)"
+                      aria-label="Move focus to the other pane"
+                      aria-keyshortcuts="Control+Shift+\"
+                      // Quality-gate remediation (accessibility-auditor, round 2, Low): this
+                      // button's centre sits inside the Separator's own widened pointer hit
+                      // region (`resizeTargetMinimumSize`), whose capture-phase `pointerdown`
+                      // listener would otherwise start a divider drag before the button's own
+                      // click handler ever runs. Stops that at the capture phase so a click here
+                      // always activates the button, never the drag.
+                      onPointerDownCapture={(event) => event.stopPropagation()}
+                      onClick={() => useSplitStore.getState().focusOther()}
+                    >
+                      <ArrowLeftRightIcon aria-hidden className="size-3.5" />
+                    </button>
                     <ResizablePanel id="split-pane-1" defaultSize={`${100 - dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>
                         <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls />

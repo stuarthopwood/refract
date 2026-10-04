@@ -33,6 +33,27 @@ interface StopInfo {
   detail?: string
 }
 
+/** Quality-gate remediation (accessibility-auditor, round 2, High): a stopped Session
+ * (`agent-exited`/`worktree-missing`/`start-failed`) renders MessageInput's textarea `disabled`
+ * (MessageInput.tsx), so a plain `textarea?.focus()` silently no-ops there -- both the focus-move
+ * chord/button and the close-pane refocus used that one selector, so both regressed identically
+ * for a stopped target pane. Falls back to the first enabled focusable element in the pane (the
+ * stopped-Session banner's Recover/Recreate worktree button) so a focus move is never silently
+ * swallowed. */
+function focusPaneContent(container: HTMLElement | null): void {
+  if (!container) return
+  const textarea = container.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')
+  if (textarea) {
+    textarea.focus()
+    return
+  }
+  container
+    .querySelector<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    )
+    ?.focus()
+}
+
 /** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
  * contracts/ipc.md) out to the transcript, queue, and pending-request stores for that Session.
  * Shared by ChatPane, ConversationSwitcher, and MessageInput's "not-started" open-then-send path. */
@@ -102,6 +123,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
   const isSplit = useSplitStore((s) => s.paneSessionIds.length === 2)
   const isFocused = useSplitStore((s) => s.paneSessionIds.length < 2 || s.focusedIndex === paneIndex)
+  const focusMoveSignal = useSplitStore((s) => s.focusMoveSignal)
   const focusPane = useSplitStore((s) => s.focusPane)
   const closePane = useSplitStore((s) => s.closePane)
   const openInSplit = useSplitStore((s) => s.openInSplit)
@@ -109,6 +131,15 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
+  // Quality-gate remediation (code-reviewer, round 2, High): removing `key={frontSessionId}`
+  // from App.tsx's single-pane `ChatPane` (restoring reclaim-focus-on-switch, a separate fix
+  // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
+  // the narrow-window collapse and via a notification's `ui:open-session`. An open DeleteDialog
+  // reads the live `session` prop, so it would then delete whatever Session this pane swapped
+  // to, not the one it was opened for. Closes it outright on any sessionId change.
+  useEffect(() => {
+    setDeleteOpen(false)
+  }, [sessionId])
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
   // Tracks whether focus is currently somewhere inside the chat pane (the message textarea,
@@ -208,17 +239,24 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // Quality-gate remediation (accessibility-auditor, High): the keyboard focus-move chord/button
   // (App.tsx) only ever updated `focusedIndex` -- real keyboard/DOM focus stayed wherever it was,
   // so the "Focused" badge and aria-live announcement could silently contradict where typing
-  // actually went. Only reacts to a genuine false->true transition (never the initial mount, and
-  // never when focus is already somewhere inside this pane -- a click/type that triggered
-  // `focusPane` directly already placed DOM focus correctly, so this must not fight it).
-  const wasFocusedRef = useRef(isFocused)
+  // actually went. Round 2 (accessibility-auditor, High): the plain `textarea.focus()` this first
+  // shipped with silently no-op'd whenever the target pane's Session is stopped (MessageInput
+  // disables the textarea then) -- `focusPaneContent` now falls back to the stopped banner's own
+  // button. Round 2 (code-reviewer, Medium): keying this off every false->true `isFocused`
+  // transition also fired for `targetSession`'s FR-009 branch (a plain/Ctrl click, or "Open in
+  // split", on the row already shown in the unfocused pane -- that only flips `focusedIndex`,
+  // deliberately WITHOUT moving DOM focus, so the user can keep working in the session list),
+  // yanking keyboard focus out of the session list into this pane's textarea. Now keys off
+  // `focusMoveSignal` instead, which only `focusOther` (the chord and this pane's own button,
+  // App.tsx) ever increments -- never `focusPane`, never any `targetSession` branch.
+  const prevMoveSignalRef = useRef(focusMoveSignal)
   useEffect(() => {
-    const was = wasFocusedRef.current
-    wasFocusedRef.current = isFocused
-    if (!isSplit || !isFocused || was) return
+    const prevSignal = prevMoveSignalRef.current
+    prevMoveSignalRef.current = focusMoveSignal
+    if (!isSplit || !isFocused || prevSignal === focusMoveSignal) return
     if (chatPaneRef.current?.contains(document.activeElement)) return
-    chatPaneRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus()
-  }, [isFocused, isSplit])
+    focusPaneContent(chatPaneRef.current)
+  }, [isFocused, isSplit, focusMoveSignal])
 
   if (!session) {
     return (
@@ -305,9 +343,13 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                 // across this structural layout change (App.tsx swaps the whole subtree), so
                 // there is no previous-instance ref to refocus. Waits one frame for the
                 // survivor's fresh single-pane ChatPane/MessageInput to mount, then focuses its
-                // own message box.
+                // own message box. Round 2 (accessibility-auditor, Medium): falls back past a
+                // disabled textarea (a stopped survivor Session) to the banner's own button,
+                // via the same `focusPaneContent` helper as the focus-move effect above.
                 requestAnimationFrame(() => {
-                  document.querySelector<HTMLTextAreaElement>('[aria-label="Message"]')?.focus()
+                  focusPaneContent(
+                    document.querySelector<HTMLElement>('[role="region"][aria-label$=" chat"]')
+                  )
                 })
               }
             : undefined
