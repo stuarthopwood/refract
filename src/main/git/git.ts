@@ -13,6 +13,7 @@ export type GitErrorCode =
   | 'base-missing'
   | 'path-too-long'
   | 'branch-missing'
+  | 'checkout-failed'
 
 export class GitError extends Error {
   readonly code: GitErrorCode

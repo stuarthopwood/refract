@@ -6,6 +6,8 @@ import type {
   ChatAnswer,
   DiffStat,
   LowMemoryWarning,
+  MergeInput,
+  PullRequestListResult,
   RefractApi,
   Readiness,
   Result,
@@ -13,6 +15,7 @@ import type {
   SessionStatusEvent,
   SessionSummary,
   SlashCommand,
+  SubmitReviewInput,
   TranscriptOp,
   Unsubscribe
 } from '../shared/ipc'
@@ -27,6 +30,7 @@ import type {
   SubagentSummary,
   TranscriptItem
 } from '../shared/model'
+import type { PullRequestDetail } from '../shared/github'
 import type { ThemeId } from '../shared/themes'
 
 // window.refract: the sole renderer-to-main bridge (contracts/ipc.md). The renderer never sees
@@ -124,6 +128,25 @@ const refract: RefractApi = {
     popupMenu: (menuId, x, y) => request<void>(IPC_REQUESTS.WINDOW_POPUP_MENU, menuId, x, y)
   },
 
+  pullRequests: {
+    list: (repositoryId, tab, query) => request<PullRequestListResult>(IPC_REQUESTS.PULL_REQUESTS_LIST, repositoryId, tab, query),
+    detail: (repositoryId, number) => request<PullRequestDetail>(IPC_REQUESTS.PULL_REQUESTS_DETAIL, repositoryId, number),
+    comment: (repositoryId, number, body) =>
+      request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_COMMENT, repositoryId, number, body),
+    replyToThread: (repositoryId, number, threadId, body) =>
+      request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_REPLY_TO_THREAD, repositoryId, number, threadId, body),
+    resolveThread: (repositoryId, number, threadId) =>
+      request<void>(IPC_REQUESTS.PULL_REQUESTS_RESOLVE_THREAD, repositoryId, number, threadId),
+    unresolveThread: (repositoryId, number, threadId) =>
+      request<void>(IPC_REQUESTS.PULL_REQUESTS_UNRESOLVE_THREAD, repositoryId, number, threadId),
+    submitReview: (repositoryId, number, input: SubmitReviewInput) =>
+      request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW, repositoryId, number, input),
+    merge: (repositoryId, number, input: MergeInput) =>
+      request<void>(IPC_REQUESTS.PULL_REQUESTS_MERGE, repositoryId, number, input),
+    newSessionFromPullRequest: (repositoryId, number) =>
+      request<Session>(IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST, repositoryId, number)
+  },
+
   theme: {
     preview: (themeId) => request<void>(IPC_REQUESTS.THEME_PREVIEW, themeId),
     set: (themeId) => request<Settings>(IPC_REQUESTS.THEME_SET, themeId)
@@ -135,7 +158,6 @@ const refract: RefractApi = {
   // (`src/main/ipc/theme.ts`) for why this is the one channel in the app that is not
   // `Result<T>`-shaped.
   themeBootstrap: () => ipcRenderer.sendSync(THEME_BOOTSTRAP_CHANNEL) as { theme: ThemeId },
-
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
   onTranscriptPatch: (handler) => on<{ sessionId: string; ops: TranscriptOp[] }>(IPC_EVENTS.TRANSCRIPT_PATCH, handler),
