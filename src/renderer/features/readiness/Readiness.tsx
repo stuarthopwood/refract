@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import refractHero from '@/assets/brand/refract-hero.png'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import type { Check, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
+import { useHealthStore } from '@/state'
 
 const CHECK_ORDER = ['git', 'omp', 'ompSignedIn'] as const
 
@@ -37,7 +38,9 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
     setChecking(true)
     try {
       const result = await window.refract.readiness.check()
-      setChecks(result.ok ? result.value : checksFromError(result.error))
+      const nextChecks = result.ok ? result.value : checksFromError(result.error)
+      setChecks(nextChecks)
+      useHealthStore.getState().setOmpCheck(nextChecks.omp)
     } catch (error) {
       console.debug('[refract] readiness.check: invoke failed', error)
       const failed: Check = { ok: false, hint: 'The check could not run. Try Re-check.' }
