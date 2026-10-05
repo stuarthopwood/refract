@@ -55,7 +55,17 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_GITHUB_LIST, async (): Promise<Result<GitHubAccount[]>> => {
     try {
-      return { ok: true, value: await listGithubAccounts() };
+      const accounts = await listGithubAccounts(() => {
+        // The background cache refresh that just settled may have changed displayName/
+        // avatarDataUrl for one or more accounts -- re-read the (now-updated) cache and push
+        // it, so the renderer picks up the real name/avatar shortly after the FIRST list()
+        // call ever returned them as null, instead of only on some later unrelated list() call.
+        void listGithubAccounts().then(
+          (refreshed) => broadcastGithubChanged(getWindow, refreshed),
+          (err) => console.error('accounts: failed to re-read the GitHub account list after a background cache refresh', err)
+        );
+      });
+      return { ok: true, value: accounts };
     } catch (err) {
       return toGithubError(err);
     }
@@ -170,8 +180,10 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
 /** Flattens `authStatus()` with `profileCache.json`'s cached display fields, then kicks off a
  * background refresh of that cache for every account (research.md decision 5) -- the returned
  * list always reflects whatever was already cached, `null` included; the refresh is for next
- * time, never this call. */
-async function listGithubAccounts(): Promise<GitHubAccount[]> {
+ * time, never this call. `onRefreshed`, if given, fires once every account's background
+ * refresh for THIS call has settled (success or failure, each independently best-effort) --
+ * never awaited by the caller, since the whole point is that list() itself never blocks on it. */
+async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccount[]> {
   const hosts = await authStatus();
   const cache = await getProfileCache();
   const accounts: GitHubAccount[] = hosts.map((entry) => {
@@ -185,8 +197,12 @@ async function listGithubAccounts(): Promise<GitHubAccount[]> {
       avatarDataUrl: cached?.avatarDataUrl ?? null
     };
   });
-  for (const entry of hosts) {
-    void refreshProfileCache(cache, entry.host, entry.login);
+  if (onRefreshed) {
+    void Promise.all(hosts.map((entry) => refreshProfileCache(cache, entry.host, entry.login))).then(onRefreshed);
+  } else {
+    for (const entry of hosts) {
+      void refreshProfileCache(cache, entry.host, entry.login);
+    }
   }
   return accounts;
 }

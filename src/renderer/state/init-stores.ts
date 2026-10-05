@@ -1,5 +1,6 @@
 import type { Repository } from '../../shared/model'
-import type { Result, SessionSummary } from '../../shared/ipc'
+import type { GitHubAccount, Result, SessionSummary } from '../../shared/ipc'
+import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { usePendingRequestsStore } from './pending-requests-store'
@@ -75,16 +76,37 @@ export function initStores(): void {
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })
+  window.refract.onAccountsGithubChanged((accounts) => {
+    useAccountsStore.getState().setGithub(accounts)
+  })
+  window.refract.onAccountsGithubAddProgress((progress) => {
+    useAccountsStore.getState().setAddFlow(progress.status === 'completed' || progress.status === 'cancelled' ? null : progress)
+  })
+  window.refract.onAccountsOmpChanged((providers) => {
+    useAccountsStore.getState().setOmpProviders(providers)
+  })
+  // research.md decision 6 fallback (FINDINGS item 43): omp has no /login or /logout over
+  // rpc-ui in this version, so accounts.omp.signIn/signOut can never actually raise one of
+  // these -- subscribed anyway, typed per contracts/ipc.md, so a future omp version that DOES
+  // support this needs no further wiring here.
+  window.refract.onAccountsOmpRequest(() => {
+    console.debug('[refract] onAccountsOmpRequest: unexpected in the current fallback branch (FINDINGS item 43)')
+  })
+  window.refract.onAccountsOmpRequestResolved(() => {
+    console.debug('[refract] onAccountsOmpRequestResolved: unexpected in the current fallback branch (FINDINGS item 43)')
+  })
 
   void (async () => {
-    const [sessionsLoad, settingsLoad, repositoriesLoad] = await Promise.all([
+    const [sessionsLoad, settingsLoad, repositoriesLoad, githubAccountsLoad] = await Promise.all([
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
       loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
-      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
+      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list'),
+      loadInitial(window.refract.accounts.github.list(), [] as GitHubAccount[], 'accounts.github.list')
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
+    useAccountsStore.getState().setGithub(githubAccountsLoad.value)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
