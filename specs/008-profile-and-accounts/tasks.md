@@ -103,8 +103,22 @@ correctly and are fully keyboard-accessible.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 3.
 
-- [ ] T019 (#303) [US3] Write `ManageAccountsDialog.tsx`'s OMP section: a separately labelled list of `OmpProviderState` (T011) distinct from the GitHub section (FR-016); if T002's probe found `/login`/`/logout` usable over rpc-ui, a Sign in/out action per provider that calls `accounts.omp.signIn/signOut`, renders any `accounts:omp-request` the same way `RequestCard.tsx` renders a Session's pending request (reused, not duplicated), and requires a confirmation naming the provider and warning that running sessions use it before signing out (FR-017); otherwise (the fallback), a read-only list with the "run `/login`/`/logout` in a terminal" instruction (research.md decision 6).
-- [ ] T020 (#308) [US3] Update the docs and verify live: `docs/DESIGN.md` (Manage accounts' OMP section) and `quickstart.md` Story 3 (confirm it matches whichever of T002's two branches was built); then on the built app in an isolated instance: confirm the OMP section is clearly labelled apart from GitHub, and either (probe-usable branch) sign a provider out and back in and confirm the warning and state updates, or (fallback branch) confirm the read-only list and instruction text.
+- [X] T019 (#303) [US3] Write `ManageAccountsDialog.tsx`'s OMP section: a separately labelled list of `OmpProviderState` (T011) distinct from the GitHub section (FR-016); if T002's probe found `/login`/`/logout` usable over rpc-ui, a Sign in/out action per provider that calls `accounts.omp.signIn/signOut`, renders any `accounts:omp-request` the same way `RequestCard.tsx` renders a Session's pending request (reused, not duplicated), and requires a confirmation naming the provider and warning that running sessions use it before signing out (FR-017); otherwise (the fallback), a read-only list with the "run `/login`/`/logout` in a terminal" instruction (research.md decision 6).
+- [X] T020 (#308) [US3] Update the docs and verify live: `docs/DESIGN.md` (Manage accounts' OMP section) and `quickstart.md` Story 3 (confirm it matches whichever of T002's two branches was built); then on the built app in an isolated instance: confirm the OMP section is clearly labelled apart from GitHub, and either (probe-usable branch) sign a provider out and back in and confirm the warning and state updates, or (fallback branch) confirm the read-only list and instruction text.
+  -- Verified live 2026-10-05 (real app, real 80-provider omp install, real mouse/keyboard
+  events through CDP, isolated user-data dir): first open shows the skeleton (aria-busy,
+  "Checking OMP providers…") while a scratch omp process reads the list (~4.7 s direct IPC,
+  ~4-8 s end to end); loaded state shows "2 of 80 providers signed in", the two signed-in
+  providers, and a "Show all 80 providers…" disclosure that expands to the other 78 with
+  "Not signed in"; Check again shows a "Checking…" indicator with the cached rows kept on
+  screen, then a polite "OMP providers: 2 of 80 signed in" announcement; Copy command copies
+  `omp login` through the main-process clipboard and shows "Copied" for 2 s; a bug (the
+  mounted-guard never reset on mount, so React StrictMode's dev double-mount silently
+  disabled the post-refresh announcement/focus-move/Copied state) was found by this pass and
+  fixed in 669d365, together with scrollbar-overlap padding on the collapsed list. The error
+  state was verified by injecting a failure through the store, not a real omp failure.
+  **Not exercised** (fact 8): a real sign-in (needs a person at a terminal and a provider
+  account to sign in to) and a real OMP-missing failure.
 
 **Checkpoint**: run quickstart Story 3. `pnpm typecheck` and `pnpm build` pass.
 

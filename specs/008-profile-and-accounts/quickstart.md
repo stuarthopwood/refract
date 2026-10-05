@@ -67,15 +67,28 @@ pnpm build        # must pass before a change lands on main
    then look at the profile item and Manage accounts. Expect: both say so, offering Sign in (CLI
    present) or the Install action from the readiness screen (CLI missing, spec 006).
 
-**Story 3: manage OMP sign-in beside GitHub (FR-016, FR-017 — unverified until the Phase 1 probe)**
+**Story 3: manage OMP sign-in beside GitHub (FR-016, FR-017)**
 
-1. Open Manage accounts. Expect: a separate, labelled OMP section lists every provider OMP is
-   signed in to, distinct from the GitHub section.
-2. If the Phase 1 probe (research.md decision 6) found `/login`/`/logout` usable over rpc-ui: sign
-   a provider out, confirm the warning names the provider and mentions running sessions, confirm,
-   and confirm the section updates; sign a provider back in and confirm OMP's own flow runs.
-3. If the probe found it unusable: confirm the section is read-only and shows the "run `/login`/
-   `/logout` in a terminal" instruction instead of a non-functional button.
+> `/login`/`/logout` were confirmed NOT drivable over OMP's rpc-ui connection (research.md
+> Decision 6, FINDINGS item 43): this section is read-only, and these steps cannot exercise a real
+> sign-in (it needs a person at a terminal and a provider account to sign in to) or a real
+> OMP-missing failure -- only what is below.
+
+1. Open Manage accounts. Expect: below a separator under the GitHub section, an "OMP provider
+   sign-in" section, labelled apart from GitHub. On first open it shows a skeleton (three rows,
+   "Checking OMP providers…") while a scratch `omp` process reads the list (several seconds);
+   focus stays on the GitHub section's Add account button throughout.
+2. Once loaded. Expect: a summary line ("N of M providers signed in", or "All M providers signed
+   in"), every signed-in provider listed by its raw id with a check icon and "Signed in", and (if
+   any remain) a collapsed "Show all M providers…" disclosure.
+3. Open the disclosure. Expect: it reads "Show signed in only", focus stays on it, and the rest of
+   OMP's providers list below it, each with a minus icon and "Not signed in".
+4. Select **Check again**. Expect: a "Checking…" indicator appears beside it while the still-
+   visible list stays exactly as it was (no loading flash), then a fresh summary.
+5. Select **Copy command**. Expect: its label becomes "Copied" for about 2 seconds, and `omp
+   login` is on the clipboard.
+6. Confirm there is no Sign in or Sign out control anywhere in this section, only the "run `omp
+   login` in a terminal" instruction -- and that it never mentions `/logout`.
 
 **Story 4: the profile menu (FR-018 to FR-024)**
 

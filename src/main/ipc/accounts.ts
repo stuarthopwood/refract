@@ -160,7 +160,7 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_OMP_SIGN_OUT, async (): Promise<Result<{ requestId: string | null }>> => {
     return {
       ok: false,
-      error: { code: 'unsupported', message: 'omp has no /logout command available over rpc-ui (FINDINGS item 43); run omp in a terminal and use /logout there.' }
+      error: { code: 'unsupported', message: "omp has no /logout command available over rpc-ui (FINDINGS item 43); sign out from omp's own interface." }
     };
   });
 

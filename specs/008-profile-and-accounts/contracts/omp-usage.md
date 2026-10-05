@@ -29,12 +29,12 @@ Already proven safe and working (specs/001 FINDINGS item 15, `readiness.ts`'s
 `{ providers: [{ id, authenticated, ... }] }`. `accounts.omp.list()` calls this once per open and
 maps it straight to `OmpProviderState[]` (data-model.md).
 
-## Sign-in/out: UNVERIFIED pending the Phase 1 probe
+## Sign-in/out: resolved -- not drivable over rpc-ui (T002); read-only fallback shipped
 
-Whether `/login` and `/logout` exist as commands this management connection can run, and what
-answering them looks like, is not yet confirmed (research.md decision 6; spec's own Assumptions;
-constitution Principle IV). The Phase 1 probe task (`docs/spike/omp-signin-probe.mjs`) must
-record, before any sign-in/out task relies on it:
+**Result (2026-10-05, T002)**: `/login`/`/logout` do not appear in the management connection's
+`available_commands_update` (docs/spike/FINDINGS.md item 43, research.md decision 6), on either an
+isolated or the real signed-in profile. The fallback below is what shipped; the probe's own
+original questions are kept here for the record:
 
 1. Whether `/login` and `/logout` appear in the management connection's `available_commands_update`.
 2. If so, what sending `{ type: 'prompt', message: '/login', id: '' }` produces: an
@@ -59,10 +59,11 @@ URL to open) is relayed as part of the same request payload's `details`, reusing
 variant's `details: string[]` field for plain informational lines when no actual answer is
 required (for example "Open https://github.com/login/device and enter ABCD-1234").
 
-**If not verified usable**: `accounts.omp.signIn`/`signOut` return error `unsupported`
-(contracts/ipc.md); Manage accounts' OMP section becomes read-only (`get_login_providers` only)
-and shows "Run `omp` in a terminal, then `/login` or `/logout`, to change this." instead of a
-Sign in/out control.
+**Not verified usable (shipped)**: `accounts.omp.signIn`/`signOut` return error `unsupported`
+(contracts/ipc.md); Manage accounts' OMP section is read-only (`get_login_providers` only) and
+shows "To sign in to another provider, run `omp login` in a terminal." with a Copy command button
+-- never a Sign in/out control, and never mentions `/logout` (no terminal counterpart was found
+for it either).
 
 ## Commands this spec does not use
 

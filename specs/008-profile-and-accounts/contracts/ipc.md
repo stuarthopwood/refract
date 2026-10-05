@@ -39,10 +39,10 @@ developer must answer (`accounts:omp-request` below carries its content); `reque
 the command ran to completion with no dialog (for example a provider that was already in the
 requested state). `answer` has the same shape as `chat.answer`'s `answer` parameter
 (`ChatAnswer`, specs/001 contracts/ipc.md), reusing `dialogs.ts`'s existing answer builder.
-`unsupported` is returned for every call in this section when the Phase 1 probe (research.md
-decision 6) found `/login`/`/logout` cannot be driven over rpc-ui; in that case the renderer shows
-the read-only fallback (list only, with the "run `/login`/`/logout` in a terminal" instruction)
-and never calls `signIn`/`signOut`.
+`unsupported` is returned for every call in this section: research.md decision 6 (FINDINGS item
+43) confirmed `/login`/`/logout` cannot be driven over rpc-ui; the renderer shows the read-only
+fallback (list only, with a "run `omp login` in a terminal" instruction -- never `/logout`, which
+has no terminal counterpart in the installed version) and never calls `signIn`/`signOut`.
 
 ### Release notes (FR-023 — What's new)
 
