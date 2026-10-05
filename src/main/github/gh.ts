@@ -221,7 +221,9 @@ export type SearchQualifierFlag = '--author' | '--assignee' | '--involves' | '--
  *
  * Critical remediation (round 4, new regression): the round-3 fix above pushed `--`/`query`
  * BEFORE `--json`/`SEARCH_FIELDS`, so `gh` read `--json` and the field list as literal search
- * text instead of flags -- every non-empty query on 4 of 5 filter tabs returned no results.
+ * text instead of flags -- gh printed empty stdout, so ghJson's JSON.parse('') threw and
+ * every non-empty query on 4 of 5 filter tabs errored with 'github-failed: gh returned invalid
+ * JSON' instead of showing results.
  * Every flag, `--json` included, MUST be pushed before `--`; `--` and `query` must be the
  * final two argv entries, confirmed live against a real repository. */
 export async function searchPullRequests(repoPath: string, qualifierFlag: SearchQualifierFlag, query?: string): Promise<GhSearchEntry[]> {
