@@ -17,6 +17,8 @@ export interface AddAccountPanelProps {
   /** True from the moment `addAccountStart()`'s own request is sent until either it resolves
    *  with a `flowId` (at which point `flow` becomes non-null) or fails outright. */
   starting: boolean
+  /** True from the Cancel click until the flow's process has actually ended (about 2 s). */
+  cancelling?: boolean
   onCancel(flowId: string): void
   onRetry(): void
 }
@@ -28,7 +30,7 @@ function spellOutCode(code: string): string {
   return code.replace(/-/g, '').split('').join(' ')
 }
 
-export function AddAccountPanel({ flow, starting, onCancel, onRetry }: AddAccountPanelProps) {
+export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, onRetry }: AddAccountPanelProps) {
   const [copied, setCopied] = useState(false)
   const [copyPolite, announceCopyPolite] = useClearedAnnouncement()
   const [copyAssertive, announceCopyAssertive] = useClearedAnnouncement()
@@ -141,8 +143,16 @@ export function AddAccountPanel({ flow, starting, onCancel, onRetry }: AddAccoun
               Open the GitHub device page
             </a>
             <div className="flex justify-end">
-              <Button ref={cancelRef} variant="ghost" size="sm" onClick={() => flow && onCancel(flow.flowId)}>
-                Cancel
+              {/* `aria-disabled`, not `disabled`: a disabled focused button drops focus to <body>. */}
+              <Button
+                ref={cancelRef}
+                variant="ghost"
+                size="sm"
+                aria-disabled={cancelling || undefined}
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                onClick={() => flow && !cancelling && onCancel(flow.flowId)}
+              >
+                {cancelling ? 'Cancelling…' : 'Cancel'}
               </Button>
             </div>
           </>
@@ -150,8 +160,16 @@ export function AddAccountPanel({ flow, starting, onCancel, onRetry }: AddAccoun
 
         {!code && status !== 'failed' && (
           <div className="flex justify-end">
-            <Button ref={cancelRef} variant="ghost" size="sm" onClick={() => flow && onCancel(flow.flowId)} disabled={!flow}>
-              Cancel
+            <Button
+              ref={cancelRef}
+              variant="ghost"
+              size="sm"
+              aria-disabled={cancelling || undefined}
+              className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+              onClick={() => flow && !cancelling && onCancel(flow.flowId)}
+              disabled={!flow}
+            >
+              {cancelling ? 'Cancelling…' : 'Cancel'}
             </Button>
           </div>
         )}

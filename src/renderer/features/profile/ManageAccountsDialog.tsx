@@ -230,7 +230,7 @@ export function ManageAccountsDialog({
               </Button>
             </div>
 
-            <AddAccountPanel flow={addFlow} starting={starting} onCancel={handleCancelFlow} onRetry={() => void startAddFlow()} />
+            <AddAccountPanel flow={addFlow} starting={starting} cancelling={cancellingFlow} onCancel={handleCancelFlow} onRetry={() => void startAddFlow()} />
 
             {orderedAccounts.length === 0 ? (
               <div className="flex flex-col gap-1">

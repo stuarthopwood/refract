@@ -6,7 +6,11 @@ import { execFile, spawn, type ExecFileException, type ChildProcessWithoutNullSt
 import { EventEmitter } from 'node:events'
 import { resolveExecutable, taskkillPath } from '../process/executables'
 
-const CANCEL_GRACE_MS = 10_000
+// `gh auth login --web` does not exit on stdin EOF while it polls for authorisation (measured: still
+// running after 10 s, only `taskkill` ended it), so a long grace just makes Cancel feel broken. Keep a
+// short one so a process that does exit on its own is not force-killed needlessly (contracts/ipc.md:
+// "after a short grace"). A pre-completion kill never touches the stored credential (T001).
+const CANCEL_GRACE_MS = 750
 
 export type GhErrorCode = 'gh-not-found' | 'gh-failed'
 

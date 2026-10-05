@@ -26,7 +26,7 @@ import path from 'node:path';
 import type { RpcCommand } from '../../shared/frames';
 import { IPC_EVENTS, IPC_REQUESTS } from '../../shared/ipc';
 import type { GitHubAccount, GitHubAddFlowProgress, IpcErrorCode, OmpProviderState, Result } from '../../shared/ipc';
-import type { GhLoginExitInfo, GhLoginFlow } from '../github/cli';
+import type { GhAuthHostEntry, GhLoginExitInfo, GhLoginFlow } from '../github/cli';
 import { GhError, authLoginCancel, authLoginStart, authLogout, authStatus, authSwitch } from '../github/cli';
 import { fetchAvatar, fetchProfile } from '../github/profile';
 import { openExternalSafe } from '../index';
@@ -117,11 +117,11 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
   });
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_GITHUB_SWITCH, async (_event, host: unknown, login: unknown): Promise<Result<GitHubAccount[]>> => {
-    return runGithubAccountMutation(host, login, getWindow, authSwitch);
+    return runGithubAccountMutation(host, login, getWindow, authSwitch, projectSwitch);
   });
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_GITHUB_SIGN_OUT, async (_event, host: unknown, login: unknown): Promise<Result<GitHubAccount[]>> => {
-    return runGithubAccountMutation(host, login, getWindow, authLogout);
+    return runGithubAccountMutation(host, login, getWindow, authLogout, projectSignOut);
   });
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_OMP_LIST, async (): Promise<Result<OmpProviderState[]>> => {
@@ -177,16 +177,9 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
   });
 }
 
-/** Flattens `authStatus()` with `profileCache.json`'s cached display fields, then kicks off a
- * background refresh of that cache for every account (research.md decision 5) -- the returned
- * list always reflects whatever was already cached, `null` included; the refresh is for next
- * time, never this call. `onRefreshed`, if given, fires once every account's background
- * refresh for THIS call has settled (success or failure, each independently best-effort) --
- * never awaited by the caller, since the whole point is that list() itself never blocks on it. */
-async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccount[]> {
-  const hosts = await authStatus();
-  const cache = await getProfileCache();
-  const accounts: GitHubAccount[] = hosts.map((entry) => {
+/** Flattens the CLI's account list with `profileCache.json`'s cached display fields. */
+function toGithubAccounts(hosts: GhAuthHostEntry[], cache: ProfileCacheStore): GitHubAccount[] {
+  return hosts.map((entry) => {
     const cached = cache.get(entry.host, entry.login);
     return {
       host: entry.host,
@@ -197,6 +190,18 @@ async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccou
       avatarDataUrl: cached?.avatarDataUrl ?? null
     };
   });
+}
+
+/** Flattens `authStatus()` with `profileCache.json`'s cached display fields, then kicks off a
+ * background refresh of that cache for every account (research.md decision 5) -- the returned
+ * list always reflects whatever was already cached, `null` included; the refresh is for next
+ * time, never this call. `onRefreshed`, if given, fires once every account's background
+ * refresh for THIS call has settled (success or failure, each independently best-effort) --
+ * never awaited by the caller, since the whole point is that list() itself never blocks on it. */
+async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccount[]> {
+  const hosts = await authStatus();
+  const cache = await getProfileCache();
+  const accounts = toGithubAccounts(hosts, cache);
   if (onRefreshed) {
     void Promise.all(hosts.map((entry) => refreshProfileCache(cache, entry.host, entry.login))).then(onRefreshed);
   } else {
@@ -229,6 +234,23 @@ async function refreshProfileCache(cache: ProfileCacheStore, host: string, login
   }
 }
 
+/** What `gh auth switch` leaves behind: on that host the chosen account is active, every other
+ * account (and every other host) unchanged. */
+function projectSwitch(hosts: GhAuthHostEntry[], host: string, login: string): GhAuthHostEntry[] {
+  return hosts.map((entry) => (entry.host === host ? { ...entry, active: entry.login === login } : entry));
+}
+
+/** What `gh auth logout` leaves behind: the account is gone and, when it was the active one, the
+ * CLI activates the first remaining account on that host in its own listing order (verified live
+ * against a two- and three-account config, including a non-alphabetical order). */
+function projectSignOut(hosts: GhAuthHostEntry[], host: string, login: string): GhAuthHostEntry[] {
+  const removed = hosts.find((entry) => entry.host === host && entry.login === login);
+  const remaining = hosts.filter((entry) => entry !== removed);
+  if (!removed?.active) return remaining;
+  const successor = remaining.find((entry) => entry.host === host);
+  return successor ? remaining.map((entry) => (entry === successor ? { ...entry, active: true } : entry)) : remaining;
+}
+
 /** Shared body of `switch`/`signOut`: validate the pair against the current `authStatus()` list
  * (contracts/ipc.md "`account-not-found`") before ever invoking the CLI, run the mutation, then
  * return and broadcast the refreshed list. */
@@ -236,7 +258,8 @@ async function runGithubAccountMutation(
   host: unknown,
   login: unknown,
   getWindow: () => BrowserWindow | undefined,
-  mutate: (host: string, login: string) => Promise<void>
+  mutate: (host: string, login: string) => Promise<void>,
+  project: (hosts: GhAuthHostEntry[], host: string, login: string) => GhAuthHostEntry[]
 ): Promise<Result<GitHubAccount[]>> {
   if (typeof host !== 'string' || typeof login !== 'string') {
     return { ok: false, error: { code: 'invalid-argument', message: 'accounts.github expects string host/login arguments' } };
@@ -247,9 +270,17 @@ async function runGithubAccountMutation(
       return { ok: false, error: { code: 'account-not-found', message: `No GitHub CLI account ${login}@${host}` } };
     }
     await mutate(host, login);
-    const refreshed = await listGithubAccounts();
-    broadcastGithubChanged(getWindow, refreshed);
-    return { ok: true, value: refreshed };
+    // The CLI has confirmed the change (exit 0), so answer from what it did rather than re-running
+    // `gh auth status`, which re-validates every token over the network (about 0.5 s) and pushed the
+    // profile item past the 1 s FR-010 allows. A background read then reconciles with the CLI's
+    // real state and broadcasts any difference.
+    const projected = toGithubAccounts(project(hosts, host, login), await getProfileCache());
+    broadcastGithubChanged(getWindow, projected);
+    void listGithubAccounts().then(
+      (actual) => broadcastGithubChanged(getWindow, actual),
+      (err) => console.error('accounts: failed to reconcile the GitHub account list after a mutation', err)
+    );
+    return { ok: true, value: projected };
   } catch (err) {
     return toGithubError(err);
   }
