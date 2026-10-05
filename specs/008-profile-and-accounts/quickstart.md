@@ -50,20 +50,24 @@ pnpm build        # must pass before a change lands on main
 1. Open Manage accounts. Expect: every GitHub CLI account is listed under "GitHub accounts", the
    active one marked by both the word "Active" and the left accent border (never colour alone).
 2. Select **Add account**. Expect: the one-time code appears, grouped as `XXXX-XXXX`, with a
-   **Copy code** button (copies the ungrouped code; does not auto-copy) and a link to open the
+   **Copy code** button (copies the code exactly as shown; `gh` usually copies it already) and a link to open the
    GitHub device page directly; the system browser also opens through the GitHub CLI's own device
    flow, and the panel shows progress until you complete it in the browser or select **Cancel**
    (shows "Cancelling…" for about 2 seconds, then returns).
 3. With two accounts signed in, select **Switch** on the inactive row. Expect: that row shows a
    spinning "Switching…" state, then becomes active -- the profile item's name and avatar update
    within 1 second (SC-002) and the active marker never moves before `gh` itself confirms.
-4. Select **Sign out** on the active row while two remain. Expect: a confirmation reading "Sign
+4. Select **Sign out** on the row that is not active. Expect: a confirmation reading "Sign out
+   @<login> on <host>? Your other accounts will remain signed in."; confirming signs it out and
+   the active account stays active.
+5. Select **Add account** again, so two accounts are signed in once more.
+6. Select **Sign out** on the active row while two remain. Expect: a confirmation reading "Sign
    out @<login> on <host>? @<next-login> will become the active account."; confirming signs it
    out and makes the named account active.
-5. Sign out the one remaining account. Expect: the confirmation reads "Sign out @<login> on
+7. Sign out the one remaining account. Expect: the confirmation reads "Sign out @<login> on
    <host>? No account will remain active."; confirming shows "No GitHub account is signed in" in
    Manage accounts and returns the profile item and menu to the signed-out state (Story 1).
-6. Run `gh auth logout` for every account outside Refract, or uninstall the GitHub CLI from PATH,
+8. Run `gh auth logout` for every account outside Refract, or uninstall the GitHub CLI from PATH,
    then look at the profile item and Manage accounts. Expect: both say so, offering Sign in (CLI
    present) or the Install action from the readiness screen (CLI missing, spec 006).
 
@@ -92,14 +96,11 @@ pnpm build        # must pass before a change lands on main
 
 **Story 4: the profile menu (FR-018 to FR-024)**
 
-> Two items described by the spec are NOT in this menu yet, by design, not oversight: **Manage
-> sessions** lands with the screen it opens (Phase 7); the update entry lands once spec 006 ships
-> `updates.get()`/`updates:changed` (neither exists yet). Both have a reserved, commented slot in
-> the code at the position they will appear.
+> Manage sessions lands with the screen it opens (Phase 7).
 
 1. Open the profile menu. Expect: items appear in this order: the account header, Manage
-   accounts, Theme, Keyboard shortcuts, Health check, What's new, then Sign out, visually set
-   apart by separators.
+   accounts, Manage sessions, Theme, Keyboard shortcuts, Health check, What's new, then Sign out,
+   visually set apart by separators.
 2. Open the Theme submenu. Expect: every built-in dark preset with its real swatch colour, the
    active one marked by a check icon and the word "Current". Choose a different preset. Expect:
    it applies and persists immediately (no Save/Cancel step, unlike Settings' Appearance

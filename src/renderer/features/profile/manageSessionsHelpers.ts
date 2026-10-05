@@ -1,6 +1,6 @@
 // Pure helpers for the Manage sessions screen (spec 008 FR-025, T026): filtering, sorting, and
-// the count/summary wording, kept tiny and tested with a throwaway script rather than a
-// framework test (matching this spec's own small-renderer-helper convention, e.g.
+// the count/summary wording, kept tiny and exported as plain functions for a future test
+// (matching this spec's own small-renderer-helper convention, e.g.
 // src/renderer/lib/account-format.ts).
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
