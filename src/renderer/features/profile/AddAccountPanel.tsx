@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { formatDeviceCode } from '@/lib/account-format'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
+import { notify } from '@/state'
 import type { GitHubAddFlowProgress } from '../../../shared/ipc'
 
 export interface AddAccountPanelProps {
@@ -28,9 +30,12 @@ function spellOutCode(code: string): string {
 
 export function AddAccountPanel({ flow, starting, onCancel, onRetry }: AddAccountPanelProps) {
   const [copied, setCopied] = useState(false)
+  const [copyPolite, announceCopyPolite] = useClearedAnnouncement()
+  const [copyAssertive, announceCopyAssertive] = useClearedAnnouncement()
   const cancelRef = useRef<HTMLButtonElement>(null)
   const copyRef = useRef<HTMLButtonElement>(null)
   const retryRef = useRef<HTMLButtonElement>(null)
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const code = flow?.code ?? ''
   const status = flow?.status
 
@@ -50,22 +55,36 @@ export function AddAccountPanel({ flow, starting, onCancel, onRetry }: AddAccoun
     setCopied(false)
   }, [flow?.flowId])
 
+  useEffect(() => {
+    return () => {
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current)
+    }
+  }, [])
+
   async function handleCopy(): Promise<void> {
-    // The ungrouped code with its own hyphen (if any), exactly as `gh` emits it -- never the
-    // cosmetic XXXX-XXXX grouping, which is a display-only transform.
-    await navigator.clipboard.writeText(code)
+    // The sandboxed renderer denies every Clipboard API permission
+    // (`session.setPermissionRequestHandler` in src/main/index.ts), so this goes straight through
+    // main's own allowlisted clipboard channel rather than trying `navigator.clipboard` first.
+    const result = await window.refract.clipboard.writeText(code)
+    if (!result.ok) {
+      notify(result.error)
+      announceCopyAssertive('Could not copy the code')
+      return
+    }
     setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    announceCopyPolite('Code copied')
+    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current)
+    copiedTimeoutRef.current = setTimeout(() => setCopied(false), 2000)
   }
 
   if (!flow && !starting) return null
 
   return (
-    <Card size="sm" className="gap-2">
+    <Card size="sm" className="min-w-0 gap-2">
       <CardHeader>
         <CardTitle>Add GitHub account</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex min-w-0 flex-col gap-3">
         <p className="text-sm text-muted-foreground">Enter this code on GitHub to finish signing in.</p>
 
         {status === 'failed' ? (
@@ -87,8 +106,8 @@ export function AddAccountPanel({ flow, starting, onCancel, onRetry }: AddAccoun
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-3">
-              <div>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="min-w-0">
                 <span className="text-xs text-muted-foreground">One-time code</span>
                 <div className="flex items-center gap-2">
                   <span aria-hidden className="font-code text-xl font-semibold tracking-widest">
@@ -102,7 +121,10 @@ export function AddAccountPanel({ flow, starting, onCancel, onRetry }: AddAccoun
                 {copied ? 'Copied' : 'Copy code'}
               </Button>
               <span aria-live="polite" aria-atomic="true" className="sr-only">
-                {copied ? 'Code copied' : ''}
+                {copyPolite}
+              </span>
+              <span aria-live="assertive" aria-atomic="true" className="sr-only">
+                {copyAssertive}
               </span>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">

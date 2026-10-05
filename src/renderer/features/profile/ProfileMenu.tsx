@@ -45,6 +45,7 @@ export function ProfileMenuContent({ account, githubStatus, onManageAccounts, on
               <span className="truncate text-xs text-muted-foreground">@{account.login} on {account.host}</span>
             </div>
           </DropdownMenuLabel>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={onManageAccounts}>Manage accounts</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={onSignOut}>

@@ -1,6 +1,6 @@
 // Manage accounts (FR-008 to FR-011, FR-014, T016/T017): lists every GitHub CLI account,
 // offers Switch/Sign out per row, and hosts the inline add-account flow (AddAccountPanel.tsx)
-// under its own section header. Sign-out confirmation itself lives one level up, in
+// directly under its own section header. Sign-out confirmation itself lives one level up, in
 // ProfileItem.tsx -- this dialog only asks its caller (`onRequestSignOut`) to open it, since the
 // same confirmation is also reachable from the profile menu's own Sign out item, outside this
 // dialog entirely.
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { initials } from '@/lib/initials'
 import { cn } from '@/lib/utils'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useAccountsStore } from '@/state'
 import type { GitHubAccount } from '../../../shared/ipc'
 import { AddAccountPanel } from './AddAccountPanel'
@@ -29,25 +30,39 @@ export interface ManageAccountsDialogProps {
   /** Asks the caller (ProfileItem.tsx) to open the shared SignOutDialog for `account`; this
    *  dialog never confirms a sign-out itself. */
   onRequestSignOut(account: GitHubAccount): void
+  /** Called on every close (Esc, the X button, or programmatically), after this dialog's own
+   *  close-auto-focus is suppressed -- the caller (ProfileItem.tsx) always returns focus to the
+   *  profile item's name button, since nothing inside this dialog is a better target once it is
+   *  gone. */
+  onCloseFocus?(): void
 }
 
 /** Imperative focus targets ProfileItem.tsx needs after the shared SignOutDialog closes (its own
  *  focus map depends on whether the row that launched it, here, got a new active account or not
- *  -- state this dialog owns, not ProfileItem). */
+ *  -- state this dialog owns, not ProfileItem). Each method returns whether it actually found and
+ *  focused a live element, so the caller can fall back to a different target when the original
+ *  row is gone (e.g. the account it belonged to was just signed out). */
 export interface ManageAccountsDialogHandle {
-  focusAccountSignOutButton(host: string, login: string): void
-  focusAddAccountButton(): void
+  focusAccountSignOutButton(host: string, login: string): boolean
+  focusAddAccountButton(): boolean
 }
 
 function rowKey(host: string, login: string): string {
   return `${host}:${login}`
 }
 
+function focusButton(el: HTMLButtonElement | null | undefined): boolean {
+  if (!el || !document.body.contains(el)) return false
+  el.focus()
+  return true
+}
+
 export function ManageAccountsDialog({
   ref,
   open,
   onOpenChange,
-  onRequestSignOut
+  onRequestSignOut,
+  onCloseFocus
 }: ManageAccountsDialogProps & { ref?: Ref<ManageAccountsDialogHandle> }) {
   const github = useAccountsStore((state) => state.github)
   const githubStatus = useAccountsStore((state) => state.githubStatus)
@@ -56,8 +71,8 @@ export function ManageAccountsDialog({
 
   const [starting, setStarting] = useState(false)
   const [cancellingFlow, setCancellingFlow] = useState(false)
-  const [polite, setPolite] = useState('')
-  const [assertive, setAssertive] = useState('')
+  const [polite, announcePolite] = useClearedAnnouncement()
+  const [assertive, announceAssertive] = useClearedAnnouncement()
 
   const addAccountBtnRef = useRef<HTMLButtonElement>(null)
   const signOutRefs = useRef(new Map<string, HTMLButtonElement>())
@@ -69,10 +84,10 @@ export function ManageAccountsDialog({
 
   useImperativeHandle(ref, () => ({
     focusAccountSignOutButton(host, login) {
-      signOutRefs.current.get(rowKey(host, login))?.focus()
+      return focusButton(signOutRefs.current.get(rowKey(host, login)))
     },
     focusAddAccountButton() {
-      addAccountBtnRef.current?.focus()
+      return focusButton(addAccountBtnRef.current)
     }
   }))
 
@@ -105,8 +120,11 @@ export function ManageAccountsDialog({
       }
     }
     if (addFlow?.status === 'failed') {
-      setAssertive(`Sign-in failed.${addFlow.detail ? ` ${addFlow.detail}` : ''}`)
+      // The detail (e.g. "device code expired") shows on its own muted line in
+      // AddAccountPanel.tsx; it is never glued onto this announced sentence.
+      announceAssertive('Sign-in failed. Check your connection and retry.')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addFlow, cancellingFlow])
 
   // Once the completed flow's new account actually shows up in `github` (it can arrive slightly
@@ -117,15 +135,15 @@ export function ManageAccountsDialog({
     const added = github.find((account) => !before.some((b) => b.host === account.host && b.login === account.login))
     if (!added) return
     pendingAddAnnounceRef.current = false
-    setPolite(`Added GitHub account ${added.displayName ?? added.login}`)
+    announcePolite(`Added GitHub account ${added.displayName ?? added.login}`)
     signOutRefs.current.get(rowKey(added.host, added.login))?.focus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [github])
 
   async function startAddFlow(): Promise<void> {
     if (addFlow || starting) return
     addFlowSnapshotRef.current = github
     setCancellingFlow(false)
-    setAssertive('')
     setStarting(true)
     await useAccountsStore.getState().addAccountStart()
     setStarting(false)
@@ -140,10 +158,10 @@ export function ManageAccountsDialog({
     rowLiRefs.current.get(rowKey(account.host, account.login))?.focus()
     const result = await useAccountsStore.getState().switchAccount(account.host, account.login)
     if (result.ok) {
-      setPolite(`Switched active account to ${account.displayName ?? account.login}`)
+      announcePolite(`Switched active account to ${account.displayName ?? account.login}`)
       signOutRefs.current.get(rowKey(account.host, account.login))?.focus()
     } else {
-      setAssertive(`Could not switch account: ${result.message ?? 'unknown error'}`)
+      announceAssertive(`Could not switch account: ${result.message ?? 'unknown error'}`)
       switchRefs.current.get(rowKey(account.host, account.login))?.focus()
     }
   }
@@ -167,7 +185,14 @@ export function ManageAccountsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-lg" onEscapeKeyDown={handleEscape}>
+      <DialogContent
+        className="min-w-0 sm:max-w-lg"
+        onEscapeKeyDown={handleEscape}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          onCloseFocus?.()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Manage accounts</DialogTitle>
           <DialogDescription>
@@ -176,7 +201,7 @@ export function ManageAccountsDialog({
         </DialogHeader>
 
         {githubStatus === 'missing-cli' ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
             <h3 className="text-sm font-medium">GitHub CLI not found</h3>
             <p className="text-sm text-muted-foreground">Refract signs in through the GitHub CLI so it never stores your token.</p>
             <a
@@ -190,9 +215,9 @@ export function ManageAccountsDialog({
             </a>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">GitHub accounts</h3>
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <h3 className="truncate text-sm font-medium">GitHub accounts</h3>
               <Button
                 ref={addAccountBtnRef}
                 variant={orderedAccounts.length === 0 ? 'default' : 'outline'}
@@ -205,13 +230,15 @@ export function ManageAccountsDialog({
               </Button>
             </div>
 
+            <AddAccountPanel flow={addFlow} starting={starting} onCancel={handleCancelFlow} onRetry={() => void startAddFlow()} />
+
             {orderedAccounts.length === 0 ? (
               <div className="flex flex-col gap-1">
                 <h4 className="text-sm font-medium">No GitHub account is signed in</h4>
                 <p className="text-sm text-muted-foreground">Sign in to review pull requests and check for updates.</p>
               </div>
             ) : (
-              <ul role="list" className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+              <ul role="list" className="flex min-w-0 max-h-64 flex-col gap-2 overflow-y-auto">
                 {orderedAccounts.map((account) => {
                   const key = rowKey(account.host, account.login)
                   const name = account.displayName ?? account.login
@@ -230,7 +257,7 @@ export function ManageAccountsDialog({
                       aria-current={account.active ? 'true' : undefined}
                       aria-busy={busy || undefined}
                       className={cn(
-                        'flex items-center gap-2 rounded-md border border-transparent p-2',
+                        'flex min-w-0 items-center gap-2 rounded-md border border-transparent p-2',
                         account.active && 'border-l-2 border-l-active-indicator'
                       )}
                     >
@@ -239,7 +266,7 @@ export function ManageAccountsDialog({
                         <AvatarFallback>{initials(name)}</AvatarFallback>
                       </Avatar>
                       <div className="flex min-w-0 flex-1 flex-col leading-tight">
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                           <span id={`account-name-${account.host}-${account.login}`} className="truncate text-sm font-medium">
                             {name}
                           </span>
@@ -272,7 +299,7 @@ export function ManageAccountsDialog({
                           </Button>
                         )}
                         {authProblem && account.host !== 'github.com' && (
-                          <span className="text-xs text-muted-foreground">
+                          <span className="min-w-0 break-all text-xs text-muted-foreground">
                             Sign in again from a terminal with gh auth login --hostname {account.host}.
                           </span>
                         )}
@@ -313,8 +340,6 @@ export function ManageAccountsDialog({
                 })}
               </ul>
             )}
-
-            <AddAccountPanel flow={addFlow} starting={starting} onCancel={handleCancelFlow} onRetry={() => void startAddFlow()} />
           </div>
         )}
 

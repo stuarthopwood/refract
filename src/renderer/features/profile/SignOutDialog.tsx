@@ -3,12 +3,11 @@
 // owns the single instance as a sibling of the DropdownMenu, never nested inside menu content --
 // menu items unmount when the menu closes, which would unmount a dialog launched from inside it).
 //
-// Focus-on-close relies on Radix's own default restore-to-previously-focused-element behaviour
-// for the Cancel path (which already lands correctly on either the profile item's name button or
-// the Manage accounts row that opened this, since that is whatever had focus the instant this
-// dialog mounted) -- only the Confirm path needs an explicit override via `onConfirmFocus`, since
-// the account that had focus may no longer be the right place to land (it may have just signed
-// out, or a different account may now be active).
+// Focus-on-close is always explicit via `onCloseFocus`, for BOTH the Cancel/Escape path and the
+// Confirm path: this and ManageAccountsDialog are controlled dialogs with no `Trigger`, so Radix
+// has no trigger ref of its own to fall back to and would otherwise drop focus to `<body>`
+// (confirmed live, not merely assumed). The caller (ProfileItem.tsx) decides the real target,
+// since it alone knows which surface launched this dialog and what the new state looks like.
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
@@ -36,11 +35,11 @@ export interface SignOutDialogProps {
    *  caller announce "Signed out {name}" without this dialog needing to know which surface
    *  (Manage accounts row vs. the profile menu) launched it. */
   onConfirmed(account: GitHubAccount): void
-  /** Called once, right as a successful sign-out starts closing this dialog. Returning `true`
-   *  means the caller already moved focus itself; this dialog then suppresses Radix's own
-   *  close-auto-focus so the two never fight over where focus lands. Returning `false` (or
-   *  omitting the prop) falls back to Radix's default restore. */
-  onConfirmFocus?(account: GitHubAccount): boolean
+  /** Called once, on every close (Cancel, Esc, or a successful Confirm), from this dialog's own
+   *  close-auto-focus. Returning `true` means the caller moved focus itself, so this dialog
+   *  suppresses its own default (there being no Trigger to fall back to). Returning `false` (or
+   *  omitting the prop) leaves focus wherever Radix would otherwise drop it. */
+  onCloseFocus?(outcome: 'confirmed' | 'cancelled', account: GitHubAccount): boolean
 }
 
 function signOutBody(account: GitHubAccount, accounts: GitHubAccount[]): string {
@@ -54,7 +53,7 @@ function signOutBody(account: GitHubAccount, accounts: GitHubAccount[]): string 
   return `Sign out @${account.login} on ${account.host}? No account will remain active.`
 }
 
-export function SignOutDialog({ account, accounts, onOpenChange, onConfirmed, onConfirmFocus }: SignOutDialogProps) {
+export function SignOutDialog({ account, accounts, onOpenChange, onConfirmed, onCloseFocus }: SignOutDialogProps) {
   const [signingOut, setSigningOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -109,9 +108,9 @@ export function SignOutDialog({ account, accounts, onOpenChange, onConfirmed, on
           cancelRef.current?.focus()
         }}
         onCloseAutoFocus={(event) => {
-          if (!justConfirmedRef.current) return
+          const outcome = justConfirmedRef.current ? 'confirmed' : 'cancelled'
           justConfirmedRef.current = false
-          if (onConfirmFocus?.(displayAccount)) {
+          if (onCloseFocus?.(outcome, displayAccount)) {
             event.preventDefault()
           }
         }}

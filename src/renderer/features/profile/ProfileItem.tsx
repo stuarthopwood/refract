@@ -16,6 +16,11 @@
 // `DropdownMenu` itself is `modal={false}`: Radix's modal dropdown can leave
 // `document.body.style.pointerEvents` stuck at `'none'` when a Dialog opens immediately after it
 // closes (a known Radix interaction), which this avoids entirely rather than working around it.
+//
+// Focus-on-close for BOTH dialogs is explicit (verified live, not assumed): neither is given a
+// `Trigger`, so Radix's own default close-auto-focus has no trigger ref to fall back to and
+// drops focus to `<body>` rather than restoring it anywhere. `handleSignOutCloseFocus` and
+// `ManageAccountsDialog`'s `onCloseFocus` are this component's own replacement for that default.
 import { useRef, useState } from 'react'
 import { SettingsIcon } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -23,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { initials } from '@/lib/initials'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useAccountsStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/ipc'
@@ -50,9 +56,16 @@ export function ProfileItem() {
   const [manageOpen, setManageOpen] = useState(false)
   const [signOutTarget, setSignOutTarget] = useState<GitHubAccount | null>(null)
   const [signOutFromMenu, setSignOutFromMenu] = useState(false)
-  const [signOutAnnounce, setSignOutAnnounce] = useState('')
+  const [signOutAnnounce, announceSignOut] = useClearedAnnouncement()
   const nameButtonRef = useRef<HTMLButtonElement>(null)
   const manageAccountsRef = useRef<ManageAccountsDialogHandle>(null)
+
+  function focusNameButton(): boolean {
+    const el = nameButtonRef.current
+    if (!el || !document.body.contains(el)) return false
+    el.focus()
+    return true
+  }
 
   function handleSignInFromMenu(): void {
     setManageOpen(true)
@@ -75,21 +88,29 @@ export function ProfileItem() {
   }
 
   function handleSignOutConfirmed(confirmedAccount: GitHubAccount): void {
-    setSignOutAnnounce(`Signed out ${confirmedAccount.displayName ?? confirmedAccount.login}`)
+    announceSignOut(`Signed out ${confirmedAccount.displayName ?? confirmedAccount.login}`)
   }
 
-  function handleSignOutConfirmFocus(): boolean {
+  /** The shared SignOutDialog's own `onCloseFocus`: launched from the profile menu always
+   *  returns to the name button; launched from a Manage accounts row returns to that SAME row's
+   *  Sign out button on Cancel/Esc (falling back to Add account if the row is gone), or to the
+   *  new active row's Sign out button (or Add account, if none remain) on Confirm. */
+  function handleSignOutCloseFocus(outcome: 'confirmed' | 'cancelled', confirmedAccount: GitHubAccount): boolean {
     if (signOutFromMenu) {
-      nameButtonRef.current?.focus()
-      return true
+      return focusNameButton()
+    }
+    if (outcome === 'cancelled') {
+      return (
+        manageAccountsRef.current?.focusAccountSignOutButton(confirmedAccount.host, confirmedAccount.login) ||
+        manageAccountsRef.current?.focusAddAccountButton() ||
+        false
+      )
     }
     const newActive = useAccountsStore.getState().github.find((candidate) => candidate.active)
-    if (newActive) {
-      manageAccountsRef.current?.focusAccountSignOutButton(newActive.host, newActive.login)
-    } else {
-      manageAccountsRef.current?.focusAddAccountButton()
+    if (newActive && manageAccountsRef.current?.focusAccountSignOutButton(newActive.host, newActive.login)) {
+      return true
     }
-    return true
+    return manageAccountsRef.current?.focusAddAccountButton() ?? false
   }
 
   return (
@@ -145,13 +166,14 @@ export function ProfileItem() {
         open={manageOpen}
         onOpenChange={setManageOpen}
         onRequestSignOut={handleRequestSignOutFromDialog}
+        onCloseFocus={focusNameButton}
       />
       <SignOutDialog
         account={signOutTarget}
         accounts={github}
         onOpenChange={handleSignOutOpenChange}
         onConfirmed={handleSignOutConfirmed}
-        onConfirmFocus={handleSignOutConfirmFocus}
+        onCloseFocus={handleSignOutCloseFocus}
       />
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {signOutAnnounce}
