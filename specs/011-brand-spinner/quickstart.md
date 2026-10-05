@@ -8,7 +8,8 @@ Requirement and story numbers refer to [spec.md](spec.md); the component's shape
 ## Prerequisites
 
 - Windows 11, with Settings > Accessibility > Visual effects > "Animation effects" available to
-  turn off (this is the reduced-motion signal `globals.css` reads).
+  turn off (this is the reduced-motion signal `globals.css` reads), and Settings > Accessibility >
+  Contrast themes available to turn on (this is the forced-colors signal FR-014 reads).
 - The prerequisite brand assets (`build/refract-icon-v2.svg`,
   `src/renderer/assets/brand/refract-hero.svg`, spec.md "Prerequisite") landed on this branch or
   merged from `main` first. Where they have not landed yet, build `BrandSpinner.tsx` against
@@ -40,7 +41,7 @@ Requirement and story numbers refer to [spec.md](spec.md); the component's shape
    `Transcript.tsx`, `SubagentPanel.tsx`, `SessionList.tsx` (the per-repository create button),
    `Readiness.tsx` (both sites), and `sonner.tsx` -- not in `sessionDisplay.tsx` (SC-001).
 
-**Story 2: the mark stays legible, calm, and cheap (FR-005 to FR-011, FR-013)**
+**Story 2: the mark stays legible, calm, and cheap (FR-005 to FR-011, FR-013 to FR-015)**
 
 1. Zoom in on (or screenshot and magnify) a working Session's 16px state icon. Expect: a
    recognisable, simplified silhouette of the mark -- flat colour per arm, no attempt at the
@@ -57,12 +58,22 @@ Requirement and story numbers refer to [spec.md](spec.md); the component's shape
 4. With a working Session visible, switch the Settings > Appearance theme (spec 007) between Dark
    and Dark (high contrast). Expect: the spinner's colours are identical in both -- unaffected by
    the switch, unlike every other themed surface.
-5. In DevTools, inspect the rendered `BrandSpinner` element's CSS: confirm the animated properties
-   are only `transform` and/or `opacity` (FR-005), and confirm two simultaneously-mounted instances
-   report different computed `animation-delay` values that nonetheless land both at the same
-   animation progress at the same wall-clock instant (sample `getComputedStyle` at the same moment
-   for two different spinners and confirm their delays differ by a multiple of 1.2s, not an
-   arbitrary amount).
+5. In DevTools, inspect the rendered `BrandSpinner` element's CSS: confirm the animated property
+   is `opacity` only, with no animated `transform`, `filter`, or `box-shadow` (FR-005), and
+   confirm two simultaneously-mounted instances report different computed `animation-delay`
+   values that nonetheless land both at the same animation progress at the same wall-clock
+   instant (sample `getComputedStyle` at the same moment for two different spinners and confirm
+   their delays differ by a multiple of 1.2s, not an arbitrary amount).
+6. Open Windows Settings > Accessibility > Contrast themes and turn one on (for example Desert or
+   Aquatic). Look at a working Session's state icon. Expect: the mark is clearly visible against
+   the system background, its fills now using system colour keywords rather than its usual fixed
+   brand hex values, and neither invisible nor clipped (FR-014, SC-006). Turn the contrast theme
+   back off and confirm the fixed brand palette returns.
+7. With a working Session's row visible in the session list, its chat header, and its details
+   card, use DevTools element inspection (or a screenshotted ruler) to compare the spinner's
+   rendered vertical centre against the adjacent session name text's vertical centre in each.
+   Expect: aligned within 0.5px in all three places (FR-015, SC-007) -- this checks the rendered
+   result, not any claim about the source artwork's own coordinates.
 
 ## Repository-wide verification (SC-001, SC-002)
 
@@ -71,6 +82,16 @@ Requirement and story numbers refer to [spec.md](spec.md); the component's shape
 - Read `ChatHeader.tsx`, `SessionDetailsCard.tsx`, and `SessionList.tsx` directly and confirm all
   three still call `<StateIcon status={...} />` with no local spinner of their own -- the only
   change is inside `StateIcon` itself.
+
+## Dedicated Simplified path set (research.md decision 2)
+
+- During implementation only (not a shipped check): render the Full variant scaled down to 16px
+  alongside the real Simplified variant at 16px, side by side. Expect: the Simplified variant
+  reads more clearly -- flatter, with more visible separation between arms and the core -- than
+  the scaled-down Full variant, confirming the dedicated path set is worth its own authoring
+  rather than reusing the Full art at a smaller size. Capture this side-by-side as a throwaway
+  rasterised screenshot for the task's own evidence, then discard the comparison harness --
+  confirmed by `git diff` showing no trace of it in the committed tree.
 
 ## Forward-provisioned large size (spec.md Assumptions, research.md decision 10)
 

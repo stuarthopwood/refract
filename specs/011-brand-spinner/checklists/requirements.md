@@ -39,9 +39,9 @@
 
 - [x] Each user story's acceptance scenarios map to at least one Given/When/Then with an
       observable outcome, not an implementation step
-- [x] SC-001 to SC-006 are each measurable (a grep result, a component-identity read, a time
-      bound, a yes/no observable state, or a pixel-identity comparison) without naming a UI
-      technology
+- [x] SC-001 to SC-007 are each measurable (a grep result, a component-identity read, a time
+      bound, a yes/no observable state, a pixel-identity comparison, or a rendered-alignment
+      measurement) without naming a UI technology
 
 ## Edge Case Coverage
 
@@ -51,6 +51,7 @@
 - [x] Scale beyond the twenty-Session measured case is covered (Edge Cases)
 - [x] The forward-provisioned large size with no current host surface is covered (Edge Cases,
       Assumptions)
+- [x] Windows forced-colors (high-contrast) mode is covered (Edge Cases, FR-014, SC-006)
 
 ## Dependencies & Assumptions
 
@@ -58,15 +59,24 @@
       `src/renderer/assets/brand/refract-hero.svg`) being delivered by a separate change is explicit
 - [x] Dependency on spec 007 (the theme presets the spinner must render unchanged under) is
       explicit
-- [x] The pre-existing `docs/DESIGN.md` "status bar"/"tooltips" inaccuracy (research.md decision
-      12) is recorded as a grounded finding, not silently corrected or silently left unmentioned
-- [x] Platform assumption (Windows 11 only) is explicit and consistent with the constitution
+- [x] The `docs/DESIGN.md` "status bar"/"tooltips" inaccuracy (research.md decisions 11, 12) is
+      corrected in the same edit that names the brand mark, not silently left for a later change
+      (reversed from this spec's first draft per design review, with the reversal itself recorded)
 
 ## Notes
 
-- Validation pass 1 (this review, during spec-writing for this feature): all items pass, no
-  spec.md wording changes needed.
-- The forward-provisioned large size (FR-011) is a genuine, flagged design decision, not a
-  requirements-quality defect: it specifies what the component must support, while Assumptions and
-  research.md decision 10 are explicit that no surface in this spec actually uses it yet, and name
-  exactly how it is still verified (a temporary, unshipped harness) despite that.
+- Validation pass 1 (initial spec-writing for this feature): all items pass, no spec.md wording
+  changes needed.
+- Validation pass 2 (after `ui-architect-v3` design review, same day): FR-005/FR-006/FR-010/FR-011
+  edited (opacity-only motion, a dedicated simplified path set and a fixed size ladder rather than
+  a flagged full-art render); FR-014 (forced-colors) and FR-015 (optical alignment) added; SC-006
+  extended and SC-007 added; the `docs/DESIGN.md` surface-list correction moved from "flagged, not
+  fixed" to "fixed in the same edit" (research.md decisions 11, 12). FR-015/SC-007 are stated as
+  rendered-output requirements (a measured alignment, not an assertion about the source artwork's
+  own viewBox geometry, which is not in fact centred on its visual content) -- re-checked against
+  "Success criteria are technology-agnostic" and "Requirements are testable and unambiguous" above,
+  both still pass.
+- The forward-provisioned large size (FR-011's 32px/48px rungs) is a genuine, flagged design
+  decision, not a requirements-quality defect: it specifies what the component must support, while
+  Assumptions and research.md decision 10 are explicit that no surface in this spec actually uses
+  it yet, and name exactly how it is still verified (a temporary, unshipped harness) despite that.

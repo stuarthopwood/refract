@@ -10,10 +10,12 @@
 icon" rule already funnels every session-status surface through -- draws its `working` case with
 `lucide-react`'s `LoaderCircleIcon` and a plain `animate-spin` class. This feature replaces that one
 branch with a new `BrandSpinner` component: an inline SVG rendering of the redesigned app mark
-(`build/refract-icon-v2.svg`), animated with a staggered per-arm opacity/lift cascade driven purely
-by CSS, synchronised across every concurrently-mounted instance by a computed negative
-`animation-delay`, with a simplified (no-facet) variant below a 24px legibility floor and a full
-(faceted) variant above it. Every other existing spinner in the app (seven further `animate-spin`
+(`build/refract-icon-v2.svg`), animated with a staggered per-arm opacity-only cascade (no physical
+translation/"lift", research.md decision 3) driven purely by CSS, synchronised across every
+concurrently-mounted instance by a computed negative `animation-delay`, with a dedicated,
+hand-authored Simplified (no-facet) path set at the 16px/20px rungs of a fixed size ladder and the
+Full (faceted) path set at 24px/32px/48px. Under Windows' forced-colors mode the fills switch to
+system colour keywords. Every other existing spinner in the app (seven further `animate-spin`
 sites across six files, plus one pulsing-dot indicator) is deliberately left unchanged
 (research.md decision 1). No Settings, persistence, or IPC surface is added.
 
@@ -41,11 +43,14 @@ concurrent `working` Sessions (FR-013, SC-005); zero per-frame JavaScript cost r
 instance count (research.md decision 5).
 
 **Constraints**: inline SVG only, no raster asset, no new dependency, no remote request, passes the
-existing CSP (FR-004); animation via `transform`/`opacity` only (FR-005); reuses the existing
-global `prefers-reduced-motion: reduce` block, no new media query (FR-008).
+existing CSP (FR-004); animation via `opacity` only, no `transform`/physical translation, `filter`,
+or `box-shadow` (FR-005); reuses the existing global `prefers-reduced-motion: reduce` block, no new
+media query (FR-008); a fixed size ladder (16/20/24/32/48px) with separately authored path sets per
+variant, not an arbitrary size (FR-011); system colour keywords under forced-colors mode (FR-014).
 
-**Scale/Scope**: one new component file, one edited feature file, one CSS addition (new
-`@keyframes`), one `docs/DESIGN.md` bullet amended. Two user stories.
+**Scale/Scope**: one new component file (two dedicated path sets: Simplified and Full), one edited
+feature file, CSS additions (new `@keyframes` plus a `forced-colors` media query), one
+`docs/DESIGN.md` bullet amended (now also correcting its surface list). Two user stories.
 
 ## Constitution Check
 
@@ -71,7 +76,7 @@ No violations, so the Complexity Tracking table is empty.
 specs/011-brand-spinner/
 ├── spec.md          # this feature's spec
 ├── plan.md           # this file
-├── research.md        # Phase 0: the spinner inventory and the ten further design decisions
+├── research.md        # Phase 0: the spinner inventory and thirteen further design decisions
 ├── data-model.md       # Phase 1: BrandSpinnerProps, the variant-selection rule, the animation/clock shape
 ├── quickstart.md       # Phase 1: how to run and verify each story
 └── tasks.md            # Phase 2 output (/speckit.tasks)
@@ -125,8 +130,10 @@ docs/
   (`docs/DESIGN.md` "Fonts" bullet: "The app icon itself (`build/icon.ico`) is a separately authored
   image asset") sits outside the theme system.
 - **`docs/DESIGN.md` gets one precise edit**, not a rewrite of the whole "Shared status icon"
-  bullet (research.md decision 11); the pre-existing "status bar"/"tooltips" surface-count
-  inaccuracy in that same bullet (research.md decision 12) is explicitly left alone.
+  bullet (research.md decision 11); the same edit also corrects that bullet's pre-existing
+  "status bar"/"tooltips" surface-count inaccuracy to the real three surfaces (research.md
+  decisions 11, 12 -- reversed from this spec's first-draft position of flagging it without
+  fixing it).
 - **Build order**: `BrandSpinner.tsx` and its `@keyframes` first (nothing else can land without
   it), then the one-line `StateIcon` edit, then the `docs/DESIGN.md` note and a final repo-wide
   verification pass. The two user stories do not have independent build orders the way a

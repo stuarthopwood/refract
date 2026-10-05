@@ -6,12 +6,17 @@ main-process data. Terms follow [CONTEXT.md](../../CONTEXT.md).
 ## New component (`src/renderer/components/brand/BrandSpinner.tsx`)
 
 ```ts
+export const LEGIBILITY_FLOOR_PX = 24
+
 export interface BrandSpinnerProps {
-  /** Pixel size; also selects the render variant (see "Render variant selection" below). */
-  size: number
+  /** Pixel size: the fixed ladder 16, 20, 24, 32, 48 -- a closed union, not an arbitrary number,
+   * because each rung has its own dedicated path set (research.md decision 4). Also selects the
+   * render variant (see "Render variant selection" below). */
+  size: 16 | 20 | 24 | 32 | 48
   /** Merged with the component's own classes (research.md decision 4) -- layout utilities only
-   * (e.g. `shrink-0`); colour is always the fixed brand palette (research.md decision 7) and is
-   * never overridable through this prop. */
+   * (e.g. `shrink-0`); colour is always the fixed brand palette (research.md decision 7, except
+   * under forced-colors mode, see "Forced colors" below) and is never overridable through this
+   * prop. */
   className?: string
 }
 
@@ -21,25 +26,42 @@ export function BrandSpinner(props: BrandSpinnerProps): JSX.Element
 - Always renders with `aria-hidden` and no accessible name of its own (research.md decision 8);
   never accepts an `aria-label`/`aria-labelledby` prop.
 - Composed of one fixed core group (`opacity: 1` throughout) and three arm groups (teal, amber,
-  violet), structurally matching `build/refract-icon-v2.svg`'s / the prerequisite
-  `src/renderer/assets/brand/refract-hero.svg`'s own three-arm layout (spec.md "Prerequisite").
+  violet). The Full variant's groups structurally match `build/refract-icon-v2.svg`'s / the
+  prerequisite `src/renderer/assets/brand/refract-hero.svg`'s own three-arm layout (spec.md
+  "Prerequisite"). The Simplified variant is a **separate, dedicated path set** -- flat,
+  single-tone-per-arm hulls with the gaps between arms and the core optically widened -- not the
+  Full variant's paths with facets hidden by a flag (research.md decision 2).
 - Colours are hard-coded brand values, not CSS custom properties sourced from
   `src/renderer/styles/globals.css`'s per-theme blocks (research.md decision 7) -- the one icon-like
-  component in the app whose colour does not vary with `theme-store.ts`'s active theme.
+  component in the app whose colour does not vary with `theme-store.ts`'s active theme. Under
+  `@media (forced-colors: active)` the fills switch to system colour keywords instead (research.md
+  decision 14, "Forced colors" below) -- the one exception to "always the fixed brand palette".
+- At its 16px size, the rendered `<svg>`'s vertical centre is positioned so it aligns with the
+  adjacent session name text's vertical centre within 0.5px (FR-015, research.md decision 13) --
+  a property of the rendered output, not an assumption that the source artwork's own viewBox is
+  itself centred on its visual content (it is not: the source mark's visual centroid is
+  approximately (256, 282) of its 512x512 box, and the prerequisite's tightened viewBox is
+  `96 122 320 320` -- neither is the exact box centre).
 
 ## Render variant selection
 
 | `size` | Variant | Facet detail | Reason |
 |---|---|---|---|
-| `< LEGIBILITY_FLOOR_PX` (24) | Simplified | None -- one flat, solid tone per arm | fine internal facets are not recognisable below this size (research.md decision 2) |
-| `>= LEGIBILITY_FLOOR_PX` (24) | Full | Every facet from the source mark | reads clearly at this size and above |
-
-`LEGIBILITY_FLOOR_PX` is one exported constant in `BrandSpinner.tsx`, not a per-call magic number.
+| `16`, `20` | Simplified | None -- a dedicated, hand-authored flat-hull path set with widened gaps | fine internal facets are not recognisable below the 24px legibility floor (research.md decisions 2, 4) |
+| `24`, `32`, `48` | Full | Every facet from the source mark | reads clearly at this size and above |
 
 Today's one shipped call site passes `size={16}` (`sessionDisplay.tsx`'s `StateIcon`, `working`
 case, replacing its current 16px `LoaderCircleIcon`/`animate-spin`) and therefore always renders
-the Simplified variant. No shipped call site passes `size >= 24` (spec.md Assumptions,
+the Simplified variant. No shipped call site passes `24`, `32`, or `48` (spec.md Assumptions,
 research.md decision 10).
+
+## Forced colors
+
+Under `@media (forced-colors: active)` (research.md decision 14), every arm and core fill switches
+from its fixed brand hex value to a system colour keyword (for example `CanvasText`), so the mark
+stays visible against whatever background the active Windows forced-colors theme provides. This is
+the one condition under which `BrandSpinnerProps`'s "colour is never overridable" rule above does
+not apply -- the override is driven entirely by the media query, never by a prop.
 
 ## Animation
 
@@ -47,9 +69,11 @@ No React state of any kind; the animation is pure CSS and needs no store.
 
 - One `@keyframes` definition per arm (or one shared definition applied three times with different
   delays -- an implementation choice, not specified here): each arm's `0%`/`100%` frames are
-  identical ("at rest": full opacity, no lift), with one brief "bright and lifted" frame partway
-  through, so a near-zero-duration, single-iteration collapse (reduced motion, research.md decision
-  6) always lands back on the matching rest frame.
+  identical ("at rest": the dim 0.35 baseline opacity, never the bright peak), with one brief
+  frame partway through reaching the 1.0 bright peak, so a near-zero-duration, single-iteration
+  collapse (reduced motion, research.md decision 6) always lands back on the matching dim rest
+  frame -- never a physical position change (`transform`/"lift"), only `opacity` (research.md
+  decision 3).
 - Three arms, evenly spaced a third of a cycle apart (research.md decision 3), 1.2s cycle,
   ease-in-out, infinite.
 - **Shared clock** (research.md decision 5): at mount, each instance computes its own

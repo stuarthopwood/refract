@@ -110,6 +110,9 @@ confirm the session list keeps scrolling smoothly.
 - A future surface that needs a large, full-screen rendering of the spinner (none exists in the
   app today): the component supports a size large enough for that case, built and checked once
   during implementation, but this spec ships no such surface (Assumptions).
+- A developer using Windows' forced-colors (high-contrast) mode: the spinner's fills switch to
+  system colour keywords instead of its fixed brand palette (FR-014), rather than disappearing or
+  clashing against the forced background.
 
 ## Requirements *(mandatory)*
 
@@ -133,13 +136,17 @@ confirm the session list keeps scrolling smoothly.
   new npm dependency, and no remote network request — and MUST render under the app's existing
   Content-Security-Policy (`default-src 'self'; script-src 'self'; style-src 'self'
   'unsafe-inline'; img-src 'self' data:`).
-- **FR-005**: The spinner's animation MUST be implemented using only CSS `transform` and `opacity`
-  changes; it MUST NOT use `filter`, `box-shadow`, or any other non-compositor-friendly property to
-  produce its motion.
-- **FR-006**: Below a legibility floor of 24px, the spinner MUST render a simplified variant with
-  no internal facet subdivision (flat, single-tone colour per arm); at 24px or above it MUST render
-  the full, faceted mark. The component's only shipped call site (FR-001) is 16px and therefore
-  always renders the simplified variant.
+- **FR-005**: The spinner's animation MUST be implemented using only a per-arm CSS `opacity`
+  cascade (cycling between a resting baseline and a bright peak); it MUST NOT use physical
+  translation (a "lift"), `filter`, or `box-shadow` to produce its motion, at any size — a
+  physical shift of even 1px at the shipped 16px size crosses a sub-pixel rendering boundary and
+  visibly shimmers rather than reading as deliberate motion.
+- **FR-006**: Below a legibility floor of 24px, the spinner MUST render a dedicated,
+  purpose-authored simplified SVG path set — flat, single-tone colour per arm, no internal facet
+  subdivision, with the gaps between arms and the core optically widened relative to the full
+  mark — rather than the full artwork reused at a smaller size with its facets merely hidden by a
+  flag. At 24px and above it MUST render the full, faceted mark unchanged. The component's
+  shipped call site (FR-001) is 16px and therefore always renders the simplified variant.
 - **FR-007**: Every concurrently-mounted instance of the spinner MUST derive its animation's phase
   from one shared time origin, so that any number of instances visible at the same time animate in
   phase with each other rather than drifting independently.
@@ -154,24 +161,36 @@ confirm the session list keeps scrolling smoothly.
 - **FR-010**: The spinner MUST use its own fixed brand colours (the teal, amber, and violet arms and
   violet core from `build/refract-icon-v2.svg`) rather than colours derived from the active theme,
   and MUST render identically under every built-in theme preset (spec 007).
-- **FR-011**: The spinner component MUST accept an explicit pixel size and MUST support both the
-  size used by its shipped call site (16px) and a larger size (at or above the 24px legibility
-  floor) suitable for a future full-screen or empty-state loading surface; this spec ships no call
-  site that uses the larger size.
+- **FR-011**: The spinner component MUST support a fixed size ladder — 16px, 20px, 24px, 32px, and
+  48px — rather than an arbitrary pixel value, since each size below the legibility floor has its
+  own dedicated, hand-authored path set (FR-006), not a generic rescaling. Its only shipped call
+  site (FR-001) uses 16px. 16px and 20px render the Simplified variant; 24px, 32px, and 48px
+  render the Full variant. The 32px and 48px rungs exist for a future full-screen or empty-state
+  loading surface; this spec ships no call site that uses them.
 - **FR-012**: Replacing `StateIcon`'s `working` icon MUST NOT change `StateIcon`'s props, its
   callers, or the rendering of the three other states.
 - **FR-013**: With twenty or more Sessions simultaneously `working` in the session list, the
   spinners' animation MUST NOT cause a perceptible drop in session-list scrolling smoothness or
   input responsiveness.
+- **FR-014**: Under Windows' forced-colors mode (`@media (forced-colors: active)`), the spinner's
+  fills MUST switch to system colour keywords (for example `CanvasText`) instead of keeping its
+  fixed brand hex values, so the mark stays visible against whatever background the active
+  forced-colors theme provides.
+- **FR-015**: At its 16px shipped size, the spinner's rendered vertical centre MUST align with
+  the vertical centre of the adjacent session name text within 0.5px, in every row using the
+  existing `items-center` flex layout (`ChatHeader.tsx`, `SessionList.tsx`,
+  `SessionDetailsCard.tsx`). This is a requirement on the rendered output, verified by inspecting
+  the built component; it is not a claim about where the mark's content sits within the source
+  artwork's own 512px viewBox (research.md decision 13).
 
 ### Key Entities
 
 - **Brand mark spinner**: the shared, decorative, animating rendering of the redesigned app mark
   used for the "working" session state; one component, two render variants (simplified below the
   legibility floor, full at or above it), colours fixed regardless of theme.
-- **Legibility floor**: the pixel threshold (24px) below which the mark's fine internal facets are
-  dropped in favour of a flat, single-tone-per-arm silhouette, because they are not recognisable at
-  smaller sizes.
+- **Legibility floor**: the pixel threshold (24px) below which the spinner renders from a
+  dedicated, separately-authored path set (the size ladder's 16px and 20px rungs) rather than the
+  full mark, because the full mark's fine internal facets are not recognisable at smaller sizes.
 - **Shared animation clock**: the mechanism that keeps every mounted spinner instance's motion in
   phase with every other, so a session list full of working Sessions reads as one calm, synchronised
   pattern rather than many independently-drifting spinners.
@@ -193,7 +212,11 @@ confirm the session list keeps scrolling smoothly.
   list shows no stutter perceptible to the eye, and every visible spinner shares the same animation
   phase at any instant sampled.
 - **SC-006**: The spinner's rendered colours are pixel-identical under the Dark and Dark (high
-  contrast) presets.
+  contrast) presets, and remain visible — rendered in system colour keywords, never clipped or
+  invisible — when Windows' forced-colors mode is active.
+- **SC-007**: At its 16px shipped size, the spinner's rendered vertical centre aligns with the
+  adjacent session name text's vertical centre within 0.5px, across `ChatHeader.tsx`,
+  `SessionList.tsx`, and `SessionDetailsCard.tsx`.
 
 ## Assumptions
 
@@ -201,11 +224,12 @@ confirm the session list keeps scrolling smoothly.
   and 16px (research.md's inventory), both below the range the brief itself flags as too small for
   the mark's fine facets (12px to 16px); 24px is set with a clear margin above the largest size
   actually found, rather than a boundary that happens to still include 16px.
-- Motion is a staggered, three-arm opacity/lift cascade (each arm briefly brightens and lifts in
-  turn — teal, then amber, then violet, repeating), never a rotation of the whole mark: the mark is
-  asymmetric and has a fixed "up" orientation, so spinning it as a rigid body would periodically
-  show it sideways or upside down, which a rotationally-symmetric ring icon never had to worry
-  about; a per-arm cascade keeps the mark right-way-up at all times while still reading as "busy".
+- Motion is a staggered, three-arm opacity cascade (each arm cycles between a resting baseline and
+  a bright peak in turn — teal, then amber, then violet, repeating), with no physical lift and no
+  rotation of the whole mark: the mark is asymmetric and has a fixed "up" orientation, so spinning
+  it as a rigid body would periodically invert it, and a physical lift crosses a sub-pixel
+  rendering boundary at the shipped 16px size (visible shimmer); a per-arm opacity-only cascade
+  keeps the mark right-way-up and pixel-sharp at every frame while still reading as active.
 - Fixed brand colours, not theme-derived: Refract is dark-only (spec 007), so there is no
   light-background contrast risk to design around, and the entire point of this feature is brand
   recognition, which a per-theme recolouring would work against.
@@ -217,14 +241,15 @@ confirm the session list keeps scrolling smoothly.
   during implementation behind a temporary, unshipped harness only (plan.md), the same "build and
   check behind a temporary route, never ship it" approach spec 007 used for `AppearanceSection`
   before spec 004's Settings screen existed.
-- `docs/DESIGN.md`'s existing "Shared status icon" bullet names session list, chat header, status
-  bar, and tooltips as the four surfaces rendering through `StateIcon`. Reading `StatusBar.tsx`
-  directly shows it renders only a low-memory notice and an omp-version notice today — no
-  per-session state icon at all, and no tooltip surface renders one either. This is a pre-existing
-  mismatch between that doc bullet and the shipped code that this spec inherits, not one it
-  introduces; this spec's actual, grep-confirmed `StateIcon` call sites are exactly three
-  (`ChatHeader.tsx`, `SessionDetailsCard.tsx`, `SessionList.tsx`), and this spec does not attempt to
-  add a fourth or otherwise correct that unrelated documentation drift.
+- `docs/DESIGN.md`'s "Shared status icon" bullet previously named session list, chat header,
+  status bar, and tooltips as the four surfaces rendering through `StateIcon`. Reading
+  `StatusBar.tsx` directly shows it renders only a low-memory notice and an omp-version notice
+  today — no per-session state icon at all — and no tooltip surface renders one either; the three
+  real call sites are exactly `ChatHeader.tsx`, `SessionDetailsCard.tsx`, and `SessionList.tsx`.
+  This spec's doc-update task corrects that surface list to the real three, in the same edit that
+  names the brand mark as the `working` rendering (research.md decisions 11, 12) — reversing this
+  spec's own earlier position of flagging the inaccuracy without fixing it, since the sentence is
+  already being opened for the `working`-icon edit.
 - No new Settings, persistence, or IPC surface: the spinner is a stateless, decorative renderer
   component; nothing about it is user-configurable (unlike spec 012's watermark toggle).
 - Windows 11 is the only supported platform and Refract remains a no-automated-tests prototype,

@@ -43,63 +43,88 @@ and details card on the old `LoaderCircleIcon` — rejected, since that would vi
 depending on... nothing, since all three already call the same component; the correct fix is
 inside `StateIcon`, not at any one of its three call sites.
 
-## 2. Legibility floor: 24px, two render variants
+## 2. Legibility floor: 24px, a fixed size ladder, two dedicated path sets (not one flagged render)
 
-**Decision**: below 24px the spinner renders a **Simplified** variant — a flat silhouette with no
-internal facet subdivision, one solid tone per arm — instead of the full mark. At 24px and above it
-renders the **Full** variant with every facet. The component's only shipped call site (16px,
-decision 1) therefore always renders the Simplified variant.
+**Decision**: the component supports a fixed size ladder -- 16px, 20px, 24px, 32px, 48px -- rather
+than an arbitrary pixel value. Below 24px (16px, 20px) it renders a dedicated, hand-authored
+**Simplified** path set: flat, single-tone colour per arm, no internal facet subdivision, with the
+gaps between arms and the core optically widened relative to the full mark, rather than the full
+artwork reused at a smaller size with its facets merely toggled off by a flag. At 24px and above
+(24px, 32px, 48px) it renders the **Full** path set with every facet, unchanged from the source
+mark. The component's only shipped call site (16px, decision 1) therefore always renders the
+Simplified variant.
 
 **Rationale**: the two sizes any current spinner actually uses are 14px and 16px (decision 1's
 table), both inside the 12px-to-16px range the brief itself identifies as too small for the mark's
 fine internal shading to survive. Setting the floor at 24px gives a clear margin above the largest
-size actually found, rather than drawing the line exactly at 16px and leaving no headroom.
+size actually found. A dedicated, separately-authored path set -- rather than the full art with
+facets merely hidden by a flag -- lets the simplified rendering widen the gaps between shapes
+specifically for legibility at small sizes, a change the full art's own proportions were never
+drawn for, rather than inheriting proportions tuned for a much larger rendering. The fixed ladder
+(rather than an arbitrary size) exists because each rung needs its own authored art; an unlisted
+size would have no corresponding path set to fall back to.
 
-**Alternatives considered**: a single variant at every size (always full facets) — rejected: it
-would ship illegible noise at the one size that is actually used; a floor set at exactly 16px
-(matching the shipped size precisely) — rejected as too tight a margin with no evidence it is the
-correct boundary rather than merely the size that happens to be used today.
+**Alternatives considered**: a single variant at every size (always full facets, or the full art's
+own proportions merely re-hidden) -- rejected: it would ship illegible noise at the one size that
+is actually used, or inherit proportions not drawn for small rendering; a floor set at exactly
+16px -- rejected as too tight a margin; an arbitrary `number` size prop with the variant chosen
+purely by a `< 24` comparison on the full art's own paths -- rejected after design review: it
+implies the simplified rendering is the full paths with detail merely suppressed, when it is
+actually a separately hand-tuned drawing with its own widened proportions, so the size itself must
+be restricted to the ladder of sizes that drawing actually covers.
 
-## 3. Motion: staggered per-arm cascade, not whole-mark rotation
+## 3. Motion: a staggered per-arm opacity cascade, not a lift and not whole-mark rotation
 
 **Decision**: the mark's core stays fixed at full opacity throughout (anchoring the shape so it
-never looks incomplete); each of its three arms (teal, amber, violet) briefly rises in opacity and
-position once per cycle, evenly spaced a third of a cycle apart, so exactly one arm is highlighted
-at any instant and the highlight visibly cycles teal -> amber -> violet -> teal. Cycle length 1.2s,
-ease-in-out, infinite. The whole mark's orientation never changes.
+never looks incomplete); each of its three arms (teal, amber, violet) cycles its own opacity
+between a resting baseline (around 0.35) and a bright peak (1.0) once per cycle, evenly spaced a
+third of a cycle apart, so exactly one arm is at its bright peak at any instant and the highlight
+visibly cycles teal -> amber -> violet -> teal. Cycle length 1.2s, ease-in-out, infinite. No
+physical translation ("lift") is applied at any size, and the whole mark's orientation never
+changes.
 
 **Rationale**: the mark is an asymmetric isometric drawing with a clear "up" (the cube core with
-arms reaching upper-left/upper-right/down); rotating it as one rigid body — the obvious alternative
-for a circular spinner — would periodically present it sideways or upside down, which a
-rotationally-symmetric ring icon (today's `LoaderCircleIcon`) never had to contend with and which
-would read as broken rather than branded. A per-arm cascade keeps the mark right-way-up at every
-frame while still clearly reading as "something is actively happening", and maps naturally onto the
-mark's own three-arm structure (each arm literally "takes its turn").
+arms reaching upper-left/upper-right/down); rotating it as one rigid body -- the obvious
+alternative for a circular spinner -- would periodically present it sideways or upside down, which
+a rotationally-symmetric ring icon (today's `LoaderCircleIcon`) never had to contend with. A
+per-arm opacity cascade keeps the mark right-way-up at every frame while still clearly reading as
+"something is actively happening", and maps naturally onto the mark's own three-arm structure (each
+arm literally "takes its turn"). Opacity alone, with no accompanying physical translation, also
+keeps every frame pixel-sharp: at the component's shipped 16px size, even a 1px lift is roughly a
+6% jump in the rendered mark's own height, crossing sub-pixel rendering boundaries and visibly
+shimmering rather than reading as deliberate animation. The same opacity-only rule is kept uniform
+across every size on the ladder (decision 2), rather than allowing translation only above some
+size, so the component has one animation behaviour to reason about, not two.
 
-**Alternatives considered**: rotating the whole mark 360 degrees per cycle — rejected for the
-upside-down problem above; a single pulsing/breathing opacity on the whole mark at once (no
-per-arm stagger) — rejected as a weaker, less "branded" motion that does not use the mark's own
-three-arm shape at all and would look identical to a generic pulsing icon.
+**Alternatives considered**: rotating the whole mark 360 degrees per cycle -- rejected for the
+upside-down problem above; a per-arm opacity-and-lift cascade (this spec's first draft) --
+rejected after design review: the lift's sub-pixel jump at 16px was judged to shimmer rather than
+read as smooth motion; a single pulsing/breathing opacity on the whole mark at once (no per-arm
+stagger) -- rejected as a weaker, less "branded" motion that does not use the mark's own three-arm
+shape at all and would look identical to a generic pulsing icon.
 
-## 4. The component needs an explicit numeric `size` prop
+## 4. The component needs a fixed-ladder `size` prop, not an arbitrary number
 
-**Decision**: the component's prop is `size: number` (pixels), not only a Tailwind utility
-`className`, because it must itself decide, in JavaScript, which render variant to produce
-(decision 2) — a decision a plain CSS class on the rendered element cannot drive, since there is no
-reliable way for the component to read back a `size-4` Tailwind class at runtime. `className` is
-still accepted and merged, for `shrink-0` and similar layout utilities, matching every sibling
-icon's existing call pattern.
+**Decision**: the component's prop is `size: 16 | 20 | 24 | 32 | 48` (the size ladder, decision
+2) -- a closed literal union, not an arbitrary `number` and not only a Tailwind utility
+`className` -- because each rung has its own dedicated, hand-authored path set (decision 2) rather
+than one set of paths merely rescaled, so there is no art for a size the ladder does not name, and
+accepting an arbitrary number would silently invite one. `className` is still accepted and merged,
+for `shrink-0` and similar layout utilities, matching every sibling icon's existing call pattern.
 
 **Rationale**: every other icon in the inventory (decision 1) is sized purely by a Tailwind class
 on a `lucide-react` icon, because none of those icons change shape by size; this component does
-(decision 2), so it is the one icon-like component in the app that needs its size as real data, not
-only as styling.
+(decision 2), so it is the one icon-like component in the app that needs its size as real,
+type-checked data, not only as styling -- and a closed union catches an unlisted size at compile
+time instead of silently falling back to whichever variant a runtime comparison happens to pick.
 
 **Alternatives considered**: two separately-named components (`BrandSpinnerSmall`,
-`BrandSpinnerLarge`) instead of one sized component — rejected as an unnecessary second public name
-for what is one shape decision gated on one number; inferring the variant from the parent's
-rendered pixel size via `ResizeObserver` — rejected as unneeded runtime complexity when the caller
-already knows and states its own intended size.
+`BrandSpinnerLarge`) instead of one sized component -- rejected as an unnecessary second public
+name for what is one shape decision gated on one number; a plain `number` prop with the variant
+chosen by a `< 24` runtime comparison -- rejected after design review (decision 2): it would accept
+a size with no corresponding authored art; inferring the variant from the parent's rendered pixel
+size via `ResizeObserver` -- rejected as unneeded runtime complexity when the caller already knows
+and states its own intended size.
 
 ## 5. Shared animation clock: a computed negative `animation-delay`, no running JavaScript
 
@@ -129,24 +154,34 @@ Scenario 4 and FR-007).
 ## 6. Reduced motion: reuse the existing global mechanism, author keyframes for a clean rest frame
 
 **Decision**: no new media query and no component-level reduced-motion check. The spinner's
-keyframes are authored so the 0% and 100% frames are identical (every arm at rest: full opacity, no
-lift) — only the frames between are different (one arm briefly dimmed-to-bright-and-back). The
-existing `@media (prefers-reduced-motion: reduce)` block in `src/renderer/styles/globals.css`
-(confirmed at lines 260-269: `*, *::before, *::after { animation-duration: 0.01ms !important;
-animation-iteration-count: 1 !important; ... }`) already collapses this animation, along with every
-other animation in the app, to one near-instant iteration.
+keyframes are authored so each arm's 0% and 100% frames are identical -- every arm at its resting
+baseline opacity (around 0.35), never the bright peak -- with only the one frame partway through
+each arm's own cycle reaching the 1.0 peak. The existing `@media (prefers-reduced-motion: reduce)`
+block in `src/renderer/styles/globals.css` (confirmed at lines 260-269: `*, *::before, *::after {
+animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; ... }`) already
+collapses this animation, along with every other animation in the app, to one near-instant
+iteration.
 
-**Rationale**: because every arm's 0%/100% frames match its own rest state, collapsing the
-animation to effectively zero duration and one iteration leaves every arm exactly where it started
-— the calm, fully-formed, static mark — rather than freezing mid-cascade on an arbitrary dimmed
-frame. This is the same global mechanism `docs/DESIGN.md`'s "Motion" rule already documents
-disabling "spinners" generally; reusing it, rather than adding a second mechanism, keeps the rule
-single and true ("a `prefers-reduced-motion: reduce` media query disables animation globally").
+**Rationale**: because every arm's 0%/100% frames match its own resting-baseline state, collapsing
+the animation to effectively zero duration and one iteration leaves every arm exactly where it
+started -- all three arms uniformly at their dim 0.35 baseline, the core still fixed at its own
+1.0 -- rather than freezing mid-cascade on an arbitrary, asymmetric "one arm stuck bright" frame.
+This uniform rest frame does not itself need to read as "busy": FR-009/decision 8 already establish
+that the busy/working semantics are carried entirely by each call site's existing sr-only "Working"
+text, never by the icon's own appearance or motion, so the static mark is free to simply look calm
+and correctly-formed (recognisable core-plus-three-arms) rather than attempting to fake activity
+through a frozen frame. This is the same global mechanism `docs/DESIGN.md`'s "Motion" rule already
+documents disabling "spinners" generally; reusing it, rather than adding a second mechanism, keeps
+the rule single and true ("a `prefers-reduced-motion: reduce` media query disables animation
+globally").
 
 **Alternatives considered**: a component-level `window.matchMedia('(prefers-reduced-motion:
-reduce)')` check that swaps in a separately-authored static markup — rejected as a second,
+reduce)')` check that swaps in a separately-authored static markup -- rejected as a second,
 redundant mechanism alongside the one that already exists and already works, and one more thing
-that could drift out of sync with it.
+that could drift out of sync with it; freezing on one arm's bright peak instead of the uniform dim
+baseline (a "half-lit arm at rest") -- rejected: an arbitrarily-singled-out bright arm would read as
+an unfinished or stuck render rather than a deliberate calm state, and nothing about this feature
+needs the rest frame itself to signal "busy" (see Rationale above).
 
 ## 7. Colour treatment: fixed brand colours, not theme-derived
 
@@ -224,38 +259,92 @@ rejected: the brief explicitly asks for this size to be decided as part of this 
 on an invented surface (for example, a large spinner added to the Readiness screen) — rejected as
 unrequested scope beyond "use the mark for spinners".
 
-## 11. `docs/DESIGN.md` amendment wording
+## 11. `docs/DESIGN.md` amendment: name the brand mark, and correct the surface list in the same edit
 
 **Decision**: the "Shared status icon" bullet's description of the `working` icon changes from "a
-spinning circle for working" to naming the brand mark spinner, while keeping the rest of the
-sentence ("every surface... renders through the one shared `StateIcon` component... no surface
-draws its own plain filled dot, or any other shape, for a state `StateIcon` already covers")
-unchanged, since that rule continues to hold exactly as written — one component, swapped once.
+spinning circle for working" to naming the brand mark spinner, and in the same edit its surface
+list is corrected from "session list, chat header, status bar, tooltips" to the three real,
+grep-confirmed call sites: `SessionList.tsx`, `ChatHeader.tsx`, `SessionDetailsCard.tsx` (decision
+12). The rest of the sentence (one shared `StateIcon` component, no surface draws its own icon for
+a state it already covers) is unchanged, since that rule continues to hold exactly as written.
 
 **Rationale**: the rule's substance (one shared component, no per-surface duplication) is not
-changing; only the visual the `working` branch of that one component produces is. A tasks.md Polish
-task applies this edit (matching spec 010's own stated convention: "This spec's `docs/DESIGN.md`
-note is written by the implementation task that builds the feature, not by this spec-writing
-pass"), not this document.
+changing; only the visual the `working` branch produces, and the accuracy of the surface list in
+the same sentence, are. Correcting both in one edit -- rather than naming the brand mark while
+leaving an adjacent, already-false surface count sitting in the very bullet being touched -- avoids
+leaving a second inaccuracy in a sentence this spec is already rewriting. A tasks.md Polish task
+applies this edit (matching spec 010's own stated convention: "This spec's `docs/DESIGN.md` note
+is written by the implementation task that builds the feature, not by this spec-writing pass"),
+not this document.
 
-**Alternatives considered**: leaving `docs/DESIGN.md` wholly unedited — rejected: the current text
-("a spinning circle for working") would become actively wrong once this spec ships.
+**Alternatives considered**: leaving `docs/DESIGN.md` wholly unedited -- rejected: the current text
+("a spinning circle for working") would become actively wrong once this spec ships; naming the
+brand mark while leaving the false "status bar"/"tooltips" surface list untouched (this spec's own
+original position, decision 12) -- reconsidered after design review: since this exact sentence is
+already being opened for the `working`-icon edit, fixing its one other inaccuracy in the same pass
+costs nothing further and removes a known piece of doc/code drift rather than leaving it for an
+unspecified future change.
 
-## 12. A pre-existing `docs/DESIGN.md` inaccuracy, noted but not fixed
+## 12. The pre-existing "status bar"/"tooltips" inaccuracy: corrected, not merely flagged
 
-**Decision**: `docs/DESIGN.md`'s "Shared status icon" bullet also names "status bar" and
-"tooltips" among the four surfaces rendering through `StateIcon`. Reading `StatusBar.tsx` directly
-shows it renders only a low-memory notice and an omp-version notice — no per-session state icon at
-all — and no tooltip in the app renders one either; the three real call sites are
-`ChatHeader.tsx:49`, `SessionDetailsCard.tsx:68`, and `SessionList.tsx:304`. This spec does not
-correct that wording, since fixing an unrelated, pre-existing documentation inaccuracy is outside
-what this feature was asked to do.
+**Decision**: `docs/DESIGN.md`'s "Shared status icon" bullet named "status bar" and "tooltips"
+among the four surfaces rendering through `StateIcon`. Reading `StatusBar.tsx` directly shows it
+renders only a low-memory notice and an omp-version notice -- no per-session state icon at all --
+and no tooltip in the app renders one either; the three real call sites are `ChatHeader.tsx:49`,
+`SessionDetailsCard.tsx:68`, and `SessionList.tsx:304`. This spec's first draft recorded this as a
+grounded finding without fixing it (scope discipline); design review revisited that call, and this
+spec now corrects it, in the same edit as decision 11, since the sentence is already open for the
+`working`-icon change.
 
-**Rationale**: scope discipline — this spec's job is the spinner, not an audit of an unrelated
-sentence's accuracy; the correction above (decision 11) only touches the clause this feature
-actually changes.
+**Rationale**: fixing a known-false claim in the exact sentence already being edited is cheaper and
+safer than leaving it to drift further while a future, unrelated change happens to touch the same
+bullet -- the "leave it for someone else" reasoning only held while nothing else required editing
+that sentence at all.
 
-**Alternatives considered**: also correcting "status bar"/"tooltips" to the real three surfaces
-while already editing this bullet — rejected as unrequested scope creep past what this feature
-needs, even though it is a one-line fix; left for whichever future change actually touches that
-claim's accuracy.
+**Alternatives considered**: leaving the correction for a separate, later change (this spec's
+original position) -- superseded per design review, now that decision 11 already opens this exact
+sentence; auditing and fixing every other `docs/DESIGN.md` inaccuracy while here -- rejected as
+still out of scope: only the one sentence this feature's own edit already touches is corrected,
+not an audit of the whole document.
+
+## 13. Optical alignment: a rendered-output requirement, not a viewBox-geometry claim
+
+**Decision**: FR-015 states the alignment requirement as a property of the rendered 16px output
+(the mark's rendered vertical centre within 0.5px of the adjacent session name's vertical centre),
+not as a claim about where the mark sits inside its own source coordinate space. The source
+artwork's own visual centroid is approximately (256, 282) in its 512x512 viewBox, and the
+prerequisite's tightened viewBox is `96 122 320 320` (spec.md "Prerequisite") -- neither is the
+exact geometric centre of the 512 box, so asserting "the core sits at the centre of the viewBox"
+would be false geometry. Whatever vertical offset the artwork's own asymmetry introduces is
+corrected, if needed, in how `BrandSpinner.tsx` crops or positions its rendered `<svg>` at 16px,
+not by asserting a false claim about the source file's own coordinates.
+
+**Rationale**: a measurable, rendered-output requirement is honest and testable without first
+needing to establish (or misstate) where the mark's content actually sits inside its own authored
+viewBox -- a detail implementation can read directly off the real asset once it lands, rather than
+this spec guessing at it.
+
+**Alternatives considered**: asserting the mark's core sits at the exact centre of its viewBox and
+therefore needs no positioning correction -- rejected: not true of the real artwork (visual
+centroid roughly (256, 282), not (256, 256)), so this spec does not rely on it.
+
+## 14. Forced-colors mode: system colour keywords, not the fixed brand palette
+
+**Decision**: under `@media (forced-colors: active)` (Windows' forced-colors/high-contrast
+rendering mode), the spinner's arm and core fills switch to system colour keywords (for example
+`CanvasText`) instead of their fixed brand hex values from decision 7.
+
+**Rationale**: forced-colors mode overrides an app's own colours with a small, user-chosen system
+palette specifically so a developer who needs that mode can read the whole OS UI, including
+elements with fixed, deliberately-non-themed colours -- decision 7's choice to keep the spinner's
+colours fixed against the app's own dark theme does not extend to this OS-level override. Without
+this rule the spinner would either keep its brand colours as flat shapes never designed against a
+forced-colors background, or risk disappearing if the rendering engine additionally nulls out
+unrecognised custom colours under that mode.
+
+**Alternatives considered**: leaving the spinner's fixed palette unconditional, the same under
+forced-colors mode as under every built-in theme preset (decision 7's original scope) -- rejected:
+forced-colors mode is a distinct, user-accessibility-driven OS override, not one more theme preset
+to treat the same way; hiding the spinner entirely under forced-colors mode (falling back to
+`STATUS_LABEL` text alone) -- rejected as a regression for a developer who relies on the OS mode
+and would still reasonably expect to see the icon, not only read it.
