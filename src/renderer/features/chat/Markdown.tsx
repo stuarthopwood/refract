@@ -8,6 +8,9 @@ import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import type { MermaidConfig } from 'mermaid'
 import { safeUrl } from '@/lib/safe-url'
+import { THEMES } from '../../../shared/themes'
+import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
+import { useActiveThemeId } from '@/state'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -45,24 +48,11 @@ function markdownUrlTransform(value: string, _key: string, node: { properties?: 
 let highlighterPromise: Promise<Highlighter> | null = null
 function getHighlighter(): Promise<Highlighter> {
   highlighterPromise ??= createHighlighter({
-    themes: ['github-dark', 'github-light'],
+    themes: Object.values(THEMES).map((theme) => theme.syntaxTheme),
     langs: [],
     engine: createJavaScriptRegexEngine()
   })
   return highlighterPromise
-}
-
-// Tracks `.dark` on <html> (toggled in main.tsx / the later Settings theme switch) so code
-// blocks repaint with the matching Shiki theme.
-function useIsDarkTheme(): boolean {
-  const [isDark, setIsDark] = React.useState(() => document.documentElement.classList.contains('dark'))
-  React.useEffect(() => {
-    const target = document.documentElement
-    const observer = new MutationObserver(() => setIsDark(target.classList.contains('dark')))
-    observer.observe(target, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
-  return isDark
 }
 
 // Small header shown above every code block -- a markdown fence, and (via ToolRow's own
@@ -95,7 +85,7 @@ export function CodeBlock({
   // of which should wrap.
   wrap?: boolean
 }) {
-  const isDark = useIsDarkTheme()
+  const activeThemeId = useActiveThemeId()
   const [html, setHtml] = React.useState<string | null>(null)
 
   React.useEffect(() => {
@@ -111,7 +101,7 @@ export function CodeBlock({
           await highlighter.loadLanguage(lang as Parameters<Highlighter['loadLanguage']>[0])
         }
         if (cancelled) return
-        setHtml(highlighter.codeToHtml(code, { lang, theme: isDark ? 'github-dark' : 'github-light' }))
+        setHtml(highlighter.codeToHtml(code, { lang, theme: THEMES[activeThemeId].syntaxTheme }))
       } catch {
         if (!cancelled) setHtml(null)
       }
@@ -119,7 +109,7 @@ export function CodeBlock({
     return () => {
       cancelled = true
     }
-  }, [code, lang, isDark])
+  }, [code, lang, activeThemeId])
 
   const label = html ? lang! : 'text'
   // Named for a screen reader and keyboard-reachable on its own (the block's content is never
@@ -253,7 +243,7 @@ function parseMermaidSvgMeta(svg: string): { title: string | null; desc: string 
 }
 
 function MermaidBlock({ code, streaming }: { code: string; streaming: boolean }) {
-  const isDark = useIsDarkTheme()
+  const activeThemeId = useActiveThemeId()
   const [showSource, setShowSource] = React.useState(false)
   const [result, setResult] = React.useState<{
     svg: string
@@ -292,7 +282,13 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
           startOnLoad: false,
           securityLevel: 'strict',
           suppressErrorRendering: true,
-          theme: isDark ? 'dark' : 'default'
+          theme: 'dark',
+          themeVariables: MERMAID_THEME_VARIABLES[activeThemeId],
+          // Quality-gate remediation (round 5): patches real Mermaid CSS gaps no `themeVariables`
+          // key can reach alone (Gantt active/activeCrit overflow labels, Gantt clickable labels
+          // against the done bar, Timeline section-10's brightness-filtered fill) -- see
+          // `getMermaidThemeCSS`'s own comment in mermaidTheme.ts.
+          themeCSS: getMermaidThemeCSS(activeThemeId)
         } satisfies MermaidConfig)
         const rendered = await Promise.race([
           mermaid.render(`mermaid-${reactId}`, code),
@@ -317,7 +313,7 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
       cancelled = true
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
-  }, [code, isDark, streaming, reactId])
+  }, [code, activeThemeId, streaming, reactId])
 
   if (streaming) {
     return <CodeBlock code={code} lang="mermaid" />

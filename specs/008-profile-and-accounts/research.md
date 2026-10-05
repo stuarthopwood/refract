@@ -139,7 +139,7 @@ else).
 
 ## Decision 6: OMP provider sign-in/out — confirmed unusable over rpc-ui; read-only fallback ships
 
-**Decision**: task T002's probe (`docs/spike/omp-signin-probe.mjs`, FINDINGS item 42) confirmed
+**Decision**: task T002's probe (`docs/spike/omp-signin-probe.mjs`, FINDINGS item 43) confirmed
 `/login` and `/logout` are absent from a scratch `omp --mode rpc-ui` process's
 `available_commands_update` — on both a brand-new isolated profile (198 flattened commands) and
 the real, fully-loaded, already-signed-in default profile (363 flattened commands), ruling out
@@ -150,7 +150,7 @@ started on demand, stopped when the section closes) only to call `get_login_prov
 (already proven safe and working, FINDINGS item 15); `accounts.omp.signIn`/`signOut`
 (contracts/ipc.md) unconditionally return error `unsupported`, and signing in or out shows an
 inline instruction to run `omp` in a terminal and use `/login` there rather than attempting an
-unsupported in-app flow. FINDINGS item 42 also found: `omp --help`/`omp login --help` document
+unsupported in-app flow. FINDINGS item 43 also found: `omp --help`/`omp login --help` document
 `/login` as a real OMP slash command with its own terminal-only CLI counterpart (`omp login
 [PROVIDER]`, "terminal counterpart of `/login`"), matching this decision's original anticipated
 risk that the flow assumes a real terminal; no CLI `omp logout` counterpart exists in this

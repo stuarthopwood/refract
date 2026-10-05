@@ -714,23 +714,27 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}
       <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} />
-      {/* T063/quality-gate fix, Composer tone remediation (2026-10-04): a literal, solid
-          `oklch(0.09 0 0)` fill -- strictly darker than `--background`'s `oklch(0.145 0 0)` in
-          the (only, dark) theme (docs/DESIGN.md "Composer tone") -- measured at rendered pixel
-          rgb(23,23,23) vs the page's rgb(10,10,10) for the previous attempt, `bg-black/20`,
-          which actually read LIGHTER once composited (Chromium's `color-mix(in oklab, black 20%,
-          transparent)` resolves missing "transparent" channels to the *other* operand's lightness
-          at zero weight, not literally black, so the alpha-blend math this file originally relied
-          on does not hold -- confirmed empirically via a scratch-instance pixel sample, not by
-          reasoning about the spec). A literal solid colour sidesteps that entirely: no alpha
-          compositing, no ambiguity. The previous `bg-muted/60` was an alpha composite of
-          `--muted`, which sits *lighter* than `--background` in the dark theme, so it read as a
-          no-op lightening instead of the intended recessive fill. Plus a `border-muted-foreground/85`
-          border re-measured at >=3:1 against both the page background and this fill (WCAG 1.4.11),
-          Send/Stop moved inside as round icon-only buttons, and the provider/model/effort
-          readout along the bottom. `focus-within` replaces the Textarea's own (now removed)
-          focus ring so the whole field, not just the text area, shows the focus state. */}
-      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-[oklch(0.09_0_0)] pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      {/* T063/quality-gate fix, Composer tone remediation (2026-10-04); spec 007 T014
+          token-ized (FR-007): the composer's fill is a per-theme `--composer-background`
+          custom property (globals.css), not a literal colour -- each built-in theme sets its own
+          value, required to render strictly darker than that theme's own `--background` so the
+          composer reads as the page's most recessive field (docs/DESIGN.md "Composer tone"); the
+          one exception is the high-contrast preset, whose `--background` is literal pure black
+          with no lightness value below it -- see that token's own comment in globals.css for how
+          it resolves the edge case instead. A solid colour (rather than an alpha composite over
+          `--card`/`--muted`) remains deliberate: the original `bg-black/20` attempt actually read
+          LIGHTER once composited (Chromium's `color-mix(in oklab, black 20%, transparent)`
+          resolves missing "transparent" channels to the *other* operand's lightness at zero
+          weight, not literally black, so alpha-blend math does not hold here -- confirmed
+          empirically via a scratch-instance pixel sample, not by reasoning about the spec), and
+          `bg-muted/60` was an alpha composite of `--muted`, which sits *lighter* than
+          `--background` in the original dark theme, so it read as a no-op lightening instead of
+          the intended recessive fill. Plus a `border-muted-foreground/85` border re-measured at
+          >=3:1 against both the page background and this fill (WCAG 1.4.11), Send/Stop moved
+          inside as round icon-only buttons, and the provider/model/effort readout along the
+          bottom. `focus-within` replaces the Textarea's own (now removed) focus ring so the whole
+          field, not just the text area, shows the focus state. */}
+      <div className="flex flex-col gap-1 rounded-lg border border-muted-foreground/85 bg-composer-background pt-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         <div className="relative flex items-end">
           {showSlashMenu && (
             <SlashMenu

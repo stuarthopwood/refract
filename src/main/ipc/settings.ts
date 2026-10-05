@@ -6,11 +6,13 @@
 // instead of through the store's own action (that action already self-updates from the IPC
 // call's return value, but the broadcast is the only sync path for every other caller).
 
-import { BrowserWindow, ipcMain } from 'electron';
-import { IPC_EVENTS, IPC_REQUESTS } from '../../shared/ipc';
+import { ipcMain } from 'electron';
+import type { BrowserWindow } from 'electron';
+import { IPC_REQUESTS } from '../../shared/ipc';
 import type { Result } from '../../shared/ipc';
 import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model';
 import type { SessionManager } from '../SessionManager';
+import { broadcastSettingsChanged } from './broadcast';
 
 const APPROVAL_MODES: Record<ApprovalMode, true> = { ask: true, 'edit-freely': true, auto: true };
 
@@ -25,17 +27,6 @@ const READOUT_KINDS: Record<ReadoutKind, true> = {
   subagents: true,
   'todo-progress': true,
 };
-
-function broadcastSettingsChanged(value: Settings, getWindow: () => BrowserWindow | undefined): void {
-  const window = getWindow();
-  if (window && !window.isDestroyed()) {
-    try {
-      window.webContents.send(IPC_EVENTS.SETTINGS_CHANGED, value);
-    } catch (err) {
-      console.error('settings: failed to broadcast settings:changed', err);
-    }
-  }
-}
 
 export function registerSettings(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   ipcMain.handle(IPC_REQUESTS.SETTINGS_GET, async (): Promise<Result<Settings>> => ({ ok: true, value: manager.settings.get() }));

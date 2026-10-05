@@ -60,6 +60,10 @@ _Avoid_: Splitter, resize handle (for this boundary specifically)
 Whichever of a **Split**'s two **Chat panes** currently receives a session-row click, the message box, Stop, the queue, and approvals (spec 005). Exactly one pane is focused at a time, marked by a left-edge accent bar plus a visible "Focused" text badge (never colour alone); clicking, typing, or Ctrl+Shift+\ moves it.
 _Avoid_: Active pane, selected pane
 
+**Theme** (spec 007):
+One of the built-in dark-toned colour presets (Dark, Dark (high contrast)) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
+_Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.

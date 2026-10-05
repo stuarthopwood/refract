@@ -1,0 +1,85 @@
+// Spec 007 US2: a keyboard-operable theme picker (FR-001, FR-002, FR-006) -- hand-rolled
+// `role="radiogroup"`/`role="radio"` (no `radio-group.tsx` primitive exists yet under
+// `components/ui`) using the classic roving-tabindex pattern: only the currently-active entry
+// sits in the Tab order, and arrow/Home/End keys move both focus and the live preview together,
+// matching how a native `<input type="radio">` list already behaves (arrowing IS choosing, not
+// just moving focus). Every preset renders in `THEMES`' own declaration order (FR-001).
+import { useRef } from 'react'
+import type { KeyboardEvent } from 'react'
+import { CheckIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useActiveThemeId, useThemeStore } from '@/state'
+import { THEMES } from '../../../shared/themes'
+import type { ThemeId } from '../../../shared/themes'
+
+const THEME_LIST = Object.values(THEMES)
+
+export function ThemePicker() {
+  const activeId = useActiveThemeId()
+  const preview = useThemeStore((state) => state.preview)
+  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  // FR-002/FR-006 deviation note (2a): choosing the already-active entry is a deliberate no-op
+  // -- it never re-fires `preview` (which would otherwise round-trip over IPC for nothing).
+  function choose(id: ThemeId) {
+    if (id === activeId) return
+    preview(id)
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = Math.min(index + 1, THEME_LIST.length - 1)
+    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = Math.max(index - 1, 0)
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = THEME_LIST.length - 1
+    if (nextIndex === null) return
+    const nextTheme = THEME_LIST[nextIndex]
+    if (!nextTheme) return
+    event.preventDefault()
+    choose(nextTheme.id)
+    buttonRefs.current[nextIndex]?.focus()
+  }
+
+  return (
+    <div role="radiogroup" aria-label="Theme" className="flex flex-col gap-1">
+      {THEME_LIST.map((theme, index) => {
+        const isActive = theme.id === activeId
+        return (
+          <button
+            key={theme.id}
+            ref={(node) => {
+              buttonRefs.current[index] = node
+            }}
+            type="button"
+            role="radio"
+            aria-checked={isActive}
+            tabIndex={isActive ? 0 : -1}
+            onClick={() => choose(theme.id)}
+            onKeyDown={(event) => handleKeyDown(event, index)}
+            className={cn(
+              'flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-2 text-left text-sm outline-none',
+              'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+              isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                'size-4 shrink-0 rounded-full border border-border',
+                isActive && 'ring-2 ring-ring ring-offset-1 ring-offset-background'
+              )}
+              style={{ backgroundColor: theme.swatch }}
+            />
+            <span className="flex-1">{theme.name}</span>
+            {isActive && (
+              <span className="flex items-center gap-1 text-xs">
+                <CheckIcon aria-hidden className="size-3.5" />
+                <span>Current</span>
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
