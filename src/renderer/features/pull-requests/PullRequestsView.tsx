@@ -27,47 +27,47 @@ export function PullRequestsView() {
     headingRef.current?.focus()
   }, [])
 
-  if (!repositoryId) {
-    return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-        Add a repository to browse its pull requests.
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <h2 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
           Pull requests
         </h2>
-        <Select value={repositoryId} onValueChange={(value) => openPullRequests(value)}>
-          <SelectTrigger size="sm" aria-label="Repository" className="w-56">
-            <SelectValue placeholder="Select a repository" />
-          </SelectTrigger>
-          <SelectContent>
-            {repositories.map((repo) => (
-              <SelectItem key={repo.id} value={repo.id}>
-                {repo.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {repositoryId && (
+          <Select value={repositoryId} onValueChange={(value) => openPullRequests(value)}>
+            <SelectTrigger size="sm" aria-label="Repository" className="w-56">
+              <SelectValue placeholder="Select a repository" />
+            </SelectTrigger>
+            <SelectContent>
+              {repositories.map((repo) => (
+                <SelectItem key={repo.id} value={repo.id}>
+                  {repo.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
-      <div className="flex min-h-0 flex-1">
-        <div className="w-80 shrink-0 overflow-hidden border-r border-border">
-          <PullRequestList repositoryId={repositoryId} />
+      {!repositoryId ? (
+        <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+          Add a repository to browse its pull requests.
         </div>
-        <div className="min-w-0 flex-1 overflow-hidden">
-          {selectedNumber !== null ? (
-            <PullRequestDetail repositoryId={repositoryId} number={selectedNumber} />
-          ) : (
-            <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-              Select a pull request to view its details.
-            </div>
-          )}
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <div className="w-80 shrink-0 overflow-hidden border-r border-border">
+            <PullRequestList repositoryId={repositoryId} />
+          </div>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            {selectedNumber !== null ? (
+              <PullRequestDetail repositoryId={repositoryId} number={selectedNumber} />
+            ) : (
+              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+                Select a pull request to view its details.
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    </div >
+      )}
+    </div>
   )
 }
