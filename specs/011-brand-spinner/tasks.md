@@ -30,14 +30,14 @@ created, and the full mapping is posted as a comment on the tracking issue and k
 
 **Purpose**: the component and its CSS every story builds on.
 
-- [ ] T001 [P] Write `src/renderer/components/brand/BrandSpinner.tsx`: `BrandSpinnerProps` (`size:
+- [ ] T001 (#398) [P] Write `src/renderer/components/brand/BrandSpinner.tsx`: `BrandSpinnerProps` (`size:
   number`, `className?: string`), the exported `LEGIBILITY_FLOOR_PX = 24` constant, the
   Simplified-vs-Full variant choice gated on `size` (data-model.md), a fixed core group plus three
   arm groups (teal/amber/violet) built from the prerequisite mark's path data, always `aria-hidden`
   with no accessible-name prop (research.md decisions 2, 4, 7, 8), and the mount-time computed
   `animation-delay` (`-(Date.now() % 1200)` ms, research.md decision 5) applied as an inline style
   per arm group.
-- [ ] T002 [P] Add the spinner's `@keyframes` to `src/renderer/styles/globals.css`: one definition
+- [ ] T002 (#399) [P] Add the spinner's `@keyframes` to `src/renderer/styles/globals.css`: one definition
   (or one reused by all three arms with different `animation-delay`s) whose `0%`/`100%` frames are
   identical "at rest" frames (full opacity, no lift) with one brief bright-and-lifted frame
   between, 1.2s, ease-in-out, infinite, animating only `opacity`/`transform` (research.md decisions
@@ -58,12 +58,12 @@ every one of its three callers shows the identical result with no other change.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 1.
 
-- [ ] T003 [US1] Edit `src/renderer/features/sessions/sessionDisplay.tsx`: remove the
+- [ ] T003 (#400) [US1] Edit `src/renderer/features/sessions/sessionDisplay.tsx`: remove the
   `LoaderCircleIcon` import and its use in `StateIcon`'s `working` case; render `<BrandSpinner
   size={16} aria-hidden className={cn(className, 'shrink-0')} />` in its place, leaving `idle`,
   `needs-you`, and `stopped` untouched, and `StateIcon`'s own `{ status: SessionStatus }` props
   signature unchanged (FR-001, FR-012) (depends on T001).
-- [ ] T004 [US1] Verify live, on the built app: quickstart.md Story 1 checks 1 to 7 -- the brand
+- [ ] T004 (#401) [US1] Verify live, on the built app: quickstart.md Story 1 checks 1 to 7 -- the brand
   mark appears identically in the session list, chat header, and details card; the other three
   states are unchanged; several concurrent working Sessions stay phase-locked; the sr-only
   "Working" announcement is unaffected; a repository-wide `animate-spin` search finds it only in
@@ -82,7 +82,7 @@ theme-invariant -- properties of the one component Phase 1 built, not separate n
 
 **Independent test**: [quickstart.md](quickstart.md) Story 2.
 
-- [ ] T005 [US2] Verify live, on the built app: quickstart.md Story 2 checks 1 to 5 -- the 16px
+- [ ] T005 (#402) [US2] Verify live, on the built app: quickstart.md Story 2 checks 1 to 5 -- the 16px
   Simplified variant reads clearly; turning off Windows' "Animation effects" freezes every visible
   spinner on a clean rest frame while the sr-only text is unaffected, and turning it back on
   resumes the animation; twenty-plus concurrent working Sessions scroll smoothly with no
@@ -90,7 +90,7 @@ theme-invariant -- properties of the one component Phase 1 built, not separate n
   the Dark and Dark (high contrast) presets; DevTools confirms only `transform`/`opacity` are
   animated and that two simultaneous instances' computed `animation-delay`s differ by a multiple of
   1.2s (FR-005 to FR-010, FR-013, SC-003 to SC-006) (depends on T003, T004).
-- [ ] T006 [US2] Build and verify the forward-provisioned large size (research.md decision 10):
+- [ ] T006 (#403) [US2] Build and verify the forward-provisioned large size (research.md decision 10):
   temporarily render `<BrandSpinner size={48} />` behind an unshipped harness (for example, a
   throwaway line added to `src/renderer/features/readiness/Readiness.tsx` and reverted before
   committing), confirm it renders the Full, faceted variant legibly, then remove the harness
@@ -107,12 +107,12 @@ fully reverted; `pnpm typecheck` and `pnpm build` pass.
 **Purpose**: documentation and a final repository-wide confirmation that nothing outside this
 feature's stated scope moved.
 
-- [ ] T007 Edit `docs/DESIGN.md`'s "Shared status icon" bullet: replace "a spinning circle for
+- [ ] T007 (#404) Edit `docs/DESIGN.md`'s "Shared status icon" bullet: replace "a spinning circle for
   working" with naming the brand mark spinner, leaving the rest of the sentence (one shared
   `StateIcon` component, no surface draws its own icon) unchanged (research.md decision 11); do not
   touch that bullet's "status bar"/"tooltips" surface list (research.md decision 12 -- out of
   scope) (depends on T003).
-- [ ] T008 Final verification pass: re-run quickstart.md Stories 1 and 2 end to end on the built
+- [ ] T008 (#405) Final verification pass: re-run quickstart.md Stories 1 and 2 end to end on the built
   app in one sitting; `grep -rn "animate-spin" src/renderer` confirms exactly the seven kept sites
   from research.md decision 1's table and no others; read `ToolRow.tsx`, `Transcript.tsx`,
   `SubagentPanel.tsx`, `SessionList.tsx`'s create-button, both `Readiness.tsx` sites, `sonner.tsx`,
@@ -161,13 +161,14 @@ clean `pnpm typecheck`/`pnpm build`; committed.
 
 | Task | Issue |
 |---|---|
-| T001 | TBD |
-| T002 | TBD |
-| T003 | TBD |
-| T004 | TBD |
-| T005 | TBD |
-| T006 | TBD |
-| T007 | TBD |
-| T008 | TBD |
+| T001 | [#398](https://github.com/stuarthopwood/refract/issues/398) |
+| T002 | [#399](https://github.com/stuarthopwood/refract/issues/399) |
+| T003 | [#400](https://github.com/stuarthopwood/refract/issues/400) |
+| T004 | [#401](https://github.com/stuarthopwood/refract/issues/401) |
+| T005 | [#402](https://github.com/stuarthopwood/refract/issues/402) |
+| T006 | [#403](https://github.com/stuarthopwood/refract/issues/403) |
+| T007 | [#404](https://github.com/stuarthopwood/refract/issues/404) |
+| T008 | [#405](https://github.com/stuarthopwood/refract/issues/405) |
 
-Mapping filled in once issues are created; the tracking issue number is recorded there too.
+Created with `gh issue create` (2026-10-05) against the existing `stuarthopwood/refract` repo.
+Posted as a comment on tracking issue [#397](https://github.com/stuarthopwood/refract/issues/397).
