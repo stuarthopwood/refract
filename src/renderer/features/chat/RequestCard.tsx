@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { CollapsedLine } from './CollapsedLine'
+import { initials } from '@/lib/initials'
 import { CodeBlock, inferOutputBlock } from './Markdown'
 
 type AskToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -87,17 +88,6 @@ function askAnswer(item: AskToolItem): string {
     return details.selectedOptions.filter((o): o is string => typeof o === 'string').join(', ')
   }
   return item.output ?? ''
-}
-
-// Exported for `Transcript.tsx`'s user-message avatar (docs/DESIGN.md "Self vs. other layout"),
-// which needs the exact same initials rendering this file already uses for the answered-question
-// avatar below.
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  const first = parts[0]![0] ?? ''
-  const last = parts.length > 1 ? (parts[parts.length - 1]![0] ?? '') : ''
-  return (first + last).toUpperCase()
 }
 
 interface AskQuestionRowProps {
