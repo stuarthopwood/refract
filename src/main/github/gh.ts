@@ -217,7 +217,13 @@ export type SearchQualifierFlag = '--author' | '--assignee' | '--involves' | '--
  * as an unknown `gh` shorthand flag and errored, while a query like `--repo=other/repo` was
  * silently ACCEPTED as a real flag and changed which repository was searched. `gh search --help`
  * documents `--` as the literal separator between flags and the search query; pushing it ahead
- * of `query` makes `-label:` text safe and makes `--repo=`-style text an inert search term. */
+ * of `query` makes `-label:` text safe and makes `--repo=`-style text an inert search term.
+ *
+ * Critical remediation (round 4, new regression): the round-3 fix above pushed `--`/`query`
+ * BEFORE `--json`/`SEARCH_FIELDS`, so `gh` read `--json` and the field list as literal search
+ * text instead of flags -- every non-empty query on 4 of 5 filter tabs returned no results.
+ * Every flag, `--json` included, MUST be pushed before `--`; `--` and `query` must be the
+ * final two argv entries, confirmed live against a real repository. */
 export async function searchPullRequests(repoPath: string, qualifierFlag: SearchQualifierFlag, query?: string): Promise<GhSearchEntry[]> {
   const { owner, repo } = await ownerRepoFor(repoPath);
   const args = ['search', 'prs', '--repo', `${owner}/${repo}`, qualifierFlag, '@me', '--json', SEARCH_FIELDS];

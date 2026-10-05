@@ -529,7 +529,7 @@ export function registerPullRequests(manager: SessionManager): void {
       // known `headSha`/`id` to pin its commitOID to -- a missing entry is now `stale`, not
       // silently "not stale".
       const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
-      if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
+      if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; close this dialog, refresh, and try again.' } };
       // High remediation (round 3, security-auditor): the staleness cache above is silently
       // overwritten by `PullRequestDetail`'s own 15s background poll, which keeps running while
       // this dialog is open -- so a push that lands between dialog-open and confirm can get
@@ -573,7 +573,7 @@ export function registerPullRequests(manager: SessionManager): void {
       // known `headSha` to pin `--match-head-commit` to -- treated as stale, same reasoning as
       // submitReview's approve path above.
       const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
-      if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
+      if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; close this dialog, refresh, and try again.' } };
       // High remediation (round 3, security-auditor): see submitReview's identical comment --
       // the cache-vs-cache staleness check above does not detect a push that landed, then got
       // re-cached as "fresh" by the 15s background poll, between this dialog opening and the
@@ -601,7 +601,7 @@ export function registerPullRequests(manager: SessionManager): void {
         return { ok: false, error: { code: isConflict ? 'not-mergeable' : 'disabled', message: mergeDisabledReason } };
       }
       if (mergeableState === 'unknown') {
-        return { ok: false, error: { code: 'not-mergeable', message: 'GitHub is still checking whether this pull request can merge; refresh and try again shortly.' } };
+        return { ok: false, error: { code: 'not-mergeable', message: 'GitHub is still checking whether this pull request can merge; close this dialog, refresh, and try again shortly.' } };
       }
       // Pinned to the renderer's own dialog-open-time snapshot (just verified identical to
       // `fresh.headSha` above), not `fresh.headSha` alone, per the security remediation above.

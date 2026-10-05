@@ -36,7 +36,10 @@ export interface ReviewDialogProps {
   onSubmitted(): void
   /** High remediation (accessibility-auditor): this dialog's own opening "Review" button -- see
    * `MergeDialog.tsx`'s identical props for the exact reasoning (Radix can't restore focus to a
-   * now-disabled trigger, e.g. right after an Approve closes out the pull request). */
+   * now-disabled trigger). Unlike Merge, a successful review never disables this trigger --
+   * `reviewDisabledReason` is state-only (draft/closed/merged, FR-019), so this fallback is only
+   * ever reached if that state changes from OUTSIDE this dialog (e.g. someone else closes the
+   * pull request) while it's open; see ReviewDialog.tsx's own round-4 correction below. */
   restoreFocusTo: RefObject<HTMLButtonElement | null>
   restoreFocusFallbackTo: RefObject<HTMLElement | null>
 }

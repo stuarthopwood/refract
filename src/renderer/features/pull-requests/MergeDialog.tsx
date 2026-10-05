@@ -40,7 +40,7 @@ export interface MergeDialogProps {
    * disabled -- e.g. right after a successful merge, when the Merge button itself disappears
    * behind `mergeDisabledReason` (corrected round-3 comment: the field was renamed from
    * `disabledReason` when Critical #3's fix two rounds ago split it from `reviewDisabledReason`).
-  */
+   */
   restoreFocusFallbackTo: RefObject<HTMLElement | null>
 }
 
