@@ -25,3 +25,30 @@ export function focusSettingsEntry(): void {
   }
   document.querySelector<HTMLTextAreaElement>('textarea')?.focus()
 }
+
+// Post-build review fix (D3, Stuart 2026-10-05): leaving the Manage sessions screen via "Back
+// to chat" has the identical remount problem -- it is reached from the profile menu, not
+// SessionList.tsx, so the control to return to is the profile item's own name button, not the
+// Settings cog above. The name button's accessible name is dynamic (the signed-in account's
+// display name, "Sign in", or "GitHub CLI not found"), so it cannot be queried by
+// `aria-label` the way `focusSettingsEntry` queries the cog -- `ProfileItem.tsx` instead marks
+// it with a stable `data-profile-name-button` attribute for exactly this query.
+export function focusProfileItemName(): void {
+  const nameButton = document.querySelector<HTMLElement>('[data-profile-name-button]')
+  if (nameButton) {
+    nameButton.focus()
+    return
+  }
+  document.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+}
+
+// Post-build review fix (D2, Stuart 2026-10-05): opening a Session from the Manage sessions
+// screen (spec 008 FR-025) switches back to the chat view and unmounts this screen entirely --
+// unlike SessionList.tsx's own row click, which never unmounts anything (the nav and chat are
+// both already visible, so the clicked row simply keeps the focus it already had). There is no
+// single "the clicked row" to return focus to here, so this lands on the message box instead --
+// the same first enabled `textarea` `ChatPane.tsx`'s own `focusPaneContent` falls back to
+// first, and the one control a freshly-opened Session reliably has.
+export function focusMessageBox(): void {
+  document.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')?.focus()
+}

@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { focusProfileItemName } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
 import { ManageSessionRow } from './ManageSessionRow'
@@ -51,6 +52,11 @@ export function ManageSessionsScreen() {
 
   function handleBackToChat(): void {
     useViewStore.getState().openChat()
+    // Post-build review fix (D3): reached from the profile menu's "Manage sessions" item, not
+    // SessionList.tsx's cog, so the control to return to is the profile item's own name button,
+    // not the Settings cog `focusSettingsEntry` queries -- mirroring that same helper's own
+    // "query after the remount commits" pattern (SettingsScreen.tsx's `handleBackToChat`).
+    requestAnimationFrame(() => focusProfileItemName())
   }
 
   function handleClearFilters(): void {
@@ -86,6 +92,8 @@ export function ManageSessionsScreen() {
         repositories={repositories}
         searchInputRef={searchInputRef}
         onFiltersChange={setFilters}
+        shownCount={visible.length}
+        totalCount={sessions.length}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">

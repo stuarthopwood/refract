@@ -26,6 +26,7 @@ import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { buildSessionRowActions } from '@/features/sessions/sessionActions'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
+import { focusMessageBox } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 
@@ -66,7 +67,6 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
-  const listFocusRequestedRef = useRef(false)
   // Same fallback-CHAIN idea as SessionList.tsx's own `captureFocusFallback` (its own doc
   // comment explains why a plain `closest` captured once is not enough): next row, else
   // previous row, else the search input, resolved lazily against `isConnected` so it never
@@ -88,6 +88,18 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
 
   function focusListContainer(): void {
     focusFallbackRef.current()
+  }
+
+  // Post-build review fix (D1, blocker, WCAG 2.4.3): archive/restore/delete only sometimes
+  // unmounts THIS row (under the Active/Archived filter it does; under All it never does -- the
+  // row survives with its quick-action button simply relabelled, and the browser keeps focus on
+  // that same DOM node with no code needed). Deferred one animation frame so React has actually
+  // committed the removal (or lack of one) before this checks `rowRef` -- calling it synchronously
+  // right after the action's promise resolves read a stale, not-yet-updated DOM in testing.
+  function focusFallbackIfRowGone(): void {
+    requestAnimationFrame(() => {
+      if (!rowRef.current?.isConnected) focusListContainer()
+    })
   }
 
   function startRenaming(): void {
@@ -139,6 +151,11 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
       if (isFocusedPane) void open(session.id)
     }
     useViewStore.getState().openChat(session.repositoryId)
+    // Post-build review fix (D2): this screen unmounts the instant the view flips back to chat
+    // (App.tsx swaps the whole main area on `view`), unlike SessionList.tsx's own row click,
+    // which never unmounts anything -- there is no single "the clicked row" to leave focus on
+    // here, so this lands on the message box instead, after the remount commits.
+    requestAnimationFrame(() => focusMessageBox())
   }
 
   const actions = buildSessionRowActions(session, {
@@ -150,14 +167,18 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     onCopyPath: () => void copyPath(),
     onReveal: () => void reveal(),
     onArchive: () => {
-      listFocusRequestedRef.current = true
       captureFocusFallback()
-      void archive(session.id).then(() => onAnnounce(`Archived ${session.name}`))
+      void archive(session.id).then(() => {
+        onAnnounce(`Archived ${session.name}`)
+        focusFallbackIfRowGone()
+      })
     },
     onRestore: () => {
-      listFocusRequestedRef.current = true
       captureFocusFallback()
-      void restore(session.id).then(() => onAnnounce(`Restored ${session.name}`))
+      void restore(session.id).then(() => {
+        onAnnounce(`Restored ${session.name}`)
+        focusFallbackIfRowGone()
+      })
     },
     onStopAgent: () => void stopAgent(session.id),
     onDelete: () => {
@@ -170,10 +191,6 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     if (renameRequestedRef.current) {
       event.preventDefault()
       renameRequestedRef.current = false
-    } else if (listFocusRequestedRef.current) {
-      event.preventDefault()
-      listFocusRequestedRef.current = false
-      focusListContainer()
     } else {
       event.preventDefault()
       if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
@@ -183,10 +200,13 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   }
 
   function handleQuickAction(): void {
-    listFocusRequestedRef.current = true
     captureFocusFallback()
-    if (isArchived) void restore(session.id).then(() => onAnnounce(`Restored ${session.name}`))
-    else void archive(session.id).then(() => onAnnounce(`Archived ${session.name}`))
+    const wasArchived = isArchived
+    const action = wasArchived ? restore(session.id) : archive(session.id)
+    void action.then(() => {
+      onAnnounce(wasArchived ? `Restored ${session.name}` : `Archived ${session.name}`)
+      focusFallbackIfRowGone()
+    })
   }
 
   return (
@@ -288,7 +308,7 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
         onOpenChange={setDeleteOpen}
         onDeleted={() => {
           onAnnounce(`Deleted ${session.name}`)
-          focusListContainer()
+          focusFallbackIfRowGone()
         }}
         onCancelled={() => {
           if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()

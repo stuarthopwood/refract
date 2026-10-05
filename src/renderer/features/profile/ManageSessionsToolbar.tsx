@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { Repository } from '../../../shared/model'
+import { showingCountLabel } from './manageSessionsHelpers'
 import type { ArchiveFilter, SessionFilters, SortKey } from './manageSessionsHelpers'
 
 export interface ManageSessionsToolbarProps {
@@ -14,6 +15,14 @@ export interface ManageSessionsToolbarProps {
   repositories: Repository[]
   searchInputRef: RefObject<HTMLInputElement | null>
   onFiltersChange(next: SessionFilters): void
+  /** Post-build review fix (D4): the filtered-result count was previously announced only
+   *  through the screen's sr-only live region (ManageSessionsScreen.tsx), invisible to a
+   *  sighted user -- the header badge never updates past the unfiltered total. Shown here,
+   *  beside the controls that caused the filtering, only while `shownCount` differs from
+   *  `totalCount` (which is never true with nothing filtered, since filtering alone changes
+   *  which sessions are included). */
+  shownCount: number
+  totalCount: number
 }
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -23,7 +32,14 @@ const SORT_LABELS: Record<SortKey, string> = {
   status: 'Status'
 }
 
-export function ManageSessionsToolbar({ filters, repositories, searchInputRef, onFiltersChange }: ManageSessionsToolbarProps) {
+export function ManageSessionsToolbar({
+  filters,
+  repositories,
+  searchInputRef,
+  onFiltersChange,
+  shownCount,
+  totalCount
+}: ManageSessionsToolbarProps) {
   function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     if (event.key === 'Escape' && filters.search) {
       event.preventDefault()
@@ -89,6 +105,10 @@ export function ManageSessionsToolbar({ filters, repositories, searchInputRef, o
           ))}
         </SelectContent>
       </Select>
+
+      {shownCount !== totalCount && (
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{showingCountLabel(shownCount, totalCount)}</span>
+      )}
     </div>
   )
 }

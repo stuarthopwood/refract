@@ -147,6 +147,7 @@ export function ProfileItem() {
                 ref={nameButtonRef}
                 type="button"
                 aria-label={label}
+                data-profile-name-button
                 className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-expanded:bg-muted"
               >
                 <Avatar size="sm">
