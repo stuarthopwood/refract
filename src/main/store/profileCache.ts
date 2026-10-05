@@ -35,4 +35,17 @@ export class ProfileCacheStore {
     this.data = next
     await writeJsonFile(this.file, next)
   }
+
+  /** Deletes `host/login`'s cached entry, if any (GateSec008 LOW: a signed-out account must not
+   * leave its display name/avatar behind in profileCache.json). No-op when there was nothing
+   * cached for that pair. */
+  async delete(host: string, login: string): Promise<void> {
+    const key = `${host}/${login}`
+    if (!(key in this.data.accounts)) return
+    const accounts = { ...this.data.accounts }
+    delete accounts[key]
+    const next = { ...this.data, accounts }
+    this.data = next
+    await writeJsonFile(this.file, next)
+  }
 }

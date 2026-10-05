@@ -103,9 +103,12 @@ interface GhAuthStatusJson {
  * this parser already tolerates since it only reads the four fields above.
  *
  * `gh auth status` exits non-zero when nobody is signed in to any host at all, but `--json`
- * still writes a parseable (near-empty) body to stdout in that case; a parseable stdout body is
- * treated as authoritative regardless of exit code, and `gh-failed` is only raised when stdout
- * itself is not JSON (a real CLI/transport failure, not "signed out").
+ * still writes a parseable (near-empty) body to stdout in that case; a non-empty stdout body is
+ * treated as authoritative regardless of exit code, and `gh-failed` is raised both when stdout
+ * itself is not JSON (a real CLI/transport failure, not "signed out") AND when stdout is empty
+ * on a non-zero exit (GateCode008 MEDIUM: an older `gh` without `--json` support on `auth
+ * status` prints only to stderr in that case, which must surface as a failure, not a silent
+ * "signed out").
  */
 export async function authStatus(): Promise<GhAuthHostEntry[]> {
   const result = await ghRaw(['auth', 'status', '--json', 'hosts'])
@@ -113,10 +116,17 @@ export async function authStatus(): Promise<GhAuthHostEntry[]> {
     throw new GhError('gh-not-found', result.stderr)
   }
   let parsed: GhAuthStatusJson
-  try {
-    parsed = (result.stdout.trim() ? JSON.parse(result.stdout) : {}) as GhAuthStatusJson
-  } catch {
-    throw new GhError('gh-failed', `gh auth status --json hosts returned unparseable output: ${result.stderr.trim() || result.stdout.trim()}`)
+  if (!result.stdout.trim()) {
+    if (result.code !== 0) {
+      throw new GhError('gh-failed', `gh auth status --json hosts failed: ${result.stderr.trim() || 'no output'}`)
+    }
+    parsed = {}
+  } else {
+    try {
+      parsed = JSON.parse(result.stdout) as GhAuthStatusJson
+    } catch {
+      throw new GhError('gh-failed', `gh auth status --json hosts returned unparseable output: ${result.stderr.trim() || result.stdout.trim()}`)
+    }
   }
   const hosts = parsed.hosts ?? {}
   const entries: GhAuthHostEntry[] = []
@@ -183,9 +193,19 @@ export class GhLoginFlow extends EventEmitter {
     child.stdout.on('data', (chunk: Buffer) => this.onStdoutData(chunk))
     child.stderr.on('data', (chunk: Buffer) => this.onStdoutData(chunk))
     child.on('exit', (code) => this.onExit(code))
+    // A spawn failure (EACCES, the binary removed after resolveExecutable cached its path, AV
+    // quarantine) emits 'error' with no 'exit' to follow; without a listener here it would be an
+    // uncaught exception in the main process, and the flow would stay in activeAddFlows forever
+    // (GateSec008 MEDIUM / GateCode008 MEDIUM). onExit's own guard makes this safe even if
+    // 'exit' somehow also fires for the same child.
+    child.on('error', () => this.onExit(null))
+    // cancel()'s stdin.end() on an already-closed pipe can emit an async EPIPE 'error'; without
+    // a listener that is also an uncaught exception (same findings as above).
+    child.stdin.on('error', () => undefined)
   }
 
-  /** Idempotent: stdin close, wait up to 10s, then force-kill via taskkill. */
+  /** Idempotent: stdin close, then force-kill via taskkill after a 750ms grace
+   * (`CANCEL_GRACE_MS`) if the process has not exited on its own. */
   async cancel(): Promise<void> {
     this.requested = true
     if (!this.stopPromise) {
@@ -263,6 +283,11 @@ export class GhLoginFlow extends EventEmitter {
   }
 
   private onExit(code: number | null): void {
+    // Guards against a double call (the normal 'exit' event firing after an 'error' already
+    // called this with code null, or vice-versa) -- without this, 'exit' would emit twice and
+    // callers (e.g. accounts.ts's ADD_START handler) would broadcast a completed/failed add flow
+    // twice (GateCode008 MEDIUM "GhLoginFlow 'error' handling").
+    if (this.exited) return
     this.exited = true
     if (this.stdoutBuf.trim()) {
       this.handleLine(this.stdoutBuf)
@@ -292,12 +317,12 @@ export async function authLoginCancel(flow: GhLoginFlow): Promise<void> {
 /**
  * Runs `gh auth switch --hostname <host> --user <login>`.
  *
- * **Unverified live** (research.md Decision 2 / T001, 2026-10-05): T001 could not safely add a
- * real second GitHub account, so this command's actual stdout/stderr/exit code — for both a
- * matching and a non-matching `--user` — was never captured. This implements `gh auth switch`'s
- * documented `--hostname`/`--user` flags only; a non-matching `--user` is expected to surface as
- * a non-zero exit (and therefore `GhError('gh-failed', …)`) but that has not been confirmed
- * against a real run.
+ * Verified live against a scratch `GH_CONFIG_DIR` (research.md Decision 2, 2026-10-05, T001): a
+ * matching `--user` (e.g. `--hostname github.com --user bob-test`) exits 0 in ~145 ms with EMPTY
+ * stdout and `✓ Switched active account for github.com to bob-test` on stderr. A `--user` that
+ * does not match any existing account on that host (e.g. `--user nobody-test`) exits 1 with
+ * empty stdout and stderr `not logged in to github.com account nobody-test` — confirming
+ * `GhError('gh-failed', …)` is exactly what a non-matching `--user` surfaces as.
  */
 export async function authSwitch(host: string, login: string): Promise<void> {
   await gh(['auth', 'switch', '--hostname', host, '--user', login])
@@ -306,10 +331,12 @@ export async function authSwitch(host: string, login: string): Promise<void> {
 /**
  * Runs `gh auth logout --hostname <host> --user <login>`.
  *
- * **Unverified live** (research.md Decision 2 / T001, 2026-10-05): same caveat as
- * `authSwitch` above — `gh auth logout`'s real stdout/stderr/exit code for a matching and a
- * non-matching `--user` were never captured live. This implements the documented
- * `--hostname`/`--user` flags only.
+ * Verified live against a scratch `GH_CONFIG_DIR` (research.md Decision 2, 2026-10-05, T001): a
+ * matching `--user` (e.g. `--hostname github.com --user bob-test`) exits 0 with empty stdout and
+ * stderr `✓ Logged out of github.com account bob-test`, followed by `✓ Switched active account
+ * for github.com to alice-test` when another account on that host became the new active one. A
+ * `--user` that does not match any existing account on that host exits 1 with empty stdout and
+ * the same `not logged in to github.com account <user>` stderr `authSwitch` above documents.
  */
 export async function authLogout(host: string, login: string): Promise<void> {
   await gh(['auth', 'logout', '--hostname', host, '--user', login])

@@ -20,17 +20,13 @@
 
 import { app, ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { promises as fsp } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import type { RpcCommand } from '../../shared/frames';
 import { IPC_EVENTS, IPC_REQUESTS } from '../../shared/ipc';
 import type { GitHubAccount, GitHubAddFlowProgress, IpcErrorCode, OmpProviderState, Result } from '../../shared/ipc';
 import type { GhAuthHostEntry, GhLoginExitInfo, GhLoginFlow } from '../github/cli';
 import { GhError, authLoginCancel, authLoginStart, authLogout, authStatus, authSwitch } from '../github/cli';
 import { fetchAvatar, fetchProfile } from '../github/profile';
 import { openExternalSafe } from '../index';
-import { OmpProcess } from '../omp/OmpProcess';
+import { readOmpLoginProviders } from '../omp/loginProviders';
 import { ProfileCacheStore } from '../store/profileCache';
 import type { SessionManager } from '../SessionManager';
 
@@ -41,7 +37,13 @@ import type { SessionManager } from '../SessionManager';
 let profileCachePromise: Promise<ProfileCacheStore> | undefined;
 
 function getProfileCache(): Promise<ProfileCacheStore> {
-  profileCachePromise ??= ProfileCacheStore.open(app.getPath('userData'));
+  // GateCode008 LOW: a rejected open() (a non-ENOENT read error, say) must not stay cached
+  // forever -- without resetting on rejection, every later list()/mutation call would keep
+  // re-awaiting the same already-rejected promise and fail for good.
+  profileCachePromise ??= ProfileCacheStore.open(app.getPath('userData')).catch((err) => {
+    profileCachePromise = undefined;
+    throw err;
+  });
   return profileCachePromise;
 }
 
@@ -49,19 +51,28 @@ function getProfileCache(): Promise<ProfileCacheStore> {
 // `addStart`, so a later `addCancel(flowId)` can find the right `GhLoginFlow` to cancel.
 const activeAddFlows = new Map<string, GhLoginFlow>();
 let addFlowSeq = 0;
+// GateCode008 MEDIUM "broadcast ordering": every operation that will eventually call
+// broadcastGithubChangedIfCurrent grabs a ticket via acquireBroadcastTicket() when it STARTS
+// its async work, not when it finishes -- so a re-read or reconcile that started before a
+// later switch/sign-out/add can never broadcast its now-stale result over that later
+// operation's own broadcast, however the two settle relative to each other.
+let latestBroadcastTicket = 0;
 
 export function registerAccounts(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   void manager; // no SessionManager state is needed here; kept for signature parity with the other area files
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_GITHUB_LIST, async (): Promise<Result<GitHubAccount[]>> => {
     try {
+      const ticket = acquireBroadcastTicket();
       const accounts = await listGithubAccounts(() => {
         // The background cache refresh that just settled may have changed displayName/
         // avatarDataUrl for one or more accounts -- re-read the (now-updated) cache and push
         // it, so the renderer picks up the real name/avatar shortly after the FIRST list()
         // call ever returned them as null, instead of only on some later unrelated list() call.
-        void listGithubAccounts().then(
-          (refreshed) => broadcastGithubChanged(getWindow, refreshed),
+        // Pure read only (GateCode008 MEDIUM "duplicated profile+avatar refresh"): this must
+        // never itself kick off another refresh round.
+        void readGithubAccounts().then(
+          (refreshed) => broadcastGithubChangedIfCurrent(ticket, getWindow, refreshed),
           (err) => console.error('accounts: failed to re-read the GitHub account list after a background cache refresh', err)
         );
       });
@@ -75,6 +86,9 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
     try {
       // contracts/ipc.md: always `github.com` -- `switch`/`signOut` are the only operations that
       // ever take an explicit host, since adding a *new* account is always against github.com.
+      // The pre-start snapshot lets the completed-add path (below) learn which host/login is
+      // new once the flow exits, since `gh`/GhLoginFlow never reports the login it signed in.
+      const hostsBeforeStart = await authStatus();
       const flow = await authLoginStart('github.com');
       const flowId = `gh-add-${Date.now()}-${++addFlowSeq}`;
       activeAddFlows.set(flowId, flow);
@@ -88,10 +102,8 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
         const status: GitHubAddFlowProgress['status'] = requested ? 'cancelled' : code === 0 ? 'completed' : 'failed';
         broadcastAddProgress(getWindow, { flowId, code: lastCode, status });
         if (status === 'completed') {
-          void listGithubAccounts().then(
-            (accounts) => broadcastGithubChanged(getWindow, accounts),
-            (err) => console.error('accounts: failed to refresh GitHub accounts after a completed add flow', err)
-          );
+          const ticket = acquireBroadcastTicket();
+          void finishCompletedAdd(hostsBeforeStart, ticket, getWindow);
         }
       });
       return { ok: true, value: { flowId } };
@@ -121,30 +133,15 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
   });
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_GITHUB_SIGN_OUT, async (_event, host: unknown, login: unknown): Promise<Result<GitHubAccount[]>> => {
-    return runGithubAccountMutation(host, login, getWindow, authLogout, projectSignOut);
+    return runGithubAccountMutation(host, login, getWindow, signOutAndForgetProfile, projectSignOut);
   });
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_OMP_LIST, async (): Promise<Result<OmpProviderState[]>> => {
-    const scratchDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'refract-accounts-omp-'));
-    // Same scratch, non-Session construction readiness.ts's `checkOmpSignedIn` uses: this probe
-    // never calls `open_session` or anything else requiring persistence, only the one read-only
-    // `get_login_providers` command (research.md decision 6, FINDINGS item 15).
-    const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'accounts-omp-probe', noSession: true });
-    try {
-      await proc.start();
-      const res = await proc.request({ type: 'get_login_providers', id: '' } as unknown as RpcCommand);
-      if (!res.success) {
-        return { ok: false, error: { code: 'omp-probe-failed', message: 'omp did not answer get_login_providers successfully' } };
-      }
-      const providers = (res.data as { providers?: Array<{ id: string; authenticated?: boolean }> } | undefined)?.providers ?? [];
-      const value: OmpProviderState[] = providers.map((provider) => ({ id: provider.id, authenticated: provider.authenticated === true }));
-      return { ok: true, value };
-    } catch (err) {
-      return { ok: false, error: { code: 'omp-probe-failed', message: err instanceof Error ? err.message : String(err) } };
-    } finally {
-      await proc.stop().catch(() => undefined);
-      await fsp.rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
+    const providers = await readOmpLoginProviders('accounts-omp-probe');
+    if (providers === null) {
+      return { ok: false, error: { code: 'omp-probe-failed', message: 'omp did not answer get_login_providers successfully' } };
     }
+    return { ok: true, value: providers };
   });
 
   // research.md decision 6 fallback: no `/login`/`/logout` can ever be driven over rpc-ui, so
@@ -192,6 +189,17 @@ function toGithubAccounts(hosts: GhAuthHostEntry[], cache: ProfileCacheStore): G
   });
 }
 
+/** Flattens `authStatus()` with `profileCache.json`'s cached display fields -- the pure,
+ * no-refresh read (GateCode008 MEDIUM "duplicated profile+avatar refresh"). Used for every
+ * re-read that must NOT itself kick off another refresh round: the background-refresh re-read
+ * below, a switch/sign-out's post-mutation reconcile, and the completed-add path. Only
+ * `listGithubAccounts` below -- the explicit list() path -- ever refreshes. */
+async function readGithubAccounts(): Promise<GitHubAccount[]> {
+  const hosts = await authStatus();
+  const cache = await getProfileCache();
+  return toGithubAccounts(hosts, cache);
+}
+
 /** Flattens `authStatus()` with `profileCache.json`'s cached display fields, then kicks off a
  * background refresh of that cache for every account (research.md decision 5) -- the returned
  * list always reflects whatever was already cached, `null` included; the refresh is for next
@@ -204,10 +212,6 @@ async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccou
   const accounts = toGithubAccounts(hosts, cache);
   if (onRefreshed) {
     void Promise.all(hosts.map((entry) => refreshProfileCache(cache, entry.host, entry.login))).then(onRefreshed);
-  } else {
-    for (const entry of hosts) {
-      void refreshProfileCache(cache, entry.host, entry.login);
-    }
   }
   return accounts;
 }
@@ -217,6 +221,13 @@ async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccou
  * successful profile fetch keeps the previously cached avatar rather than clearing it. Never
  * throws -- callers fire this and forget it. */
 async function refreshProfileCache(cache: ProfileCacheStore, host: string, login: string): Promise<void> {
+  if (host !== 'github.com') {
+    // GateSec008 HIGH / GateCode008 CRITICAL: skip entirely rather than attempt-then-catch --
+    // `fetchProfile` itself refuses any non-github.com host too, but a GitHub Enterprise
+    // account must never even have its token read for this. The cache entry simply stays
+    // absent; the UI already falls back to the login/initials for it.
+    return;
+  }
   try {
     const profile = await fetchProfile(host, login);
     const previous = cache.get(host, login);
@@ -225,12 +236,13 @@ async function refreshProfileCache(cache: ProfileCacheStore, host: string, login
       try {
         avatarDataUrl = await fetchAvatar(profile.avatarUrl);
       } catch (err) {
-        console.debug(`accounts: avatar refresh failed for ${login}@${host}, keeping the previously cached avatar`, err instanceof Error ? err.message : err);
+        // GateSec008 LOW: no login/handle in a debug log, only the host.
+        console.debug(`accounts: avatar refresh failed for an account on ${host}, keeping the previously cached avatar`, err instanceof Error ? err.message : err);
       }
     }
     await cache.set(host, login, { displayName: profile.displayName, avatarDataUrl, fetchedAt: new Date().toISOString() });
   } catch (err) {
-    console.debug(`accounts: opportunistic profile refresh failed for ${login}@${host}`, err instanceof Error ? err.message : err);
+    console.debug(`accounts: opportunistic profile refresh failed for an account on ${host}`, err instanceof Error ? err.message : err);
   }
 }
 
@@ -249,6 +261,44 @@ function projectSignOut(hosts: GhAuthHostEntry[], host: string, login: string): 
   if (!removed?.active) return remaining;
   const successor = remaining.find((entry) => entry.host === host);
   return successor ? remaining.map((entry) => (entry === successor ? { ...entry, active: true } : entry)) : remaining;
+}
+
+/** `signOut`'s `mutate` function (GateSec008 LOW): once `gh auth logout` has actually
+ * succeeded, also drop that account's now-stale display name/avatar from profileCache.json so
+ * a signed-out account's personal data does not outlive the account. Best-effort -- a failed
+ * cache delete must not undo an already-successful sign-out. */
+async function signOutAndForgetProfile(host: string, login: string): Promise<void> {
+  await authLogout(host, login);
+  try {
+    const cache = await getProfileCache();
+    await cache.delete(host, login);
+  } catch (err) {
+    console.debug(`accounts: failed to delete the cached profile for a signed-out account on ${host}`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** A completed add flow's `authStatus()` snapshot vs. the one taken just before the flow
+ * started is the only way to learn which host/login is new (GhLoginFlow reports no login);
+ * refreshes that account's profile cache (GateCode008 MEDIUM "a newly added account never gets
+ * its name/avatar this session") and then broadcasts, under `ticket` so a later mutation always
+ * wins over this if one started since. Never throws -- the caller fires this and forgets it. */
+async function finishCompletedAdd(
+  hostsBeforeStart: GhAuthHostEntry[],
+  ticket: number,
+  getWindow: () => BrowserWindow | undefined
+): Promise<void> {
+  try {
+    const hostsAfter = await authStatus();
+    const before = new Set(hostsBeforeStart.map((entry) => `${entry.host}/${entry.login}`));
+    const added = hostsAfter.filter((entry) => !before.has(`${entry.host}/${entry.login}`));
+    const cache = await getProfileCache();
+    await Promise.all(
+      added.filter((entry) => entry.host === 'github.com').map((entry) => refreshProfileCache(cache, entry.host, entry.login))
+    );
+    broadcastGithubChangedIfCurrent(ticket, getWindow, toGithubAccounts(hostsAfter, cache));
+  } catch (err) {
+    console.error('accounts: failed to refresh GitHub accounts after a completed add flow', err);
+  }
 }
 
 /** Shared body of `switch`/`signOut`: validate the pair against the current `authStatus()` list
@@ -273,11 +323,14 @@ async function runGithubAccountMutation(
     // The CLI has confirmed the change (exit 0), so answer from what it did rather than re-running
     // `gh auth status`, which re-validates every token over the network (about 0.5 s) and pushed the
     // profile item past the 1 s FR-010 allows. A background read then reconciles with the CLI's
-    // real state and broadcasts any difference.
+    // real state and broadcasts any difference -- both broadcasts share one ticket (GateCode008
+    // MEDIUM "broadcast ordering"), so a later mutation's own ticket always wins over this one's
+    // now-stale reconcile, however the two settle relative to each other.
+    const ticket = acquireBroadcastTicket();
     const projected = toGithubAccounts(project(hosts, host, login), await getProfileCache());
-    broadcastGithubChanged(getWindow, projected);
-    void listGithubAccounts().then(
-      (actual) => broadcastGithubChanged(getWindow, actual),
+    broadcastGithubChangedIfCurrent(ticket, getWindow, projected);
+    void readGithubAccounts().then(
+      (actual) => broadcastGithubChangedIfCurrent(ticket, getWindow, actual),
       (err) => console.error('accounts: failed to reconcile the GitHub account list after a mutation', err)
     );
     return { ok: true, value: projected };
@@ -315,4 +368,23 @@ function broadcastGithubChanged(getWindow: () => BrowserWindow | undefined, acco
       console.error('accounts: failed to broadcast accounts:github-changed', err);
     }
   }
+}
+
+/** Issues the next ticket for the broadcast-ordering guard (GateCode008 MEDIUM "broadcast
+ * ordering", declared with `latestBroadcastTicket` above). */
+function acquireBroadcastTicket(): number {
+  latestBroadcastTicket += 1;
+  return latestBroadcastTicket;
+}
+
+/** Only broadcasts when `ticket` is still the most recently acquired one -- a re-read or
+ * reconcile holding an older ticket has been superseded by a later mutation/list and must drop
+ * its now-stale result instead of overwriting what the newer operation already broadcast. */
+function broadcastGithubChangedIfCurrent(
+  ticket: number,
+  getWindow: () => BrowserWindow | undefined,
+  accounts: GitHubAccount[]
+): void {
+  if (ticket !== latestBroadcastTicket) return;
+  broadcastGithubChanged(getWindow, accounts);
 }

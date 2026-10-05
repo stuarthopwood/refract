@@ -10,6 +10,7 @@ import path from 'node:path';
 import { resolveExecutable } from './process/executables';
 import { gitRaw } from './git/git';
 import { OmpProcess } from './omp/OmpProcess';
+import { readOmpLoginProviders } from './omp/loginProviders';
 import type { RpcCommand } from '../shared/frames';
 import type { Check, Readiness } from '../shared/ipc';
 
@@ -89,33 +90,27 @@ async function checkOmpSignedIn(): Promise<Check> {
         return { ok: true };
       }
     }
-    return { ok: false, hint: await signedInFailureHint(proc) };
+    return { ok: false, hint: await signedInFailureHint() };
   } catch {
-    return { ok: false, hint: await signedInFailureHint(proc) };
+    return { ok: false, hint: await signedInFailureHint() };
   } finally {
     await proc.stop().catch(() => undefined);
     await fs.rm(scratchDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
-// Enriches SIGNED_IN_HINT with unauthenticated provider ids, when available. This is the one
-// remaining use of `get_login_providers`; failures here are swallowed since the base hint is
-// already correct without it.
-async function signedInFailureHint(proc: OmpProcess): Promise<string> {
-  try {
-    // `get_login_providers` is not part of the app's normal turn-based command set
-    // (src/shared/frames.ts's `RpcCommand` union), so it is not declared there; this is the
-    // one caller. The cast documents that narrowing, not an actual `any`.
-    const res = await proc.request({ type: 'get_login_providers', id: '' } as unknown as RpcCommand);
-    if (res.success) {
-      const providers = (res.data as { providers?: Array<{ id: string; authenticated?: boolean }> } | undefined)?.providers ?? [];
-      const ids = providers.filter((p) => p.authenticated !== true).map((p) => p.id);
-      if (ids.length > 0) {
-        return `${SIGNED_IN_HINT} Not signed in: ${ids.slice(0, 5).join(', ')}.`;
-      }
+// Enriches SIGNED_IN_HINT with unauthenticated provider ids, when available (GateCode008
+// MEDIUM "the scratch-OMP provider probe is duplicated"): the scratch OmpProcess construction
+// for this read-only get_login_providers call now lives in omp/loginProviders.ts, shared with
+// ipc/accounts.ts's ACCOUNTS_OMP_LIST handler, instead of being duplicated here. Failures are
+// swallowed since the base hint is already correct without this enrichment.
+async function signedInFailureHint(): Promise<string> {
+  const providers = await readOmpLoginProviders('readiness-login-providers-hint');
+  if (providers) {
+    const ids = providers.filter((p) => p.authenticated !== true).map((p) => p.id);
+    if (ids.length > 0) {
+      return `${SIGNED_IN_HINT} Not signed in: ${ids.slice(0, 5).join(', ')}.`;
     }
-  } catch {
-    // fall through to the base hint
   }
   return SIGNED_IN_HINT;
 }

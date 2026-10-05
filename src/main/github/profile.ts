@@ -13,6 +13,10 @@ import { matchesImageSignature } from '../../shared/images'
 import { authToken } from './cli'
 
 const API_HOST = 'api.github.com'
+// GateSec008 HIGH / GateCode008 CRITICAL: the REST call below is hard-coded to api.github.com,
+// so a token for any other host (GitHub Enterprise, say) must never even be read, let alone
+// sent there. `fetchProfile` enforces this before `authToken` is ever called.
+const SUPPORTED_AUTH_HOST = 'github.com'
 const AVATAR_HOST = 'avatars.githubusercontent.com'
 const REQUEST_TIMEOUT_MS = 10_000
 // A GitHub user profile JSON document is a few hundred bytes; generously bounded so a buggy or
@@ -51,6 +55,12 @@ export class AvatarFetchError extends Error {
  * leaves the previous entry untouched").
  */
 export async function fetchProfile(host: string, login: string): Promise<GitHubProfile> {
+  // Checked BEFORE authToken is ever called (GateSec008 HIGH / GateCode008 CRITICAL): this
+  // request always goes to the fixed api.github.com below, so a non-github.com account's token
+  // must never be read at all, let alone sent to the wrong server.
+  if (host !== SUPPORTED_AUTH_HOST) {
+    throw new ProfileFetchError(`profile fetch is only supported for ${SUPPORTED_AUTH_HOST}, not ${host}`)
+  }
   const token = await authToken(host, login)
   const body = await requestProfileBody(token)
 

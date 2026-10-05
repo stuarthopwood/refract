@@ -69,16 +69,29 @@ session, so this run only did what a single-account machine can verify safely.
   gitProtocol}` — the array-of-entries shape this spec always assumed, now confirmed rather than
   inferred; an invalid token reports `state: "error"` with an HTTP 401 message (this is what
   Manage accounts' "Needs attention" row keys on, `state !== 'success'`), and `gh` lists the
-  ACTIVE account first (the order changes after a switch). (b) `gh auth switch --hostname <h>
-  --user <login>` completed in ~145 ms. (c) logging out the ACTIVE account makes `gh` activate
-  the first remaining account on that host in its own listing order — confirmed with 2 accounts,
-  3 accounts (active `carol` -> `alice`), and a non-alphabetical config (active `mid` of `zed`,
-  `mid`, `abe` -> `zed`): `ManageAccountsDialog.tsx`/`SignOutDialog.tsx`'s successor rule ("first
-  remaining account on the same host, in the CLI's listing order") matches reality. A real
-  non-matching `--user` on `switch`/`logout` was not separately re-probed in this pass (the
-  original single-account-workstation attempt remains the only evidence for that one case); the
-  three-shapes verification above is otherwise complete, so no part of `ManageAccountsDialog.tsx`
-  ships against an assumed array shape any longer.
+  ACTIVE account first (the order changes after a switch). (b) a matching `gh auth switch
+  --hostname <h> --user <login>` completed in ~145 ms, exits 0, with EMPTY stdout and
+  `✓ Switched active account for <h> to <login>` on stderr; a `--user` that does not match any
+  existing account on that host exits 1 with empty stdout and stderr `not logged in to <h>
+  account <login>`. (c) logging out the ACTIVE account makes `gh` activate the first remaining
+  account on that host in its own listing order — confirmed with 2 accounts, 3 accounts (active
+  `carol` -> `alice`), and a non-alphabetical config (active `mid` of `zed`, `mid`, `abe` ->
+  `zed`): `ManageAccountsDialog.tsx`/`SignOutDialog.tsx`'s successor rule ("first remaining
+  account on the same host, in the CLI's listing order") matches reality. A matching `gh auth
+  logout --hostname <h> --user <login>` exits 0 with empty stdout and stderr `✓ Logged out of <h>
+  account <login>`, followed by `✓ Switched active account for <h> to <next>` when another
+  account on that host became the new active one; a `--user` that does not match any existing
+  account exits 1 with empty stdout and the same `not logged in to <h> account <login>` stderr
+  `authSwitch` documents above — **re-verified live 2026-10-05** against the same scratch
+  `GH_CONFIG_DIR`: `--hostname github.com --user nobody-test` (never present in the fake config)
+  for both `switch` and `logout`, each exit 1 with stderr `not logged in to github.com account
+  nobody-test`; a matching `--user bob-test` switch exits 0 with stderr `✓ Switched active
+  account for github.com to bob-test`, and a matching `bob-test` logout exits 0 with stderr
+  `✓ Logged out of github.com account bob-test` then `✓ Switched active account for github.com to
+  alice-test`. This settles the one case the original single-account-workstation attempt could
+  not reach; the three-shapes verification above is otherwise complete, so no part of
+  `ManageAccountsDialog.tsx` ships against an assumed array shape, exit code, or stdout/stderr
+  text any longer.
 
 **Rationale**: constitution Principle IV requires evidence before design for anything the spec
 relies on. The two-or-more-account case could not be exercised with `stuarthopwood`'s own real,
