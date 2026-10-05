@@ -42,16 +42,27 @@ pnpm build        # must pass before a change lands on main
 
 **Story 2: sign in, switch, and sign out of GitHub accounts (FR-008 to FR-015)**
 
-1. Open Manage accounts. Expect: every GitHub CLI account is listed, the active one marked by
-   text and colour.
-2. Choose Add account. Expect: the system browser opens through the GitHub CLI's own device flow,
-   and Manage accounts shows the one-time code and progress until you complete it in the browser.
-3. With two accounts signed in, switch the active one. Expect: it becomes active immediately, and
-   the profile item's name and avatar update within 1 second (SC-002).
-4. Sign one account out while two remain. Expect: a confirmation naming that account and which
-   account becomes active next; confirming signs it out and makes the named account active.
-5. Sign out the one remaining account. Expect: the confirmation says no account will remain
-   active; confirming returns the profile item and menu to the signed-out state (Story 1).
+> A second GitHub account is not required to run this story: a scratch `GH_CONFIG_DIR` (a
+> throwaway config directory with `hosts.yml` entries holding fake accounts and `GH_BROWSER` set
+> to a no-op) exercises switch, sign-out, and the real device-code flow without a second real
+> account or touching your real login.
+
+1. Open Manage accounts. Expect: every GitHub CLI account is listed under "GitHub accounts", the
+   active one marked by both the word "Active" and the left accent border (never colour alone).
+2. Select **Add account**. Expect: the one-time code appears, grouped as `XXXX-XXXX`, with a
+   **Copy code** button (copies the ungrouped code; does not auto-copy) and a link to open the
+   GitHub device page directly; the system browser also opens through the GitHub CLI's own device
+   flow, and the panel shows progress until you complete it in the browser or select **Cancel**
+   (shows "Cancelling…" for about 2 seconds, then returns).
+3. With two accounts signed in, select **Switch** on the inactive row. Expect: that row shows a
+   spinning "Switching…" state, then becomes active -- the profile item's name and avatar update
+   within 1 second (SC-002) and the active marker never moves before `gh` itself confirms.
+4. Select **Sign out** on the active row while two remain. Expect: a confirmation reading "Sign
+   out @<login> on <host>? @<next-login> will become the active account."; confirming signs it
+   out and makes the named account active.
+5. Sign out the one remaining account. Expect: the confirmation reads "Sign out @<login> on
+   <host>? No account will remain active."; confirming shows "No GitHub account is signed in" in
+   Manage accounts and returns the profile item and menu to the signed-out state (Story 1).
 6. Run `gh auth logout` for every account outside Refract, or uninstall the GitHub CLI from PATH,
    then look at the profile item and Manage accounts. Expect: both say so, offering Sign in (CLI
    present) or the Install action from the readiness screen (CLI missing, spec 006).

@@ -96,10 +96,11 @@ interface GhAuthStatusJson {
  * Runs `gh auth status --json hosts` and flattens every host's account array into one list
  * (research.md decision 1). The single-account-per-host shape (`host`, `login`, `active`,
  * `state`) was verified live (research.md Decision 1, re-confirmed by T001 2026-10-05). The
- * two-or-more-account-per-host array shape is **not** verified live — T001 could not safely add
- * a second real account — so this only assumes the array holds more entries with the same
- * already-verified fields per entry; that assumption is the reasonable/documented shape, not a
- * confirmed one (research.md Decision 2).
+ * two-or-more-account-per-host array shape was verified live on 2026-10-05 against a scratch
+ * `GH_CONFIG_DIR` holding fake accounts (research.md Decision 2): `gh` returns one array per
+ * host with the active account listed first, each entry carrying the same already-verified
+ * fields (`host`, `login`, `active`, `state`) plus `error`/`tokenSource`/`gitProtocol`, which
+ * this parser already tolerates since it only reads the four fields above.
  *
  * `gh auth status` exits non-zero when nobody is signed in to any host at all, but `--json`
  * still writes a parseable (near-empty) body to stdout in that case; a parseable stdout body is

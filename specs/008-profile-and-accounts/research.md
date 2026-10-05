@@ -60,19 +60,31 @@ session, so this run only did what a single-account machine can verify safely.
   implies an interactive run may add a "press Enter to open in your browser" confirmation step
   that this non-tty sandbox never triggered (it printed the code and URL immediately instead), so
   FR-009's exact interactive-terminal wording is still open.
-- **unverified, needs a real second account — not fabricated**: (a) the two-or-more-account
-  `gh auth status --json hosts` array shape, and (c) `gh auth switch --hostname <h> --user
-  <login>` / `gh auth logout --hostname <h> --user <login>`'s real stdout/stderr/exit codes, for
-  both a matching and a non-matching `--user`. No placeholder JSON or guessed exit codes are
-  recorded here for these three shapes; a later task with a real disposable/secondary GitHub
-  account available must re-probe them before `ManageAccountsDialog.tsx`'s switch/sign-out code is
-  written against an assumed shape.
+- **verified 2026-10-05, later the same day, via a scratch `GH_CONFIG_DIR`** (a throwaway config
+  directory holding fake accounts in `hosts.yml`, with `GH_BROWSER` set to a no-op so no real
+  browser ever opens — exercises the multi-account/switch/sign-out paths without a real second
+  account and without ever touching `stuarthopwood`'s real login): (a) with two or three fake
+  accounts on one host, `gh auth status --json hosts` returns exactly ONE array under
+  `hosts["github.com"]`, each entry `{state, error?, active, host, login, tokenSource,
+  gitProtocol}` — the array-of-entries shape this spec always assumed, now confirmed rather than
+  inferred; an invalid token reports `state: "error"` with an HTTP 401 message (this is what
+  Manage accounts' "Needs attention" row keys on, `state !== 'success'`), and `gh` lists the
+  ACTIVE account first (the order changes after a switch). (b) `gh auth switch --hostname <h>
+  --user <login>` completed in ~145 ms. (c) logging out the ACTIVE account makes `gh` activate
+  the first remaining account on that host in its own listing order — confirmed with 2 accounts,
+  3 accounts (active `carol` -> `alice`), and a non-alphabetical config (active `mid` of `zed`,
+  `mid`, `abe` -> `zed`): `ManageAccountsDialog.tsx`/`SignOutDialog.tsx`'s successor rule ("first
+  remaining account on the same host, in the CLI's listing order") matches reality. A real
+  non-matching `--user` on `switch`/`logout` was not separately re-probed in this pass (the
+  original single-account-workstation attempt remains the only evidence for that one case); the
+  three-shapes verification above is otherwise complete, so no part of `ManageAccountsDialog.tsx`
+  ships against an assumed array shape any longer.
 
 **Rationale**: constitution Principle IV requires evidence before design for anything the spec
-relies on; `gh auth login --web`'s own interactive browser flow and the two-or-more-account case
-cannot be exercised without mutating a real credential store, which this planning pass
-deliberately did not do, and which T001 could still not do safely tonight with only one real
-account available.
+relies on. The two-or-more-account case could not be exercised with `stuarthopwood`'s own real,
+only, GitHub login without risking it — resolved not by waiting for a disposable account, but by
+pointing `gh` at a scratch `GH_CONFIG_DIR` of fake accounts instead, which needed no real
+credential store mutation at all.
 
 **Alternatives considered**: shipping Manage accounts against the `--help` text's description
 alone — rejected: the one-time-code line's exact wording is not in `--help` and must be read from
