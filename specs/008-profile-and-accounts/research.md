@@ -32,10 +32,47 @@ prompt, since FR-009 requires showing that progress; (c) what `gh auth switch --
 --user <login>` and `gh auth logout --hostname <h> --user <login>` print and exit with, for both
 the success case and a `--user` that does not match an existing account.
 
+**T001 probe results (2026-10-05)**: only one real GitHub account (`stuarthopwood`) was signed in
+on the workstation and no disposable/secondary account could be added without risking that
+session, so this run only did what a single-account machine can verify safely.
+
+- **re-verified**: `gh auth status --json hosts` still returns exactly the single-entry shape
+  recorded in Decision 1 above —
+  `{"hosts":{"github.com":[{"state":"success","active":true,"host":"github.com",
+  "login":"stuarthopwood","tokenSource":"keyring","scopes":"copilot, gist, read:org,
+  read:packages, repo, workflow","gitProtocol":"https"}]}}` — unchanged from the original
+  planning-pass check; no drift since Decision 1 was written.
+- **partially verified**: `gh auth login --web` was started and killed before completion, never
+  switching or signing in. Command run: `GH_BROWSER=true timeout -s INT 6 gh auth login --web
+  --hostname github.com --git-protocol https` (stdin/stdout not attached to a real terminal — this
+  sandbox has no pty). Exact stdout:
+  ```
+  ! One-time code (5FCF-5515) copied to clipboard
+  Open this URL to continue in your web browser: https://github.com/login/device
+  ```
+  then SIGINT fired (exit 124) before the code could be approved by anyone; `GH_BROWSER=true` was
+  set first so no real browser window ever opened. Per `gh auth login --help`, the token is only
+  written to the credential store "after completion" of the device flow, so killing the process
+  pre-completion should never touch the stored credential — confirmed by re-running `gh auth
+  status --json hosts` and `gh config get git_protocol` immediately after: both byte-for-byte
+  identical to before the attempt, still showing only `stuarthopwood`, still `active: true`.
+  **Still unverified**: the attached-terminal variant of this same prompt. `gh auth login --help`
+  implies an interactive run may add a "press Enter to open in your browser" confirmation step
+  that this non-tty sandbox never triggered (it printed the code and URL immediately instead), so
+  FR-009's exact interactive-terminal wording is still open.
+- **unverified, needs a real second account — not fabricated**: (a) the two-or-more-account
+  `gh auth status --json hosts` array shape, and (c) `gh auth switch --hostname <h> --user
+  <login>` / `gh auth logout --hostname <h> --user <login>`'s real stdout/stderr/exit codes, for
+  both a matching and a non-matching `--user`. No placeholder JSON or guessed exit codes are
+  recorded here for these three shapes; a later task with a real disposable/secondary GitHub
+  account available must re-probe them before `ManageAccountsDialog.tsx`'s switch/sign-out code is
+  written against an assumed shape.
+
 **Rationale**: constitution Principle IV requires evidence before design for anything the spec
 relies on; `gh auth login --web`'s own interactive browser flow and the two-or-more-account case
 cannot be exercised without mutating a real credential store, which this planning pass
-deliberately did not do.
+deliberately did not do, and which T001 could still not do safely tonight with only one real
+account available.
 
 **Alternatives considered**: shipping Manage accounts against the `--help` text's description
 alone — rejected: the one-time-code line's exact wording is not in `--help` and must be read from
