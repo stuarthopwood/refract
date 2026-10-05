@@ -1,6 +1,7 @@
 import { initStores } from './init-stores'
 import { notify } from './notify'
 import { useCommandsStore } from './commands-store'
+import { useHealthStore } from './health-store'
 import { useDraftStore } from './draft-store'
 import { useMemoryStore } from './memory-store'
 import { usePendingRequestsStore } from './pending-requests-store'
@@ -19,6 +20,7 @@ import { useThemeStore } from './theme-store'
 export { initStores }
 export { notify }
 export { useCommandsStore }
+export { useHealthStore }
 export { useDraftStore }
 export { useMemoryStore }
 export { usePendingRequestsStore }
@@ -39,6 +41,7 @@ export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThe
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
   commands: typeof useCommandsStore
+  health: typeof useHealthStore
   draft: typeof useDraftStore
   memory: typeof useMemoryStore
   pendingRequests: typeof usePendingRequestsStore
@@ -67,6 +70,7 @@ declare global {
 if (import.meta.env.DEV) {
   window.__refractStores = {
     commands: useCommandsStore,
+    health: useHealthStore,
     draft: useDraftStore,
     memory: useMemoryStore,
     pendingRequests: usePendingRequestsStore,

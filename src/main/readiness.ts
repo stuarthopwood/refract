@@ -15,10 +15,14 @@ import type { Check, Readiness } from '../shared/ipc';
 
 const execFileAsync = promisify(execFile);
 
-// contracts/omp-usage.md's version rule: any 18.4.x or 18.5.x patch is supported (FINDINGS
-// items 15 and 19 cover 18.4.4 and 18.4.5; item 29 covers 18.5.1, constitution Principle IV);
-// only the major and minor-range are pinned.
-const OMP_VERSION_SUPPORTED_RE = /^18\.(4|5)\.\d+$/;
+// contracts/omp-usage.md's version rule: 18.4.x/18.5.x are specifically verified (FINDINGS
+// items 15 and 19 cover 18.4.4 and 18.4.5; item 29 covers 18.5.1, constitution Principle IV).
+// Any other 18.x.y passes too but surfaces a warning instead -- pinning exact minors re-broke
+// readiness on every omp release (18.6.1 tripped the old exact-minor allowlist; not probed for
+// incompatibilities, just not re-verified), so only a DIFFERENT MAJOR version is a hard failure
+// now. Stuart's 2026-10-05 decision: warn but allow, rather than re-probing every release.
+const OMP_VERSION_VERIFIED_RE = /^18\.(4|5)\.\d+$/;
+const OMP_VERSION_SAME_MAJOR_RE = /^18\.\d+\.\d+$/;
 const OMP_VERSION_RE = /(\d+\.\d+\.\d+)/;
 
 // contracts/ipc.md "Readiness": the fixed hint shown whenever the sign-in probe cannot confirm
@@ -47,10 +51,18 @@ async function checkOmp(): Promise<Check> {
     return { ok: false, hint: `omp --version failed: ${err instanceof Error ? err.message : String(err)}` };
   }
   const found = OMP_VERSION_RE.exec(stdout)?.[1] ?? stdout.trim();
-  if (OMP_VERSION_SUPPORTED_RE.test(found)) {
+  if (OMP_VERSION_VERIFIED_RE.test(found)) {
     return { ok: true, found };
   }
-  return { ok: false, found, hint: `Expected omp 18.4.x or 18.5.x, found ${found}. Install a supported version and relaunch Refract.` };
+  if (OMP_VERSION_SAME_MAJOR_RE.test(found)) {
+    return {
+      ok: true,
+      found,
+      warning: true,
+      hint: `omp ${found} is outside the specifically verified 18.4.x/18.5.x range; Refract has not been checked against it individually but is expected to keep working.`
+    };
+  }
+  return { ok: false, found, hint: `Expected omp 18.x, found ${found}. Install a supported version and relaunch Refract.` };
 }
 
 // contracts/ipc.md: `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also

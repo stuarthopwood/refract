@@ -183,5 +183,5 @@ itself.
 | Unparseable stdout line | Log it and continue (never crash the reader) |
 | Chunk validation error | Fail the current request, log, keep the process |
 | `success:false` response | Add an error `notice` naming the command; do not change status |
-| `omp --version` is not `18.4.x` or `18.5.x` | Readiness check fails and names the version found (FR-036). Supporting another minor/major version is a constitution amendment after the probes are rerun (Principle IV). |
+| `omp --version` is not `18.4.x` or `18.5.x` | Readiness check still passes for any other `18.x.y` (warns, naming the version found and that it is outside the specifically verified range, FR-036) -- Stuart's 2026-10-05 decision after 18.6.1 tripped the old exact-minor allowlist for the third time. Only a different MAJOR version is a hard failure. A specifically-verified addition to `18.4.x`/`18.5.x` (no warning shown) still needs the probes rerun and a FINDINGS entry, per Principle IV. |
 | Worktree folder missing at open | `stopped`, `worktree-missing`, offer Recreate, Archive, Delete (FR-035); the agent is not started |
