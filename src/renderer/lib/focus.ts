@@ -29,10 +29,11 @@ export function focusSettingsEntry(): void {
 // Post-build review fix (D3, Stuart 2026-10-05): leaving the Manage sessions screen via "Back
 // to chat" has the identical remount problem -- it is reached from the profile menu, not
 // SessionList.tsx, so the control to return to is the profile item's own name button, not the
-// Settings cog above. The name button's accessible name is dynamic (the signed-in account's
-// display name, "Sign in", or "GitHub CLI not found"), so it cannot be queried by
-// `aria-label` the way `focusSettingsEntry` queries the cog -- `ProfileItem.tsx` instead marks
-// it with a stable `data-profile-name-button` attribute for exactly this query.
+// Settings cog above. The name button's accessible name changes with the GitHub sign-in state
+// (the signed-in account's display name, "Sign in", "GitHub CLI not found", or one of several
+// other states ProfileItem.tsx's own `accessibleName` computes), so it cannot be queried by a
+// fixed `aria-label` the way `focusSettingsEntry` queries the cog -- `ProfileItem.tsx` instead
+// marks it with a stable `data-profile-name-button` attribute for exactly this query.
 export function focusProfileItemName(): void {
   const nameButton = document.querySelector<HTMLElement>('[data-profile-name-button]')
   if (nameButton) {

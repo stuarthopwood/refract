@@ -36,6 +36,7 @@ import {
   PaletteIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
+  TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -49,7 +50,7 @@ import {
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { initials } from '@/lib/initials'
-import { useActiveThemeId, useThemeStore, useViewStore } from '@/state'
+import { useAccountsStore, useActiveThemeId, useThemeStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import { THEMES } from '../../../shared/themes'
 import type { ThemeId } from '../../../shared/themes'
@@ -224,8 +225,17 @@ export function ProfileMenuContent({
               <AvatarFallback>{initials(account.displayName ?? account.login)}</AvatarFallback>
             </Avatar>
             <div className="flex min-w-0 flex-1 flex-col leading-tight">
-              <span className="truncate text-sm font-medium">{account.displayName ?? account.login}</span>
-              <span className="truncate text-xs text-muted-foreground">@{account.login} on {account.host}</span>
+              {/* UI M4 (quality-gate remediation): icon plus text, never colour alone, when the
+                  ACTIVE account's own GitHub sign-in needs attention. */}
+              <span className="flex items-center gap-1 truncate text-sm font-medium">
+                {account.state !== 'success' && (
+                  <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-state-needs-you" />
+                )}
+                <span className="truncate">{account.displayName ?? account.login}</span>
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {account.state !== 'success' ? 'GitHub sign-in needs attention' : `@${account.login} on ${account.host}`}
+              </span>
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
@@ -238,6 +248,15 @@ export function ProfileMenuContent({
             <ExternalLinkIcon aria-hidden className="size-3.5" />
             <span className="sr-only"> Opens in your browser</span>
           </a>
+        </DropdownMenuItem>
+      ) : githubStatus === 'error' ? (
+        // UI M3 (quality-gate remediation): a `gh-failed`/thrown-invoke read offers a way to
+        // retry instead of silently claiming "Sign in" (which would misreport an unreadable CLI
+        // as nobody being signed in).
+        <DropdownMenuItem key="first-row" onSelect={() => void useAccountsStore.getState().refreshGithub()}>
+          <TriangleAlertIcon aria-hidden />
+          <span className="flex-1">GitHub unavailable</span>
+          <span className="text-xs text-muted-foreground">Check again</span>
         </DropdownMenuItem>
       ) : githubStatus === 'signed-out' || githubStatus === 'ready' ? (
         <DropdownMenuItem key="first-row" onSelect={onSignIn}>
@@ -254,6 +273,14 @@ export function ProfileMenuContent({
           once here instead of once per branch above -- keyed so a `githubStatus` change while the
           menu is open (e.g. sign-in finishing) can never remount, and drop focus from, any of
           these items (Phase 6 re-check, NEW-A). */}
+      {/* UI M4 (quality-gate remediation): a direct way to reach the fix, next to the header's
+          own warning above, whenever the active account's sign-in needs attention. */}
+      {signedIn && account && account.state !== 'success' && (
+        <DropdownMenuItem key="fix-sign-in" onSelect={onManageAccounts}>
+          <TriangleAlertIcon aria-hidden />
+          Fix sign-in…
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem key="manage-accounts" onSelect={onManageAccounts}>
         <UsersIcon aria-hidden />
         Manage accounts

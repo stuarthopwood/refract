@@ -87,14 +87,14 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
         <CardTitle>Add GitHub account</CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-3">
-        <p className="text-sm text-muted-foreground">Enter this code on GitHub to finish signing in.</p>
-
         {status === 'failed' ? (
           <>
+            {/* Quality-gate remediation (code-reviewer/UI M5): main's own plain-language reason
+                for the failure (shared/ipc.ts's `GitHubAddFlowProgress.detail`), never a guessed
+                "check your connection" that may not be true at all. */}
             <p role="alert" className="text-sm text-destructive">
-              Sign-in failed. Check your connection and retry.
+              {flow?.detail ?? 'Sign-in did not finish.'}
             </p>
-            {flow?.detail && <p className="text-xs text-muted-foreground">{flow.detail}</p>}
             <div className="flex justify-end">
               <Button ref={retryRef} variant="outline" size="sm" onClick={onRetry}>
                 Retry
@@ -108,6 +108,10 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
           </div>
         ) : (
           <>
+            {/* Quality-gate remediation (UI M5): only shown once a real code exists and the flow
+                is actually waiting -- it used to render unconditionally, including over the
+                failed and starting-with-no-code states above, where there is no code to enter. */}
+            <p className="text-sm text-muted-foreground">Enter this code on GitHub to finish signing in.</p>
             <div className="flex min-w-0 items-center gap-3">
               <div className="min-w-0">
                 {/* aria-hidden (quality-gate remediation, accessibility-auditor Low): the sr-only
@@ -148,6 +152,7 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
             >
               <ExternalLinkIcon aria-hidden className="size-3.5" />
               Open the GitHub device page
+              <span className="sr-only"> Opens in your browser</span>
             </a>
             <div className="flex justify-end">
               {/* `aria-disabled`, not `disabled`: a disabled focused button drops focus to <body>. */}

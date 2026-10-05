@@ -56,6 +56,12 @@ export interface ManageAccountsDialogHandle {
    *  region inside THIS dialog, not the caller's own (which stays hidden for as long as this
    *  dialog stays open). A no-op while this dialog is closed (nothing is listening). */
   announce(text: string): void
+  /** Runs the exact same guarded start this dialog's own Add account button runs (status
+   *  gating, aria-disabled, assertive failure announcement + refocus) -- quality-gate
+   *  remediation (code-reviewer/accessibility-auditor Medium): the profile menu's "Sign in to
+   *  GitHub…" item opens this dialog and calls this instead of `addAccountStart()` directly,
+   *  which used to bypass every one of those guards and could start a second, concurrent flow. */
+  startAddFlow(): void
 }
 
 function rowKey(host: string, login: string): string {
@@ -78,6 +84,7 @@ export function ManageAccountsDialog({
   const github = useAccountsStore((state) => state.github)
   const githubStatus = useAccountsStore((state) => state.githubStatus)
   const addFlow = useAccountsStore((state) => state.addFlow)
+  const addFlowOutcome = useAccountsStore((state) => state.addFlowOutcome)
   const pendingSwitch = useAccountsStore((state) => state.pendingSwitch)
 
   const [starting, setStarting] = useState(false)
@@ -86,6 +93,9 @@ export function ManageAccountsDialog({
   const [assertive, announceAssertive] = useClearedAnnouncement()
 
   const addAccountBtnRef = useRef<HTMLButtonElement>(null)
+  // Accessibility-auditor High: the CLI-missing branch renders no Add account button at all, so
+  // `onOpenAutoFocus` below needs a second, always-present target for that branch.
+  const installLinkRef = useRef<HTMLAnchorElement>(null)
   const signOutRefs = useRef(new Map<string, HTMLButtonElement>())
   const switchRefs = useRef(new Map<string, HTMLButtonElement>())
   const rowLiRefs = useRef(new Map<string, HTMLLIElement>())
@@ -107,6 +117,9 @@ export function ManageAccountsDialog({
     },
     announce(text) {
       announcePolite(text)
+    },
+    startAddFlow() {
+      void startAddFlow()
     }
   }))
 
@@ -116,12 +129,22 @@ export function ManageAccountsDialog({
   useEffect(() => {
     if (!open) return
     void useAccountsStore.getState().refreshOmpProviders()
+    // data-model.md / plan.md: the GitHub account list is refreshed on open too, the same
+    // stale-while-revalidate way the OMP section already is -- `refreshGithub` itself is a cheap
+    // no-op if a read is already in flight (e.g. the profile menu triggered one just before this
+    // dialog opened).
+    void useAccountsStore.getState().refreshGithub()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // Detects an add flow's own completion vs. cancellation: the store nulls `addFlow` for both,
-  // so this panel is the only place that still knows WHICH one happened, via the Cancel button's
-  // own `cancellingFlow` flag (the only way a flow here ever becomes 'cancelled').
+  // Detects an add flow's own completion vs. cancellation (quality-gate remediation, code-
+  // reviewer Medium, root cause fix): the store nulls `addFlow` identically for BOTH outcomes, so
+  // this effect used to infer which one happened from the Cancel button's own `cancellingFlow`
+  // flag alone -- which only covers a click on THIS dialog's own Cancel button, never closing the
+  // dialog mid-flow (X/overlay) or the closed-while-starting auto-cancel `startAddFlow` issues
+  // itself, both of which armed the "Added…"/"Re-authenticated…" announcement by mistake.
+  // `addFlowOutcome` (the store's own last terminal status) is now the sole source of truth for
+  // THAT decision; `cancellingFlow` still only resets this dialog's own Cancel button UI.
   useEffect(() => {
     const prev = prevAddFlowRef.current
     prevAddFlowRef.current = addFlow
@@ -129,7 +152,8 @@ export function ManageAccountsDialog({
       if (cancellingFlow) {
         setCancellingFlow(false)
         addAccountBtnRef.current?.focus()
-      } else {
+      }
+      if (addFlowOutcome === 'completed') {
         pendingAddAnnounceRef.current = true
       }
     }
@@ -137,7 +161,7 @@ export function ManageAccountsDialog({
     // `role="alert"` paragraph -- quality-gate remediation (accessibility-auditor Low): a second
     // assertive announcement from here was making a screen reader hear it twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addFlow, cancellingFlow])
+  }, [addFlow, addFlowOutcome, cancellingFlow])
 
   // Once the completed flow's new account actually shows up in `github` (it can arrive slightly
   // after the 'completed' progress event -- contracts/ipc.md), announce and focus it.
@@ -248,9 +272,18 @@ export function ManageAccountsDialog({
           // Approved design (docs/DESIGN.md): focus always starts on the GitHub section's Add
           // account button, regardless of whether any account is signed in yet (quality-gate
           // remediation, code-reviewer Medium: the previous `[open]` effect ran before Radix's
-          // own Portal commit mounted these refs and never actually focused anything).
-          event.preventDefault()
-          addAccountBtnRef.current?.focus()
+          // own Portal commit mounted these refs and never actually focused anything). The
+          // CLI-missing branch renders no Add account button at all (accessibility-auditor
+          // High, round 2): `preventDefault` only fires when a real focus target exists here,
+          // so that branch focuses the Install GitHub CLI link instead rather than leaving focus
+          // outside the dialog entirely.
+          if (addAccountBtnRef.current) {
+            event.preventDefault()
+            addAccountBtnRef.current.focus()
+          } else if (installLinkRef.current) {
+            event.preventDefault()
+            installLinkRef.current.focus()
+          }
         }}
         onEscapeKeyDown={handleEscape}
         onCloseAutoFocus={(event) => {
@@ -273,6 +306,7 @@ export function ManageAccountsDialog({
               </h3>
               <p className="text-sm text-muted-foreground">Refract signs in through the GitHub CLI so it never stores your token.</p>
               <a
+                ref={installLinkRef}
                 href="https://cli.github.com"
                 target="_blank"
                 rel="noreferrer noopener"
@@ -280,6 +314,7 @@ export function ManageAccountsDialog({
               >
                 <ExternalLinkIcon aria-hidden className="size-3.5" />
                 Install GitHub CLI
+                <span className="sr-only"> Opens in your browser</span>
               </a>
             </div>
           ) : (
@@ -361,24 +396,50 @@ export function ManageAccountsDialog({
                               <span className="truncate">{account.host}</span>
                             </span>
                           </span>
+                          {/* UI M2 (quality-gate remediation): the status line now states the
+                              actual cause -- a 'timeout' is offline/unreachable (Sign in again
+                              cannot fix that), anything else is an expired/revoked credential
+                              (Sign in again can). Both are icon + text, never colour alone. */}
                           {authProblem && (
                             <span className="flex items-center gap-1 text-xs font-medium text-state-needs-you">
                               <TriangleAlertIcon aria-hidden className="size-3" />
-                              Needs attention
+                              {account.state === 'timeout' ? "Couldn't reach GitHub" : `Sign-in expired. Sign in again as @${account.login}.`}
                             </span>
                           )}
-                          {authProblem && account.host === 'github.com' && (
-                            <Button variant="outline" size="xs" className="w-fit" aria-label={`Sign in again to ${name}`} onClick={() => void startAddFlow()}>
-                              Sign in again
-                            </Button>
-                          )}
-                          {authProblem && account.host !== 'github.com' && (
+                          {authProblem && account.state !== 'timeout' && account.host !== 'github.com' && (
                             <span className="min-w-0 break-all text-xs text-muted-foreground">
                               Sign in again from a terminal with gh auth login --hostname {account.host}.
                             </span>
                           )}
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
+                          {/* UI M1 (quality-gate remediation): moved out of the text column into
+                              this trailing action cluster, before Sign out, so it sits next to
+                              Switch/Sign out instead of far away on its own row. */}
+                          {authProblem && account.state === 'timeout' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              aria-label={`Check again for ${name}`}
+                              onClick={() => void useAccountsStore.getState().refreshGithub()}
+                            >
+                              Check again
+                            </Button>
+                          )}
+                          {authProblem && account.state !== 'timeout' && account.host === 'github.com' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              aria-disabled={starting || addFlow?.status === 'waiting' || undefined}
+                              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                              aria-label={`Sign in again to ${name}`}
+                              onClick={() => {
+                                if (!starting && addFlow?.status !== 'waiting') void startAddFlow()
+                              }}
+                            >
+                              Sign in again
+                            </Button>
+                          )}
                           {!account.active && (
                             <Button
                               ref={(el) => {
@@ -388,7 +449,7 @@ export function ManageAccountsDialog({
                               variant="outline"
                               size="sm"
                               disabled={switchDisabled}
-                              aria-label={`Switch active account to ${name}`}
+                              aria-label={busy ? `Switching to ${name}` : `Switch active account to ${name}`}
                               onClick={() => void handleSwitch(account)}
                             >
                               {busy ? <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" /> : null}

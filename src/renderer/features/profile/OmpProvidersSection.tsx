@@ -208,7 +208,10 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
         <p className="min-w-0 text-xs text-muted-foreground">
           To sign in to another provider, run <code className="font-code">omp login</code> in a terminal.
         </p>
-        <Button variant="outline" size="xs" className="shrink-0" aria-label="Copy command" onClick={() => void handleCopy()}>
+        {/* No `aria-label` (WCAG 2.5.3 Label in Name, quality-gate remediation accessibility-
+            auditor Low): the accessible name now matches the visible "Copy command"/"Copied"
+            text exactly, the same fix AddAccountPanel.tsx's own Copy code button already has. */}
+        <Button variant="outline" size="xs" className="shrink-0" onClick={() => void handleCopy()}>
           {copied ? <CheckIcon aria-hidden className="size-3.5" /> : <CopyIcon aria-hidden className="size-3.5" />}
           {copied ? 'Copied' : 'Copy command'}
         </Button>

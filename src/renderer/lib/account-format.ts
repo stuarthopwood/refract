@@ -1,6 +1,7 @@
-// Pure helpers for Manage accounts (User Story 2): kept tiny and tested with a throwaway script
-// rather than a framework test, matching plan.md's own convention for this spec's small renderer
-// helpers (e.g. src/renderer/lib/initials.ts).
+// Pure helpers for Manage accounts (User Story 2): kept tiny and exported standalone (quality-
+// gate remediation, code-reviewer Low: this used to claim a throwaway test script that never
+// existed) so they can be covered by a future unit test without rendering any component, the
+// same convention src/renderer/lib/initials.ts already follows.
 import type { GitHubAccount, OmpProviderState } from '../../shared/ipc'
 
 const CLEAN_DEVICE_CODE = /^[A-Za-z0-9]{8}$/

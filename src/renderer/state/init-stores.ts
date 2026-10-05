@@ -34,21 +34,25 @@ async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: s
 // since `gh-not-found` is a state the profile item and Manage accounts dialog show (githubStatus
 // 'missing-cli'), not a transient failure -- it must never log as an error or fall through to
 // the ordinary empty-list-means-signed-out reading `setGithub` would otherwise give it. A
-// thrown invoke (the handler not registered yet) is its own third outcome (quality-gate
-// remediation, code-reviewer Medium): that is a transient startup race, not "nobody is signed
-// in" either, so the caller leaves `githubStatus` at its initial 'loading' instead of calling
-// `setGithub([])`.
-async function loadInitialGithubAccounts(): Promise<{ accounts: GitHubAccount[]; missingCli: boolean; failed: boolean }> {
+// `gh-failed` result and a thrown invoke (the handler not registered yet) both resolve to their
+// own 'error' outcome (quality-gate remediation, code-reviewer Medium, round 2): the former used
+// to fall through to `setGithub([])` -- 'signed-out', "nobody is signed in", when the real
+// situation is "the CLI could not be read" -- and the latter used to leave `githubStatus` stuck
+// at its initial 'loading' forever if no later broadcast ever arrived, with no way for the user
+// to retry. Both now drive the same neutral `setGithubError` the profile item's "GitHub
+// unavailable"/"Check again" state already renders, via `initStores`' own caller below.
+async function loadInitialGithubAccounts(): Promise<
+  { kind: 'ok'; accounts: GitHubAccount[] } | { kind: 'missing-cli' } | { kind: 'error' }
+> {
   try {
     const result = await window.refract.accounts.github.list()
-    if (result.ok) return { accounts: result.value, missingCli: false, failed: false }
-    if (result.error.code !== 'gh-not-found') {
-      console.error(`[refract] accounts.github.list: ${result.error.code} ${result.error.message}`)
-    }
-    return { accounts: [], missingCli: result.error.code === 'gh-not-found', failed: false }
+    if (result.ok) return { kind: 'ok', accounts: result.value }
+    if (result.error.code === 'gh-not-found') return { kind: 'missing-cli' }
+    console.error(`[refract] accounts.github.list: ${result.error.code} ${result.error.message}`)
+    return { kind: 'error' }
   } catch (error) {
     console.debug('[refract] accounts.github.list: invoke failed (handler not registered yet)', error)
-    return { accounts: [], missingCli: false, failed: true }
+    return { kind: 'error' }
   }
 }
 
@@ -108,17 +112,23 @@ export function initStores(): void {
     useAccountsStore.getState().setGithub(accounts)
   })
   window.refract.onAccountsGithubAddProgress((progress) => {
-    useAccountsStore.getState().setAddFlow(progress.status === 'completed' || progress.status === 'cancelled' ? null : progress)
+    const current = useAccountsStore.getState().addFlow
+    // UI M6 (quality-gate remediation): a progress event for a DIFFERENT flowId than the one
+    // currently tracked (once one is known) is a stale/cross-flow event -- ignored outright
+    // rather than clobbering the flow actually on screen.
+    if (current?.flowId && progress.flowId !== current.flowId) return
+    useAccountsStore.getState().setAddFlow(progress)
   })
 
   // Quality-gate remediation (code-reviewer Medium): applied the instant this resolves instead
-  // of after the slowest of the unrelated loads below, and skipped entirely on a thrown invoke
-  // (stays 'loading', per loadInitialGithubAccounts' own doc) or once a broadcast has already
-  // landed (above).
+  // of after the slowest of the unrelated loads below, and skipped entirely once a broadcast has
+  // already landed (above) -- the initial load's own result would otherwise be stale.
   void loadInitialGithubAccounts().then((githubAccountsLoad) => {
-    if (githubBroadcastReceived || githubAccountsLoad.failed) return
-    if (githubAccountsLoad.missingCli) {
+    if (githubBroadcastReceived) return
+    if (githubAccountsLoad.kind === 'missing-cli') {
       useAccountsStore.getState().setGithubMissingCli()
+    } else if (githubAccountsLoad.kind === 'error') {
+      useAccountsStore.getState().setGithubError()
     } else {
       useAccountsStore.getState().setGithub(githubAccountsLoad.accounts)
     }

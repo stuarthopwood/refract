@@ -57,6 +57,13 @@ export function App() {
   // at startup or just after a renderer reload) -- long enough to clear a hidden Session's unread
   // flag the `visible` effect below should not have touched yet. `null` means "not yet measured".
   const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
+  // Quality-gate remediation (test-reviewer Medium): the session-list panel stays mounted even
+  // collapsed to zero width (react-resizable-panels sets no inert/hidden/display:none on a
+  // collapsed Panel -- the same root cause App.tsx's own subagents Panel below already works
+  // around), stranding ProfileItem.tsx and every SessionList row button in the Tab order and in
+  // screen-reader browse mode while invisible. Tracked via this Panel's own `onResize` (there is
+  // no dedicated open/close store for this one, unlike the subagents panel's `useSubagentPanelStore`).
+  const [navCollapsed, setNavCollapsed] = useState(false)
   // Quality-gate remediation (code-reviewer, round 2, High): the focus-move button's `left` was
   // reading the PERSISTED `dividerPercent`, which `onLayoutChanged` only updates once a drag or
   // keyboard resize finishes (the library's own docs: "not called until the pointer has been
@@ -218,14 +225,28 @@ export function App() {
           </ErrorBoundary>
         ) : (
           <ResizablePanelGroup orientation="horizontal" className="h-full">
-            <ResizablePanel id="session-list" defaultSize={280} minSize={220} maxSize={480} collapsible collapsedSize={0}>
+            <ResizablePanel
+              id="session-list"
+              defaultSize={280}
+              minSize={220}
+              maxSize={480}
+              collapsible
+              collapsedSize={0}
+              onResize={(size) => setNavCollapsed(size.inPixels <= 0)}
+            >
+              {/* Quality-gate remediation (test-reviewer Medium): content only mounts while not
+                  collapsed -- the `ResizablePanel` wrapper itself stays always mounted either way
+                  (so its own pixel-exact sizing never changes), only the content inside unmounts,
+                  the same technique the subagents Panel below already uses. */}
               <ErrorBoundary>
-                <div className="flex h-full flex-col">
-                  <div className="min-h-0 flex-1">
-                    <SessionList />
+                {!navCollapsed && (
+                  <div className="flex h-full flex-col">
+                    <div className="min-h-0 flex-1">
+                      <SessionList />
+                    </div>
+                    <ProfileItem />
                   </div>
-                  <ProfileItem />
-                </div>
+                )}
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />

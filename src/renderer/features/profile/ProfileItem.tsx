@@ -25,9 +25,9 @@
 // `Trigger`, so Radix's own default close-auto-focus has no trigger ref to fall back to and
 // drops focus to `<body>` rather than restoring it anywhere. `handleSignOutCloseFocus` and each
 // dialog's own `onCloseFocus` are this component's replacement for that default.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { SettingsIcon } from 'lucide-react'
+import { SettingsIcon, TriangleAlertIcon } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -51,7 +51,14 @@ function accessibleName(account: GitHubAccount | undefined, githubStatus: Github
   // branch's accessible name now starts with (here, matches exactly) its own visible text below.
   if (githubStatus === 'missing-cli') return 'GitHub CLI missing'
   if (githubStatus === 'loading') return 'Checking GitHub sign-in'
+  // UI M3 (quality-gate remediation): a `gh-failed`/thrown-invoke read never claims "Sign in" --
+  // that would misreport "the CLI could not be read" as "nobody is signed in".
+  if (githubStatus === 'error') return 'GitHub unavailable'
   if (!account) return 'Sign in'
+  // UI M4 (quality-gate remediation): the active account's own auth problem (an expired or
+  // revoked token `gh` itself still lists, `state !== 'success'`) is never announced as plainly
+  // "signed in to GitHub" -- that is simply false once `gh` can no longer act as that account.
+  if (account.state !== 'success') return `${account.displayName ?? account.login}, GitHub sign-in needs attention`
   return `${account.displayName ?? account.login}, signed in to GitHub`
 }
 
@@ -61,7 +68,17 @@ export function ProfileItem() {
   const account = github.find((candidate) => candidate.active)
   const missingCli = githubStatus === 'missing-cli'
   const loadingGithub = githubStatus === 'loading'
-  const name = missingCli ? 'GitHub CLI missing' : loadingGithub ? 'Checking GitHub sign-in' : (account?.displayName ?? account?.login ?? null)
+  const githubError = githubStatus === 'error'
+  // UI M4: the active account's own GitHub-side auth problem, independent of `githubStatus`
+  // (which only ever reflects the CLI's own reachability, never one specific account's state).
+  const authProblem = account !== undefined && account.state !== 'success'
+  const name = missingCli
+    ? 'GitHub CLI missing'
+    : loadingGithub
+      ? 'Checking GitHub sign-in'
+      : githubError
+        ? 'GitHub unavailable'
+        : (account?.displayName ?? account?.login ?? null)
   const label = accessibleName(account, githubStatus)
   const [menuOpen, setMenuOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
@@ -82,9 +99,26 @@ export function ProfileItem() {
     return true
   }
 
+  // data-model.md / plan.md: the GitHub account list is refreshed whenever the profile menu
+  // opens, the same way Manage accounts' own `open` effect does (quality-gate remediation,
+  // code-reviewer Medium) -- `refreshGithub` itself is a cheap no-op if a read is already in
+  // flight, so this and Manage accounts opening together never starts two concurrent reads.
+  useEffect(() => {
+    if (menuOpen) void useAccountsStore.getState().refreshGithub()
+  }, [menuOpen])
+
   function handleSignInFromMenu(): void {
     setManageOpen(true)
-    void useAccountsStore.getState().addAccountStart()
+    // Quality-gate remediation (code-reviewer/accessibility-auditor Medium): runs the SAME
+    // guarded `startAddFlow` the dialog's own Add account button runs (status gating,
+    // aria-disabled, assertive failure announcement + refocus), never `addAccountStart()`
+    // directly -- a direct call bypassed every one of those guards and could start a second,
+    // concurrent flow. Deferred one frame (the dialog was just opened by the line above, and its
+    // content needs to actually mount first), the same `requestAnimationFrame`-after-open pattern
+    // ProfileMenu.tsx's own Theme submenu already uses for its post-open focus.
+    requestAnimationFrame(() => {
+      manageAccountsRef.current?.startAddFlow()
+    })
   }
 
   function handleSignOutFromMenu(): void {
@@ -164,10 +198,23 @@ export function ProfileItem() {
                 className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-expanded:bg-muted"
               >
                 <Avatar size="sm">
-                  {!missingCli && <AvatarImage src={account?.avatarDataUrl ?? undefined} alt="" />}
-                  <AvatarFallback>{missingCli ? '?' : initials(name ?? '?')}</AvatarFallback>
+                  {!missingCli && !githubError && <AvatarImage src={account?.avatarDataUrl ?? undefined} alt="" />}
+                  <AvatarFallback className={githubError ? 'text-state-needs-you' : undefined}>
+                    {missingCli ? (
+                      '?'
+                    ) : githubError ? (
+                      <TriangleAlertIcon aria-hidden className="size-3.5" />
+                    ) : (
+                      initials(name ?? '?')
+                    )}
+                  </AvatarFallback>
                 </Avatar>
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{name ?? 'Sign in'}</span>
+                {/* UI M4: icon plus text, never colour alone (the amber token used here matches
+                    the dialog's own "Needs attention" rows) -- shown only for the ACTIVE
+                    account's own auth problem, distinct from `githubError` above (the CLI itself
+                    being unreachable, with no account known at all). */}
+                {authProblem && <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0 text-state-needs-you" />}
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
