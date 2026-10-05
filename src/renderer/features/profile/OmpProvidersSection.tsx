@@ -38,6 +38,10 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
   // is safe: the store call itself still completes and stores its result regardless).
   const mountedRef = useRef(true)
   useEffect(() => {
+    // StrictMode mounts, unmounts, then remounts every component in development: without resetting
+    // this on mount, the cleanup below would leave the guard false for good and every post-await
+    // step (announcement, focus, "Copied") would be skipped.
+    mountedRef.current = true
     return () => {
       mountedRef.current = false
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
@@ -152,7 +156,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <ul role="list" aria-label="Other OMP providers" className="mt-2 flex max-h-36 flex-col gap-1 overflow-y-auto">
+                <ul role="list" aria-label="Other OMP providers" className="mt-2 flex max-h-36 flex-col gap-1 overflow-y-auto pr-3">
                   {other.map((provider) => (
                     <li key={provider.id} className="flex min-w-0 items-center justify-between gap-2">
                       <span className="truncate font-code text-xs" title={provider.id}>
