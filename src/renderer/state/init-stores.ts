@@ -30,6 +30,24 @@ async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: s
   }
 }
 
+// Spec 008 data-model.md / FR-014: a dedicated initial-load path for `accounts.github.list()`,
+// since `gh-not-found` is a state the profile item and Manage accounts dialog show (githubStatus
+// 'missing-cli'), not a transient failure -- it must never log as an error or fall through to
+// the ordinary empty-list-means-signed-out reading `setGithub` would otherwise give it.
+async function loadInitialGithubAccounts(): Promise<{ accounts: GitHubAccount[]; missingCli: boolean }> {
+  try {
+    const result = await window.refract.accounts.github.list()
+    if (result.ok) return { accounts: result.value, missingCli: false }
+    if (result.error.code !== 'gh-not-found') {
+      console.error(`[refract] accounts.github.list: ${result.error.code} ${result.error.message}`)
+    }
+    return { accounts: [], missingCli: result.error.code === 'gh-not-found' }
+  } catch (error) {
+    console.debug('[refract] accounts.github.list: invoke failed (handler not registered yet)', error)
+    return { accounts: [], missingCli: false }
+  }
+}
+
 // Subscribes every store to its `window.refract` event once, and loads initial data
 // (`sessions.list`, `settings.get`, `repositories.list`). Call once from main.tsx.
 export function initStores(): void {
@@ -101,12 +119,16 @@ export function initStores(): void {
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
       loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
       loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list'),
-      loadInitial(window.refract.accounts.github.list(), [] as GitHubAccount[], 'accounts.github.list')
+      loadInitialGithubAccounts()
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
-    useAccountsStore.getState().setGithub(githubAccountsLoad.value)
+    if (githubAccountsLoad.missingCli) {
+      useAccountsStore.getState().setGithubMissingCli()
+    } else {
+      useAccountsStore.getState().setGithub(githubAccountsLoad.accounts)
+    }
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only

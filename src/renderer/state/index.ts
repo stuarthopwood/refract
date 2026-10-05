@@ -20,6 +20,7 @@ import { useThemeStore } from './theme-store'
 export { initStores }
 export { notify }
 export { useAccountsStore }
+export type { GithubStatus } from './accounts'
 export { useCommandsStore }
 export { useHealthStore }
 export { useDraftStore }

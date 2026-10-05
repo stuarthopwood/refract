@@ -1,33 +1,71 @@
-// The profile menu's minimal shell (docs/DESIGN.md "Layout", spec 008 FR-003, FR-004, FR-018,
-// FR-024): just the account header (avatar + display name + `@handle` on host) when signed in, or
-// a disabled Sign in row when signed out. The Sign in row is intentionally inert until T016/T017
-// land the Manage accounts dialog with its add-account flow: the previous version called
-// `addAccountStart()` straight from this menu, which spawned `gh auth login --web` with no UI
-// anywhere to show its one-time code. `ProfileItem.tsx` (T013) wraps this in a `DropdownMenu`, so
-// arrow-key navigation, Esc-to-close, and focus-return-to-trigger all come for free from Radix's
-// primitive (T003) -- nothing here hand-rolls any of that. Later User Stories (T016, T021, T022,
-// T023) extend this content with Manage accounts, Manage sessions, Theme, Keyboard shortcuts, the
-// update entry, Health check, What's new, and Sign out, each a further `DropdownMenuItem` appended
-// below the header (with a `DropdownMenuSeparator` between groups) -- none of those exist yet.
+// The profile menu's content (docs/DESIGN.md "Layout", spec 008 FR-003, FR-004, FR-008 to
+// FR-011, FR-014, FR-018, FR-024): the account header (avatar + display name + `@handle` on
+// host) plus Manage accounts and Sign out when signed in; a Sign in action plus Manage accounts
+// when signed out; an Install action plus Manage accounts when the GitHub CLI itself is missing
+// (FR-014). `ProfileItem.tsx` wraps this in a `DropdownMenu`, so arrow-key navigation, Esc-to-
+// close, and focus-return-to-trigger all come for free from Radix's primitive -- nothing here
+// hand-rolls any of that. `ProfileItem.tsx` owns both dialogs this menu can open (Manage accounts,
+// Sign out) as siblings of the `DropdownMenu`, since a menu item unmounts the moment the menu
+// closes -- this component only calls the callbacks it is given, never touches a dialog itself.
+import { ExternalLinkIcon } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu'
 import { initials } from '@/lib/initials'
+import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/ipc'
 
-export function ProfileMenuContent({ account }: { account: GitHubAccount | undefined }) {
+export interface ProfileMenuContentProps {
+  account: GitHubAccount | undefined
+  githubStatus: GithubStatus
+  onManageAccounts(): void
+  /** Signed-out "Sign in to GitHub…" item (FR-009, FR-010): opens Manage accounts AND starts the
+   *  add-account flow immediately, since there is nowhere else signed-out to put a Sign in
+   *  action that can actually show the flow's one-time code. */
+  onSignIn(): void
+  onSignOut(): void
+}
+
+export function ProfileMenuContent({ account, githubStatus, onManageAccounts, onSignIn, onSignOut }: ProfileMenuContentProps) {
   return (
     <DropdownMenuContent side="top" align="start" sideOffset={6} collisionPadding={8} className="w-60">
-      {account ? (
-        <DropdownMenuLabel className="flex items-center gap-2.5 font-normal">
-          <Avatar>
-            <AvatarImage src={account.avatarDataUrl ?? undefined} alt="" />
-            <AvatarFallback>{initials(account.displayName ?? account.login)}</AvatarFallback>
-          </Avatar>
-          <div className="flex min-w-0 flex-1 flex-col leading-tight">
-            <span className="truncate text-sm font-medium">{account.displayName ?? account.login}</span>
-            <span className="truncate text-xs text-muted-foreground">@{account.login} on {account.host}</span>
-          </div>
-        </DropdownMenuLabel>
+      {githubStatus === 'ready' && account ? (
+        <>
+          <DropdownMenuLabel className="flex items-center gap-2.5 font-normal">
+            <Avatar>
+              <AvatarImage src={account.avatarDataUrl ?? undefined} alt="" />
+              <AvatarFallback>{initials(account.displayName ?? account.login)}</AvatarFallback>
+            </Avatar>
+            <div className="flex min-w-0 flex-1 flex-col leading-tight">
+              <span className="truncate text-sm font-medium">{account.displayName ?? account.login}</span>
+              <span className="truncate text-xs text-muted-foreground">@{account.login} on {account.host}</span>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuItem onSelect={onManageAccounts}>Manage accounts</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onSelect={onSignOut}>
+            Sign out
+          </DropdownMenuItem>
+        </>
+      ) : githubStatus === 'missing-cli' ? (
+        <>
+          <DropdownMenuItem asChild>
+            <a href="https://cli.github.com" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2">
+              <ExternalLinkIcon aria-hidden />
+              Install GitHub CLI
+            </a>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onManageAccounts}>Manage accounts</DropdownMenuItem>
+        </>
+      ) : githubStatus === 'signed-out' ? (
+        <>
+          <DropdownMenuItem onSelect={onSignIn}>Sign in to GitHub…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onManageAccounts}>Manage accounts</DropdownMenuItem>
+        </>
       ) : (
         <DropdownMenuItem disabled>Sign in to GitHub…</DropdownMenuItem>
       )}
