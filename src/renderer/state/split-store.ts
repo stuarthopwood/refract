@@ -141,22 +141,22 @@ export const useSplitStore = create<SplitState>((set, get) => {
   // (code-reviewer, Critical): the first version of this DRY merge dropped that single-pane
   // distinction entirely and always opened a split, turning every plain single-pane session
   // click into an unwanted split -- mode restores it explicitly.
- //
- // Third remediation round (code-reviewer/a11y, High): round 2 only returned the view to
- // 'chat' from three callsites that happened to call `openInSplit`/`replaceFocused` directly
- // (SessionList.tsx's row click, Ctrl+click, "Open in split"). Every OTHER path that focuses a
- // session -- the per-repository "+" quick-create, NewSessionDialog's submit, and main's
- // `onUiOpenSession` (notification click / startup split-recovery) -- all funnel through
- // `sessions-store.ts`'s `create` or `init-stores.ts`, which both call `replaceFocused` too,
- // but the per-callsite guard those paths lack left a Session created or opened that way
- // hidden behind the Pull Requests panel: a genuine dead end. `targetSession` is the one
- // function BOTH `openInSplit` and `replaceFocused` funnel through, so every current and
- // future caller of either gets this for free. Any call here means a user action intends to
- // see a specific session's chat right now, including the "already focused, no-op for pane
- // arrangement" branches below -- so the view switch happens unconditionally, before those
- // early returns, not only on the branches that actually change `paneSessionIds`.
+  //
+  // Third remediation round (code-reviewer/a11y, High): round 2 only returned the view to
+  // 'chat' from three callsites that happened to call `openInSplit`/`replaceFocused` directly
+  // (SessionList.tsx's row click, Ctrl+click, "Open in split"). Every OTHER path that focuses a
+  // session -- the per-repository "+" quick-create, NewSessionDialog's submit, and main's
+  // `onUiOpenSession` (notification click / startup split-recovery) -- all funnel through
+  // `sessions-store.ts`'s `create` or `init-stores.ts`, which both call `replaceFocused` too,
+  // but the per-callsite guard those paths lack left a Session created or opened that way
+  // hidden behind the Pull Requests panel: a genuine dead end. `targetSession` is the one
+  // function BOTH `openInSplit` and `replaceFocused` funnel through, so every current and
+  // future caller of either gets this for free. Any call here means a user action intends to
+  // see a specific session's chat right now, including the "already focused, no-op for pane
+  // arrangement" branches below -- so the view switch happens unconditionally, before those
+  // early returns, not only on the branches that actually change `paneSessionIds`.
   function targetSession(sessionId: string, replaceIndex: 0 | 1, mode: 'split' | 'replace'): void {
-  if (useViewStore.getState().view === 'pull-requests') useViewStore.getState().openChat()
+    if (useViewStore.getState().view === 'pull-requests') useViewStore.getState().openChat()
     const { paneSessionIds, focusedIndex } = get()
     const pristineIds = withoutPristine(sessionId)
 

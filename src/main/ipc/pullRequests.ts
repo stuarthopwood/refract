@@ -509,18 +509,18 @@ export function registerPullRequests(manager: SessionManager): void {
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW, async (_event, repositoryId: unknown, number: unknown, input: unknown) => {
     if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof input !== 'object' || input === null) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects (repositoryId, number, { verdict, body?, expectedHeadSha })`);
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects (repositoryId, number, { verdict, body?, expectedHeadSha })`);
     }
-  const { verdict, body, expectedHeadSha } = input as Partial<SubmitReviewInput>;
+    const { verdict, body, expectedHeadSha } = input as Partial<SubmitReviewInput>;
     if (verdict !== 'comment' && verdict !== 'approve' && verdict !== 'request-changes') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects verdict to be 'comment' | 'approve' | 'request-changes'`);
     }
     if (body !== undefined && typeof body !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects body to be a string when provided`);
     }
-  if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects expectedHeadSha to be a non-empty string`);
-  }
+    if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_SUBMIT_REVIEW} expects expectedHeadSha to be a non-empty string`);
+    }
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
@@ -530,23 +530,23 @@ export function registerPullRequests(manager: SessionManager): void {
       // silently "not stale".
       const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
-   // High remediation (round 3, security-auditor): the staleness cache above is silently
-   // overwritten by `PullRequestDetail`'s own 15s background poll, which keeps running while
-   // this dialog is open -- so a push that lands between dialog-open and confirm can get
-   // re-cached as the new "known good" value, making the cache-vs-cache check above pass even
-   // though the user never saw this commit. `expectedHeadSha` is the renderer's own snapshot
-   // of `headSha` from the moment the dialog opened; comparing it to a FRESH re-fetch right
-   // here is the actual guarantee -- the cache check above only proves a cache entry exists.
-   if (fresh.headSha !== expectedHeadSha) {
-    return {
-     ok: false,
-     error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; refresh and try again.' }
-    };
-   }
+      // High remediation (round 3, security-auditor): the staleness cache above is silently
+      // overwritten by `PullRequestDetail`'s own 15s background poll, which keeps running while
+      // this dialog is open -- so a push that lands between dialog-open and confirm can get
+      // re-cached as the new "known good" value, making the cache-vs-cache check above pass even
+      // though the user never saw this commit. `expectedHeadSha` is the renderer's own snapshot
+      // of `headSha` from the moment the dialog opened; comparing it to a FRESH re-fetch right
+      // here is the actual guarantee -- the cache check above only proves a cache entry exists.
+      if (fresh.headSha !== expectedHeadSha) {
+        return {
+          ok: false,
+          error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; close this dialog, refresh, and try again.' }
+        };
+      }
       const state = mapPullRequestState(fresh.state, fresh.isDraft);
       const reviewDisabledReason = computeReviewDisabledReason(state);
       if (reviewDisabledReason) return { ok: false, error: { code: 'disabled', message: reviewDisabledReason } };
-   const pinned = verdict === 'approve' ? { pullRequestId: fresh.id, headSha: expectedHeadSha } : undefined;
+      const pinned = verdict === 'approve' ? { pullRequestId: fresh.id, headSha: expectedHeadSha } : undefined;
       await gh.submitReview(resolved.path, number, verdict, body, pinned);
       forgetCache(repositoryId, number);
       return { ok: true, value: { id: randomUUID() } };
@@ -557,15 +557,15 @@ export function registerPullRequests(manager: SessionManager): void {
 
   ipcMain.handle(IPC_REQUESTS.PULL_REQUESTS_MERGE, async (_event, repositoryId: unknown, number: unknown, input: unknown) => {
     if (typeof repositoryId !== 'string' || !isValidPullRequestNumber(number) || typeof input !== 'object' || input === null) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects (repositoryId, number, { method, expectedHeadSha })`);
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects (repositoryId, number, { method, expectedHeadSha })`);
     }
-  const { method, expectedHeadSha } = input as Partial<MergeInput>;
+    const { method, expectedHeadSha } = input as Partial<MergeInput>;
     if (method !== 'merge' && method !== 'squash' && method !== 'rebase') {
       return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects method to be 'merge' | 'squash' | 'rebase'`);
     }
-  if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
-   return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects expectedHeadSha to be a non-empty string`);
-  }
+    if (typeof expectedHeadSha !== 'string' || expectedHeadSha.length === 0) {
+      return invalidArgument(`${IPC_REQUESTS.PULL_REQUESTS_MERGE} expects expectedHeadSha to be a non-empty string`);
+    }
     const resolved = repoPathFor(repositoryId);
     if (!resolved.ok) return resolved.error;
     try {
@@ -574,38 +574,38 @@ export function registerPullRequests(manager: SessionManager): void {
       // submitReview's approve path above.
       const { stale, fresh } = await checkNotStale(repositoryId, resolved.path, number, true);
       if (stale) return { ok: false, error: { code: 'stale', message: 'This pull request has changed on GitHub; refresh before trying again.' } };
-   // High remediation (round 3, security-auditor): see submitReview's identical comment --
-   // the cache-vs-cache staleness check above does not detect a push that landed, then got
-   // re-cached as "fresh" by the 15s background poll, between this dialog opening and the
-   // user confirming. Comparing the renderer's own dialog-open-time snapshot against a fresh
-   // re-fetch right here is the real guarantee.
-   if (fresh.headSha !== expectedHeadSha) {
-    return {
-     ok: false,
-     error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; refresh and try again.' }
-    };
-   }
+      // High remediation (round 3, security-auditor): see submitReview's identical comment --
+      // the cache-vs-cache staleness check above does not detect a push that landed, then got
+      // re-cached as "fresh" by the 15s background poll, between this dialog opening and the
+      // user confirming. Comparing the renderer's own dialog-open-time snapshot against a fresh
+      // re-fetch right here is the real guarantee.
+      if (fresh.headSha !== expectedHeadSha) {
+        return {
+          ok: false,
+          error: { code: 'stale', message: 'This pull request has changed on GitHub since you opened this dialog; close this dialog, refresh, and try again.' }
+        };
+      }
       const state = mapPullRequestState(fresh.state, fresh.isDraft);
       const mergeableState = mapMergeableState(fresh.mergeable);
-   const mergeDisabledReason = computeMergeDisabledReason(state, fresh.mergeable, fresh.mergeStateStatus);
-   if (mergeDisabledReason) {
-    // Medium remediation (code-reviewer): this reason covers two genuinely different IPC
-    // error codes per contracts/ipc.md -- merge conflicts (`not-mergeable`, FR-020, since
-    // GitHub itself refuses the merge) versus a review-state/BLOCKED gate (`disabled`,
-    // same family as `reviewDisabledReason`). The separate `mergeableState === 'conflicting'`
-    // check a round 2 regression added below this was unreachable dead code: conflicts
-    // always hit this branch first (via `mergeable.toUpperCase() === 'CONFLICTING'` above),
-    // always returning the wrong code (`disabled`) for a real conflict. Folded the
-    // distinction in here instead of leaving a second, never-executed check further down.
-    const isConflict = mergeableState === 'conflicting' || fresh.mergeStateStatus.toUpperCase() === 'DIRTY';
-    return { ok: false, error: { code: isConflict ? 'not-mergeable' : 'disabled', message: mergeDisabledReason } };
+      const mergeDisabledReason = computeMergeDisabledReason(state, fresh.mergeable, fresh.mergeStateStatus);
+      if (mergeDisabledReason) {
+        // Medium remediation (code-reviewer): this reason covers two genuinely different IPC
+        // error codes per contracts/ipc.md -- merge conflicts (`not-mergeable`, FR-020, since
+        // GitHub itself refuses the merge) versus a review-state/BLOCKED gate (`disabled`,
+        // same family as `reviewDisabledReason`). The separate `mergeableState === 'conflicting'`
+        // check a round 2 regression added below this was unreachable dead code: conflicts
+        // always hit this branch first (via `mergeable.toUpperCase() === 'CONFLICTING'` above),
+        // always returning the wrong code (`disabled`) for a real conflict. Folded the
+        // distinction in here instead of leaving a second, never-executed check further down.
+        const isConflict = mergeableState === 'conflicting' || fresh.mergeStateStatus.toUpperCase() === 'DIRTY';
+        return { ok: false, error: { code: isConflict ? 'not-mergeable' : 'disabled', message: mergeDisabledReason } };
       }
       if (mergeableState === 'unknown') {
         return { ok: false, error: { code: 'not-mergeable', message: 'GitHub is still checking whether this pull request can merge; refresh and try again shortly.' } };
       }
-   // Pinned to the renderer's own dialog-open-time snapshot (just verified identical to
-   // `fresh.headSha` above), not `fresh.headSha` alone, per the security remediation above.
-   await gh.mergePullRequest(resolved.path, number, method, expectedHeadSha);
+      // Pinned to the renderer's own dialog-open-time snapshot (just verified identical to
+      // `fresh.headSha` above), not `fresh.headSha` alone, per the security remediation above.
+      await gh.mergePullRequest(resolved.path, number, method, expectedHeadSha);
       forgetCache(repositoryId, number);
       return { ok: true, value: undefined };
     } catch (err) {
