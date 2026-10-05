@@ -15,6 +15,7 @@ import { registerPullRequests } from './pullRequests';
 import { registerRepositories } from './repositories';
 import { registerSessions } from './sessions';
 import { registerSettings } from './settings';
+import { registerTheme } from './theme';
 import { registerWindow } from './window';
 
 export function registerIpc(manager: SessionManager, getWindow: () => BrowserWindow | undefined, appMenu: Menu): void {
@@ -25,6 +26,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerConversations(manager);
   registerChat(manager);
   registerSettings(manager, getWindow);
+  registerTheme(manager, getWindow);
   registerClipboard();
   registerWindow(appMenu, getWindow);
 

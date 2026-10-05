@@ -1,12 +1,14 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// Pinned to "dark": Refract is dark-only (Stuart, 2026-10-02 -- see docs/DESIGN.md "Look and
-// feel"), and there is no next-themes `ThemeProvider` anywhere in the render tree for `useTheme()`
-// to read real app state from, so calling it here always silently fell back to its "system"
-// default -- meaning toasts independently followed the OS's light/dark setting via
-// `prefers-color-scheme`, regardless of the app's own (always-dark) appearance. Once spec 007
-// ships real theme presets, this reads the active theme's `mode` instead of a hardcoded literal.
+// Pinned to "dark", and staying that way (spec 007 research.md decision 11, confirmed moot):
+// `theme="dark"` only selects Sonner's own built-in dark-mode icon/structural variant, never
+// toast colours -- those already follow whichever Refract theme is active via the CSS custom
+// property overrides below (`--normal-bg`, `--normal-text`, `--normal-border`, all mapped to
+// `--popover`/`--popover-foreground`/`--border`, which repaint with the rest of the app on a
+// theme switch). Since every built-in Refract theme is dark-toned (no light theme exists, and
+// none is planned), `"dark"` is the correct literal for every preset, not a placeholder waiting
+// on a `mode` field `ThemeDefinition` deliberately does not have.
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner

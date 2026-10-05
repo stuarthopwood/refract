@@ -75,6 +75,9 @@ _Avoid_: Comment thread, discussion
 **Review action**:
 Any of comment, reply, resolve, unresolve, submit a review (comment/approve/request changes), or merge (spec 003) -- every one runs only as the direct result of an explicit user action, and approving, requesting changes, and merging each require a confirmation naming the pull request and the exact action first.
 _Avoid_: PR action, operation
+**Theme** (spec 007):
+One of the built-in dark-toned colour presets (Dark, Dark (high contrast)) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
+_Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system
 
 ## Flagged ambiguities
 

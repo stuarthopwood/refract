@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
+import { IPC_EVENTS, IPC_REQUESTS, THEME_BOOTSTRAP_CHANNEL } from '../shared/ipc'
 import type {
   BranchEntry,
   ChatAnswer,
@@ -31,6 +31,7 @@ import type {
   TranscriptItem
 } from '../shared/model'
 import type { PullRequestDetail } from '../shared/github'
+import type { ThemeId } from '../shared/themes'
 
 // window.refract: the sole renderer-to-main bridge (contracts/ipc.md). The renderer never sees
 // ipcRenderer or a raw channel string; every method below is a fixed, typed call.
@@ -146,6 +147,17 @@ const refract: RefractApi = {
       request<Session>(IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST, repositoryId, number)
   },
 
+  theme: {
+    preview: (themeId) => request<void>(IPC_REQUESTS.THEME_PREVIEW, themeId),
+    set: (themeId) => request<Settings>(IPC_REQUESTS.THEME_SET, themeId)
+  },
+
+  // Synchronous by design (contracts/ipc.md "Bootstrap", research.md decision 4): called once
+  // from `main.tsx`'s very first lines, before React mounts, so the renderer's single JS thread
+  // blocks until the right theme class is already known -- see `theme:bootstrap`'s own handler
+  // (`src/main/ipc/theme.ts`) for why this is the one channel in the app that is not
+  // `Result<T>`-shaped.
+  themeBootstrap: () => ipcRenderer.sendSync(THEME_BOOTSTRAP_CHANNEL) as { theme: ThemeId },
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
   onTranscriptPatch: (handler) => on<{ sessionId: string; ops: TranscriptOp[] }>(IPC_EVENTS.TRANSCRIPT_PATCH, handler),

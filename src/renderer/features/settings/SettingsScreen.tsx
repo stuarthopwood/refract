@@ -1,7 +1,8 @@
 // The Settings screen (spec 004 FR-011 to FR-016, data-model.md "Settings screen"): a
-// left-section-list layout, one section today ("Session readout"); spec 007 adds "appearance"
-// later without redesigning this screen (FR-015). Reached via the temporary gear control in
-// SessionList.tsx (research.md decision 7) until spec 008's profile-item cog supersedes it.
+// left-section-list layout with two sections ("Session readout", and spec 007's "Appearance"),
+// switching content without redesigning this screen (FR-015). Reached via the temporary gear
+// control in SessionList.tsx (research.md decision 7) until spec 008's profile-item cog
+// supersedes it.
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -11,6 +12,7 @@ import { focusSettingsEntry } from '@/lib/focus'
 import { useSettingsStore, useViewStore } from '@/state'
 import type { ReadoutKind } from '../../../shared/model'
 import type { SettingsSectionId } from '../../state/view-store'
+import { AppearanceSection } from './AppearanceSection'
 
 interface ReadoutToggleDescriptor {
   kind: ReadoutKind
@@ -38,11 +40,15 @@ interface SettingsSectionDescriptor {
   label: string
 }
 
-const SECTIONS: SettingsSectionDescriptor[] = [{ id: 'session-readout', label: 'Session readout' }]
+const SECTIONS: SettingsSectionDescriptor[] = [
+  { id: 'session-readout', label: 'Session readout' },
+  { id: 'appearance', label: 'Appearance' }
+]
 
 export function SettingsScreen() {
   const settingsSection = useViewStore((state) => state.settingsSection) ?? 'session-readout'
   const openChat = useViewStore((state) => state.openChat)
+  const openSettings = useViewStore((state) => state.openSettings)
   const sessionReadout = useSettingsStore((state) => state.settings.sessionReadout)
   const setReadoutVisibility = useSettingsStore((state) => state.setReadoutVisibility)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -52,9 +58,14 @@ export function SettingsScreen() {
   // here claimed focus -- it silently dropped to `<body>` on every entry. Focusing this screen's
   // own heading (already a real `<h2>`, `tabIndex={-1}` so it accepts programmatic focus without
   // joining the Tab order) lands keyboard/screen-reader users somewhere meaningful instead.
+  // Spec 007: now that this screen switches between two LIVE sections without unmounting
+  // itself, re-focus the heading on every section change too, not only the screen's own first
+  // mount -- otherwise clicking "Appearance" in the nav (or back to "Session readout") left
+  // focus sitting on whichever nav button was clicked instead of landing on the new section's
+  // content, same gap the original effect already existed to avoid for the screen's own entry.
   useEffect(() => {
     headingRef.current?.focus()
-  }, [])
+  }, [settingsSection])
 
   function handleBackToChat(): void {
     openChat()
@@ -84,44 +95,53 @@ export function SettingsScreen() {
           <ul className="flex flex-col gap-0.5">
             {SECTIONS.map((section) => (
               <li key={section.id}>
-                <span
+                <button
+                  type="button"
                   aria-current={section.id === settingsSection ? 'page' : undefined}
+                  onClick={() => openSettings(section.id)}
                   className={cn(
-                    'block w-full rounded-md px-2 py-1.5 text-left text-sm',
-                    section.id === settingsSection ? 'bg-muted font-medium' : 'text-muted-foreground'
+                    'block w-full rounded-md border border-transparent px-2 py-1.5 text-left text-sm outline-none',
+                    'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50',
+                    section.id === settingsSection ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                   )}
                 >
                   {section.label}
-                </span>
+                </button>
               </li>
             ))}
           </ul>
         </nav>
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
-            Session readout
-          </h2>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Choose which readouts show in the chip row above the message box, for every open Session.
-          </p>
-          <div className="flex flex-col divide-y divide-border">
-            {READOUT_TOGGLES.map((toggle) => {
-              const id = `readout-toggle-${toggle.kind}`
-              return (
-                <div key={toggle.kind} className="flex items-center justify-between gap-4 py-3">
-                  <label htmlFor={id} className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{toggle.label}</span>
-                    <span className="text-xs text-muted-foreground">{toggle.description}</span>
-                  </label>
-                  <Switch
-                    id={id}
-                    checked={sessionReadout[toggle.kind]}
-                    onCheckedChange={(checked) => void setReadoutVisibility(toggle.kind, checked)}
-                  />
-                </div>
-              )
-            })}
-          </div>
+          {settingsSection === 'appearance' ? (
+            <AppearanceSection />
+          ) : (
+            <>
+              <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
+                Session readout
+              </h2>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Choose which readouts show in the chip row above the message box, for every open Session.
+              </p>
+              <div className="flex flex-col divide-y divide-border">
+                {READOUT_TOGGLES.map((toggle) => {
+                  const id = `readout-toggle-${toggle.kind}`
+                  return (
+                    <div key={toggle.kind} className="flex items-center justify-between gap-4 py-3">
+                      <label htmlFor={id} className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">{toggle.label}</span>
+                        <span className="text-xs text-muted-foreground">{toggle.description}</span>
+                      </label>
+                      <Switch
+                        id={id}
+                        checked={sessionReadout[toggle.kind]}
+                        onCheckedChange={(checked) => void setReadoutVisibility(toggle.kind, checked)}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
