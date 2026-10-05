@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { Repository } from '../../../shared/model'
 import { showingCountLabel } from './manageSessionsHelpers'
-import type { ArchiveFilter, SessionFilters, SortKey } from './manageSessionsHelpers'
+import type { ArchiveFilter, SessionFilters, SortKey } from '@/state/view-store'
 
 export interface ManageSessionsToolbarProps {
   filters: SessionFilters
@@ -38,7 +38,7 @@ const SORT_LABELS: Record<SortKey, string> = {
 // toggle.tsx's own default `data-[state=on]:bg-primary` fill -- the brightest thing on the
 // screen otherwise, and the only control in the renderer using that fill for a filter state.
 const SELECTED_SEGMENT_CLASS =
-  'data-[state=on]:bg-muted data-[state=on]:text-foreground data-[state=on]:hover:bg-muted data-[state=on]:border-l-2 data-[state=on]:border-l-active-indicator'
+  'data-[state=on]:bg-muted data-[state=on]:text-foreground data-[state=on]:hover:bg-muted data-[state=on]:shadow-[inset_2px_0_0_0_var(--color-active-indicator)]'
 
 export function ManageSessionsToolbar({
   filters,

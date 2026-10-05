@@ -17,7 +17,8 @@ import { useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import { ManageSessionRow } from './ManageSessionRow'
 import { ManageSessionsToolbar } from './ManageSessionsToolbar'
-import { DEFAULT_FILTERS, distinctRepositoryCount, filterAndSortSessions, sessionCountLabel, showingCountLabel } from './manageSessionsHelpers'
+import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel, showingCountLabel } from './manageSessionsHelpers'
+import { DEFAULT_FILTERS } from '@/state/view-store'
 
 export function ManageSessionsScreen() {
   const sessions = useSessionsStore((state) => state.sessions)

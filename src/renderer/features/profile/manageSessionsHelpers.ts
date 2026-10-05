@@ -4,29 +4,13 @@
 // src/renderer/lib/account-format.ts).
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-
-export type ArchiveFilter = 'all' | 'active' | 'archived'
-export type SortKey = 'recent' | 'name' | 'repo' | 'status'
+import type { SessionFilters } from '@/state/view-store'
 
 const STATUS_ORDER: Record<SessionSummary['status'], number> = {
   'needs-you': 0,
   working: 1,
   idle: 2,
   stopped: 3
-}
-
-export interface SessionFilters {
-  search: string
-  repositoryId: string // 'all' or a real Repository id
-  archiveFilter: ArchiveFilter
-  sort: SortKey
-}
-
-export const DEFAULT_FILTERS: SessionFilters = {
-  search: '',
-  repositoryId: 'all',
-  archiveFilter: 'all',
-  sort: 'recent'
 }
 
 /** Filters, then sorts, `sessions` per `filters` -- never mutates the input array. Search matches

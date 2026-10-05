@@ -76,6 +76,11 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
   const quickActionPendingRef = useRef(false)
+  // Post-build review fix (accessibility-auditor, Medium, WCAG 4.1.3): archive/restore chosen
+  // from the "..." menu or the right-click context menu, below, must not announce until the
+  // menu's close animation actually finishes -- see `handleMenuCloseAutoFocus`.
+  const deferAnnouncementRef = useRef(false)
+  const pendingAnnouncementRef = useRef<string | null>(null)
   // Same fallback-CHAIN idea as SessionList.tsx's own `captureFocusFallback` (its own doc
   // comment explains why a plain `closest` captured once is not enough): next row, else
   // previous row, else the search input, resolved lazily against `isConnected` so it never
@@ -249,14 +254,22 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     onReveal: () => void reveal(),
     onArchive: () => {
       captureFocusFallback()
+      deferAnnouncementRef.current = true
       void archive(session.id).then((ok) => {
-        if (ok) onAnnounce(`Archived ${session.name}`)
+        if (!ok) return
+        const message = `Archived ${session.name}`
+        if (deferAnnouncementRef.current) pendingAnnouncementRef.current = message
+        else onAnnounce(message)
       })
     },
     onRestore: () => {
       captureFocusFallback()
+      deferAnnouncementRef.current = true
       void restore(session.id).then((ok) => {
-        if (ok) onAnnounce(`Restored ${session.name}`)
+        if (!ok) return
+        const message = `Restored ${session.name}`
+        if (deferAnnouncementRef.current) pendingAnnouncementRef.current = message
+        else onAnnounce(message)
       })
     },
     onStopAgent: () => void stopAgent(session.id),
@@ -270,6 +283,19 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   // surface (not a normally-focusable element), so its own close-autofocus prefers sending focus
   // to the open button instead of the "..." trigger the user never started from.
   function handleMenuCloseAutoFocus(event: Event, isContextMenu = false): void {
+    // Post-build review fix (accessibility-auditor, Medium, WCAG 4.1.3): Radix keeps `#root`
+    // `aria-hidden` until this modal menu's content actually unmounts after its close animation
+    // -- `onCloseAutoFocus` is the first point that reliably runs after that. An
+    // archive/restore announcement chosen from this menu (or the matching context menu) is held
+    // in `pendingAnnouncementRef` until here instead of firing the moment the IPC call
+    // resolves, which can land mid-animation and get silently swallowed by the still-hidden
+    // `#root`. The quick-action button (not a menu) is unaffected: it never sets
+    // `deferAnnouncementRef`, so it keeps announcing immediately.
+    deferAnnouncementRef.current = false
+    if (pendingAnnouncementRef.current) {
+      onAnnounce(pendingAnnouncementRef.current)
+      pendingAnnouncementRef.current = null
+    }
     if (renameRequestedRef.current) {
       event.preventDefault()
       renameRequestedRef.current = false
@@ -314,7 +340,7 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
                 // row instead of each shifting with its own content's length. Padding moved onto
                 // this button (off the wrapping `<li>`) so the hover fill below is entirely
                 // clickable, with no dead gutter.
-                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[6rem_minmax(0,1fr)_10rem_9rem_5rem] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[6rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {/* Post-build review fix (Phase7PostBuild, HIGH, WCAG 2.5.3/4.1.2): no
                     `aria-label` here -- it previously replaced the button's whole content with
