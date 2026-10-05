@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon, SettingsIcon } from 'lucide-react'
-import refractHero from '@/assets/brand/refract-hero.png'
+import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -481,7 +481,7 @@ export function SessionList() {
           before the double-click ever reaches the page's own JS, so a renderer-driven toggle was
           dead code and has been removed. */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
-        <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0 rounded-md" />
+        <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
         <span className="text-sm font-semibold">Refract</span>
         {/* Spec 004 FR-011, research.md decision 7: a temporary, plainly-labelled entry point to
             Settings (not styled as a profile item) -- spec 008's profile-item cog supersedes
