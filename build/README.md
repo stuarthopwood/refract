@@ -1,24 +1,16 @@
 # build/
 
-Brand/icon assets for Refract. This directory is not currently wired into any
-packaging step except where noted below.
+Brand and icon assets for Refract.
 
-- **`icon.ico`** — The active app icon. Referenced by `src/main/index.ts`'s
-  `icon:` option (used for the dev-time window icon). This is the only file
-  in this directory actually used by the app today.
-- **`refract-icon.ico`** — Byte-identical copy of `icon.ico`, kept under its
-  original delivered filename (Stuart's original deliverable). Not referenced
-  by any code or build step.
-- **`refract-icon.res`** — A hand-compiled Windows resource file. Nothing in
-  this repo currently references it. Once spec 006 wires up electron-builder
-  packaging, electron-builder writes its own resources from the `win.icon`
-  config option rather than consuming a pre-compiled `.res`, so this file is
-  not part of that path.
-- **`refract-hero.png`** (1.3MB) — Stuart's original source art for the hero
-  icon, at full resolution. `src/renderer/assets/brand/refract-hero.png` (a
-  256x256 downscale used for in-app bundling) was derived from this file.
-  This file itself is not referenced by any code or build step.
+- **`icon.ico`** — The app icon (the isometric cube-and-arms mark). Eight PNG frames: 16, 24, 32,
+  48, 64, 96, 128, and 256 px, 32-bit with transparency. `src/main/index.ts`'s `icon:` option uses it
+  for the dev-time window icon; once spec 006 wires up electron-builder packaging, `win.icon` points
+  at it (electron-builder needs a 256 px frame, which this file has).
+- **`refract-icon-v2.svg`** — The source artwork the icon and the in-app hero are made from. Treat it
+  as the source of truth: transparent background, 512 x 512 viewBox, no external references. Nothing
+  loads this file at runtime.
 
-In short: only `icon.ico` is currently wired in. The other three are Stuart's
-original deliverables kept for reference / possible future packaging use, not
-currently part of any build step.
+The in-app hero (the readiness screen's brand header and the left nav's header) is
+`src/renderer/assets/brand/refract-hero.svg`: the same paths as `refract-icon-v2.svg` with the
+viewBox tightened to the artwork so the mark fills its box at small sizes. If the artwork changes,
+regenerate that copy from `refract-icon-v2.svg`; do not edit the two independently.

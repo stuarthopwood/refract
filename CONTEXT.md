@@ -60,6 +60,22 @@ _Avoid_: Splitter, resize handle (for this boundary specifically)
 Whichever of a **Split**'s two **Chat panes** currently receives a session-row click, the message box, Stop, the queue, and approvals (spec 005). Exactly one pane is focused at a time, marked by a left-edge accent bar plus a visible "Focused" text badge (never colour alone); clicking, typing, or Ctrl+Shift+\ moves it.
 _Avoid_: Active pane, selected pane
 
+**Pull requests view**:
+The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Repository**'s pull requests on GitHub, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
+_Avoid_: PR view, merge requests (GitLab's term)
+
+**Filter tab**:
+One of the five tabs a **Pull requests view**'s list offers -- Open, Authored by me, Assigned to me, Involves me, Review requested (spec 003) -- narrowing which pull requests the list shows; exactly one is active at a time, defaulting to Open.
+_Avoid_: Filter, category
+
+**Review thread**:
+A comment thread anchored to a location in a pull request's diff (spec 003), with a resolved or unresolved state; resolving and unresolving are both explicit, reversible actions, never inferred from a reply.
+_Avoid_: Comment thread, discussion
+
+**Review action**:
+Any of comment, reply, resolve, unresolve, submit a review (comment/approve/request changes), or merge (spec 003) -- every one runs only as the direct result of an explicit user action, and approving, requesting changes, and merging each require a confirmation naming the pull request and the exact action first.
+_Avoid_: PR action, operation
+
 **Theme** (spec 007):
 One of the built-in dark-toned colour presets (Dark, Dark (high contrast)) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
 _Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system

@@ -15,7 +15,7 @@ import {
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, useReadoutStore, useSubagentPanelStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useSubagentPanelStore, useViewStore } from '@/state'
 import { formatDiffStat } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../Transcript'
 import { ReadoutChip } from './ReadoutChip'
@@ -140,7 +140,28 @@ export function CurrentTimeChip() {
  * to the same hidden state here, with no error toast). */
 export function PullRequestChip({ sessionId }: { sessionId: string }) {
   const pullRequest = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.pullRequest)
+  const session = useSessionsStore((s) => s.sessions.find((candidate) => candidate.id === sessionId))
   if (pullRequest === null) return null
+
+  // specs/003-pull-request-management convergence: this chip shipped as a plain external link
+  // before that feature's own in-app view existed (spec 004 research.md decision 4, explicitly
+  // "until spec 003's own view exists"). Now that it does, activating the chip opens it there
+  // instead, pre-selecting this exact pull request via the pull-requests store, then falling back
+  // to the external link only if the owning repository can no longer be resolved.
+  if (session) {
+    return (
+      <ReadoutChip
+        icon={GitPullRequestIcon}
+        accessibleName={`Open pull request #${pullRequest.number}`}
+        onActivate={() => {
+          usePullRequestsStore.getState().selectPullRequest(session.repositoryId, pullRequest.number)
+          useViewStore.getState().openPullRequests(session.repositoryId)
+        }}
+      >
+        <span aria-hidden>#{pullRequest.number}</span>
+      </ReadoutChip>
+    )
+  }
   return (
     <ReadoutChip icon={GitPullRequestIcon} href={pullRequest.url} accessibleName={`Open pull request #${pullRequest.number}`}>
       <span aria-hidden>#{pullRequest.number}</span>

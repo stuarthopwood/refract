@@ -44,3 +44,39 @@ export function DiffView({ path, oldText, newText }: DiffViewProps) {
     </div>
   )
 }
+
+interface DiffViewFromPatchProps {
+  /** Repository-relative path, shown as the header. */
+  path: string
+  /** An already-unified diff body (hunks starting `@@`), e.g. GitHub's REST `pulls/{n}/files`
+   * `patch` field (specs/003-pull-request-management research.md decision 5, ChangesTab.tsx,
+   * T017) -- unlike `DiffView`, this is NOT built from a before/after pair via `buildUnifiedDiff`;
+   * it is wrapped with the same `diff --git a/<path> b/<path>` header `parseDiff` needs and
+   * rendered through the identical `Diff`/`Hunk`/`renderGutter` pipeline. */
+  patch: string
+}
+
+/** GitHub's pull request diffs arrive as a ready-made patch body, not an old/new text pair --
+ * this is `DiffView`'s sibling for that shape, sharing its rendering but not its diff-building. */
+export function DiffViewFromPatch({ path, patch }: DiffViewFromPatchProps) {
+  const wrapped = `diff --git a/${path} b/${path}
+--- a/${path}
++++ b/${path}
+${patch}`
+  const file = parseDiff(wrapped)[0]
+
+  return (
+    <div className="diff-view overflow-hidden rounded-md border border-border">
+      <div className="truncate border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground" title={path}>
+        {path}
+      </div>
+      {!file || file.hunks.length === 0 ? (
+        <div className="px-2.5 py-1.5 text-xs text-muted-foreground">No changes</div>
+      ) : (
+        <Diff viewType="unified" diffType={file.type} hunks={file.hunks} renderGutter={renderGutter}>
+          {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
+        </Diff>
+      )}
+    </div>
+  )
+}

@@ -15,6 +15,7 @@ import { useViewStore } from './view-store'
 import { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSplitStore } from './split-store'
+import { usePullRequestsStore } from './pull-requests-store'
 import { useThemeStore } from './theme-store'
 
 export { initStores }
@@ -36,6 +37,8 @@ export type { MainView, SettingsSectionId } from './view-store'
 export { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore }
 export { useSubagentPanelStore }
 export { useSplitStore }
+export { usePullRequestsStore }
+export type { PullRequestsRepoState } from './pull-requests-store'
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
@@ -55,6 +58,7 @@ export interface RefractDevStores {
   readout: typeof useReadoutStore
   subagentPanel: typeof useSubagentPanelStore
   split: typeof useSplitStore
+  pullRequests: typeof usePullRequestsStore
   theme: typeof useThemeStore
 }
 
@@ -84,6 +88,7 @@ if (import.meta.env.DEV) {
     readout: useReadoutStore,
     subagentPanel: useSubagentPanelStore,
     split: useSplitStore,
+    pullRequests: usePullRequestsStore,
     theme: useThemeStore
   }
 }

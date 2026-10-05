@@ -10,6 +10,7 @@ import { ManageSessionsScreen } from '@/features/profile/ManageSessionsScreen'
 import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
+import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import { useRepositoriesStore, useSessionsStore, useSplitStore, useSubagentPanelStore, useViewStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
@@ -230,7 +231,12 @@ export function App() {
             <ResizableHandle withHandle aria-label="Resize session list" />
             <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
               <ErrorBoundary>
-                {paneSessionIds.length === 0 ? (
+                {view === 'pull-requests' ? (
+                  // specs/003-pull-request-management: swaps only this panel's content (never
+                  // the session-list panel or the subagent panel, both of which stay mounted --
+                  // "Pull requests" is a left-nav entry, not a separate shell).
+                  <PullRequestsView />
+                ) : paneSessionIds.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                     Select a Session or create one.
                   </div>

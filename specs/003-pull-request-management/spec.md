@@ -203,6 +203,13 @@ creation rules from spec 001.
   branch, head branch, reviewers, assignees, labels, and description.
 - **FR-008**: The Overview MUST show a timeline of the pull request's commits, comments, reviews,
   and review threads, in order, including any automated-reviewer findings with their severity.
+  **Known deviation (remediation round, High finding):** `findings` is currently always `[]` --
+  no GitHub GraphQL field distinguishes an automated/bot review from a human one, and no live
+  Copilot/bot review sample was available this session to confirm the body-parsing convention a
+  heuristic would need (research.md decision 4). Implementing an unverified parser risked
+  fabricating findings/severities from a convention nobody confirmed, which is worse than the
+  current honest gap. `SEVERITY_LABEL`/the findings-rendering branch in `Timeline.tsx` are kept
+  ready for whichever severity-extraction approach is chosen once a real sample is available.
 - **FR-009**: The detail view MUST offer a Changes tab showing changed files, their total
   additions and deletions, and, per file, its diff.
 - **FR-010**: The detail view MUST show the pull request's current check status (for example
@@ -224,8 +231,9 @@ creation rules from spec 001.
 - **FR-018**: Every review action (comment, reply, resolve, unresolve, submit review, merge) MUST
   report success or the exact failure, and MUST NOT leave the view showing state that no longer
   matches the action's outcome.
-- **FR-019**: Draft, closed, and merged pull requests MUST have their review and merge actions
-  disabled, each with the reason shown.
+- **FR-019**: Draft, closed, and merged pull requests MUST have their Approve, Request changes,
+  and Merge actions disabled, each with the reason shown. The comment composer and each review
+  thread's Reply/Resolve/Unresolve controls remain available regardless of pull request state.
 - **FR-020**: A merge attempt MUST be refused, with the reason shown, when the pull request has
   merge conflicts or a failing required check.
 - **FR-021**: Before any action acts on a pull request that has changed since it was loaded, the

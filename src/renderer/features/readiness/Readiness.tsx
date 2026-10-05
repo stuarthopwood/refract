@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { LoaderCircleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import refractHero from '@/assets/brand/refract-hero.png'
+import refractHero from '@/assets/brand/refract-hero.svg'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import type { Check, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
 import { useHealthStore } from '@/state'
@@ -58,7 +58,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
       <div className="flex items-center gap-4">
-        <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0 rounded-xl" />
+        <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0" />
         <div className="flex flex-col">
           <span className="font-brand text-5xl font-bold leading-none text-foreground">Refract</span>
           <span className="font-brand mt-1 text-sm font-medium leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>

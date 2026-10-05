@@ -36,10 +36,23 @@ export interface PullRequestSummary {
 
 ### `PullRequestDetail`
 
-The Overview tab's content plus everything the detail view's header actions need to decide what's offered (FR-007, FR-016, FR-019, FR-020). `disabledReason` is the single source of truth for why Review/merge actions are unavailable — the renderer never re-derives it from `state`/`mergeable` itself, so the displayed reason and the actual gate can never disagree (FR-019, FR-020).
+The Overview tab's content plus everything the detail view's header actions need to decide what's
+offered (FR-007, FR-016, FR-019, FR-020).
+
+Corrected (round 3): this section previously described a single `disabledReason: string | null`
+plus a boolean `mergeable` — that shape was REMOVED by Critical #3's fix two rounds ago and never
+updated here since. The shipped contract (`src/shared/github.ts`) instead splits the reason in
+two (`reviewDisabledReason` only ever reflects the pull request's own state — draft/closed/merged
+— so a repository with branch-protection requiring reviews never disables the Review button by
+the very BLOCKED state that approving would clear; `mergeDisabledReason` layers merge-only
+concerns — conflicts, BLOCKED — on top), and represents mergeability as the 3-value
+`MergeableState` string enum (`'mergeable' | 'conflicting' | 'unknown'`), not a boolean, so
+GitHub's own "still computing mergeability" state can be shown as "still checking" instead of a
+false conflict message.
 
 ```ts
 export type MergeMethod = 'merge' | 'squash' | 'rebase';
+export type MergeableState = 'mergeable' | 'conflicting' | 'unknown';
 
 export interface PullRequestDetail {
   number: number;
@@ -54,16 +67,30 @@ export interface PullRequestDetail {
   description: string; // markdown; rendered through Markdown.tsx, never raw HTML (FR-023)
   timeline: TimelineEntry[];
   checkState: CheckState | 'none';
-  mergeable: boolean;
-  disabledReason: string | null; // e.g. "This pull request is a draft.", "Checks are failing.",
-                                  // "This pull request has merge conflicts."; null when every
-                                  // review/merge action is available
+  mergeableState: MergeableState;
+  reviewDisabledReason: string | null; // e.g. "This pull request is a draft."; null when Review/
+                                        // Approve/Request changes are available (FR-019)
+  mergeDisabledReason: string | null; // adds "This pull request has merge conflicts.", a blocked
+                                       // state's own reason, etc. on top of reviewDisabledReason;
+                                       // null when Merge is available (FR-020)
   allowedMergeMethods: MergeMethod[]; // only the methods this repository allows for this pull request
   additions: number;
   deletions: number;
   changedFilesCount: number;
+  files: ChangedFile[]; // the Changes tab's own per-file data (FR-009)
+  url: string; // the real GitHub URL (FR-011 "Open in browser", FR-025 external links)
   updatedAt: string; // staleness marker (FR-021), compared on every mutating request
-  headSha: string; // staleness marker (FR-021); a force-push changes this even if updatedAt lags
+  headSha: string; // staleness marker (FR-021); a force-push changes this even if updatedAt lags.
+                    // Security remediation (round 3, High): the renderer snapshots this the
+                    // instant a Review/Merge dialog opens and sends it back as the mutating
+                    // request's own `expectedHeadSha` (contracts/ipc.md) -- a background poll
+                    // re-caching a newer headSha while the dialog sits open must not be able to
+                    // silently widen what commit an approval/merge is pinned to.
+  // Security remediation (Medium-but-must-fix): true for a fork pull request -- "New session"
+  // shows an untrusted-code warning (prompt-injection/AGENTS.md risk from an unknown author)
+  // before checking out and running an agent against this branch.
+  isFork: boolean;
+  headRepositoryOwner: string | null;
 }
 ```
 
