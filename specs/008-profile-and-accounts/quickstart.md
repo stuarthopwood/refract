@@ -121,15 +121,39 @@ pnpm build        # must pass before a change lands on main
 6. Using only the keyboard: open the menu, arrow through every item and into and out of the
    Theme submenu, press Esc, and confirm focus returns to the profile item.
 
-**Story 5: manage sessions (FR-025)**
+**Story 5: manage sessions (FR-025, FR-027)**
 
-1. With Sessions in more than one repository, including at least one archived, open Manage
-   sessions from the profile menu. Expect: every Session listed with its repository, status, and
-   archive state.
-2. Archive an active one, then restore it. Expect: it moves to archived and back, matching its own
-   repository's session list (spec 001).
-3. Delete a Session from this screen. Expect: the same confirmation spec 001 FR-029 requires,
-   naming its uncommitted changes and unpushed commits.
+1. With Sessions in more than one repository, including at least one archived, open "Manage
+   sessions" from the profile menu (present in every sign-in state). Expect: a header reading
+   "Manage sessions" with a count ("{n} sessions across {m} repositories"), a Back to chat
+   button, and a toolbar (search, repository filter, archive filter, sort).
+2. Confirm every Session is listed with its status (an icon plus the visible status word,
+   e.g. "Working"), repository and branch, and last activity; an archived Session additionally
+   shows an "Archived" badge, and one whose worktree is missing shows "Worktree missing".
+3. Search by name or branch, filter by repository, and switch the archive filter between
+   All/Active/Archived. Expect: the list and the "Showing X of N sessions" count update,
+   announced politely; pressing Esc in the search field with text in it clears it and restores
+   the full list.
+4. Sort by each option (Recently active, Name, A to Z, Repository, A to Z, Status). Expect: the
+   row order changes to match.
+5. Open a row's "..." menu. Expect: the same action list the session list's own row menu offers
+   (rename, open in split, copy worktree path, open worktree folder, archive/restore, stop
+   agent, delete).
+6. Click a row's name/info area to open it. Expect: it opens in the chat view and this screen
+   returns to the chat view; Ctrl+click opens it in a split instead.
+7. Archive an active Session using its quick-action button while filtered to Active. Expect: it
+   drops out of the filtered list, the removal is announced, and focus lands on the next row's
+   open button, else the previous row's, else the search input -- never lost to the page.
+8. Restore the archived Session. Expect: it moves back into the active list (or disappears if
+   filtered to Archived) and the change is announced, matching its own repository's session
+   list (spec 001).
+9. Delete a Session from this screen. Expect: the same confirmation spec 001 FR-029 requires,
+   naming its uncommitted changes and unpushed commits, and the removal is announced the same
+   way as archive/restore.
+10. Search for text that matches no Session. Expect: a "No matching sessions" message and a
+    "Clear filters" button that resets search, repository, and archive filters together.
+11. With no Sessions in any repository, open Manage sessions. Expect: "No sessions yet" with a
+    short instruction and a Back to chat button.
 
 **Memory badge (FR-029 — implemented by spec 001's existing task T099, not a task of this spec)**
 

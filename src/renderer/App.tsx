@@ -6,6 +6,7 @@ import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
+import { ManageSessionsScreen } from '@/features/profile/ManageSessionsScreen'
 import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
@@ -209,6 +210,10 @@ export function App() {
         ) : view === 'settings' ? (
           <ErrorBoundary>
             <SettingsScreen />
+          </ErrorBoundary>
+        ) : view === 'manage-sessions' ? (
+          <ErrorBoundary>
+            <ManageSessionsScreen />
           </ErrorBoundary>
         ) : (
           <ResizablePanelGroup orientation="horizontal" className="h-full">

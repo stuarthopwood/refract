@@ -166,6 +166,7 @@ export function ProfileItem() {
           account={account}
           githubStatus={githubStatus}
           onManageAccounts={() => setManageOpen(true)}
+          onManageSessions={() => useViewStore.getState().openManageSessions()}
           onSignIn={handleSignInFromMenu}
           onSignOut={handleSignOutFromMenu}
           onKeyboardShortcuts={() => setKeyboardOpen(true)}

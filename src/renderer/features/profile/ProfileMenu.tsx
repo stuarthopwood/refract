@@ -14,16 +14,16 @@
 // `onThemeApplied` to reach ProfileItem's shared live region, and What's new only ever shows a
 // toast.
 //
-// Two reserved slots, each left as a comment rather than a disabled/stub item (a control that
-// opens nothing is worse than no control): "Manage sessions" lands between Manage accounts and
-// the Theme group once Phase 7 builds the screen it opens (tasks.md T027); the update entry lands
-// between Keyboard shortcuts and Health check once spec 006 ships `updates.get()`/
-// `updates:changed` (tasks.md T024b) -- no `updates` IPC, preload method, or store exists yet.
+// One reserved slot, left as a comment rather than a disabled/stub item (a control that opens
+// nothing is worse than no control): the update entry lands between Keyboard shortcuts and
+// Health check once spec 006 ships `updates.get()`/`updates:changed` (tasks.md T024b) -- no
+// `updates` IPC, preload method, or store exists yet.
 import {
   ActivityIcon,
   CheckIcon,
   ExternalLinkIcon,
   KeyboardIcon,
+  LayersIcon,
   LogOutIcon,
   PaletteIcon,
   SlidersHorizontalIcon,
@@ -53,6 +53,7 @@ export interface ProfileMenuContentProps {
   account: GitHubAccount | undefined
   githubStatus: GithubStatus
   onManageAccounts(): void
+  onManageSessions(): void
   /** Signed-out "Sign in to GitHub…" item (FR-009, FR-010): opens Manage accounts AND starts the
    *  add-account flow immediately, since there is nowhere else signed-out to put a Sign in
    *  action that can actually show the flow's one-time code. */
@@ -156,6 +157,7 @@ export function ProfileMenuContent({
   account,
   githubStatus,
   onManageAccounts,
+  onManageSessions,
   onSignIn,
   onSignOut,
   onKeyboardShortcuts,
@@ -188,8 +190,10 @@ export function ProfileMenuContent({
             <UsersIcon aria-hidden />
             Manage accounts
           </DropdownMenuItem>
-          {/* Manage sessions slot (Phase 7, tasks.md T027): reserved here, right after Manage
-              accounts, until that screen exists. */}
+          <DropdownMenuItem onSelect={onManageSessions}>
+            <LayersIcon aria-hidden />
+            Manage sessions
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <ThemeSubmenu onThemeApplied={onThemeApplied} />
           <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
@@ -211,6 +215,10 @@ export function ProfileMenuContent({
             <UsersIcon aria-hidden />
             Manage accounts
           </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onManageSessions}>
+            <LayersIcon aria-hidden />
+            Manage sessions
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <ThemeSubmenu onThemeApplied={onThemeApplied} />
           <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
@@ -221,6 +229,10 @@ export function ProfileMenuContent({
           <DropdownMenuItem onSelect={onManageAccounts}>
             <UsersIcon aria-hidden />
             Manage accounts
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onManageSessions}>
+            <LayersIcon aria-hidden />
+            Manage sessions
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <ThemeSubmenu onThemeApplied={onThemeApplied} />

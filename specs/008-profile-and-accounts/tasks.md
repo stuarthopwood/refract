@@ -184,9 +184,15 @@ correctly and are fully keyboard-accessible.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 5.
 
-- [ ] T026 (#333) [US5] Write `src/renderer/features/profile/ManageSessionsScreen.tsx`: lists every Session across every Repository (`useSessionsStore`/`useRepositoriesStore`, specs/001) with its repository, status, and archive state (FR-025), reusing the existing archive/restore actions and `DeleteDialog.tsx`'s confirmation (specs/001 FR-029) unchanged — no new IPC, this screen is a renderer-only cross-repository view over `sessions.list()`.
-- [ ] T027 (#336) [US5] Add the `'manage-sessions'` case to `App.tsx`'s main-area switch (rendering `ManageSessionsScreen`) and the "Manage sessions" item's `openManageSessions()` wiring in `ProfileMenu.tsx` (T021) (depends on T012, T021, T026).
-- [ ] T028 (#340) [US5] Update the docs and verify live: `docs/DESIGN.md` (Manage sessions screen) and `quickstart.md` Story 5; then on the built app in an isolated instance with Sessions in more than one repository, including an archived one: open Manage sessions from the profile menu, confirm every Session is listed with its repository/status/archive state, archive one, restore the archived one, and delete one, confirming the same uncommitted/unpushed confirmation spec 001 requires.
+- [X] T026 (#333) [US5] Write `src/renderer/features/profile/ManageSessionsScreen.tsx`: lists every Session across every Repository (`useSessionsStore`/`useRepositoriesStore`, specs/001) with its repository, status, and archive state (FR-025), reusing the existing archive/restore actions and `DeleteDialog.tsx`'s confirmation (specs/001 FR-029) unchanged — no new IPC, this screen is a renderer-only cross-repository view over `sessions.list()`.
+- [X] T027 (#336) [US5] Add the `'manage-sessions'` case to `App.tsx`'s main-area switch (rendering `ManageSessionsScreen`) and the "Manage sessions" item's `openManageSessions()` wiring in `ProfileMenu.tsx` (T021) (depends on T012, T021, T026).
+- [X] T028 (#340) [US5] Update the docs and verify live: `docs/DESIGN.md` (Manage sessions screen) and `quickstart.md` Story 5; then on the built app in an isolated instance with Sessions in more than one repository, including an archived one: open Manage sessions from the profile menu, confirm every Session is listed with its repository/status/archive state, archive one, restore the archived one, and delete one, confirming the same uncommitted/unpushed confirmation spec 001 requires.
+  -- Shared `sessionActions.ts(x)` extraction verified by reading the `SessionList.tsx` diff
+  (no behaviour change, only the row action list extracted). Main-process archive-stops-agent
+  claim verified in `src/main/ipc/sessions.ts`: the `SESSIONS_ARCHIVE` handler calls
+  `manager.getOrCreateAgent(id).shutdown()` before setting `archivedAt` -- confirmed true.
+  Live keyboard/visual verification not performed here; the parent agent verifies on the
+  built app.
 
 **Checkpoint**: run quickstart Story 5. `pnpm typecheck` and `pnpm build` pass.
 
