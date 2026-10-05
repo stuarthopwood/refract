@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { cn } from "cn"
-import { CheckIcon, ChevronRightIcon } from "lucide-react"
+import { ChevronRightIcon } from "lucide-react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 function DropdownMenu({
@@ -53,13 +53,10 @@ function DropdownMenuItem({
   className,
   variant = "default",
   inset,
-  checked,
-  children,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   variant?: "default" | "destructive"
   inset?: boolean
-  checked?: boolean
 }) {
   return (
     <DropdownMenuPrimitive.Item
@@ -71,18 +68,7 @@ function DropdownMenuItem({
         className
       )}
       {...props}
-    >
-      {checked !== undefined ? (
-        <>
-          <span className="pointer-events-none absolute left-2 flex size-4 items-center justify-center">
-            {checked ? <CheckIcon className="pointer-events-none" /> : null}
-          </span>
-          <span className="pl-6">{children}</span>
-        </>
-      ) : (
-        children
-      )}
-    </DropdownMenuPrimitive.Item>
+    />
   )
 }
 
@@ -105,7 +91,7 @@ function DropdownMenuSubTrigger({
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
-        "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-ring)] data-[state=open]:bg-accent data-[state=open]:text-accent-foreground data-[inset=true]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

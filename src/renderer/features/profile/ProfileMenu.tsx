@@ -1,8 +1,12 @@
 // The profile menu's content (docs/DESIGN.md "Layout", spec 008 FR-003, FR-004, FR-008 to
-// FR-011, FR-014, FR-018 to FR-024): the account header (avatar + display name + `@handle` on
-// host) plus Manage accounts, Theme, Keyboard shortcuts, Health check, What's new, and Sign out
-// when signed in; a Sign in action plus the rest of that same list when signed out; an Install
-// action plus the rest of that same list when the GitHub CLI itself is missing (FR-014).
+// FR-011, FR-014, FR-018 to FR-024): a state-specific first row -- the account header (avatar +
+// display name + `@handle` on host) when signed in, a Sign in action when signed out, an Install
+// action when the GitHub CLI itself is missing (FR-014), or a disabled "Checking GitHub
+// sign-in…" row while the initial status read is still in flight -- followed by one shared block
+// (Manage accounts, Manage sessions, Theme, Keyboard shortcuts, Health check, What's new)
+// rendered exactly once so React never remounts it (and drops focus) on a `githubStatus` change
+// while the menu is open, then Sign out only when signed in (post-build review, GateCode008
+// Medium: this used to be four near-identical copies of that shared block, one per branch).
 // `ProfileItem.tsx` wraps this in a `DropdownMenu`, so arrow-key navigation, Esc-to-close, and
 // focus-return-to-trigger all come for free from Radix's primitive -- nothing here hand-rolls any
 // of that. `ProfileItem.tsx` owns every dialog this menu can open (Manage accounts, Sign out,
@@ -84,7 +88,8 @@ export interface ProfileMenuContentProps {
  *  and returns focus to the profile item's name button via Radix's own default close-auto-focus
  *  (no `Trigger`-less dialog is opened here, so that default is exactly right); selecting
  *  "Appearance settings…" instead opens the Settings screen, which unmounts ProfileItem
- *  entirely, so focus goes to Settings' own first focusable control instead. The submenu is
+ *  entirely, so focus goes to the Settings screen's own heading instead (SettingsScreen.tsx:66-68
+ *  focuses it on mount, not any "first focusable control"). The submenu is
  *  controlled (`open`/`onOpenChange`) so that opening it moves focus to the active preset --
  *  but only when the submenu was opened by keyboard (the `contains` check below leaves a
  *  pointer-hover open alone, since a mouse user never wants focus silently stolen). Radix alone
@@ -129,6 +134,7 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
               key={theme.id}
               ref={isActive ? activeItemRef : undefined}
               onSelect={() => chooseTheme(theme.id, theme.name)}
+              className={isActive ? 'focus:shadow-[inset_4px_0_0_0_var(--color-ring)]' : undefined}
             >
               {isActive && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-active-indicator" />}
               <span
@@ -156,8 +162,8 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
   )
 }
 
-/** Keyboard shortcuts, Health check, and What's new: identical in every GitHub sign-in state, so
- *  rendered once and shared across all three branches below. */
+/** Keyboard shortcuts, Health check, and What's new: common to every GitHub sign-in state, so
+ *  extracted here and rendered exactly once by `ProfileMenuContent` below, regardless of state. */
 function CommonMenuItems({
   onKeyboardShortcuts,
   onHealthCheck,
@@ -183,6 +189,7 @@ function CommonMenuItems({
         <SparklesIcon aria-hidden />
         <span className="flex-1">What's new</span>
         <ExternalLinkIcon aria-hidden className="size-3.5" />
+        <span className="sr-only"> Opens in your browser</span>
       </DropdownMenuItem>
     </>
   )
@@ -200,6 +207,7 @@ export function ProfileMenuContent({
   onWhatsNew,
   onThemeApplied
 }: ProfileMenuContentProps) {
+  const signedIn = githubStatus === 'ready' && account !== undefined
   return (
     <DropdownMenuContent
       side="top"
@@ -208,7 +216,7 @@ export function ProfileMenuContent({
       collisionPadding={8}
       className="w-64 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto"
     >
-      {githubStatus === 'ready' && account ? (
+      {signedIn && account ? (
         <>
           <DropdownMenuLabel className="flex items-center gap-2.5 font-normal">
             <Avatar>
@@ -221,79 +229,54 @@ export function ProfileMenuContent({
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={onManageAccounts}>
-            <UsersIcon aria-hidden />
-            Manage accounts
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onManageSessions}>
-            <LayersIcon aria-hidden />
-            Manage sessions
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <ThemeSubmenu onThemeApplied={onThemeApplied} />
-          <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={onSignOut}>
+        </>
+      ) : githubStatus === 'missing-cli' ? (
+        <DropdownMenuItem key="first-row" asChild>
+          <a href="https://cli.github.com" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2">
+            <DownloadIcon aria-hidden />
+            <span className="flex-1">Install GitHub CLI</span>
+            <ExternalLinkIcon aria-hidden className="size-3.5" />
+            <span className="sr-only"> Opens in your browser</span>
+          </a>
+        </DropdownMenuItem>
+      ) : githubStatus === 'signed-out' || githubStatus === 'ready' ? (
+        <DropdownMenuItem key="first-row" onSelect={onSignIn}>
+          <LogInIcon aria-hidden />
+          Sign in to GitHub…
+        </DropdownMenuItem>
+      ) : (
+        <DropdownMenuItem key="first-row" disabled>
+          <LoaderCircleIcon aria-hidden className="animate-spin" />
+          Checking GitHub sign-in…
+        </DropdownMenuItem>
+      )}
+      {/* Shared block (GateCode008 Medium): identical in every `githubStatus`, so rendered exactly
+          once here instead of once per branch above -- keyed so a `githubStatus` change while the
+          menu is open (e.g. sign-in finishing) can never remount, and drop focus from, any of
+          these items (Phase 6 re-check, NEW-A). */}
+      <DropdownMenuItem key="manage-accounts" onSelect={onManageAccounts}>
+        <UsersIcon aria-hidden />
+        Manage accounts
+      </DropdownMenuItem>
+      <DropdownMenuItem key="manage-sessions" onSelect={onManageSessions}>
+        <LayersIcon aria-hidden />
+        Manage sessions
+      </DropdownMenuItem>
+      <DropdownMenuSeparator key="shared-separator" />
+      <ThemeSubmenu key="theme" onThemeApplied={onThemeApplied} />
+      <CommonMenuItems
+        key="common"
+        onKeyboardShortcuts={onKeyboardShortcuts}
+        onHealthCheck={onHealthCheck}
+        onWhatsNew={onWhatsNew}
+      />
+      {signedIn && (
+        <>
+          <DropdownMenuSeparator key="sign-out-separator" />
+          <DropdownMenuItem key="sign-out" variant="destructive" onSelect={onSignOut}>
             <LogOutIcon aria-hidden />
             Sign out
           </DropdownMenuItem>
-        </>
-      ) : githubStatus === 'missing-cli' ? (
-        <>
-          <DropdownMenuItem asChild>
-            <a href="https://cli.github.com" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2">
-              <DownloadIcon aria-hidden />
-              <span className="flex-1">Install GitHub CLI</span>
-              <ExternalLinkIcon aria-hidden className="size-3.5" />
-            </a>
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onManageAccounts}>
-            <UsersIcon aria-hidden />
-            Manage accounts
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onManageSessions}>
-            <LayersIcon aria-hidden />
-            Manage sessions
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <ThemeSubmenu onThemeApplied={onThemeApplied} />
-          <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
-        </>
-      ) : githubStatus === 'signed-out' || githubStatus === 'ready' ? (
-        <>
-          <DropdownMenuItem onSelect={onSignIn}>
-            <LogInIcon aria-hidden />
-            Sign in to GitHub…
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onManageAccounts}>
-            <UsersIcon aria-hidden />
-            Manage accounts
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onManageSessions}>
-            <LayersIcon aria-hidden />
-            Manage sessions
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <ThemeSubmenu onThemeApplied={onThemeApplied} />
-          <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
-        </>
-      ) : (
-        <>
-          <DropdownMenuItem disabled>
-            <LoaderCircleIcon aria-hidden className="animate-spin" />
-            Checking GitHub sign-in…
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onManageAccounts}>
-            <UsersIcon aria-hidden />
-            Manage accounts
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onManageSessions}>
-            <LayersIcon aria-hidden />
-            Manage sessions
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <ThemeSubmenu onThemeApplied={onThemeApplied} />
-          <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
         </>
       )}
     </DropdownMenuContent>

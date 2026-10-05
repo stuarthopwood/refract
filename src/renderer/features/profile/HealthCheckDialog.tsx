@@ -41,9 +41,8 @@ function warningPhrase(count: number): string {
 
 /** H1 (post-build review): counts failures and warnings separately, since a pass-with-a-warning
  *  row is never a failure (CheckRow.tsx's own "Passed with a warning" state) -- the old
- *  "{n} need attention" wording conflated the two and was also ungrammatical for n=1. Exported so
- *  a throwaway script can verify every combination without duplicating this logic. */
-export function healthCheckAnnouncement(checks: ReadinessChecks): string {
+ *  "{n} need attention" wording conflated the two and was also ungrammatical for n=1. */
+function healthCheckAnnouncement(checks: ReadinessChecks): string {
   let failed = 0
   let warned = 0
   for (const key of CHECK_ORDER) {
@@ -53,7 +52,7 @@ export function healthCheckAnnouncement(checks: ReadinessChecks): string {
   }
   if (failed > 0) {
     const warnSuffix = warned > 0 ? `, ${warned} passed ${warningPhrase(warned)}` : ''
-    return `Health check complete. ${failed} failed${warnSuffix}.`
+    return `Health check complete. ${failed} ${failed === 1 ? 'check' : 'checks'} failed${warnSuffix}.`
   }
   if (warned > 0) {
     return `Health check complete. All checks passed, ${warned} ${warningPhrase(warned)}.`
@@ -68,24 +67,38 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
   const [assertive, announceAssertive] = useClearedAnnouncement()
   const doneRef = useRef<HTMLButtonElement>(null)
   const checkAgainRef = useRef<HTMLButtonElement>(null)
+  // NEW-F (Phase 6 re-check): a run-id guard so closing and reopening the dialog mid-run (which
+  // starts a second `runCheck`) can never have the first run's stale `finally` clear `loading`
+  // or overwrite the second run's still-in-flight results.
+  const runIdRef = useRef(0)
 
   async function runCheck(focusCheckAgain: boolean): Promise<void> {
+    const id = ++runIdRef.current
     setLoading(true)
+    // NEW-B (Phase 6 re-check): clear the OTHER live region too -- setting the same text twice in
+    // the same region is a no-op React commit, so a second identical result within
+    // useClearedAnnouncement's 6s window would otherwise announce nothing.
     announcePolite('Checking…')
+    announceAssertive('')
     try {
       const result = await window.refract.readiness.check()
+      if (id !== runIdRef.current) return
       const next = result.ok ? result.value : checksFromError(result.error)
       setChecks(next)
       useHealthStore.getState().setOmpCheck(next.omp)
       announcePolite(healthCheckAnnouncement(next))
     } catch (error) {
+      if (id !== runIdRef.current) return
       console.debug('[refract] readiness.check: invoke failed', error)
       const failed: Check = { ok: false, hint: 'The check could not run. Try Check again.' }
       setChecks({ git: failed, omp: failed, ompSignedIn: failed })
+      announcePolite('')
       announceAssertive('Health check couldn\'t run.')
     } finally {
-      setLoading(false)
-      if (focusCheckAgain) checkAgainRef.current?.focus()
+      if (id === runIdRef.current) {
+        setLoading(false)
+        if (focusCheckAgain) checkAgainRef.current?.focus()
+      }
     }
   }
 
@@ -118,7 +131,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
           role="list"
           aria-label="Health checks"
           aria-busy={loading || undefined}
-          className={`flex flex-col gap-3${loading ? ' opacity-60' : ''}`}
+          className={`flex flex-col gap-3${loading && checks !== null ? ' opacity-80' : ''}`}
         >
           {CHECK_ORDER.map((key) => (
             <CheckRow

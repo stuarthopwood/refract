@@ -5,9 +5,9 @@
 // own rendering is pixel-identical to before this extraction; only HealthCheckDialog.tsx sets it,
 // since that dialog shows the state word visibly (Readiness.tsx leaves it `sr-only`, matching
 // its own quieter first-run tone). `CheckStatusIcon`'s own `srWord` defaults true (Readiness's
-// quieter, icon-plus-sr-only-word tone); HealthCheckDialog passes `srWord={!showStateWord}` so a
-// screen reader hears the state word exactly once there too, instead of once from the icon's own
-// sr-only span and again from the row's visible one.
+// quieter, icon-plus-sr-only-word tone); `CheckRow` itself passes `srWord={!showStateWord}` below
+// so a screen reader hears the state word exactly once whichever caller renders it, instead of
+// once from the icon's own sr-only span and again from the row's visible one.
 import type { ReactNode } from 'react'
 import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import type { Check } from '../../../shared/ipc'
