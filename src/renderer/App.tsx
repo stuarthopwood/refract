@@ -6,6 +6,7 @@ import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
+import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { StatusBar } from '@/features/status-bar/StatusBar'
@@ -213,7 +214,12 @@ export function App() {
           <ResizablePanelGroup orientation="horizontal" className="h-full">
             <ResizablePanel id="session-list" defaultSize={280} minSize={220} maxSize={480} collapsible collapsedSize={0}>
               <ErrorBoundary>
-                <SessionList />
+                <div className="flex h-full flex-col">
+                  <div className="min-h-0 flex-1">
+                    <SessionList />
+                  </div>
+                  <ProfileItem />
+                </div>
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />
