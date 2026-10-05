@@ -137,34 +137,36 @@ no new protocol registration and is simpler to validate end-to-end (the same byt
 checked are the bytes handed over, with no separate file-read step that could serve something
 else).
 
-## Decision 6: OMP provider sign-in/out — probe first, reuse the readiness pattern
+## Decision 6: OMP provider sign-in/out — confirmed unusable over rpc-ui; read-only fallback ships
 
-**Decision**: task T002 (tasks.md) probes, before any User Story 3 implementation task, whether
-`/login` and `/logout` are offered by a scratch `omp --mode rpc-ui` process's
-`available_commands_update`, and if so what sending them as a `prompt` produces (an
-`extension_ui_request` dialog, `command_output` text, or both), recording the result in
-`docs/spike/FINDINGS.md` per constitution Principle IV. If the probe confirms a usable flow,
-`src/main/ipc/accounts.ts`'s OMP section spins up a scratch, non-Session `OmpProcess` (the exact
-construction `readiness.ts`'s `checkOmpSignedIn` already uses: a temp-dir cwd, started on demand,
-stopped when the section closes) to call `get_login_providers` for reads and to send `/login`/
-`/logout` and relay any resulting dialog through the existing `dialogs.ts` classifier
-(contracts/omp-usage.md) over a new, non-Session pending-request channel.
+**Decision**: task T002's probe (`docs/spike/omp-signin-probe.mjs`, FINDINGS item 42) confirmed
+`/login` and `/logout` are absent from a scratch `omp --mode rpc-ui` process's
+`available_commands_update` — on both a brand-new isolated profile (198 flattened commands) and
+the real, fully-loaded, already-signed-in default profile (363 flattened commands), ruling out
+`--profile` isolation as the cause. **The fallback branch ships, not the verified-usable branch**:
+`src/main/ipc/accounts.ts`'s OMP section is read-only. It spins up the same scratch, non-Session
+`OmpProcess` construction `readiness.ts`'s `checkOmpSignedIn` already uses (a temp-dir cwd,
+started on demand, stopped when the section closes) only to call `get_login_providers` for reads
+(already proven safe and working, FINDINGS item 15); `accounts.omp.signIn`/`signOut`
+(contracts/ipc.md) unconditionally return error `unsupported`, and signing in or out shows an
+inline instruction to run `omp` in a terminal and use `/login` there rather than attempting an
+unsupported in-app flow. FINDINGS item 42 also found: `omp --help`/`omp login --help` document
+`/login` as a real OMP slash command with its own terminal-only CLI counterpart (`omp login
+[PROVIDER]`, "terminal counterpart of `/login`"), matching this decision's original anticipated
+risk that the flow assumes a real terminal; no CLI `omp logout` counterpart exists in this
+version, so the instruction text names only `/login`, never `/logout`, and never implies a
+terminal sign-out command this probe did not find.
 
-**Fallback if the probe shows it is not possible** (`/login`/`/logout` absent from
-`available_commands_update`, or the dialog it raises cannot be answered over rpc-ui): Manage
-accounts' OMP section becomes read-only — it still lists provider sign-in state via
-`get_login_providers` (already proven safe and working, FINDINGS item 15) — and signing in or out
-shows an inline instruction to run `omp` in a terminal and use `/login`/`/logout` there, rather
-than attempting an unsupported in-app flow. This is the conservative fallback recorded here so the
-implementing task has a concrete instruction either way the probe comes out.
-
-**Rationale**: the spec's own Assumptions flag this as unverified and require a probe before a
-plan relies on it (constitution Principle IV); User Story 3 is Priority P2 and nothing else in
-this spec depends on it, so a read-only fallback does not block Users Stories 1, 2, 4, or 5.
+**Rationale**: constitution Principle IV requires evidence before design; the probe is decisive
+rather than merely absence-of-something-tried, because it reproduced the identical zero-hit
+result on the real, already-signed-in profile too (not only the never-used isolated one). User
+Story 3 is Priority P2 and nothing else in this spec depends on it, so the read-only fallback does
+not block User Stories 1, 2, 4, or 5.
 
 **Alternatives considered**: assuming the RPC-driven flow works and designing only that path —
 rejected, directly against constitution Principle IV ("Features MUST NOT be designed around a
-FINDINGS open item... until a probe resolves it").
+FINDINGS open item... until a probe resolves it"); moot in hindsight since the probe ran and
+confirmed the fallback is the only buildable path.
 
 ## Decision 7: one shared main-area view-switch store, reconciled with specs 003 and 004
 
