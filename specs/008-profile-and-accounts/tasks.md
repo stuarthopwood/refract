@@ -130,11 +130,49 @@ correctly and are fully keyboard-accessible.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 4.
 
-- [ ] T021 (#312) [US4] Extend `ProfileMenu.tsx` to the full fixed order (FR-018): account header, Manage accounts (T016), Manage sessions (added by T027 below — add the menu item and its `openManageSessions()` call now even though the screen lands in Phase 7), Theme, Keyboard shortcuts, the update entry, Health check, What's new, then Sign out set apart with a separator; keep the existing arrow-key/Esc/focus-return behaviour (T014) working across the longer list.
-- [ ] T022 (#317) [US4] Add the Theme submenu (FR-019; depends on spec 007 shipping its theme setter and `settingsSection: 'appearance'`, same blocked-until-lands relationship as T024's update entry — plan.md "Build order"): a `DropdownMenuSub` (T003) listing every built-in dark preset with the active one checked by icon and text, plus "Appearance settings" calling `useViewStore.getState().openSettings('appearance')`; the preset choices call spec 007's theme-setter IPC against its documented contract once that spec ships it.
-- [ ] T023 (#321) [US4] Write `src/renderer/features/profile/KeyboardShortcutsDialog.tsx` (FR-020): a read-only list built from a static constant matching `docs/DESIGN.md`'s "Keyboard" table (Send message, Newline, Clear the message box, Stop the running turn, New Session, New Conversation, Jump to the Nth Session, Hide/show the session list, Open Settings, Cycle Approval mode, Command palette); swapped for backlog issue #6's dynamic set once that work exists, not by this task.
-- [ ] T024 (#325) [US4] Wire the update entry, Health check, and What's new in `ProfileMenu.tsx`: the update entry reads spec 006's `updates.get()`/`updates:changed` (contracts/ipc.md "Update state (owned by spec 006)" — blocked until spec 006 ships it; this task implements the two-state label against that documented shape) (FR-021); Health check calls the existing `window.refract.readiness.check()` and shows its result in a toast or small dialog (FR-022); What's new calls the new `app.openReleaseNotes()` (T009) (FR-023).
-- [ ] T025 (#329) [US4] Update the docs and verify live: `docs/DESIGN.md` ("Keyboard" cross-reference, Settings/Backlog notes for the Theme submenu and update entry) and `quickstart.md` Story 4; then on the built app in an isolated instance: confirm the fixed order, open and check the Theme submenu's active entry, open Keyboard shortcuts, select Health check and read its result, select What's new and confirm the system browser opens, and operate the whole menu (including into and out of the Theme submenu) using only the keyboard with focus returning to the profile item on close.
+- [X] T021 (#312) [US4] Extend `ProfileMenu.tsx` to the full fixed order (FR-018): account header, Manage accounts (T016), Manage sessions (added by T027 below — add the menu item and its `openManageSessions()` call now even though the screen lands in Phase 7), Theme, Keyboard shortcuts, the update entry, Health check, What's new, then Sign out set apart with a separator; keep the existing arrow-key/Esc/focus-return behaviour (T014) working across the longer list.
+  -- Done except the Manage sessions item itself: left as a reserved, commented slot right
+  after Manage accounts (ProfileMenu.tsx) instead of a menu item that would open an empty
+  view -- a control that opens nothing is worse than no control. Added by T027 (Phase 7) once
+  the screen it opens exists. Everything else in the fixed order (account header, Manage
+  accounts, Theme, Keyboard shortcuts, Health check, What's new, Sign out, each separator) is
+  built and keeps the existing arrow-key/Esc/focus-return behaviour across the longer list.
+- [X] T022 (#317) [US4] Add the Theme submenu (FR-019; depends on spec 007 shipping its theme setter and `settingsSection: 'appearance'`, same blocked-until-lands relationship as T024's update entry — plan.md "Build order"): a `DropdownMenuSub` (T003) listing every built-in dark preset with the active one checked by icon and text, plus "Appearance settings" calling `useViewStore.getState().openSettings('appearance')`; the preset choices call spec 007's theme-setter IPC against its documented contract once that spec ships it.
+  -- Spec 007 shipped since this task was written, so the blocking dependency is resolved:
+  every built-in preset from THEMES, the active one checked by icon and the word "Current",
+  a data-driven swatch (ThemePicker.tsx's own approach, never a hard-coded hex -- a UI-review
+  correction), choosing a different one calling useThemeStore.getState().save(id) directly
+  (applies and persists at once; a menu is not where a live preview belongs) and announcing
+  "Applied theme {name}" through ProfileItem's shared live region, then "Appearance
+  settings…" calling openSettings('appearance').
+- [X] T023 (#321) [US4] Write `src/renderer/features/profile/KeyboardShortcutsDialog.tsx` (FR-020): a read-only list built from a static constant matching `docs/DESIGN.md`'s "Keyboard" table (Send message, Newline, Clear the message box, Stop the running turn, New Session, New Conversation, Jump to the Nth Session, Hide/show the session list, Open Settings, Cycle Approval mode, Command palette); swapped for backlog issue #6's dynamic set once that work exists, not by this task.
+  -- Built with an HONESTY correction: every one of docs/DESIGN.md's 13 "Keyboard" table rows
+  was individually re-verified against its real handler before being listed (not assumed from
+  the table). Only 6 have one: Send message, Newline (textarea default), Clear the message box,
+  Stop the running turn (all MessageInput.tsx), Open in split (SessionList.tsx), and Move focus
+  to the other pane (App.tsx). The other 7 (New Session, New Conversation, Jump to the Nth
+  Session, Hide/show the session list, Open Settings, Cycle Approval mode, Command palette) have
+  no handler anywhere in src/renderer or src/main -- confirmed by reading every keydown listener
+  and src/main/menu.ts's accelerators, not grepped-and-assumed. This dialog lists only the 6 real
+  ones; a new GitHub issue documents the other 7 (filed this session) rather than promising a
+  "coming soon" footer the reviewer had proposed.
+- [X] T024 (#325) [US4] Wire the update entry, Health check, and What's new in `ProfileMenu.tsx`: the update entry reads spec 006's `updates.get()`/`updates:changed` (contracts/ipc.md "Update state (owned by spec 006)" — blocked until spec 006 ships it; this task implements the two-state label against that documented shape) (FR-021); Health check calls the existing `window.refract.readiness.check()` and shows its result in a toast or small dialog (FR-022); What's new calls the new `app.openReleaseNotes()` (T009) (FR-023).
+  -- Partially done: Health check (a dialog, not a toast -- reruns readiness.check() live,
+  reusing Readiness.tsx's own per-check row via the new CheckRow.tsx extraction) and What's new
+  (calls app.openReleaseNotes(), a sonner toast on either outcome) are both wired and real. The
+  update entry is NOT wired: spec 006 still does not exist in this checkout -- no updates IPC
+  request, preload method, or store, confirmed by searching for all three before writing this
+  note. Rather than add a disabled/stub item, its slot is left as a reserved, commented position
+  in ProfileMenu.tsx between Keyboard shortcuts and Health check; the remaining work is split out
+  as T024b below so this task itself can close.
+- [ ] T024b [US4] Wire the real update entry in `ProfileMenu.tsx` once spec 006 ships `updates.get()`/`updates:changed` (contracts/ipc.md "Update state (owned by spec 006)"): replace the reserved slot (between Keyboard shortcuts and Health check) with the real two-state label ("Check for updates" / "Restart to update <version>") against that shipped shape (FR-021). Depends on spec 006.
+- [X] T025 (#329) [US4] Update the docs and verify live: `docs/DESIGN.md` ("Keyboard" cross-reference, Settings/Backlog notes for the Theme submenu and update entry) and `quickstart.md` Story 4; then on the built app in an isolated instance: confirm the fixed order, open and check the Theme submenu's active entry, open Keyboard shortcuts, select Health check and read its result, select What's new and confirm the system browser opens, and operate the whole menu (including into and out of the Theme submenu) using only the keyboard with focus returning to the profile item on close.
+  -- docs/DESIGN.md's Profile item bullet rewritten with the full built order and both reserved
+  slots named; new Keyboard shortcuts dialog and Health check dialog bullets added; quickstart.md
+  Story 4 rewritten to match (including the two deferred items). Live keyboard-operation /
+  visual verification NOT run by this agent (no app launch, per instruction -- the parent verifies
+  live with real input events); pnpm typecheck, pnpm build, and pnpm check:ui-text (0 leaks) were
+  run and passed instead.
 
 **Checkpoint**: run quickstart Story 4. `pnpm typecheck` and `pnpm build` pass.
 

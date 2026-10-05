@@ -1,27 +1,29 @@
 // The profile item (docs/DESIGN.md "Layout", spec 008 FR-001 to FR-007, FR-024, FR-008 to
-// FR-011, FR-014): pinned at the bottom of the left nav, below the session list. Shows the active
-// GitHub account's round avatar (`avatar.tsx`, T003) and display name, the GitHub-CLI-missing
-// state (FR-014: avatar fallback "?", name "GitHub CLI missing"), or a generic avatar and "Sign
-// in" when no account is signed in. A separate cog button opens Settings (FR-002), replacing
-// spec 004 FR-011's temporary left-nav Settings entry now that this lands. Selecting the
-// avatar/name part anywhere opens the profile menu (FR-003) via a `DropdownMenu` (T003's
-// primitive) wrapping `ProfileMenu.tsx`'s content; Radix's primitive supplies arrow-key
+// FR-011, FR-014, FR-018 to FR-024): pinned at the bottom of the left nav, below the session
+// list. Shows the active GitHub account's round avatar (`avatar.tsx`, T003) and display name,
+// the GitHub-CLI-missing state (FR-014: avatar fallback "?", name "GitHub CLI missing"), or a
+// generic avatar and "Sign in" when no account is signed in. A separate cog button opens Settings
+// (FR-002), replacing spec 004 FR-011's temporary left-nav Settings entry now that this lands.
+// Selecting the avatar/name part anywhere opens the profile menu (FR-003) via a `DropdownMenu`
+// (T003's primitive) wrapping `ProfileMenu.tsx`'s content; Radix's primitive supplies arrow-key
 // navigation, Esc to close, and returning focus to this trigger on close for free (FR-024). The
 // name tooltip and the menu never stack on the same trigger: the tooltip only renders while the
 // menu is closed.
 //
-// This component also owns the two dialogs the profile menu can open (Manage accounts, Sign out)
-// as SIBLINGS of the `DropdownMenu`, never nested inside its content -- a menu item unmounts the
-// instant the menu closes, which would tear down a dialog launched from inside it mid-open. The
-// `DropdownMenu` itself is `modal={false}`: Radix's modal dropdown can leave
-// `document.body.style.pointerEvents` stuck at `'none'` when a Dialog opens immediately after it
-// closes (a known Radix interaction), which this avoids entirely rather than working around it.
+// This component also owns every dialog the profile menu can open (Manage accounts, Sign out,
+// Keyboard shortcuts, Health check) as SIBLINGS of the `DropdownMenu`, never nested inside its
+// content -- a menu item unmounts the instant the menu closes, which would tear down a dialog
+// launched from inside it mid-open. The `DropdownMenu` itself is `modal={false}`: Radix's modal
+// dropdown can leave `document.body.style.pointerEvents` stuck at `'none'` when a Dialog opens
+// immediately after it closes (a known Radix interaction), which this avoids entirely rather than
+// working around it.
 //
-// Focus-on-close for BOTH dialogs is explicit (verified live, not assumed): neither is given a
+// Focus-on-close for EVERY dialog here is explicit (verified live, not assumed): none is given a
 // `Trigger`, so Radix's own default close-auto-focus has no trigger ref to fall back to and
-// drops focus to `<body>` rather than restoring it anywhere. `handleSignOutCloseFocus` and
-// `ManageAccountsDialog`'s `onCloseFocus` are this component's own replacement for that default.
+// drops focus to `<body>` rather than restoring it anywhere. `handleSignOutCloseFocus` and each
+// dialog's own `onCloseFocus` are this component's replacement for that default.
 import { useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { SettingsIcon } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -29,9 +31,11 @@ import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { initials } from '@/lib/initials'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
-import { useAccountsStore, useViewStore } from '@/state'
+import { notify, useAccountsStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/ipc'
+import { HealthCheckDialog } from './HealthCheckDialog'
+import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog'
 import { ManageAccountsDialog } from './ManageAccountsDialog'
 import type { ManageAccountsDialogHandle } from './ManageAccountsDialog'
 import { ProfileMenuContent } from './ProfileMenu'
@@ -56,7 +60,11 @@ export function ProfileItem() {
   const [manageOpen, setManageOpen] = useState(false)
   const [signOutTarget, setSignOutTarget] = useState<GitHubAccount | null>(null)
   const [signOutFromMenu, setSignOutFromMenu] = useState(false)
-  const [signOutAnnounce, announceSignOut] = useClearedAnnouncement()
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
+  const [healthOpen, setHealthOpen] = useState(false)
+  // Shared by every announcement this component itself makes (sign-out, Theme submenu) -- one
+  // polite live region is enough, since they never fire at the same moment.
+  const [announcement, announce] = useClearedAnnouncement()
   const nameButtonRef = useRef<HTMLButtonElement>(null)
   const manageAccountsRef = useRef<ManageAccountsDialogHandle>(null)
 
@@ -88,7 +96,23 @@ export function ProfileItem() {
   }
 
   function handleSignOutConfirmed(confirmedAccount: GitHubAccount): void {
-    announceSignOut(`Signed out ${confirmedAccount.displayName ?? confirmedAccount.login}`)
+    announce(`Signed out ${confirmedAccount.displayName ?? confirmedAccount.login}`)
+  }
+
+  /** The Theme submenu's own `onThemeApplied` (FR-019, T022): fires only once `save` actually
+   *  succeeds (ProfileMenu.tsx's `ThemeSubmenu` checks the resolved boolean itself). */
+  function handleThemeApplied(themeLabel: string): void {
+    announce(`Applied theme ${themeLabel}`)
+  }
+
+  /** What's new (FR-023): opens the installed version's release notes in the system browser;
+   *  the menu item itself needs no dialog, just a toast on either outcome. */
+  function handleWhatsNew(): void {
+    void (async () => {
+      const result = await window.refract.app.openReleaseNotes()
+      if (result.ok) toast.success('Opening the release notes in your browser…')
+      else notify(result.error)
+    })()
   }
 
   /** The shared SignOutDialog's own `onCloseFocus`: launched from the profile menu always
@@ -144,6 +168,10 @@ export function ProfileItem() {
           onManageAccounts={() => setManageOpen(true)}
           onSignIn={handleSignInFromMenu}
           onSignOut={handleSignOutFromMenu}
+          onKeyboardShortcuts={() => setKeyboardOpen(true)}
+          onHealthCheck={() => setHealthOpen(true)}
+          onWhatsNew={handleWhatsNew}
+          onThemeApplied={handleThemeApplied}
         />
       </DropdownMenu>
       <Tooltip>
@@ -175,8 +203,10 @@ export function ProfileItem() {
         onConfirmed={handleSignOutConfirmed}
         onCloseFocus={handleSignOutCloseFocus}
       />
+      <KeyboardShortcutsDialog open={keyboardOpen} onOpenChange={setKeyboardOpen} onCloseFocus={focusNameButton} />
+      <HealthCheckDialog open={healthOpen} onOpenChange={setHealthOpen} onCloseFocus={focusNameButton} />
       <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {signOutAnnounce}
+        {announcement}
       </div>
     </div>
   )

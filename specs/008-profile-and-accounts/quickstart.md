@@ -92,20 +92,34 @@ pnpm build        # must pass before a change lands on main
 
 **Story 4: the profile menu (FR-018 to FR-024)**
 
-1. Open the profile menu. Expect: items appear in exactly this order: the account header, Manage
-   accounts, Manage sessions, Theme, Keyboard shortcuts, the update entry, Health check, What's
-   new, then Sign out, visually set apart.
-2. Open the Theme submenu. Expect: every built-in dark preset, with the active one checked (icon and
-   text); "Appearance settings" opens Settings' Appearance section (spec 007 — until that spec
-   lands, it opens Settings with nothing further to show there yet).
-3. Open Keyboard shortcuts. Expect: a read-only list matching docs/DESIGN.md's Keyboard table.
-4. Look at the update entry. Expect: "Check for updates" with no update pending; once spec 006
-   lands its update state, "Restart to update <version>" while one is downloaded and waiting.
-5. Select Health check. Expect: the first-run readiness checks re-run and their result shows.
-6. Select What's new. Expect: the installed version's release notes open in the system browser,
-   never inside the app window.
-7. Using only the keyboard: open the menu, arrow through every item and into and out of the Theme
-   submenu, press Esc, and confirm focus returns to the profile item.
+> Two items described by the spec are NOT in this menu yet, by design, not oversight: **Manage
+> sessions** lands with the screen it opens (Phase 7); the update entry lands once spec 006 ships
+> `updates.get()`/`updates:changed` (neither exists yet). Both have a reserved, commented slot in
+> the code at the position they will appear.
+
+1. Open the profile menu. Expect: items appear in this order: the account header, Manage
+   accounts, Theme, Keyboard shortcuts, Health check, What's new, then Sign out, visually set
+   apart by separators.
+2. Open the Theme submenu. Expect: every built-in dark preset with its real swatch colour, the
+   active one marked by a check icon and the word "Current". Choose a different preset. Expect:
+   it applies and persists immediately (no Save/Cancel step, unlike Settings' Appearance
+   section), the menu closes, focus returns to the profile item, and a screen reader announces
+   "Applied theme <name>". Reopen the menu and the Theme submenu: the newly chosen preset is now
+   the one checked. "Appearance settings…" opens Settings' Appearance section.
+3. Open Keyboard shortcuts. Expect: a read-only list grouped under "Message box" and "Split
+   view", showing only Send/Newline/Clear/Stop and Open in split/Move focus between panes --
+   fewer rows than docs/DESIGN.md's own "Keyboard" table, which documents several chords with no
+   working handler yet (tracked as a GitHub issue). Focus starts on Done; Esc or Done closes it
+   and returns focus to the profile item.
+4. Select Health check. Expect: a dialog opens and immediately re-runs the first-run readiness
+   checks, each row briefly reading "Checking <name>" with a spinner, then the real result (icon
+   plus the visible word Passed/Passed with a warning/Failed, never colour alone) with its own
+   found/hint text if any. Select Check again: expect the same loading-then-result cycle, with
+   focus kept on Check again throughout and Done staying enabled while it runs.
+5. Select What's new. Expect: the installed version's release notes open in the system browser,
+   never inside the app window, with a toast confirming it.
+6. Using only the keyboard: open the menu, arrow through every item and into and out of the
+   Theme submenu, press Esc, and confirm focus returns to the profile item.
 
 **Story 5: manage sessions (FR-025)**
 

@@ -20,8 +20,11 @@ interface ThemeState {
   * those. Choosing the already-saved theme id is normalized to `null` (FR-002/FR-006 deviation
   * note 2a): otherwise Save/Cancel would stay wrongly enabled for a no-op change. */
  preview(id: ThemeId | null): void
- /** FR-004: persists `id` as the app's lasting choice and clears any open preview. */
- save(id: ThemeId): Promise<void>
+ /** FR-004: persists `id` as the app's lasting choice and clears any open preview. Returns
+  * whether it actually succeeded (spec 008 T022: the profile menu's Theme submenu announces
+  * "Applied theme {label}" only on a real success, never on a failed save that already toasted
+  * through `notify` below). */
+ save(id: ThemeId): Promise<boolean>
  /** FR-005: Cancel, Esc, or navigating away from Settings without saving -- all three are the
   * same one call (research.md decision 7), since the derived class already falls back to the
   * untouched `theme` the moment `previewing` clears. A genuine no-op when nothing is being
@@ -57,9 +60,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
    // earlier save resolves -- only clear `previewing` if it still equals the id this call
    // actually saved.
    set((s) => ({ theme: result.value.theme, previewing: s.previewing === id ? null : s.previewing }))
-  } else {
-   notify(result.error)
+   return true
   }
+  notify(result.error)
+  return false
  },
 
  cancelPreview: () => {
