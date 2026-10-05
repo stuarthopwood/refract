@@ -31,14 +31,15 @@ export interface SignOutDialogProps {
    *  becomes active next (FR-011) -- never Manage accounts' own active-first display order. */
   accounts: GitHubAccount[]
   onOpenChange(open: boolean): void
-  /** Called once `signOutAccount` actually succeeds, before the dialog starts closing. Lets the
-   *  caller announce "Signed out {name}" without this dialog needing to know which surface
-   *  (Manage accounts row vs. the profile menu) launched it. */
-  onConfirmed(account: GitHubAccount): void
   /** Called once, on every close (Cancel, Esc, or a successful Confirm), from this dialog's own
-   *  close-auto-focus. Returning `true` means the caller moved focus itself, so this dialog
-   *  suppresses its own default (there being no Trigger to fall back to). Returning `false` (or
-   *  omitting the prop) leaves focus wherever Radix would otherwise drop it. */
+   *  close-auto-focus -- by which point Radix has already lifted the `aria-hidden` it puts on
+   *  everything outside this dialog while it was open (quality-gate remediation, accessibility-
+   *  auditor High), so this is also where the caller must build any "Signed out {name}"
+   *  announcement, not from `signOutAccount`'s own resolution (too early: this dialog, and
+   *  whatever it hid, is still open then). Returning `true` means the caller moved focus itself,
+   *  so this dialog suppresses its own default (there being no Trigger to fall back to).
+   *  Returning `false` (or omitting the prop) leaves focus wherever Radix would otherwise drop
+   *  it. */
   onCloseFocus?(outcome: 'confirmed' | 'cancelled', account: GitHubAccount): boolean
 }
 
@@ -53,7 +54,7 @@ function signOutBody(account: GitHubAccount, accounts: GitHubAccount[]): string 
   return `Sign out @${account.login} on ${account.host}? No account will remain active.`
 }
 
-export function SignOutDialog({ account, accounts, onOpenChange, onConfirmed, onCloseFocus }: SignOutDialogProps) {
+export function SignOutDialog({ account, accounts, onOpenChange, onCloseFocus }: SignOutDialogProps) {
   const [signingOut, setSigningOut] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -88,7 +89,6 @@ export function SignOutDialog({ account, accounts, onOpenChange, onConfirmed, on
       return
     }
     justConfirmedRef.current = true
-    onConfirmed(target)
     onOpenChange(false)
   }
 

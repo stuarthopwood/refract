@@ -29,6 +29,18 @@ export function signOutSuccessor(accounts: GitHubAccount[], target: { host: stri
   return null
 }
 
+/** Finds the account in `after` whose own auth problem (per `state !== 'success'`) is fixed
+ * compared to its entry in `before` (ManageAccountsDialog.tsx's add-flow completion effect):
+ * identifies which already-known account a "Sign in again" re-authenticated, for the cases where
+ * the add flow brought in no brand new account at all. Returns `null` when no existing account's
+ * `state` improved (an add flow that genuinely added a new account, for instance). */
+export function findReauthenticatedAccount(before: GitHubAccount[], after: GitHubAccount[]): GitHubAccount | null {
+  for (const account of after) {
+    const prior = before.find((b) => b.host === account.host && b.login === account.login)
+    if (prior && prior.state !== 'success' && account.state === 'success') return account
+  }
+  return null
+}
 
 /** The Manage accounts OMP section's summary line (T019): "All {total} providers signed in" is
  *  the one special case; every other count (including 0 and 1) uses the same "{n} of {total}

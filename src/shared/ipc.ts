@@ -262,9 +262,6 @@ export const IPC_EVENTS = {
   SUBAGENT_PATCH: 'subagent:patch',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
-  ACCOUNTS_OMP_CHANGED: 'accounts:omp-changed',
-  ACCOUNTS_OMP_REQUEST: 'accounts:omp-request',
-  ACCOUNTS_OMP_REQUEST_RESOLVED: 'accounts:omp-request-resolved',
 } as const;
 
 /** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
@@ -448,9 +445,6 @@ export interface RefractApi {
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
-  onAccountsOmpChanged(handler: (payload: OmpProviderState[]) => void): Unsubscribe;
-  onAccountsOmpRequest(handler: (payload: { requestId: string; request: PendingRequest }) => void): Unsubscribe;
-  onAccountsOmpRequestResolved(handler: (payload: { requestId: string }) => void): Unsubscribe;
 }
 
 declare global {

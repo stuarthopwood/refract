@@ -1,8 +1,11 @@
 // The profile item (docs/DESIGN.md "Layout", spec 008 FR-001 to FR-007, FR-024, FR-008 to
 // FR-011, FR-014, FR-018 to FR-024): pinned at the bottom of the left nav, below the session
 // list. Shows the active GitHub account's round avatar (`avatar.tsx`, T003) and display name,
-// the GitHub-CLI-missing state (FR-014: avatar fallback "?", name "GitHub CLI missing"), or a
-// generic avatar and "Sign in" when no account is signed in. A separate cog button opens Settings
+// the GitHub-CLI-missing state (FR-014: avatar fallback "?", name "GitHub CLI missing"), a
+// disabled "Checking GitHub sign-in" row while the first `accounts.github.list()` is still in
+// flight (quality-gate remediation, ui-architect-v3 Low: this used to read "Sign in" during that
+// window, indistinguishable from the real signed-out state), or a generic avatar and "Sign in"
+// once that settles with nobody signed in. A separate cog button opens Settings
 // (FR-002), replacing spec 004 FR-011's temporary left-nav Settings entry now that this lands.
 // Selecting the avatar/name part anywhere opens the profile menu (FR-003) via a `DropdownMenu`
 // (T003's primitive) wrapping `ProfileMenu.tsx`'s content; Radix's primitive supplies arrow-key
@@ -44,7 +47,10 @@ import { SignOutDialog } from './SignOutDialog'
 /** The signed-in account's combined accessible name (FR-005): name and GitHub sign-in state
  *  together as one phrase a screen reader can read in one pass. */
 function accessibleName(account: GitHubAccount | undefined, githubStatus: GithubStatus): string {
-  if (githubStatus === 'missing-cli') return 'GitHub CLI not found'
+  // Quality-gate remediation (accessibility-auditor Medium, WCAG 2.5.3 Label in Name): each
+  // branch's accessible name now starts with (here, matches exactly) its own visible text below.
+  if (githubStatus === 'missing-cli') return 'GitHub CLI missing'
+  if (githubStatus === 'loading') return 'Checking GitHub sign-in'
   if (!account) return 'Sign in'
   return `${account.displayName ?? account.login}, signed in to GitHub`
 }
@@ -54,7 +60,8 @@ export function ProfileItem() {
   const githubStatus = useAccountsStore((state) => state.githubStatus)
   const account = github.find((candidate) => candidate.active)
   const missingCli = githubStatus === 'missing-cli'
-  const name = missingCli ? 'GitHub CLI missing' : (account?.displayName ?? account?.login ?? null)
+  const loadingGithub = githubStatus === 'loading'
+  const name = missingCli ? 'GitHub CLI missing' : loadingGithub ? 'Checking GitHub sign-in' : (account?.displayName ?? account?.login ?? null)
   const label = accessibleName(account, githubStatus)
   const [menuOpen, setMenuOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
@@ -95,10 +102,6 @@ export function ProfileItem() {
     if (!open) setSignOutTarget(null)
   }
 
-  function handleSignOutConfirmed(confirmedAccount: GitHubAccount): void {
-    announce(`Signed out ${confirmedAccount.displayName ?? confirmedAccount.login}`)
-  }
-
   /** The Theme submenu's own `onThemeApplied` (FR-019, T022): fires only once `save` actually
    *  succeeds (ProfileMenu.tsx's `ThemeSubmenu` checks the resolved boolean itself). */
   function handleThemeApplied(themeLabel: string): void {
@@ -120,6 +123,16 @@ export function ProfileItem() {
    *  Sign out button on Cancel/Esc (falling back to Add account if the row is gone), or to the
    *  new active row's Sign out button (or Add account, if none remain) on Confirm. */
   function handleSignOutCloseFocus(outcome: 'confirmed' | 'cancelled', confirmedAccount: GitHubAccount): boolean {
+    if (outcome === 'confirmed') {
+      const message = `Signed out ${confirmedAccount.displayName ?? confirmedAccount.login}`
+      // Quality-gate remediation (accessibility-auditor High): announced from here, not from
+      // `signOutAccount`'s own resolution, since by now Radix has lifted the `aria-hidden` it
+      // puts on everything outside whichever dialog was open -- including this component's own
+      // live region when the sign-out came from the profile menu, or Manage accounts' own live
+      // region (via its `announce` handle method) when THAT dialog is still open underneath.
+      if (signOutFromMenu) announce(message)
+      else manageAccountsRef.current?.announce(message)
+    }
     if (signOutFromMenu) {
       return focusNameButton()
     }
@@ -202,7 +215,6 @@ export function ProfileItem() {
         account={signOutTarget}
         accounts={github}
         onOpenChange={handleSignOutOpenChange}
-        onConfirmed={handleSignOutConfirmed}
         onCloseFocus={handleSignOutCloseFocus}
       />
       <KeyboardShortcutsDialog open={keyboardOpen} onOpenChange={setKeyboardOpen} onCloseFocus={focusNameButton} />

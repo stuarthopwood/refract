@@ -1,15 +1,17 @@
 import { create } from 'zustand'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../../shared/ipc'
-import type { ChatAnswer } from '../../shared/ipc'
 import { notify } from './notify'
 
 /** Derived GitHub CLI reachability/sign-in state (User Story 2): distinct from the raw
  *  `github` list itself so the profile item and Manage accounts dialog can tell "the CLI has
  *  never answered yet" (`loading`) apart from "the CLI answered: nobody is signed in"
  *  (`signed-out`) and "the CLI itself is not on PATH" (`missing-cli`) -- three UI states FR-014
- *  and the Manage accounts dialog both need to render differently. `loading` is the only one
- *  that never shows anything of its own: every surface that reads it falls back to its ordinary
- *  no-account rendering until the first `accounts.github.list()` settles, so there is no flash. */
+ *  and the Manage accounts dialog both need to render differently. `loading` is also what
+ *  init-stores.ts keeps the store in when the very first `accounts.github.list()` itself throws
+ *  (quality-gate remediation, code-reviewer Medium): a transient invoke failure must never read
+ *  as "nobody is signed in". The profile item (ProfileItem.tsx) is the one surface that DOES show
+ *  something of its own for `loading` -- a disabled "Checking GitHub sign-in" row -- every other
+ *  surface falls back to its ordinary no-account rendering until this settles. */
 export type GithubStatus = 'loading' | 'ready' | 'missing-cli' | 'signed-out'
 
 /** OMP provider section state (User Story 3, T019): `idle` before Manage accounts' OMP section
@@ -33,6 +35,13 @@ interface AccountsState {
   github: GitHubAccount[]
   githubStatus: GithubStatus
   addFlow: GitHubAddFlowProgress | null
+  /** A snapshot of `github` taken the instant `addAccountStart` is called, by EITHER entry point
+   *  (Manage accounts' own Add account/Retry/Sign in again, or the profile menu's Sign in item,
+   *  ProfileItem.tsx's `handleSignInFromMenu`) -- quality-gate remediation (code-reviewer
+   *  Medium): taking it here, not in whichever component happened to start the flow, means
+   *  ManageAccountsDialog.tsx's own completion effect can always tell a brand new account apart
+   *  from an existing one that was just re-authenticated, regardless of which surface started it. */
+  addFlowSnapshot: GitHubAccount[]
   /** Non-null while a Manage accounts Switch action is in flight (data-model.md extension, User
    *  Story 2): the active marker must never move until `gh` itself confirms the switch, so the
    *  UI renders the target row as busy from the moment the request starts, not just once it
@@ -50,33 +59,41 @@ interface AccountsState {
    *  'signed-out' rule (an empty list means something different in this case). */
   setGithubMissingCli(): void
   setAddFlow(progress: GitHubAddFlowProgress | null): void
-  setOmpProviders(providers: OmpProviderState[]): void
-  refreshGithub(): Promise<void>
   addAccountStart(): Promise<boolean>
-  addAccountCancel(flowId: string): Promise<void>
+  /** Resolves `{ ok: false, message }` on failure (quality-gate remediation, accessibility-
+   *  auditor Medium) instead of `void`, so a caller stuck on a "Cancelling…" button (Manage
+   *  accounts' Cancel) can reset its own pending state and announce the failure instead of being
+   *  stuck for good. */
+  addAccountCancel(flowId: string): Promise<AccountMutationResult>
   switchAccount(host: string, login: string): Promise<AccountMutationResult>
   signOutAccount(host: string, login: string): Promise<AccountMutationResult>
   /** Lazy only (research.md decision 6 / FINDINGS item 43: a real read spawns a scratch `omp`
    *  process, ~4.7 s) -- never called at app start, only on Manage accounts' OMP section opening,
-   *  "Check again", and "Retry" (T019). Never throws; a failure sets `ompStatus: 'error'`,
-   *  keeps any already-cached `ompProviders`, and resolves `{ ok: false, message }` instead, so
-   *  a caller can build its own assertive announcement without a second `try/catch`. */
+   *  "Check again", and "Retry" (T019). Never throws (wrapped in try/catch, quality-gate
+   *  remediation code-reviewer Medium): a failure sets `ompStatus: 'error'`, keeps any already-
+   *  cached `ompProviders`, and resolves `{ ok: false, message }` instead, so a caller can build
+   *  its own assertive announcement without a second `try/catch`. Concurrent calls are deduped
+   *  by a module-level sequence number (code-reviewer Medium: StrictMode's double-invoked open
+   *  effect, or closing and reopening mid-read, must never let a slower stale read overwrite a
+   *  faster later one) -- only the call that is still the newest when its own read resolves ever
+   *  writes state. */
   refreshOmpProviders(): Promise<AccountMutationResult>
-  signInOmpProvider(providerId: string): Promise<void>
-  signOutOmpProvider(providerId: string): Promise<void>
-  answerOmpRequest(requestId: string, answer: ChatAnswer): Promise<void>
 }
 
 // Spec 008 data-model.md "Account store state": GitHub accounts (contracts/ipc.md "GitHub
 // accounts") and OMP provider sign-in (contracts/ipc.md "OMP provider sign-in", User Story 3).
-// `github` is refreshed on open and on `accounts:github-changed`; `ompProviders` only when
-// Manage accounts' OMP section opens (never eagerly at startup, unlike `github`) -- a scratch
+// `github` is applied from init-stores.ts's own initial `accounts.github.list()` load and kept
+// current by every `accounts:github-changed` broadcast; `ompProviders` only when Manage
+// accounts' OMP section opens (never eagerly at startup, unlike `github`) -- a scratch
 // OmpProcess probe per data-model.md is cheap but not free, and nothing needs it before that
 // section is actually visible.
+let ompRefreshSequence = 0
+
 export const useAccountsStore = create<AccountsState>((set, get) => ({
   github: [],
   githubStatus: 'loading',
   addFlow: null,
+  addFlowSnapshot: [],
   pendingSwitch: null,
   ompProviders: [],
   ompStatus: 'idle',
@@ -84,22 +101,11 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
   setGithub: (accounts) => set({ github: accounts, githubStatus: accounts.length === 0 ? 'signed-out' : 'ready' }),
   setGithubMissingCli: () => set({ github: [], githubStatus: 'missing-cli' }),
   setAddFlow: (progress) => set({ addFlow: progress }),
-  setOmpProviders: (providers) => set({ ompProviders: providers, ompStatus: 'ready' }),
-  refreshGithub: async () => {
-    const result = await window.refract.accounts.github.list()
-    if (!result.ok) {
-      // 'gh-not-found' is a state the UI shows (FR-014), not an error -- no toast for it, just
-      // as the initial load in init-stores.ts never toasts either.
-      if (result.error.code === 'gh-not-found') {
-        get().setGithubMissingCli()
-        return
-      }
-      notify(result.error)
-      return
-    }
-    get().setGithub(result.value)
-  },
   addAccountStart: async () => {
+    // Quality-gate remediation (code-reviewer Medium): snapshotting here, not in whichever
+    // component called this, means it is taken exactly once per flow regardless of which entry
+    // point (Manage accounts or the profile menu's Sign in item) started it.
+    set({ addFlowSnapshot: get().github })
     const result = await window.refract.accounts.github.addStart()
     if (!result.ok) {
       notify(result.error)
@@ -117,9 +123,10 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
     const result = await window.refract.accounts.github.addCancel(flowId)
     if (!result.ok) {
       notify(result.error)
-      return
+      return { ok: false, message: result.error.message }
     }
     set({ addFlow: null })
+    return { ok: true }
   },
   switchAccount: async (host, login) => {
     // Pessimistic (data-model.md extension): the active marker moves only once `gh` confirms,
@@ -145,41 +152,32 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
     return { ok: true }
   },
   refreshOmpProviders: async () => {
-    // Stale-while-revalidate (T019): only drop to the full 'loading' skeleton when nothing is
-    // cached yet; a refresh with cached data to show keeps 'ready' and is tracked by
-    // `ompRefreshing` instead, so the list never disappears while a later read is in flight.
-    const hasCache = get().ompProviders.length > 0
-    set({ ompRefreshing: true, ompStatus: hasCache ? get().ompStatus : 'loading' })
-    const result = await window.refract.accounts.omp.list()
-    if (!result.ok) {
-      set({ ompRefreshing: false, ompStatus: 'error' })
-      return { ok: false, message: result.error.message }
-    }
-    set({ ompProviders: result.value, ompStatus: 'ready', ompRefreshing: false })
-    return { ok: true }
-  },
-  signInOmpProvider: async (providerId) => {
-    const result = await window.refract.accounts.omp.signIn(providerId)
-    if (!result.ok) {
-      notify(result.error)
-      return
-    }
-    // research.md decision 6 fallback (FINDINGS item 43): this never actually raises a
-    // requestId in the current omp version, but refresh anyway in case a future omp does.
-    if (result.value.requestId === null) void get().refreshOmpProviders()
-  },
-  signOutOmpProvider: async (providerId) => {
-    const result = await window.refract.accounts.omp.signOut(providerId)
-    if (!result.ok) {
-      notify(result.error)
-      return
-    }
-    if (result.value.requestId === null) void get().refreshOmpProviders()
-  },
-  answerOmpRequest: async (requestId, answer) => {
-    const result = await window.refract.accounts.omp.answer(requestId, answer)
-    if (!result.ok) {
-      notify(result.error)
+    // Stale-while-revalidate (T019): the full 'loading' skeleton is only for this app session's
+    // very first OMP read (`ompStatus` starts 'idle'); every later call -- including a Retry
+    // after an 'error' with nothing cached -- keeps whatever status is already shown (and with
+    // it, whatever is already on screen, error block included) and is tracked by `ompRefreshing`
+    // instead, so a focused Retry/Check again button is never yanked out from under the user
+    // mid-click (quality-gate remediation, code-reviewer Medium).
+    const sequence = ++ompRefreshSequence
+    const priorStatus = get().ompStatus
+    set({ ompRefreshing: true, ompStatus: priorStatus === 'idle' ? 'loading' : priorStatus })
+    try {
+      const result = await window.refract.accounts.omp.list()
+      if (sequence !== ompRefreshSequence) {
+        // A newer refresh started while this one was in flight (StrictMode's double-invoked
+        // open effect, or a close-then-reopen mid-read); only the newest call's own result is
+        // ever written, so a slower stale response can never clobber a faster later one.
+        return result.ok ? { ok: true } : { ok: false, message: result.error.message }
+      }
+      if (!result.ok) {
+        set({ ompRefreshing: false, ompStatus: 'error' })
+        return { ok: false, message: result.error.message }
+      }
+      set({ ompProviders: result.value, ompStatus: 'ready', ompRefreshing: false })
+      return { ok: true }
+    } catch (error) {
+      if (sequence === ompRefreshSequence) set({ ompRefreshing: false, ompStatus: 'error' })
+      return { ok: false, message: error instanceof Error ? error.message : 'Unknown error' }
     }
   }
 }))

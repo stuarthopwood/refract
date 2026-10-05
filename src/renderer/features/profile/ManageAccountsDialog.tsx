@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
+import { findReauthenticatedAccount } from '@/lib/account-format'
 import { initials } from '@/lib/initials'
 import { cn } from '@/lib/utils'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
@@ -48,6 +49,13 @@ export interface ManageAccountsDialogProps {
 export interface ManageAccountsDialogHandle {
   focusAccountSignOutButton(host: string, login: string): boolean
   focusAddAccountButton(): boolean
+  /** Writes to this dialog's own polite live region (quality-gate remediation, accessibility-
+   *  auditor High): Radix hides everything outside an open modal dialog from assistive tech, so
+   *  a status message produced while this dialog is open -- e.g. ProfileItem.tsx's "Signed out
+   *  {name}" after a Manage accounts row's own Sign out confirms -- must be announced from a
+   *  region inside THIS dialog, not the caller's own (which stays hidden for as long as this
+   *  dialog stays open). A no-op while this dialog is closed (nothing is listening). */
+  announce(text: string): void
 }
 
 function rowKey(host: string, login: string): string {
@@ -81,9 +89,14 @@ export function ManageAccountsDialog({
   const signOutRefs = useRef(new Map<string, HTMLButtonElement>())
   const switchRefs = useRef(new Map<string, HTMLButtonElement>())
   const rowLiRefs = useRef(new Map<string, HTMLLIElement>())
-  const addFlowSnapshotRef = useRef<GitHubAccount[]>([])
   const prevAddFlowRef = useRef(addFlow)
   const pendingAddAnnounceRef = useRef(false)
+  // Quality-gate remediation (code-reviewer High): `startAddFlow` is async and `open` can change
+  // while it awaits; a ref (not the `open` prop itself) is what a callback running after that
+  // await needs to see this render's latest value, same reasoning as SignOutDialog.tsx's own
+  // `accountRef`.
+  const openRef = useRef(open)
+  openRef.current = open
 
   useImperativeHandle(ref, () => ({
     focusAccountSignOutButton(host, login) {
@@ -91,23 +104,11 @@ export function ManageAccountsDialog({
     },
     focusAddAccountButton() {
       return focusButton(addAccountBtnRef.current)
+    },
+    announce(text) {
+      announcePolite(text)
     }
   }))
-
-  // Open focus (approved design): the first row's action when there are accounts, else Add
-  // account (the empty state's primary button). The OMP section (below) never takes initial
-  // focus, regardless of its own loading/error state.
-  useEffect(() => {
-    if (!open) return
-    const active = github.find((account) => account.active) ?? github[0]
-    if (active) {
-      signOutRefs.current.get(rowKey(active.host, active.login))?.focus()
-    } else {
-      addAccountBtnRef.current?.focus()
-    }
-    // Only on open itself -- not every time `github` changes while it stays open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
 
   // T019: a real OMP read spawns a scratch process (~4.7 s measured) -- fetched once per dialog
   // open, never eagerly at app start and never re-fetched just because `open` stays true (the
@@ -132,11 +133,9 @@ export function ManageAccountsDialog({
         pendingAddAnnounceRef.current = true
       }
     }
-    if (addFlow?.status === 'failed') {
-      // The detail (e.g. "device code expired") shows on its own muted line in
-      // AddAccountPanel.tsx; it is never glued onto this announced sentence.
-      announceAssertive('Sign-in failed. Check your connection and retry.')
-    }
+    // A failed flow's own "Sign-in failed..." is announced once, by AddAccountPanel.tsx's own
+    // `role="alert"` paragraph -- quality-gate remediation (accessibility-auditor Low): a second
+    // assertive announcement from here was making a screen reader hear it twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addFlow, cancellingFlow])
 
@@ -144,27 +143,66 @@ export function ManageAccountsDialog({
   // after the 'completed' progress event -- contracts/ipc.md), announce and focus it.
   useEffect(() => {
     if (!pendingAddAnnounceRef.current) return
-    const before = addFlowSnapshotRef.current
-    const added = github.find((account) => !before.some((b) => b.host === account.host && b.login === account.login))
-    if (!added) return
+    // Quality-gate remediation (code-reviewer Medium): cleared unconditionally, not only once an
+    // "added" account is found -- a "Sign in again" re-auth of an account already in the
+    // snapshot would otherwise leave this armed forever, mis-announcing the next unrelated flow.
     pendingAddAnnounceRef.current = false
-    announcePolite(`Added GitHub account ${added.displayName ?? added.login}`)
-    signOutRefs.current.get(rowKey(added.host, added.login))?.focus()
+    const before = useAccountsStore.getState().addFlowSnapshot
+    const added = github.find((account) => !before.some((b) => b.host === account.host && b.login === account.login))
+    if (added) {
+      announcePolite(`Added GitHub account ${added.displayName ?? added.login}`)
+      signOutRefs.current.get(rowKey(added.host, added.login))?.focus()
+      return
+    }
+    // No brand new account appeared: this was a re-authentication of one already in the list,
+    // which still deserves its own announcement.
+    const reauthed = findReauthenticatedAccount(before, github)
+    if (reauthed) {
+      announcePolite(`Re-authenticated ${reauthed.displayName ?? reauthed.login}`)
+      signOutRefs.current.get(rowKey(reauthed.host, reauthed.login))?.focus()
+    } else {
+      announcePolite('Re-authenticated with GitHub')
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [github])
 
   async function startAddFlow(): Promise<void> {
-    if (addFlow || starting) return
-    addFlowSnapshotRef.current = github
+    // Blocks only while a flow is actually running (quality-gate remediation, code-reviewer
+    // High): a 'failed' flow must never keep blocking Add account/Retry/Sign in again forever.
+    if (addFlow?.status === 'waiting' || starting) return
+    if (addFlow?.status === 'failed') useAccountsStore.getState().setAddFlow(null)
     setCancellingFlow(false)
     setStarting(true)
-    await useAccountsStore.getState().addAccountStart()
+    const started = await useAccountsStore.getState().addAccountStart()
     setStarting(false)
+    if (!started) {
+      announceAssertive('Could not start sign-in')
+      addAccountBtnRef.current?.focus()
+      return
+    }
+    if (!openRef.current) {
+      // Quality-gate remediation (code-reviewer Medium): the dialog was closed (overlay click,
+      // the X button -- anything other than Escape, which `handleEscape` already blocks) while
+      // this request was still in flight, before `addFlow` had a `flowId` to cancel by. Now
+      // that one exists, cancel immediately rather than leaving `gh auth login` running
+      // unattended.
+      const flowId = useAccountsStore.getState().addFlow?.flowId
+      if (flowId) void useAccountsStore.getState().addAccountCancel(flowId)
+    }
   }
 
   function handleCancelFlow(flowId: string): void {
     setCancellingFlow(true)
-    void useAccountsStore.getState().addAccountCancel(flowId)
+    void (async () => {
+      const result = await useAccountsStore.getState().addAccountCancel(flowId)
+      if (!result.ok) {
+        // Quality-gate remediation (accessibility-auditor Medium): otherwise Cancel is stuck on
+        // "Cancelling…" for good -- a successful cancel already resets this via the add-flow
+        // detection effect above, once `addFlow` actually goes null.
+        setCancellingFlow(false)
+        announceAssertive(`Could not cancel sign-in: ${result.message ?? 'unknown error'}`)
+      }
+    })()
   }
 
   async function handleSwitch(account: GitHubAccount): Promise<void> {
@@ -188,8 +226,14 @@ export function ManageAccountsDialog({
   }
 
   function handleOpenChange(next: boolean): void {
-    if (!next && addFlow && addFlow.status === 'waiting') {
-      void useAccountsStore.getState().addAccountCancel(addFlow.flowId)
+    if (!next) {
+      if (addFlow?.status === 'waiting') {
+        void useAccountsStore.getState().addAccountCancel(addFlow.flowId)
+      } else if (addFlow?.status === 'failed') {
+        // Quality-gate remediation (code-reviewer High): a failed flow must not survive into the
+        // next open, where it would otherwise keep blocking Add account/Retry/Sign in again.
+        useAccountsStore.getState().setAddFlow(null)
+      }
     }
     onOpenChange(next)
   }
@@ -200,6 +244,14 @@ export function ManageAccountsDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className="min-w-0 max-h-[min(680px,calc(100vh-4rem))] overflow-y-auto sm:max-w-lg"
+        onOpenAutoFocus={(event) => {
+          // Approved design (docs/DESIGN.md): focus always starts on the GitHub section's Add
+          // account button, regardless of whether any account is signed in yet (quality-gate
+          // remediation, code-reviewer Medium: the previous `[open]` effect ran before Radix's
+          // own Portal commit mounted these refs and never actually focused anything).
+          event.preventDefault()
+          addAccountBtnRef.current?.focus()
+        }}
         onEscapeKeyDown={handleEscape}
         onCloseAutoFocus={(event) => {
           event.preventDefault()
@@ -240,9 +292,13 @@ export function ManageAccountsDialog({
                   ref={addAccountBtnRef}
                   variant={orderedAccounts.length === 0 ? 'default' : 'outline'}
                   size="sm"
-                  aria-label="Add GitHub account"
-                  disabled={starting || addFlow !== null}
-                  onClick={() => void startAddFlow()}
+                  aria-disabled={starting || addFlow?.status === 'waiting' || undefined}
+                  className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                  onClick={() => {
+                    // `aria-disabled`, not `disabled` (quality-gate remediation, accessibility-
+                    // auditor High): a disabled focused button drops focus to <body>.
+                    if (!starting && addFlow?.status !== 'waiting') void startAddFlow()
+                  }}
                 >
                   Add account
                 </Button>

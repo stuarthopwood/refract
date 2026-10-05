@@ -110,15 +110,22 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
           <>
             <div className="flex min-w-0 items-center gap-3">
               <div className="min-w-0">
-                <span className="text-xs text-muted-foreground">One-time code</span>
+                {/* aria-hidden (quality-gate remediation, accessibility-auditor Low): the sr-only
+                    span below already repeats "One-time code", so a screen reader was reading it
+                    twice. */}
+                <span aria-hidden className="text-xs text-muted-foreground">One-time code</span>
                 <div className="flex items-center gap-2">
                   <span aria-hidden className="font-code text-xl font-semibold tracking-widest">
                     {formatDeviceCode(code)}
                   </span>
-                  <span className="sr-only">One-time code: {spellOutCode(code)}</span>
+                  <span id="add-account-code-value" className="sr-only">One-time code: {spellOutCode(code)}</span>
                 </div>
               </div>
-              <Button ref={copyRef} variant="outline" size="sm" onClick={() => void handleCopy()} aria-label="Copy one-time code">
+              {/* No `aria-label`: the accessible name now matches the visible "Copy code"/"Copied"
+                  text exactly (WCAG 2.5.3, quality-gate remediation accessibility-auditor
+                  Medium); `aria-describedby` adds the actual code (accessibility-auditor Medium:
+                  a screen reader landing on this button heard neither code nor label for it). */}
+              <Button ref={copyRef} variant="outline" size="sm" onClick={() => void handleCopy()} aria-describedby="add-account-code-value">
                 {copied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
                 {copied ? 'Copied' : 'Copy code'}
               </Button>
@@ -160,14 +167,15 @@ export function AddAccountPanel({ flow, starting, cancelling = false, onCancel, 
 
         {!code && status !== 'failed' && (
           <div className="flex justify-end">
+            {/* `aria-disabled`, not `disabled` (quality-gate remediation, accessibility-auditor
+                High): a disabled focused button drops focus to <body>. */}
             <Button
               ref={cancelRef}
               variant="ghost"
               size="sm"
-              aria-disabled={cancelling || undefined}
+              aria-disabled={!flow || cancelling || undefined}
               className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               onClick={() => flow && !cancelling && onCancel(flow.flowId)}
-              disabled={!flow}
             >
               {cancelling ? 'Cancelling…' : 'Cancel'}
             </Button>

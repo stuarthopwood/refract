@@ -178,11 +178,7 @@ const refract: RefractApi = {
   onSubagentPatch: (handler) =>
     on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
-  onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler),
-  onAccountsOmpChanged: (handler) => on<OmpProviderState[]>(IPC_EVENTS.ACCOUNTS_OMP_CHANGED, handler),
-  onAccountsOmpRequest: (handler) =>
-    on<{ requestId: string; request: PendingRequest }>(IPC_EVENTS.ACCOUNTS_OMP_REQUEST, handler),
-  onAccountsOmpRequestResolved: (handler) => on<{ requestId: string }>(IPC_EVENTS.ACCOUNTS_OMP_REQUEST_RESOLVED, handler)
+  onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
 }
 
 contextBridge.exposeInMainWorld('refract', refract)

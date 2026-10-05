@@ -33,18 +33,22 @@ async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: s
 // Spec 008 data-model.md / FR-014: a dedicated initial-load path for `accounts.github.list()`,
 // since `gh-not-found` is a state the profile item and Manage accounts dialog show (githubStatus
 // 'missing-cli'), not a transient failure -- it must never log as an error or fall through to
-// the ordinary empty-list-means-signed-out reading `setGithub` would otherwise give it.
-async function loadInitialGithubAccounts(): Promise<{ accounts: GitHubAccount[]; missingCli: boolean }> {
+// the ordinary empty-list-means-signed-out reading `setGithub` would otherwise give it. A
+// thrown invoke (the handler not registered yet) is its own third outcome (quality-gate
+// remediation, code-reviewer Medium): that is a transient startup race, not "nobody is signed
+// in" either, so the caller leaves `githubStatus` at its initial 'loading' instead of calling
+// `setGithub([])`.
+async function loadInitialGithubAccounts(): Promise<{ accounts: GitHubAccount[]; missingCli: boolean; failed: boolean }> {
   try {
     const result = await window.refract.accounts.github.list()
-    if (result.ok) return { accounts: result.value, missingCli: false }
+    if (result.ok) return { accounts: result.value, missingCli: false, failed: false }
     if (result.error.code !== 'gh-not-found') {
       console.error(`[refract] accounts.github.list: ${result.error.code} ${result.error.message}`)
     }
-    return { accounts: [], missingCli: result.error.code === 'gh-not-found' }
+    return { accounts: [], missingCli: result.error.code === 'gh-not-found', failed: false }
   } catch (error) {
     console.debug('[refract] accounts.github.list: invoke failed (handler not registered yet)', error)
-    return { accounts: [], missingCli: false }
+    return { accounts: [], missingCli: false, failed: true }
   }
 }
 
@@ -94,41 +98,41 @@ export function initStores(): void {
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })
+  // `accounts:github-changed` can arrive before the initial `accounts.github.list()` load below
+  // resolves (another window switching/signing out/adding an account); once it has, the initial
+  // load's own result is stale and must never overwrite it (quality-gate remediation,
+  // code-reviewer Medium).
+  let githubBroadcastReceived = false
   window.refract.onAccountsGithubChanged((accounts) => {
+    githubBroadcastReceived = true
     useAccountsStore.getState().setGithub(accounts)
   })
   window.refract.onAccountsGithubAddProgress((progress) => {
     useAccountsStore.getState().setAddFlow(progress.status === 'completed' || progress.status === 'cancelled' ? null : progress)
   })
-  window.refract.onAccountsOmpChanged((providers) => {
-    useAccountsStore.getState().setOmpProviders(providers)
-  })
-  // research.md decision 6 fallback (FINDINGS item 43): omp has no /login or /logout over
-  // rpc-ui in this version, so accounts.omp.signIn/signOut can never actually raise one of
-  // these -- subscribed anyway, typed per contracts/ipc.md, so a future omp version that DOES
-  // support this needs no further wiring here.
-  window.refract.onAccountsOmpRequest(() => {
-    console.debug('[refract] onAccountsOmpRequest: unexpected in the current fallback branch (FINDINGS item 43)')
-  })
-  window.refract.onAccountsOmpRequestResolved(() => {
-    console.debug('[refract] onAccountsOmpRequestResolved: unexpected in the current fallback branch (FINDINGS item 43)')
-  })
 
-  void (async () => {
-    const [sessionsLoad, settingsLoad, repositoriesLoad, githubAccountsLoad] = await Promise.all([
-      loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
-      loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
-      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list'),
-      loadInitialGithubAccounts()
-    ])
-    useSessionsStore.getState().setSessions(sessionsLoad.value)
-    useSettingsStore.getState().setSettings(settingsLoad.value)
-    useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
+  // Quality-gate remediation (code-reviewer Medium): applied the instant this resolves instead
+  // of after the slowest of the unrelated loads below, and skipped entirely on a thrown invoke
+  // (stays 'loading', per loadInitialGithubAccounts' own doc) or once a broadcast has already
+  // landed (above).
+  void loadInitialGithubAccounts().then((githubAccountsLoad) => {
+    if (githubBroadcastReceived || githubAccountsLoad.failed) return
     if (githubAccountsLoad.missingCli) {
       useAccountsStore.getState().setGithubMissingCli()
     } else {
       useAccountsStore.getState().setGithub(githubAccountsLoad.accounts)
     }
+  })
+
+  void (async () => {
+    const [sessionsLoad, settingsLoad, repositoriesLoad] = await Promise.all([
+      loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
+      loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
+      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
+    ])
+    useSessionsStore.getState().setSessions(sessionsLoad.value)
+    useSettingsStore.getState().setSettings(settingsLoad.value)
+    useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
