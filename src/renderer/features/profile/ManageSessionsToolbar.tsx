@@ -32,6 +32,14 @@ const SORT_LABELS: Record<SortKey, string> = {
   status: 'Status'
 }
 
+// Post-build review fix (Phase7PostBuild, Medium): every selected segment of this ToggleGroup
+// shares the one `--active-indicator` treatment DESIGN.md's own "Active/selected indicator" rule
+// requires for every current/selected surface in the app (a 2px left-edge bar), overriding
+// toggle.tsx's own default `data-[state=on]:bg-primary` fill -- the brightest thing on the
+// screen otherwise, and the only control in the renderer using that fill for a filter state.
+const SELECTED_SEGMENT_CLASS =
+  'data-[state=on]:bg-muted data-[state=on]:text-foreground data-[state=on]:hover:bg-muted data-[state=on]:border-l-2 data-[state=on]:border-l-active-indicator'
+
 export function ManageSessionsToolbar({
   filters,
   repositories,
@@ -85,12 +93,18 @@ export function ManageSessionsToolbar({
           if (value) onFiltersChange({ ...filters, archiveFilter: value as ArchiveFilter })
         }}
         variant="outline"
-        size="sm"
+        spacing={0}
         aria-label="Filter by archive status"
       >
-        <ToggleGroupItem value="all">All</ToggleGroupItem>
-        <ToggleGroupItem value="active">Active</ToggleGroupItem>
-        <ToggleGroupItem value="archived">Archived</ToggleGroupItem>
+        <ToggleGroupItem value="all" className={SELECTED_SEGMENT_CLASS}>
+          All
+        </ToggleGroupItem>
+        <ToggleGroupItem value="active" className={SELECTED_SEGMENT_CLASS}>
+          Active
+        </ToggleGroupItem>
+        <ToggleGroupItem value="archived" className={SELECTED_SEGMENT_CLASS}>
+          Archived
+        </ToggleGroupItem>
       </ToggleGroup>
 
       <Select value={filters.sort} onValueChange={(value) => onFiltersChange({ ...filters, sort: value as SortKey })}>
@@ -107,7 +121,7 @@ export function ManageSessionsToolbar({
       </Select>
 
       {shownCount !== totalCount && (
-        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{showingCountLabel(shownCount, totalCount)}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{showingCountLabel(shownCount, totalCount)}</span>
       )}
     </div>
   )

@@ -68,6 +68,13 @@ export function sessionCountLabel(sessionCount: number, repositoryCount: number)
   return `${sessionCount} ${sessionWord} across ${repositoryCount} ${repoWord}`
 }
 
+/** Post-build review fix (Phase7PostBuild, Low): the header's own count line counts
+ *  repositories a session actually EXISTS in, never every registered Repository (several of
+ *  which may have zero sessions at all) -- distinct `session.repositoryId` values only. */
+export function distinctRepositoryCount(sessions: SessionSummary[]): number {
+  return new Set(sessions.map((session) => session.repositoryId)).size
+}
+
 /** The filtered-result announcement: "Showing X of N sessions", singular "session" when the
  *  UNFILTERED total itself is 1 (the thing actually being enumerated). */
 export function showingCountLabel(shown: number, total: number): string {

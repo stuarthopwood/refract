@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { cn } from '@/lib/utils'
-import { focusSessionsNav } from '@/lib/focus'
+import { focusPaneContent, focusSessionsNav } from '@/lib/focus'
 import {
   notify,
   useCommandsStore,
@@ -33,37 +33,6 @@ interface StopInfo {
   detail?: string
 }
 
-/** Quality-gate remediation (accessibility-auditor, round 2, High): a stopped Session
- * (`agent-exited`/`worktree-missing`/`start-failed`) renders MessageInput's textarea `disabled`
- * (MessageInput.tsx), so a plain `textarea?.focus()` silently no-ops there -- both the focus-move
- * chord/button and the close-pane refocus used that one selector, so both regressed identically
- * for a stopped target pane. Round 3 (code-reviewer/accessibility-auditor/test-reviewer, Medium):
- * the first version of this fallback queried the WHOLE pane region, landing on whichever enabled
- * control happened to come first in DOM order -- `ChatHeader` renders before the stopped banner,
- * so it actually landed on the conversation switcher or the narrow-collapse swap chip, not the
- * banner's own Recover/Recreate worktree/Delete button this docblock previously (wrongly) claimed
- * "always exists when the textarea is disabled". It does not: a `start-failed` banner renders no
- * button at all, an `agent-exited` banner mid-recovery has its only button (`Recover`) disabled,
- * and there is a brief window right after a stopped Session is (re)opened where `stopInfo` is
- * still `{}` -- MessageInput already disables the textarea once `status === 'stopped'` (treating
- * an undefined `stopReason` as "not `not-started`"), but `showBanner` requires a truthy
- * `effectiveStopReason`, so no banner has rendered yet either. For all three, this now focuses
- * the pane region itself (`tabIndex={-1}` below) rather than falling through to a generic
- * whole-pane DOM scan, which would otherwise land on a `ChatHeader` control again. */
-function focusPaneContent(container: HTMLElement | null): void {
-  if (!container) return
-  const textarea = container.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')
-  if (textarea) {
-    textarea.focus()
-    return
-  }
-  const bannerButton = container.querySelector<HTMLElement>('[data-pane-banner] button:not(:disabled), [data-pane-banner] [href]')
-  if (bannerButton) {
-    bannerButton.focus()
-    return
-  }
-  container.focus()
-}
 
 /** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
  * contracts/ipc.md) out to the transcript, queue, and pending-request stores for that Session.
@@ -339,6 +308,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       role="region"
       aria-label={`${session.name} chat`}
       tabIndex={-1}
+      data-session-pane={sessionId}
       onMouseDownCapture={handleFocusPane}
       onFocusCapture={handleFocusPane}
       className="relative flex h-full flex-col overflow-hidden"

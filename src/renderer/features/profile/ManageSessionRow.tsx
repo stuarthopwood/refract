@@ -16,17 +16,25 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { buildSessionRowActions } from '@/features/sessions/sessionActions'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
-import { focusMessageBox } from '@/lib/focus'
+import { focusSessionPane } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 
@@ -57,31 +65,39 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [quickActionPending, setQuickActionPending] = useState(false)
   const { copyPath, reveal } = useWorktreeActions(session)
   const isArchived = !!session.archivedAt
   const worktreeMissing = session.stopReason === 'worktree-missing'
   const rowRef = useRef<HTMLLIElement>(null)
   const openButtonRef = useRef<HTMLButtonElement>(null)
-  const quickActionRef = useRef<HTMLButtonElement>(null)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
+  const quickActionPendingRef = useRef(false)
   // Same fallback-CHAIN idea as SessionList.tsx's own `captureFocusFallback` (its own doc
   // comment explains why a plain `closest` captured once is not enough): next row, else
   // previous row, else the search input, resolved lazily against `isConnected` so it never
   // fires against an element this same unmount already took with it.
   const focusFallbackRef = useRef<() => void>(() => searchInputRef.current?.focus())
-  // Set when an action may remove this row from the filtered list. The archive/restore IPC resolves
-  // BEFORE the store update that unmounts the row, so a one-frame check after the promise can still
-  // see the row mounted (measured live: focus then fell to <body>); the unmount itself is the
-  // reliable signal, so the fallback runs from the unmount cleanup.
-  const pendingRemovalFocusRef = useRef(false)
-  const pendingRemovalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Post-build review fix (Phase7PostBuild, HIGH, WCAG 2.4.3): archive/restore/delete only
+  // SOMETIMES unmount this row (under the Active/Archived filter they do; under All, archive and
+  // restore never do -- the row survives with its quick-action button simply relabelled, and the
+  // browser keeps focus on that same DOM node with no code needed). The previous version armed a
+  // 3-second timer after each action and only ran the fallback if it was still armed when THIS
+  // instance unmounted -- any row's unrelated quick action within that 3s window disarmed it, so
+  // confirming a delete dialog read for longer than 3 seconds (the normal case for a dialog
+  // listing data loss) dropped focus to `<body>` with nothing left to catch it. The unmount
+  // itself is the only signal this needs: whenever this instance is actually torn down, if focus
+  // has nowhere left to go (null or `<body>`), send it to the fallback captured while the row was
+  // still mounted.
   useEffect(() => {
     return () => {
-      if (pendingRemovalTimerRef.current) clearTimeout(pendingRemovalTimerRef.current)
-      if (pendingRemovalFocusRef.current) requestAnimationFrame(() => focusFallbackRef.current())
+      requestAnimationFrame(() => {
+        if (!document.activeElement || document.activeElement === document.body) focusFallbackRef.current()
+      })
     }
   }, [])
 
@@ -96,29 +112,10 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
       else if (prevButton?.isConnected) prevButton.focus()
       else searchInputRef.current?.focus()
     }
-    pendingRemovalFocusRef.current = true
-    if (pendingRemovalTimerRef.current) clearTimeout(pendingRemovalTimerRef.current)
-    // Cleared if the row survives (the All filter just relabels the quick action), so a later,
-    // unrelated unmount of this row does not steal focus.
-    pendingRemovalTimerRef.current = setTimeout(() => {
-      pendingRemovalFocusRef.current = false
-    }, 3000)
   }
 
   function focusListContainer(): void {
     focusFallbackRef.current()
-  }
-
-  // Post-build review fix (D1, blocker, WCAG 2.4.3): archive/restore/delete only sometimes
-  // unmounts THIS row (under the Active/Archived filter it does; under All it never does -- the
-  // row survives with its quick-action button simply relabelled, and the browser keeps focus on
-  // that same DOM node with no code needed). Deferred one animation frame so React has actually
-  // committed the removal (or lack of one) before this checks `rowRef` -- calling it synchronously
-  // right after the action's promise resolves read a stale, not-yet-updated DOM in testing.
-  function focusFallbackIfRowGone(): void {
-    requestAnimationFrame(() => {
-      if (!rowRef.current?.isConnected) focusListContainer()
-    })
   }
 
   function startRenaming(): void {
@@ -146,6 +143,16 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     }
   }
 
+  // Shared with SessionList.tsx's own row (DESIGN.md "Session list keyboard and focus model"):
+  // F2 starts a rename from the open button the same way it does from the nav row, so the same
+  // object behaves identically on both screens.
+  function handleOpenButtonKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key === 'F2') {
+      event.preventDefault()
+      startRenaming()
+    }
+  }
+
   useEffect(() => {
     if (!renaming) return
     const raf = requestAnimationFrame(() => renameInputRef.current?.focus())
@@ -160,9 +167,31 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   }, [renaming])
 
   // Mirrors SessionList.tsx's own row-click rule exactly (replaceFocused / openInSplit / the
-  // isFocusedPane wake-check), with one addition: this screen is not the chat view, so every
-  // path also switches back to it (FR-025's own "opens that session" requirement).
-  function handleOpen(event: { ctrlKey: boolean }): void {
+  // isFocusedPane wake-check), with two additions: this screen is not the chat view, so every
+  // path also switches back to it (FR-025's own "opens that session" requirement), and a real
+  // pointer click is guarded against the double-click fall-through below.
+  function handleOpen(event: { ctrlKey: boolean; detail?: number }): void {
+    // Post-build review fix (Phase7PostBuild, HIGH): `openChat` below swaps the WHOLE main area
+    // back to chat and unmounts this screen -- the left nav row that was always underneath this
+    // row's own position can end up under the pointer by the time a genuine second click of a
+    // double-click lands, opening (or renaming) whatever Session that nav row happens to show
+    // instead of this one. `event.detail` is 0 for a keyboard-triggered click (Enter/Space) and
+    // >= 1 for a real pointer click, so only a pointer activation arms this one-shot
+    // capture-phase guard: any further `click`/`dblclick` anywhere in the document within the
+    // next 500ms (the Windows default double-click time) is swallowed before it can reach that
+    // nav row.
+    if ((event.detail ?? 0) >= 1) {
+      const swallow = (swallowed: Event) => {
+        swallowed.stopPropagation()
+        swallowed.preventDefault()
+      }
+      window.addEventListener('click', swallow, { capture: true })
+      window.addEventListener('dblclick', swallow, { capture: true })
+      setTimeout(() => {
+        window.removeEventListener('click', swallow, { capture: true })
+        window.removeEventListener('dblclick', swallow, { capture: true })
+      }, 500)
+    }
     if (event.ctrlKey) {
       openInSplit(session.id)
     } else {
@@ -170,13 +199,46 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
       if (isFocusedPane) void open(session.id)
     }
     useViewStore.getState().openChat(session.repositoryId)
-    // Post-build review fix (D2): this screen unmounts the instant the view flips back to chat
-    // (App.tsx swaps the whole main area on `view`), unlike SessionList.tsx's own row click,
-    // which never unmounts anything -- there is no single "the clicked row" to leave focus on
-    // here, so this lands on the message box instead, after the remount commits.
-    requestAnimationFrame(() => focusMessageBox())
+    // Post-build review fix (D2/Phase7PostBuild, HIGH): this screen unmounts the instant the view
+    // flips back to chat (App.tsx swaps the whole main area on `view`), unlike SessionList.tsx's
+    // own row click, which never unmounts anything -- there is no single "the clicked row" to
+    // leave focus on here. Reads the FOCUSED pane's Session id fresh, after the split-store
+    // update above has committed (never `session.id` itself, which is wrong for a Ctrl+click into
+    // the unfocused pane), and focuses that pane's own content -- never the first enabled
+    // textarea anywhere in the document (wrong pane in a split, `<body>` for a stopped Session).
+    requestAnimationFrame(() => {
+      const { paneSessionIds, focusedIndex } = useSplitStore.getState()
+      const focusedSessionId = paneSessionIds[focusedIndex]
+      if (focusedSessionId) focusSessionPane(focusedSessionId)
+    })
   }
 
+  // Post-build review fix (Phase7PostBuild, Low): blocks a second click before React re-renders
+  // (a double-click on the quick action itself), the same `aria-disabled`-not-`disabled`
+  // in-flight guard `SessionList.tsx`'s own per-repository create button uses, so keyboard focus
+  // never leaves the button mid-action.
+  function handleQuickAction(): void {
+    if (quickActionPendingRef.current) return
+    quickActionPendingRef.current = true
+    setQuickActionPending(true)
+    captureFocusFallback()
+    const wasArchived = isArchived
+    const action = wasArchived ? restore(session.id) : archive(session.id)
+    void action.then((ok) => {
+      quickActionPendingRef.current = false
+      setQuickActionPending(false)
+      // Post-build review fix (Phase7PostBuild/code-reviewer, Medium): only announces -- and the
+      // store already reported the failure through its own `notify` toast when `ok` is false --
+      // a screen-reader user must never hear "Archived X" next to a visible failure toast.
+      if (ok) onAnnounce(wasArchived ? `Restored ${session.name}` : `Archived ${session.name}`)
+    })
+  }
+
+  // The row's "..." menu and its right-click context menu share this one action list:
+  // one set of options, reachable two ways, never two menus to keep in sync. The list itself
+  // (labels/order/archived-or-not/stopped-or-not) is shared with SessionList.tsx via
+  // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
+  // this row's own rename/delete-dialog state) stay local, since they differ per screen.
   const actions = buildSessionRowActions(session, {
     onRename: () => {
       renameRequestedRef.current = true
@@ -187,16 +249,14 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     onReveal: () => void reveal(),
     onArchive: () => {
       captureFocusFallback()
-      void archive(session.id).then(() => {
-        onAnnounce(`Archived ${session.name}`)
-        focusFallbackIfRowGone()
+      void archive(session.id).then((ok) => {
+        if (ok) onAnnounce(`Archived ${session.name}`)
       })
     },
     onRestore: () => {
       captureFocusFallback()
-      void restore(session.id).then(() => {
-        onAnnounce(`Restored ${session.name}`)
-        focusFallbackIfRowGone()
+      void restore(session.id).then((ok) => {
+        if (ok) onAnnounce(`Restored ${session.name}`)
       })
     },
     onStopAgent: () => void stopAgent(session.id),
@@ -206,129 +266,160 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     }
   })
 
-  function handleMenuCloseAutoFocus(event: Event): void {
+  // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's whole
+  // surface (not a normally-focusable element), so its own close-autofocus prefers sending focus
+  // to the open button instead of the "..." trigger the user never started from.
+  function handleMenuCloseAutoFocus(event: Event, isContextMenu = false): void {
     if (renameRequestedRef.current) {
       event.preventDefault()
       renameRequestedRef.current = false
     } else {
       event.preventDefault()
-      if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
       else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
       else focusListContainer()
     }
   }
 
-  function handleQuickAction(): void {
-    captureFocusFallback()
-    const wasArchived = isArchived
-    const action = wasArchived ? restore(session.id) : archive(session.id)
-    void action.then(() => {
-      onAnnounce(wasArchived ? `Restored ${session.name}` : `Archived ${session.name}`)
-      focusFallbackIfRowGone()
-    })
-  }
-
   return (
-    <li ref={rowRef} className="relative w-full rounded-md border border-transparent hover:bg-muted/50">
+    <li ref={rowRef} className="relative w-full hover:bg-muted/50">
       {isVisible && <span aria-hidden className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-active-indicator" />}
-      <div className="flex min-w-0 items-center gap-2 py-1.5 pl-3 pr-2">
-        {renaming ? (
-          <input
-            ref={renameInputRef}
-            autoFocus
-            value={draftName}
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={() => void commitRename()}
-            onKeyDown={handleNameKeyDown}
-            aria-label="Session name"
-            className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1.5 text-sm outline-none"
-          />
-        ) : (
-          <button
-            ref={openButtonRef}
-            type="button"
-            aria-label={`Open session ${session.name} in ${repositoryName}`}
-            onClick={(event) => handleOpen(event)}
-            onDoubleClick={startRenaming}
-            data-choice-item
-            className="manage-session-open-button flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <span className="flex shrink-0 items-center gap-1.5">
-              <StateIcon status={session.status} />
-              <span className="text-xs text-muted-foreground">{STATUS_LABEL[session.status]}</span>
-            </span>
-            {isVisible && <span className="sr-only">Open in chat</span>}
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium" title={session.name}>
-                {session.name}
-              </span>
-              <span className="flex items-center gap-1 truncate font-code text-xs text-muted-foreground">
-                <GitBranchIcon aria-hidden className="size-3 shrink-0" />
-                {session.branch}
-              </span>
-            </span>
-            <span className="flex shrink-0 items-center gap-1 truncate text-xs text-muted-foreground">
-              <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
-              {repositoryName}
-            </span>
-            {worktreeMissing && (
-              <span className="flex shrink-0 items-center gap-1 text-xs text-destructive">
-                <TriangleAlertIcon aria-hidden className="size-3 shrink-0" />
-                Worktree missing
-              </span>
-            )}
-            {isArchived && (
-              <Badge variant="secondary" className="shrink-0">
-                <ArchiveIcon aria-hidden className="size-3" />
-                Archived
-              </Badge>
-            )}
-            <span className="ml-auto shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
-          </button>
-        )}
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            ref={quickActionRef}
-            type="button"
-            aria-label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
-            onClick={handleQuickAction}
-            className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            {isArchived ? <ArchiveRestoreIcon aria-hidden className="size-4" /> : <ArchiveIcon aria-hidden className="size-4" />}
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+      {/* Post-build review fix (Phase7PostBuild, Medium): right-click/Shift+F10 opens the same
+          options the "..." trigger does, matching SessionList.tsx's own row (DESIGN.md "Session
+          list keyboard and focus model") -- the same object behaves identically on both screens. */}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div className="flex min-w-0 items-center gap-2 pr-2">
+            {renaming ? (
+              <input
+                ref={renameInputRef}
+                autoFocus
+                value={draftName}
+                onChange={(event) => setDraftName(event.target.value)}
+                onBlur={() => void commitRename()}
+                onKeyDown={handleNameKeyDown}
+                aria-label="Session name"
+                className="w-full min-w-0 flex-1 rounded border border-ring bg-transparent px-2 py-1.5 text-sm outline-none"
+              />
+            ) : (
               <button
-                ref={menuTriggerRef}
+                ref={openButtonRef}
                 type="button"
-                aria-label={`${session.name} actions`}
-                className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                onClick={(event) => handleOpen(event)}
+                onKeyDown={handleOpenButtonKeyDown}
+                data-choice-item
+                // Post-build review fix (Phase7PostBuild, Medium): a fixed grid, not a natural-width
+                // flex row, so status/name/repository/state/time form real columns across every
+                // row instead of each shifting with its own content's length. Padding moved onto
+                // this button (off the wrapping `<li>`) so the hover fill below is entirely
+                // clickable, with no dead gutter.
+                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[6rem_minmax(0,1fr)_10rem_9rem_5rem] items-center gap-3 rounded-md py-2 pl-3 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
-                <EllipsisVerticalIcon aria-hidden className="size-4" />
+                {/* Post-build review fix (Phase7PostBuild, HIGH, WCAG 2.5.3/4.1.2): no
+                    `aria-label` here -- it previously replaced the button's whole content with
+                    "Open session X in repo", hiding status, branch, Archived, Worktree missing,
+                    and last activity from screen-reader users entirely. The accessible name now
+                    comes from this visible content, in the same order it is read. */}
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <StateIcon status={session.status} />
+                  <span className="truncate text-xs text-muted-foreground">{STATUS_LABEL[session.status]}</span>
+                </span>
+                {isVisible && <span className="sr-only">Shown in chat</span>}
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate font-medium">
+                    <span className="sr-only">Open </span>
+                    {session.name}
+                  </span>
+                  <span className="flex min-w-0 items-center gap-1 font-code text-xs text-muted-foreground">
+                    <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+                    <span className="truncate">{session.branch}</span>
+                  </span>
+                </span>
+                <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                  <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+                  <span className="truncate">{repositoryName}</span>
+                </span>
+                <span className="flex min-w-0 items-center gap-1.5 text-xs">
+                  {worktreeMissing && (
+                    <span className="flex shrink-0 items-center gap-1 text-destructive">
+                      <TriangleAlertIcon aria-hidden className="size-3 shrink-0" />
+                      Worktree missing
+                    </span>
+                  )}
+                  {isArchived && (
+                    <Badge variant="secondary" className="shrink-0">
+                      <ArchiveIcon aria-hidden className="size-3" />
+                      Archived
+                    </Badge>
+                  )}
+                </span>
+                <span className="text-right text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
-              {actions.map((action, index) =>
-                action.kind === 'separator' ? (
-                  <DropdownMenuSeparator key={`sep-${index}`} />
-                ) : (
-                  <DropdownMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
-                    {action.label}
-                  </DropdownMenuItem>
-                )
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+            )}
+            <div className="flex shrink-0 items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
+                    aria-disabled={quickActionPending || undefined}
+                    onClick={handleQuickAction}
+                    className="rounded p-1.5 text-muted-foreground aria-disabled:opacity-50 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    {isArchived ? <ArchiveRestoreIcon aria-hidden className="size-4" /> : <ArchiveIcon aria-hidden className="size-4" />}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{isArchived ? 'Restore' : 'Archive'}</TooltipContent>
+              </Tooltip>
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        ref={menuTriggerRef}
+                        type="button"
+                        aria-label={`${session.name} actions`}
+                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      >
+                        <EllipsisVerticalIcon aria-hidden className="size-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">More actions</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+                  {actions.map((action, index) =>
+                    action.kind === 'separator' ? (
+                      <DropdownMenuSeparator key={`sep-${index}`} />
+                    ) : (
+                      <DropdownMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+                        {action.label}
+                      </DropdownMenuItem>
+                    )
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>
+          {actions.map((action, index) =>
+            action.kind === 'separator' ? (
+              <ContextMenuSeparator key={`sep-${index}`} />
+            ) : (
+              <ContextMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+                {action.label}
+              </ContextMenuItem>
+            )
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
       <DeleteDialog
         session={session}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        onDeleted={() => {
-          onAnnounce(`Deleted ${session.name}`)
-          focusFallbackIfRowGone()
-        }}
+        onDeleted={() => onAnnounce(`Deleted ${session.name}`)}
         onCancelled={() => {
           if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
           else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()

@@ -42,13 +42,41 @@ export function focusProfileItemName(): void {
   document.querySelector<HTMLTextAreaElement>('textarea')?.focus()
 }
 
-// Post-build review fix (D2, Stuart 2026-10-05): opening a Session from the Manage sessions
+// Post-build review fix (Phase7PostBuild, HIGH, moved here from ChatPane.tsx): a stopped Session
+// (`agent-exited`/`worktree-missing`/`start-failed`) renders MessageInput's textarea `disabled`
+// (MessageInput.tsx), so a plain `textarea?.focus()` silently no-ops there. Falls back to the
+// stopped banner's own first enabled button/link, and only then to the pane region itself
+// (`tabIndex={-1}`) rather than a generic whole-pane DOM scan, which would otherwise land on a
+// `ChatHeader` control instead. Shared by ChatPane's own focus-move chord/button and close-pane
+// refocus, and by `focusSessionPane` below, which scopes it to one specific pane.
+export function focusPaneContent(container: HTMLElement | null): void {
+  if (!container) return
+  const textarea = container.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')
+  if (textarea) {
+    textarea.focus()
+    return
+  }
+  const bannerButton = container.querySelector<HTMLElement>(
+    '[data-pane-banner] button:not(:disabled), [data-pane-banner] [href]'
+  )
+  if (bannerButton) {
+    bannerButton.focus()
+    return
+  }
+  container.focus()
+}
+
+// Post-build review fix (Phase7PostBuild, HIGH): opening a Session from the Manage sessions
 // screen (spec 008 FR-025) switches back to the chat view and unmounts this screen entirely --
 // unlike SessionList.tsx's own row click, which never unmounts anything (the nav and chat are
 // both already visible, so the clicked row simply keeps the focus it already had). There is no
-// single "the clicked row" to return focus to here, so this lands on the message box instead --
-// the same first enabled `textarea` `ChatPane.tsx`'s own `focusPaneContent` falls back to
-// first, and the one control a freshly-opened Session reliably has.
-export function focusMessageBox(): void {
-  document.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')?.focus()
+// single "the clicked row" to return focus to here, so this instead targets whichever pane the
+// opened (or already-focused) Session actually ended up in -- resolved by the caller AFTER the
+// split-store update commits (`useSplitStore.getState().paneSessionIds[focusedIndex]`), never
+// the first enabled textarea anywhere in the document (the previous `focusMessageBox`, removed:
+// wrong pane whenever a split is open and the OTHER pane is focused, and `<body>` whenever the
+// newly-opened Session is stopped). `data-session-pane` is set on ChatPane's own region element.
+export function focusSessionPane(sessionId: string): void {
+  const container = document.querySelector<HTMLElement>(`[data-session-pane="${CSS.escape(sessionId)}"]`)
+  focusPaneContent(container)
 }
