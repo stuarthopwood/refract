@@ -69,6 +69,17 @@ correctly and are fully keyboard-accessible.
 - [X] T013 (#271) [US1] Write `src/renderer/features/profile/ProfileItem.tsx`: the round avatar (`avatar.tsx`, T003) with an initials fallback while loading, failed, or unset (FR-007), the display name or "Sign in" (FR-004), and a separate cog button, both reachable by keyboard with a visible focus indicator and one combined accessible name (FR-005, FR-026, FR-028 for the long-name ellipsis), fed by `useAccountsStore` (T011) for the active GitHub account (FR-001, FR-006).
 - [X] T014 (#276) [US1] Write `src/renderer/features/profile/ProfileMenu.tsx`'s minimal shell: a `DropdownMenu` (T003's primitives) opened by selecting the profile item anywhere but the cog (FR-003), showing the account header (avatar + `@handle`) or a Sign in action when signed out (FR-004), arrow-key navigation, Esc to close, and focus returned to the profile item on close (FR-024); wire the cog to call `useViewStore.getState().openSettings()` (FR-002; plan.md "Build order" — the Settings screen itself is spec 004's, not built here); mount `ProfileItem`+`ProfileMenu` at the bottom of the left nav by wrapping `SessionList` in `src/renderer/App.tsx` in a flex column (`<SessionList/>` flex-1 scrollable, `<ProfileItem/>` shrink-0 below it), and add the `'settings'` case to `App.tsx`'s main-area switch reading `useViewStore` (rendering nothing further until spec 004 lands its `SettingsScreen`, per plan.md) (depends on T011-T013).
 - [X] T015 (#282) [US1] Update the docs and verify live: `docs/DESIGN.md` "Layout" (the profile item's placement and the cog/menu split) and "Keyboard"; then on the built app in an isolated instance (own `--user-data-dir`): confirm a signed-in account's avatar and name show, the cog opens the (currently empty) Settings switch, selecting elsewhere opens the menu, signing out via `gh auth logout` outside Refract and reopening shows the generic avatar and "Sign in", and Tab/Enter/Esc reach and operate both controls with a visible focus indicator (quickstart Story 1).
+  -- Live evidence (parent, earlier pass, isolated instance): signed-in avatar and name show;
+  the cog opens Settings; selecting elsewhere opens the menu; the Manage accounts dialog,
+  Add account device-code flow (code shown in ~2 s) and gh-scratch account state exercised in
+  the 2026-10-05 re-verify. NOT re-run on the fixed build: signing out via `gh auth logout`
+  outside Refract and reopening to see "Sign in".
+  -- Add-account failure path (parent, 2026-10-05, scratch gh config, `gh auth login` child
+  killed mid-flow): status became `failed`, focus moved to Retry, one `role="alert"` read
+  "Sign-in failed. Check your connection and retry."; clicking Retry started flow `-2` with a
+  new code and focus on Copy code. Copy code announced "Code copied" in a live region inside
+  the dialog (outside the Radix-hidden #root). NOT verified live: sign-out announcement,
+  real add-account completion, GitHub Enterprise Server hosts.
 
 **Checkpoint**: run quickstart Story 1. `pnpm typecheck` and `pnpm build` pass.
 
@@ -180,6 +191,15 @@ correctly and are fully keyboard-accessible.
   rejection, Keyboard shortcuts' no-brackets copy fix, and Health check's announcement wording,
   doubled-state-word, missing catch, re-run layout jump, and hard-coded colour fixes -- see the
   updated Profile item and Health check dialog bullets in docs/DESIGN.md.
+  -- Live evidence (parent, 2026-10-05, isolated instance, real CDP input): the fixed menu order
+  (Manage accounts, Manage sessions, Theme, Keyboard shortcuts, Health check, What's new, Sign
+  out) renders; Enter on the profile button opens it; the Theme submenu opens with ArrowRight,
+  lists Dark (Current, accent bar on the focused item) / Dark (high contrast) / Appearance
+  settings; Esc backs out and focus returns to the profile button; Health check runs against the
+  real readiness check and reads Git Passed, OMP Passed with a warning (18.6.1 outside 18.4.x/
+  18.5.x), OMP signed in Passed, focus on Done. NOT verified live: What's new (opens the system
+  browser; deliberately not clicked), the Keyboard shortcuts dialog contents in this pass,
+  Theme submenu focus ring with Dark (high contrast) active, selecting a theme.
 
 **Checkpoint**: run quickstart Story 4. `pnpm typecheck` and `pnpm build` pass.
 
@@ -200,6 +220,20 @@ correctly and are fully keyboard-accessible.
   `manager.getOrCreateAgent(id).shutdown()` before setting `archivedAt` -- confirmed true.
   Live keyboard/visual verification not performed here; the parent agent verifies on the
   built app.
+  -- Live evidence (parent, 2026-10-05, isolated instance `--user-data-dir=C:/tmp/p7/userdata`,
+  real CDP mouse/key input, repos alpha+beta with 6 Sessions incl. archived): Manage sessions
+  opens from the profile menu and lists every Session with repository/status/archive state;
+  restore and archive-under-filter exercised in an earlier pass; single click opens the clicked
+  row's Session and a follow-up double-click does not open a different Session or toggle the
+  sidebar row beneath it (view stayed on the opened Session, sidebar repository groups kept
+  their expanded state); with a split open, opening from Manage sessions replaces the focused
+  pane and focus lands in that pane (`merry-heron chat`, x=281); the row context menu offers
+  Rename / Open in split / Copy worktree path / Open worktree folder / Restore / Delete…;
+  Delete… opens the spec 001 confirmation with focus on Cancel (still there after 4 s), and
+  Escape cancelled it (Session count stayed 6).
+  NOT verified live: confirming an actual delete (confirmation was cancelled, not accepted);
+  the "Showing X of N" filter announcement in a screen reader; double-click `activeElement`
+  between the two mousedowns.
 
 **Checkpoint**: run quickstart Story 5. `pnpm typecheck` and `pnpm build` pass.
 
