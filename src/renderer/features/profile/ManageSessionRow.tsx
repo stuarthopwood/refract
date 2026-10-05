@@ -72,6 +72,18 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   // previous row, else the search input, resolved lazily against `isConnected` so it never
   // fires against an element this same unmount already took with it.
   const focusFallbackRef = useRef<() => void>(() => searchInputRef.current?.focus())
+  // Set when an action may remove this row from the filtered list. The archive/restore IPC resolves
+  // BEFORE the store update that unmounts the row, so a one-frame check after the promise can still
+  // see the row mounted (measured live: focus then fell to <body>); the unmount itself is the
+  // reliable signal, so the fallback runs from the unmount cleanup.
+  const pendingRemovalFocusRef = useRef(false)
+  const pendingRemovalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (pendingRemovalTimerRef.current) clearTimeout(pendingRemovalTimerRef.current)
+      if (pendingRemovalFocusRef.current) requestAnimationFrame(() => focusFallbackRef.current())
+    }
+  }, [])
 
   function captureFocusFallback(): void {
     const li = rowRef.current
@@ -84,6 +96,13 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
       else if (prevButton?.isConnected) prevButton.focus()
       else searchInputRef.current?.focus()
     }
+    pendingRemovalFocusRef.current = true
+    if (pendingRemovalTimerRef.current) clearTimeout(pendingRemovalTimerRef.current)
+    // Cleared if the row survives (the All filter just relabels the quick action), so a later,
+    // unrelated unmount of this row does not steal focus.
+    pendingRemovalTimerRef.current = setTimeout(() => {
+      pendingRemovalFocusRef.current = false
+    }, 3000)
   }
 
   function focusListContainer(): void {
