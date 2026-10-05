@@ -68,25 +68,46 @@ function of `useSettingsStore((s) => s.settings.watermarkEnabled)`: renders noth
 
 ```ts
 interface BrandWatermarkProps {
-  /** 'live': the real, responsively-clamped corner mark mounted once in App.tsx's chat
-   *  ResizablePanel. 'preview': a small, fixed-size rendering inside the Appearance section,
-   *  sharing the same mask-image/colour/opacity but not the responsive clamp or corner anchor. */
+  /** 'live': the real, responsively-clamped corner mark, mounted inside whichever of
+   *  ChatPane.tsx's own eligible render branches is active (research.md decision 3). 'preview':
+   *  a small, fixed-size rendering inside the Appearance section, sharing the same
+   *  mask-image/colour/opacity but not the responsive clamp or corner anchor. */
   variant: 'live' | 'preview';
 }
 ```
 
 Both variants read the same `watermarkEnabled` state; `variant: 'preview'` additionally ignores
-`FR-010`'s full-screen suppression rule, since it is explicitly meant to render inside Settings
+`FR-011`'s full-screen suppression rule, since it is explicitly meant to render inside Settings
 (research.md decision 9).
+
+### Extended `ChatPaneProps` (`src/renderer/features/chat/ChatPane.tsx`)
+
+```ts
+interface ChatPaneProps {
+  sessionId: string;
+  paneIndex: number;
+  reservesWindowControls: boolean;
+  otherSession: { id: string; name: string } | null;
+  /** New (research.md decisions 3, 8): true for exactly one rendered ChatPane at a time — the
+   *  single pane shown when there is only one, or the right (second, paneIndex 1) pane of a true
+   *  two-pane split. App.tsx computes and passes this; ChatPane itself does not infer it from
+   *  useSplitStore. Mounts <BrandWatermark variant="live" /> in this pane's transcript container
+   *  (the normal case) or its own `!session` Empty fallback, whichever branch is active. */
+  showWatermark?: boolean;
+}
+```
+
 
 ## Cross-spec data notes
 
 - **Settings screen host (spec 004)** and **Appearance section (spec 007)**: the new switch and
   preview are added inside `AppearanceSection.tsx`, already built on `main` in this checkout — no
   new section or screen is created.
-- **Split chat pane (spec 005)**: `BrandWatermark`'s `'live'` instance is mounted once at the outer
-  chat `ResizablePanel` in `App.tsx`, independent of `useSplitStore`'s `paneSessionIds` length
-  (research.md decision 3) — this spec reads no split-store state directly.
+- **Split chat pane (spec 005)**: `BrandWatermark`'s `'live'` instance is mounted inside whichever
+  `ChatPane` instance receives `showWatermark` (the right pane of a true split, or the single
+  pane), never both and never the left pane (research.md decisions 3, 8) — this spec reads no
+  split-store state directly; `App.tsx` already computes the single/right-pane distinction for its
+  own rendering and simply forwards it.
 - **Theme tokens (spec 007)**: the mark's colour is `var(--muted-foreground)`, already declared in
   every `.theme-*` block; this spec adds no new theme-specific token, only the one
   theme-independent `--watermark-opacity` constant in `:root` (research.md decision 5).

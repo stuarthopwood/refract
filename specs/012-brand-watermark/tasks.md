@@ -84,30 +84,36 @@ chat area.
 **Independent test**: [quickstart.md](quickstart.md) Story 1.
 
 - [ ] T008 [US1] Add to `src/renderer/styles/globals.css`: `--watermark-opacity: 0.06;` in `:root`
-  (research.md decision 5); a `.watermark-mark` rule (`mask-image: url(...refract-hero.svg); mask-
-  size: contain; mask-repeat: no-repeat; mask-position: center; background-color: var(--muted-
-  foreground); opacity: var(--watermark-opacity)`, research.md decision 4); the "live" variant's
-  sizing/offset (`width: clamp(96px, 20cqw, 280px); aspect-ratio: 1; position: absolute; right:
-  1.5rem; bottom: 1.5rem`, research.md decisions 5-7); and
-  `@media (forced-colors: active) { .watermark-mark { display: none; } }` (research.md decision
-  11) (depends on T001 for the real asset path). (#415)
+  (research.md decision 5, documented ceiling `0.12`); a `.watermark-mark` rule (`mask-image:
+  url(...refract-hero.svg); mask-size: contain; mask-repeat: no-repeat; mask-position: center;
+  background-color: var(--muted-foreground); opacity: var(--watermark-opacity)`, research.md
+  decision 4); the "live" variant's sizing/offset (`width: clamp(96px, 20cqw, 280px); aspect-
+  ratio: 1; position: absolute; right: 1.5rem; bottom: 1.5rem`, research.md decisions 5-7); and
+  `@media (forced-colors: active), (prefers-reduced-transparency: reduce) { .watermark-mark {
+  display: none; } }` (research.md decision 11, both media features confirmed real at this app's
+  pinned Electron/Chromium) (depends on T001 for the real asset path). (#415)
 - [ ] T009 [US1] Write `src/renderer/features/chat/BrandWatermark.tsx`: reads
   `useSettingsStore((s) => s.settings.watermarkEnabled)`, renders `null` when `false`; otherwise an
   `aria-hidden` `div` with `pointer-events-none` and the `.watermark-mark` class, sized per
-  `variant: 'live' | 'preview'` (data-model.md) — `'live'` gets the responsive clamp from T008,
+  `variant: 'live' | 'preview'` (data-model.md) — `'live'` gets the responsive clamp from T008 and
+  is mounted inside whichever of ChatPane.tsx's eligible render branches is active (T010),
   `'preview'` gets a fixed ~96px box with no corner-anchor positioning, meant to sit inline inside
   a bordered preview container (depends on T007, T008). (#416)
-- [ ] T010 [US1] Edit `src/renderer/App.tsx`: wrap the `ResizablePanel id="chat"`'s existing
-  `<ErrorBoundary>` (the single-pane/split-group conditional) in one new
-  `<div className="relative h-full [container-type:size]">`, with
-  `<BrandWatermark variant="live" />` added as that div's first child, itself
-  `absolute inset-0 overflow-hidden -z-10` so its own leaf wrapper clips at its edges without
-  wrapping any real content in an `overflow: hidden` ancestor (research.md decision 8) (depends on
-  T009). (#417)
-- [ ] T011 [US1] Verify live per quickstart.md Story 1: default-on mark anchored to the chat area's
-  corner; visible in the "Select a Session" empty state; scales on resize with no layout shift;
-  exactly one instance with a split chat pane open; unaffected by the Subagent panel or session
-  list (depends on T010). (#418)
+- [ ] T010 [US1] Edit `src/renderer/features/chat/ChatPane.tsx`: add a new `showWatermark?:
+  boolean` prop (data-model.md); add `relative` and `[container-type:size]` to the existing
+  transcript container's class string (`<div className="min-h-0 flex-1 overflow-hidden">`, no new
+  wrapper div) and mount `<BrandWatermark variant="live" />` as its first child when
+  `showWatermark` is true; also mount it in the component's own `!session` `<Empty>` fallback
+  branch under the same prop (research.md decisions 1, 3, 8). Edit `src/renderer/App.tsx`: pass
+  `showWatermark` to exactly one rendered `ChatPane` — the single pane shown when there is one, or
+  `paneB` (index 1, the right pane) of a true two-pane split, never `paneA` — and mount
+  `<BrandWatermark variant="live" />` (with its own small `relative` wrapper) inside the
+  `paneSessionIds.length === 0` div (research.md decision 3) (depends on T009). (#417)
+- [ ] T011 [US1] Verify live per quickstart.md Story 1: default-on mark anchored to the reading
+  area's corner, directly above the composer, never covered by it even as the message box grows to
+  its ~8-line maximum; visible in the "Select a Session" empty state; scales on resize with no
+  layout shift; exactly one instance, in the right pane's reading area, with a split chat pane
+  open; unaffected by the Subagent panel or session list (depends on T010). (#418)
 
 **Checkpoint**: quickstart.md Story 1 passes in full.
 
@@ -121,15 +127,17 @@ without leaving Settings.
 **Independent test**: [quickstart.md](quickstart.md) Story 2.
 
 - [ ] T012 [US2] Edit `src/renderer/features/settings/AppearanceSection.tsx`: below the existing
-  theme picker's Save/Cancel row, add a visually separated sub-section with a `Switch` + label
-  ("Background mark") + one-line description, matching `SettingsScreen.tsx`'s Session readout
-  toggle layout, wired to `useSettingsStore`'s `watermarkEnabled`/`setWatermarkEnabled`; beside it,
-  a small bordered box containing `<BrandWatermark variant="preview" />`, shown or hidden by the
-  same state (research.md decision 9) (depends on T007, T009). (#419)
-- [ ] T013 [US2] Verify live per quickstart.md Story 2: the switch reflects and changes
-  `watermarkEnabled` live with no restart; the preview updates immediately; the real mark in the
-  chat area updates immediately; the choice survives a full restart; a missing or non-boolean
-  stored value falls back to on (depends on T012, T004). (#420)
+  theme picker's Save/Cancel row, add an `<hr className="my-6 border-border" />` divider followed
+  by a visually separated sub-section with a `Switch` labelled "Background watermark" + one-line,
+  jargon-free description, matching `SettingsScreen.tsx`'s Session readout toggle layout, wired to
+  `useSettingsStore`'s `watermarkEnabled`/`setWatermarkEnabled`; beside it, a small bordered box
+  containing `<BrandWatermark variant="preview" />`, shown or hidden by the same state (research.md
+  decisions 9, 14) (depends on T007, T009). (#419)
+- [ ] T013 [US2] Verify live per quickstart.md Story 2: the divider visually separates the switch
+  from the theme picker's Save/Cancel row; the switch reflects and changes `watermarkEnabled` live
+  with no restart; the preview updates immediately; the real mark in the chat area updates
+  immediately; the choice survives a full restart; a missing or non-boolean stored value falls
+  back to on (depends on T012, T004). (#420)
 
 **Checkpoint**: quickstart.md Story 2 passes in full.
 
@@ -145,17 +153,19 @@ below WCAG 2.2 AA.
 
 - [ ] T014 [US3] Audit (and fix if needed) `BrandWatermark.tsx`/`globals.css`: confirm
   `pointer-events: none` and `aria-hidden` are present and effective (no native interactive
-  element, no implicit ARIA role, no `tabindex`); confirm the `forced-colors: active` rule
-  actually suppresses it; extend `scripts/check-theme-contrast.mjs` to include the mark's
-  worst-case composited pair (the mark's silhouette colour at `--watermark-opacity` over
-  `--background`, re-checking the existing lowest-margin text/non-text pairs underneath it) for
-  every built-in theme preset (depends on T008, T010). (#421)
+  element, no implicit ARIA role, no `tabindex`); confirm the combined `forced-colors: active`/
+  `prefers-reduced-transparency: reduce` rule actually suppresses it; extend
+  `scripts/check-theme-contrast.mjs` to include the mark's worst-case composited pair (the mark's
+  silhouette colour at `--watermark-opacity` over `--background`, re-checking the muted-foreground/
+  chat-foreground text pairs against it, per theme) for every built-in theme preset, confirming the
+  numbers match research.md decision 13's own computed table (depends on T008, T010). (#421)
 - [ ] T015 [US3] Verify live per quickstart.md Story 3: drag-select transcript text that overlaps
   the mark; click directly on the mark's visual area in both the empty state and over real
   content; Tab through every chat-area control and confirm the mark is never a stop; browse with
   Narrator and confirm it is never announced; enable Windows High Contrast and confirm the mark is
-  not shown regardless of the switch; run the extended `check-theme-contrast.mjs` and confirm every
-  built-in theme preset still passes (depends on T014). (#422)
+  not shown regardless of the switch; turn off "Show transparency in Windows" and confirm the same;
+  run the extended `check-theme-contrast.mjs` and confirm every built-in theme preset still passes
+  (depends on T014). (#422)
 
 **Checkpoint**: quickstart.md Story 3 passes in full, including the extended contrast script's
 numbers.

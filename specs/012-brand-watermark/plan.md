@@ -8,14 +8,20 @@
 
 Add a faint, single-colour, non-interactive rendering of the new brand mark
 (`src/renderer/assets/brand/refract-hero.svg`, prerequisite) anchored to the bottom-right corner of
-the chat area — one instance regardless of a single pane or a split (spec 005), sized by a CSS
-container-query clamp, coloured from the active theme's own `--muted-foreground` token (spec 007),
-and controlled by one new app-wide `watermarkEnabled` setting (default on) in the Settings screen's
-existing Appearance section (spec 007), with a small dedicated preview so the switch is checkable
-without leaving Settings. The mark never shows on Settings, Readiness, or the future Manage
-sessions screen, never intercepts pointer events or Tab focus, is hidden under Windows High
-Contrast, and is proven not to drop any themed surface below WCAG 2.2 AA. Design rationale is in
-[research.md](research.md); the one new IPC method is in [contracts/ipc.md](contracts/ipc.md).
+the **reading area** (the scrollable transcript region above the composer, corrected after design
+review from an earlier draft that anchored to the outer chat panel and sat behind the opaque
+composer) — one instance, belonging to the right-most or single pane regardless of a split (spec
+005), sized by a CSS container-query clamp, coloured from the active theme's own
+`--muted-foreground` token (spec 007), and controlled by one new app-wide `watermarkEnabled`
+setting (default on) in the Settings screen's existing Appearance section (spec 007), in its own
+sub-section separated from the theme picker's Save/Cancel row, with a small dedicated preview so
+the switch is checkable without leaving Settings. The mark never shows on Settings, Readiness, or
+the future Manage sessions screen, never intercepts pointer events or Tab focus, is hidden under
+Windows High Contrast and reduced transparency (both confirmed real, recognised media features at
+this app's pinned Electron/Chromium, research.md decision 11), and is proven not to drop any themed
+surface below WCAG 2.2 AA using contrast numbers computed directly from the real tokens (research.md
+decision 13), not an unverified estimate. Design rationale is in [research.md](research.md); the
+one new IPC method is in [contracts/ipc.md](contracts/ipc.md).
 
 ## Technical Context
 
@@ -42,16 +48,17 @@ no new process type.
 preview within the same render pass, with no restart (SC-002); no measurable layout shift from the
 mark at any window size or theme (SC-006).
 
-**Constraints**: the mark must never intercept a pointer event or a text selection (FR-011), must
-never join the Tab order or be announced to assistive technology (FR-012), must disappear entirely
-under `forced-colors: active` regardless of the setting (FR-013), and must not drop any themed
-surface below WCAG 2.2 AA at its documented opacity (FR-014). It must cost nothing at runtime
-beyond its one-time paint: no animation, no per-frame JavaScript, no new dependency, no remote
-request (FR-021).
+**Constraints**: the mark must never intercept a pointer event or a text selection (FR-012), must
+never join the Tab order or be announced to assistive technology (FR-013), must disappear entirely
+under `forced-colors: active` or `prefers-reduced-transparency: reduce` regardless of the setting
+(FR-014), must never be covered by the composer at any composer height (FR-007, by the reading
+area's own `flex-1` layout, not a tracked CSS variable), and must not drop any themed surface below
+WCAG 2.2 AA at its documented opacity (FR-015). It must cost nothing at runtime beyond its one-time
+paint: no animation, no per-frame JavaScript, no new dependency, no remote request (FR-022).
 
-**Scale/Scope**: one new boolean setting, one new IPC method, one new component (plus its reuse as
-a Settings preview), a handful of new CSS declarations; 21 functional requirements across 4 user
-stories.
+**Scale/Scope**: one new boolean setting, one new IPC method, one new component (reused across up
+to three mount points plus a Settings preview), a handful of new CSS declarations; 22 functional
+requirements across 4 user stories.
 
 ## Constitution Check
 
@@ -62,7 +69,7 @@ stories.
 | I. OMP is the engine | Pass (not applicable) | This spec touches no OMP process, flag, or frame; it is a renderer/main UI and settings feature. |
 | II. RPC wire contract | Pass (not applicable) | No RPC traffic is added or changed. |
 | III. Session and process lifecycle | Pass (not applicable) | No Session, worktree, or process lifecycle is touched; the setting is app-wide (Assumptions), not per-Session. |
-| IV. Evidence before design | Pass (not applicable) | Nothing this spec depends on is an OMP/RPC behaviour; the one platform fact it relies on (CSS container query units in this app's pinned Electron/Chromium) is an already-shipped, multi-year-old web standard, not a project-specific unknown — research.md decision 6 cites the shipped version rather than marking it UNVERIFIED. No probe task is needed. |
+| IV. Evidence before design | Pass (not applicable) | Nothing this spec depends on is an OMP/RPC behaviour. Two platform facts were verified directly rather than assumed: CSS container query units (research.md decision 6, an already-shipped, multi-year-old web standard) and `prefers-reduced-transparency` support at this app's pinned Electron 44.5.1/Chromium 152 (research.md decision 11, confirmed live via a throwaway Electron probe after a design review raised it). Neither is marked UNVERIFIED (constitution IV's marker is reserved for OMP/RPC facts); no probe task is needed in tasks.md since both are already resolved here. |
 | V. Electron security baseline | Pass | The mark is pure CSS (`mask-image`) against the already-bundled `refract-hero.svg`, loaded under the existing CSP's `img-src 'self' data:` with no change (research.md decision 12); it makes no remote request. The one new IPC method (`settings.setWatermarkEnabled`) follows the existing typed, allowlisted `contextBridge` pattern, persisted only by main (`SettingsStore`), the same as every other `settings.*` setter. |
 | Platform and Stack | Pass | Windows 11 only; Electron + Vite + React, strict TypeScript. |
 | Development Workflow | Pass | Spec Kit order (`/speckit.checklist` → `/speckit.plan` → `/speckit.tasks` → `/speckit.taskstoissues`, this pass); no automated tests; typecheck and build gate; verified by running the app (quickstart.md). |
@@ -77,7 +84,7 @@ No violations, so the Complexity Tracking table is empty. No constitution amendm
 specs/012-brand-watermark/
 ├── spec.md
 ├── plan.md               # this file
-├── research.md           # 12 decisions, no UNVERIFIED items
+├── research.md           # 14 decisions, no UNVERIFIED items
 ├── data-model.md          # Settings.watermarkEnabled, BrandWatermarkProps
 ├── quickstart.md          # how to run and verify each story
 ├── contracts/
@@ -104,46 +111,57 @@ src/
     ├── state/
     │   └── settings-store.ts               # EDIT: DEFAULT_SETTINGS.watermarkEnabled, setWatermarkEnabled action
     ├── styles/
-    │   └── globals.css                      # EDIT: `--watermark-opacity` in :root, `.watermark-mark`/`.watermark-mark--preview` rules, forced-colors hide rule
+    │   └── globals.css                      # EDIT: `--watermark-opacity` in :root (starting 0.06, documented ceiling 0.12, research.md decision 5/13), `.watermark-mark`/`.watermark-mark--preview` rules, combined forced-colors/reduced-transparency hide rule (research.md decision 11)
     └── features/
         ├── chat/
-        │   └── BrandWatermark.tsx          # NEW: the shared mask-image component (`live`/`preview` variants)
+        │   ├── BrandWatermark.tsx          # NEW: the shared mask-image component (`live`/`preview` variants)
+        │   └── ChatPane.tsx                # EDIT: new `showWatermark?: boolean` prop; mounts <BrandWatermark variant="live" /> inside its own transcript container (relative + [container-type:size] added to the existing class string) and its own `!session` Empty fallback (research.md decisions 1, 3, 8)
         └── settings/
-            └── AppearanceSection.tsx       # EDIT: new sub-section — Switch + description + <BrandWatermark variant="preview" />
-App.tsx                                      # EDIT: wraps the "chat" ResizablePanel's existing <ErrorBoundary> in a new relative/container-type div, mounts <BrandWatermark variant="live" /> as its first child (research.md decision 8)
+            └── AppearanceSection.tsx       # EDIT: new sub-section, separated from the theme picker's Save/Cancel by a divider — Switch ("Background watermark") + description + <BrandWatermark variant="preview" /> (research.md decision 14)
+App.tsx                                      # EDIT: passes `showWatermark` to exactly one rendered ChatPane (the single pane, or paneB/index 1 of a true split — never paneA); mounts <BrandWatermark variant="live" /> in its own `paneSessionIds.length === 0` div (research.md decision 3)
 docs/
 └── DESIGN.md                                # EDIT: "Look and feel" (new bullet), "Settings in the first build" (new line)
 scripts/
-└── check-theme-contrast.mjs                 # EDIT: extend to include the watermark's worst-case composited pair, per built-in theme preset (spec 007's established hand-run pattern)
+└── check-theme-contrast.mjs                 # EDIT: extend to include the watermark's worst-case composited pair, per built-in theme preset (spec 007's established hand-run pattern; starting numbers already computed in research.md decision 13)
 ```
 
 **Structure Decision**: no new source root and no new renderer-only store; this spec only adds one
 new component file (`BrandWatermark.tsx`) and extends spec 001's existing `settings.json`/IPC/
 Settings-screen plumbing in place, reusing spec 004's `AppearanceSection.tsx` host and spec 007's
-theme tokens exactly as they already exist on `main` in this checkout.
+theme tokens exactly as they already exist on `main` in this checkout. `ChatPane.tsx` is the one
+file this spec touches that was not anticipated in the first draft, added after design review
+confirmed the outer-panel anchor sat behind the composer (research.md decision 1) — the fix is a
+smaller change than the first draft's own new App.tsx wrapper, not a larger one.
 
 ## Design overview
 
 - **One boolean, one setter, reusing an established pattern exactly** (research.md decision 10):
   `watermarkEnabled` and `setWatermarkEnabled` mirror `sessionReadout`/`setReadoutVisibility`
   field-for-field, not a new shape.
-- **One component, two variants, never two implementations** (data-model.md): `BrandWatermark.tsx`
-  is the single source of the mark's visual, mounted once live in `App.tsx` and once, at a fixed
+- **One component, several mount points, never several implementations** (data-model.md):
+  `BrandWatermark.tsx` is the single source of the mark's visual, mounted at whichever of up to
+  three eligible places in `App.tsx`/`ChatPane.tsx` is actually active, plus once more, at a fixed
   smaller size, as the Settings preview — so the preview can never visually drift from the real
-  mark.
-- **CSS owns placement and colour; JS owns only the on/off boolean.** No React state tracks size,
-  position, or opacity — those are container-query clamps and theme tokens in `globals.css`
-  (research.md decisions 4-7); the component's only runtime decision is `watermarkEnabled ? render
-  : null`.
-- **The clipping boundary is scoped to the mark's own leaf wrapper, never an ancestor of real
-  content** (research.md decision 8): the one new wrapper `div` `App.tsx` adds has no `overflow`
-  rule of its own, so no existing Radix-portaled popover, dropdown, or hover card is put at risk of
-  being clipped.
+  mark, and there is only ever one real implementation to keep correct.
+- **CSS owns placement and colour; JS owns only the on/off boolean and which pane is eligible.**
+  No React state tracks size, position, or opacity — those are container-query clamps and theme
+  tokens in `globals.css` (research.md decisions 4-7); the only runtime decisions are
+  `watermarkEnabled ? render : null` and `App.tsx`'s existing single/right-pane computation,
+  reused via the new `showWatermark` prop rather than duplicated inside `ChatPane`.
+- **Composer clearance is a structural guarantee, not a tracked value** (research.md decisions 1,
+  8): the mark is anchored to the reading area's own `flex-1` container, whose bottom edge is
+  always exactly the composer's current top edge by ordinary flex layout — no `ResizeObserver`, no
+  CSS variable tracking the composer's height, and so no way for the two to drift out of sync.
+- **The clipping boundary reuses an existing one, never adds a new ancestor over real content**
+  (research.md decision 8): `BrandWatermark` mounts inside the transcript container's own,
+  already-present `overflow-hidden` (needed for `Transcript`'s scrolling regardless of this spec),
+  so no existing Radix-portaled popover, dropdown, or hover card is put at any new risk of being
+  clipped.
 - **Full-screen views stay watermark-free by construction, not by a suppression flag**
-  (research.md decision 2): because the mark is mounted inside the "chat" `ResizablePanel`'s own
-  subtree, and `App.tsx` already replaces that whole region's render branch for
-  Settings/Readiness/the future Manage sessions screen, there is no extra `view === 'chat'` check
-  to add or forget.
+  (research.md decision 2): because every mount point lives inside `App.tsx`'s chat-area render
+  branch or `ChatPane.tsx` itself, and `App.tsx` already replaces that whole region's render branch
+  for Settings/Readiness/the future Manage sessions screen, there is no extra `view === 'chat'`
+  check to add or forget.
 
 ### Build order and dependencies on other specs
 
