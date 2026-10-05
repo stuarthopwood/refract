@@ -51,11 +51,14 @@ function getProfileCache(): Promise<ProfileCacheStore> {
 // `addStart`, so a later `addCancel(flowId)` can find the right `GhLoginFlow` to cancel.
 const activeAddFlows = new Map<string, GhLoginFlow>();
 let addFlowSeq = 0;
-// GateCode008 MEDIUM "broadcast ordering": every operation that will eventually call
-// broadcastGithubChangedIfCurrent grabs a ticket via acquireBroadcastTicket() when it STARTS
-// its async work, not when it finishes -- so a re-read or reconcile that started before a
-// later switch/sign-out/add can never broadcast its now-stale result over that later
-// operation's own broadcast, however the two settle relative to each other.
+// GateCode008 MEDIUM "broadcast ordering": every reconcile/refresh round that will eventually
+// call broadcastGithubChangedIfCurrent acquires a ticket via acquireBroadcastTicket() right
+// before that round's own async work begins -- for list() that is the call itself; for a
+// completed add flow and for switch/signOut it is only once the CLI mutation has already
+// settled and the post-mutation reconcile is about to start, not when the user-triggered
+// operation first began. Whichever round's ticket was acquired most recently always wins, so an
+// earlier round's now-stale result can never overwrite it, however the two settle relative to
+// each other.
 let latestBroadcastTicket = 0;
 
 export function registerAccounts(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
@@ -97,10 +100,10 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
         lastCode = code;
         broadcastAddProgress(getWindow, { flowId, code: lastCode, status: 'waiting' });
       });
-      flow.on('exit', ({ code, requested }: GhLoginExitInfo) => {
+      flow.on('exit', ({ code, requested, detail }: GhLoginExitInfo) => {
         activeAddFlows.delete(flowId);
         const status: GitHubAddFlowProgress['status'] = requested ? 'cancelled' : code === 0 ? 'completed' : 'failed';
-        broadcastAddProgress(getWindow, { flowId, code: lastCode, status });
+        broadcastAddProgress(getWindow, { flowId, code: lastCode, status, detail: status === 'failed' ? detail : undefined });
         if (status === 'completed') {
           const ticket = acquireBroadcastTicket();
           void finishCompletedAdd(hostsBeforeStart, ticket, getWindow);
@@ -109,17 +112,19 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
       return { ok: true, value: { flowId } };
     } catch (err) {
       if (err instanceof GhError) {
-        return { ok: false, error: { code: err.code, message: err.message } };
+        return toGithubError(err);
       }
       // `authLoginStart` can also throw a plain `Error` from `resolveExecutable('gh')` when the
-      // CLI is not on PATH at all, before any `GhError` would ever be constructed.
-      return { ok: false, error: { code: 'gh-not-found', message: err instanceof Error ? err.message : String(err) } };
+      // CLI is not on PATH at all, before any `GhError` would ever be constructed. GateSec008 LOW:
+      // the raw detail stays on this console only -- the renderer only ever sees the fixed sentence.
+      console.debug('accounts: GitHub CLI could not be resolved before an add flow could start', err instanceof Error ? err.message : err);
+      return { ok: false, error: { code: 'gh-not-found', message: githubErrorMessage('gh-not-found') } };
     }
   });
 
   ipcMain.handle(IPC_REQUESTS.ACCOUNTS_GITHUB_ADD_CANCEL, async (_event, flowId: unknown): Promise<Result<void>> => {
     if (typeof flowId !== 'string') {
-      return { ok: false, error: { code: 'invalid-argument', message: `accounts.github.addCancel expects a string flowId, got ${JSON.stringify(flowId)}` } };
+      return { ok: false, error: { code: 'invalid-argument', message: `Expected a flow ID, got ${JSON.stringify(flowId)}.` } };
     }
     const flow = activeAddFlows.get(flowId);
     if (flow) {
@@ -235,14 +240,14 @@ async function refreshProfileCache(cache: ProfileCacheStore, host: string, login
     if (profile.avatarUrl) {
       try {
         avatarDataUrl = await fetchAvatar(profile.avatarUrl);
-      } catch (err) {
+      } catch {
         // GateSec008 LOW: no login/handle in a debug log, only the host.
-        console.debug(`accounts: avatar refresh failed for an account on ${host}, keeping the previously cached avatar`, err instanceof Error ? err.message : err);
+        console.debug(`accounts: avatar refresh failed for an account on ${host}, keeping the previously cached avatar`);
       }
     }
     await cache.set(host, login, { displayName: profile.displayName, avatarDataUrl, fetchedAt: new Date().toISOString() });
-  } catch (err) {
-    console.debug(`accounts: opportunistic profile refresh failed for an account on ${host}`, err instanceof Error ? err.message : err);
+  } catch {
+    console.debug(`accounts: opportunistic profile refresh failed for an account on ${host}`);
   }
 }
 
@@ -272,8 +277,8 @@ async function signOutAndForgetProfile(host: string, login: string): Promise<voi
   try {
     const cache = await getProfileCache();
     await cache.delete(host, login);
-  } catch (err) {
-    console.debug(`accounts: failed to delete the cached profile for a signed-out account on ${host}`, err instanceof Error ? err.message : err);
+  } catch {
+    console.debug(`accounts: failed to delete the cached profile for a signed-out account on ${host}`);
   }
 }
 
@@ -317,7 +322,7 @@ async function runGithubAccountMutation(
   try {
     const hosts = await authStatus();
     if (!hosts.some((entry) => entry.host === host && entry.login === login)) {
-      return { ok: false, error: { code: 'account-not-found', message: `No GitHub CLI account ${login}@${host}` } };
+      return { ok: false, error: { code: 'account-not-found', message: githubErrorMessage('account-not-found') } };
     }
     await mutate(host, login);
     // The CLI has confirmed the change (exit 0), so answer from what it did rather than re-running
@@ -339,11 +344,31 @@ async function runGithubAccountMutation(
   }
 }
 
+const DEFAULT_GITHUB_ERROR_MESSAGE = 'GitHub CLI could not finish that. Try again.';
+
+/** GateUi008 M7: the renderer only ever sees one of these fixed, plain-language sentences for a
+ * GitHub-CLI-related failure -- never the CLI's own stderr, a `gh ...` command line, or a
+ * channel name. Codes outside this map fall back to `DEFAULT_GITHUB_ERROR_MESSAGE`. */
+const GITHUB_ERROR_MESSAGES: Partial<Record<IpcErrorCode, string>> = {
+  'gh-failed': DEFAULT_GITHUB_ERROR_MESSAGE,
+  'gh-not-found': 'GitHub CLI is not installed.',
+  'account-not-found': 'That account is no longer signed in.',
+  timeout: 'GitHub CLI took too long to respond.'
+};
+
+function githubErrorMessage(code: IpcErrorCode): string {
+  return GITHUB_ERROR_MESSAGES[code] ?? DEFAULT_GITHUB_ERROR_MESSAGE;
+}
+
 function toGithubError(err: unknown): { ok: false; error: { code: IpcErrorCode; message: string } } {
   if (err instanceof GhError) {
-    return { ok: false, error: { code: err.code, message: err.message } };
+    // GateSec008 LOW: the CLI's raw message (which can carry a `--user <login>` argument built
+    // from `args.join(' ')`) stays on this console only -- the renderer only ever sees the fixed
+    // sentence above.
+    console.debug(`accounts: GitHub CLI operation failed (${err.code})`, err.message);
+    return { ok: false, error: { code: err.code, message: githubErrorMessage(err.code) } };
   }
-  return { ok: false, error: { code: 'gh-failed', message: err instanceof Error ? err.message : String(err) } };
+  return { ok: false, error: { code: 'gh-failed', message: githubErrorMessage('gh-failed') } };
 }
 
 /** Never throws: a destroyed or not-yet-created window simply drops the event (same pattern as

@@ -1,10 +1,25 @@
 // GitHub CLI (`gh`) access: an execFile-based wrapper mirroring src/main/git/git.ts's shape,
 // plus the auth-specific commands specs/008-profile-and-accounts needs (research.md decisions
 // 1-2, contracts/ipc.md "GitHub accounts").
+//
+// The actual exec/resolve/timeout core (`ghRaw`, `GhError`, `GhErrorCode`, `GhRawResult`) lives
+// in `./gh.ts` (spec 003's PR-management wrapper) and is reused here rather than duplicated
+// (GateCode008 MEDIUM "two gh wrappers"): this file's own former copy of `ghRaw` had no timeout
+// at all, so `gh auth status`/`auth token`/`auth switch`/`auth logout`/`addStart`'s pre-flight
+// `authStatus()` could hang forever on a wedged `gh`. The account commands below keep their own
+// `'gh-not-found'`/`'gh-failed'` vocabulary via `ghRaw`'s additive `notFoundCode` option, kept
+// distinct from spec 003's `'gh-unavailable'`/`'github-failed'` without touching spec 003's own
+// call sites. The long-lived interactive `GhLoginFlow` below (`gh auth login --web`) is a
+// `spawn()`, not a single timed `execFile` call, so it is intentionally NOT folded onto `ghRaw`.
 
-import { execFile, spawn, type ExecFileException, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import os from 'node:os'
 import { resolveExecutable, taskkillPath } from '../process/executables'
+import { GhError, ghRaw, type GhErrorCode } from './gh'
+
+export { GhError }
+export type { GhErrorCode }
 
 // `gh auth login --web` does not exit on stdin EOF while it polls for authorisation (measured: still
 // running after 10 s, only `taskkill` ended it), so a long grace just makes Cancel feel broken. Keep a
@@ -12,66 +27,25 @@ import { resolveExecutable, taskkillPath } from '../process/executables'
 // "after a short grace"). A pre-completion kill never touches the stored credential (T001).
 const CANCEL_GRACE_MS = 750
 
-export type GhErrorCode = 'gh-not-found' | 'gh-failed'
+// Account commands are host/login-scoped, never repo-scoped, so there is no repository path to
+// hand `ghRaw` as `cwd` -- `os.tmpdir()` is the same neutral choice `readiness.ts`'s `checkGit`
+// already makes for `gitRaw(os.tmpdir(), ['--version'])`.
+const ACCOUNT_CWD = os.tmpdir()
 
-export class GhError extends Error {
-  readonly code: GhErrorCode
-
-  constructor(code: GhErrorCode, message: string) {
-    super(message)
-    this.name = 'GhError'
-    this.code = code
-  }
-}
-
-export interface GhRawResult {
-  stdout: string
-  stderr: string
-  /** Process exit code; `0` on success. A spawn failure (e.g. `gh` missing from PATH) is `1`. */
-  code: number
-  /** `true` only when `gh` itself could not be resolved on PATH; distinguishes "not installed"
-   * from an ordinary non-zero exit, which `code: 1` alone cannot. */
-  notFound: boolean
-}
-
-/** Runs `gh <args>` with no shell, in `cwd` when given. Never rejects; callers branch on
- * `.code`/`.notFound`. Resolves gh's absolute path via `resolveExecutable` (same PATH-ordering
- * rationale as git.ts's `gitRaw`: never trust a bare `"gh"` to avoid a cwd-planted binary). */
-export async function ghRaw(args: string[], opts?: { cwd?: string; signal?: AbortSignal }): Promise<GhRawResult> {
-  let ghPath: string
-  try {
-    ghPath = await resolveExecutable('gh')
-  } catch (err) {
-    return { stdout: '', stderr: err instanceof Error ? err.message : String(err), code: 1, notFound: true }
-  }
-  return new Promise((resolve) => {
-    execFile(
-      ghPath,
-      args,
-      { cwd: opts?.cwd, windowsHide: true, signal: opts?.signal },
-      (error: ExecFileException | null, stdout, stderr) => {
-        if (error === null) {
-          resolve({ stdout, stderr, code: 0, notFound: false })
-          return
-        }
-        const code = typeof error.code === 'number' ? error.code : 1
-        resolve({ stdout, stderr: stderr || error.message, code, notFound: false })
-      }
-    )
-  })
-}
-
-/** Runs `gh <args>` and returns trimmed stdout; throws `GhError('gh-not-found', …)` when `gh`
- * is not on PATH, else `GhError('gh-failed', …)` on a non-zero exit. */
-export async function gh(args: string[], opts?: { cwd?: string }): Promise<string> {
-  const result = await ghRaw(args, opts)
-  if (result.notFound) {
-    throw new GhError('gh-not-found', result.stderr)
+/** Runs `gh <args>` via the shared timed/resolved runner (`./gh.ts`'s `ghRaw`, 15s
+ * `AbortController` timeout) and returns trimmed stdout. Throws `GhError('gh-not-found', …)`
+ * when `gh` is not on PATH, `GhError('timeout', …)` if the 15s timeout fires, else
+ * `GhError('gh-failed', …)` on a non-zero exit -- the message is built from stderr only (or a
+ * fixed string), NEVER stdout, which can be a secret (e.g. `auth token`'s token). */
+async function gh(args: string[]): Promise<string> {
+  const result = await ghRaw(ACCOUNT_CWD, args, { notFoundCode: 'gh-not-found' })
+  if (result.timedOut) {
+    throw new GhError('timeout', `gh ${args[0] ?? ''} did not respond within the timeout.`)
   }
   if (result.code !== 0) {
-    throw new GhError('gh-failed', `gh ${args.join(' ')} failed: ${result.stderr.trim() || result.stdout.trim()}`)
+    throw new GhError('gh-failed', `gh ${args.join(' ')} failed: ${result.stderr.trim() || 'no output'}`)
   }
-  return result.stdout
+  return result.stdout.trim()
 }
 
 export interface GhAuthHostEntry {
@@ -111,9 +85,9 @@ interface GhAuthStatusJson {
  * "signed out").
  */
 export async function authStatus(): Promise<GhAuthHostEntry[]> {
-  const result = await ghRaw(['auth', 'status', '--json', 'hosts'])
-  if (result.notFound) {
-    throw new GhError('gh-not-found', result.stderr)
+  const result = await ghRaw(ACCOUNT_CWD, ['auth', 'status', '--json', 'hosts'], { notFoundCode: 'gh-not-found' })
+  if (result.timedOut) {
+    throw new GhError('timeout', 'gh auth status did not respond within the timeout.')
   }
   let parsed: GhAuthStatusJson
   if (!result.stdout.trim()) {
@@ -155,6 +129,11 @@ export async function authToken(host: string, login: string): Promise<string> {
 export interface GhLoginExitInfo {
   code: number | null
   requested: boolean
+  /** Short, plain-language reason when the flow ended in failure (`code !== 0`, not
+   * `requested`); absent on success/cancel. Classified from the exit code and a short internal
+   * stderr tail -- NEVER the raw stderr itself, which can carry a command line or token
+   * (GateUi008 M5). */
+  detail?: string
 }
 
 /**
@@ -178,8 +157,13 @@ export interface GhLoginExitInfo {
  * stored credential).
  */
 export class GhLoginFlow extends EventEmitter {
+  // GateUi008 M5: the last 2 KB of stderr, kept only to classify a failed exit into one of the
+  // four fixed `detail` sentences below -- never logged, never emitted, never leaves this class.
+  private static readonly STDERR_TAIL_BYTES = 2 * 1024
+
   private child: ChildProcessWithoutNullStreams | undefined
   private stdoutBuf = ''
+  private stderrTail = ''
   private requested = false
   private exited = false
   private exitWaiters: Array<() => void> = []
@@ -192,6 +176,7 @@ export class GhLoginFlow extends EventEmitter {
     this.child = child
     child.stdout.on('data', (chunk: Buffer) => this.onStdoutData(chunk))
     child.stderr.on('data', (chunk: Buffer) => this.onStdoutData(chunk))
+    child.stderr.on('data', (chunk: Buffer) => this.onStderrTailData(chunk))
     child.on('exit', (code) => this.onExit(code))
     // A spawn failure (EACCES, the binary removed after resolveExecutable cached its path, AV
     // quarantine) emits 'error' with no 'exit' to follow; without a listener here it would be an
@@ -296,7 +281,23 @@ export class GhLoginFlow extends EventEmitter {
     const waiters = this.exitWaiters
     this.exitWaiters = []
     for (const waiter of waiters) waiter()
-    this.emit('exit', { code, requested: this.requested } satisfies GhLoginExitInfo)
+    const detail = !this.requested && code !== 0 ? this.classifyFailure() : undefined
+    this.emit('exit', { code, requested: this.requested, detail } satisfies GhLoginExitInfo)
+  }
+
+  private onStderrTailData(chunk: Buffer): void {
+    this.stderrTail = (this.stderrTail + chunk.toString('utf8')).slice(-GhLoginFlow.STDERR_TAIL_BYTES)
+  }
+
+  /** Classifies a failed `gh auth login` run into one of four short, plain-language sentences
+   * (GateUi008 M5) using only the exit code and the stderr tail above -- the raw stderr text
+   * itself never leaves this method, is never logged, and is never emitted. */
+  private classifyFailure(): string {
+    const tail = this.stderrTail.toLowerCase()
+    if (/expired/.test(tail)) return 'The code expired.'
+    if (/declined|denied|access_denied/.test(tail)) return 'GitHub declined the sign-in.'
+    if (/network|timeout|dial|enotfound/.test(tail)) return "Couldn't reach GitHub."
+    return 'Sign-in did not finish.'
   }
 }
 

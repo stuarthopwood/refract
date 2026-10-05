@@ -54,6 +54,7 @@ export type IpcErrorCode =
   | 'invalid-theme'
   | 'gh-not-found'
   | 'gh-failed'
+  | 'timeout'
   | 'account-not-found'
   | 'omp-probe-failed'
   | 'unsupported'
