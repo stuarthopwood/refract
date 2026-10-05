@@ -1,9 +1,10 @@
-// Manage accounts (FR-008 to FR-011, FR-014, T016/T017): lists every GitHub CLI account,
-// offers Switch/Sign out per row, and hosts the inline add-account flow (AddAccountPanel.tsx)
-// directly under its own section header. Sign-out confirmation itself lives one level up, in
-// ProfileItem.tsx -- this dialog only asks its caller (`onRequestSignOut`) to open it, since the
-// same confirmation is also reachable from the profile menu's own Sign out item, outside this
-// dialog entirely.
+// Manage accounts (FR-008 to FR-011, FR-014, FR-016, T016/T017/T019): lists every GitHub CLI
+// account, offers Switch/Sign out per row, hosts the inline add-account flow
+// (AddAccountPanel.tsx) directly under its own section header, and (below a separator) the
+// read-only OMP provider section (OmpProvidersSection.tsx). Sign-out confirmation itself lives
+// one level up, in ProfileItem.tsx -- this dialog only asks its caller (`onRequestSignOut`) to
+// open it, since the same confirmation is also reachable from the profile menu's own Sign out
+// item, outside this dialog entirely.
 import { useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { Ref } from 'react'
 import {
@@ -17,12 +18,14 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Separator } from '@/components/ui/separator'
 import { initials } from '@/lib/initials'
 import { cn } from '@/lib/utils'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useAccountsStore } from '@/state'
 import type { GitHubAccount } from '../../../shared/ipc'
 import { AddAccountPanel } from './AddAccountPanel'
+import { OmpProvidersSection } from './OmpProvidersSection'
 
 export interface ManageAccountsDialogProps {
   open: boolean
@@ -92,7 +95,8 @@ export function ManageAccountsDialog({
   }))
 
   // Open focus (approved design): the first row's action when there are accounts, else Add
-  // account (the empty state's primary button).
+  // account (the empty state's primary button). The OMP section (below) never takes initial
+  // focus, regardless of its own loading/error state.
   useEffect(() => {
     if (!open) return
     const active = github.find((account) => account.active) ?? github[0]
@@ -102,6 +106,15 @@ export function ManageAccountsDialog({
       addAccountBtnRef.current?.focus()
     }
     // Only on open itself -- not every time `github` changes while it stays open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  // T019: a real OMP read spawns a scratch process (~4.7 s measured) -- fetched once per dialog
+  // open, never eagerly at app start and never re-fetched just because `open` stays true (the
+  // section's own "Check again"/"Retry" are the only other triggers).
+  useEffect(() => {
+    if (!open) return
+    void useAccountsStore.getState().refreshOmpProviders()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -186,7 +199,7 @@ export function ManageAccountsDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="min-w-0 sm:max-w-lg"
+        className="min-w-0 max-h-[min(680px,calc(100vh-4rem))] overflow-y-auto sm:max-w-lg"
         onEscapeKeyDown={handleEscape}
         onCloseAutoFocus={(event) => {
           event.preventDefault()
@@ -200,148 +213,158 @@ export function ManageAccountsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {githubStatus === 'missing-cli' ? (
-          <div className="flex min-w-0 flex-col gap-2">
-            <h3 className="text-sm font-medium">GitHub CLI not found</h3>
-            <p className="text-sm text-muted-foreground">Refract signs in through the GitHub CLI so it never stores your token.</p>
-            <a
-              href="https://cli.github.com"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex w-fit items-center gap-1.5 text-sm underline underline-offset-2"
-            >
-              <ExternalLinkIcon aria-hidden className="size-3.5" />
-              Install GitHub CLI
-            </a>
-          </div>
-        ) : (
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="flex min-w-0 items-center justify-between gap-2">
-              <h3 className="truncate text-sm font-medium">GitHub accounts</h3>
-              <Button
-                ref={addAccountBtnRef}
-                variant={orderedAccounts.length === 0 ? 'default' : 'outline'}
-                size="sm"
-                aria-label="Add GitHub account"
-                disabled={starting || addFlow !== null}
-                onClick={() => void startAddFlow()}
+        <section aria-labelledby="github-accounts-heading" className="min-w-0">
+          {githubStatus === 'missing-cli' ? (
+            <div className="flex min-w-0 flex-col gap-2">
+              <h3 id="github-accounts-heading" className="text-sm font-medium">
+                GitHub CLI not found
+              </h3>
+              <p className="text-sm text-muted-foreground">Refract signs in through the GitHub CLI so it never stores your token.</p>
+              <a
+                href="https://cli.github.com"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex w-fit items-center gap-1.5 text-sm underline underline-offset-2"
               >
-                Add account
-              </Button>
+                <ExternalLinkIcon aria-hidden className="size-3.5" />
+                Install GitHub CLI
+              </a>
             </div>
-
-            <AddAccountPanel flow={addFlow} starting={starting} cancelling={cancellingFlow} onCancel={handleCancelFlow} onRetry={() => void startAddFlow()} />
-
-            {orderedAccounts.length === 0 ? (
-              <div className="flex flex-col gap-1">
-                <h4 className="text-sm font-medium">No GitHub account is signed in</h4>
-                <p className="text-sm text-muted-foreground">Sign in to review pull requests and check for updates.</p>
+          ) : (
+            <div className="flex min-w-0 flex-col gap-3">
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <h3 id="github-accounts-heading" className="truncate text-sm font-medium">
+                  GitHub accounts
+                </h3>
+                <Button
+                  ref={addAccountBtnRef}
+                  variant={orderedAccounts.length === 0 ? 'default' : 'outline'}
+                  size="sm"
+                  aria-label="Add GitHub account"
+                  disabled={starting || addFlow !== null}
+                  onClick={() => void startAddFlow()}
+                >
+                  Add account
+                </Button>
               </div>
-            ) : (
-              <ul role="list" className="flex min-w-0 max-h-64 flex-col gap-2 overflow-y-auto">
-                {orderedAccounts.map((account) => {
-                  const key = rowKey(account.host, account.login)
-                  const name = account.displayName ?? account.login
-                  const busy = pendingSwitch !== null && pendingSwitch.host === account.host && pendingSwitch.login === account.login
-                  const switchDisabled = pendingSwitch !== null
-                  const authProblem = account.state !== 'success'
-                  return (
-                    <li
-                      key={key}
-                      ref={(el) => {
-                        if (el) rowLiRefs.current.set(key, el)
-                        else rowLiRefs.current.delete(key)
-                      }}
-                      tabIndex={-1}
-                      aria-labelledby={`account-name-${account.host}-${account.login}`}
-                      aria-current={account.active ? 'true' : undefined}
-                      aria-busy={busy || undefined}
-                      className={cn(
-                        'flex min-w-0 items-center gap-2 rounded-md border border-transparent p-2',
-                        account.active && 'border-l-2 border-l-active-indicator'
-                      )}
-                    >
-                      <Avatar>
-                        <AvatarImage src={account.avatarDataUrl ?? undefined} alt="" />
-                        <AvatarFallback>{initials(name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex min-w-0 flex-1 flex-col leading-tight">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span id={`account-name-${account.host}-${account.login}`} className="truncate text-sm font-medium">
-                            {name}
+
+              <AddAccountPanel flow={addFlow} starting={starting} cancelling={cancellingFlow} onCancel={handleCancelFlow} onRetry={() => void startAddFlow()} />
+
+              {orderedAccounts.length === 0 ? (
+                <div className="flex flex-col gap-1">
+                  <h4 className="text-sm font-medium">No GitHub account is signed in</h4>
+                  <p className="text-sm text-muted-foreground">Sign in to review pull requests and check for updates.</p>
+                </div>
+              ) : (
+                <ul role="list" className="flex min-w-0 max-h-48 flex-col gap-2 overflow-y-auto">
+                  {orderedAccounts.map((account) => {
+                    const key = rowKey(account.host, account.login)
+                    const name = account.displayName ?? account.login
+                    const busy = pendingSwitch !== null && pendingSwitch.host === account.host && pendingSwitch.login === account.login
+                    const switchDisabled = pendingSwitch !== null
+                    const authProblem = account.state !== 'success'
+                    return (
+                      <li
+                        key={key}
+                        ref={(el) => {
+                          if (el) rowLiRefs.current.set(key, el)
+                          else rowLiRefs.current.delete(key)
+                        }}
+                        tabIndex={-1}
+                        aria-labelledby={`account-name-${account.host}-${account.login}`}
+                        aria-current={account.active ? 'true' : undefined}
+                        aria-busy={busy || undefined}
+                        className={cn(
+                          'flex min-w-0 items-center gap-2 rounded-md border border-transparent p-2',
+                          account.active && 'border-l-2 border-l-active-indicator'
+                        )}
+                      >
+                        <Avatar>
+                          <AvatarImage src={account.avatarDataUrl ?? undefined} alt="" />
+                          <AvatarFallback>{initials(name)}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span id={`account-name-${account.host}-${account.login}`} className="truncate text-sm font-medium">
+                              {name}
+                            </span>
+                            {account.active && (
+                              <span className="flex shrink-0 items-center gap-1 text-xs font-medium">
+                                <CheckIcon aria-hidden className="size-3.5" />
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <span className="flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground">
+                            <span className="flex min-w-0 items-center gap-1 truncate">
+                              <AtSignIcon aria-hidden className="size-3 shrink-0" />
+                              <span className="truncate">{account.login}</span>
+                            </span>
+                            <span className="flex min-w-0 items-center gap-1 truncate">
+                              <GlobeIcon aria-hidden className="size-3 shrink-0" />
+                              <span className="truncate">{account.host}</span>
+                            </span>
                           </span>
-                          {account.active && (
-                            <span className="flex shrink-0 items-center gap-1 text-xs font-medium">
-                              <CheckIcon aria-hidden className="size-3.5" />
-                              Active
+                          {authProblem && (
+                            <span className="flex items-center gap-1 text-xs font-medium text-state-needs-you">
+                              <TriangleAlertIcon aria-hidden className="size-3" />
+                              Needs attention
+                            </span>
+                          )}
+                          {authProblem && account.host === 'github.com' && (
+                            <Button variant="outline" size="xs" className="w-fit" aria-label={`Sign in again to ${name}`} onClick={() => void startAddFlow()}>
+                              Sign in again
+                            </Button>
+                          )}
+                          {authProblem && account.host !== 'github.com' && (
+                            <span className="min-w-0 break-all text-xs text-muted-foreground">
+                              Sign in again from a terminal with gh auth login --hostname {account.host}.
                             </span>
                           )}
                         </div>
-                        <span className="flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground">
-                          <span className="flex min-w-0 items-center gap-1 truncate">
-                            <AtSignIcon aria-hidden className="size-3 shrink-0" />
-                            <span className="truncate">{account.login}</span>
-                          </span>
-                          <span className="flex min-w-0 items-center gap-1 truncate">
-                            <GlobeIcon aria-hidden className="size-3 shrink-0" />
-                            <span className="truncate">{account.host}</span>
-                          </span>
-                        </span>
-                        {authProblem && (
-                          <span className="flex items-center gap-1 text-xs font-medium text-state-needs-you">
-                            <TriangleAlertIcon aria-hidden className="size-3" />
-                            Needs attention
-                          </span>
-                        )}
-                        {authProblem && account.host === 'github.com' && (
-                          <Button variant="outline" size="xs" className="w-fit" aria-label={`Sign in again to ${name}`} onClick={() => void startAddFlow()}>
-                            Sign in again
-                          </Button>
-                        )}
-                        {authProblem && account.host !== 'github.com' && (
-                          <span className="min-w-0 break-all text-xs text-muted-foreground">
-                            Sign in again from a terminal with gh auth login --hostname {account.host}.
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {!account.active && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          {!account.active && (
+                            <Button
+                              ref={(el) => {
+                                if (el) switchRefs.current.set(key, el)
+                                else switchRefs.current.delete(key)
+                              }}
+                              variant="outline"
+                              size="sm"
+                              disabled={switchDisabled}
+                              aria-label={`Switch active account to ${name}`}
+                              onClick={() => void handleSwitch(account)}
+                            >
+                              {busy ? <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" /> : null}
+                              {busy ? 'Switching…' : 'Switch'}
+                            </Button>
+                          )}
                           <Button
                             ref={(el) => {
-                              if (el) switchRefs.current.set(key, el)
-                              else switchRefs.current.delete(key)
+                              if (el) signOutRefs.current.set(key, el)
+                              else signOutRefs.current.delete(key)
                             }}
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            disabled={switchDisabled}
-                            aria-label={`Switch active account to ${name}`}
-                            onClick={() => void handleSwitch(account)}
+                            className="text-destructive"
+                            aria-label={`Sign out ${name}`}
+                            onClick={() => onRequestSignOut(account)}
                           >
-                            {busy ? <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" /> : null}
-                            {busy ? 'Switching…' : 'Switch'}
+                            Sign out
                           </Button>
-                        )}
-                        <Button
-                          ref={(el) => {
-                            if (el) signOutRefs.current.set(key, el)
-                            else signOutRefs.current.delete(key)
-                          }}
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive"
-                          aria-label={`Sign out ${name}`}
-                          onClick={() => onRequestSignOut(account)}
-                        >
-                          Sign out
-                        </Button>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
+
+        <Separator />
+
+        <OmpProvidersSection announcePolite={announcePolite} announceAssertive={announceAssertive} />
 
         <div aria-live="polite" aria-atomic="true" className="sr-only">
           {polite}

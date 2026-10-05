@@ -1,7 +1,7 @@
 // Pure helpers for Manage accounts (User Story 2): kept tiny and tested with a throwaway script
 // rather than a framework test, matching plan.md's own convention for this spec's small renderer
 // helpers (e.g. src/renderer/lib/initials.ts).
-import type { GitHubAccount } from '../../shared/ipc'
+import type { GitHubAccount, OmpProviderState } from '../../shared/ipc'
 
 const CLEAN_DEVICE_CODE = /^[A-Za-z0-9]{8}$/
 
@@ -27,4 +27,26 @@ export function signOutSuccessor(accounts: GitHubAccount[], target: { host: stri
     return account
   }
   return null
+}
+
+
+/** The Manage accounts OMP section's summary line (T019): "All {total} providers signed in" is
+ *  the one special case; every other count (including 0 and 1) uses the same "{n} of {total}
+ *  providers signed in" template verbatim -- "1 of {total}" reads fine without singularizing
+ *  "providers" on its own. */
+export function ompSummaryLine(signedIn: number, total: number): string {
+  if (total > 0 && signedIn === total) return `All ${total} providers signed in`
+  return `${signedIn} of ${total} providers signed in`
+}
+
+/** Splits OMP's own provider order into the authenticated ones (tier 1, always visible) and the
+ *  rest (tier 2, behind the collapsed "Show all" disclosure) -- each sub-list keeps OMP's
+ *  original relative order, never re-sorted. */
+export function splitOmpProviders<T extends Pick<OmpProviderState, 'authenticated'>>(providers: T[]): { signedIn: T[]; other: T[] } {
+  const signedIn: T[] = []
+  const other: T[] = []
+  for (const provider of providers) {
+    (provider.authenticated ? signedIn : other).push(provider)
+  }
+  return { signedIn, other }
 }

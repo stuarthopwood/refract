@@ -12,6 +12,15 @@ import { notify } from './notify'
  *  no-account rendering until the first `accounts.github.list()` settles, so there is no flash. */
 export type GithubStatus = 'loading' | 'ready' | 'missing-cli' | 'signed-out'
 
+/** OMP provider section state (User Story 3, T019): `idle` before Manage accounts' OMP section
+ *  has ever been opened (the list is never fetched eagerly at startup -- a real read spawns a
+ *  scratch `omp` process, measured ~4.7 s). `loading` only while the FIRST read for this app
+ *  session is in flight and nothing is cached yet; once any read has ever succeeded, a later
+ *  in-flight read keeps `ready` (stale-while-revalidate) and is tracked by `ompRefreshing`
+ *  instead, so the cached list never disappears behind a full loading state again. `error` keeps
+ *  whatever was cached (if anything) and is shown alongside it, never in place of it. */
+export type OmpStatus = 'idle' | 'loading' | 'ready' | 'error'
+
 /** A mutation's own outcome, for a caller that needs to build a live-region announcement
  *  distinct from the toast `notify()` already shows (both ManageAccountsDialog.tsx and
  *  SignOutDialog.tsx need the failure message a second time, for their own assertive region). */
@@ -30,6 +39,12 @@ interface AccountsState {
    *  resolves. */
   pendingSwitch: { host: string; login: string } | null
   ompProviders: OmpProviderState[]
+  ompStatus: OmpStatus
+  /** True whenever an `accounts.omp.list()` read is in flight, regardless of `ompStatus` --
+   *  distinct from `ompStatus === 'loading'` (the first-ever read) so a later refresh with
+   *  cached data to show can still drive its own "Checking…" indicator (T019 stale-while-
+   *  revalidate) without reverting the section to a full loading skeleton. */
+  ompRefreshing: boolean
   setGithub(accounts: GitHubAccount[]): void
   /** Sets the CLI-not-installed state directly, bypassing `setGithub`'s own empty-list ->
    *  'signed-out' rule (an empty list means something different in this case). */
@@ -41,7 +56,12 @@ interface AccountsState {
   addAccountCancel(flowId: string): Promise<void>
   switchAccount(host: string, login: string): Promise<AccountMutationResult>
   signOutAccount(host: string, login: string): Promise<AccountMutationResult>
-  refreshOmpProviders(): Promise<void>
+  /** Lazy only (research.md decision 6 / FINDINGS item 43: a real read spawns a scratch `omp`
+   *  process, ~4.7 s) -- never called at app start, only on Manage accounts' OMP section opening,
+   *  "Check again", and "Retry" (T019). Never throws; a failure sets `ompStatus: 'error'`,
+   *  keeps any already-cached `ompProviders`, and resolves `{ ok: false, message }` instead, so
+   *  a caller can build its own assertive announcement without a second `try/catch`. */
+  refreshOmpProviders(): Promise<AccountMutationResult>
   signInOmpProvider(providerId: string): Promise<void>
   signOutOmpProvider(providerId: string): Promise<void>
   answerOmpRequest(requestId: string, answer: ChatAnswer): Promise<void>
@@ -59,10 +79,12 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
   addFlow: null,
   pendingSwitch: null,
   ompProviders: [],
+  ompStatus: 'idle',
+  ompRefreshing: false,
   setGithub: (accounts) => set({ github: accounts, githubStatus: accounts.length === 0 ? 'signed-out' : 'ready' }),
   setGithubMissingCli: () => set({ github: [], githubStatus: 'missing-cli' }),
   setAddFlow: (progress) => set({ addFlow: progress }),
-  setOmpProviders: (providers) => set({ ompProviders: providers }),
+  setOmpProviders: (providers) => set({ ompProviders: providers, ompStatus: 'ready' }),
   refreshGithub: async () => {
     const result = await window.refract.accounts.github.list()
     if (!result.ok) {
@@ -123,12 +145,18 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
     return { ok: true }
   },
   refreshOmpProviders: async () => {
+    // Stale-while-revalidate (T019): only drop to the full 'loading' skeleton when nothing is
+    // cached yet; a refresh with cached data to show keeps 'ready' and is tracked by
+    // `ompRefreshing` instead, so the list never disappears while a later read is in flight.
+    const hasCache = get().ompProviders.length > 0
+    set({ ompRefreshing: true, ompStatus: hasCache ? get().ompStatus : 'loading' })
     const result = await window.refract.accounts.omp.list()
     if (!result.ok) {
-      notify(result.error)
-      return
+      set({ ompRefreshing: false, ompStatus: 'error' })
+      return { ok: false, message: result.error.message }
     }
-    set({ ompProviders: result.value })
+    set({ ompProviders: result.value, ompStatus: 'ready', ompRefreshing: false })
+    return { ok: true }
   },
   signInOmpProvider: async (providerId) => {
     const result = await window.refract.accounts.omp.signIn(providerId)
