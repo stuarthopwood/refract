@@ -9,7 +9,7 @@ import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import type { MermaidConfig } from 'mermaid'
 import { safeUrl } from '@/lib/safe-url'
 import { THEMES } from '../../../shared/themes'
-import { MERMAID_THEME_VARIABLES } from '../../../shared/mermaidTheme'
+import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
 import { useActiveThemeId } from '@/state'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
@@ -283,7 +283,12 @@ function MermaidBlock({ code, streaming }: { code: string; streaming: boolean })
           securityLevel: 'strict',
           suppressErrorRendering: true,
           theme: 'dark',
-          themeVariables: MERMAID_THEME_VARIABLES[activeThemeId]
+          themeVariables: MERMAID_THEME_VARIABLES[activeThemeId],
+          // Quality-gate remediation (round 5): patches real Mermaid CSS gaps no `themeVariables`
+          // key can reach alone (Gantt active/activeCrit overflow labels, Gantt clickable labels
+          // against the done bar, Timeline section-10's brightness-filtered fill) -- see
+          // `getMermaidThemeCSS`'s own comment in mermaidTheme.ts.
+          themeCSS: getMermaidThemeCSS(activeThemeId)
         } satisfies MermaidConfig)
         const rendered = await Promise.race([
           mermaid.render(`mermaid-${reactId}`, code),

@@ -45,9 +45,17 @@
 //    label overflows outside a short bar is forced back to `taskTextDarkColor` via `!important`
 //    with no theme-variable able to distinguish it from the inside-bar case (the two requirements
 //    are provably contradictory for one shared colour: inside needs luminance <=0.053, outside
-//    needs >=0.199). This is a real, undiscovered-until-now gap in Mermaid's own CSS, not
-//    something this file's theme variables can patch; documented here and in tasks.md rather than
-//    silently left for a future round to rediscover. The separate, PLAIN (non-done, non-active)
+//    needs >=0.199). Round 4 documented this as an undiscovered, unpatchable gap in Mermaid's own
+//    CSS -- that was correct about theme VARIABLES (one variable genuinely cannot satisfy both
+//    requirements at once) but incomplete: round 5 fixes it anyway, via Mermaid's documented
+//    `themeCSS` init option (`mermaid.initialize({ ..., themeCSS })`, see `getMermaidThemeCSS`
+//    below), which injects an ADDITIONAL CSS rule rather than substituting a variable. A
+//    two-class selector Mermaid's own shipped CSS never defines for these states
+//    (`.activeText<N>.taskTextOutsideLeft`/`Right`, `.activeCritText<N>.taskTextOutsideLeft`/
+//    `Right`) beats the single-class `!important` rule on specificity alone (two classes beat
+//    one, regardless of source order, since both are `!important`) -- verified in a real render:
+//    measured 8.89-19.25:1 afterward, see `getMermaidThemeCSS`'s own comment. The separate,
+//    PLAIN (non-done, non-active)
 //    `:crit` task's inside label was measured at 3.06:1 -- but that case is actually governed by
 //    `taskTextColor` (no `.critText*` CSS rule exists in Mermaid's shipped `gantt/styles.js`, so
 //    the plain `.taskText0`-style rule applies) and `critBkgColor` (the plain crit bar's own
@@ -76,12 +84,26 @@
 //    separate "N-way qualitative fill" variable family Mermaid derives from `primaryColor`/
 //    `secondaryColor` (near-zero-saturation dark greys in this app's theme, so hue-rotating them
 //    for variety does nothing) -- the exact same near-black-on-near-black collapse as the pie/
-//    cScale palette before round 2, just never ported to this third family. Journey's own
-//    `.label text` colour is hardcoded `#333` in Mermaid's shipped `user-journey/styles.js` with
-//    no theme-variable hook at all, so a dark task/section fill made that hardcoded dark label
-//    unreadable too (measured ~1.2-1.4:1 both ways). Reusing the bright `cScale0`-`cScale7`
-//    palette for `fillType0`-`fillType7` fixes both: the fills read against the page background,
-//    and Mermaid's hardcoded dark label text reads against the now-bright fills (>=5.3:1).
+//    cScale palette before round 2, just never ported to this third family. Round 4 fixed this by
+//    reusing the bright `cScale0`-`cScale7` palette here too, on the assumption that Journey's
+//    task/section label text is an SVG `<text>` element matching Mermaid's shipped
+//    `user-journey/styles.js` rule `.label text { fill: #333 }` (hardcoded, no theme-variable
+//    hook) -- so a BRIGHT fill would read against that hardcoded DARK label. That assumption was
+//    wrong (round 5, corroborated by two independent reviewers measuring the real rendered DOM):
+//    Journey draws its task/section labels as a plain `<div class="label">` inside a
+//    `<foreignObject>` (Mermaid's own `_drawTextCandidateFunc`'s `fo`/`byHtml` path, the default
+//    when `htmlLabels` is not explicitly disabled), never an SVG `<text>` -- so the
+//    `.label text { fill: #333 }` rule, which only matches an actual `<text>` descendant, never
+//    applies to it at all. The div is instead styled by Mermaid's OTHER `.label { color: textColor
+//    }` rule, i.e. this app's own near-white `textColor` -- LIGHT text. Round 4's bright fill
+//    therefore put light text on a light-to-bright fill (measured 1.18-2.36:1, a NEW regression
+//    that round). Round 5 fix: `fillType0`-`fillType7` are now eight distinct, hue-separated
+//    MID-TONE colours (same technique already used for `cScale11` above -- narrowed to the
+//    luminance band that clears BOTH constraints at once: dark enough for `textColor` to read at
+//    >=4.5:1 on top, luminance <=0.173/0.183 (dark/`dark-high-contrast`), AND light enough to
+//    still clear the pre-existing >=3:1 floor against `--card`, luminance >=0.141/0.108), not the
+//    bright `cScale0`-`cScale7` values (measured: all eight slots clear >=4.8:1 against
+//    `textColor` and >=3.2:1 against `--card` in both themes).
 // 4. Pie slices were only ever separated by hue (adjacent slices measured as low as 1.00-1.80:1
 //    for colour-blind viewers), and `pieStrokeColor` matched `primaryBorderColor` (a mid grey)
 //    instead of being genuinely dark, so the separating stroke itself cleared 3:1 against under
@@ -91,12 +113,32 @@
 // Before building out this round's fixes further, `theme:'dark'` with only `background`/
 // `primaryColor`/`primaryTextColor`/`textColor` overridden (the cheapest plausible alternative)
 // was re-measured against the SAME richer fixtures: every pie/mindmap colour measured 1.01-3.80:1
-// (worse than this file's palette, which already passed pie/mindmap indices 0-7 at >=8.3:1 before
+// (worse than this file's palette, which already passed pie/mindmap indices 0-7 at >=6.98:1 before
 // this round's fix and only needed slots 8-11 filled in) -- `primaryColor` has to stay a dark
 // colour to match this app's `--card` token for node fills elsewhere, so Mermaid's own
 // `primaryColor`-derived qualitative palettes collapse the same way regardless. Completing this
 // file's own fixed palette, rather than reverting to Mermaid's stock derivation, is the net-better
 // option; a nicer, more hue-varied high-contrast palette remains later polish (see issue #125).
+//
+// Quality-gate remediation (round 5): round 4 shipped with scripts/check-mermaid-contrast.mjs
+// reporting 182/182 PASS; two independent reviewers (code-reviewer, accessibility-auditor) each
+// built their OWN from-scratch measurement harness (real computed style + `elementsFromPoint`
+// hit-testing against the actual rendered DOM, not that script's own regex-over-serialized-CSS-
+// text approach, which can only read a rule's declared value, never ask which rule actually WINS
+// the cascade for a given element or what shape is actually underneath a piece of text) and
+// independently converged on the same 3 real failures that script could not see:
+// 1. Gantt active/activeCrit overflow labels (1.05-2.26:1) -- see this file's header comment,
+//    point 1, and `getMermaidThemeCSS`'s own comment.
+// 2. gitGraph branch-name labels (1.15-1.56:1) -- see `gitBranchLabel0`-`gitBranchLabel7`'s own
+//    interface comment.
+// 3. Journey task/section labels (1.18-2.36:1, a NEW regression this round) -- see
+//    `fillType0`-`fillType7`'s own interface comment.
+// Plus two Medium-severity gaps fixed in the same pass: Timeline section-10 (`cScale11`'s own
+// comment) and Gantt clickable-task labels against the done bar (`taskTextClickableColor`'s own
+// comment). scripts/check-mermaid-contrast.mjs itself was rewritten to match the reviewers'
+// methodology (computed style + `elementsFromPoint`, with the actually-rendered leaf text/shape
+// as the unit of measurement, not a diagram-type-specific regex over the `<style>` block text) --
+// see that script's own header comment for the full rationale.
 import type { ThemeId } from './themes'
 
 // Mermaid's own published `MermaidConfig['themeVariables']` (node_modules/mermaid/dist/
@@ -134,8 +176,25 @@ export interface MermaidThemeVariables {
   * affects ONLY Gantt section stripes -- it has no effect on ER-diagram attribute rows; those
   * alternate via `darkMode` + `mainBkg`, which Mermaid's `'dark'` base already derives
   * correctly, which is why this file no longer overrides any ER-specific variable). Matches the
-  * theme's own `--muted`/`--secondary`. */
+  * theme's own `--muted`/`--secondary`. Covers ONLY Gantt's ODD section rows (Mermaid's shipped
+  * `gantt/styles.js` rule `.section1, .section3 { fill: altSectionBkgColor }`) -- see
+  * `sectionBkgColor`/`sectionBkgColor2` below for the EVEN rows, a separate variable pair this
+  * file did not know existed until round 5. */
  altSectionBkgColor: string
+ /** Gantt's EVEN section-row background (`.section0`/`.section2`, quality-gate remediation,
+  * round 5, corroborated by two independent reviewers measuring the real rendered DOM): a
+  * SEPARATE variable pair from `altSectionBkgColor` above that this file never set, so Mermaid's
+  * own un-reviewed `theme-dark.js` default was still in effect -- an arbitrary muted warm tone
+  * unrelated to this app's palette, measured as the real backdrop a bar sitting in an EVEN
+  * section row actually renders against (every Gantt row alternates `.section`'s own
+  * `opacity: 0.2`, so this blends with whatever bar sits on top of it at 20% strength). The plain
+  * crit bar (`critBkgColor` below, this file's narrowest-margin bar colour) measured only
+  * 2.15:1/2.77:1 (dark/high-contrast) against that unreviewed default blended over `--card` --
+  * under the 3:1 non-text floor -- while the SAME bar in an ODD row (blended with
+  * `altSectionBkgColor` instead) already passed at 3.06:1/3.68:1. Matching `altSectionBkgColor`
+  * here makes every row's blend identical (and already-passing) regardless of parity. */
+ sectionBkgColor: string
+ sectionBkgColor2: string
  /** Note shape fill; matches the theme's own `--popover`. */
  noteBkgColor: string
  /** Note shape text colour; matches the theme's own `--popover-foreground`. */
@@ -153,9 +212,18 @@ export interface MermaidThemeVariables {
   * shipped CSS only wires this up for done/doneCrit tasks that overflow, not active/activeCrit --
   * see this file's own header comment, point 1. */
  taskTextOutsideColor: string
- /** Gantt clickable-task label colour; matches the theme's own `--primary`-ish accent so a
-  * clickable task reads as interactive against the dark background (quality-gate remediation,
-  * round 2: Mermaid's default here, `#003163`, measured ~1.5:1 against this app's background). */
+ /** Gantt clickable-task label colour (quality-gate remediation, round 2: Mermaid's default
+  * here, `#003163`, measured ~1.5:1 against this app's background). Mermaid's own
+  * `.taskText.clickable` rule (two classes, beats every single-class `<state>Text<N>` rule the
+  * same way `getMermaidThemeCSS`'s own comment describes) applies this colour regardless of
+  * which bar a clickable task's label actually sits on -- round 2's accent-coloured value only
+  * ever cleared 4.5:1 against the dark plain/active/crit bars, never against the done bar
+  * (Mermaid's own `doneTaskBkgColor`, a hardcoded, non-themeable `lightgrey`): measured ~1.13:1
+  * there (round 5, corroborated by two independent reviewers measuring the real rendered DOM,
+  * not an assumed `--card` baseline). Matches `textColor`/`taskTextOutsideColor` instead (near-
+  * white: clears >=5:1 against the dark plain/active/crit bars); the done-bar case is handled
+  * separately by a `themeCSS` override to `taskTextDarkColor` (pure black) -- see
+  * `getMermaidThemeCSS`'s own comment. */
  taskTextClickableColor: string
  /** Gantt's DEFAULT task-label colour (plain tasks, and -- since Mermaid defines no `.critText*`
   * CSS rule -- a plain, non-done, non-active `:crit` task's inside label too; quality-gate
@@ -172,9 +240,11 @@ export interface MermaidThemeVariables {
   * black once `primaryColor` itself is a dark node-fill colour -- measured ~1.1-2.5:1 between
   * adjacent slices and against the page background; round 4: slots 9-12 added -- round 2 only
   * ever filled 8 of Mermaid's 12 slots, see this file's own header comment, point 2). A fixed,
-  * hue-separated, high-lightness palette instead: each of `pie1`-`pie12` measures >=8.3:1
-  * against both this app's `--card`/`--background` surfaces and the `pieSectionTextColor` label
-  * colour below, regardless of which Refract theme is active, so one palette serves every theme.
+  * hue-separated, high-lightness palette instead: each of `pie1`-`pie12` measures >=6.98:1
+  * against both this app's `--card`/`--background` surfaces (round 5: corrected from a stale
+  * `>=8.3:1` claim here -- `pie1`/`#76a9ff`, the weakest slot, actually measures 6.98:1 against
+  * `--card` in the `dark` theme) and >=8.89:1 against the `pieSectionTextColor` label colour
+  * below, regardless of which Refract theme is active, so one palette serves every theme.
   * Unlike `cScale11` (which has no choice but to be a muted, moderately-dark tone -- see that
   * key's own comment), `pie12` stays bright like every other slot: Mermaid's pie renderer reads
   * `pie1`-`pie12` as a plain array with no CSS-cascade reuse, so there's no shared-variable
@@ -196,7 +266,8 @@ export interface MermaidThemeVariables {
  pieOpacity: number
  /** Percentage-label text colour, drawn INSIDE each slice; Mermaid's own default here reuses
   * `textColor` (this app's near-white), which is illegible on the light palette above. Black
-  * reads at >=8.3:1 against every colour in that palette. */
+  * reads at >=8.89:1 against every colour in that palette (round 5: corrected from a stale
+  * `>=8.3:1` claim here). */
  pieSectionTextColor: string
  /** Slice border, separating adjacent slices (quality-gate remediation, round 4: previously
   * matched `primaryBorderColor`, a mid grey that cleared 3:1 against under half the palette --
@@ -238,7 +309,24 @@ export interface MermaidThemeVariables {
   * against the page background, the WCAG non-text floor) instead of following the rest of the
   * palette, freeing `cScaleLabel11` below to be a light colour that works as both section-10's
   * text (>=4.5:1 against this fill) and the time-axis stroke (>=3:1 against the page
-  * background). */
+  * background).
+  *
+  * Quality-gate remediation (round 5, corroborated by two independent reviewers measuring the
+  * real rendered DOM): the declared pair above (5.12:1/5.34:1 dark/high-contrast, see this
+  * theme's own inline comment) was correct but incomplete -- Mermaid's own
+  * `.eventWrapper { filter: brightness(120%) }` CSS rule (applied to every timeline event
+  * regardless of section) brightens this fill by a further ~1.2x in sRGB space AFTER it is
+  * declared, which no `themeVariables` key can see or patch (CSS filters are a post-paint
+  * effect, not a colour substitution): the ACTUALLY-PAINTED pair measured only 3.91:1, under
+  * 4.5:1, even though the declared pair above passes comfortably. No single flat fill can
+  * satisfy both "declared pair clears >=3:1 against `--card`" and "post-`brightness(120%)`
+  * pair still clears >=4.5:1" at once (the two constraints are contradictory once the
+  * brightening is ~1.5x in linear-light space, the same kind of provable contradiction as the
+  * Gantt active-overflow case above) -- so the fix instead neutralises the filter itself via
+  * `themeCSS` (`.eventWrapper { filter: none !important }`, see `getMermaidThemeCSS`'s own
+  * comment), which makes the declared and painted colours the same again. Slots 0-9 had enough
+  * margin that the 1.2x brightening never pushed any of them below 4.5:1 in the first place, so
+  * neutralising it does not reintroduce any other failure (verified in a real render). */
  cScale11: string
  /** Section label text colour drawn on top of the `cScale*` fills above; Mermaid defaults every
   * slot to this single value (`scaleLabelColor`) unless a slot-specific `cScaleLabel<N>` is set,
@@ -274,10 +362,18 @@ export interface MermaidThemeVariables {
   * fills was wrong -- journey never read `cScale*` at all). Mermaid derives these from
   * `primaryColor`/`secondaryColor` by default, the same near-zero-saturation dark greys as the
   * pie palette's own root cause, so they collapsed the same way (measured ~1.2-1.4:1 against
-  * the page background) -- AND made journey's own hardcoded-in-Mermaid `.label text { fill:
-  * #333 }` (no theme-variable hook exists for this one) unreadable against them too. Reusing
-  * the bright `cScale0`-`cScale7` palette fixes both: >=3:1 against the page background, and
-  * >=5.3:1 for Mermaid's hardcoded `#333` label text drawn on top. */
+  * the page background). Round 4 "fixed" this by reusing the bright `cScale0`-`cScale7` palette
+  * here, on the mistaken assumption (round 5, corroborated by two independent reviewers
+  * measuring the real rendered DOM) that Journey's labels are SVG `<text>` matching Mermaid's
+  * hardcoded `.label text { fill: #333 }` rule -- they are not: Journey draws labels as a plain
+  * `<div class="label">` inside a `<foreignObject>`, which that `text`-descendant selector never
+  * matches, and which Mermaid's OTHER `.label { color: textColor }` rule styles instead (this
+  * app's own near-white `textColor`). Round 4's bright fill put light text on a light-to-bright
+  * fill (measured 1.18-2.36:1, a regression that round). Round 5 fix: eight distinct, hue-
+  * separated MID-TONE colours instead (same technique as `cScale11` above) -- narrowed to clear
+  * BOTH `textColor` on top (>=4.5:1, needs fill luminance <=0.173/0.183 dark/high-contrast) AND
+  * the pre-existing >=3:1 floor against `--card` (needs fill luminance >=0.141/0.108) at once;
+  * measured >=4.8:1 against `textColor` and >=3.2:1 against `--card` in both themes. */
  fillType0: string
  fillType1: string
  fillType2: string
@@ -299,6 +395,21 @@ export interface MermaidThemeVariables {
  git5: string
  git6: string
  git7: string
+ /** gitGraph branch-name label text colour, drawn over each branch's own `gitBranchLabel<N>`-
+  * sized pill, itself filled with that branch's `git<N>` colour (quality-gate remediation, round
+  * 5, corroborated by two independent reviewers): Mermaid's shipped `git/styles.js` only
+  * resolves this to a theme value when it is unset -- it was never set here, so it fell through
+  * to Mermaid's own `theme-dark.js` default (`labelTextColor`/its RGB invert, both an idiomatic
+  * light grey close to `lightgrey`), measured 1.15-1.56:1 against this file's own bright `git0`-
+  * `git7` pills above. Pure black clears >=8.89:1 against every one of them. */
+ gitBranchLabel0: string
+ gitBranchLabel1: string
+ gitBranchLabel2: string
+ gitBranchLabel3: string
+ gitBranchLabel4: string
+ gitBranchLabel5: string
+ gitBranchLabel6: string
+ gitBranchLabel7: string
 }
 
 /** Picker order mirrors `THEMES` (additive: a further dark preset adds a key here too, per
@@ -325,6 +436,9 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   darkMode: true,
   // `--muted`/`--secondary: oklch(0.269 0 0)`.
   altSectionBkgColor: '#2b2b2b',
+  // Round 5: matches `altSectionBkgColor` -- see this key's own interface comment.
+  sectionBkgColor: '#2b2b2b',
+  sectionBkgColor2: '#2b2b2b',
   // `--popover: oklch(0.205 0 0)` / `--popover-foreground: oklch(0.985 0 0)`.
   noteBkgColor: '#1f1f1f',
   noteTextColor: '#fafafa',
@@ -335,7 +449,11 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   taskTextDarkColor: '#000000',
   // Matches `textColor`: light text for a label that overflows onto the dark page background.
   taskTextOutsideColor: '#fafafa',
-  taskTextClickableColor: '#c7c7c7',
+  // Round 5: matches `textColor`/`taskTextOutsideColor` -- clears >=5:1 against the dark plain/
+  // active/crit bars a clickable label can sit on; the done bar (hardcoded `lightgrey`) is
+  // handled separately via `getMermaidThemeCSS`'s `themeCSS` override. See this key's own
+  // interface comment.
+  taskTextClickableColor: '#fafafa',
   // Matches `textColor` (round 4): Mermaid's own default here (`darkTextColor`, an idiosyncratic
   // near-white) measured only 3.07:1 against `critBkgColor` below before this file set an
   // explicit value -- see this file's own header comment, point 1.
@@ -348,8 +466,9 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   // narrowed to the luminance band that satisfies both at once. See point 1.
   critBkgColor: '#db0000',
   // Fixed hue-separated palette (measured, not derived from `primaryColor`): blue, green,
-  // amber, purple, pink, yellow, cyan, light-red, periwinkle, mint, peach, lime. Each >=8.3:1
-  // against `--card`/`--background` and against `pieSectionTextColor` (`#000000`) below. Unlike
+  // amber, purple, pink, yellow, cyan, light-red, periwinkle, mint, peach, lime. Each >=6.98:1
+  // against `--card`/`--background` (round 5: corrected from a stale `>=8.3:1` claim here) and
+  // >=8.89:1 against `pieSectionTextColor` (`#000000`) below. Unlike
   // `cScale11` (see that key's own comment), `pie12` has no shared-variable conflict -- Mermaid's
   // pie renderer reads `pie1`-`pie12` directly as a plain array (no CSS-cascade reuse), so it
   // stays bright like every other slot instead of needing `cScale11`'s muted compromise.
@@ -397,19 +516,23 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   cScaleInv9: '#b5b5b5',
   cScaleInv10: '#b5b5b5',
   cScaleInv11: '#b5b5b5',
-  // Same bright palette as `cScale0`-`cScale7` -- journey/gitGraph's own separate fill family.
-  fillType0: '#76a9ff',
-  fillType1: '#21df9b',
-  fillType2: '#ffb734',
-  fillType3: '#d492ff',
-  fillType4: '#ff8492',
-  fillType5: '#ffe066',
-  fillType6: '#9bf6ff',
-  fillType7: '#ffadad',
+  // Round 5: eight distinct, hue-separated MID-TONE colours (see this key's own interface
+  // comment) -- journey/gitGraph's own separate fill family, no longer the bright
+  // `cScale0`-`cScale7` palette (that put this theme's near-white `textColor` on a light fill).
+  fillType0: '#2d71b6',
+  fillType1: '#247e51',
+  fillType2: '#966420',
+  fillType3: '#954bcb',
+  fillType4: '#ca3359',
+  fillType5: '#816d1b',
+  fillType6: '#287989',
+  fillType7: '#c73e32',
   // Round 4: gitGraph's own commit-dot fills are a FOURTH separate "N-way qualitative fill"
   // family (`git0`-`git7`), derived by default from `secondaryColor` (near-zero-saturation dark
   // grey) lightened by a fixed amount -- measured 2.54:1 against `--card`, the same collapse
-  // pattern as `fillType`/`cScale` before each was fixed. Same bright palette reused again.
+  // pattern as `fillType`/`cScale` before each was fixed. Same bright palette reused again
+  // (unlike `fillType` above, `git<N>`'s own label text is NOT drawn on top of the fill itself --
+  // it sits in a separate pill, coloured by `gitBranchLabel<N>` below -- so `git<N>` stays bright).
   git0: '#76a9ff',
   git1: '#21df9b',
   git2: '#ffb734',
@@ -417,7 +540,20 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   git4: '#ff8492',
   git5: '#ffe066',
   git6: '#9bf6ff',
-  git7: '#ffadad'
+  git7: '#ffadad',
+  // Round 5 (corroborated by two independent reviewers): Mermaid's shipped `git/styles.js` only
+  // defaults this to a theme value when unset -- never set here before, so it fell through to
+  // Mermaid's own light-grey default, measured 1.15-1.56:1 against the bright `git0`-`git7`
+  // pills above. Pure black clears >=8.89:1 against every one of them. See this key's own
+  // interface comment.
+  gitBranchLabel0: '#000000',
+  gitBranchLabel1: '#000000',
+  gitBranchLabel2: '#000000',
+  gitBranchLabel3: '#000000',
+  gitBranchLabel4: '#000000',
+  gitBranchLabel5: '#000000',
+  gitBranchLabel6: '#000000',
+  gitBranchLabel7: '#000000'
  },
  'dark-high-contrast': {
   // `.theme-dark-high-contrast`'s own CSS custom properties (globals.css): `--background:
@@ -439,6 +575,9 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   textColor: '#ffffff',
   darkMode: true,
   altSectionBkgColor: '#242424',
+  // Round 5: matches `altSectionBkgColor` -- see this key's own interface comment.
+  sectionBkgColor: '#242424',
+  sectionBkgColor2: '#242424',
   // `--popover: oklch(0.14 0 0)` / `--popover-foreground: oklch(1 0 0)`.
   noteBkgColor: '#090909',
   noteTextColor: '#ffffff',
@@ -447,7 +586,8 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   taskTextDarkColor: '#000000',
   // Matches `textColor`: light text for a label that overflows onto the dark page background.
   taskTextOutsideColor: '#ffffff',
-  taskTextClickableColor: '#e0e0e0',
+  // Round 5: same reasoning as `dark`'s own comment on this key. Matches `textColor`.
+  taskTextClickableColor: '#ffffff',
   // Matches `textColor` (round 4). See `dark`'s own comment on this key.
   taskTextColor: '#ffffff',
   // Same value as `dark` (round 4): measured 5.23:1 against `taskTextColor` above and 3.80:1
@@ -501,14 +641,18 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   cScaleInv9: '#cecece',
   cScaleInv10: '#cecece',
   cScaleInv11: '#cecece',
-  fillType0: '#76a9ff',
-  fillType1: '#21df9b',
-  fillType2: '#ffb734',
-  fillType3: '#d492ff',
-  fillType4: '#ff8492',
-  fillType5: '#ffe066',
-  fillType6: '#9bf6ff',
-  fillType7: '#ffadad',
+  // Round 5: same eight mid-tone colours as `dark` -- see that theme's own comment on this key
+  // and the `fillType0`-`fillType7` interface comment (the shared luminance window clears both
+  // themes' constraints at once).
+  fillType0: '#2d71b6',
+  fillType1: '#247e51',
+  fillType2: '#966420',
+  fillType3: '#954bcb',
+  fillType4: '#ca3359',
+  fillType5: '#816d1b',
+  fillType6: '#287989',
+  fillType7: '#c73e32',
+  // Same bright palette as `dark` -- see that theme's own comment on this key.
   git0: '#76a9ff',
   git1: '#21df9b',
   git2: '#ffb734',
@@ -516,6 +660,67 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   git4: '#ff8492',
   git5: '#ffe066',
   git6: '#9bf6ff',
-  git7: '#ffadad'
+  git7: '#ffadad',
+  // Round 5: same reasoning as `dark`'s own comment on this key.
+  gitBranchLabel0: '#000000',
+  gitBranchLabel1: '#000000',
+  gitBranchLabel2: '#000000',
+  gitBranchLabel3: '#000000',
+  gitBranchLabel4: '#000000',
+  gitBranchLabel5: '#000000',
+  gitBranchLabel6: '#000000',
+  gitBranchLabel7: '#000000'
  }
+}
+
+// Quality-gate remediation (round 5, corroborated by two independent reviewers measuring the
+// real rendered DOM): three real Mermaid CSS gaps that no `themeVariables` key can patch alone
+// -- each needs an ADDITIONAL CSS rule injected via Mermaid's own documented `themeCSS` init
+// option (`mermaid.initialize({ ..., themeCSS: getMermaidThemeCSS(activeThemeId) })`, see
+// Markdown.tsx's own call site), which Mermaid's `createUserStyles` appends -- already scoped to
+// the diagram's own `#id` automatically -- after Mermaid's own generated stylesheet, so a rule
+// here can out-specificity one of Mermaid's shipped rules without touching node_modules:
+//
+// 1. Gantt active/activeCrit overflow labels -- see this file's header comment, point 1. A
+//    two-class selector Mermaid's shipped `gantt/styles.js` never defines for these states
+//    (`.activeText<N>.taskTextOutsideLeft`/`Right`, `.activeCritText<N>.taskTextOutsideLeft`/
+//    `Right`) beats the single-class `!important` rule meant for the INSIDE-bar case on
+//    specificity alone (two classes beat one, regardless of source order, since both are
+//    `!important`) -- measured 8.89-19.25:1 afterward, up from 1.05-2.26:1.
+// 2. Gantt clickable task labels -- see `taskTextClickableColor`'s own interface comment. A
+//    three-class override (`.taskText.clickable.doneText<N>`) beats Mermaid's generic two-class
+//    `.taskText.clickable` rule the same way, so only the done-bar case (Mermaid's hardcoded,
+//    non-themeable `lightgrey` `doneTaskBkgColor`) gets a dark fill; every other bar a clickable
+//    label can sit on is handled by `taskTextClickableColor` itself.
+// 3. Timeline section-10 -- see `cScale11`'s own interface comment. Mermaid's own
+//    `.eventWrapper { filter: brightness(120%) }` rule brightens every timeline event's fill
+//    AFTER it is declared, a post-paint effect no `themeVariables` key can see or patch --
+//    neutralising the filter outright removes the discrepancy (every other slot had enough
+//    margin that the brightening never pushed it below 4.5:1 in the first place).
+//
+// KNOWN LIMITATION: the background-resolution logic in scripts/check-mermaid-contrast.mjs that
+// verifies all three of these models ONLY the `brightness()` filter function (the one real case
+// above), not Mermaid's full CSS `filter` grammar (`contrast()`, `saturate()`, `hue-rotate()`,
+// `grayscale()`, `sepia()`, `invert()`, `blur()`, `drop-shadow()`) -- a future diagram fixture
+// that relies on one of those would silently under- or over-state its measured contrast until
+// that script's own filter handling is widened to match.
+export function getMermaidThemeCSS(themeId: ThemeId): string {
+ const t = MERMAID_THEME_VARIABLES[themeId]
+ const overflowStates = ['activeText', 'activeCritText']
+ const overflowSelectors = overflowStates
+  .flatMap((state) => [0, 1, 2, 3].map((n) => `${state}${n}`))
+  .flatMap((cls) => [`.${cls}.taskTextOutsideLeft`, `.${cls}.taskTextOutsideRight`])
+  .join(',\n  ')
+ const doneClickableSelectors = [0, 1, 2, 3].map((n) => `.taskText.clickable.doneText${n}`).join(',\n  ')
+ return `
+  ${overflowSelectors} {
+    fill: ${t.taskTextOutsideColor} !important;
+  }
+  ${doneClickableSelectors} {
+    fill: ${t.taskTextDarkColor} !important;
+  }
+  .eventWrapper {
+    filter: none !important;
+  }
+`
 }

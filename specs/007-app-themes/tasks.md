@@ -450,6 +450,61 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   plain-text fallback, and the reduced-motion check -- unchanged from the prior round's code
   (neither was touched by this remediation), out of scope for the Critical/High-fix focus.
 
+  **Quality-gate remediation (round 5, T017):** round 4 shipped with
+  `scripts/check-mermaid-contrast.mjs` reporting 182/182 PASS. Two independent reviewers
+  (code-reviewer, accessibility-auditor) each built their OWN from-scratch harness against the
+  real rendered DOM (computed style + `elementsFromPoint` hit-testing, not round 4's regex over
+  the serialized `<style>` block text, which can only read a rule's DECLARED value, never ask
+  which rule actually wins the cascade or what shape is actually underneath a piece of text) and
+  independently converged on the same 3 real failures: (1) Gantt active/activeCrit overflow
+  labels, 1.05-2.26:1 -- Mermaid's shipped `gantt/styles.js` only defines the
+  `<state>Text<N>.taskTextOutside{Left,Right}` combinator override needed for an overflowing
+  label for `doneText*`/`doneCritText*`, never for `activeText*`/`activeCritText*`; fixed via a
+  new `themeCSS` init option (`getMermaidThemeCSS` in mermaidTheme.ts) injecting that same
+  combinator for the active states too -- measured 8.89-19.25:1 afterward. (2) gitGraph
+  branch-name labels, 1.15-1.56:1 -- `gitBranchLabel0`-`gitBranchLabel7` were never set, so
+  Mermaid's own light-grey default rendered against this file's bright `git0`-`git7` pill fills;
+  now explicit `#000000` in both themes, >=8.89:1. (3) Journey task/section labels, 1.18-2.36:1,
+  a NEW regression this round -- the round-4 fix assumed Journey labels are SVG `<text>` matching
+  Mermaid's hardcoded `.label text { fill: #333 }` rule; they are actually a `<div class="label">`
+  inside a `<foreignObject>`, styled by Mermaid's OTHER `.label { color: textColor }` rule (this
+  app's own near-white `textColor`), so the round-4 bright `fillType0`-`fillType7` palette put
+  light text on a light fill; now eight mid-tone colours (same two-constraint technique as
+  `cScale11`), measured >=4.8:1 against `textColor` and >=3.2:1 against `--card` in both themes.
+  Two Medium-severity gaps fixed in the same pass: Timeline section-10 (`cScale11`) measured
+  3.91:1, not the declared 5.12:1/5.34:1 -- Mermaid's own `.eventWrapper { filter: brightness(120%)
+  }` rule brightens every timeline event's fill after it is declared, a post-paint effect no
+  `themeVariables` key can patch; neutralised via the same `themeCSS` mechanism
+  (`.eventWrapper { filter: none !important }`). Gantt clickable-task labels measured ~1.13:1
+  against the done bar (Mermaid's own hardcoded, non-themeable `lightgrey`) -- `taskTextClickableColor`
+  is now near-white (clears the dark plain/active/crit bars) with a `themeCSS` override
+  (`.taskText.clickable.doneText<N>`) forcing `taskTextDarkColor` for the done-bar case alone. A
+  third, previously-undocumented gap surfaced by the same real-DOM methodology while building the
+  widened fixtures below: Gantt's EVEN section rows (`.section0`/`.section2`) read a SEPARATE
+  `sectionBkgColor`/`sectionBkgColor2` variable pair this file never set (only
+  `altSectionBkgColor`, which covers the ODD rows), leaving Mermaid's own un-reviewed default in
+  effect; the plain crit bar measured only 2.15:1/2.77:1 blended with that default over `--card`,
+  under the 3:1 floor -- now matches `altSectionBkgColor` in both themes, >=3.06:1. Also fixed:
+  AppMenuBar.tsx's round-4 `event.repeat` Escape guard was provably ineffective (by the time a
+  held Escape's repeat keydown fires, that listener has already unmounted after the first,
+  genuine Escape closed the bar) -- removed from AppMenuBar.tsx and the real guard added to
+  AppearanceSection.tsx's own Escape handler instead, the listener that is actually still attached
+  when the repeat event arrives. `scripts/check-mermaid-contrast.mjs` was rewritten from the
+  CSS-text-pattern-matching methodology described above to the reviewers' real-DOM approach
+  (new `scripts/mermaid-contrast-measure.mjs`: renders each fixture, inserts the SVG into a live
+  page, and for every leaf text/shape element reads `getComputedStyle` plus an
+  `elementsFromPoint` hit-test of whatever is actually painted behind it, alpha-compositing every
+  layer found including any `brightness()` CSS filter) and its fixtures widened (Timeline 4 -> 12
+  sections to reach `cScale11`/section-10; gitGraph 2 -> 8 branches to reach every
+  `git<N>`/`gitBranchLabel<N>` slot; Gantt's Overflow section gained an active+crit combined
+  overflowing row). `pnpm typecheck`/`build` clean;
+  `node scripts/check-mermaid-contrast.mjs` now reports `all 426 mermaid colour checks across 2
+  theme(s) PASS`, exit 0 (up from 28 checks round 4 -- every diagram type's every real text/shape
+  leaf is now measured generically, not one hand-picked selector per diagram). Stale comments
+  corrected in the same pass: an `>=8.3:1` pie-palette claim (actually 6.98:1 against `--card`,
+  `pie1`/`#76a9ff` the weakest slot) and a "themeCSS can't fix this" claim for the Gantt
+  active-overflow case (it can -- see above).
+
 
 **Checkpoint**: run quickstart Story 3.
 

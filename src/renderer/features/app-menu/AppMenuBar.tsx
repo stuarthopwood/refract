@@ -89,14 +89,15 @@ export function AppMenuBar() {
       // checks exactly this -- see its 'role="menubar"' guard for the order-independent half of
       // this fix).
       //
-      // Quality-gate remediation (Low, round 4): holding Escape down auto-repeats a `keydown`
-      // (~500ms after the first, then faster) -- by the time the SECOND event fires, `visible`
-      // is already `false` and the bar has closed, but this listener is still attached (its own
-      // cleanup only runs on the NEXT render once React processes the `setVisible(false)` from
-      // the first event), so it fires again, calling `preventDefault` on an Escape the bar no
-      // longer owns and cancelling a preview the first Escape never touched either. `event.repeat`
-      // is only ever `true` on these synthetic auto-repeat events, never the original keypress.
-      if (event.repeat) return
+      // Quality-gate remediation (round 5): a round-4 `if (event.repeat) return` guard used to
+      // live here, reasoning that it stopped a held-down Escape's auto-repeat from reaching
+      // AppearanceSection.tsx's own preview-cancel listener. It did not: by the time the repeat
+      // keydown fires (~500ms after the first), this effect's cleanup has already removed this
+      // very listener (React re-rendered after the first event's `setVisible(false)`), so the
+      // repeat event was never intercepted here regardless -- it fell straight through to
+      // AppearanceSection.tsx's listener either way. The real fix now lives there instead (see
+      // that file's own comment). Guarding here was harmless but pointless, so it is removed
+      // along with the comment that claimed it worked.
       if (event.key === 'Escape') {
         event.preventDefault()
         setVisible(false)

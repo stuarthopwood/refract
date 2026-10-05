@@ -58,6 +58,18 @@ export function AppearanceSection() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape' || event.defaultPrevented) return
+      // Quality-gate remediation (round 5, a11y -- corroborated by two independent reviewers):
+      // holding Escape down to close AppMenuBar.tsx's Alt-opened bar auto-repeats a `keydown`
+      // (~500ms after the first, then faster). By the time that repeat event fires, AppMenuBar's
+      // own listener has already unmounted (it closed on the first, genuine Escape), so the
+      // repeat event reaches only this listener, and AppMenuBar's root (and the `role="menubar"`
+      // guard below) is already gone from the DOM too -- nothing stopped this handler from
+      // treating the repeat as a brand-new Escape and cancelling an in-progress theme preview the
+      // user never intended to touch. A round-4 fix tried to solve this from AppMenuBar.tsx's own
+      // side instead (an `event.repeat` guard there); it never worked, for the same reason (that
+      // listener is already gone by repeat time) -- see AppMenuBar.tsx's own comment. The actual
+      // fix has to live here, on the listener that is still attached when the repeat arrives.
+      if (event.repeat) return
       // Quality-gate remediation (HIGH): the old `[role="dialog"]` selector (and no
       // `defaultPrevented` check) stole Escape from the Alt menu bar and any Radix
       // menu/listbox too, silently cancelling an unrelated preview -- narrowed to spec 005's
