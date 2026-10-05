@@ -1,6 +1,8 @@
 // Data stored or held by Refract, and the shapes Refract derives from OMP.
 // Field names and literal unions follow specs/001-core-session-workspace/data-model.md exactly.
 
+import type { ThemeId } from './themes';
+
 /** A local git project the developer has added to Refract. Owns zero or more Sessions. */
 export interface Repository {
   id: string; // uuid
@@ -51,6 +53,7 @@ export interface Settings {
   approvalMode: ApprovalMode; // default 'ask'
   sessionReadout: Record<ReadoutKind, boolean>; // spec 004 FR-012 to FR-014
   split: SplitLayout | null; // spec 005: null = single pane, no split open
+  theme: ThemeId; // spec 007 FR-018: default 'dark'
 }
 
 /** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the

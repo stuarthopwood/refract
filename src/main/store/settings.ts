@@ -4,6 +4,8 @@ import path from 'node:path'
 import { readJsonFile, writeJsonFile } from './atomicJson'
 import { DEFAULT_SESSION_READOUT } from '../../shared/model'
 import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model'
+import { isThemeId } from '../../shared/themes'
+import type { ThemeId } from '../../shared/themes'
 
 // Quality-gate remediation (security-auditor, HIGH, independent of ipc/settings.ts's own
 // validation): a hand-edited or already-corrupt settings.json bypasses the IPC handler entirely
@@ -25,12 +27,20 @@ function isValidSplitLayout(value: unknown): value is SplitLayout {
 export class SettingsStore {
   private constructor(
     private readonly file: string,
-    private data: Settings
+    private data: Settings,
+    // Quality-gate remediation (HIGH): the exact, pre-correction `theme` value as it was
+    // actually in settings.json (a real ThemeId once the developer has ever saved a theme
+    // choice, otherwise `undefined` -- missing key or invalid/corrupt value, never trusted
+    // here). Kept separate from `this.data.theme` (always the corrected, in-memory value
+    // every reader needs) so an UNRELATED setter's own whole-row write below never silently
+    // persists FR-013's in-memory correction to disk on the user's behalf -- only `setTheme`
+    // itself, a real save, is allowed to turn this from `undefined`/stale into the new value.
+    private rawTheme: ThemeId | undefined
   ) {}
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark' }))
     // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
     // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
     // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
@@ -45,24 +55,56 @@ export class SettingsStore {
     if (data.split !== null && !isValidSplitLayout(data.split)) {
       data.split = null
     }
-    return new SettingsStore(file, data)
+    // Spec 007 data-model.md "Extended Settings", FR-013: an existing settings.json written
+    // before this spec has no `theme` key at all (the same missing-key migration as
+    // `sessionReadout`/`split` above), and a value that IS present but is not a key of `THEMES`
+    // (a theme a later app update removed) is treated as the default preset for every read --
+    // the bootstrap read, the picker's marked entry, and `theme-store.ts`'s derivation -- without
+    // requiring a save; the same lazy-correction pattern `isValidSplitLayout` above already uses
+    // for `split`. (Quality-gate remediation, round 2: this previously claimed the correction
+    // 'does not rewrite the file until the developer actually saves a theme choice' -- not quite
+    // true. An UNRELATED setter's own whole-row write (`persistWhole` below) still rewrites the
+    // whole file immediately; it just writes `rawTheme`, so the missing/invalid key is silently
+    // DROPPED from the file on that save rather than being corrected into it -- same practical
+    // end state the old wording described, reached a different way.)
+    //
+    // Quality-gate remediation (HIGH): `rawTheme` captures the value exactly as it was BEFORE
+    // this correction -- `undefined` for both the "missing key" and "present but invalid" cases
+    // -- so the correction below only ever changes what `this.data.theme` (and so every reader)
+    // sees in memory; see the constructor's own comment for why the two must stay separate.
+    const rawTheme = isThemeId(data.theme) ? data.theme : undefined
+    if (!isThemeId(data.theme)) {
+      data.theme = 'dark'
+    }
+    return new SettingsStore(file, data, rawTheme)
   }
 
   get(): Settings {
     return { ...this.data }
   }
 
+  // Quality-gate remediation (HIGH): every setter below that persists the WHOLE row (every one
+  // except `setTheme` itself) must write `rawTheme` -- the value exactly as it was last actually
+  // on disk, not `this.data.theme`'s possibly FR-013-corrected in-memory value -- so an unrelated
+  // save (approval mode, readout visibility, split) never silently writes that correction to
+  // settings.json on the user's behalf. `JSON.stringify` drops an `undefined` value entirely, so
+  // `rawTheme === undefined` naturally reproduces "no theme key written yet" on disk, exactly
+  // matching the pre-existing migration/lazy-correction comments above.
+  private async persistWhole(next: Settings): Promise<Settings> {
+    this.data = next
+    await writeJsonFile(this.file, { ...next, theme: this.rawTheme as ThemeId })
+    return { ...next }
+  }
+
   async setApprovalMode(mode: ApprovalMode): Promise<Settings> {
     const next = { ...this.data, approvalMode: mode }
-    this.data = next
-    await writeJsonFile(this.file, next)
     // Return this call's own written value, not `this.get()`: a concurrent caller's later
     // `setApprovalMode` may already have overwritten the shared `this.data` by the time this
     // write's promise resolves, which would otherwise hand every racing caller the same
     // (wrong, most-recent) mode instead of the one it actually asked to set -- and
     // `ipc/settings.ts` feeds that value straight into `applyPendingModeChange`, so a stale
     // read there could launch a live Session in someone else's requested mode.
-    return { ...next }
+    return this.persistWhole(next)
   }
 
   /** `settings.setReadoutVisibility(kind, visible)` (spec 004 FR-012 to FR-014, contracts/ipc.md):
@@ -71,9 +113,7 @@ export class SettingsStore {
    * shared read). */
   async setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<Settings> {
     const next = { ...this.data, sessionReadout: { ...this.data.sessionReadout, [kind]: visible } }
-    this.data = next
-    await writeJsonFile(this.file, next)
-    return { ...next }
+    return this.persistWhole(next)
   }
 
   /** `settings.setSplit(layout)` (spec 005 FR-014/FR-015/data-model.md, contracts/ipc.md): persists
@@ -82,7 +122,21 @@ export class SettingsStore {
    * starts, stops, or touches any agent -- this call only ever writes the stored layout. */
   async setSplit(layout: SplitLayout | null): Promise<Settings> {
     const next = { ...this.data, split: layout }
+    return this.persistWhole(next)
+  }
+
+  /** `theme.set(themeId)` (spec 007 FR-004, contracts/ipc.md): persists the chosen theme as the
+   * one Refract starts in and follows afterwards, the same race-safety pattern as every setter
+   * above (returns this call's own written value, never a possibly-superseded shared read). The
+   * caller (`src/main/ipc/theme.ts`) validates `themeId` against `THEMES` before calling this --
+   * this method trusts it, same division of responsibility as `setApprovalMode`/`APPROVAL_MODES`. */
+  async setTheme(themeId: ThemeId): Promise<Settings> {
+    const next = { ...this.data, theme: themeId }
     this.data = next
+    // The one and only place allowed to turn `rawTheme` into a real, developer-saved value --
+    // every other setter above goes through `persistWhole`, which deliberately writes the OLD
+    // `rawTheme` back, not this new one, until this method itself runs.
+    this.rawTheme = themeId
     await writeJsonFile(this.file, next)
     return { ...next }
   }

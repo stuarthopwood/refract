@@ -62,7 +62,8 @@ These OMP facts are unverified and are checked before the work that depends on t
 **Story 2: choose which readouts show (FR-011 to FR-016)**
 
 1. Open Settings (the temporary gear affordance this spec adds, until spec 008's profile-item cog
-   exists — research.md decision 7). Expect: a single "Session readout" section lists Changes,
+   exists — research.md decision 7). Expect: two sections, "Session readout" (this spec) and
+   "Appearance" (spec 007's theme picker) — the Session readout section lists Changes,
    Context window usage, Turn time, Current time, Pull request, Subagents, and Todo progress, each
    with its own on/off control; on a never-changed install, every one is on except Current time.
 2. Turn Current time on. Expect: every open Session's chip row shows it within about 1 s, with no

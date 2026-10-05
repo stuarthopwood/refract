@@ -4,6 +4,7 @@
 
 import type { ApprovalMode, ConversationInfo, DiffStat, PendingRequest, ReadoutKind, Repository, Session, SessionReadout, SessionStatus, Settings, SplitLayout, SubagentSummary, TranscriptItem } from './model';
 import type { ImageContent, SlashCommandDescriptor } from './frames';
+import type { ThemeId } from './themes';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
@@ -41,7 +42,8 @@ export type IpcErrorCode =
   | 'worktree-missing'
   | 'clipboard-failed'
   | 'unsupported-image-type'
-  | 'image-too-large';
+  | 'image-too-large'
+  | 'invalid-theme';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -191,6 +193,8 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   SETTINGS_SET_SPLIT: 'settings.setSplit',
   WINDOW_POPUP_MENU: 'window.popupMenu',
+  THEME_PREVIEW: 'theme.preview',
+  THEME_SET: 'theme.set',
 } as const;
 
 export const IPC_EVENTS = {
@@ -208,6 +212,14 @@ export const IPC_EVENTS = {
   SUBAGENTS_UPDATE: 'subagents:update',
   SUBAGENT_PATCH: 'subagent:patch',
 } as const;
+
+/** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
+ * `Result<T>`-shaped -- a synchronous `ipcRenderer.sendSync` request/response pair answered by a
+ * synchronous `ipcMain.on` handler, called once from `main.tsx`'s very first lines before React
+ * mounts (FR-012/SC-003, research.md decision 4, confirmed live: FINDINGS.md item 42). Kept out
+ * of `IPC_REQUESTS` (every other entry there is `ipcMain.handle`/`ipcRenderer.invoke`, async) and
+ * out of `IPC_EVENTS` (main-pushed, no reply) since it is neither. */
+export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 
 // ---------------------------------------------------------------------------
 // window.refract
@@ -321,6 +333,26 @@ export interface RefractApi {
      * `getBoundingClientRect()` already gives. */
     popupMenu(menuId: AppMenuId, x: number, y: number): Promise<Result<void>>;
   };
+
+  theme: {
+    /** Spec 007 FR-003 to FR-005, FR-017: live-only, never persisted. Moves the window's
+     * title-bar overlay colour to the previewed theme; `null` reverts it to the current saved
+     * theme. Every other surface repaints in the renderer directly from `theme-store.ts`'s
+     * derived class -- no round trip for those. */
+    preview(themeId: ThemeId | null): Promise<Result<void>>;
+    /** Spec 007 FR-004: persists `themeId` as the app's lasting choice (`invalid-theme` for an
+     * id that is not a key of `THEMES`), applies the same title-bar overlay update, and
+     * broadcasts `settings:changed`. */
+    set(themeId: ThemeId): Promise<Result<Settings>>;
+  };
+
+  /** Spec 007 contracts/ipc.md "Bootstrap": synchronous, called once from `main.tsx`'s very
+   * first lines, before React mounts and before any class is set on `<html>` -- replaces the old
+   * hardcoded `document.documentElement.classList.add('dark')`. Blocks the renderer's single JS
+   * thread for one cheap, one-time call (confirmed live at ~0.6ms, FINDINGS.md item 42) so
+   * nothing paints before the right theme class is already set (FR-012/SC-003). Not
+   * `Result<T>`-shaped: there is nothing to fail. */
+  themeBootstrap(): { theme: ThemeId };
 
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;
   onSessionListChanged(handler: () => void): Unsubscribe;

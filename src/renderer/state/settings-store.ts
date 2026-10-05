@@ -12,7 +12,7 @@ interface SettingsState {
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
 // readout chips show.
-export const DEFAULT_SETTINGS: Settings = { version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null }
+export const DEFAULT_SETTINGS: Settings = { version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark' }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   settings: DEFAULT_SETTINGS,
