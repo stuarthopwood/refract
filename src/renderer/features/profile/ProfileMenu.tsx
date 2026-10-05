@@ -18,12 +18,16 @@
 // nothing is worse than no control): the update entry lands between Keyboard shortcuts and
 // Health check once spec 006 ships `updates.get()`/`updates:changed` (tasks.md T024b) -- no
 // `updates` IPC, preload method, or store exists yet.
+import { useRef, useState } from 'react'
 import {
   ActivityIcon,
   CheckIcon,
+  DownloadIcon,
   ExternalLinkIcon,
   KeyboardIcon,
   LayersIcon,
+  LoaderCircleIcon,
+  LogInIcon,
   LogOutIcon,
   PaletteIcon,
   SlidersHorizontalIcon,
@@ -68,18 +72,30 @@ export interface ProfileMenuContentProps {
 }
 
 /** The Theme submenu (FR-019, T022): every built-in preset in `THEMES`' own declaration order,
- *  the active one marked by both a check icon and the word "Current" (never colour alone), with
- *  the exact swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already uses (each
- *  theme's own real `--background` value, not an invented accent). Choosing a DIFFERENT preset
- *  saves it immediately via `useThemeStore.getState().save` (a menu is a transient overlay --
- *  Settings' own Appearance section is where a live preview with Save/Cancel belongs); choosing
- *  the already-active preset is a deliberate no-op, the same FR-002/FR-006 deviation note
- *  ThemePicker.tsx's own `choose` already documents. Selecting either a preset or "Appearance
- *  settings…" closes the whole menu and returns focus to the profile item's name button via
- *  Radix's own default close-auto-focus (no `Trigger`-less dialog is opened here, so that
- *  default -- unlike ManageAccountsDialog/SignOutDialog's -- is exactly the right behaviour). */
+ *  the active one marked by a check icon, the word "Current", AND the same shared 2px
+ *  `--active-indicator` bar every other "current/selected" surface in the app uses
+ *  (docs/DESIGN.md "Active/selected indicator"; never colour alone), with the exact
+ *  swatch-by-data-not-by-hardcoded-hex approach ThemePicker.tsx already uses (each theme's own
+ *  real `--background` value, not an invented accent). Choosing a DIFFERENT preset saves it
+ *  immediately via `useThemeStore.getState().save` (a menu is a transient overlay -- Settings'
+ *  own Appearance section is where a live preview with Save/Cancel belongs); choosing the
+ *  already-active preset is a deliberate no-op, the same FR-002/FR-006 deviation note
+ *  ThemePicker.tsx's own `choose` already documents. Selecting a preset closes the whole menu
+ *  and returns focus to the profile item's name button via Radix's own default close-auto-focus
+ *  (no `Trigger`-less dialog is opened here, so that default is exactly right); selecting
+ *  "Appearance settings…" instead opens the Settings screen, which unmounts ProfileItem
+ *  entirely, so focus goes to Settings' own first focusable control instead. The submenu is
+ *  controlled (`open`/`onOpenChange`) so that opening it moves focus to the active preset --
+ *  but only when the submenu was opened by keyboard (the `contains` check below leaves a
+ *  pointer-hover open alone, since a mouse user never wants focus silently stolen). Radix alone
+ *  would otherwise focus the first item in `THEME_LIST`, which only happened to be the active
+ *  preset while "Dark" (the first theme) was also current -- any other active preset, e.g.
+ *  "Dark (high contrast)", left a habitual Enter press on the wrong, first-listed row. */
 function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void }) {
   const activeId = useActiveThemeId()
+  const [open, setOpen] = useState(false)
+  const subContentRef = useRef<HTMLDivElement>(null)
+  const activeItemRef = useRef<HTMLDivElement>(null)
 
   function chooseTheme(id: ThemeId, name: string): void {
     if (id === activeId) return
@@ -89,28 +105,47 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
   }
 
   return (
-    <DropdownMenuSub>
+    <DropdownMenuSub
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) return
+        requestAnimationFrame(() => {
+          if (subContentRef.current?.contains(document.activeElement)) {
+            activeItemRef.current?.focus()
+          }
+        })
+      }}
+    >
       <DropdownMenuSubTrigger>
         <PaletteIcon aria-hidden />
         Theme
       </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent sideOffset={4} alignOffset={-4} collisionPadding={8}>
-        {THEME_LIST.map((theme) => (
-          <DropdownMenuItem key={theme.id} onSelect={() => chooseTheme(theme.id, theme.name)}>
-            <span
-              aria-hidden
-              className="size-3.5 shrink-0 rounded-full border border-border"
-              style={{ backgroundColor: theme.swatch }}
-            />
-            <span className="flex-1">{theme.name}</span>
-            {theme.id === activeId && (
-              <span className="flex items-center gap-1 text-xs font-medium">
-                <CheckIcon aria-hidden className="size-3.5" />
-                Current
-              </span>
-            )}
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuSubContent ref={subContentRef} sideOffset={4} alignOffset={-4} collisionPadding={8}>
+        {THEME_LIST.map((theme) => {
+          const isActive = theme.id === activeId
+          return (
+            <DropdownMenuItem
+              key={theme.id}
+              ref={isActive ? activeItemRef : undefined}
+              onSelect={() => chooseTheme(theme.id, theme.name)}
+            >
+              {isActive && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-active-indicator" />}
+              <span
+                aria-hidden
+                className="size-4 shrink-0 rounded-full border border-border"
+                style={{ backgroundColor: theme.swatch }}
+              />
+              <span className="flex-1">{theme.name}</span>
+              {isActive && (
+                <span className="flex items-center gap-1 text-xs font-medium">
+                  <CheckIcon aria-hidden className="size-3.5" />
+                  Current
+                </span>
+              )}
+            </DropdownMenuItem>
+          )
+        })}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => useViewStore.getState().openSettings('appearance')}>
           <SlidersHorizontalIcon aria-hidden />
@@ -171,7 +206,7 @@ export function ProfileMenuContent({
       align="start"
       sideOffset={6}
       collisionPadding={8}
-      className="w-64 max-h-[calc(100vh-4.5rem)] overflow-y-auto"
+      className="w-64 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto"
     >
       {githubStatus === 'ready' && account ? (
         <>
@@ -207,8 +242,9 @@ export function ProfileMenuContent({
         <>
           <DropdownMenuItem asChild>
             <a href="https://cli.github.com" target="_blank" rel="noreferrer noopener" className="flex items-center gap-2">
-              <ExternalLinkIcon aria-hidden />
-              Install GitHub CLI
+              <DownloadIcon aria-hidden />
+              <span className="flex-1">Install GitHub CLI</span>
+              <ExternalLinkIcon aria-hidden className="size-3.5" />
             </a>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onManageAccounts}>
@@ -223,9 +259,12 @@ export function ProfileMenuContent({
           <ThemeSubmenu onThemeApplied={onThemeApplied} />
           <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
         </>
-      ) : githubStatus === 'signed-out' ? (
+      ) : githubStatus === 'signed-out' || githubStatus === 'ready' ? (
         <>
-          <DropdownMenuItem onSelect={onSignIn}>Sign in to GitHub…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onSignIn}>
+            <LogInIcon aria-hidden />
+            Sign in to GitHub…
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={onManageAccounts}>
             <UsersIcon aria-hidden />
             Manage accounts
@@ -239,7 +278,23 @@ export function ProfileMenuContent({
           <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
         </>
       ) : (
-        <DropdownMenuItem disabled>Sign in to GitHub…</DropdownMenuItem>
+        <>
+          <DropdownMenuItem disabled>
+            <LoaderCircleIcon aria-hidden className="animate-spin" />
+            Checking GitHub sign-in…
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onManageAccounts}>
+            <UsersIcon aria-hidden />
+            Manage accounts
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onManageSessions}>
+            <LayersIcon aria-hidden />
+            Manage sessions
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <ThemeSubmenu onThemeApplied={onThemeApplied} />
+          <CommonMenuItems onKeyboardShortcuts={onKeyboardShortcuts} onHealthCheck={onHealthCheck} onWhatsNew={onWhatsNew} />
+        </>
       )}
     </DropdownMenuContent>
   )

@@ -2,8 +2,8 @@
 // HONESTY RULE: lists ONLY a chord actually verified to have a working handler in this codebase
 // (a keydown listener, a textarea default, or an Electron accelerator) -- never a chord
 // docs/DESIGN.md's own "Keyboard" table documents that has no real handler behind it yet. See
-// issue (filed alongside this task) for the table's own currently-unimplemented rows; this
-// dialog is the one place that only ever shows what is really there.
+// issue #429 for the table's own currently-unimplemented rows; this dialog is the one place
+// that only ever shows what is really there.
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -47,7 +47,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     heading: 'Split view',
     rows: [
-      { action: 'Open in split (a session row)', keys: ['Ctrl', 'Click'] },
+      { action: 'Open a session in split view', keys: ['Ctrl', 'Click'] },
       { action: 'Move focus to the other pane', keys: ['Ctrl', 'Shift', '\\'] }
     ]
   }

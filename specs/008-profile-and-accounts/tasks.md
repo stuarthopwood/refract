@@ -173,6 +173,13 @@ correctly and are fully keyboard-accessible.
   visual verification NOT run by this agent (no app launch, per instruction -- the parent verifies
   live with real input events); pnpm typecheck, pnpm build, and pnpm check:ui-text (0 leaks) were
   run and passed instead.
+  -- Post-build review fixes (ui-architect-v3, Stuart 2026-10-05) applied in a follow-up pass:
+  menu loading state (Checking GitHub sign-in…), Sign in/Install GitHub CLI icon columns, the
+  dropdown's max-h switched to the Radix available-height var, the Theme submenu's
+  keyboard-open focus on the active preset and its --active-indicator bar, a caught theme.set
+  rejection, Keyboard shortcuts' no-brackets copy fix, and Health check's announcement wording,
+  doubled-state-word, missing catch, re-run layout jump, and hard-coded colour fixes -- see the
+  updated Profile item and Health check dialog bullets in docs/DESIGN.md.
 
 **Checkpoint**: run quickstart Story 4. `pnpm typecheck` and `pnpm build` pass.
 

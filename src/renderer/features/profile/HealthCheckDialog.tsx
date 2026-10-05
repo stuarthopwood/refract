@@ -5,6 +5,14 @@
 // state word VISIBLE (`showStateWord`) instead of `sr-only`, since a deliberate "run a check"
 // action reads better with it on screen. Never invents a hint string or a version number: every
 // value rendered comes straight from the real `Check` the main process returned.
+//
+// Post-build review fixes: `healthCheckAnnouncement` counts failures and warnings separately so
+// the announcement never conflates a real failure with a row that merely "needs attention" (a
+// warning); `runCheck`'s own `catch` mirrors Readiness.tsx's -- a thrown `readiness.check` marks
+// every row failed with a real hint rather than leaving "Checking…" as the last thing announced;
+// and a re-run keeps the previous `checks` on screen (dimmed, `aria-busy`) instead of passing
+// `undefined` for every row, so the dialog never shrinks and Check again never moves under the
+// pointer mid re-run.
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -27,23 +35,54 @@ function checksFromError(error: IpcError): ReadinessChecks {
   return { git: failed, omp: failed, ompSignedIn: failed }
 }
 
+function warningPhrase(count: number): string {
+  return count === 1 ? 'with a warning' : 'with warnings'
+}
+
+/** H1 (post-build review): counts failures and warnings separately, since a pass-with-a-warning
+ *  row is never a failure (CheckRow.tsx's own "Passed with a warning" state) -- the old
+ *  "{n} need attention" wording conflated the two and was also ungrammatical for n=1. Exported so
+ *  a throwaway script can verify every combination without duplicating this logic. */
+export function healthCheckAnnouncement(checks: ReadinessChecks): string {
+  let failed = 0
+  let warned = 0
+  for (const key of CHECK_ORDER) {
+    const check = checks[key]
+    if (!check.ok) failed++
+    else if (check.warning) warned++
+  }
+  if (failed > 0) {
+    const warnSuffix = warned > 0 ? `, ${warned} passed ${warningPhrase(warned)}` : ''
+    return `Health check complete. ${failed} failed${warnSuffix}.`
+  }
+  if (warned > 0) {
+    return `Health check complete. All checks passed, ${warned} ${warningPhrase(warned)}.`
+  }
+  return 'Health check complete. All checks passed.'
+}
+
 export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCheckDialogProps) {
   const [checks, setChecks] = useState<ReadinessChecks | null>(null)
   const [loading, setLoading] = useState(false)
-  const [announcement, announce] = useClearedAnnouncement()
+  const [polite, announcePolite] = useClearedAnnouncement()
+  const [assertive, announceAssertive] = useClearedAnnouncement()
   const doneRef = useRef<HTMLButtonElement>(null)
   const checkAgainRef = useRef<HTMLButtonElement>(null)
 
   async function runCheck(focusCheckAgain: boolean): Promise<void> {
     setLoading(true)
-    announce('Checking…')
+    announcePolite('Checking…')
     try {
       const result = await window.refract.readiness.check()
       const next = result.ok ? result.value : checksFromError(result.error)
       setChecks(next)
       useHealthStore.getState().setOmpCheck(next.omp)
-      const needAttention = CHECK_ORDER.filter((key) => !next[key].ok || next[key].warning).length
-      announce(needAttention === 0 ? 'Health check complete. All checks passed.' : `Health check complete. ${needAttention} need attention.`)
+      announcePolite(healthCheckAnnouncement(next))
+    } catch (error) {
+      console.debug('[refract] readiness.check: invoke failed', error)
+      const failed: Check = { ok: false, hint: 'The check could not run. Try Check again.' }
+      setChecks({ git: failed, omp: failed, ompSignedIn: failed })
+      announceAssertive('Health check couldn\'t run.')
     } finally {
       setLoading(false)
       if (focusCheckAgain) checkAgainRef.current?.focus()
@@ -61,7 +100,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="min-w-0 sm:max-w-md"
+        className="min-w-0 sm:max-w-lg"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           doneRef.current?.focus()
@@ -75,31 +114,39 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
           <DialogTitle>Health check</DialogTitle>
           <DialogDescription>Checks that Git and OMP are ready.</DialogDescription>
         </DialogHeader>
-        <ul role="list" aria-label="Health checks" aria-busy={loading || undefined} className="flex flex-col gap-3">
+        <ul
+          role="list"
+          aria-label="Health checks"
+          aria-busy={loading || undefined}
+          className={`flex flex-col gap-3${loading ? ' opacity-60' : ''}`}
+        >
           {CHECK_ORDER.map((key) => (
             <CheckRow
               key={key}
               label={CHECK_LABELS[key]}
-              check={loading ? undefined : (checks?.[key] ?? undefined)}
-              checking={loading}
+              check={checks?.[key]}
+              checking={loading && checks === null}
               showStateWord
             />
           ))}
         </ul>
         <div aria-live="polite" aria-atomic="true" className="sr-only">
-          {announcement}
+          {polite}
+        </div>
+        <div aria-live="assertive" aria-atomic="true" className="sr-only">
+          {assertive}
         </div>
         <DialogFooter>
           <Button
             ref={checkAgainRef}
             variant="outline"
             aria-disabled={loading || undefined}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            className="min-w-28 aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={() => {
               if (!loading) void runCheck(true)
             }}
           >
-            Check again
+            {loading ? 'Checking…' : 'Check again'}
           </Button>
           <Button ref={doneRef} onClick={() => onOpenChange(false)}>
             Done
