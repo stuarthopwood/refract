@@ -60,6 +60,10 @@ export interface Check {
   ok: boolean;
   found?: string;
   hint?: string;
+  /** `ok: true` with `warning: true`: the check passed but found something worth surfacing to
+   * the developer without blocking them (e.g. an omp version newer than any specifically
+   * verified one). Never set alongside `ok: false` -- a hard failure always blocks instead. */
+  warning?: boolean;
 }
 
 export interface Readiness {

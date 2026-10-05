@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import refractHero from '@/assets/brand/refract-hero.png'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
@@ -81,6 +81,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
                   <span className="text-sm">{CHECK_LABELS[key]}</span>
                   {check?.found && <span className="text-xs text-muted-foreground">{check.found}</span>}
                   {check && !check.ok && check.hint && <span className="text-xs text-destructive">{check.hint}</span>}
+                  {check && check.ok && check.warning && check.hint && <span className="text-xs text-amber-500">{check.hint}</span>}
                 </div>
               </li>
             )
@@ -109,6 +110,14 @@ function CheckStatusIcon({ check, checking }: { check?: Check; checking: boolean
       <>
         <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <span className="sr-only">Not checked yet</span>
+      </>
+    )
+  }
+  if (check.ok && check.warning) {
+    return (
+      <>
+        <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-500" />
+        <span className="sr-only">Passed with a warning</span>
       </>
     )
   }
