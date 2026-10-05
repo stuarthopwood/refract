@@ -505,6 +505,46 @@ swatches, repaints the whole app live as the developer chooses, and only Save ma
   `pie1`/`#76a9ff` the weakest slot) and a "themeCSS can't fix this" claim for the Gantt
   active-overflow case (it can -- see above).
 
+  **CORRECTION (round 6, corroborated by two independent reviewers each building their own
+  from-scratch screenshot-pixel-diff harness):** the round-5 claim above ("426/426 PASS") is
+  INVALIDATED -- not by a new regression, but because round 5's own replacement methodology
+  (computed style + `elementsFromPoint`) had the SAME class of gap round 5 itself was fixing:
+  `elementsFromPoint`-based background resolution only ever composited a hit-tested element's
+  `fill`/`background-color`, never a painted STROKE, so a label sitting on a stroked line was
+  measured as if nothing were behind it. Two real Highs slipped through as false PASSes: (1)
+  Gantt clickable-task labels against the ACTIVE/activeCrit bars (round 5 only ever covered the
+  done bar's `.taskText.clickable.doneText<N>` case) measured 2.18:1 (dark) / 2.27:1
+  (dark-high-contrast); (2) gitGraph commit-id labels sitting on a bright `git<N>` branch line,
+  partially visible through the commit-label's own `opacity: 0.5` background, measured
+  1.73-2.87:1 (pre-existing, not introduced by round 5). Both fixed in `getMermaidThemeCSS`: the
+  clickable-label `themeCSS` override now also covers `activeText<N>`/`activeCritText<N>`, and a
+  new `.commit-label-bkg { opacity: 1 !important }` rule removes the branch-line bleed-through
+  entirely (measured ~7.0:1 afterward). `scripts/mermaid-contrast-measure.mjs` was rewritten to
+  replace `elementsFromPoint`-based TEXT background/foreground resolution with the same
+  screenshot-pixel-diff technique both reviewers used (render glyphs visible, screenshot, hide
+  glyphs, screenshot again, diff the two real captures) -- shape/pie checks are unchanged. Fixing
+  this surfaced a SEPARATE, more severe harness bug in the process: the bare test wrapper gave
+  Mermaid's `width: 100%` SVG no real containing-block width to resolve against, silently
+  rendering every fixture at the CSS spec's ~300px default replaced-element size instead of its
+  real (often 2000+ px) size -- degrading anti-aliasing fidelity enough to corrupt per-pixel
+  colour sampling. Fixed by sizing the SVG to its own `viewBox` dimensions explicitly. Also fixed:
+  `cardColor` now resolves the app's real `--card` CSS token from `globals.css` instead of
+  reusing Mermaid's unrelated `primaryColor` variable, which had quietly drifted off the real
+  `dark`-theme value (`#1f1f1f` vs the real `#171717`); a stale comment in `mermaidTheme.ts`
+  misattributing the `brightness()`-filter-modelling limitation to `check-mermaid-contrast.mjs`
+  instead of `mermaid-contrast-measure.mjs` (where `accumulatedBrightness` actually lives) is also
+  corrected. `pnpm typecheck`/`build` clean. `node scripts/check-mermaid-contrast.mjs` re-run
+  after all of the above: the 2 Highs above now PASS consistently and reproducibly (spot-checked
+  against independent real-pixel/computed-style evidence, not just the rewritten checker's own
+  say-so). **NOT fully clean**: the corrected, far-more-sensitive harness also surfaces roughly a
+  dozen more failures scattered across flowchart/ER/pie/mindmap/gitGraph-branch-pill labels
+  sitting close to a line/edge boundary -- some reproduce consistently (pie "1%"/"3%" slice
+  labels, flowchart `-->|No|` edge label), others flicker between PASS/FAIL across repeated runs
+  of the identical static fixture (sub-pixel Chromium text-layout/hinting non-determinism, not a
+  colour regression). These are pre-existing, previously invisible to every prior round's
+  methodology (not introduced this round) and are OUT OF SCOPE for this fix -- flagged here as a
+  known, not-yet-triaged gap for a future round, not silently left unmentioned.
+
 
 **Checkpoint**: run quickstart Story 3.
 

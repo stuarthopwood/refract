@@ -139,6 +139,27 @@
 // methodology (computed style + `elementsFromPoint`, with the actually-rendered leaf text/shape
 // as the unit of measurement, not a diagram-type-specific regex over the `<style>` block text) --
 // see that script's own header comment for the full rationale.
+//
+// Quality-gate remediation (round 6): shipping commit 0c7e1e1 (round 5) was re-audited again by
+// two independent reviewers, each building their OWN from-scratch screenshot-PIXEL-diff harness
+// (render once with text visible, once with every glyph hidden, diff the two real screenshots to
+// find each glyph's actual painted pixels) rather than trusting computed style + `elementsFromPoint`
+// as round 5's own reviewers and check-mermaid-contrast.mjs did -- and found 2 more real failures
+// that methodology could not see, plus a real gap in round 5's own replacement checker:
+// 1. Gantt clickable-task labels against the ACTIVE/activeCrit bars (round 5 only ever covered the
+//    done bar) -- see `taskTextClickableColor`'s own interface comment and `getMermaidThemeCSS`'s
+//    own comment.
+// 2. gitGraph commit-id labels (1.73-2.87:1, pre-existing, not introduced by round 5) -- see
+//    `getMermaidThemeCSS`'s own comment on `.commit-label-bkg`.
+// 3. scripts/mermaid-contrast-measure.mjs's `elementsFromPoint`-based background resolution only
+//    ever composited a hit-tested element's `fill`/`background-color`, never a painted STROKE (a
+//    `<path>` with `fill:none` but a visible `stroke`, or a bare `<line>`) -- a label sitting over
+//    a stroked line was treated as if nothing were painted there, which is exactly how finding 2
+//    above passed round 5's own checker at a reported 7.59:1. Round 6 replaces TEXT background/
+//    foreground resolution with the screenshot-pixel-diff technique both reviewers' own harnesses
+//    used (shape/pie checks are unaffected and keep the round-5 `elementsFromPoint` approach --
+//    see that file's own header comment for the full rationale and the one documented limitation
+//    the bucketed-by-background diffing itself has).
 import type { ThemeId } from './themes'
 
 // Mermaid's own published `MermaidConfig['themeVariables']` (node_modules/mermaid/dist/
@@ -221,9 +242,14 @@ export interface MermaidThemeVariables {
   * (Mermaid's own `doneTaskBkgColor`, a hardcoded, non-themeable `lightgrey`): measured ~1.13:1
   * there (round 5, corroborated by two independent reviewers measuring the real rendered DOM,
   * not an assumed `--card` baseline). Matches `textColor`/`taskTextOutsideColor` instead (near-
-  * white: clears >=5:1 against the dark plain/active/crit bars); the done-bar case is handled
-  * separately by a `themeCSS` override to `taskTextDarkColor` (pure black) -- see
-  * `getMermaidThemeCSS`'s own comment. */
+  * white: clears >=5:1 against the dark plain/crit bars). Quality-gate remediation (round 6,
+  * corroborated by two independent reviewers measuring real rendered pixels): this near-white
+  * value does NOT clear contrast against the active/activeCrit bars either -- `.active0`/
+  * `.activeCrit0`-style fills are light (`#81B1DB`-style blue), the same shape of problem as the
+  * done bar, not dark like plain/crit -- measured 2.18:1 (dark) / 2.27:1 (dark-high-contrast).
+  * The done, active, and activeCrit cases are therefore ALL now handled the same way: a
+  * `themeCSS` override to `taskTextDarkColor` (pure black) -- see `getMermaidThemeCSS`'s own
+  * comment. */
  taskTextClickableColor: string
  /** Gantt's DEFAULT task-label colour (plain tasks, and -- since Mermaid defines no `.critText*`
   * CSS rule -- a plain, non-done, non-active `:crit` task's inside label too; quality-gate
@@ -698,12 +724,18 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
 //    neutralising the filter outright removes the discrepancy (every other slot had enough
 //    margin that the brightening never pushed it below 4.5:1 in the first place).
 //
-// KNOWN LIMITATION: the background-resolution logic in scripts/check-mermaid-contrast.mjs that
-// verifies all three of these models ONLY the `brightness()` filter function (the one real case
-// above), not Mermaid's full CSS `filter` grammar (`contrast()`, `saturate()`, `hue-rotate()`,
-// `grayscale()`, `sepia()`, `invert()`, `blur()`, `drop-shadow()`) -- a future diagram fixture
-// that relies on one of those would silently under- or over-state its measured contrast until
-// that script's own filter handling is widened to match.
+// KNOWN LIMITATION: the background-resolution logic in scripts/mermaid-contrast-measure.mjs's
+// `accumulatedBrightness` (not `check-mermaid-contrast.mjs` -- a stale misattribution in an
+// earlier version of this comment, corrected round 6) that verifies all three of these models
+// ONLY the `brightness()` filter function (the one real case above), not Mermaid's full CSS
+// `filter` grammar (`contrast()`, `saturate()`, `hue-rotate()`, `grayscale()`, `sepia()`,
+// `invert()`, `blur()`, `drop-shadow()`). Round 6 narrowed this limitation's blast radius: TEXT
+// contrast no longer resolves its background this way at all (see that file's own header
+// comment for the screenshot-pixel-diff replacement, which needs no filter-grammar modelling
+// because it reads real post-filter pixels directly) -- only the remaining SHAPE-vs-background
+// checks (`measureShapes`) still use `accumulatedBrightness`, so a future shape fixture relying
+// on an unmodelled filter function would silently under- or over-state its measured contrast
+// until that function is widened to match.
 export function getMermaidThemeCSS(themeId: ThemeId): string {
  const t = MERMAID_THEME_VARIABLES[themeId]
  const overflowStates = ['activeText', 'activeCritText']
@@ -711,16 +743,36 @@ export function getMermaidThemeCSS(themeId: ThemeId): string {
   .flatMap((state) => [0, 1, 2, 3].map((n) => `${state}${n}`))
   .flatMap((cls) => [`.${cls}.taskTextOutsideLeft`, `.${cls}.taskTextOutsideRight`])
   .join(',\n  ')
- const doneClickableSelectors = [0, 1, 2, 3].map((n) => `.taskText.clickable.doneText${n}`).join(',\n  ')
+ // Quality-gate remediation (round 6): the done-bar case below only ever covered
+ // `.taskText.clickable.doneText<N>` -- a clickable task's label sitting on an ACTIVE or
+ // activeCrit bar (also a light fill, same as done) still fell through to Mermaid's generic
+ // `.taskText.clickable` rule (`taskTextClickableColor`, this file's near-white default), measured
+ // 2.18:1 (dark) / 2.27:1 (dark-high-contrast). Same three-class-beats-two-class fix, same dark
+ // colour, for both remaining light-fill bar types -- see `taskTextClickableColor`'s own interface
+ // comment for why it can no longer document "clears >=5:1 against every bar" unqualified.
+ const clickableSelectors = ['doneText', 'activeText', 'activeCritText']
+  .flatMap((state) => [0, 1, 2, 3].map((n) => `.taskText.clickable.${state}${n}`))
+  .join(',\n  ')
  return `
   ${overflowSelectors} {
     fill: ${t.taskTextOutsideColor} !important;
   }
-  ${doneClickableSelectors} {
+  ${clickableSelectors} {
     fill: ${t.taskTextDarkColor} !important;
   }
   .eventWrapper {
     filter: none !important;
+  }
+  /* Quality-gate remediation (round 6): gitGraph's own \`.commit-label-bkg\` rect ships at
+     \`opacity: 0.5\`, so wherever a commit sits on a bright \`git<N>\` branch line, the line shows
+     through the label's own background at 50% strength and the default commit-label text colour
+     (#b8b6b6) can measure as low as 1.4-2.0:1 against that blend (real screenshot-pixel
+     measurement, not CSS reading -- see scripts/check-mermaid-contrast.mjs's own
+     measureTextFromScreenshots). Forcing the label background fully opaque removes the blend
+     entirely: measured ~7.6:1 (text #b8b6b6 on the now-opaque #2b2b2b label background)
+     afterward, verified live via the same real-pixel harness. */
+  .commit-label-bkg {
+    opacity: 1 !important;
   }
 `
 }
