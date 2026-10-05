@@ -297,3 +297,18 @@ export interface ConversationInfo {
   preview: string; // first user message, truncated to 120 characters
   isCurrent: boolean; // file === Session.currentConversation
 }
+
+/** spec 008 data-model.md: `profileCache.json`'s whole-file shape -- a small, revalidated
+ * display cache for GitHub accounts. Refract never stores a GitHub access token (FR-012);
+ * only these two display fields per account, both derived from a one-time profile/avatar
+ * fetch (research.md decisions 3-5). */
+export interface ProfileCache {
+  version: 1;
+  accounts: Record<string, ProfileCacheEntry>; // keyed by `${host}/${login}`, e.g. "github.com/stuarthopwood"
+}
+
+export interface ProfileCacheEntry {
+  displayName: string | null; // null falls back to the login everywhere a name would show
+  avatarDataUrl: string | null; // validated data:image/png|jpeg;base64,...; null = show initials
+  fetchedAt: string; // ISO 8601; the moment this entry was last successfully refreshed
+}
