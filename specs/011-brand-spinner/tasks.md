@@ -48,12 +48,12 @@ created, and the full mapping is posted as a comment on the tracking issue and k
   decisions 3, 5, 6, spec.md FR-005); no edit needed to the existing `@media
   (prefers-reduced-motion: reduce)` block (lines 260-269), which already matches `*, *::before,
   *::after` and therefore already covers the new keyframes.
-- [ ] T009 Add `@media (forced-colors: active)` to the same stylesheet (`globals.css`): map the
-  spinner's arm and core fills to system colour keywords (for example `CanvasText`) instead of
+- [ ] T009 (#427) Add `@media (forced-colors: active)` to the same stylesheet (`globals.css`): map
+  the spinner's arm and core fills to system colour keywords (for example `CanvasText`) instead of
   their fixed brand hex values (FR-014, research.md decision 14) (depends on T002, same file).
-- [ ] T010 [P] Author and verify the dedicated Simplified path set for real, at both its ladder
-  sizes (16px, 20px): hand-tune flat, single-tone arm hulls with the gaps between arms and the
-  core optically widened, replacing T001's placeholder; render it side by side with the Full
+- [ ] T010 (#428) [P] Author and verify the dedicated Simplified path set for real, at both its
+  ladder sizes (16px, 20px): hand-tune flat, single-tone arm hulls with the gaps between arms and
+  the core optically widened, replacing T001's placeholder; render it side by side with the Full
   variant scaled down to 16px and capture a throwaway rasterised comparison as evidence that the
   dedicated set reads more clearly, then discard the comparison harness entirely (FR-006,
   research.md decision 2) (depends on T001).
@@ -195,8 +195,8 @@ clean `pnpm typecheck`/`pnpm build`; committed.
 | T006 | [#403](https://github.com/stuarthopwood/refract/issues/403) |
 | T007 | [#404](https://github.com/stuarthopwood/refract/issues/404) |
 | T008 | [#405](https://github.com/stuarthopwood/refract/issues/405) |
-| T009 | TBD |
-| T010 | TBD |
+| T009 | [#427](https://github.com/stuarthopwood/refract/issues/427) |
+| T010 | [#428](https://github.com/stuarthopwood/refract/issues/428) |
 
 Created with `gh issue create` (2026-10-05) against the existing `stuarthopwood/refract` repo.
 Posted as a comment on tracking issue [#397](https://github.com/stuarthopwood/refract/issues/397).
