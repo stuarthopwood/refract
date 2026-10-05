@@ -36,7 +36,7 @@ tracking issue and kept here.
   `main` and `src/renderer/assets/brand/refract-hero.svg` exists at the path and square viewBox
   (`"96 122 320 320"`) described in spec.md's "Prerequisite" section. If it has not landed yet,
   treat every later task that references that path as blocked and coordinate rather than
-  recreating or duplicating the asset.
+  recreating or duplicating the asset. (#408)
 
 **Checkpoint**: the asset exists at the documented path; every later task may proceed.
 
@@ -49,26 +49,26 @@ builds on.
 
 - [ ] T002 [P] Extend `src/shared/model.ts`'s `Settings` interface with
   `watermarkEnabled: boolean` (data-model.md). (depends on T001 only in that the feature exists;
-  no file dependency)
+  no file dependency) (#409)
 - [ ] T003 Extend `src/shared/ipc.ts`: add `IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED =
   'settings.setWatermarkEnabled'` and `RefractApi.settings.setWatermarkEnabled(enabled: boolean):
-  Promise<Result<Settings>>`, per contracts/ipc.md (depends on T002).
+  Promise<Result<Settings>>`, per contracts/ipc.md (depends on T002). (#410)
 - [ ] T004 Extend `src/main/store/settings.ts`: `readJsonFile`'s default row gains
   `watermarkEnabled: true`; `SettingsStore.open` treats a missing or non-boolean stored
   `watermarkEnabled` as `true` in memory (same lazy-correction pattern as `theme`/`split`,
   data-model.md); add `setWatermarkEnabled(enabled: boolean): Promise<Settings>` persisting the
   whole row via the existing `persistWhole` helper, same race-safety contract as
-  `setReadoutVisibility` (depends on T002).
+  `setReadoutVisibility` (depends on T002). (#411)
 - [ ] T005 Extend `src/main/ipc/settings.ts`: `registerSettings` gains an
   `ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, ...)` handler validating the
   argument is a boolean (`invalid-argument` otherwise), calling `manager.settings
-  .setWatermarkEnabled`, and broadcasting `settings:changed` (depends on T003, T004).
+  .setWatermarkEnabled`, and broadcasting `settings:changed` (depends on T003, T004). (#412)
 - [ ] T006 Extend `src/preload/index.ts`: expose `settings.setWatermarkEnabled` alongside the
-  existing `settings.*` methods (depends on T003, T005).
+  existing `settings.*` methods (depends on T003, T005). (#413)
 - [ ] T007 Extend `src/renderer/state/settings-store.ts`: `DEFAULT_SETTINGS.watermarkEnabled =
   true`; add a `setWatermarkEnabled(enabled: boolean): Promise<void>` action calling
   `window.refract.settings.setWatermarkEnabled`, mirroring `setReadoutVisibility`'s body exactly
-  (depends on T006).
+  (depends on T006). (#414)
 
 **Checkpoint**: `pnpm typecheck` and `pnpm build` pass; `settings.get()` returns
 `watermarkEnabled: true` on a fresh profile; a hand-edited missing or non-boolean value falls back
@@ -90,24 +90,24 @@ chat area.
   sizing/offset (`width: clamp(96px, 20cqw, 280px); aspect-ratio: 1; position: absolute; right:
   1.5rem; bottom: 1.5rem`, research.md decisions 5-7); and
   `@media (forced-colors: active) { .watermark-mark { display: none; } }` (research.md decision
-  11) (depends on T001 for the real asset path).
+  11) (depends on T001 for the real asset path). (#415)
 - [ ] T009 [US1] Write `src/renderer/features/chat/BrandWatermark.tsx`: reads
   `useSettingsStore((s) => s.settings.watermarkEnabled)`, renders `null` when `false`; otherwise an
   `aria-hidden` `div` with `pointer-events-none` and the `.watermark-mark` class, sized per
   `variant: 'live' | 'preview'` (data-model.md) — `'live'` gets the responsive clamp from T008,
   `'preview'` gets a fixed ~96px box with no corner-anchor positioning, meant to sit inline inside
-  a bordered preview container (depends on T007, T008).
+  a bordered preview container (depends on T007, T008). (#416)
 - [ ] T010 [US1] Edit `src/renderer/App.tsx`: wrap the `ResizablePanel id="chat"`'s existing
   `<ErrorBoundary>` (the single-pane/split-group conditional) in one new
   `<div className="relative h-full [container-type:size]">`, with
   `<BrandWatermark variant="live" />` added as that div's first child, itself
   `absolute inset-0 overflow-hidden -z-10` so its own leaf wrapper clips at its edges without
   wrapping any real content in an `overflow: hidden` ancestor (research.md decision 8) (depends on
-  T009).
+  T009). (#417)
 - [ ] T011 [US1] Verify live per quickstart.md Story 1: default-on mark anchored to the chat area's
   corner; visible in the "Select a Session" empty state; scales on resize with no layout shift;
   exactly one instance with a split chat pane open; unaffected by the Subagent panel or session
-  list (depends on T010).
+  list (depends on T010). (#418)
 
 **Checkpoint**: quickstart.md Story 1 passes in full.
 
@@ -125,11 +125,11 @@ without leaving Settings.
   ("Background mark") + one-line description, matching `SettingsScreen.tsx`'s Session readout
   toggle layout, wired to `useSettingsStore`'s `watermarkEnabled`/`setWatermarkEnabled`; beside it,
   a small bordered box containing `<BrandWatermark variant="preview" />`, shown or hidden by the
-  same state (research.md decision 9) (depends on T007, T009).
+  same state (research.md decision 9) (depends on T007, T009). (#419)
 - [ ] T013 [US2] Verify live per quickstart.md Story 2: the switch reflects and changes
   `watermarkEnabled` live with no restart; the preview updates immediately; the real mark in the
   chat area updates immediately; the choice survives a full restart; a missing or non-boolean
-  stored value falls back to on (depends on T012, T004).
+  stored value falls back to on (depends on T012, T004). (#420)
 
 **Checkpoint**: quickstart.md Story 2 passes in full.
 
@@ -149,13 +149,13 @@ below WCAG 2.2 AA.
   actually suppresses it; extend `scripts/check-theme-contrast.mjs` to include the mark's
   worst-case composited pair (the mark's silhouette colour at `--watermark-opacity` over
   `--background`, re-checking the existing lowest-margin text/non-text pairs underneath it) for
-  every built-in theme preset (depends on T008, T010).
+  every built-in theme preset (depends on T008, T010). (#421)
 - [ ] T015 [US3] Verify live per quickstart.md Story 3: drag-select transcript text that overlaps
   the mark; click directly on the mark's visual area in both the empty state and over real
   content; Tab through every chat-area control and confirm the mark is never a stop; browse with
   Narrator and confirm it is never announced; enable Windows High Contrast and confirm the mark is
   not shown regardless of the switch; run the extended `check-theme-contrast.mjs` and confirm every
-  built-in theme preset still passes (depends on T014).
+  built-in theme preset still passes (depends on T014). (#422)
 
 **Checkpoint**: quickstart.md Story 3 passes in full, including the extended contrast script's
 numbers.
@@ -173,7 +173,7 @@ session-list/Subagent-panel/split state, and consistently absent from every full
   chat/Subagent-panel dividers through their full range; open and close the Subagent panel and a
   split chat pane repeatedly; narrow the window to the 360px chat-area floor; confirm the mark is
   never shown on the Settings screen, the Readiness screen, or (once spec 008 builds it) the
-  Manage sessions screen (depends on T010, T012).
+  Manage sessions screen (depends on T010, T012). (#423)
 
 **Checkpoint**: quickstart.md Story 4 passes in full.
 
@@ -185,9 +185,9 @@ session-list/Subagent-panel/split state, and consistently absent from every full
 
 - [ ] T017 [P] Update `docs/DESIGN.md`: a new bullet under "Look and feel" describing the
   watermark (anchor, toggle, hidden on full-screen views), and a new line under "Settings in the
-  first build" naming the switch (depends on T011, T013).
+  first build" naming the switch (depends on T011, T013). (#424)
 - [ ] T018 Run every check in [quickstart.md](quickstart.md), all four stories, on one clean build;
-  confirm `pnpm typecheck` and `pnpm build` both pass (depends on T011, T013, T015, T016, T017).
+  confirm `pnpm typecheck` and `pnpm build` both pass (depends on T011, T013, T015, T016, T017). (#425)
 
 **Checkpoint**: every quickstart.md check passes on a single clean build; typecheck and build are
 green.
