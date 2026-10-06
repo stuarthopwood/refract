@@ -45,12 +45,24 @@ win:
   executableName: Refract
   # Code signing is explicitly out of scope for this spec (spec.md Assumptions: SmartScreen is
   # expected to warn on first run of an unsigned installer; whether/how to sign is a later,
-  # separate decision). Without this, electron-builder auto-discovers any code-signing
-  # certificate already present in the machine's own certificate store and silently signs with
-  # it (VERIFIED on this machine, 2026-10-06: a pre-existing cert triggered several slow
-  # `signtool.exe` calls against a network timestamp authority during `pnpm package`) -- which
-  # would tie a maintainer's local or CI machine identity into the shipped binary by accident.
-  signAndEditExecutable: false
+  # separate decision).
+  #
+  # Quality-gate remediation (HIGH, code-reviewer): `signAndEditExecutable: false` was meant only
+  # to skip signing, but it ALSO disables electron-builder's `resedit`-based resource editing --
+  # the packaged Refract.exe kept Electron's own icon, FileDescription, ProductName and
+  # CompanyName instead of Refract's (VERIFIED 2026-10-06: `(Get-Item
+  # release/win-unpacked/Refract.exe).VersionInfo` reported "Electron"/"GitHub, Inc.", and the
+  # extracted icon was byte-identical to node_modules/electron/dist/electron.exe's own icon).
+  # `signExecutable: false` (app-builder-lib 26.15.3's own documented option, see
+  # node_modules/.../app-builder-lib/out/options/winOptions.d.ts) skips code signing only, while
+  # leaving `signAndEditExecutable` at its default `true` so the icon/version/execution-level
+  # edit still runs. No separate auto-discovery setting (e.g. CSC_IDENTITY_AUTO_DISCOVERY, a
+  # macOS-only flag in this electron-builder version) is needed: electron-builder only ever looks
+  # for a Windows signing certificate when `signtoolOptions`/`certificateFile`/`WIN_CSC_LINK` is
+  # actually set (verified in app-builder-lib's own windowsSignToolManager.js), and
+  # `signExecutable: false` makes the whole signing path -- including that lookup -- a no-op
+  # regardless, so a maintainer's or CI machine's own certificate store is never consulted.
+  signExecutable: false
 
 nsis:
   # Both are electron-builder's own defaults; named explicitly because FR-001's no-admin
