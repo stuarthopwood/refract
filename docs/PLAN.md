@@ -50,8 +50,9 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
 | A2c | #489 | Bug: after a crash and resume, a still-running agent has no Subagents pill. Seed `runtime.subagents` from `get_subagents` on attach and resume, and mark orphaned `running` agents as "agent exited". Needs the repro from Stuart (what crashed, was a process left?) | todo | none; after A2 (same files) | `SessionAgent.ts`, `readout.ts`, `ReadoutChips.tsx` |
-| A2d | #491 | Ask question card: render the question as sanitised markdown at normal weight, heading plus body, vertical options, max height. Matters daily because rule 9 starts every story with an `ask` card | todo | none; same file as the Ask UI lane (`RequestCard.tsx`: do before #446, #444, #473) | `RequestCard.tsx`, `card.tsx` use |
+| A2d | #491 + #497 | Ask question card: render the question as sanitised markdown at normal weight, heading plus body, vertical options, max height, **and (#497) make option labels and descriptions wrap instead of clipping**. Matters daily because rule 9 starts every story with an `ask` card | todo | none; same file as the Ask UI lane (`RequestCard.tsx`: do before #446, #444, #473) | `RequestCard.tsx`, `card.tsx` use |
 | A2e | #492 | Bug: Subagents (Agents) panel content does not wrap and has no padding (Radix `ScrollArea` table child, truncating tool rows, `p-2` vs `px-3`). Do it in a way #490 carries over | todo | none; before C2c | `SubagentPanel.tsx`, `ScrollArea` wrapper, `CollapsedLine.tsx` |
+| A2f | #500 + #498 | Pull request view fixes: **#500** the repository selector does not open (the header sits in the window drag region: add `no-drag-region`, reserve the caption-button corner), then **#498** the Merge dialog overflows (radio list or wrapping methods, shorter primary button, wider dialog). Same nowrap pattern as #492 and #497 | todo | none | `PullRequestsView.tsx`, `MergeDialog.tsx`, `alert-dialog.tsx` |
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
 | A5 | #488 | Remove a repository from the session list, blocked while it owns Sessions (spec 001 FR-059, T107 to T109) | done (PR #493, merged 2026-10-06 13:37; it changed the shared destructive `Button` and the focus ring app-wide, so verify live) | A1 | `SessionList.tsx`, `RemoveRepositoryDialog.tsx`, `repositories.ts`, `registry.ts`, `focus.ts`, `Readiness.tsx`, `button.tsx` |
@@ -96,6 +97,7 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 | **Theme and chrome** | **#482 session status style (colour-coded icons by default, optional dots, preview)** right after A3 (`sessionDisplay.tsx` is one of the damaged files), then #458 + #456 tokens, then #452 (default Dark retune, "somewhere between"), #4 fonts, #448 and #450 | todo; #482 after A3, the rest after B1 and B4 |
 | **Composer** | #432 drag and drop images, #431 pasted images to disk, #443 emoji | todo |
 | **Readout pills** | **#496 Approval mode pill into the composer box before the model badge, Todo pill first in the pill row** (do this first: it reshapes the row), then #438 (Todo pill opens the task list, now the first pill), #434, #435, #436, #437, #441. Coordinate with #454 (model and thinking pickers, same bottom row) and #433 (mode pill) | todo; serialise with the Composer lane (`MessageInput.tsx`) |
+| **Pull requests (spec 003)** | #499 filter redesign (compact scope control plus State and Relation, no wrapping tabs); after A2f (same view) | todo; after A2f, and settle the control style with the #474 grill if it is running |
 
 ### Phase E: later
 
@@ -172,6 +174,8 @@ Also: `SessionAgent.ts` (A2, A2c, #479, #477), `readout.ts` and `ReadoutChips.ts
 
 Also: `MessageInput.tsx` (#496, #454, #465, #432, #431, #443, #471 are all in this file; one agent at a time), `ApprovalModePill.tsx` (#496, #433), `docs/DESIGN.md` lines 24, 25 and 82 (#496, with #139).
 
+Also: `RequestCard.tsx` (A2d, #497, #446, #444, #473). The `whitespace-nowrap` in `Button` bites #492, #497 and #498 alike: decide one shared answer (a `wrap` option on `Button`, or a wrapping option pattern) once, in whichever of them is built first, instead of three one-off fixes. `PullRequestsView.tsx`, `PullRequestList.tsx` and `MergeDialog.tsx` (A2f, #499).
+
 Also: `src/main/index.ts` (A6, and spec 006's `AppUserModelId` task #277; coordinate with the `spec-006-impl` branch before editing).
 
 ## Index of issues filed 2026-10-06
@@ -187,3 +191,5 @@ Also filed 2026-10-06: #491 ask question card readability (minimal formatting), 
 Also filed 2026-10-06: #494 bug, taskbar shows the Electron atom icon instead of the Refract logo (row A6). Status refresh: A1 done (PR #486), A5 #488 done (PR #493, merged); the earlier "removal spec follows" note and "PR open" status were stale.
 
 Also filed 2026-10-06: #496 chat, Approval mode pill moves into the composer box before the model badge and the Todo pill takes its place above (Readout pills lane, first item). DESIGN.md placement text and #139 (T101) need updating with it.
+
+Also filed 2026-10-06: #497 Ask options do not wrap, #498 Merge dialog overflow, #499 PR filter redesign, #500 PR repository selector does not open (drag region). Placed as rows A2d (#497 with #491), A2f (#500 then #498) and the Pull requests lane (#499).
