@@ -21,7 +21,7 @@ import { registerNotifications } from './notifications'
 import { startMemoryMonitor } from './memory'
 import { UpdateStateStore } from './store/updateState'
 import { startAutomaticUpdateCheck } from './ipc/updates'
-import { resolveInstallingState, scheduleInstallOnQuit } from './update/installOnQuit'
+import { resolveInstallingState, scheduleInstallOnQuit, verifyInstallerBeforeQuit } from './update/installOnQuit'
 
 const isDev = !app.isPackaged
 
@@ -258,8 +258,25 @@ if (!gotLock) {
     // 'installing' phase from the previous run (the install-on-quit helper's own target
     // version compared against the version actually running now) must never be mistaken for
     // the current run's own fresh state.
-    updateStateStore = await UpdateStateStore.open(userDataDir)
-    await resolveInstallingState(updateStateStore, app.getVersion())
+    //
+    // Quality-gate remediation (Medium "UpdateStateStore.open and resolveInstallingState run
+    // unguarded in the async whenReady chain, before createWindow()"): `UpdateStateStore.open`
+    // itself now falls back to defaults on any read/parse/shape problem (updateState.ts), so this
+    // try/catch is a second, outer safety net -- on an unexpected throw, `updateStateStore` still
+    // ends up a working in-memory store, and the window still opens. A `resolveInstallingState`
+    // failure is logged and simply leaves its persisted phase unresolved this run, rather than
+    // ever blocking `createWindow()` below.
+    try {
+      updateStateStore = await UpdateStateStore.open(userDataDir)
+    } catch (err) {
+      console.error('main: UpdateStateStore.open failed; continuing with an in-memory default', err)
+      updateStateStore = UpdateStateStore.inMemory(userDataDir)
+    }
+    try {
+      await resolveInstallingState(updateStateStore, app.getVersion())
+    } catch (err) {
+      console.error('main: resolveInstallingState failed; continuing with its persisted phase unresolved', err)
+    }
 
     // Spec 005 FR-015/data-model.md Decision 3b: drop any persisted split id no longer present
     // in the registry or now archived, before the renderer ever reads `settings.get()`. Reads
@@ -327,8 +344,16 @@ if (!gotLock) {
       const state = updateStateStore?.get()
       if (state?.phase === 'downloaded' && state.installerPath) {
         try {
-          await updateStateStore?.update({ phase: 'installing' })
-          await scheduleInstallOnQuit(state.installerPath, process.pid)
+          // Quality-gate remediation (LOW, security): re-verifies the installer immediately
+          // before scheduling it -- see verifyInstallerBeforeQuit's own doc comment.
+          const updatesDir = join(app.getPath('userData'), 'updates')
+          const verified = await verifyInstallerBeforeQuit(state.installerPath, updatesDir)
+          if (!verified.ok) {
+            console.error(`main: refusing to schedule the update install, ${verified.reason}`)
+          } else {
+            await scheduleInstallOnQuit(state.installerPath, process.pid)
+            await updateStateStore?.update({ phase: 'installing' })
+          }
         } catch (err) {
           console.error('main: failed to schedule the update install-on-quit helper', err)
         }
