@@ -8,6 +8,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { resolveExecutable } from './process/executables';
+import { githubCliStatus } from './github/gh';
 import { gitRaw } from './git/git';
 import { OmpProcess } from './omp/OmpProcess';
 import { readOmpLoginProviders, requestLoginProviders } from './omp/loginProviders';
@@ -33,7 +34,11 @@ const SIGNED_IN_HINT = 'Run omp, complete /login, then Re-check.';
 async function checkGit(): Promise<Check> {
   const result = await gitRaw(os.tmpdir(), ['--version']);
   if (result.code !== 0) {
-    return { ok: false, hint: 'Git not found on PATH. Install Git for Windows and relaunch Refract.' };
+    // Quality-gate remediation (Medium, live observation): the old wording ("Install Git for
+    // Windows and relaunch Refract") sat right next to an Install button and told the developer
+    // to do something else (relaunch) instead of using it -- Install itself already re-checks
+    // automatically on success (contracts/ipc.md), no relaunch needed.
+    return { ok: false, hint: 'Git for Windows is not installed. Use Install, or install it yourself and choose Re-check.' };
   }
   return { ok: true, found: result.stdout.trim() };
 }
@@ -43,7 +48,10 @@ async function checkOmp(): Promise<Check> {
   try {
     ompPath = await resolveExecutable('omp');
   } catch {
-    return { ok: false, hint: 'omp not found on PATH. Install omp and relaunch Refract.' };
+    // Quality-gate remediation (Medium, live observation, matching checkGit's same fix): avoid
+    // telling the developer to relaunch right next to the Install button that already triggers
+    // its own automatic re-check.
+    return { ok: false, hint: 'omp is not installed. Use Install, or install it yourself and choose Re-check.' };
   }
   let stdout: string;
   try {
@@ -63,7 +71,7 @@ async function checkOmp(): Promise<Check> {
       hint: `omp ${found} is outside the specifically verified 18.4.x/18.5.x range; Refract has not been checked against it individually but is expected to keep working.`
     };
   }
-  return { ok: false, found, hint: `Expected omp 18.x, found ${found}. Install a supported version and relaunch Refract.` };
+  return { ok: false, found, hint: `Expected omp 18.x, found ${found}. Use Install to get a supported version, or install one yourself and choose Re-check.` };
 }
 
 // contracts/ipc.md: `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also
@@ -126,28 +134,29 @@ async function signedInFailureHint(probe?: OmpProcess): Promise<string> {
   return SIGNED_IN_HINT;
 }
 
-// Spec 006 FR-008, data-model.md "Dependency": `gh --version` resolves on PATH **and** `gh
-// auth status` reports a signed-in account; this is the one Readiness row that never affects
+// Spec 006 FR-008, data-model.md "Dependency": `github/gh.ts`'s shared `githubCliStatus` (not
+// found / not signed in / offline / ok); this is the one Readiness row that never affects
 // `allPass` (research.md decision 10) -- missing or signed-out GitHub CLI never blocks Add
 // repository, it only blocks updates (spec 006) and pull-request access (spec 003 FR-027).
+// Quality-gate remediation (Medium "two gh wrappers"): this used to be its own independent
+// resolveExecutable + `gh --version` + `gh auth status` probe, with no timeout and a coarser
+// not-signed-in-only classification than `UpdateChecker.ts`'s own separate implementation of the
+// same check -- both now call `githubCliStatus`.
 async function checkGithubCli(): Promise<Check> {
-  let ghPath: string;
-  try {
-    ghPath = await resolveExecutable('gh');
-  } catch {
-    return { ok: false, hint: 'gh not found on PATH. Optional: install the GitHub CLI for updates and pull request access.' };
+  const status = await githubCliStatus(os.tmpdir());
+  switch (status) {
+    case 'ok':
+      return { ok: true };
+    case 'not-installed':
+      return {
+        ok: false,
+        hint: 'The GitHub CLI (gh) is not installed. Use Install, or install it yourself and choose Re-check. Optional -- only needed for updates and pull request access.'
+      };
+    case 'not-signed-in':
+      return { ok: false, hint: 'gh is installed but not signed in. Run gh auth login, then Re-check.' };
+    case 'offline':
+      return { ok: false, hint: 'gh could not reach GitHub. Check your network connection, then Re-check.' };
   }
-  try {
-    await execFileAsync(ghPath, ['--version'], { windowsHide: true });
-  } catch (err) {
-    return { ok: false, hint: `gh --version failed: ${err instanceof Error ? err.message : String(err)}` };
-  }
-  try {
-    await execFileAsync(ghPath, ['auth', 'status'], { windowsHide: true });
-  } catch {
-    return { ok: false, hint: 'gh is installed but not signed in. Run gh auth login, then Re-check.' };
-  }
-  return { ok: true };
 }
 
 export async function readinessCheck(): Promise<Readiness> {
