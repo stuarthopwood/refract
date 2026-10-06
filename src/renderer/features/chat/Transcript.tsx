@@ -9,8 +9,9 @@ import {
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
+import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptItem } from '../../../shared/model'
+import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
@@ -393,10 +394,68 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // boundary.
   let isFirstRow = true
 
+  // Issue #485 (spec 001 US5 acceptance scenario 3, Clarification 2026-10-06): the viewport
+  // element survives both a Session switch (ChatPane.tsx swaps `sessionId` on the same
+  // `Transcript` instance, no remount) and a Conversation switch (`applySnapshot` on the same
+  // Session), so landing has to be driven explicitly rather than relying on `MessageScroller`'s
+  // own mount-time `defaultScrollPosition`.
+  const viewportRef = React.useRef<HTMLDivElement>(null)
+
+  // Continuously records this Session's scroll position while the viewport is visible, so
+  // whatever was last recorded is exactly where the developer left it (no separate "on leaving"
+  // handler needed).
+  function handleViewportScroll(event: React.UIEvent<HTMLDivElement>) {
+    const viewport = event.currentTarget
+    useChatScrollStore.getState().record(sessionId, {
+      atEnd: isAtScrollEnd({
+        scrollTop: viewport.scrollTop,
+        scrollHeight: viewport.scrollHeight,
+        clientHeight: viewport.clientHeight
+      }),
+      scrollTop: viewport.scrollTop
+    })
+  }
+
+  // Lands the viewport at the end, or restores the remembered detached position, whenever this
+  // Session's transcript is wholesale-replaced (`transcript.generation`, transcript-store.ts) --
+  // a Session switch, a Conversation switch, or this pane's very first mount -- never on an
+  // ordinary streamed `items` update. Polls via `requestAnimationFrame` until the just-applied
+  // content's `scrollHeight` holds steady for `SCROLL_LANDING_STABLE_FRAMES` frames (a
+  // `content-visibility:auto` row can still be settling from its placeholder height right after
+  // commit, #459's same root cause) instead of a fixed sleep, bounded by
+  // `SCROLL_LANDING_MAX_FRAMES` so a layout that never truly settles cannot poll forever.
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    let cancelled = false
+    let frame = 0
+    let stableFrames = 0
+    let lastHeight = -1
+
+    function step() {
+      if (cancelled || !viewport) return
+      const { scrollHeight } = viewport
+      stableFrames = scrollHeight === lastHeight ? stableFrames + 1 : 0
+      lastHeight = scrollHeight
+      frame += 1
+      if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
+        const memory = useChatScrollStore.getState().bySession[sessionId]
+        viewport.scrollTop = resolveLandingScrollTop(memory, viewport.scrollHeight)
+        return
+      }
+      requestAnimationFrame(step)
+    }
+
+    requestAnimationFrame(step)
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, transcript.generation])
+
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="h-full flex-1">
-        <MessageScrollerViewport>
+        <MessageScrollerViewport ref={viewportRef} onScroll={handleViewportScroll}>
           <MessageScrollerContent className="mx-auto w-full max-w-4xl px-4 py-4">
             {!hasConversationStarted && (
               <div className="px-2 py-8 text-center text-sm text-muted-foreground">

@@ -10,7 +10,7 @@ import { HistoryIcon, PlusIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { notify, useSessionsStore } from '@/state'
+import { notify, useChatScrollStore, useSessionsStore } from '@/state'
 import type { ConversationInfo } from '../../../shared/model'
 import { applySnapshot } from './ChatPane'
 
@@ -33,6 +33,9 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
         notify(result.error)
         return
       }
+      // Issue #485: a Conversation switch always lands at the end, never reusing the
+      // Session's remembered scroll offset from a since-replaced Conversation's own content.
+      useChatScrollStore.getState().clear(sessionId)
       applySnapshot(sessionId, result.value)
     } finally {
       setCreating(false)
@@ -61,6 +64,8 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
         notify(result.error)
         return
       }
+      // Issue #485: same as `handleNewConversation` above.
+      useChatScrollStore.getState().clear(sessionId)
       applySnapshot(sessionId, result.value)
       setHistoryOpen(false)
     } finally {
