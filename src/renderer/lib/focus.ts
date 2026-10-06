@@ -110,10 +110,25 @@ export function focusRepositoryGroupOrReadiness(): void {
     header.focus()
     return
   }
-  const readinessPrimary = document.querySelector<HTMLElement>('[data-readiness-primary]')
-  if (readinessPrimary) {
-    readinessPrimary.focus()
-    return
+  // The first-run screen mounts after this runs and re-runs its readiness checks; its primary
+  // action stays disabled (unfocusable) until they pass, so a single focus() would drop focus to
+  // <body>. Wait for it, bounded; if the checks fail, land on the screen's own first enabled
+  // button (Re-check) instead.
+  let attempts = 0
+  const tick = (): void => {
+    const primary = document.querySelector<HTMLElement>('[data-readiness-primary]:not(:disabled)')
+    if (primary) {
+      primary.focus()
+      return
+    }
+    attempts += 1
+    if (attempts < 40) {
+      window.setTimeout(tick, 100)
+      return
+    }
+    const fallback = document.querySelector<HTMLElement>('[data-readiness-primary]')?.parentElement?.querySelector<HTMLElement>('button:not(:disabled)')
+    if (fallback) fallback.focus()
+    else focusSessionsNav()
   }
-  focusSessionsNav()
+  tick()
 }

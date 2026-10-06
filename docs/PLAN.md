@@ -50,6 +50,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
+| A5 | #488 | Remove a repository from the session list, blocked while it owns Sessions (spec 001 FR-059, T107 to T109) | in-flight (branch `feat/remove-repository`) | A1 | `SessionList.tsx`, `RemoveRepositoryDialog.tsx`, `repositories.ts`, `registry.ts`, `focus.ts`, `Readiness.tsx` |
 
 ### Phase B: decisions and probes (can run in parallel with A, no code collisions)
 
