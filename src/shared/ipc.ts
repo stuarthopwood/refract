@@ -108,6 +108,11 @@ export interface DependencyInstallProgress {
   /** Set only on `'failed'`: an actionable reason (exit code, HTTP status, or a caught error's
    * message), never a raw stack trace. */
   detail?: string;
+  /** Set only on `'done'`: the installer finished successfully but this process could not yet find
+   * the tool (its in-memory PATH is stale), so the user must restart Refract to finish. The
+   * renderer shows an "Installed. Restart Refract to finish." state instead of the failing hint
+   * plus a second Install button. */
+  restartRequired?: boolean;
 }
 
 /** Persisted update progress (data-model.md "UpdateState", `updateState.json`): the spec.md Key
