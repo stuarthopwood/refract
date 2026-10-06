@@ -134,11 +134,21 @@ export function AppearanceSection() {
           row above it. */}
       <hr className="my-6 border-border" />
       <div className="flex items-center justify-between gap-4">
-        <label htmlFor="watermark-toggle" className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium">Background watermark</span>
-          <span className="text-xs text-muted-foreground">A faint Refract mark shown in the corner of the chat area.</span>
-        </label>
-        <Switch id="watermark-toggle" checked={watermarkEnabled} onCheckedChange={(checked) => void setWatermarkEnabled(checked)} />
+        {/* Quality-gate remediation (accessibility-auditor, Low): the whole two-line block (title
+            plus description) used to sit inside the <label>, so a screen reader announced both
+            every time this control got focus -- putting only the title in the label and wiring
+            the description in via `aria-describedby` (the same pattern as a native form hint)
+            announces the title as the name and the description separately, once, as a hint. */}
+        <div className="flex flex-col gap-0.5">
+          <label htmlFor="watermark-toggle" className="text-sm font-medium">Background watermark</label>
+          <span id="watermark-toggle-description" className="text-xs text-muted-foreground">A faint Refract mark shown in the corner of the chat area.</span>
+        </div>
+        <Switch
+          id="watermark-toggle"
+          aria-describedby="watermark-toggle-description"
+          checked={watermarkEnabled}
+          onCheckedChange={(checked) => void setWatermarkEnabled(checked)}
+        />
       </div>
       <div className="mt-3 flex size-28 items-center justify-center rounded-md border border-border">
         <BrandWatermark variant="preview" />

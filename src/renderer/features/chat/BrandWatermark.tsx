@@ -18,10 +18,17 @@ interface BrandWatermarkProps {
 export function BrandWatermark({ variant }: BrandWatermarkProps) {
   const watermarkEnabled = useSettingsStore((s) => s.settings.watermarkEnabled)
   if (!watermarkEnabled) return null
+  // Quality-gate remediation (code-reviewer/ui-architect, Medium): `-z-10` on the 'live' variant
+  // (research.md decision 8 -- previously undone in code) so this absolutely-positioned mark
+  // paints BEHIND its normal-flow sibling content (App.tsx's no-pane-open text, this ChatPane's
+  // own `!session` Empty state, and the real transcript) instead of over it -- every mount point
+  // already establishes its own stacking context (`isolate` or `[container-type:size]`'s implied
+  // containment), so the mark stays visibly behind its own siblings rather than escaping further
+  // up and disappearing under something else entirely.
   return (
     <div
       aria-hidden
-      className={cn('watermark-mark pointer-events-none', variant === 'live' ? 'watermark-mark--live' : 'size-24')}
+      className={cn('watermark-mark pointer-events-none', variant === 'live' ? 'watermark-mark--live -z-10' : 'size-24')}
     />
   )
 }

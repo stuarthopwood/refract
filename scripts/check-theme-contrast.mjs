@@ -223,17 +223,39 @@ for (const [themeId, props] of Object.entries(themes)) {
 // area: `--muted-foreground` itself (secondary/meta text) and `--chat-foreground` (primary
 // prose). Both must clear 4.5:1 (WCAG AA body text), in every theme (research.md decision 13).
 
-if (watermarkOpacity !== null) {
+// Quality-gate remediation (code-reviewer, Medium): this whole block used to silently skip
+// (via the outer `if`/an inner `continue`) whenever `--watermark-opacity` failed to parse or a
+// theme was missing `muted-foreground`/`background`/the pair's own foreground token -- a
+// future CSS edit that broke any of those would make this script report nothing but an
+// all-PASS table instead of catching the regression. Every one of those cases now pushes a
+// `pass: false` row (the PAIRS loop's own 'token missing' shape above) AND counts toward
+// `checkedCount`/`failCount`, so a missing token fails the run (non-zero exit below) instead
+// of quietly dropping out of the denominator.
+if (watermarkOpacity === null) {
+  checkedCount++
+  failCount++
+  rows.push({ themeId: '(root)', fg: '--watermark-opacity', bg: ':root', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+} else {
   for (const [themeId, props] of Object.entries(themes)) {
     const mutedFg = props['muted-foreground']
     const background = props['background']
-    if (!mutedFg || !background) continue
+    if (!mutedFg || !background) {
+      checkedCount++
+      failCount++
+      rows.push({ themeId, fg: 'muted-foreground', bg: 'background', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
     const markEntry = { raw: 'mark', alpha: watermarkOpacity, linear: mutedFg.linear }
     const markBackdropLinear = resolvedLinear(markEntry, background)
     const markBackdropEntry = { raw: 'mark-on-background', alpha: 1, linear: markBackdropLinear }
     for (const fg of ['muted-foreground', 'chat-foreground']) {
       const fgEntry = props[fg]
-      if (!fgEntry) continue
+      if (!fgEntry) {
+        checkedCount++
+        failCount++
+        rows.push({ themeId, fg, bg: 'mark-on-background', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+        continue
+      }
       const fgLinear = resolvedLinear(fgEntry, markBackdropEntry)
       const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(markBackdropLinear))
       const pass = ratio >= 4.5

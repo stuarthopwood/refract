@@ -229,7 +229,16 @@ export function App() {
                 ) : paneSessionIds.length === 0 ? (
                   // Spec 012 (research.md decision 3): no pane open at all -- no composer exists
                   // in this branch, so the mark anchors to this div's own full box.
-                  <div className="relative flex h-full items-center justify-center text-sm text-muted-foreground">
+                  //
+                  // Quality-gate remediation (code-reviewer/ui-architect, Medium): `20cqw` needs
+                  // this root itself to be the query container (`[container-type:size]`), not the
+                  // window, matching ChatPane.tsx's own transcript container (research.md decision
+                  // 8) -- missing it here sized the mark off the WHOLE window instead of this box.
+                  // `isolate` plus the mark's own `-z-10` (BrandWatermark.tsx) then keeps the
+                  // absolutely-positioned mark painting BEHIND this normal-flow text instead of
+                  // over it: `container-type` forces containment/a stacking context too, but
+                  // `isolate` makes that explicit rather than relying on an implementation detail.
+                  <div className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground [container-type:size]">
                     <BrandWatermark variant="live" />
                     Select a Session or create one.
                   </div>

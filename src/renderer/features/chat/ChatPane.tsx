@@ -284,8 +284,13 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   }, [isFocused, isSplit, focusMoveSignal])
 
   if (!session) {
+    // Quality-gate remediation (code-reviewer/ui-architect, Medium): same fix as App.tsx's own
+    // no-pane-open empty state -- `[container-type:size]` makes this root (not the window) the
+    // `20cqw` query container, and `isolate` (plus the mark's own `-z-10`, BrandWatermark.tsx)
+    // keeps the absolutely-positioned mark painting behind this Empty's normal-flow content
+    // instead of over it (research.md decision 8).
     return (
-      <Empty className="relative h-full">
+      <Empty className="relative isolate h-full [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
         <EmptyHeader>
           <EmptyMedia variant="icon">

@@ -108,9 +108,21 @@ export class SettingsStore {
   // settings.json on the user's behalf. `JSON.stringify` drops an `undefined` value entirely, so
   // `rawTheme === undefined` naturally reproduces "no theme key written yet" on disk, exactly
   // matching the pre-existing migration/lazy-correction comments above.
+  //
+  // Quality-gate remediation (round 2, Medium): the same reasoning applies to
+  // `rawWatermarkEnabled` -- `setTheme` below used to write `next` (the in-memory, possibly
+  // FR-019/FR-020-corrected `watermarkEnabled`) straight to disk, silently persisting that
+  // correction on an unrelated theme save. `serialize` is now the one place every writer in this
+  // class builds its on-disk row from, so `setTheme` (which must write its OWN just-updated
+  // `rawTheme`, unlike every other setter) and `persistWhole` (which writes the OLD `rawTheme`/
+  // `rawWatermarkEnabled`) can never again drift apart on this.
+  private serialize(next: Settings): Settings {
+    return { ...next, theme: this.rawTheme as ThemeId, watermarkEnabled: this.rawWatermarkEnabled as boolean }
+  }
+
   private async persistWhole(next: Settings): Promise<Settings> {
     this.data = next
-    await writeJsonFile(this.file, { ...next, theme: this.rawTheme as ThemeId, watermarkEnabled: this.rawWatermarkEnabled as boolean })
+    await writeJsonFile(this.file, this.serialize(next))
     return { ...next }
   }
 
@@ -153,9 +165,11 @@ export class SettingsStore {
     this.data = next
     // The one and only place allowed to turn `rawTheme` into a real, developer-saved value --
     // every other setter above goes through `persistWhole`, which deliberately writes the OLD
-    // `rawTheme` back, not this new one, until this method itself runs.
+    // `rawTheme` back, not this new one, until this method itself runs. `serialize` still writes
+    // `rawWatermarkEnabled` (unchanged by this call) rather than `next.watermarkEnabled`, so an
+    // in-memory FR-019/FR-020 correction never rides along on an unrelated theme save.
     this.rawTheme = themeId
-    await writeJsonFile(this.file, next)
+    await writeJsonFile(this.file, this.serialize(next))
     return { ...next }
   }
 
