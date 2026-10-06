@@ -96,6 +96,21 @@ shimmering rather than reading as deliberate animation. The same opacity-only ru
 across every size on the ladder (decision 2), rather than allowing translation only above some
 size, so the component has one animation behaviour to reason about, not two.
 
+**Quality-gate remediation** (UI MEDIUM, round 2, 3 independent reviewers): two deviations from
+the decision above, both required for the 16px working icon to stay visible, implemented directly
+in `globals.css`'s `@keyframes` (not reflected in the "Decision"/"Rationale" text above, which
+records what was originally built):
+1. the ~0.35 resting baseline measured as low as ~1.4:1 against `--sidebar` in both built-in theme
+   presets -- under the 3:1 WCAG AA non-text floor spec 007 FR-008 holds every other state icon
+   to, and the one frame visible under reduced motion (decision 6) -- raised to 0.7, which clears
+   3:1 for every arm colour against both presets' `--sidebar` (verified with the same OKLCH/WCAG
+   math as `scripts/check-theme-contrast.mjs`).
+2. a single ease-in-out curve per arm meant every arm was still partway through its own rise/fall
+   whenever a neighbour peaked (around 0.78 opacity, not resting), so "exactly one arm is at its
+   bright peak at any instant" above did not actually read as taking turns. Each arm's keyframes
+   now sit at the 0.7 rest value for two-thirds of the cycle with one short pulse to 1.0, so only
+   one arm is ever mid-pulse at a time.
+
 **Alternatives considered**: rotating the whole mark 360 degrees per cycle -- rejected for the
 upside-down problem above; a per-arm opacity-and-lift cascade (this spec's first draft) --
 rejected after design review: the lift's sub-pixel jump at 16px was judged to shimmer rather than
@@ -182,6 +197,14 @@ that could drift out of sync with it; freezing on one arm's bright peak instead 
 baseline (a "half-lit arm at rest") -- rejected: an arbitrarily-singled-out bright arm would read as
 an unfinished or stuck render rather than a deliberate calm state, and nothing about this feature
 needs the rest frame itself to signal "busy" (see Rationale above).
+
+**Quality-gate remediation** (UI MEDIUM): the resting baseline referenced above (~0.35) is raised
+to 0.7 (decision 3's remediation note) -- the 16px icon's only visible frame under reduced motion
+needs to independently clear 3:1 contrast against `--sidebar` in both theme presets, which 0.35
+did not. The frames each arm settles on when the cascade pauses (0%, 33.333%, 66.667%, 100%, as
+applicable per arm) are still all the same uniform 0.7 rest value, so the rationale above -- "all
+three arms uniformly at their dim baseline, never an arbitrary half-lit arm" -- still holds
+exactly as described, just at the new baseline value.
 
 ## 7. Colour treatment: fixed brand colours, not theme-derived
 

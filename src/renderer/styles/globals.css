@@ -270,35 +270,52 @@
 
 /* Brand spinner (spec 011 T002, data-model.md "Animation"): a per-arm opacity cascade, one
  * fixed core (`.brand-spinner-core`, opacity 1 throughout) and three arms whose own
- * `@keyframes` already encode a third-of-a-cycle stagger against each other (0%/100% both at
- * the 0.35 rest baseline, one frame partway through reaching the 1.0 peak) -- so every arm can
- * share the exact same `animation-delay`, set once per mounted instance by `BrandSpinner.tsx`
- * as the `--brand-spinner-delay` custom property (research.md decision 5), and every instance
- * mounted at any moment lands on the same point in the cycle as every other (FR-007). The
- * `prefers-reduced-motion: reduce` block above already collapses this to one near-instant
- * iteration landing back on each arm's shared rest frame (research.md decision 6) -- no new,
- * component-specific reduced-motion check (FR-008). Never `transform`, `filter`, or
- * `box-shadow` (FR-005). */
+ * `@keyframes` already encode a third-of-a-cycle stagger against each other (0%/33.333%/66.667%
+ * /100%, whichever apply, all at the 0.7 rest baseline, one brief pulse frame partway through
+ * reaching the 1.0 peak) -- so every arm can share the exact same `animation-delay`, set once
+ * per mounted instance by `BrandSpinner.tsx` as the `--brand-spinner-delay` custom property
+ * (research.md decision 5), and every instance mounted at any moment lands on the same point in
+ * the cycle as every other (FR-007). The `prefers-reduced-motion: reduce` block above already
+ * collapses this to one near-instant iteration landing back on each arm's shared rest frame
+ * (research.md decision 6) -- no new, component-specific reduced-motion check (FR-008). Never
+ * `transform`, `filter`, or `box-shadow` (FR-005).
+ *
+ * Quality-gate remediation (UI MEDIUM, 3 independent reviewers): two deviations from the
+ * original 0.35-rest, single-ease-in-out-curve-per-arm design (research.md decision 3,
+ * data-model.md "Animation"), both required for the 16px working icon to stay visible:
+ * 1. Rest baseline raised 0.35 -> 0.7: the Simplified core is always opaque and the arms
+ *    previously rested as low as ~1.4:1 against `--sidebar` in both built-in theme presets --
+ *    under the 3:1 WCAG AA non-text floor spec 007 FR-008 holds every other state icon to, and
+ *    the one visible under `prefers-reduced-motion: reduce`, which freezes on exactly this
+ *    frame. 0.7 clears 3:1 for every arm colour against both presets' `--sidebar` (verified
+ *    with the same OKLCH/WCAG math as `scripts/check-theme-contrast.mjs`).
+ * 2. Each arm's single 0% -> peak -> 100% ease-in-out curve replaced with a short pulse that
+ *    sits at rest for two-thirds of the cycle: previously, every arm was still partway through
+ *    its own rise/fall whenever a neighbour peaked (research.md's "exactly one arm is at its
+ *    bright peak" did not hold -- the other two were still visibly brightening/dimming, around
+ *    0.78 opacity, not resting), so the highlight never read as genuinely taking turns.
+ */
 @keyframes brand-spinner-arm-1 {
-  0%, 100% { opacity: 0.35; }
+  0%, 33.333%, 100% { opacity: 0.7; }
   16.667% { opacity: 1; }
 }
 @keyframes brand-spinner-arm-2 {
-  0%, 100% { opacity: 0.35; }
+  0%, 33.333%, 66.667%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
 @keyframes brand-spinner-arm-3 {
-  0%, 100% { opacity: 0.35; }
+  0%, 66.667%, 100% { opacity: 0.7; }
   83.333% { opacity: 1; }
 }
 
 .brand-spinner-arm-1,
 .brand-spinner-arm-2,
 .brand-spinner-arm-3 {
-  /* The rest frame is the BASE style, not only the 0%/100% keyframes: when the animation does
-   * not run or ends (prefers-reduced-motion collapses it to one 0.01ms iteration with no fill),
-   * the arm must settle on the dim rest frame, never the bright peak (FR-009). */
-  opacity: 0.35;
+  /* The rest frame is the BASE style, not only the 0%/100%/33.333%/66.667% keyframes: when the
+   * animation does not run or ends (prefers-reduced-motion collapses it to one 0.01ms iteration
+   * with no fill), the arm must settle on the dim rest frame, never the bright peak (FR-009).
+   * 0.7, not the original 0.35 -- quality-gate remediation above the @keyframes block. */
+  opacity: 0.7;
   animation-duration: 1.2s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
@@ -312,10 +329,16 @@
 /* Brand spinner under Windows forced-colors mode (spec 011 T009, FR-014, research.md decision
  * 14): every arm and core fill switches from its fixed brand hex value to a system colour
  * keyword, so the mark stays visible against whatever background the active forced-colors
- * theme provides, rather than keeping colours never designed against it. */
+ * theme provides, rather than keeping colours never designed against it.
+ *
+ * Quality-gate remediation (Code LOW): plain `path` selector, not `:is(path, use)` -- neither
+ * variant's markup contains a `<use>` element (BrandSpinner.tsx), so the `use` branch matched
+ * nothing. `!important` dropped too: an SVG `fill` attribute is a presentation attribute, the
+ * lowest-priority origin in the CSS cascade, so any author-stylesheet rule -- even this plain,
+ * non-`!important` class-descendant selector -- already overrides it unconditionally. */
 @media (forced-colors: active) {
-  .brand-spinner :is(path, use) {
-    fill: CanvasText !important;
+  .brand-spinner path {
+    fill: CanvasText;
   }
 }
 

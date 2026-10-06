@@ -36,6 +36,15 @@ export function BrandSpinner(props: BrandSpinnerProps): JSX.Element
   component in the app whose colour does not vary with `theme-store.ts`'s active theme. Under
   `@media (forced-colors: active)` the fills switch to system colour keywords instead (research.md
   decision 14, "Forced colors" below) -- the one exception to "always the fixed brand palette".
+  **Quality-gate remediation** (UI MEDIUM, 3 reviewers): the Simplified variant's core
+  (`BrandSpinner.tsx`'s `SimplifiedMark`) was always opaque at `#52208E`, which measured ~1.67:1 /
+  ~1.92:1 against the Dark / Dark (high contrast) `--sidebar` -- under the 3:1 floor spec 007
+  FR-008 holds every other state icon's colour to, and the one colour in this variant that can
+  never be dimmer (it never animates). Swapped for the Full mark's own `#864DD6` core facet
+  (~3.45:1 / ~3.97:1, both >=3:1) -- still one of the mark's existing fixed brand hex values, not
+  a new one. The Simplified arm-3 (violet stem) hex also moved from `#7544C9` to the Full mark's
+  own `#A877E0` arm-3 facet, so the stem reads as visibly separate from the brighter core next to
+  it. The Full variant's own colours are unchanged.
 - At its 16px size, the rendered `<svg>`'s vertical centre is positioned so it aligns with the
   adjacent session name text's vertical centre within 0.5px (FR-015, research.md decision 13) --
   a property of the rendered output, not an assumption that the source artwork's own viewBox is
@@ -68,14 +77,24 @@ not apply -- the override is driven entirely by the media query, never by a prop
 No React state of any kind; the animation is pure CSS and needs no store.
 
 - One `@keyframes` definition per arm (or one shared definition applied three times with different
-  delays -- an implementation choice, not specified here): each arm's `0%`/`100%` frames are
-  identical ("at rest": the dim 0.35 baseline opacity, never the bright peak), with one brief
-  frame partway through reaching the 1.0 bright peak, so a near-zero-duration, single-iteration
-  collapse (reduced motion, research.md decision 6) always lands back on the matching dim rest
-  frame -- never a physical position change (`transform`/"lift"), only `opacity` (research.md
-  decision 3).
+  delays -- an implementation choice, not specified here): each arm's rest frames (`0%`/`100%`,
+  plus the other two-thirds-points on its own cycle it sits at rest at -- see remediation note
+  below) are identical ("at rest": the dim 0.7 baseline opacity, never the bright peak), with one
+  brief frame partway through reaching the 1.0 bright peak, so a near-zero-duration,
+  single-iteration collapse (reduced motion, research.md decision 6) always lands back on the
+  matching dim rest frame -- never a physical position change (`transform`/"lift"), only `opacity`
+  (research.md decision 3).
 - Three arms, evenly spaced a third of a cycle apart (research.md decision 3), 1.2s cycle,
   ease-in-out, infinite.
+  **Quality-gate remediation** (UI MEDIUM, 2 findings, 3 reviewers; research.md decision 3's own
+  remediation note has the full numbers): the rest baseline was originally 0.35, not 0.7 --
+  raised because the Simplified variant's arms measured as low as ~1.4:1 against `--sidebar` at
+  that opacity, under spec 007 FR-008's 3:1 floor. Each arm's keyframes were also redesigned from
+  one continuous ease-in-out curve per cycle (0% rest -> peak -> 100% rest) to a short pulse that
+  sits at the 0.7 rest value for two-thirds of the cycle, so neighbouring arms are never still
+  mid-rise/fall (around 0.78 opacity) when one arm peaks, matching "exactly one arm is at its
+  bright peak at any instant" (research.md decision 3) as an actually-visible, not merely
+  nominal, cascade.
 - **Shared clock** (research.md decision 5): at mount, each instance computes its own
   `animation-delay` as `-(Date.now() % 1200)`ms -- a pure function of wall-clock time, computed
   once, with no listener, no `requestAnimationFrame`, and no per-frame React work afterward. Every

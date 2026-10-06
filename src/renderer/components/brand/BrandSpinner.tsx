@@ -120,12 +120,22 @@ function SimplifiedMark() {
       <path
         className="brand-spinner-arm-3"
         d="M256 327.7 L287.9 346.1 L287.9 409.5 L256 428.2 L224.1 409.5 L224.1 346.1 Z"
-        fill="#7544C9"
+        // Quality-gate remediation (UI MEDIUM, 3 reviewers): lighter than the Full variant's
+        // own mid-tone facet so the stem reads as separate from the lightened core below,
+        // reusing the Full mark's own brightest arm-3 facet colour (FullMark above) rather
+        // than inventing a new brand hue.
+        fill="#A877E0"
       />
       <path
         className="brand-spinner-core"
         d="M256 196.3 L306 225.4 L306 283.6 L256 312.7 L206 283.6 L206 225.4 Z"
-        fill="#52208E"
+        // Quality-gate remediation (UI MEDIUM, 3 reviewers, globals.css check-theme-contrast.mjs
+        // math): the core is always opaque (never animated), so it is the one colour in this
+        // variant that is also the *only* always-visible pixel group -- the prior #52208E
+        // measured ~1.67:1 / ~1.92:1 against the two themes' --sidebar, well under the 3:1
+        // floor spec 007 FR-008 holds every other state icon to. Reusing the Full mark's own
+        // #864DD6 core facet (FullMark above) instead measures ~3.45:1 / ~3.97:1 -- both >=3:1.
+        fill="#864DD6"
       />
     </>
   )
