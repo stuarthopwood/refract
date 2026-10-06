@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { CollapsedLine } from './CollapsedLine'
 import { initials } from '@/lib/initials'
-import { CodeBlock, inferOutputBlock } from './Markdown'
+import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 
 type AskToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -90,6 +90,21 @@ function askAnswer(item: AskToolItem): string {
   return item.output ?? ''
 }
 
+/** FR-018 (issue #491): a question with more than one line shows its first line as a short
+ * heading of medium weight, with the rest rendered as the body; a single-line question has no
+ * separate heading, only a body. Splits on the raw text's own newline, not on markdown block
+ * boundaries -- the agent's question is plain multi-line text, and the markdown renderer turns
+ * each half into its own blocks independently. */
+function splitQuestionHeading(text: string): { heading: string | null; body: string } {
+  const normalized = text.replace(/\r\n/g, '\n')
+  const newlineIndex = normalized.indexOf('\n')
+  if (newlineIndex === -1) return { heading: null, body: normalized }
+  const heading = normalized.slice(0, newlineIndex).trim()
+  const body = normalized.slice(newlineIndex + 1).replace(/^\n+/, '')
+  if (!heading || !body) return { heading: null, body: normalized }
+  return { heading, body }
+}
+
 interface AskQuestionRowProps {
   item: AskToolItem
   userName?: string
@@ -97,15 +112,17 @@ interface AskQuestionRowProps {
 
 // The answered-question line (T073, FR-018, FR-045, docs/DESIGN.md "Chat"): a collapsed
 // "Asked user:" row (question cut to one line) on the T080 baseline, expanding to the full
-// question and its options as plain text, with an indented "Answer:" row below carrying a small
-// round avatar of the user's initials, their name, and the answer ("Cancelled" for a cancelled
-// question). Built from the agent's own `ask` tool item (T072): its `args` hold the question and
-// options, its `output`/`details` the chosen answer, both of which survive a restart via
-// `get_messages`, unlike the `request` item this supersedes once it resolves.
+// question through the same sanitised-markdown heading/body renderer the live card uses (FR-018,
+// issue #491), with an indented "Answer:" row below carrying a small round avatar of the user's
+// initials, their name, and the answer ("Cancelled" for a cancelled question). Built from the
+// agent's own `ask` tool item (T072): its `args` hold the question and options, its
+// `output`/`details` the chosen answer, both of which survive a restart via `get_messages`,
+// unlike the `request` item this supersedes once it resolves.
 export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
   const { question, options } = readAskArgs(item.args)
   const answer = askAnswer(item)
   const name = userName ?? 'You'
+  const { heading, body } = splitQuestionHeading(question)
 
   return (
     <CollapsedLine
@@ -115,8 +132,14 @@ export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
     >
       {/* Dimmed to `--muted-foreground` (accessibility-auditor, round 2): matches the collapsed
        * summary above instead of the ambient `--foreground` this previously inherited, which
-       * reads brighter than primary chat prose and inverted the secondary/bookkeeping hierarchy. */}
-      <div className="whitespace-pre-wrap text-sm text-muted-foreground">{question}</div>
+       * reads brighter than primary chat prose and inverted the secondary/bookkeeping hierarchy.
+       * Rendered through the shared Markdown component (FR-018, issue #491) with the same
+       * heading/body split as the live question card, so a question looks the same before and
+       * after answering. */}
+      {heading && (
+        <Markdown id={`${item.id}-ask-heading`} text={heading} className="font-medium text-muted-foreground" />
+      )}
+      <Markdown id={`${item.id}-ask-body`} text={body} className="text-muted-foreground" />
       {options.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
           {options.map((option) => (
@@ -213,13 +236,29 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   const trimmedText = text.trim()
+  // FR-018 (issue #491): the whole question used to sit in `CardTitle`'s bold/medium-weight
+  // style, over-emphasising even a long multi-paragraph question. Now only a genuine first-line
+  // heading (when the question has more than one line) uses that style; the body always renders
+  // through the shared sanitised-markdown `Markdown` component at normal weight, in its own
+  // maximum-height scrolling region so a long question never pushes the options or Cancel off
+  // screen (WCAG 1.4.10).
+  const { heading, body } = splitQuestionHeading(request.title)
 
   return (
     <Card size="sm">
-      <CardHeader>
-        <CardTitle>{request.title}</CardTitle>
-        {request.message && <CardDescription>{request.message}</CardDescription>}
-      </CardHeader>
+      {heading && (
+        <CardHeader>
+          <CardTitle>
+            <Markdown id={`${request.requestId}-ask-heading`} text={heading} />
+          </CardTitle>
+        </CardHeader>
+      )}
+      <CardContent className="max-h-56 space-y-2 overflow-y-auto">
+        <Markdown id={`${request.requestId}-ask-body`} text={body} />
+        {request.message && (
+          <Markdown id={`${request.requestId}-ask-message`} text={request.message} className="text-muted-foreground" />
+        )}
+      </CardContent>
       <CardContent className="space-y-2">
         {request.inputKind === 'confirm' && (
           <div className="flex gap-2">
@@ -232,17 +271,17 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </div>
         )}
         {request.inputKind === 'choice' && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2">
             {request.options.map((option, index) => (
               <Button
                 key={option}
                 size="sm"
                 variant="outline"
                 disabled={busy}
-                className="h-auto flex-col items-start gap-0 py-1"
+                className="h-auto w-full flex-col items-start gap-0 whitespace-normal py-1.5 text-left"
                 onClick={() => void answer({ value: option }, 'answered', option)}
               >
-                <span>{option}</span>
+                <span className="font-medium">{option}</span>
                 {/* `optionDetails` is a plain string (main converts OMP's `{description?}` objects
                  * before it reaches here) -- rendered as text, never as an object. */}
                 {request.optionDetails?.[index] && (
