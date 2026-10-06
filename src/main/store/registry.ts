@@ -54,12 +54,16 @@ export class RegistryStore {
     if (this.data.sessions.some((s) => s.repositoryId === id)) {
       throw new RegistryError('has-sessions', REPOSITORY_HAS_SESSIONS_MESSAGE)
     }
-    const previous = this.data.repositories
-    this.data.repositories = previous.filter((r) => r.id !== id)
+    const index = this.data.repositories.findIndex((r) => r.id === id)
+    const [removed] = this.data.repositories.splice(index, 1)
     try {
       await writeJsonFile(this.file, this.data)
     } catch (err) {
-      this.data.repositories = previous
+      // Put the repository back into the CURRENT list, not a stale copy of it, so a repository
+      // added while this write was in flight is not lost.
+      if (removed && !this.data.repositories.some((r) => r.id === removed.id)) {
+        this.data.repositories.splice(Math.min(index, this.data.repositories.length), 0, removed)
+      }
       throw err
     }
   }
@@ -84,8 +88,11 @@ export class RegistryStore {
       await writeJsonFile(this.file, this.data)
     } catch (err) {
       // The caller rolls back the worktree it just made on any failure here, so the Session
-      // record must not outlive it in memory (it would otherwise be saved by the next write).
+      // record must not outlive it: drop it by id (never restore a whole earlier array, which
+      // would discard other writes made meanwhile), then make one best-effort attempt to save the
+      // corrected data, because a write queued earlier may already have saved this record.
       this.data.sessions = this.data.sessions.filter((existing) => existing.id !== s.id)
+      await writeJsonFile(this.file, this.data).catch(() => undefined)
       throw err
     }
   }

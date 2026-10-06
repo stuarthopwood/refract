@@ -107,9 +107,7 @@ export function focusSessionPane(sessionId: string): void {
 // tick, so there is no repository header, and no Sessions nav either, left to query -- Readiness
 // marks its one primary action with `data-readiness-primary` for exactly this case, mirroring
 // `focusSettingsEntry`'s stable-marker approach above, and its own heading with
-// `data-readiness-root` for the rare case where even Re-check is still disabled (mid-check).
-// Every tick first checks that focus hasn't already moved on its own: a Tab or a click on
-// Re-check while this is still waiting must never be overridden.
+// `data-readiness-root`, where focus parks first (see the comment on the loop below).
 export function focusRepositoryGroupOrReadiness(preferredRepositoryId?: string): void {
   const groups = Array.from(document.querySelectorAll<HTMLElement>('[data-repository-id]'))
   const preferredGroup = preferredRepositoryId
@@ -136,7 +134,7 @@ export function focusRepositoryGroupOrReadiness(preferredRepositoryId?: string):
       primary.focus()
       return
     }
-    if (!parked) {
+    if (!parked?.isConnected) {
       const readinessRoot = document.querySelector<HTMLElement>('[data-readiness-root]')
       if (readinessRoot) {
         readinessRoot.focus()
@@ -148,10 +146,7 @@ export function focusRepositoryGroupOrReadiness(preferredRepositoryId?: string):
       window.setTimeout(tick, 100)
       return
     }
-    if (parked) return
-    const fallback = document.querySelector<HTMLElement>('[data-readiness-primary]')?.parentElement?.querySelector<HTMLElement>('button:not(:disabled)')
-    if (fallback) fallback.focus()
-    else focusSessionsNav()
+    if (!parked) focusSessionsNav()
   }
   tick()
 }
