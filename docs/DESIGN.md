@@ -38,6 +38,7 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
   - **(default)** Refract uses fonts installed on the system and does not bundle any; glyphs missing from the chosen font fall back to another installed font.
   - **Exception**: the "Refract" wordmark and tagline on the Readiness screen's brand header use one bundled display font (Geist, `src/renderer/assets/fonts/`): the wordmark at weight 700/48px, the tagline lighter. It is not a UI font or Code font setting and is never used for body text. The app icon itself (`build/icon.ico`) is a separately authored image asset, not rendered from this font.
 - **State colour roles** **(default)**: working (accent), idle (muted), needs you (warning), stopped (error). Every state also has a distinct icon, so colour is never the only signal.
+- **Brand watermark** (spec 012): a faint, single-colour silhouette of the Refract mark, anchored to the bottom-right corner of the chat area's reading area (never the composer), on by default and toggled off (or back on) from a switch in the Appearance section. Exactly one instance shows at a time -- the single chat pane, or the right pane of a split, never both -- and it is hidden outright on the Settings, Readiness, and (once built) Manage sessions screens, and whenever Windows High Contrast or reduced transparency is on.
 - **Shared status icon** (Stuart, 2026-10-04; extends State colour roles above): every surface that shows a session's live status -- session list, chat header, status bar, tooltips -- renders through the one shared `StateIcon` component (`src/renderer/features/sessions/sessionDisplay.tsx`): a spinning circle for working, a hollow circle for idle, a bell for needs-you, a square for stopped. No surface draws its own plain filled dot, or any other shape, for a state `StateIcon` already covers.
 - **Scrollbars**: thin, drawn from theme colours (`--scrollbar-thumb`, `--scrollbar-thumb-hover`, `--scrollbar-track`), and `color-scheme` follows the theme so no default light scrollbar appears on dark.
 - **Square choice items**: options in pickers and menus, tabs, toggle segments, the selected session row, and conversation rows have square corners (one rule in `globals.css`); buttons, inputs, popups, dialogs, cards, and chips keep their rounding.
@@ -120,6 +121,7 @@ Send and Stop each name their chord in a tooltip on hover and keyboard focus, as
 
 - Approval mode (a pill above the message box, spec 001 T098; no longer on the status bar).
 - Theme: shipped (spec 007) -- Appearance section, Dark / Dark (high contrast) presets, live preview. UI font, code font (family, ligatures, size): wanted, not yet built; tracked as issue #4.
+- Background watermark: shipped (spec 012) -- Appearance section, a switch below the theme picker with a live preview; on by default, applies immediately with no restart.
 
 ## Confirmed in implementation
 

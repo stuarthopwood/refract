@@ -22,6 +22,7 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
 import { Transcript } from './Transcript'
@@ -120,9 +121,16 @@ interface ChatPaneProps {
   /** Spec 005 (research.md Decision 6, FR-017): set only by App.tsx's narrow-window collapse,
    * never while both panes are genuinely shown side by side. */
   otherSession?: { id: string; name: string } | null
+  /** Spec 012 (data-model.md "Extended ChatPaneProps"): true for exactly one rendered ChatPane
+   * at a time -- the single pane shown when there is only one, or the right (second, paneIndex
+   * 1) pane of a true two-pane split. App.tsx computes and passes this; ChatPane itself does not
+   * infer it from useSplitStore. Mounts <BrandWatermark variant="live" /> in this pane's
+   * transcript container (the normal case) or its own `!session` Empty fallback, whichever
+   * branch is active. */
+  showWatermark?: boolean
 }
 
-export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession }: ChatPaneProps) {
+export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark }: ChatPaneProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   // bug report point 4: while `sessions-store.ts`'s `open()` is in flight for this Session (a
   // fresh click, or a not-started Session cold-starting its agent), show that here too -- not
@@ -276,8 +284,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   }, [isFocused, isSplit, focusMoveSignal])
 
   if (!session) {
+    // Quality-gate remediation (code-reviewer/ui-architect, Medium): same fix as App.tsx's own
+    // no-pane-open empty state -- `[container-type:size]` makes this root (not the window) the
+    // `20cqw` query container, and `isolate` (plus the mark's own `-z-10`, BrandWatermark.tsx)
+    // keeps the absolutely-positioned mark painting behind this Empty's normal-flow content
+    // instead of over it (research.md decision 8).
     return (
-      <Empty className="h-full">
+      <Empty className="relative isolate h-full [container-type:size]">
+        {showWatermark && <BrandWatermark variant="live" />}
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <MessageSquareIcon />
@@ -438,7 +452,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           else focusSessionsNav()
         }}
       />
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
+        {showWatermark && <BrandWatermark variant="live" />}
         <Transcript sessionId={sessionId} />
       </div>
       <MessageInput

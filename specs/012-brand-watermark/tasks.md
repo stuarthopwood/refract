@@ -32,7 +32,7 @@ tracking issue and kept here.
 
 **Purpose**: confirm the one external dependency this spec does not build itself.
 
-- [ ] T001 Confirm the prerequisite brand-asset change (branch `brand-icon-v2`) is merged into
+- [X] T001 Confirm the prerequisite brand-asset change (branch `brand-icon-v2`) is merged into
   `main` and `src/renderer/assets/brand/refract-hero.svg` exists at the path and square viewBox
   (`"96 122 320 320"`) described in spec.md's "Prerequisite" section. If it has not landed yet,
   treat every later task that references that path as blocked and coordinate rather than
@@ -47,25 +47,25 @@ tracking issue and kept here.
 **Purpose**: the one new setting, its IPC round trip, and the renderer store action every story
 builds on.
 
-- [ ] T002 [P] Extend `src/shared/model.ts`'s `Settings` interface with
+- [X] T002 [P] Extend `src/shared/model.ts`'s `Settings` interface with
   `watermarkEnabled: boolean` (data-model.md). (depends on T001 only in that the feature exists;
   no file dependency) (#409)
-- [ ] T003 Extend `src/shared/ipc.ts`: add `IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED =
+- [X] T003 Extend `src/shared/ipc.ts`: add `IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED =
   'settings.setWatermarkEnabled'` and `RefractApi.settings.setWatermarkEnabled(enabled: boolean):
   Promise<Result<Settings>>`, per contracts/ipc.md (depends on T002). (#410)
-- [ ] T004 Extend `src/main/store/settings.ts`: `readJsonFile`'s default row gains
+- [X] T004 Extend `src/main/store/settings.ts`: `readJsonFile`'s default row gains
   `watermarkEnabled: true`; `SettingsStore.open` treats a missing or non-boolean stored
   `watermarkEnabled` as `true` in memory (same lazy-correction pattern as `theme`/`split`,
   data-model.md); add `setWatermarkEnabled(enabled: boolean): Promise<Settings>` persisting the
   whole row via the existing `persistWhole` helper, same race-safety contract as
   `setReadoutVisibility` (depends on T002). (#411)
-- [ ] T005 Extend `src/main/ipc/settings.ts`: `registerSettings` gains an
+- [X] T005 Extend `src/main/ipc/settings.ts`: `registerSettings` gains an
   `ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, ...)` handler validating the
   argument is a boolean (`invalid-argument` otherwise), calling `manager.settings
   .setWatermarkEnabled`, and broadcasting `settings:changed` (depends on T003, T004). (#412)
-- [ ] T006 Extend `src/preload/index.ts`: expose `settings.setWatermarkEnabled` alongside the
+- [X] T006 Extend `src/preload/index.ts`: expose `settings.setWatermarkEnabled` alongside the
   existing `settings.*` methods (depends on T003, T005). (#413)
-- [ ] T007 Extend `src/renderer/state/settings-store.ts`: `DEFAULT_SETTINGS.watermarkEnabled =
+- [X] T007 Extend `src/renderer/state/settings-store.ts`: `DEFAULT_SETTINGS.watermarkEnabled =
   true`; add a `setWatermarkEnabled(enabled: boolean): Promise<void>` action calling
   `window.refract.settings.setWatermarkEnabled`, mirroring `setReadoutVisibility`'s body exactly
   (depends on T006). (#414)
@@ -83,7 +83,7 @@ chat area.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 1.
 
-- [ ] T008 [US1] Add to `src/renderer/styles/globals.css`: `--watermark-opacity: 0.06;` in `:root`
+- [X] T008 [US1] Add to `src/renderer/styles/globals.css`: `--watermark-opacity: 0.06;` in `:root`
   (research.md decision 5, documented ceiling `0.12`); a `.watermark-mark` rule (`mask-image:
   url(...refract-hero.svg); mask-size: contain; mask-repeat: no-repeat; mask-position: center;
   background-color: var(--muted-foreground); opacity: var(--watermark-opacity)`, research.md
@@ -92,14 +92,14 @@ chat area.
   `@media (forced-colors: active), (prefers-reduced-transparency: reduce) { .watermark-mark {
   display: none; } }` (research.md decision 11, both media features confirmed real at this app's
   pinned Electron/Chromium) (depends on T001 for the real asset path). (#415)
-- [ ] T009 [US1] Write `src/renderer/features/chat/BrandWatermark.tsx`: reads
+- [X] T009 [US1] Write `src/renderer/features/chat/BrandWatermark.tsx`: reads
   `useSettingsStore((s) => s.settings.watermarkEnabled)`, renders `null` when `false`; otherwise an
   `aria-hidden` `div` with `pointer-events-none` and the `.watermark-mark` class, sized per
   `variant: 'live' | 'preview'` (data-model.md) — `'live'` gets the responsive clamp from T008 and
   is mounted inside whichever of ChatPane.tsx's eligible render branches is active (T010),
   `'preview'` gets a fixed ~96px box with no corner-anchor positioning, meant to sit inline inside
   a bordered preview container (depends on T007, T008). (#416)
-- [ ] T010 [US1] Edit `src/renderer/features/chat/ChatPane.tsx`: add a new `showWatermark?:
+- [X] T010 [US1] Edit `src/renderer/features/chat/ChatPane.tsx`: add a new `showWatermark?:
   boolean` prop (data-model.md); add `relative` and `[container-type:size]` to the existing
   transcript container's class string (`<div className="min-h-0 flex-1 overflow-hidden">`, no new
   wrapper div) and mount `<BrandWatermark variant="live" />` as its first child when
@@ -126,7 +126,7 @@ without leaving Settings.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 2.
 
-- [ ] T012 [US2] Edit `src/renderer/features/settings/AppearanceSection.tsx`: below the existing
+- [X] T012 [US2] Edit `src/renderer/features/settings/AppearanceSection.tsx`: below the existing
   theme picker's Save/Cancel row, add an `<hr className="my-6 border-border" />` divider followed
   by a visually separated sub-section with a `Switch` labelled "Background watermark" + one-line,
   jargon-free description, matching `SettingsScreen.tsx`'s Session readout toggle layout, wired to
@@ -151,7 +151,7 @@ below WCAG 2.2 AA.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 3.
 
-- [ ] T014 [US3] Audit (and fix if needed) `BrandWatermark.tsx`/`globals.css`: confirm
+- [X] T014 [US3] Audit (and fix if needed) `BrandWatermark.tsx`/`globals.css`: confirm
   `pointer-events: none` and `aria-hidden` are present and effective (no native interactive
   element, no implicit ARIA role, no `tabindex`); confirm the combined `forced-colors: active`/
   `prefers-reduced-transparency: reduce` rule actually suppresses it; extend
@@ -193,7 +193,7 @@ session-list/Subagent-panel/split state, and consistently absent from every full
 
 **Purpose**: documentation and a final full-spec verification pass.
 
-- [ ] T017 [P] Update `docs/DESIGN.md`: a new bullet under "Look and feel" describing the
+- [X] T017 [P] Update `docs/DESIGN.md`: a new bullet under "Look and feel" describing the
   watermark (anchor, toggle, hidden on full-screen views), and a new line under "Settings in the
   first build" naming the switch (depends on T011, T013). (#424)
 - [ ] T018 Run every check in [quickstart.md](quickstart.md), all four stories, on one clean build;
@@ -233,3 +233,10 @@ Phase 1 + Phase 2 + Phase 3 (User Story 1) alone already delivers the visible fe
 for (a faint, correctly anchored, non-duplicating mark). Phase 4 (User Story 2) adds the toggle his
 request also explicitly named. Phases 5-6 harden and prove it; neither blocks shipping Phases 1-4
 first if desired.
+
+## Implementation evidence (parent, 2026-10-06, scratch profile, real CDP, Dark theme)
+
+- T011 (partly verified, unchecked): default on; the mark shows in the "Select a Session" empty state and anchors to the chat reading area's bottom-right corner directly above the composer in a single pane (100px square at 1280px); with a two-pane split open there is exactly one `.watermark-mark`, at x=1155 in the right pane; `aria-hidden="true"`, `pointer-events: none`, opacity 0.06. NOT verified: the composer growing to its 8-line maximum, window resize scaling, the Subagent panel open.
+- T013 (partly verified, unchecked): Settings > Appearance shows "Background watermark" with a switch and a bordered preview box with the mark; a real click turns the switch off, the live watermark count drops to 0, and the value persists across a page reload; turning it back on restores it. Default is on for a fresh profile. NOT verified: a hand-edited missing or non-boolean stored value falling back to on.
+- Forced colors and `prefers-reduced-transparency: reduce` (emulated): the mark computes `display: none` in both.
+- NOT verified: T015 (text selection and clicks through the mark; `pointer-events: none` is confirmed), T016 (drag-resize behaviours), T018 (the full quickstart pass), and the settings screen's dark high-contrast appearance.

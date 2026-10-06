@@ -102,6 +102,13 @@ for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   themes[themeId] = props
 }
 
+// Spec 012 (brand watermark, research.md decision 13): `--watermark-opacity` is
+// theme-independent, declared once in `:root`, not inside any `.theme-<id>` block above.
+const ROOT_BLOCK_RE = /:root\s*\{([^}]*)\}/
+const rootMatch = css.match(ROOT_BLOCK_RE)
+const watermarkOpacityMatch = rootMatch ? rootMatch[1].match(/--watermark-opacity:\s*([\d.]+)\s*;/) : null
+const watermarkOpacity = watermarkOpacityMatch ? Number(watermarkOpacityMatch[1]) : null
+
 // ---- WCAG relative luminance / contrast ratio -------------------------------------------------
 
 function clamp01(x) {
@@ -206,6 +213,65 @@ for (const [themeId, props] of Object.entries(themes)) {
       fgHex: linearToHex(fgLinear),
       bgHex: linearToHex(bgLinear),
     })
+  }
+}
+
+// ---- spec 012 (brand watermark): the mark's own worst-case composited backdrop ---------------
+// The mark's rendered colour -- `--muted-foreground` masked at `--watermark-opacity` over
+// `--background` (globals.css `.watermark-mark`'s own two declarations) -- composited as a
+// backdrop, checked against the two text colours that can plausibly sit over it in the reading
+// area: `--muted-foreground` itself (secondary/meta text) and `--chat-foreground` (primary
+// prose). Both must clear 4.5:1 (WCAG AA body text), in every theme (research.md decision 13).
+
+// Quality-gate remediation (code-reviewer, Medium): this whole block used to silently skip
+// (via the outer `if`/an inner `continue`) whenever `--watermark-opacity` failed to parse or a
+// theme was missing `muted-foreground`/`background`/the pair's own foreground token -- a
+// future CSS edit that broke any of those would make this script report nothing but an
+// all-PASS table instead of catching the regression. Every one of those cases now pushes a
+// `pass: false` row (the PAIRS loop's own 'token missing' shape above) AND counts toward
+// `checkedCount`/`failCount`, so a missing token fails the run (non-zero exit below) instead
+// of quietly dropping out of the denominator.
+if (watermarkOpacity === null) {
+  checkedCount++
+  failCount++
+  rows.push({ themeId: '(root)', fg: '--watermark-opacity', bg: ':root', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+} else {
+  for (const [themeId, props] of Object.entries(themes)) {
+    const mutedFg = props['muted-foreground']
+    const background = props['background']
+    if (!mutedFg || !background) {
+      checkedCount++
+      failCount++
+      rows.push({ themeId, fg: 'muted-foreground', bg: 'background', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const markEntry = { raw: 'mark', alpha: watermarkOpacity, linear: mutedFg.linear }
+    const markBackdropLinear = resolvedLinear(markEntry, background)
+    const markBackdropEntry = { raw: 'mark-on-background', alpha: 1, linear: markBackdropLinear }
+    for (const fg of ['muted-foreground', 'chat-foreground']) {
+      const fgEntry = props[fg]
+      if (!fgEntry) {
+        checkedCount++
+        failCount++
+        rows.push({ themeId, fg, bg: 'mark-on-background', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+        continue
+      }
+      const fgLinear = resolvedLinear(fgEntry, markBackdropEntry)
+      const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(markBackdropLinear))
+      const pass = ratio >= 4.5
+      checkedCount++
+      if (!pass) failCount++
+      rows.push({
+        themeId,
+        fg,
+        bg: 'mark-on-background',
+        min: 4.5,
+        ratio,
+        pass,
+        fgHex: linearToHex(fgLinear),
+        bgHex: linearToHex(markBackdropLinear),
+      })
+    }
   }
 }
 
