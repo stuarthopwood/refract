@@ -31,8 +31,10 @@ pnpm build        # must pass before a change lands on main
    area simply switches away from chat with nothing further to show yet — the switch itself is
    what this story checks).
 3. Select the profile item anywhere else. Expect: the profile menu opens, not Settings.
-4. Sign out of the GitHub CLI (`gh auth logout`) outside Refract, then look at the profile item.
-   Expect: a generic avatar and "Sign in" in place of a name; opening the menu offers Sign in.
+4. Sign out of the GitHub CLI (`gh auth logout`) outside Refract, then return to the Refract
+   window (bringing it into focus refreshes the account list, throttled to once per 5 s).
+   Expect: the profile item shows a generic avatar and "Sign in" in place of a name; opening the
+   menu offers "Sign in to GitHub…".
 5. Using only the keyboard, Tab to the profile item and to the cog. Expect: both take focus with
    a visible indicator, in that order, and a screen reader reads each as one phrase naming the
    sign-in state.
@@ -68,7 +70,8 @@ pnpm build        # must pass before a change lands on main
    <host>? No account will remain active."; confirming shows "No GitHub account is signed in" in
    Manage accounts and returns the profile item and menu to the signed-out state (Story 1).
 8. Run `gh auth logout` for every account outside Refract, or uninstall the GitHub CLI from PATH,
-   then look at the profile item and Manage accounts. Expect: both say so, offering Sign in (CLI
+   then return to the Refract window (or open Manage accounts, which also re-reads on open).
+   Expect: both the profile item and Manage accounts say so, offering "Sign in to GitHub…" (CLI
    present) or the Install action from the readiness screen (CLI missing, spec 006).
 
 **Story 3: manage OMP sign-in beside GitHub (FR-016, FR-017)**
@@ -98,28 +101,34 @@ pnpm build        # must pass before a change lands on main
 
 > Manage sessions lands with the screen it opens (Phase 7).
 
-1. Open the profile menu. Expect: items appear in this order: the account header, Manage
-   accounts, Manage sessions, Theme, Keyboard shortcuts, Health check, What's new, then Sign out,
-   visually set apart by separators.
-2. Open the Theme submenu. Expect: every built-in dark preset with its real swatch colour, the
+1. Open the profile menu. Expect: items appear in this order: the account header, then -- only
+   when the active account's own GitHub sign-in needs attention -- a conditional "Fix
+   sign-in…" (or "Check GitHub connection…" for an unreachable host) item, Manage accounts,
+   Manage sessions, Theme, Keyboard shortcuts, Health check, What's new, then Sign out, visually
+   set apart by separators.
+2. With the active account's GitHub sign-in needing attention (an expired token, or an
+   unreachable host), open the profile menu and select "Fix sign-in…"/"Check GitHub
+   connection…". Expect: Manage accounts opens and focus lands on that account's own recovery
+   button (Sign in again, or Check again) -- no sign-in flow starts on its own.
+3. Open the Theme submenu. Expect: every built-in dark preset with its real swatch colour, the
    active one marked by a check icon and the word "Current". Choose a different preset. Expect:
    it applies and persists immediately (no Save/Cancel step, unlike Settings' Appearance
    section), the menu closes, focus returns to the profile item, and a screen reader announces
    "Applied theme <name>". Reopen the menu and the Theme submenu: the newly chosen preset is now
    the one checked. "Appearance settings…" opens Settings' Appearance section.
-3. Open Keyboard shortcuts. Expect: a read-only list grouped under "Message box" and "Split
+4. Open Keyboard shortcuts. Expect: a read-only list grouped under "Message box" and "Split
    view", showing only Send/Newline/Clear/Stop and Open in split/Move focus between panes --
    fewer rows than docs/DESIGN.md's own "Keyboard" table, which documents several chords with no
    working handler yet (tracked as a GitHub issue). Focus starts on Done; Esc or Done closes it
    and returns focus to the profile item.
-4. Select Health check. Expect: a dialog opens and immediately re-runs the first-run readiness
+5. Select Health check. Expect: a dialog opens and immediately re-runs the first-run readiness
    checks, each row briefly reading "Checking <name>" with a spinner, then the real result (icon
    plus the visible word Passed/Passed with a warning/Failed, never colour alone) with its own
    found/hint text if any. Select Check again: expect the same loading-then-result cycle, with
    focus kept on Check again throughout and Done staying enabled while it runs.
-5. Select What's new. Expect: the installed version's release notes open in the system browser,
+6. Select What's new. Expect: the installed version's release notes open in the system browser,
    never inside the app window, with a toast confirming it.
-6. Using only the keyboard: open the menu, arrow through every item and into and out of the
+7. Using only the keyboard: open the menu, arrow through every item and into and out of the
    Theme submenu, press Esc, and confirm focus returns to the profile item.
 
 **Story 5: manage sessions (FR-025, FR-027)**
