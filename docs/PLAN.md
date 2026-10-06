@@ -95,7 +95,7 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 | **Menus and keys** | #445 + #471 context menus, #6 shortcut set with #395 and #429 | todo |
 | **Theme and chrome** | **#482 session status style (colour-coded icons by default, optional dots, preview)** right after A3 (`sessionDisplay.tsx` is one of the damaged files), then #458 + #456 tokens, then #452 (default Dark retune, "somewhere between"), #4 fonts, #448 and #450 | todo; #482 after A3, the rest after B1 and B4 |
 | **Composer** | #432 drag and drop images, #431 pasted images to disk, #443 emoji | todo |
-| **Readout pills** | #434, #435, #436, #437, #438, #441 | todo |
+| **Readout pills** | **#496 Approval mode pill into the composer box before the model badge, Todo pill first in the pill row** (do this first: it reshapes the row), then #438 (Todo pill opens the task list, now the first pill), #434, #435, #436, #437, #441. Coordinate with #454 (model and thinking pickers, same bottom row) and #433 (mode pill) | todo, after A2d (different file); serialise with the Composer lane (`MessageInput.tsx`) |
 
 ### Phase E: later
 
@@ -170,6 +170,8 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 
 Also: `SessionAgent.ts` (A2, A2c, #479, #477), `readout.ts` and `ReadoutChips.tsx` (A2c, #434 to #438), `SessionManager.ts`, `SubagentPanel.tsx` and `readout-store.ts` (C2c, A2c), `ChatPane.tsx` (also A2b).
 
+Also: `MessageInput.tsx` (#496, #454, #465, #432, #431, #443, #471 are all in this file; one agent at a time), `ApprovalModePill.tsx` (#496, #433), `docs/DESIGN.md` lines 24, 25 and 82 (#496, with #139).
+
 Also: `src/main/index.ts` (A6, and spec 006's `AppUserModelId` task #277; coordinate with the `spec-006-impl` branch before editing).
 
 ## Index of issues filed 2026-10-06
@@ -183,3 +185,5 @@ Also filed 2026-10-06: #489 bug (no Subagents pill after a crash and resume), #4
 Also filed 2026-10-06: #491 ask question card readability (minimal formatting), #492 bug, Agents panel content does not wrap and needs padding.
 
 Also filed 2026-10-06: #494 bug, taskbar shows the Electron atom icon instead of the Refract logo (row A6). Status refresh: A1 done (PR #486), A5 #488 done (PR #493, merged); the earlier "removal spec follows" note and "PR open" status were stale.
+
+Also filed 2026-10-06: #496 chat, Approval mode pill moves into the composer box before the model badge and the Todo pill takes its place above (Readout pills lane, first item). DESIGN.md placement text and #139 (T101) need updating with it.
