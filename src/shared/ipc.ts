@@ -183,6 +183,10 @@ export interface GitHubAccount {
   login: string;
   active: boolean;
   state: string;
+  /** Why `state` is not 'success', classified in the main process from gh's own per-account error
+   * text (never shown raw): the token was rejected, gh could not reach the host, or the cause is
+   * unknown. Absent when `state` is 'success'. */
+  problem?: 'expired' | 'unreachable' | 'unknown';
   displayName: string | null;
   avatarDataUrl: string | null;
 }
