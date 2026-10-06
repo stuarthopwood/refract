@@ -62,6 +62,14 @@ export interface ManageAccountsDialogHandle {
    *  GitHub…" item opens this dialog and calls this instead of `addAccountStart()` directly,
    *  which used to bypass every one of those guards and could start a second, concurrent flow. */
   startAddFlow(): void
+  /** UI N4 (quality-gate remediation, gate-3): "Fix sign-in…"/"Check GitHub connection…" (the
+   *  profile menu's own item, and ProfileItem.tsx's own name row) both open this dialog and call
+   *  this instead of `startAddFlow()` -- focuses whichever recovery control the ACTIVE account's
+   *  own row actually renders (Sign in again, or Check again for an unreachable host) WITHOUT
+   *  starting anything itself. Returns `false` (never auto-starts a flow as a fallback) when
+   *  there is no active account, or its row renders neither control (an Enterprise host's
+   *  terminal-command text has no button at all). */
+  focusActiveAccountFixButton(): boolean
 }
 
 function rowKey(host: string, login: string): string {
@@ -72,6 +80,15 @@ function focusButton(el: HTMLButtonElement | null | undefined): boolean {
   if (!el || !document.body.contains(el)) return false
   el.focus()
   return true
+}
+
+/** UI N4 / A11y M1 (quality-gate remediation, gate-3): an unreachable host -- the `problem`
+ *  field (set by main from `gh`'s own per-account error text), or the legacy `timeout` `state`
+ *  value from before `problem` existed -- can never be fixed by Sign in again, so every row
+ *  text/button/focus decision below branches on this instead of `account.state !== 'success'`
+ *  alone. */
+function isUnreachable(account: GitHubAccount): boolean {
+  return account.problem === 'unreachable' || account.state === 'timeout'
 }
 
 export function ManageAccountsDialog({
@@ -86,6 +103,11 @@ export function ManageAccountsDialog({
   const addFlow = useAccountsStore((state) => state.addFlow)
   const addFlowOutcome = useAccountsStore((state) => state.addFlowOutcome)
   const pendingSwitch = useAccountsStore((state) => state.pendingSwitch)
+  // A11y M1 / UI N3 (quality-gate remediation, gate-3): drives the "Checking…"/aria-disabled
+  // state of every Check again control in this dialog (the header's own retry, and each
+  // unreachable row's own), the same reactive-subscription pattern `starting`/`addFlow` already
+  // use for Add account/Sign in again.
+  const githubRefreshing = useAccountsStore((state) => state.githubRefreshing)
 
   const [starting, setStarting] = useState(false)
   const [cancellingFlow, setCancellingFlow] = useState(false)
@@ -96,8 +118,17 @@ export function ManageAccountsDialog({
   // Accessibility-auditor High: the CLI-missing branch renders no Add account button at all, so
   // `onOpenAutoFocus` below needs a second, always-present target for that branch.
   const installLinkRef = useRef<HTMLAnchorElement>(null)
+  // UI N1 / A11y M2 (quality-gate remediation, gate-3): the 'error' branch's own focus target --
+  // same reasoning as `installLinkRef` above, since that branch renders no Add account button
+  // either (nothing is known to have signed in yet when the CLI itself could not be read).
+  const checkAgainHeaderRef = useRef<HTMLButtonElement>(null)
   const signOutRefs = useRef(new Map<string, HTMLButtonElement>())
   const switchRefs = useRef(new Map<string, HTMLButtonElement>())
+  // UI N4 (quality-gate remediation, gate-3): per-row recovery controls, tracked so
+  // `focusActiveAccountFixButton` ("Fix sign-in…"/"Check GitHub connection…") can focus
+  // whichever one the active account's own row actually renders.
+  const signInAgainRefs = useRef(new Map<string, HTMLButtonElement>())
+  const checkAgainRefs = useRef(new Map<string, HTMLButtonElement>())
   const rowLiRefs = useRef(new Map<string, HTMLLIElement>())
   const prevAddFlowRef = useRef(addFlow)
   const pendingAddAnnounceRef = useRef(false)
@@ -120,6 +151,13 @@ export function ManageAccountsDialog({
     },
     startAddFlow() {
       void startAddFlow()
+    },
+    focusActiveAccountFixButton() {
+      const active = useAccountsStore.getState().github.find((candidate) => candidate.active)
+      if (!active) return false
+      const key = rowKey(active.host, active.login)
+      if (isUnreachable(active)) return focusButton(checkAgainRefs.current.get(key))
+      return focusButton(signInAgainRefs.current.get(key))
     }
   }))
 
@@ -172,9 +210,19 @@ export function ManageAccountsDialog({
     // snapshot would otherwise leave this armed forever, mis-announcing the next unrelated flow.
     pendingAddAnnounceRef.current = false
     const before = useAccountsStore.getState().addFlowSnapshot
+    // UI N7 (quality-gate remediation, gate-3, inference): compares the active marker by login
+    // before vs. after, using the SAME pre-flow snapshot already captured for new-account
+    // detection above -- a completed flow (a brand new sign-in, or a "Sign in again" re-auth)
+    // can silently promote its account to active (main's own cli.ts decides that, not this
+    // dialog), which otherwise went unannounced.
+    const activeBefore = before.find((candidate) => candidate.active)
+    const activeAfter = github.find((candidate) => candidate.active)
+    const activeChanged =
+      activeAfter !== undefined && (activeBefore === undefined || activeBefore.host !== activeAfter.host || activeBefore.login !== activeAfter.login)
+    const activeSuffix = activeChanged ? ' It is now the active account.' : ''
     const added = github.find((account) => !before.some((b) => b.host === account.host && b.login === account.login))
     if (added) {
-      announcePolite(`Added GitHub account ${added.displayName ?? added.login}`)
+      announcePolite(`Added GitHub account ${added.displayName ?? added.login}${activeSuffix}`)
       signOutRefs.current.get(rowKey(added.host, added.login))?.focus()
       return
     }
@@ -182,10 +230,10 @@ export function ManageAccountsDialog({
     // which still deserves its own announcement.
     const reauthed = findReauthenticatedAccount(before, github)
     if (reauthed) {
-      announcePolite(`Re-authenticated ${reauthed.displayName ?? reauthed.login}`)
+      announcePolite(`Re-authenticated ${reauthed.displayName ?? reauthed.login}${activeSuffix}`)
       signOutRefs.current.get(rowKey(reauthed.host, reauthed.login))?.focus()
     } else {
-      announcePolite('Re-authenticated with GitHub')
+      announcePolite(`Re-authenticated with GitHub${activeSuffix}`)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [github])
@@ -241,6 +289,35 @@ export function ManageAccountsDialog({
     }
   }
 
+  /** A11y M1 / UI N3 (quality-gate remediation, gate-3): one unreachable row's own "Check
+   *  again" (guarded by `githubRefreshing`, same pattern as Add account/Sign in again above).
+   *  `refreshGithub` re-reads every account, not just this one, so the outcome is read back by
+   *  re-finding THIS row afterwards, not assumed from a boolean result. If the problem cleared,
+   *  the button itself just unmounted (its row now renders Switch/Sign out instead) -- focus
+   *  moves to whichever of those the row still shows, falling back to the row itself. */
+  async function handleRowCheckAgain(account: GitHubAccount): Promise<void> {
+    if (useAccountsStore.getState().githubRefreshing) return
+    const key = rowKey(account.host, account.login)
+    await useAccountsStore.getState().refreshGithub()
+    const after = useAccountsStore.getState().github.find((candidate) => candidate.host === account.host && candidate.login === account.login)
+    if (after && after.state === 'success') {
+      announcePolite('GitHub is reachable again')
+      if (!focusButton(switchRefs.current.get(key)) && !focusButton(signOutRefs.current.get(key))) {
+        rowLiRefs.current.get(key)?.focus()
+      }
+    } else {
+      announceAssertive("Still can't reach GitHub")
+    }
+  }
+
+  /** A11y M1 / UI N3 (quality-gate remediation, gate-3): the 'error' section's own header-level
+   *  "Check again" (no single account to re-focus -- a successful read replaces this whole
+   *  branch with the ordinary account list). */
+  async function handleHeaderCheckAgain(): Promise<void> {
+    if (useAccountsStore.getState().githubRefreshing) return
+    await useAccountsStore.getState().refreshGithub()
+  }
+
   function handleEscape(event: Event): void {
     const flowActive = starting || addFlow?.status === 'waiting'
     if (flowActive) {
@@ -283,6 +360,11 @@ export function ManageAccountsDialog({
           } else if (installLinkRef.current) {
             event.preventDefault()
             installLinkRef.current.focus()
+          } else if (checkAgainHeaderRef.current) {
+            // UI N1 (quality-gate remediation, gate-3): the 'error' branch renders neither of
+            // the above -- its own "Check again" is the only focusable control.
+            event.preventDefault()
+            checkAgainHeaderRef.current.focus()
           }
         }}
         onEscapeKeyDown={handleEscape}
@@ -316,6 +398,41 @@ export function ManageAccountsDialog({
                 Install GitHub CLI
                 <span className="sr-only"> Opens in your browser</span>
               </a>
+            </div>
+          ) : githubStatus === 'loading' ? (
+            // UI N1 (quality-gate remediation, gate-3): no Add account here -- nothing is known
+            // signed in or not yet, so offering it would be a guess either way.
+            <div className="flex min-w-0 items-center gap-2" aria-busy="true">
+              <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />
+              <h3 id="github-accounts-heading" className="text-sm font-medium text-muted-foreground">
+                Checking GitHub sign-in…
+              </h3>
+            </div>
+          ) : githubStatus === 'error' ? (
+            // UI N1 (quality-gate remediation, gate-3): a `gh-failed`/thrown-invoke read with
+            // nothing cached -- icon + text, never colour alone, and no filled (or any) Add
+            // account button: it's unknown whether anyone is actually signed in, so offering to
+            // add a NEW account first, before offering to retry the read that would show any
+            // EXISTING ones, would be backwards.
+            <div className="flex min-w-0 flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />
+                <h3 id="github-accounts-heading" className="text-sm font-medium">
+                  Couldn't read your GitHub CLI accounts.
+                </h3>
+              </div>
+              <Button
+                ref={checkAgainHeaderRef}
+                variant="outline"
+                size="sm"
+                className="w-fit aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                aria-disabled={githubRefreshing || undefined}
+                onClick={() => {
+                  if (!githubRefreshing) void handleHeaderCheckAgain()
+                }}
+              >
+                {githubRefreshing ? 'Checking…' : 'Check again'}
+              </Button>
             </div>
           ) : (
             <div className="flex min-w-0 flex-col gap-3">
@@ -354,6 +471,7 @@ export function ManageAccountsDialog({
                     const busy = pendingSwitch !== null && pendingSwitch.host === account.host && pendingSwitch.login === account.login
                     const switchDisabled = pendingSwitch !== null
                     const authProblem = account.state !== 'success'
+                    const unreachable = isUnreachable(account)
                     return (
                       <li
                         key={key}
@@ -396,17 +514,24 @@ export function ManageAccountsDialog({
                               <span className="truncate">{account.host}</span>
                             </span>
                           </span>
-                          {/* UI M2 (quality-gate remediation): the status line now states the
-                              actual cause -- a 'timeout' is offline/unreachable (Sign in again
-                              cannot fix that), anything else is an expired/revoked credential
-                              (Sign in again can). Both are icon + text, never colour alone. */}
+                          {/* UI N5 / A11y M2 (quality-gate remediation, gate-3): the status
+                              line is now ONE plain sentence with no embedded "@login" (it used
+                              to wrap mid-name) -- the login stays available in the recovery
+                              button's own accessible name below instead. Three distinct causes,
+                              icon + text, never colour alone: unreachable (Sign in again cannot
+                              fix that), an expired/revoked credential (Sign in again can), or an
+                              unknown `gh` error with no more specific cause to report. */}
                           {authProblem && (
                             <span className="flex items-center gap-1 text-xs font-medium text-state-needs-you">
                               <TriangleAlertIcon aria-hidden className="size-3" />
-                              {account.state === 'timeout' ? "Couldn't reach GitHub" : `Sign-in expired. Sign in again as @${account.login}.`}
+                              {unreachable
+                                ? "Couldn't reach GitHub."
+                                : account.problem === 'expired'
+                                  ? 'Sign-in expired.'
+                                  : 'Sign-in needs attention.'}
                             </span>
                           )}
-                          {authProblem && account.state !== 'timeout' && account.host !== 'github.com' && (
+                          {authProblem && !unreachable && account.host !== 'github.com' && (
                             <span className="min-w-0 break-all text-xs text-muted-foreground">
                               Sign in again from a terminal with gh auth login --hostname {account.host}.
                             </span>
@@ -415,24 +540,40 @@ export function ManageAccountsDialog({
                         <div className="flex shrink-0 items-center gap-1">
                           {/* UI M1 (quality-gate remediation): moved out of the text column into
                               this trailing action cluster, before Sign out, so it sits next to
-                              Switch/Sign out instead of far away on its own row. */}
-                          {authProblem && account.state === 'timeout' && (
+                              Switch/Sign out instead of far away on its own row. A11y M1 / UI N3
+                              (quality-gate remediation, gate-3): guarded by `githubRefreshing`
+                              (shows "Checking…", same pattern as Add account) -- `refreshGithub`
+                              re-reads every account, not just this one, so the aria-label says
+                              so rather than implying a narrower per-account retry. */}
+                          {authProblem && unreachable && (
                             <Button
+                              ref={(el) => {
+                                if (el) checkAgainRefs.current.set(key, el)
+                                else checkAgainRefs.current.delete(key)
+                              }}
                               variant="outline"
                               size="sm"
-                              aria-label={`Check again for ${name}`}
-                              onClick={() => void useAccountsStore.getState().refreshGithub()}
+                              aria-disabled={githubRefreshing || undefined}
+                              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                              aria-label="Check GitHub accounts again"
+                              onClick={() => {
+                                if (!githubRefreshing) void handleRowCheckAgain(account)
+                              }}
                             >
-                              Check again
+                              {githubRefreshing ? 'Checking…' : 'Check again'}
                             </Button>
                           )}
-                          {authProblem && account.state !== 'timeout' && account.host === 'github.com' && (
+                          {authProblem && !unreachable && account.host === 'github.com' && (
                             <Button
+                              ref={(el) => {
+                                if (el) signInAgainRefs.current.set(key, el)
+                                else signInAgainRefs.current.delete(key)
+                              }}
                               variant="outline"
                               size="sm"
                               aria-disabled={starting || addFlow?.status === 'waiting' || undefined}
                               className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                              aria-label={`Sign in again to ${name}`}
+                              aria-label={`Sign in again as @${account.login}`}
                               onClick={() => {
                                 if (!starting && addFlow?.status !== 'waiting') void startAddFlow()
                               }}

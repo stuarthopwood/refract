@@ -57,12 +57,16 @@ export function App() {
   // at startup or just after a renderer reload) -- long enough to clear a hidden Session's unread
   // flag the `visible` effect below should not have touched yet. `null` means "not yet measured".
   const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
-  // Quality-gate remediation (test-reviewer Medium): the session-list panel stays mounted even
-  // collapsed to zero width (react-resizable-panels sets no inert/hidden/display:none on a
-  // collapsed Panel -- the same root cause App.tsx's own subagents Panel below already works
-  // around), stranding ProfileItem.tsx and every SessionList row button in the Tab order and in
-  // screen-reader browse mode while invisible. Tracked via this Panel's own `onResize` (there is
-  // no dedicated open/close store for this one, unlike the subagents panel's `useSubagentPanelStore`).
+  // Quality-gate remediation (test-reviewer Medium; revised gate-3, UI N6 / A11y M3): the
+  // session-list panel's own content stays mounted AND rendered even collapsed to zero width
+  // (react-resizable-panels sets no inert/hidden/display:none on a collapsed Panel by itself) --
+  // unmounting it on collapse (the first fix) dropped the whole left nav's own live state (which
+  // Sessions group was open/closed, scroll position, an in-progress rename) every time the user
+  // dragged the divider shut. The content below is instead kept mounted and marked `inert` +
+  // `aria-hidden` while collapsed -- out of the Tab order and screen-reader browse mode, exactly
+  // like the always-mounted subagents Panel's own content further down, but never torn down.
+  // Tracked via this Panel's own `onResize` (there is no dedicated open/close store for this
+  // one, unlike the subagents panel's `useSubagentPanelStore`).
   const [navCollapsed, setNavCollapsed] = useState(false)
   // Quality-gate remediation (code-reviewer, round 2, High): the focus-move button's `left` was
   // reading the PERSISTED `dividerPercent`, which `onLayoutChanged` only updates once a drag or
@@ -234,19 +238,19 @@ export function App() {
               collapsedSize={0}
               onResize={(size) => setNavCollapsed(size.inPixels <= 0)}
             >
-              {/* Quality-gate remediation (test-reviewer Medium): content only mounts while not
-                  collapsed -- the `ResizablePanel` wrapper itself stays always mounted either way
-                  (so its own pixel-exact sizing never changes), only the content inside unmounts,
-                  the same technique the subagents Panel below already uses. */}
+              {/* Quality-gate remediation (test-reviewer Medium; revised gate-3, UI N6 / A11y
+                  M3): the `ResizablePanel` wrapper stays always mounted either way (so its own
+                  pixel-exact sizing never changes), and now so does the content inside it --
+                  `inert` + `aria-hidden` take it out of the Tab order and screen-reader browse
+                  mode while collapsed, without unmounting it (and losing SessionList's own open
+                  group/scroll/rename state) the way the previous conditional mount did. */}
               <ErrorBoundary>
-                {!navCollapsed && (
-                  <div className="flex h-full flex-col">
-                    <div className="min-h-0 flex-1">
-                      <SessionList />
-                    </div>
-                    <ProfileItem />
+                <div className="flex h-full flex-col" inert={navCollapsed} aria-hidden={navCollapsed || undefined}>
+                  <div className="min-h-0 flex-1">
+                    <SessionList />
                   </div>
-                )}
+                  <ProfileItem />
+                </div>
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />

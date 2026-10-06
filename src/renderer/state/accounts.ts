@@ -243,7 +243,17 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
         return result.ok ? { ok: true } : { ok: false, message: result.error.message }
       }
       if (!result.ok) {
-        if (get().github.length === 0) get().setGithubError()
+        // Quality-gate remediation (code-reviewer HIGH, gate-3 N1): mirrors
+        // `loadInitialGithubAccounts` -- a `gh-not-found` result here means the CLI itself
+        // vanished mid-session (uninstalled, PATH change), never "nobody is signed in", so it
+        // drives the SAME missing-CLI setter regardless of whether `github` is already cached;
+        // every other error code still only overwrites to 'error' when there is no cached list to
+        // fall back on, exactly as before.
+        if (result.error.code === 'gh-not-found') {
+          get().setGithubMissingCli()
+        } else if (get().github.length === 0) {
+          get().setGithubError()
+        }
         return { ok: false, message: result.error.message }
       }
       get().setGithub(result.value)

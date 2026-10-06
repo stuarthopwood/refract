@@ -25,7 +25,7 @@
 // `Trigger`, so Radix's own default close-auto-focus has no trigger ref to fall back to and
 // drops focus to `<body>` rather than restoring it anywhere. `handleSignOutCloseFocus` and each
 // dialog's own `onCloseFocus` are this component's replacement for that default.
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SettingsIcon, TriangleAlertIcon } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -58,7 +58,13 @@ function accessibleName(account: GitHubAccount | undefined, githubStatus: Github
   // UI M4 (quality-gate remediation): the active account's own auth problem (an expired or
   // revoked token `gh` itself still lists, `state !== 'success'`) is never announced as plainly
   // "signed in to GitHub" -- that is simply false once `gh` can no longer act as that account.
-  if (account.state !== 'success') return `${account.displayName ?? account.login}, GitHub sign-in needs attention`
+  // UI N4 (quality-gate remediation, gate-3): an unreachable-host problem reads as "can't reach
+  // GitHub", distinct from the generic "sign-in needs attention" that implies a credential issue
+  // Sign in again could actually fix -- it can't, for an unreachable host.
+  if (account.state !== 'success') {
+    const unreachable = account.problem === 'unreachable' || account.state === 'timeout'
+    return `${account.displayName ?? account.login}, ${unreachable ? "can't reach GitHub" : 'GitHub sign-in needs attention'}`
+  }
   return `${account.displayName ?? account.login}, signed in to GitHub`
 }
 
@@ -99,13 +105,40 @@ export function ProfileItem() {
     return true
   }
 
-  // data-model.md / plan.md: the GitHub account list is refreshed whenever the profile menu
-  // opens, the same way Manage accounts' own `open` effect does (quality-gate remediation,
-  // code-reviewer Medium) -- `refreshGithub` itself is a cheap no-op if a read is already in
-  // flight, so this and Manage accounts opening together never starts two concurrent reads.
-  useEffect(() => {
-    if (menuOpen) void useAccountsStore.getState().refreshGithub()
-  }, [menuOpen])
+  // Quality-gate remediation (accessibility-auditor MEDIUM, gate-3 M1): used to re-read
+  // `github` on every menu open, which could unmount the menu's own focused first-slot item
+  // ("Fix sign-in…"/"Sign in"/"GitHub unavailable" <-> the signed-in header) while a non-modal
+  // menu was open, dropping focus to `<body>`. Removed in favour of refreshing on the Manage
+  // accounts dialog's own open (kept, ManageAccountsDialog.tsx) and on the window regaining
+  // focus/visibility (init-stores.ts), neither of which can ever happen while this menu itself
+  // is open and focused.
+
+  /** UI N4 (quality-gate remediation, gate-3): a separate path from "Sign in"/"Manage
+   *  accounts" below -- opens Manage accounts WITHOUT starting any flow, then focuses whichever
+   *  recovery control the ACTIVE account's own row actually shows (Sign in again, or Check
+   *  again for an unreachable host) -- never auto-starts a new sign-in itself. */
+  function handleFixSignIn(): void {
+    setManageOpen(true)
+    requestAnimationFrame(() => {
+      manageAccountsRef.current?.focusActiveAccountFixButton()
+    })
+  }
+
+  /** A11y M1 / UI N3 (quality-gate remediation, gate-3): the profile menu's own "GitHub
+   *  unavailable / Check again" item (ProfileMenu.tsx) unmounts the instant the menu closes
+   *  (Radix's default on select), so the refresh's outcome can only ever be announced from a
+   *  region outside that menu -- this component's own shared live region, below. */
+  function handleCheckGithubAgain(): void {
+    if (useAccountsStore.getState().githubRefreshing) return
+    const hadProblem = useAccountsStore.getState().githubStatus === 'error'
+    void useAccountsStore
+      .getState()
+      .refreshGithub()
+      .then(() => {
+        if (!hadProblem) return
+        announce(useAccountsStore.getState().githubStatus === 'error' ? "Still can't reach GitHub" : 'GitHub is reachable again')
+      })
+  }
 
   function handleSignInFromMenu(): void {
     setManageOpen(true)
@@ -230,6 +263,8 @@ export function ProfileItem() {
           onManageSessions={() => useViewStore.getState().openManageSessions()}
           onSignIn={handleSignInFromMenu}
           onSignOut={handleSignOutFromMenu}
+          onFixSignIn={handleFixSignIn}
+          onCheckGithubAgain={handleCheckGithubAgain}
           onKeyboardShortcuts={() => setKeyboardOpen(true)}
           onHealthCheck={() => setHealthOpen(true)}
           onWhatsNew={handleWhatsNew}

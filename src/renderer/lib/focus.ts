@@ -2,11 +2,26 @@
 // SessionList/ChatPane actions (archive, restore, delete) unmount the element that currently
 // holds focus, sometimes asynchronously and sometimes along with its whole surrounding group
 // (e.g. restoring the last archived Session also unmounts the Archived <Collapsible>). The
-// Sessions nav root (src/renderer/features/sessions/SessionList.tsx) is the one element
-// guaranteed to outlive every row, group, and dialog it contains, so it is always a safe final
-// fallback when no better, still-connected neighbour exists.
+// Sessions nav root (src/renderer/features/sessions/SessionList.tsx) stays MOUNTED for the whole
+// app session, but is no longer guaranteed focusable: App.tsx now keeps it `inert` (and
+// `aria-hidden`) rather than unmounting it while the session-list panel is collapsed to zero
+// width (quality-gate remediation, gate-3, UI N6 / A11y M3), so a stale `inert` ancestor must be
+// checked, not just presence in the DOM. Falls back, in order, to whichever Session pane is
+// still showing (`focusPaneContent`, same target `focusSessionPane` uses), then to the session-
+// list panel's own resize handle -- the one other still-connected, still-focusable control that
+// survives a collapsed/inert nav.
 export function focusSessionsNav(): void {
-  document.querySelector<HTMLElement>('nav[aria-label="Sessions"]')?.focus()
+  const nav = document.querySelector<HTMLElement>('nav[aria-label="Sessions"]')
+  if (nav && !nav.closest('[inert]')) {
+    nav.focus()
+    return
+  }
+  const pane = document.querySelector<HTMLElement>('[data-session-pane]')
+  if (pane) {
+    focusPaneContent(pane)
+    return
+  }
+  document.querySelector<HTMLElement>('[aria-label="Resize session list"]')?.focus()
 }
 
 // High remediation (a11y, spec 004): leaving the Settings screen via "Back to chat" unmounts it

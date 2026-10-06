@@ -68,6 +68,14 @@ export interface ProfileMenuContentProps {
    *  action that can actually show the flow's one-time code. */
   onSignIn(): void
   onSignOut(): void
+  /** UI N4 (quality-gate remediation, gate-3): "Fix sign-in…"/"Check GitHub connection…"
+   *  below -- opens Manage accounts and focuses the ACTIVE account's own recovery control,
+   *  without starting any flow itself (distinct from `onSignIn`, which starts one immediately). */
+  onFixSignIn(): void
+  /** A11y M1 / UI N3 (quality-gate remediation, gate-3): the 'error' state's own "GitHub
+   *  unavailable / Check again" item below -- guarded/announced by the caller (ProfileItem.tsx),
+   *  since this item unmounts the instant the menu closes and can never announce its own result. */
+  onCheckGithubAgain(): void
   onKeyboardShortcuts(): void
   onHealthCheck(): void
   onWhatsNew(): void
@@ -203,12 +211,24 @@ export function ProfileMenuContent({
   onManageSessions,
   onSignIn,
   onSignOut,
+  onFixSignIn,
+  onCheckGithubAgain,
   onKeyboardShortcuts,
   onHealthCheck,
   onWhatsNew,
   onThemeApplied
 }: ProfileMenuContentProps) {
   const signedIn = githubStatus === 'ready' && account !== undefined
+  // A11y M1 (quality-gate remediation, gate-3): reactive, not a `getState()` read -- while a
+  // window-focus-triggered refresh (init-stores.ts) is already in flight when this menu opens,
+  // the 'error' row below shows "Checking…" instead of re-offering "Check again" for a read
+  // that is already running.
+  const githubRefreshing = useAccountsStore((state) => state.githubRefreshing)
+  // UI N4 (quality-gate remediation, gate-3): an unreachable host (the `problem` field, or the
+  // legacy `timeout` state before it existed) reads "Can't reach GitHub"/"Check GitHub
+  // connection…" -- Sign in again cannot fix an unreachable host, so neither wording nor the
+  // action it promises should claim it can.
+  const unreachable = account !== undefined && (account.problem === 'unreachable' || account.state === 'timeout')
   return (
     <DropdownMenuContent
       side="top"
@@ -234,7 +254,11 @@ export function ProfileMenuContent({
                 <span className="truncate">{account.displayName ?? account.login}</span>
               </span>
               <span className="truncate text-xs text-muted-foreground">
-                {account.state !== 'success' ? 'GitHub sign-in needs attention' : `@${account.login} on ${account.host}`}
+                {account.state !== 'success'
+                  ? unreachable
+                    ? "Can't reach GitHub"
+                    : 'GitHub sign-in needs attention'
+                  : `@${account.login} on ${account.host}`}
               </span>
             </div>
           </DropdownMenuLabel>
@@ -252,11 +276,31 @@ export function ProfileMenuContent({
       ) : githubStatus === 'error' ? (
         // UI M3 (quality-gate remediation): a `gh-failed`/thrown-invoke read offers a way to
         // retry instead of silently claiming "Sign in" (which would misreport an unreadable CLI
-        // as nobody being signed in).
-        <DropdownMenuItem key="first-row" onSelect={() => void useAccountsStore.getState().refreshGithub()}>
-          <TriangleAlertIcon aria-hidden />
+        // as nobody being signed in). A11y M1 / UI N3 (quality-gate remediation, gate-3): guarded
+        // by `githubRefreshing` (same pattern as Manage accounts' own Add account) so a refresh
+        // already running (e.g. the window-focus one, init-stores.ts) cannot be restarted from
+        // here, and the aria-label states what this actually does -- re-reads every account, not
+        // just one -- rather than implying a narrower retry. The result is announced by the
+        // caller (ProfileItem.tsx's `onCheckGithubAgain`) once this item has already unmounted.
+        <DropdownMenuItem
+          key="first-row"
+          aria-disabled={githubRefreshing || undefined}
+          aria-label="Check GitHub accounts again"
+          onSelect={(event) => {
+            if (githubRefreshing) {
+              event.preventDefault()
+              return
+            }
+            onCheckGithubAgain()
+          }}
+        >
+          {githubRefreshing ? (
+            <LoaderCircleIcon aria-hidden className="animate-spin" />
+          ) : (
+            <TriangleAlertIcon aria-hidden />
+          )}
           <span className="flex-1">GitHub unavailable</span>
-          <span className="text-xs text-muted-foreground">Check again</span>
+          <span className="text-xs text-muted-foreground">{githubRefreshing ? 'Checking…' : 'Check again'}</span>
         </DropdownMenuItem>
       ) : githubStatus === 'signed-out' || githubStatus === 'ready' ? (
         <DropdownMenuItem key="first-row" onSelect={onSignIn}>
@@ -276,9 +320,9 @@ export function ProfileMenuContent({
       {/* UI M4 (quality-gate remediation): a direct way to reach the fix, next to the header's
           own warning above, whenever the active account's sign-in needs attention. */}
       {signedIn && account && account.state !== 'success' && (
-        <DropdownMenuItem key="fix-sign-in" onSelect={onManageAccounts}>
+        <DropdownMenuItem key="fix-sign-in" onSelect={onFixSignIn}>
           <TriangleAlertIcon aria-hidden />
-          Fix sign-in…
+          {unreachable ? 'Check GitHub connection…' : 'Fix sign-in…'}
         </DropdownMenuItem>
       )}
       <DropdownMenuItem key="manage-accounts" onSelect={onManageAccounts}>
