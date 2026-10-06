@@ -79,11 +79,11 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
           {subagents.length === 0 && <li className="px-2 py-1.5 text-sm text-muted-foreground">No subagents this turn.</li>}
         </ul>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-2 p-2">
+          <div className="flex flex-col gap-2 px-3 py-2">
             {selectedId === null && <p className="px-1 py-2 text-sm text-muted-foreground">Select a subagent to see its live stream.</p>}
             {grouped.map((item) =>
               isToolGroup(item) ? (
-                <ToolGroupRow key={item.id} group={item} />
+                <ToolGroupRow key={item.id} group={item} summaryWrap />
               ) : item.kind === 'assistant-text' ? (
                 <Markdown key={item.id} id={item.id} text={item.text} streaming={item.streaming} />
               ) : null
