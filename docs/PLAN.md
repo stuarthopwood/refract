@@ -2,9 +2,9 @@
 
 The ordered work queue for Refract. It exists so one question gets a reliable answer: **what is next?**
 
-- Last updated: 2026-10-06 (after the 2026-10-06 backlog session, issues #443 to #482).
+- Last updated: 2026-10-06 (after the 2026-10-06 backlog session, issues #443 to #494).
 - Source of truth for scope is the GitHub issue. This file holds the **order**, **dependencies** and **status**. Do not copy issue text here.
-- `main` was at `4b76d3f` when this was written.
+- `main` was at `f01e862` when this was last refreshed.
 
 ## How to use this file
 
@@ -46,7 +46,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 
 | # | Issue | Work | Status | Needs | Files touched |
 |---|---|---|---|---|---|
-| A1 | #447 | Add repository from the session list after first-run | done (PR #486; removal spec follows on `spec/remove-repository`, T107 to T109) | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
+| A1 | #447 | Add repository from the session list after first-run | done (PR #486) | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
 | A2c | #489 | Bug: after a crash and resume, a still-running agent has no Subagents pill. Seed `runtime.subagents` from `get_subagents` on attach and resume, and mark orphaned `running` agents as "agent exited". Needs the repro from Stuart (what crashed, was a process left?) | todo | none; after A2 (same files) | `SessionAgent.ts`, `readout.ts`, `ReadoutChips.tsx` |
@@ -54,7 +54,8 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 | A2e | #492 | Bug: Subagents (Agents) panel content does not wrap and has no padding (Radix `ScrollArea` table child, truncating tool rows, `p-2` vs `px-3`). Do it in a way #490 carries over | todo | none; before C2c | `SubagentPanel.tsx`, `ScrollArea` wrapper, `CollapsedLine.tsx` |
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
-| A5 | #488 | Remove a repository from the session list, blocked while it owns Sessions (spec 001 FR-059, T107 to T109) | verify (PR #493 open, not merged; it changes the shared destructive Button and focus ring app-wide, Stuart to approve) | A1 | `SessionList.tsx`, `RemoveRepositoryDialog.tsx`, `repositories.ts`, `registry.ts`, `focus.ts`, `Readiness.tsx`, `button.tsx` |
+| A5 | #488 | Remove a repository from the session list, blocked while it owns Sessions (spec 001 FR-059, T107 to T109) | done (PR #493, merged 2026-10-06 13:37; it changed the shared destructive `Button` and the focus ring app-wide, so verify live) | A1 | `SessionList.tsx`, `RemoveRepositoryDialog.tsx`, `repositories.ts`, `registry.ts`, `focus.ts`, `Readiness.tsx`, `button.tsx` |
+| A6 | #494 | Bug: taskbar shows the Electron atom icon, not the Refract logo. Dev fix: set the window icon explicitly and revisit the dev `AppUserModelId`. Packaged fix comes with spec 006 (`electron-builder.yml` `win.icon`, #277). Needs how Stuart launched it (dev, `out/`, or installed) | todo | none for dev; spec 006 merge for packaged | `src/main/index.ts` |
 
 ### Phase B: decisions and probes (can run in parallel with A, no code collisions)
 
@@ -169,6 +170,8 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 
 Also: `SessionAgent.ts` (A2, A2c, #479, #477), `readout.ts` and `ReadoutChips.tsx` (A2c, #434 to #438), `SessionManager.ts`, `SubagentPanel.tsx` and `readout-store.ts` (C2c, A2c), `ChatPane.tsx` (also A2b).
 
+Also: `src/main/index.ts` (A6, and spec 006's `AppUserModelId` task #277; coordinate with the `spec-006-impl` branch before editing).
+
 ## Index of issues filed 2026-10-06
 
 #443 emoji, #444 ask options and tabs, #445 spell suggestions, #446 multi-select loop, #447 add repository, #448 border under window controls, #449 reattach, #450 Settings icon, #452 Dark retune, #453 collapsible left pane, #454 session model, #455 role to model, #456 markdown tokens, #457 thinking and tool toggles, #458 tokenise everything, #459 autoscroll, #460 versioning, #463 explorer, #464 git panel, #465 @ mentions, #466 copy, #467 scroll to your message, #468 scroll to top, #469 tool icons, #470 editing, #471 context menus, #472 conversation list, #473 Ask spacing, #474 design system, #475 advisor, #476 auto-cleanup, #477 pause, #478 Jira, #479 goal mode, #480 rename repository, #482 session status style. Amended: #1 side chat, #3 terminal, #4 fonts, #8, #391 Agent Builder (now `p1`), #392 FDB Knowledge (now `p1`), #393 shell and placeholders (now `p1`), #445, #455.
@@ -178,3 +181,5 @@ Also filed 2026-10-06: #485 bug, switching Sessions opens at the top (decided: e
 Also filed 2026-10-06: #489 bug (no Subagents pill after a crash and resume), #490 persistent Agents panel (folds #10, which is a duplicate). Folded: #10 into #490.
 
 Also filed 2026-10-06: #491 ask question card readability (minimal formatting), #492 bug, Agents panel content does not wrap and needs padding.
+
+Also filed 2026-10-06: #494 bug, taskbar shows the Electron atom icon instead of the Refract logo (row A6). Status refresh: A1 done (PR #486), A5 #488 done (PR #493, merged); the earlier "removal spec follows" note and "PR open" status were stale.
