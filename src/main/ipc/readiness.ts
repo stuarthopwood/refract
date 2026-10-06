@@ -13,6 +13,13 @@ type InstallableDependency = 'git' | 'omp' | 'github-cli';
 
 const INSTALLABLE_DEPENDENCIES: Record<InstallableDependency, true> = { git: true, omp: true, 'github-cli': true };
 
+// Quality-gate remediation (Medium "no per-dependency lock stops two Install clicks
+// overlapping"): module-level, so it is shared across every call this handler ever receives --
+// a second `installDependency` call for a dependency already installing returns a busy error
+// Result instead of running two installs (and two downloads to two different temp files) for
+// the same dependency at once.
+const installsInFlight = new Set<InstallableDependency>();
+
 export function registerReadiness(getWindow: () => BrowserWindow | undefined): void {
   ipcMain.handle(IPC_REQUESTS.READINESS_CHECK, async (): Promise<Result<Readiness>> => ({ ok: true, value: await readinessCheck() }));
 
@@ -28,6 +35,15 @@ export function registerReadiness(getWindow: () => BrowserWindow | undefined): v
         error: { code: 'invalid-argument', message: `${IPC_REQUESTS.READINESS_INSTALL_DEPENDENCY} expects one of 'git' | 'omp' | 'github-cli'` }
       };
     }
+    const typedDependency = dependency as InstallableDependency;
+
+    // Quality-gate remediation (Medium): a second call for the same dependency while the first is
+    // still running returns a busy error Result (the UI shows this as busy) instead of starting a
+    // second concurrent install.
+    if (installsInFlight.has(typedDependency)) {
+      return { ok: false, error: { code: 'not-idle', message: `An install for '${typedDependency}' is already running.` } };
+    }
+    installsInFlight.add(typedDependency);
 
     const onProgress = (progress: DependencyInstallProgress): void => {
       const window = getWindow();
@@ -40,7 +56,7 @@ export function registerReadiness(getWindow: () => BrowserWindow | undefined): v
     };
 
     try {
-      switch (dependency as InstallableDependency) {
+      switch (typedDependency) {
         case 'git':
           await installGit(onProgress);
           break;
@@ -53,6 +69,8 @@ export function registerReadiness(getWindow: () => BrowserWindow | undefined): v
       }
     } catch (err) {
       return { ok: false, error: { code: 'dependency-install-failed', message: err instanceof Error ? err.message : String(err) } };
+    } finally {
+      installsInFlight.delete(typedDependency);
     }
 
     const readiness = await readinessCheck();
