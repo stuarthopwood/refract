@@ -96,3 +96,57 @@ export function focusSessionPane(sessionId: string): void {
   const container = document.querySelector<HTMLElement>(`[data-session-pane="${CSS.escape(sessionId)}"]`)
   focusPaneContent(container)
 }
+
+// Issue #488 (T108, FR-059, US1/AC14): removing a repository unmounts its whole group at once.
+// When another repository remains, its header is the natural landing spot, and the dialog
+// captures the group that was adjacent to the removed one before `remove()` ran (passed in as
+// `preferredRepositoryId`) so focus returns there rather than to whichever group happens to sort
+// first; that capture, or this query, can both miss (closed Collapsible, re-render timing), so
+// the first remaining header is always the fallback. When the removed one was the last, App.tsx's
+// own `showReadiness` swap replaces the entire SessionList with the Readiness screen in the same
+// tick, so there is no repository header, and no Sessions nav either, left to query -- Readiness
+// marks its one primary action with `data-readiness-primary` for exactly this case, mirroring
+// `focusSettingsEntry`'s stable-marker approach above, and its own heading with
+// `data-readiness-root`, where focus parks first (see the comment on the loop below).
+export function focusRepositoryGroupOrReadiness(preferredRepositoryId?: string): void {
+  const groups = Array.from(document.querySelectorAll<HTMLElement>('[data-repository-id]'))
+  const preferredGroup = preferredRepositoryId
+    ? groups.find((group) => group.getAttribute('data-repository-id') === preferredRepositoryId)
+    : undefined
+  const header = (preferredGroup ?? groups[0])?.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]') ?? null
+  if (header) {
+    header.focus()
+    return
+  }
+  // The first-run screen mounts after this runs and re-runs its readiness checks; its primary
+  // action stays disabled (unfocusable) until they pass, so a single focus() would drop focus to
+  // <body>. Park focus on the screen's own heading at once so it is never on <body> (a screen
+  // reader would announce nothing), then, bounded, upgrade to the primary action when it
+  // enables, but only while focus is still on that heading: a Tab or a click on Re-check in the
+  // meantime must never be overridden.
+  let attempts = 0
+  let parked: HTMLElement | null = null
+  const tick = (): void => {
+    const active = document.activeElement
+    if (active !== document.body && active !== null && active !== parked) return
+    const primary = document.querySelector<HTMLElement>('[data-readiness-primary]:not(:disabled)')
+    if (primary) {
+      primary.focus()
+      return
+    }
+    if (!parked?.isConnected) {
+      const readinessRoot = document.querySelector<HTMLElement>('[data-readiness-root]')
+      if (readinessRoot) {
+        readinessRoot.focus()
+        parked = readinessRoot
+      }
+    }
+    attempts += 1
+    if (attempts < 40) {
+      window.setTimeout(tick, 100)
+      return
+    }
+    if (!parked) focusSessionsNav()
+  }
+  tick()
+}

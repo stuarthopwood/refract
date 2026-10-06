@@ -26,10 +26,12 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 |---|---|---|
 | `repositories.list()` | `Repository[]` | |
 | `repositories.add(path)` | `Repository` | `not-a-repo`, `no-commits`, `duplicate` |
-| `repositories.remove(id)` | `void` | `session-running` |
+| `repositories.remove(id)` | `void` | `has-sessions` |
 | `repositories.branches(id)` | `BranchEntry[]`, where `BranchEntry` is `{ name: string; kind: 'default' \| 'branch' \| 'session'; sessionName?: string; archived?: boolean }`: the default branch first (when it still exists), then other branches in git order, then branches owned by a Session of this repository sorted by display name, with that Session's live `name` as `sessionName` and `archived: true` when it is archived. `name` is the value `sessions.create` takes as `baseBranch`. | `git-failed` |
 | `repositories.pickFolder()` | `string \| null` | Opens a native folder-picker dialog on the main window (`properties: ['openDirectory']`); `null` when the user cancels. Added to support the renderer's Browse button. |
 | `repositories.userName(id)` | `string` | T072, FR-045: `git config user.name` in the repository's own checkout, falling back to the Windows account name when git has none configured; cached per repository id for the process lifetime. Used by the answered-question row's avatar/name. Error `not-found`. |
+
+Removal is refused with `has-sessions` while the Repository still owns any Session, active or archived, no matter whether its agent is currently running (FR-059, Clarifications 2026-10-06), replacing the earlier `session-running` code: the refusal condition changed from "a Session is currently running" to "any Session still exists", and `session-running` had exactly one caller (this method) to update. `RegistryStore.removeRepository` refuses for the same reason as a backstop, so the renderer's own pre-check -- which `RemoveRepositoryDialog` already uses to decide which of its two states to show -- is never the only thing stopping an orphaned Session record.
 
 ### Sessions (FR-002 to FR-006, FR-013, FR-028, FR-029, FR-035)
 

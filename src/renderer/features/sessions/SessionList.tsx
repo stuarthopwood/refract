@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -21,8 +21,10 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
-import { focusSessionsNav } from '@/lib/focus'
+import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
+import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
@@ -294,7 +296,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   ref={menuTriggerRef}
                   type="button"
                   aria-label={`${session.name} actions`}
-                  className="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 aria-expanded:opacity-100"
+                  className="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
                 >
                   <EllipsisVerticalIcon aria-hidden className="size-3.5" />
                 </button>
@@ -349,6 +351,8 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   // so keyboard focus stays on the button.
   const creatingRef = useRef(false)
   const [creating, setCreating] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
+  const menuTriggerRef = useRef<HTMLButtonElement>(null)
 
   async function handleQuickCreate(): Promise<void> {
     if (creatingRef.current) return
@@ -368,7 +372,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   return (
     <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
-        <div className="flex items-center gap-1 px-1">
+        <div className="group flex items-center gap-1 px-1">
           <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
             <span className="truncate">{repository.name}</span>
@@ -401,6 +405,23 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
             />
             <TooltipContent>New session from a branch…</TooltipContent>
           </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                ref={menuTriggerRef}
+                type="button"
+                aria-label={`Repository actions for ${repository.name}`}
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+              >
+                <EllipsisVerticalIcon aria-hidden className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
+                Remove repository…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <CollapsibleContent>
           <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
@@ -425,6 +446,16 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
           </CollapsibleContent>
         </Collapsible>
       )}
+      <RemoveRepositoryDialog
+        repository={repository}
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        onRemoved={focusRepositoryGroupOrReadiness}
+        onCancelled={() => {
+          if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+          else focusSessionsNav()
+        }}
+      />
     </div>
   )
 }
@@ -502,6 +533,19 @@ export function SessionList() {
           ))}
         </div>
       </ScrollArea>
+      {/* #447: the only way to add another repository once the first-run screen is gone. A
+          persistent footer so it is always reachable; the dialog keeps its own validation and
+          returns focus here on close. */}
+      <div className="shrink-0 border-t border-sidebar-border p-2">
+        <AddRepositoryDialog
+          trigger={
+            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium">
+              <FolderPlusIcon aria-hidden className="size-4" />
+              Add repository
+            </Button>
+          }
+        />
+      </div>
     </nav>
   )
 }

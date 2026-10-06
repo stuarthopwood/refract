@@ -6,7 +6,7 @@ interface RepositoriesState {
   repositories: Repository[]
   setRepositories(repositories: Repository[]): void
   add(path: string): Promise<Repository | null>
-  remove(id: string): Promise<void>
+  remove(id: string): Promise<boolean>
 }
 
 // Repositories the developer has added to Refract (contracts/ipc.md "Repositories").
@@ -26,8 +26,9 @@ export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
     const result = await window.refract.repositories.remove(id)
     if (!result.ok) {
       notify(result.error)
-      return
+      return false
     }
     set({ repositories: get().repositories.filter((repository) => repository.id !== id) })
+    return true
   }
 }))

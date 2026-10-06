@@ -1,6 +1,6 @@
 // IPC handlers for `repositories.*` (contracts/ipc.md "Repositories", tasks.md T021). `remove` is
-// refused with `session-running` while any of the Repository's Sessions has a live agent, and
-// never touches disk in that case.
+// refused with `has-sessions` while the Repository still owns any Session, active or archived
+// (FR-059), and never touches disk in that case.
 
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -13,6 +13,7 @@ import { gitRaw, repoInfo } from '../git/git';
 import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
+import { REPOSITORY_HAS_SESSIONS_MESSAGE } from '../store/registry';
 
 /** `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
  * checkout, falling back to the Windows account name when git has none configured; cached per
@@ -79,9 +80,9 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     if (typeof id !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_REMOVE} expects a string id`);
     }
-    const running = manager.summaries().some((s) => s.repositoryId === id && s.status !== 'stopped');
-    if (running) {
-      return { ok: false, error: { code: 'session-running', message: 'A Session in this repository is still running.' } };
+    const hasOwnedSessions = manager.registry.snapshot().sessions.some((s) => s.repositoryId === id);
+    if (hasOwnedSessions) {
+      return { ok: false, error: { code: 'has-sessions', message: REPOSITORY_HAS_SESSIONS_MESSAGE } };
     }
     try {
       await manager.registry.removeRepository(id);

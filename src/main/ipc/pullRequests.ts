@@ -26,7 +26,7 @@ import type {
 } from '../../shared/github';
 import type { Session } from '../../shared/model';
 import * as gh from '../github/gh';
-import { addWorktreeFromPullRequestBranch, uniquePullRequestBranchName } from '../git/worktrees';
+import { addWorktreeFromPullRequestBranch, removeWorktree, uniquePullRequestBranchName } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
 
@@ -641,7 +641,17 @@ export function registerPullRequests(manager: SessionManager): void {
         lastActivityAt: now,
         archivedAt: null
       };
-      await manager.registry.addSession(session);
+      try {
+        await manager.registry.addSession(session);
+      } catch (err) {
+        // Security remediation (Medium): mirrors sessions.ts's SESSIONS_CREATE fix -- `addSession`
+        // can fail with `not-found` when the Repository was removed while
+        // `uniquePullRequestBranchName`/`addWorktreeFromPullRequestBranch` above were still in
+        // flight, which would otherwise strand the worktree/branch just created. Reuses the same
+        // removal helper `sessions.delete` already uses, rather than a second cleanup path.
+        await removeWorktree(repository.path, worktreePath, branch, { deleteBranch: true }).catch(() => undefined);
+        return mapStoreThrown(err);
+      }
       manager.notifyListChanged();
       return { ok: true, value: session };
     } catch (err) {
