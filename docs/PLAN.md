@@ -17,6 +17,7 @@ Stuart can say:
 | **Implement #N** | Same as above for that issue, regardless of queue order. |
 | **Update the plan** | Re-read the open issues and `origin/main`, then refresh status, order and the spec table. Say what changed. |
 | **Why is X after Y?** | Answer from "Needs" and "File collisions". |
+| **Create new issues** (any request to file or amend issues) | File them, then apply working rule 8: place each one in the Queue, update the issue index, and commit and push the plan. Report where each landed. |
 
 Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision or a dependency), `in-flight` (someone is already on it, do not duplicate), `verify` (built, needs a live check and issue cleanup).
 
@@ -29,6 +30,12 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 5. Follow AGENTS.md: literal absolute paths only for deletes, commit and push after every logical change, answer the question first, and put those rules in every delegation brief.
 6. After code changes run the quality gate (tests, build, lint, then reviewers). `main` needs typecheck and production build to pass.
 7. Specs are the unit for large features. Small bugs and polish go straight to a branch.
+8. **New issues update the plan.** Whenever Stuart asks for new issues to be created, or an existing issue's scope is amended, update this file in the same turn, before the final report:
+   - Place each issue in the Queue: phase, position, "Needs", files touched, status. Fold duplicates into the issue that already covers them (as #11 into #440).
+   - Add it to the issue index and record any decision he made in "Decisions".
+   - Note which existing rows it blocks, gates or overlaps, and any new file collision.
+   - Commit and push the change. It lands on the `docs/plan` branch while that is unmerged, otherwise on a fresh branch cut from `origin/main` (name it `docs/plan-<yyyy-mm-dd>`).
+   - This is the **one write permitted in issue-only mode** (rule 1). Report the placement in the final message, one line per issue ("#NNN is row C4, after #463").
 
 ## Queue
 

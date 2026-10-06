@@ -41,4 +41,4 @@ The issue-triage workflow's comment is read by whichever agent picks a GitHub is
 
 ## The plan
 
-`docs/PLAN.md` holds the ordered work queue, dependencies and status. When the user asks "What's next?" or "Implement the next story", read it first and follow its "How to use this file" section. Keep it current: update the row's status in the same change as the work.
+`docs/PLAN.md` holds the ordered work queue, dependencies and status. When the user asks "What's next?" or "Implement the next story", read it first and follow its "How to use this file" section. Keep it current: update the row's status in the same change as the work. When the user asks for new issues to be created, update the plan in the same turn (working rule 8).
