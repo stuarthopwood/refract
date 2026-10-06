@@ -48,11 +48,17 @@ async function gh(args: string[]): Promise<string> {
   return result.stdout.trim()
 }
 
+export type GhAccountProblem = 'expired' | 'unreachable' | 'unknown'
+
 export interface GhAuthHostEntry {
   host: string
   login: string
   active: boolean
   state: string
+  /** Set when `state !== 'success'`; classified from gh's per-account `error` text (never the
+   * raw text itself -- GateSec008/GateUi008: the renderer and logs must never see it). Mirrors
+   * `GitHubAccount.problem` in src/shared/ipc.ts. */
+  problem?: GhAccountProblem
 }
 
 interface GhAuthStatusHostAccount {
@@ -60,10 +66,31 @@ interface GhAuthStatusHostAccount {
   login?: string
   active?: boolean
   state?: string
+  /** `gh`'s per-account failure detail (e.g. an expired/invalid token, a network error) --
+   * classified into `GhAccountProblem` below and never itself stored on `GhAuthHostEntry` or
+   * exposed to the renderer/logs. */
+  error?: string
 }
 
 interface GhAuthStatusJson {
   hosts?: Record<string, GhAuthStatusHostAccount[]>
+}
+
+/** Classifies a non-success account entry's `error` text into one of the three fixed
+ * `GhAccountProblem` buckets (UI N5) -- undefined for a successful account. The raw `error`
+ * text itself is read only here and never stored or returned (GateSec008/GateUi008: it must
+ * never reach the renderer or any log). */
+function classifyAccountProblem(state: string, error: string | undefined): GhAccountProblem | undefined {
+  if (state === 'success') return undefined
+  if (state === 'timeout') return 'unreachable'
+  const text = error ?? ''
+  if (/401|bad credentials|token.*(invalid|expired|revoked)|re-?authenticate|authentication failed/i.test(text)) {
+    return 'expired'
+  }
+  if (/timeout|timed out|dial tcp|no such host|ENOTFOUND|ECONN|network|unreachable|offline|EAI_AGAIN|tls|certificate/i.test(text)) {
+    return 'unreachable'
+  }
+  return 'unknown'
 }
 
 /**
@@ -73,8 +100,8 @@ interface GhAuthStatusJson {
  * two-or-more-account-per-host array shape was verified live on 2026-10-05 against a scratch
  * `GH_CONFIG_DIR` holding fake accounts (research.md Decision 2): `gh` returns one array per
  * host with the active account listed first, each entry carrying the same already-verified
- * fields (`host`, `login`, `active`, `state`) plus `error`/`tokenSource`/`gitProtocol`, which
- * this parser already tolerates since it only reads the four fields above.
+ * fields (`host`, `login`, `active`, `state`) plus `tokenSource`/`gitProtocol`, which this
+ * parser already tolerates, and `error`, now read to classify `problem` below.
  *
  * `gh auth status` exits non-zero when nobody is signed in to any host at all, but `--json`
  * still writes a parseable (near-empty) body to stdout in that case; a non-empty stdout body is
@@ -111,6 +138,7 @@ export async function authStatus(): Promise<GhAuthHostEntry[]> {
         login: account.login ?? '',
         active: account.active === true,
         state: account.state ?? 'unknown',
+        problem: classifyAccountProblem(account.state ?? 'unknown', account.error),
       })
     }
   }
@@ -171,7 +199,12 @@ export class GhLoginFlow extends EventEmitter {
 
   /** Spawns the child; resolves once spawned (not once signed in — the flow keeps running). */
   async start(host: string): Promise<void> {
-    const ghPath = await resolveExecutable('gh')
+    let ghPath: string
+    try {
+      ghPath = await resolveExecutable('gh')
+    } catch {
+      throw new GhError('gh-not-found', 'The GitHub CLI (gh) is not installed or not on PATH.')
+    }
     const child = spawn(ghPath, ['auth', 'login', '--hostname', host, '--web'], { windowsHide: true })
     this.child = child
     child.stdout.on('data', (chunk: Buffer) => this.onStdoutData(chunk))

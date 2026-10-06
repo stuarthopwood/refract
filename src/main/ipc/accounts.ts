@@ -114,11 +114,17 @@ export function registerAccounts(manager: SessionManager, getWindow: () => Brows
       if (err instanceof GhError) {
         return toGithubError(err);
       }
-      // `authLoginStart` can also throw a plain `Error` from `resolveExecutable('gh')` when the
-      // CLI is not on PATH at all, before any `GhError` would ever be constructed. GateSec008 LOW:
-      // the raw detail stays on this console only -- the renderer only ever sees the fixed sentence.
-      console.debug('accounts: GitHub CLI could not be resolved before an add flow could start', err instanceof Error ? err.message : err);
-      return { ok: false, error: { code: 'gh-not-found', message: githubErrorMessage('gh-not-found') } };
+      // `resolveExecutable('gh')` failures are already wrapped into `GhError('gh-not-found', ...)`
+      // by `GhLoginFlow.start()` (github/cli.ts), so the only non-GhError throw reaching here is a
+      // synchronous `spawn()` failure *after* the binary was found (EACCES, the binary removed
+      // after `resolveExecutable` cached its path, AV quarantine, etc.) -- that must not be
+      // reported as 'gh-not-found' when the binary in fact exists. Only a genuinely missing-file
+      // error (`error.code === 'ENOENT'`) is still 'gh-not-found'; every other cause is 'gh-failed'.
+      // GateSec008 LOW: the raw detail stays on this console only -- the renderer only ever sees
+      // the fixed sentence.
+      const code = (err as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' ? 'gh-not-found' : 'gh-failed';
+      console.debug('accounts: an add flow failed to start outside the GhError vocabulary', err instanceof Error ? err.message : err);
+      return { ok: false, error: { code, message: githubErrorMessage(code) } };
     }
   });
 
@@ -188,6 +194,7 @@ function toGithubAccounts(hosts: GhAuthHostEntry[], cache: ProfileCacheStore): G
       login: entry.login,
       active: entry.active,
       state: entry.state,
+      problem: entry.problem,
       displayName: cached?.displayName ?? null,
       avatarDataUrl: cached?.avatarDataUrl ?? null
     };
