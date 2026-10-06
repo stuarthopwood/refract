@@ -18,6 +18,11 @@ export class RegistryError extends Error {
   }
 }
 
+/** Single source of truth for the `has-sessions` refusal text -- the IPC handler's pre-check and
+ * the registry's own defensive guard (both exist so there is never a race between counting
+ * Sessions and removing the Repository) used to word this differently; both read it from here. */
+export const REPOSITORY_HAS_SESSIONS_MESSAGE = "Delete this repository's Sessions before removing it."
+
 export class RegistryStore {
   private constructor(
     private readonly file: string,
@@ -43,8 +48,11 @@ export class RegistryStore {
   }
 
   async removeRepository(id: string): Promise<void> {
+    if (!this.data.repositories.some((r) => r.id === id)) {
+      throw new RegistryError('not-found', `Repository not found: ${id}`)
+    }
     if (this.data.sessions.some((s) => s.repositoryId === id)) {
-      throw new RegistryError('has-sessions', 'This repository still owns Sessions; delete them before removing it.')
+      throw new RegistryError('has-sessions', REPOSITORY_HAS_SESSIONS_MESSAGE)
     }
     this.data.repositories = this.data.repositories.filter((r) => r.id !== id)
     await writeJsonFile(this.file, this.data)
@@ -56,6 +64,14 @@ export class RegistryStore {
     }
     if (this.data.sessions.some((existing) => existing.repositoryId === s.repositoryId && existing.branch === s.branch)) {
       throw new RegistryError('duplicate', `Branch already used in this repository: ${s.branch}`)
+    }
+    // Security remediation (Medium): closes the race where a Repository is removed while this
+    // Session's worktree/branch creation was still in flight (sessions.ts/pullRequests.ts await
+    // `listBranches`/`generateName`/`addWorktree` between their own existence check and this
+    // call). Synchronous -- no `await` between this check and the push below -- so nothing can
+    // interleave a `removeRepository` between them.
+    if (!this.data.repositories.some((r) => r.id === s.repositoryId)) {
+      throw new RegistryError('not-found', `Repository not found: ${s.repositoryId}`)
     }
     this.data.sessions.push(s)
     await writeJsonFile(this.file, this.data)

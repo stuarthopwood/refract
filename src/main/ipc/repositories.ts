@@ -13,6 +13,7 @@ import { gitRaw, repoInfo } from '../git/git';
 import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
+import { REPOSITORY_HAS_SESSIONS_MESSAGE } from '../store/registry';
 
 /** `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
  * checkout, falling back to the Windows account name when git has none configured; cached per
@@ -79,9 +80,9 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     if (typeof id !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_REMOVE} expects a string id`);
     }
-    const ownedSessions = manager.registry.snapshot().sessions.filter((s) => s.repositoryId === id);
-    if (ownedSessions.length > 0) {
-      return { ok: false, error: { code: 'has-sessions', message: "Delete this repository's Sessions before removing it." } };
+    const hasOwnedSessions = manager.registry.snapshot().sessions.some((s) => s.repositoryId === id);
+    if (hasOwnedSessions) {
+      return { ok: false, error: { code: 'has-sessions', message: REPOSITORY_HAS_SESSIONS_MESSAGE } };
     }
     try {
       await manager.registry.removeRepository(id);
