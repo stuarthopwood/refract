@@ -122,28 +122,35 @@ export function focusRepositoryGroupOrReadiness(preferredRepositoryId?: string):
   }
   // The first-run screen mounts after this runs and re-runs its readiness checks; its primary
   // action stays disabled (unfocusable) until they pass, so a single focus() would drop focus to
-  // <body>. Wait for it, bounded; if the checks fail, land on the screen's own first enabled
-  // button (Re-check) instead.
+  // <body>. Park focus on the screen's own heading at once so it is never on <body> (a screen
+  // reader would announce nothing), then, bounded, upgrade to the primary action when it
+  // enables, but only while focus is still on that heading: a Tab or a click on Re-check in the
+  // meantime must never be overridden.
   let attempts = 0
+  let parked: HTMLElement | null = null
   const tick = (): void => {
-    if (document.activeElement !== document.body && document.activeElement !== null) return
+    const active = document.activeElement
+    if (active !== document.body && active !== null && active !== parked) return
     const primary = document.querySelector<HTMLElement>('[data-readiness-primary]:not(:disabled)')
     if (primary) {
       primary.focus()
       return
+    }
+    if (!parked) {
+      const readinessRoot = document.querySelector<HTMLElement>('[data-readiness-root]')
+      if (readinessRoot) {
+        readinessRoot.focus()
+        parked = readinessRoot
+      }
     }
     attempts += 1
     if (attempts < 40) {
       window.setTimeout(tick, 100)
       return
     }
+    if (parked) return
     const fallback = document.querySelector<HTMLElement>('[data-readiness-primary]')?.parentElement?.querySelector<HTMLElement>('button:not(:disabled)')
-    if (fallback) {
-      fallback.focus()
-      return
-    }
-    const readinessRoot = document.querySelector<HTMLElement>('[data-readiness-root]')
-    if (readinessRoot) readinessRoot.focus()
+    if (fallback) fallback.focus()
     else focusSessionsNav()
   }
   tick()

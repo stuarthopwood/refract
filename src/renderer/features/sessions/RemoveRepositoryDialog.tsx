@@ -14,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
+import { toast } from 'sonner'
 import { useRepositoriesStore, useSessionsStore } from '@/state'
 
 export interface RemoveRepositoryDialogProps {
@@ -91,6 +92,8 @@ export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemov
       // moment left to hook here; 0ms (not requestAnimationFrame, which is throttled while the
       // verification window is hidden) is just long enough for React to commit that unmount.
       window.setTimeout(() => onRemoved?.(preferredRepositoryId), 0)
+    } catch {
+      toast.error('Could not remove the repository. Try again.')
     } finally {
       removingRef.current = false
       setRemoving(false)

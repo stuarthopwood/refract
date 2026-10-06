@@ -54,8 +54,14 @@ export class RegistryStore {
     if (this.data.sessions.some((s) => s.repositoryId === id)) {
       throw new RegistryError('has-sessions', REPOSITORY_HAS_SESSIONS_MESSAGE)
     }
-    this.data.repositories = this.data.repositories.filter((r) => r.id !== id)
-    await writeJsonFile(this.file, this.data)
+    const previous = this.data.repositories
+    this.data.repositories = previous.filter((r) => r.id !== id)
+    try {
+      await writeJsonFile(this.file, this.data)
+    } catch (err) {
+      this.data.repositories = previous
+      throw err
+    }
   }
 
   async addSession(s: Session): Promise<void> {
@@ -74,7 +80,14 @@ export class RegistryStore {
       throw new RegistryError('not-found', `Repository not found: ${s.repositoryId}`)
     }
     this.data.sessions.push(s)
-    await writeJsonFile(this.file, this.data)
+    try {
+      await writeJsonFile(this.file, this.data)
+    } catch (err) {
+      // The caller rolls back the worktree it just made on any failure here, so the Session
+      // record must not outlive it in memory (it would otherwise be saved by the next write).
+      this.data.sessions = this.data.sessions.filter((existing) => existing.id !== s.id)
+      throw err
+    }
   }
 
   async updateSession(id: string, patch: Partial<Session>): Promise<Session> {
