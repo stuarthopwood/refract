@@ -89,7 +89,7 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 
 | Lane | Order | Status |
 |---|---|---|
-| **Transcript** | #459 autoscroll, #430 nested tool boxes, #473 and #360 spacing, then #466 / #467 / #468 message actions and #469 tool icons (the last two after B1) | todo |
+| **Transcript** | #459 autoscroll, #430 nested tool boxes, #473 and #360 spacing, then #466 / #467 / #468 message actions and #469 tool icons (the last two after B1), then **#502 subagent bubbles with agent-type icons, grouped and indented by batch** (after #430 and #469: it shares #469's icon mapping module and replaces the one-line `SubagentRow`; coordinate with #490 so the same agent looks the same in the panel) | todo |
 | **Ask UI** | #446 multi-select loop, #444 options and tab per question (also fixes the multi-question display seen in #473) | todo |
 | **Session list** | #440 titles (fold #11 in), #439, then #453 collapse, then #472 conversation list | todo, after A4 (same file) |
 | **Settings** | #455 roles (via `omp config`), #457 thinking and tool-call toggles, #475 advisor, #476 auto-cleanup, #454 session model | todo, after B2 |
@@ -176,6 +176,8 @@ Also: `MessageInput.tsx` (#496, #454, #465, #432, #431, #443, #471 are all in th
 
 Also: `RequestCard.tsx` (A2d, #497, #446, #444, #473). The `whitespace-nowrap` in `Button` bites #492, #497 and #498 alike: decide one shared answer (a `wrap` option on `Button`, or a wrapping option pattern) once, in whichever of them is built first, instead of three one-off fixes. `PullRequestsView.tsx`, `PullRequestList.tsx` and `MergeDialog.tsx` (A2f, #499).
 
+Also: `Transcript.tsx`, `ToolRow.tsx` (`SubagentRow`), `AgentMessageRow.tsx`, `src/shared/model.ts` (`subagent` item) and `src/main/omp/transcript.ts` and `SessionAgent.ts` (`readTaskSpecs`) for #502, alongside the existing Transcript lane items.
+
 Also: `src/main/index.ts` (A6, and spec 006's `AppUserModelId` task #277; coordinate with the `spec-006-impl` branch before editing).
 
 ## Index of issues filed 2026-10-06
@@ -193,3 +195,5 @@ Also filed 2026-10-06: #494 bug, taskbar shows the Electron atom icon instead of
 Also filed 2026-10-06: #496 chat, Approval mode pill moves into the composer box before the model badge and the Todo pill takes its place above (Readout pills lane, first item). DESIGN.md placement text and #139 (T101) need updating with it.
 
 Also filed 2026-10-06: #497 Ask options do not wrap, #498 Merge dialog overflow, #499 PR filter redesign, #500 PR repository selector does not open (drag region). Placed as rows A2d (#497 with #491), A2f (#500 then #498) and the Pull requests lane (#499).
+
+Also filed 2026-10-06: #502 chat, subagents rendered as bubbles with agent-type icons, related agents (same `task` batch) grouped and indented, for example the quality gate reviewers (Transcript lane, after #430 and #469).
