@@ -124,6 +124,38 @@ docs/spike/                    # probe scripts and findings (already present)
 
 The data model, contracts, and quickstart introduced no new process, network access, or renderer capability beyond those in the Constitution Check. `koffi` is a native module loaded only in main. The one constitution rule that needed evidence, Job Object versus survivors (Principle III), is now proven (FINDINGS items 10 and 12).
 
+## Amendment 2026-10-06: Remove a repository
+
+**Summary**: closes a data-loss gap in the existing `repositories.remove` IPC method (spec.md FR-059, Clarifications 2026-10-06): removal is now blocked while the Repository still owns any Session (active or archived), gets a real entry point and confirmation dialog in the session list, and the registry layer itself refuses to drop a Repository out from under a Session record instead of silently cascading that drop.
+
+**Files to change**:
+- `src/main/store/registry.ts` -- `removeRepository` refuses (throws a new `RegistryError` code) while the Repository owns any Session, instead of filtering `sessions` as a side effect.
+- `src/main/ipc/repositories.ts` -- the `REPOSITORIES_REMOVE` handler checks the Repository's own Session count (not just running status) and returns the new `has-sessions` error before ever calling `removeRepository`.
+- `src/shared/ipc.ts` -- `IpcErrorCode` drops `session-running` (its one caller is this handler) and adds `has-sessions`.
+- `src/preload/index.ts` -- no signature change; `repositories.remove` keeps its existing `(id: string) => Promise<Result<void>>` shape.
+- `src/renderer/state/repositories-store.ts` -- `remove` changes from `Promise<void>` to `Promise<boolean>` (a success flag), following the existing `add` → `Repository | null` pattern, so a dialog can tell whether to close itself; it still notifies and leaves state untouched on failure.
+- `src/renderer/features/sessions/SessionList.tsx` -- `RepositoryGroup`'s header gains a third control: a "…" `DropdownMenu` (same component, same `EllipsisVerticalIcon` trigger and accessible-name pattern as `SessionRow`'s own menu) holding one destructive item, **Remove repository…**.
+- `src/renderer/features/sessions/RemoveRepositoryDialog.tsx` (new) -- the confirmation dialog, built on `AlertDialog` like `DeleteDialog.tsx`, with the two states from Clarifications 2026-10-06.
+- `specs/001-core-session-workspace/contracts/ipc.md`, `data-model.md`, `quickstart.md` -- documentation of the above (already amended with this plan update).
+
+**Contract change**: `repositories.remove(id)` now errors `has-sessions` (replacing `session-running`) whenever the Repository still owns one or more Sessions, counted regardless of status; it never again errors solely because a Session merely happens to be running while every other Session of that Repository is already gone.
+
+**Dialog/menu design**: the repository header's new "…" menu holds exactly one item, "Remove repository…" (destructive styling, matching the session row's "Delete…"), opening `RemoveRepositoryDialog`. With Sessions present, the dialog states the active and archived counts and offers only a way to close it -- no destructive action is rendered at all, rather than a disabled one, so there is nothing for a screen reader or a stray Enter press to activate by mistake. With none, it names exactly what happens (the Refract entry goes, the folder on disk does not) and offers Cancel / Remove, mirroring `DeleteDialog`'s Cancel / Delete footer. Focus: on open, trapped in the dialog per the existing `AlertDialog` behaviour; on cancel, back to the "…" trigger that opened it; on a successful removal, to another repository group's header trigger if one remains, else to the readiness screen's own first control (the whole workspace unmounts once `hasRepositories` goes false, per `App.tsx`'s existing `showReadiness = !ready || !hasRepositories`, so no new wiring is needed for the last-repository case -- it already falls out of that existing reactive condition). On failure, `notify()` as every other store method already does, with the repository left exactly as it was.
+
+**Constitution check (re-run)**:
+
+| Principle | Status | How this amendment meets it |
+|---|---|---|
+| I. OMP is the engine | Pass | No change to how OMP is launched or driven; removal never touches an `OmpProcess`. |
+| II. RPC wire contract | Pass | Not touched. |
+| III. Session and process lifecycle | Pass | Removal is refused whenever a Session (hence a possible live process) still exists for the Repository, so no live or reattachable agent can ever be orphaned by this flow. |
+| IV. Evidence before design | Pass | No new OMP-facing behaviour; nothing to probe. |
+| V. Electron security baseline | Pass | The new IPC method shape is the same typed, allowlisted `Result<T>` pattern as every other method; the renderer still never touches the registry or the file system directly. |
+| Platform and Stack | Pass | No new dependency, no new process. |
+| Development Workflow | Pass | Verified by running the app (quickstart.md Story 1), not an automated suite. |
+
+No violations; the Complexity Tracking table stays empty.
+
 ## Complexity Tracking
 
 None.
