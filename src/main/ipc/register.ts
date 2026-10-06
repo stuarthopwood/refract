@@ -7,6 +7,7 @@
 import type { BrowserWindow, Menu } from 'electron';
 import { IPC_EVENTS } from '../../shared/ipc';
 import type { ManagerEvent, SessionManager } from '../SessionManager';
+import type { UpdateStateStore } from '../store/updateState';
 import { registerChat } from './chat';
 import { registerClipboard } from './clipboard';
 import { registerConversations } from './conversations';
@@ -16,10 +17,16 @@ import { registerRepositories } from './repositories';
 import { registerSessions } from './sessions';
 import { registerSettings } from './settings';
 import { registerTheme } from './theme';
+import { registerUpdates } from './updates';
 import { registerWindow } from './window';
 
-export function registerIpc(manager: SessionManager, getWindow: () => BrowserWindow | undefined, appMenu: Menu): void {
-  registerReadiness();
+export function registerIpc(
+  manager: SessionManager,
+  getWindow: () => BrowserWindow | undefined,
+  appMenu: Menu,
+  updateStateStore: UpdateStateStore
+): void {
+  registerReadiness(getWindow);
   registerRepositories(manager, getWindow);
   registerSessions(manager);
   registerPullRequests(manager);
@@ -29,6 +36,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerTheme(manager, getWindow);
   registerClipboard();
   registerWindow(appMenu, getWindow);
+  registerUpdates(updateStateStore, getWindow);
 
   manager.onEvent((event) => forwardEvent(event, getWindow));
 }

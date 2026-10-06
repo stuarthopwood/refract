@@ -12,6 +12,7 @@ import { useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSplitStore } from './split-store'
 import { useThemeStore } from './theme-store'
+import { DEFAULT_UPDATE_STATE, useUpdateStore } from './update-store'
 
 // Awaits an initial-load request; an error or a rejected invoke falls back to an empty/default
 // value instead of a toast on every cold start. `ok` reports whether the real value loaded
@@ -75,16 +76,24 @@ export function initStores(): void {
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })
+  // Spec 006 contracts/ipc.md `updates:state-changed`: every persisted transition, including
+  // the ones pushed mid-download ('downloading' then 'downloaded'/'failed') for a live
+  // progress indicator in the status bar's update badge.
+  window.refract.onUpdatesStateChanged((state) => {
+    useUpdateStore.getState().setState(state)
+  })
 
   void (async () => {
-    const [sessionsLoad, settingsLoad, repositoriesLoad] = await Promise.all([
+    const [sessionsLoad, settingsLoad, repositoriesLoad, updatesLoad] = await Promise.all([
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
       loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
-      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
+      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list'),
+      loadInitial(window.refract.updates.getState(), DEFAULT_UPDATE_STATE, 'updates.getState')
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
+    useUpdateStore.getState().setState(updatesLoad.value)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only

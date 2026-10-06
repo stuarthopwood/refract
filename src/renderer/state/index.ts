@@ -16,6 +16,7 @@ import { useSubagentPanelStore } from './subagent-store'
 import { useSplitStore } from './split-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useThemeStore } from './theme-store'
+import { DEFAULT_UPDATE_STATE, useUpdateStore } from './update-store'
 
 export { initStores }
 export { notify }
@@ -37,6 +38,7 @@ export { useSplitStore }
 export { usePullRequestsStore }
 export type { PullRequestsRepoState } from './pull-requests-store'
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
+export { DEFAULT_UPDATE_STATE, useUpdateStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -56,6 +58,7 @@ export interface RefractDevStores {
   split: typeof useSplitStore
   pullRequests: typeof usePullRequestsStore
   theme: typeof useThemeStore
+  update: typeof useUpdateStore
 }
 
 declare global {
@@ -84,6 +87,7 @@ if (import.meta.env.DEV) {
     subagentPanel: useSubagentPanelStore,
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
-    theme: useThemeStore
+    theme: useThemeStore,
+    update: useUpdateStore
   }
 }

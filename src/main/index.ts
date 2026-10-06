@@ -19,6 +19,9 @@ import { SessionManager } from './SessionManager'
 import { registerIpc } from './ipc/register'
 import { registerNotifications } from './notifications'
 import { startMemoryMonitor } from './memory'
+import { UpdateStateStore } from './store/updateState'
+import { startAutomaticUpdateCheck } from './ipc/updates'
+import { resolveInstallingState, scheduleInstallOnQuit } from './update/installOnQuit'
 
 const isDev = !app.isPackaged
 
@@ -42,6 +45,7 @@ const BEFORE_QUIT_STOP_ALL_TIMEOUT_MS = 10_000
 
 let mainWindow: BrowserWindow | undefined
 let manager: SessionManager | undefined
+let updateStateStore: UpdateStateStore | undefined
 
 // Spec 005 FR-015/data-model.md: set by `validateSplitAtStartup` when a restored split drops to
 // exactly one surviving Session; sent as a one-time `ui:open-session` once the renderer's own
@@ -171,6 +175,9 @@ function createWindow(): void {
 
   window.on('ready-to-show', () => {
     window.show()
+    // FR-020, SC-010, contracts/ipc.md "Startup behaviour": kicked off after the window is
+    // shown, never awaited before this call -- see startAutomaticUpdateCheck's own comment.
+    if (updateStateStore) startAutomaticUpdateCheck(updateStateStore)
   })
 
   window.on('closed', () => {
@@ -246,6 +253,14 @@ if (!gotLock) {
     const settings = await SettingsStore.open(userDataDir)
     manager = new SessionManager(registry, settings)
 
+    // Spec 006 FR-018, research.md decision 5: resolved before T021's automatic update check
+    // below, and before anything else that could read `updateStateStore`'s phase -- a leftover
+    // 'installing' phase from the previous run (the install-on-quit helper's own target
+    // version compared against the version actually running now) must never be mistaken for
+    // the current run's own fresh state.
+    updateStateStore = await UpdateStateStore.open(userDataDir)
+    await resolveInstallingState(updateStateStore, app.getVersion())
+
     // Spec 005 FR-015/data-model.md Decision 3b: drop any persisted split id no longer present
     // in the registry or now archived, before the renderer ever reads `settings.get()`. Reads
     // the registry only -- never starts an agent itself (FR-014). Quality-gate remediation
@@ -271,16 +286,16 @@ if (!gotLock) {
     const appMenu = buildAppMenu(isDev)
     Menu.setApplicationMenu(appMenu)
 
-    registerIpc(manager, getWindow, appMenu)
+    registerIpc(manager, getWindow, appMenu, updateStateStore)
     registerNotifications(manager, getWindow)
     startMemoryMonitor(manager, getWindow)
 
-    if (isDev) {
-      // Windows would otherwise group the dev binary under Electron's own shared
-      // AppUserModelID; pin it to the running executable so taskbar grouping and
-      // notifications are Refract's own, not electron.exe's.
-      app.setAppUserModelId(process.execPath)
-    }
+    // Spec 006 T012: unconditional, using the same appId electron-builder.yml uses
+    // (research.md decision 1's uninstall-registry-key derivation) -- Windows notifications,
+    // the taskbar icon, and the Apps & Features identity stay one identity across every
+    // upgrade. A dev run shares this same fixed id too, rather than grouping under Electron's
+    // own shared AppUserModelID.
+    app.setAppUserModelId('com.stuarthopwood.refract')
 
     createWindow()
 
@@ -304,7 +319,20 @@ if (!gotLock) {
     quitInFlight = true
     event.preventDefault()
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, BEFORE_QUIT_STOP_ALL_TIMEOUT_MS))
-    void Promise.race([manager.stopAll(), timeout]).then(() => {
+    void Promise.race([manager.stopAll(), timeout]).then(async () => {
+      // Spec 006 FR-015, FR-016, research.md decision 5: install only ever happens from a
+      // verified, downloaded state, and only at a quit the developer already chose -- never
+      // implied by any other phase. A scheduling failure (helper spawn failed) is logged and
+      // Refract still quits normally rather than ever blocking quit on the update.
+      const state = updateStateStore?.get()
+      if (state?.phase === 'downloaded' && state.installerPath) {
+        try {
+          await updateStateStore?.update({ phase: 'installing' })
+          await scheduleInstallOnQuit(state.installerPath, process.pid)
+        } catch (err) {
+          console.error('main: failed to schedule the update install-on-quit helper', err)
+        }
+      }
       app.quit()
     })
   })
