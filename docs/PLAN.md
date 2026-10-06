@@ -95,7 +95,7 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 | **Menus and keys** | #445 + #471 context menus, #6 shortcut set with #395 and #429 | todo |
 | **Theme and chrome** | **#482 session status style (colour-coded icons by default, optional dots, preview)** right after A3 (`sessionDisplay.tsx` is one of the damaged files), then #458 + #456 tokens, then #452 (default Dark retune, "somewhere between"), #4 fonts, #448 and #450 | todo; #482 after A3, the rest after B1 and B4 |
 | **Composer** | #432 drag and drop images, #431 pasted images to disk, #443 emoji | todo |
-| **Readout pills** | **#496 Approval mode pill into the composer box before the model badge, Todo pill first in the pill row** (do this first: it reshapes the row), then #438 (Todo pill opens the task list, now the first pill), #434, #435, #436, #437, #441. Coordinate with #454 (model and thinking pickers, same bottom row) and #433 (mode pill) | todo, after A2d (different file); serialise with the Composer lane (`MessageInput.tsx`) |
+| **Readout pills** | **#496 Approval mode pill into the composer box before the model badge, Todo pill first in the pill row** (do this first: it reshapes the row), then #438 (Todo pill opens the task list, now the first pill), #434, #435, #436, #437, #441. Coordinate with #454 (model and thinking pickers, same bottom row) and #433 (mode pill) | todo; serialise with the Composer lane (`MessageInput.tsx`) |
 
 ### Phase E: later
 
