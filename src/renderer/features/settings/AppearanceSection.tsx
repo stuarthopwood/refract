@@ -8,11 +8,15 @@
 // firing it unconditionally on unmount never fights a Save that just completed.
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { useThemeStore } from '@/state'
+import { Switch } from '@/components/ui/switch'
+import { BrandWatermark } from '@/features/chat/BrandWatermark'
+import { useSettingsStore, useThemeStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
 
 export function AppearanceSection() {
   const isDirty = useThemeStore((state) => state.previewing !== null)
+  const watermarkEnabled = useSettingsStore((state) => state.settings.watermarkEnabled)
+  const setWatermarkEnabled = useSettingsStore((state) => state.setWatermarkEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const wasDirtyRef = useRef(false)
   // Quality-gate remediation (a11y, round 2): scopes the focus-restoration effect below (and
@@ -124,6 +128,20 @@ export function AppearanceSection() {
         <Button variant="outline" size="sm" onClick={handleCancel} disabled={!isDirty}>
           Cancel
         </Button>
+      </div>
+      {/* Spec 012 (research.md decisions 9, 14): applies live, no Save/Cancel -- the divider
+          plus this control's own clear labelling keeps that from reading as governed by the
+          row above it. */}
+      <hr className="my-6 border-border" />
+      <div className="flex items-center justify-between gap-4">
+        <label htmlFor="watermark-toggle" className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium">Background watermark</span>
+          <span className="text-xs text-muted-foreground">A faint Refract mark shown in the corner of the chat area.</span>
+        </label>
+        <Switch id="watermark-toggle" checked={watermarkEnabled} onCheckedChange={(checked) => void setWatermarkEnabled(checked)} />
+      </div>
+      <div className="mt-3 flex size-28 items-center justify-center rounded-md border border-border">
+        <BrandWatermark variant="preview" />
       </div>
     </div>
   )
