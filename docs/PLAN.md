@@ -46,8 +46,9 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 
 | # | Issue | Work | Status | Needs | Files touched |
 |---|---|---|---|---|---|
-| A1 | #447 | Add repository from the session list after first-run | next | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
+| A1 | #447 | Add repository from the session list after first-run | **in-flight** | none | `SessionList.tsx`, `AddRepositoryDialog.tsx`. Branch `fix/447-add-repository` (2 commits ahead of `main`, pushed, no PR yet); worktree `C:/Repos/personal/pinion-worktrees/fix-447` has uncommitted spec edits. Another session is on it: do not redo. Next step is its PR and gates. |
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
+| A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
 
@@ -64,7 +65,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 
 | # | Issue | Work | Status | Needs |
 |---|---|---|---|---|
-| C1 | #393 + #394 | Right panel shell: icon rail, tab strip, window-controls corner, **plus the FDB Knowledge and Agent Builder placeholder panes** (`p1`, demo-critical, "will sell the prototype to the bosses"). Head start in `git stash@{1}` ("side-panel placeholder WIP") | todo | A done (touches `App.tsx`); B1 for icons; Stuart's call on demo content (strict empty states vs a labelled "Sample data" toggle) |
+| C1 | #393 + #394 | Right panel shell: icon rail, tab strip, window-controls corner, **plus the FDB Knowledge and Agent Builder placeholder panes** (`p1`, demo-critical, "will sell the prototype to the bosses"). Head start: stash commit `b12a884` ("side-panel placeholder WIP"); also `9053ad5` ("394 a11y WIP"). Cite them by hash, not `stash@{n}`, because stash indices move | todo | A done (touches `App.tsx`); B1 for icons; Stuart's call on demo content (strict empty states vs a labelled "Sample data" toggle) |
 | C2 | #1 | **Side chat (`/btw`)** as the first pane, via the bundled `runEphemeralTurn` extension | todo | C1, B2 (extension probes) |
 | C2a | #392 | **FDB Knowledge**: real integration with FDB's AI knowledge base (`p1`). Routes: its MCP for agents, Refract as MCP client, REST API, OMP host tools (`set_host_tools`) | blocked | C1, FDB discovery (does it have an MCP, an API, auth, data governance), B2 host-tool probe |
 | C2b | #391 | **Agent Builder**: real integration with FDB's cloud agent factory (agents persistent or automated, each in a VM) (`p1`). Routes: API, MCP, host tools, deep link as fallback | blocked | C1, FDB discovery (API, auth, run and log streaming), #479 unattended policy for approvals |
@@ -142,6 +143,7 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 - Conversation titles: derive from the first message now, rename later (#440).
 - The two FDB panels are named **FDB Knowledge** and **Agent Builder**. Both are **important and demo-critical** ("what is really going to sell this prototype to my bosses"): #391, #392 and #393 are `p1`. Placeholders (#393) first, real integrations after discovery.
 - Session status style (#482): **colour-coded icons by default**, with a Settings option for **dots** and a preview of both.
+- Switching Sessions (and Conversations) always lands at the **end** of the conversation, with no scroll position restore. This amends spec 001 line 148 and the policy in #459 (first slice #485).
 
 ## Decisions still needed from Stuart
 
@@ -161,3 +163,5 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 ## Index of issues filed 2026-10-06
 
 #443 emoji, #444 ask options and tabs, #445 spell suggestions, #446 multi-select loop, #447 add repository, #448 border under window controls, #449 reattach, #450 Settings icon, #452 Dark retune, #453 collapsible left pane, #454 session model, #455 role to model, #456 markdown tokens, #457 thinking and tool toggles, #458 tokenise everything, #459 autoscroll, #460 versioning, #463 explorer, #464 git panel, #465 @ mentions, #466 copy, #467 scroll to your message, #468 scroll to top, #469 tool icons, #470 editing, #471 context menus, #472 conversation list, #473 Ask spacing, #474 design system, #475 advisor, #476 auto-cleanup, #477 pause, #478 Jira, #479 goal mode, #480 rename repository, #482 session status style. Amended: #1 side chat, #3 terminal, #4 fonts, #8, #391 Agent Builder (now `p1`), #392 FDB Knowledge (now `p1`), #393 shell and placeholders (now `p1`), #445, #455.
+
+Also filed 2026-10-06: #485 bug, switching Sessions opens at the top (decision: land at the end; first slice of #459, which is also amended).
