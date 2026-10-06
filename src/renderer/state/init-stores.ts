@@ -2,6 +2,8 @@ import type { Repository } from '../../shared/model'
 import type { GitHubAccount, Result, SessionSummary } from '../../shared/ipc'
 import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
+import { useHealthStore } from './health-store'
+import { useInstallProgressStore } from './install-progress-store'
 import { useMemoryStore } from './memory-store'
 import { usePendingRequestsStore } from './pending-requests-store'
 import { useQueueStore } from './queue-store'
@@ -108,6 +110,19 @@ export function initStores(): void {
   // progress indicator in the status bar's update badge.
   window.refract.onUpdatesStateChanged((state) => {
     useUpdateStore.getState().setState(state)
+  })
+
+  // Quality-gate remediation (UI/A11y Medium "install progress is lost when the screen
+  // unmounts, and nothing blocks a second install"): subscribed here, not only inside
+  // Readiness.tsx, so a dependency's Install progress (and the omp-version warning a readiness-
+  // changed push can carry) survives that screen unmounting -- the optional GitHub CLI install
+  // can still be running past that point.
+  window.refract.onReadinessInstallProgress((progress) => {
+    useInstallProgressStore.getState().setProgress(progress)
+  })
+  window.refract.onReadinessChanged((checks) => {
+    useHealthStore.getState().setOmpCheck(checks.omp)
+    useInstallProgressStore.getState().clearPassing(checks)
   })
 
   // `accounts:github-changed` can arrive before the initial `accounts.github.list()` load below

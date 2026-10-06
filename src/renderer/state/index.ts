@@ -18,6 +18,7 @@ import { useSplitStore } from './split-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useThemeStore } from './theme-store'
 import { DEFAULT_UPDATE_STATE, useUpdateStore } from './update-store'
+import { useInstallProgressStore } from './install-progress-store'
 
 export { initStores }
 export { notify }
@@ -42,6 +43,8 @@ export { usePullRequestsStore }
 export type { PullRequestsRepoState } from './pull-requests-store'
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
 export { DEFAULT_UPDATE_STATE, useUpdateStore }
+export { useInstallProgressStore }
+export type { InstallableDependency } from './install-progress-store'
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -63,6 +66,7 @@ export interface RefractDevStores {
   pullRequests: typeof usePullRequestsStore
   theme: typeof useThemeStore
   update: typeof useUpdateStore
+  installProgress: typeof useInstallProgressStore
 }
 
 declare global {
@@ -93,6 +97,7 @@ if (import.meta.env.DEV) {
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
     theme: useThemeStore,
-    update: useUpdateStore
+    update: useUpdateStore,
+    installProgress: useInstallProgressStore
   }
 }

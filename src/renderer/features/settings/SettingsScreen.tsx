@@ -1,8 +1,8 @@
 // The Settings screen (spec 004 FR-011 to FR-016, data-model.md "Settings screen"): a
-// left-section-list layout with two sections ("Session readout", and spec 007's "Appearance"),
-// switching content without redesigning this screen (FR-015). Reached via the temporary gear
-// control in SessionList.tsx (research.md decision 7) until spec 008's profile-item cog
-// supersedes it.
+// left-section-list layout with three sections ("Session readout", spec 007's "Appearance", and
+// spec 006's "Updates"), switching content without redesigning this screen (FR-015). Reached via
+// the temporary gear control in SessionList.tsx (research.md decision 7) until spec 008's
+// profile-item cog supersedes it.
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -13,6 +13,7 @@ import { useSettingsStore, useViewStore } from '@/state'
 import type { ReadoutKind } from '../../../shared/model'
 import type { SettingsSectionId } from '../../state/view-store'
 import { AppearanceSection } from './AppearanceSection'
+import { UpdatesSection } from './UpdatesSection'
 
 interface ReadoutToggleDescriptor {
   kind: ReadoutKind
@@ -42,7 +43,8 @@ interface SettingsSectionDescriptor {
 
 const SECTIONS: SettingsSectionDescriptor[] = [
   { id: 'session-readout', label: 'Session readout' },
-  { id: 'appearance', label: 'Appearance' }
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'updates', label: 'Updates' }
 ]
 
 export function SettingsScreen() {
@@ -114,6 +116,8 @@ export function SettingsScreen() {
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
           {settingsSection === 'appearance' ? (
             <AppearanceSection />
+          ) : settingsSection === 'updates' ? (
+            <UpdatesSection />
           ) : (
             <>
               <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
