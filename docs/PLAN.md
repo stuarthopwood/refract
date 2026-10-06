@@ -98,6 +98,7 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 | **Composer** | #432 drag and drop images, #431 pasted images to disk, #443 emoji | todo |
 | **Readout pills** | **#496 Approval mode pill into the composer box before the model badge, Todo pill first in the pill row** (do this first: it reshapes the row), then #438 (Todo pill opens the task list, now the first pill), #434, #435, #436, #437, #441. Coordinate with #454 (model and thinking pickers, same bottom row) and #433 (mode pill) | todo; serialise with the Composer lane (`MessageInput.tsx`) |
 | **Pull requests (spec 003)** | #499 filter redesign (compact scope control plus State and Relation, no wrapping tabs); after A2f (same view) | todo; after A2f, and settle the control style with the #474 grill if it is running |
+| **GitHub issues** | **#503 Report an issue** (repository-header button and dialog, v1 without the AI draft: title, description, labels from the repository, live duplicate check, file with `gh issue create --body-file -`), then **#504 Issues page** (cross-repo list, State, Repository, Relation, Label and text filters, detail pane, and the separate **GitHub tools block** with vertical space in the session list), then #503's AI drafting step (needs a mechanism probe) and "Start a Session from this issue". Share one list shell with the Pull requests page (#499, #500) | todo; both edit `SessionList.tsx`, so after A4 (#480) and serialised with the Session list lane; the gh issue wrappers go in `src/main/github/gh.ts` |
 
 ### Phase E: later
 
@@ -178,6 +179,8 @@ Also: `RequestCard.tsx` (A2d, #497, #446, #444, #473). The `whitespace-nowrap` i
 
 Also: `Transcript.tsx`, `ToolRow.tsx` (`SubagentRow`), `AgentMessageRow.tsx`, `src/shared/model.ts` (`subagent` item) and `src/main/omp/transcript.ts` and `SessionAgent.ts` (`readTaskSpecs`) for #502, alongside the existing Transcript lane items.
 
+Also: `SessionList.tsx` (#503 repository header button, #504 GitHub tools block), `src/main/github/gh.ts` (new issue calls for #503 and #504, shared with spec 003), `view-store.ts` (new `issues` view for #504).
+
 Also: `src/main/index.ts` (A6, and spec 006's `AppUserModelId` task #277; coordinate with the `spec-006-impl` branch before editing).
 
 ## Index of issues filed 2026-10-06
@@ -197,3 +200,5 @@ Also filed 2026-10-06: #496 chat, Approval mode pill moves into the composer box
 Also filed 2026-10-06: #497 Ask options do not wrap, #498 Merge dialog overflow, #499 PR filter redesign, #500 PR repository selector does not open (drag region). Placed as rows A2d (#497 with #491), A2f (#500 then #498) and the Pull requests lane (#499).
 
 Also filed 2026-10-06: #502 chat, subagents rendered as bubbles with agent-type icons, related agents (same `task` batch) grouped and indented, for example the quality gate reviewers (Transcript lane, after #430 and #469).
+
+Also filed 2026-10-06: #503 Report an issue (repository-header button and dialog, scoped to the repository's issue log) and #504 Issues page (cross-repo browser, filters, GitHub tools block spacing), placed in the new GitHub issues lane, after A4. Amended #502 with verified task-tool facts: `agent` is per item, the batch `context` is required and shared, nested ids are dot-qualified.
