@@ -39,6 +39,15 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # Quality-gate remediation (HIGH/Medium): reject any tag that doesn't look like a plain
+          # vX.Y.Z release or one of the three documented pre-release suffixes BEFORE it is ever
+          # compared against package.json's version or used to derive the prerelease flag below --
+          # a malformed tag (e.g. a stray "-" with unexpected text) used to reach those steps
+          # un-validated.
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.?[0-9]+)?)?$ ]]; then
+            echo "::error::Tag $TAG does not match the required vX.Y.Z[-alpha|-beta|-rc[.N]] format"
+            exit 1
+          fi
           pkg_version="$(node -p "require('./package.json').version")"
           tag_version="${TAG#v}"
           tag_version="${tag_version%%-*}"
@@ -71,9 +80,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # Quality-gate remediation (Medium): the earlier guard step already validated $TAG
+          # against ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.?[0-9]+)?)?$, so a case-sensitive
+          # match on exactly those three suffixes (bash case patterns are case-sensitive by
+          # default) is now an exact, not a loose glob, match.
           flag=""
           case "$TAG" in
-            *-rc*|*-beta*|*-alpha*) flag="--prerelease" ;;
+            v[0-9]*.[0-9]*.[0-9]*-alpha*|v[0-9]*.[0-9]*.[0-9]*-beta*|v[0-9]*.[0-9]*.[0-9]*-rc*) flag="--prerelease" ;;
           esac
           echo "flag=$flag" >> "$GITHUB_OUTPUT"
 
