@@ -279,13 +279,17 @@ export function ProfileMenuContent({
         // as nobody being signed in). A11y M1 / UI N3 (quality-gate remediation, gate-3): guarded
         // by `githubRefreshing` (same pattern as Manage accounts' own Add account) so a refresh
         // already running (e.g. the window-focus one, init-stores.ts) cannot be restarted from
-        // here, and the aria-label states what this actually does -- re-reads every account, not
-        // just one -- rather than implying a narrower retry. The result is announced by the
-        // caller (ProfileItem.tsx's `onCheckGithubAgain`) once this item has already unmounted.
+        // here. The result is announced by the caller (ProfileItem.tsx's `onCheckGithubAgain`)
+        // once this item has already unmounted. No `aria-label` while idle (quality-gate
+        // remediation, Code LOW 7 / A11y Medium, gate-4): the row's two text nodes ("GitHub
+        // unavailable", "Check again") already give an accessible name that starts with the
+        // visible text, which a fixed label used to break (WCAG 2.5.3 Label in Name) -- only the
+        // busy state still needs one, since its visible text changes to "Checking…" but the
+        // concatenated default name would otherwise still read "...Check again".
         <DropdownMenuItem
           key="first-row"
           aria-disabled={githubRefreshing || undefined}
-          aria-label="Check GitHub accounts again"
+          aria-label={githubRefreshing ? 'GitHub unavailable, Checking…' : undefined}
           onSelect={(event) => {
             if (githubRefreshing) {
               event.preventDefault()

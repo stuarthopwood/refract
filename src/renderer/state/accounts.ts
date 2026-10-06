@@ -68,8 +68,8 @@ interface AccountsState {
    *  landed while it was still in flight. */
   githubRefreshTicket: number
   /** True whenever a `refreshGithub` read is in flight -- a second call while one is already
-   *  running is a cheap no-op (data-model.md / plan.md: the Manage accounts dialog and the
-   *  profile menu can both trigger a refresh on open, close together). */
+   *  running is a cheap no-op (data-model.md / plan.md: Manage accounts' own open effect and the
+   *  window focus/visibility refresh, init-stores.ts, can both trigger one close together). */
   githubRefreshing: boolean
   ompProviders: OmpProviderState[]
   ompStatus: OmpStatus
@@ -98,7 +98,8 @@ interface AccountsState {
   switchAccount(host: string, login: string): Promise<AccountMutationResult>
   signOutAccount(host: string, login: string): Promise<AccountMutationResult>
   /** Re-reads `accounts.github.list()` (data-model.md / plan.md: the GitHub account list is
-   *  refreshed whenever Manage accounts or the profile menu opens, not just once at startup).
+   *  refreshed whenever Manage accounts opens, and on window focus or tab visibility changes
+   *  (throttled, init-stores.ts), not just once at startup).
    *  Applies its result through `setGithub` -- guarded by `githubRefreshTicket` the same way
    *  `refreshOmpProviders` guards itself with its own module-level sequence number, so a slow
    *  read here can never overwrite a fresher `accounts:github-changed` broadcast that landed
@@ -123,8 +124,9 @@ interface AccountsState {
 // Spec 008 data-model.md "Account store state": GitHub accounts (contracts/ipc.md "GitHub
 // accounts") and OMP provider sign-in (contracts/ipc.md "OMP provider sign-in", User Story 3).
 // `github` is applied from init-stores.ts's own initial `accounts.github.list()` load, kept
-// current by every `accounts:github-changed` broadcast, and refreshed again whenever Manage
-// accounts or the profile menu opens (`refreshGithub`); `ompProviders` only when Manage
+// current by every `accounts:github-changed` broadcast, and refreshed again when Manage
+// accounts opens, or on window focus/tab visibility (throttled), via `refreshGithub`;
+// `ompProviders` only when Manage
 // accounts' OMP section opens (never eagerly at startup, unlike `github`) -- a scratch
 // OmpProcess probe per data-model.md is cheap but not free, and nothing needs it before that
 // section is actually visible.

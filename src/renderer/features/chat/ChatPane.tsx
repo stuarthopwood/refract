@@ -401,7 +401,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           // FR-016: deleting the Session shown in this pane closes the pane itself (a no-op when
           // there is no split to close down to), not just a focus move inside it.
           useSplitStore.getState().closePane(paneIndex)
-          focusSessionsNav()
+          // Quality-gate remediation (code-reviewer Low, gate-4): deferred one frame -- while the
+          // session list is collapsed (inert), `focusSessionsNav`'s own pane fallback can land on
+          // THIS pane, which `closePane` above just scheduled to unmount, before React has
+          // actually committed that change.
+          requestAnimationFrame(() => focusSessionsNav())
         }}
         onCancelled={() => {
           if (deleteBannerButtonRef.current?.isConnected) deleteBannerButtonRef.current.focus()

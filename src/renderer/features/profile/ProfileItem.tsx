@@ -136,7 +136,19 @@ export function ProfileItem() {
       .refreshGithub()
       .then(() => {
         if (!hadProblem) return
-        announce(useAccountsStore.getState().githubStatus === 'error' ? "Still can't reach GitHub" : 'GitHub is reachable again')
+        // Quality-gate remediation (code-reviewer Low, gate-4): `missing-cli` used to fall into
+        // the same "GitHub is reachable again" branch as every other non-'error' outcome -- a
+        // flat-out false claim when the refresh actually found the CLI itself gone, not merely
+        // reachable again. Only a status that is neither 'error' nor 'missing-cli' is a real
+        // recovery.
+        const status = useAccountsStore.getState().githubStatus
+        if (status === 'error') {
+          announce("Still can't reach GitHub")
+        } else if (status === 'missing-cli') {
+          announce('GitHub CLI not found')
+        } else {
+          announce('GitHub is reachable again')
+        }
       })
   }
 

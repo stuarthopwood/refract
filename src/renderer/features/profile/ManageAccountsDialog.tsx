@@ -76,7 +76,7 @@ function rowKey(host: string, login: string): string {
   return `${host}:${login}`
 }
 
-function focusButton(el: HTMLButtonElement | null | undefined): boolean {
+function focusButton(el: HTMLElement | null | undefined): boolean {
   if (!el || !document.body.contains(el)) return false
   el.focus()
   return true
@@ -169,8 +169,8 @@ export function ManageAccountsDialog({
     void useAccountsStore.getState().refreshOmpProviders()
     // data-model.md / plan.md: the GitHub account list is refreshed on open too, the same
     // stale-while-revalidate way the OMP section already is -- `refreshGithub` itself is a cheap
-    // no-op if a read is already in flight (e.g. the profile menu triggered one just before this
-    // dialog opened).
+    // no-op if a read is already in flight (e.g. the window focus/visibility refresh,
+    // init-stores.ts, already running).
     void useAccountsStore.getState().refreshGithub()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -289,12 +289,19 @@ export function ManageAccountsDialog({
     }
   }
 
-  /** A11y M1 / UI N3 (quality-gate remediation, gate-3): one unreachable row's own "Check
-   *  again" (guarded by `githubRefreshing`, same pattern as Add account/Sign in again above).
-   *  `refreshGithub` re-reads every account, not just this one, so the outcome is read back by
-   *  re-finding THIS row afterwards, not assumed from a boolean result. If the problem cleared,
-   *  the button itself just unmounted (its row now renders Switch/Sign out instead) -- focus
-   *  moves to whichever of those the row still shows, falling back to the row itself. */
+  /** A11y M1 / UI N3 (quality-gate remediation, gate-3), extended gate-4 Medium 1: one
+   *  unreachable row's own "Check again" (guarded by `githubRefreshing`, same pattern as Add
+   *  account/Sign in again above). `refreshGithub` re-reads every account, not just this one, so
+   *  the outcome is read back by re-finding THIS row afterwards, not assumed from a boolean
+   *  result -- split three ways, since "the problem cleared" used to wrongly cover both "it's
+   *  fixed" and "it changed to a DIFFERENT problem" alike: still `success` keeps today's
+   *  behaviour; still unreachable keeps the assertive warning and leaves focus alone (nothing
+   *  actually changed); anything else -- the token expired/unknown so the row now shows Sign in
+   *  again, or the account was signed out elsewhere so the row is gone entirely -- announces
+   *  what is now true (never the stale "Still can't reach GitHub") and focuses the row's own
+   *  recovery control. That control, or the whole row, only exists after this render commits, so
+   *  the focus move is deferred one frame, the same `requestAnimationFrame` `handleFixSignIn`
+   *  (ProfileItem.tsx) already uses for the identical reason. */
   async function handleRowCheckAgain(account: GitHubAccount): Promise<void> {
     if (useAccountsStore.getState().githubRefreshing) return
     const key = rowKey(account.host, account.login)
@@ -305,17 +312,53 @@ export function ManageAccountsDialog({
       if (!focusButton(switchRefs.current.get(key)) && !focusButton(signOutRefs.current.get(key))) {
         rowLiRefs.current.get(key)?.focus()
       }
-    } else {
+    } else if (after && isUnreachable(after)) {
       announceAssertive("Still can't reach GitHub")
+    } else {
+      announcePolite(after ? `GitHub is reachable. Sign in again as @${account.login}.` : 'That account is no longer signed in.')
+      requestAnimationFrame(() => {
+        if (focusButton(signInAgainRefs.current.get(key))) return
+        if (focusButton(signOutRefs.current.get(key))) return
+        if (focusButton(addAccountBtnRef.current)) return
+        if (focusButton(checkAgainHeaderRef.current)) return
+        focusButton(installLinkRef.current)
+      })
     }
   }
 
-  /** A11y M1 / UI N3 (quality-gate remediation, gate-3): the 'error' section's own header-level
-   *  "Check again" (no single account to re-focus -- a successful read replaces this whole
-   *  branch with the ordinary account list). */
+  /** A11y M1 / UI N3 (quality-gate remediation, gate-3), extended gate-4 Medium 2: the 'error'
+   *  section's own header-level "Check again" used to announce nothing in either outcome, and
+   *  lost focus to the dialog container on success/missing-cli (the same Radix FocusScope
+   *  behaviour an unmounted row hits -- see `handleRowCheckAgain` above). Reads `githubStatus`
+   *  fresh from the store after the read resolves, since a successful/missing-cli result replaces
+   *  this whole branch (no single account to re-find the way the row handler does). */
   async function handleHeaderCheckAgain(): Promise<void> {
     if (useAccountsStore.getState().githubRefreshing) return
     await useAccountsStore.getState().refreshGithub()
+    const status = useAccountsStore.getState().githubStatus
+    if (status === 'error') {
+      // Still showing this same button -- focus already stays put; only the announcement is new.
+      announceAssertive("Still can't read your GitHub CLI accounts")
+      return
+    }
+    if (status === 'missing-cli') {
+      announcePolite('GitHub CLI not found')
+      requestAnimationFrame(() => {
+        focusButton(installLinkRef.current)
+      })
+      return
+    }
+    announcePolite('GitHub accounts loaded')
+    requestAnimationFrame(() => {
+      if (focusButton(addAccountBtnRef.current)) return
+      const freshGithub = useAccountsStore.getState().github
+      const first = [...freshGithub.filter((a) => a.active), ...freshGithub.filter((a) => !a.active)][0]
+      if (!first) return
+      const key = rowKey(first.host, first.login)
+      if (focusButton(switchRefs.current.get(key))) return
+      if (focusButton(signOutRefs.current.get(key))) return
+      rowLiRefs.current.get(key)?.focus()
+    })
   }
 
   function handleEscape(event: Event): void {
@@ -555,7 +598,7 @@ export function ManageAccountsDialog({
                               size="sm"
                               aria-disabled={githubRefreshing || undefined}
                               className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                              aria-label="Check GitHub accounts again"
+                              aria-label={githubRefreshing ? `Checking ${name}…` : `Check again for ${name}`}
                               onClick={() => {
                                 if (!githubRefreshing) void handleRowCheckAgain(account)
                               }}
