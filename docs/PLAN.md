@@ -55,7 +55,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
 | A5 | #488 | Remove a repository from the session list, blocked while it owns Sessions (spec 001 FR-059, T107 to T109) | done (PR #493, merged 2026-10-06 13:37; it changed the shared destructive `Button` and the focus ring app-wide, so verify live) | A1 | `SessionList.tsx`, `RemoveRepositoryDialog.tsx`, `repositories.ts`, `registry.ts`, `focus.ts`, `Readiness.tsx`, `button.tsx` |
-| A6 | #494 | Bug: taskbar shows the Electron atom icon, not the Refract logo. Dev fix: set the window icon explicitly and revisit the dev `AppUserModelId`. Packaged fix comes with spec 006 (`electron-builder.yml` `win.icon`, #277). Needs how Stuart launched it (dev, `out/`, or installed) | todo | none for dev; spec 006 merge for packaged | `src/main/index.ts` |
+| A6 | #494 | Bug: taskbar shows the Electron atom icon, not the Refract logo. Launch method confirmed (`pnpm build`, then `electron.exe .`, per `README.md`): `isDev` is `!app.isPackaged`, so the dev `AppUserModelId` pin applies. Fix: set the window icon explicitly (`window.setIcon`) and replace the `process.execPath` AppUserModelId with a Refract id; test both together. The packaged fix comes with spec 006 (`electron-builder.yml` `win.icon`, #277), which does not help this launch method | todo | none; coordinate with `spec-006-impl` (same `AppUserModelId` code) | `src/main/index.ts`, `README.md` |
 
 ### Phase B: decisions and probes (can run in parallel with A, no code collisions)
 
@@ -107,7 +107,7 @@ Checked on `origin/main` by searching for each spec's symbols, plus open branche
 
 | Spec | State | Next step |
 |---|---|---|
-| 006 Installer and updates (#117) | **in-flight**: branch `spec-006-impl` (9 commits ahead of `main`, last push 2026-10-06 12:34), worktree `C:/Repos/personal/pinion-spec-006`, no PR yet | Another session is on it. Do not duplicate. Next: gate fixes, then open the PR. Needs #460 for the release workflow. |
+| 006 Installer and updates (#117) | **in-flight**: branch `spec-006-impl` (22 commits ahead of `main` when last checked 2026-10-06), worktree `C:/Repos/personal/pinion-spec-006`, no PR yet | Another session is on it. Do not duplicate. Next: gate fixes, then open the PR. Needs #460 for the release workflow. It also edits the `AppUserModelId` code that A6 needs. |
 | 008 Profile and accounts (#132) | merged (PR #451, `accounts.ts` and GitHub CLI present) | `verify`: live check, close stale task issues |
 | 003 PR management (#101) | merged (PR #389; `PullRequestsView`, `pullRequests.ts`) | `verify`: live check, close the 8 open task issues |
 | 011 Brand spinner (#397) | built (`BrandSpinner.tsx`, CSS, `sessionDisplay.tsx`) | `verify`: close the 10 open task issues |
