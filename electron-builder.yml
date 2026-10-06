@@ -1,0 +1,64 @@
+# Packaging config for Refract's Windows installer and updater
+# (specs/006-installer-and-updates/research.md decisions 1, 2, 12; T006, T007).
+#
+# v26.x config: `asarUnpack` stays top-level alongside `asar` (electron-builder v27 moves it
+# under `asar.unpack`; this project pins electron-builder@26.15.3, see package.json).
+#
+# Deliberately NOT publishing from here: `.github/workflows/release.yml` assembles the GitHub
+# Release itself (installer, checksum, notes, prerelease flag) so it controls the checksum asset
+# and the prerelease flag (research.md decision 8). No top-level `publish:` key is set here on
+# purpose -- VERIFIED (2026-10-06, electron-builder 26.15.3) that any top-level `publish` string
+# in this file, including the literal "never", is misread by this version's publish-config
+# normalizer as a custom provider name, not a policy, and fails looking for a nonexistent
+# "electron-publisher-never" module (a real bug in this version, not a config mistake). The
+# policy lives on the CLI instead: the `pnpm package` script (package.json) passes
+# `--publish never`, which electron-builder's PublishManager applies correctly (no provider list
+# is ever normalized) and also pre-empts the "implicit CI publish" detection every GitHub Actions
+# runner (CI=true) would otherwise trigger.
+
+appId: com.stuarthopwood.refract
+productName: Refract
+copyright: Copyright (c) 2026 Stuart Hopwood
+
+directories:
+  output: release
+  buildResources: build
+
+# electron-vite's build output is `out/main`, `out/preload`, `out/renderer`; nothing else in the
+# repository (src/, specs/, docs/, scripts/, etc.) ships in the installer. package.json and
+# production node_modules are always included by electron-builder regardless of this list.
+files:
+  - out/**/*
+
+# koffi (specs/001-core-session-workspace/research.md decision 13) ships a native .node binary
+# that cannot load from inside app.asar; unpack the whole package so it is found on disk
+# wherever its own loader (node_modules/koffi/src/koffi/index.js) looks for it.
+asarUnpack:
+  - node_modules/koffi/**/*
+
+win:
+  target: nsis
+  icon: build/icon.ico
+  # Fixes the installed/registered executable name so build/installer.nsh's customUnInit guard
+  # (a `tasklist` check for this exact name) and app.setAppUserModelId's shared identity
+  # (src/main/index.ts, T012) can both rely on it without re-deriving it from productName.
+  executableName: Refract
+  # Code signing is explicitly out of scope for this spec (spec.md Assumptions: SmartScreen is
+  # expected to warn on first run of an unsigned installer; whether/how to sign is a later,
+  # separate decision). Without this, electron-builder auto-discovers any code-signing
+  # certificate already present in the machine's own certificate store and silently signs with
+  # it (VERIFIED on this machine, 2026-10-06: a pre-existing cert triggered several slow
+  # `signtool.exe` calls against a network timestamp authority during `pnpm package`) -- which
+  # would tie a maintainer's local or CI machine identity into the shipped binary by accident.
+  signAndEditExecutable: false
+
+nsis:
+  # Both are electron-builder's own defaults; named explicitly because FR-001's no-admin
+  # requirement depends on them: oneClick true + perMachine false is, per electron-builder's own
+  # NSIS docs, already a one-click, per-user installer with no install-mode page and no admin
+  # prompt -- no `oneClick: false` "assisted" mode is needed.
+  oneClick: true
+  perMachine: false
+  # build/installer.nsh is picked up automatically at this default path (electron-builder's own
+  # `include` default); it supplies customUnInstall (keep/delete data, FR-023) and customUnInit
+  # (close-Refract-first guard, FR-024).

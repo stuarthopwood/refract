@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "check:ui-text": "node scripts/check-ui-text.mjs",
     "check:theme-contrast": "node scripts/check-theme-contrast.mjs",
-    "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs"
+    "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs",
+    "package": "electron-builder --win --publish never"
   },
   "dependencies": {
     "@shadcn/react": "0.3.1",
@@ -41,6 +42,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "44.5.1",
+    "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "shadcn": "4.21.0",
     "tailwindcss": "4.3.3",
