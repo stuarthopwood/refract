@@ -1,0 +1,103 @@
+// Keyboard shortcuts (spec 008 FR-020, T023): a read-only list reachable from the profile menu.
+// HONESTY RULE: lists ONLY a chord actually verified to have a working handler in this codebase
+// (a keydown listener, a textarea default, or an Electron accelerator) -- never a chord
+// docs/DESIGN.md's own "Keyboard" table documents that has no real handler behind it yet. See
+// issue #429 for the table's own currently-unimplemented rows; this dialog is the one place
+// that only ever shows what is really there.
+import { useRef } from 'react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
+
+export interface KeyboardShortcutsDialogProps {
+  open: boolean
+  onOpenChange(open: boolean): void
+  /** Called on close (Esc, the X button, Done, or programmatically) -- the caller
+   *  (ProfileItem.tsx) returns focus to the profile item's name button, the same explicit
+   *  close-auto-focus every dialog here needs since none is given a `Trigger` (Radix's own
+   *  default would otherwise drop focus to `<body>`, confirmed live earlier in this spec). */
+  onCloseFocus?(): void
+}
+
+interface ShortcutRow {
+  action: string
+  keys: string[]
+}
+
+interface ShortcutGroup {
+  heading: string
+  rows: ShortcutRow[]
+}
+
+// Every row here was individually verified against its real handler before being listed
+// (MessageInput.tsx, App.tsx, SessionList.tsx) -- see this task's own report for the full
+// row-by-row verification table. A chord in docs/DESIGN.md's "Keyboard" table that is NOT listed
+// here (Ctrl+N, Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+comma, Ctrl+Shift+A, Ctrl+K) has no
+// working handler yet; it is left out entirely rather than shown as a false promise.
+const SHORTCUT_GROUPS: ShortcutGroup[] = [
+  {
+    heading: 'Message box',
+    rows: [
+      { action: 'Send message', keys: ['Enter'] },
+      { action: 'Newline in message', keys: ['Shift', 'Enter'] },
+      { action: 'Clear the message box', keys: ['Esc'] },
+      { action: 'Stop the running turn', keys: ['Ctrl', 'Shift', 'X'] }
+    ]
+  },
+  {
+    heading: 'Split view',
+    rows: [
+      { action: 'Open a session in split view', keys: ['Ctrl', 'Click'] },
+      { action: 'Move focus to the other pane', keys: ['Ctrl', 'Shift', '\\'] }
+    ]
+  }
+]
+
+export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: KeyboardShortcutsDialogProps) {
+  const doneRef = useRef<HTMLButtonElement>(null)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="min-w-0 max-h-[min(560px,calc(100vh-4rem))] sm:max-w-lg"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          doneRef.current?.focus()
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          onCloseFocus?.()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>Keyboard shortcuts</DialogTitle>
+          <DialogDescription>The shortcuts Refract supports today.</DialogDescription>
+        </DialogHeader>
+        <div className="flex min-w-0 flex-col gap-4 overflow-y-auto">
+          {SHORTCUT_GROUPS.map((group) => (
+            <div key={group.heading} className="flex min-w-0 flex-col gap-2">
+              <h3 className="text-xs font-medium text-muted-foreground">{group.heading}</h3>
+              <ul role="list" className="flex flex-col gap-2">
+                {group.rows.map((row) => (
+                  <li key={row.action} className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="min-w-0 truncate text-sm">{row.action}</span>
+                    <KbdGroup className="shrink-0">
+                      {row.keys.map((key) => (
+                        <Kbd key={key}>{key}</Kbd>
+                      ))}
+                    </KbdGroup>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button ref={doneRef} onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

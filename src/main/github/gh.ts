@@ -15,7 +15,19 @@ import { resolveExecutable } from '../process/executables';
 import { gitRaw } from '../git/git';
 import type { MergeMethod, ReviewVerdict } from '../../shared/github';
 
-export type GhErrorCode = 'no-github-remote' | 'gh-unavailable' | 'rate-limited' | 'github-failed' | 'not-mergeable';
+// GateCode008 MEDIUM "two gh wrappers": `gh-not-found`/`gh-failed`/`timeout` are additive
+// members for `github/cli.ts`'s account commands, which now share this module's one timed
+// exec/resolve core (`ghRaw`) instead of keeping their own untimed duplicate. Existing spec-003
+// call sites never produce these three codes, so their behaviour is unchanged.
+export type GhErrorCode =
+  | 'no-github-remote'
+  | 'gh-unavailable'
+  | 'rate-limited'
+  | 'github-failed'
+  | 'not-mergeable'
+  | 'gh-not-found'
+  | 'gh-failed'
+  | 'timeout';
 
 export class GhError extends Error {
   readonly code: GhErrorCode;
@@ -32,19 +44,27 @@ export interface GhRawResult {
   stdout: string;
   stderr: string;
   code: number;
+  /** `true` when the 15s timeout (`TIMEOUT_MS`) aborted the process -- distinguishes a hang from
+   * an ordinary non-zero exit, which `code` alone cannot (an aborted `execFile` surfaces as a
+   * platform-specific error code, not a dedicated one). */
+  timedOut: boolean;
 }
 
 /** Runs `gh <args>` with no shell in `cwd`. Never throws for a nonzero exit; callers branch on
- * `.code`. Throws `GhError('gh-unavailable', ...)` only when `gh` itself cannot be found on PATH.
+ * `.code`/`.timedOut`. Throws `GhError(opts?.notFoundCode ?? 'gh-unavailable', ...)` only when
+ * `gh` itself cannot be found on PATH -- `notFoundCode` is an additive override so
+ * `github/cli.ts`'s account commands can share this one timed/resolved runner while keeping
+ * their own `'gh-not-found'` vocabulary; every existing call site that omits it keeps today's
+ * `'gh-unavailable'` behaviour unchanged.
  * Executor form: `Promise.withResolvers()` needs lib "ES2024"; tsconfig.node.json is pinned to
  * "ES2023" (same documented exception as `OmpProcess.ts`'s `start()` and the existing
  * `src/main/git/github.ts`'s `runGh()`). */
-export async function ghRaw(cwd: string, args: string[]): Promise<GhRawResult> {
+export async function ghRaw(cwd: string, args: string[], opts?: { notFoundCode?: GhErrorCode }): Promise<GhRawResult> {
   let ghPath: string;
   try {
     ghPath = await resolveExecutable('gh');
   } catch {
-    throw new GhError('gh-unavailable', 'The GitHub CLI (gh) is not installed or not on PATH.');
+    throw new GhError(opts?.notFoundCode ?? 'gh-unavailable', 'The GitHub CLI (gh) is not installed or not on PATH.');
   }
   return new Promise((resolve) => {
     const controller = new AbortController();
@@ -55,13 +75,14 @@ export async function ghRaw(cwd: string, args: string[]): Promise<GhRawResult> {
       { cwd, windowsHide: true, signal: controller.signal },
       (error: Error | null, stdout: string, stderr: string) => {
         clearTimeout(timer);
+        const timedOut = controller.signal.aborted;
         let code = 0;
         if (error !== null && 'code' in error && typeof (error as { code: unknown }).code === 'number') {
           code = (error as { code: number }).code;
         } else if (error !== null) {
           code = 1;
         }
-        resolve({ stdout: stdout ?? '', stderr: stderr ?? '', code });
+        resolve({ stdout: stdout ?? '', stderr: stderr ?? '', code, timedOut });
       }
     );
   });

@@ -7,6 +7,7 @@
 import type { BrowserWindow, Menu } from 'electron';
 import { IPC_EVENTS } from '../../shared/ipc';
 import type { ManagerEvent, SessionManager } from '../SessionManager';
+import { registerAccounts } from './accounts';
 import { registerChat } from './chat';
 import { registerClipboard } from './clipboard';
 import { registerConversations } from './conversations';
@@ -20,6 +21,7 @@ import { registerWindow } from './window';
 
 export function registerIpc(manager: SessionManager, getWindow: () => BrowserWindow | undefined, appMenu: Menu): void {
   registerReadiness();
+  registerAccounts(manager, getWindow);
   registerRepositories(manager, getWindow);
   registerSessions(manager);
   registerPullRequests(manager);

@@ -17,7 +17,8 @@ import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
 import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
 import { ToolGroupRow, SubagentRow } from './ToolRow'
-import { AskQuestionRow, RequestCard, ResolvedRequestSummary, initials } from './RequestCard'
+import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
+import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>

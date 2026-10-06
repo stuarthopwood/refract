@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, SettingsIcon } from 'lucide-react'
+import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -29,14 +29,9 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
+import { buildSessionRowActions } from './sessionActions'
+import type { SessionRowAction } from './sessionActions'
 import { useWorktreeActions } from './useWorktreeActions'
-
-// One action descriptor list builds both the row's "..." dropdown menu and its right-click
-// context menu (DESIGN.md "Session list keyboard and focus model"): the same options,
-// reachable either way, never two separately-maintained menus.
-type SessionRowAction =
-  | { kind: 'separator' }
-  | { kind: 'item'; key: string; label: string; variant?: 'destructive'; onSelect: () => void }
 
 function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
@@ -68,7 +63,6 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const { copyPath, reveal } = useWorktreeActions(session)
-  const isArchived = !!session.archivedAt
   const worktreeMissing = session.stopReason === 'worktree-missing'
   const rowRef = useRef<HTMLLIElement>(null)
   const openButtonRef = useRef<HTMLButtonElement>(null)
@@ -168,66 +162,34 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   }, [renaming])
 
   // The row's "..." menu and its right-click context menu share this one action list:
-  // one set of options, reachable two ways, never two menus to keep in sync.
-  const actions: SessionRowAction[] = [
-    {
-      kind: 'item',
-      key: 'rename',
-      label: 'Rename',
-      onSelect: () => {
-        renameRequestedRef.current = true
-        startRenaming()
-      }
+  // one set of options, reachable two ways, never two menus to keep in sync. The list itself
+  // (labels/order/archived-or-not/stopped-or-not) is shared with ManageSessionRow.tsx via
+  // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
+  // this row's own rename/delete-dialog state) stay local, since they differ per screen.
+  const actions: SessionRowAction[] = buildSessionRowActions(session, {
+    onRename: () => {
+      renameRequestedRef.current = true
+      startRenaming()
     },
-    // Spec 005: same effect as Ctrl+click on the row's open button below.
-    {
-      kind: 'item',
-      key: 'open-in-split',
-      label: 'Open in split',
-      onSelect: () => {
-        openInSplit(session.id)
-      }
+    onOpenInSplit: () => openInSplit(session.id),
+    onCopyPath: () => void copyPath(),
+    onReveal: () => void reveal(),
+    onArchive: () => {
+      listFocusRequestedRef.current = true
+      captureFocusFallback()
+      void archive(session.id)
     },
-    // The same two actions the details card offers, kept here too since Radix hover
-    // cards are not keyboard-reachable.
-    { kind: 'item', key: 'copy-path', label: 'Copy worktree path', onSelect: () => void copyPath() },
-    { kind: 'item', key: 'reveal', label: 'Open worktree folder', onSelect: () => void reveal() },
-    isArchived
-      ? {
-        kind: 'item',
-        key: 'restore',
-        label: 'Restore',
-        onSelect: () => {
-          listFocusRequestedRef.current = true
-          captureFocusFallback()
-          void restore(session.id)
-        }
-      }
-      : {
-        kind: 'item',
-        key: 'archive',
-        label: 'Archive',
-        onSelect: () => {
-          listFocusRequestedRef.current = true
-          captureFocusFallback()
-          void archive(session.id)
-        }
-      },
-    ...(session.status !== 'stopped'
-      ? ([{ kind: 'item', key: 'stop', label: 'Stop agent', onSelect: () => void stopAgent(session.id) }] as const)
-      : []),
-    { kind: 'separator' },
-    {
-      kind: 'item',
-      key: 'delete',
-      label: 'Delete…',
-      variant: 'destructive',
-      onSelect: () => {
-        captureFocusFallback()
-        setDeleteOpen(true)
-      }
+    onRestore: () => {
+      listFocusRequestedRef.current = true
+      captureFocusFallback()
+      void restore(session.id)
+    },
+    onStopAgent: () => void stopAgent(session.id),
+    onDelete: () => {
+      captureFocusFallback()
+      setDeleteOpen(true)
     }
-  ]
+  })
 
   // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's open
   // button (the only normally-focusable element in the row), so its own close-autofocus prefers
@@ -475,7 +437,6 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
 export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
-  const openSettings = useViewStore((state) => state.openSettings)
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const view = useViewStore((state) => state.view)
   const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
@@ -513,19 +474,6 @@ export function SessionList() {
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
         <span className="text-sm font-semibold">Refract</span>
-        {/* Spec 004 FR-011, research.md decision 7: a temporary, plainly-labelled entry point to
-            Settings (not styled as a profile item) -- spec 008's profile-item cog supersedes
-            this once it lands. */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="no-drag-region ml-auto h-7 gap-1.5 px-2 text-muted-foreground"
-          aria-label="Settings"
-          onClick={() => openSettings()}
-        >
-          <SettingsIcon aria-hidden className="size-3.5" />
-          Settings
-        </Button>
       </div>
       {/* specs/003-pull-request-management FR-001, T011: above the repository groups, Stuart's
           placement answer (spec 003 Clarifications). `aria-current` gives the selected state a

@@ -1,5 +1,6 @@
 import type { Repository } from '../../shared/model'
-import type { Result, SessionSummary } from '../../shared/ipc'
+import type { GitHubAccount, Result, SessionSummary } from '../../shared/ipc'
+import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { usePendingRequestsStore } from './pending-requests-store'
@@ -26,6 +27,32 @@ async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: s
   } catch (error) {
     console.debug(`[refract] ${label}: invoke failed (handler not registered yet)`, error)
     return { value: fallback, ok: false }
+  }
+}
+
+// Spec 008 data-model.md / FR-014: a dedicated initial-load path for `accounts.github.list()`,
+// since `gh-not-found` is a state the profile item and Manage accounts dialog show (githubStatus
+// 'missing-cli'), not a transient failure -- it must never log as an error or fall through to
+// the ordinary empty-list-means-signed-out reading `setGithub` would otherwise give it. A
+// `gh-failed` result and a thrown invoke (the handler not registered yet) both resolve to their
+// own 'error' outcome (quality-gate remediation, code-reviewer Medium, round 2): the former used
+// to fall through to `setGithub([])` -- 'signed-out', "nobody is signed in", when the real
+// situation is "the CLI could not be read" -- and the latter used to leave `githubStatus` stuck
+// at its initial 'loading' forever if no later broadcast ever arrived, with no way for the user
+// to retry. Both now drive the same neutral `setGithubError` the profile item's "GitHub
+// unavailable"/"Check again" state already renders, via `initStores`' own caller below.
+async function loadInitialGithubAccounts(): Promise<
+  { kind: 'ok'; accounts: GitHubAccount[] } | { kind: 'missing-cli' } | { kind: 'error' }
+> {
+  try {
+    const result = await window.refract.accounts.github.list()
+    if (result.ok) return { kind: 'ok', accounts: result.value }
+    if (result.error.code === 'gh-not-found') return { kind: 'missing-cli' }
+    console.error(`[refract] accounts.github.list: ${result.error.code} ${result.error.message}`)
+    return { kind: 'error' }
+  } catch (error) {
+    console.debug('[refract] accounts.github.list: invoke failed (handler not registered yet)', error)
+    return { kind: 'error' }
   }
 }
 
@@ -74,6 +101,64 @@ export function initStores(): void {
   })
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
+  })
+  // `accounts:github-changed` can arrive before the initial `accounts.github.list()` load below
+  // resolves (another window switching/signing out/adding an account); once it has, the initial
+  // load's own result is stale and must never overwrite it (quality-gate remediation,
+  // code-reviewer Medium).
+  let githubBroadcastReceived = false
+  window.refract.onAccountsGithubChanged((accounts) => {
+    githubBroadcastReceived = true
+    useAccountsStore.getState().setGithub(accounts)
+  })
+  window.refract.onAccountsGithubAddProgress((progress) => {
+    const current = useAccountsStore.getState().addFlow
+    // UI M6 (quality-gate remediation): a progress event for a DIFFERENT flowId than the one
+    // currently tracked (once one is known) is a stale/cross-flow event -- ignored outright
+    // rather than clobbering the flow actually on screen.
+    if (current?.flowId && progress.flowId !== current.flowId) return
+    useAccountsStore.getState().setAddFlow(progress)
+  })
+
+  // Quality-gate remediation (code-reviewer Medium): applied the instant this resolves instead
+  // of after the slowest of the unrelated loads below, and skipped entirely once a broadcast has
+  // already landed (above) -- the initial load's own result would otherwise be stale.
+  void loadInitialGithubAccounts().then((githubAccountsLoad) => {
+    if (githubBroadcastReceived) return
+    if (githubAccountsLoad.kind === 'missing-cli') {
+      useAccountsStore.getState().setGithubMissingCli()
+    } else if (githubAccountsLoad.kind === 'error') {
+      useAccountsStore.getState().setGithubError()
+    } else {
+      useAccountsStore.getState().setGithub(githubAccountsLoad.accounts)
+    }
+  })
+
+  // Quality-gate remediation (accessibility-auditor MEDIUM, gate-3 M1): a `gh auth
+  // login`/`logout` run in an external terminal while Refract is in the background never
+  // broadcasts `accounts:github-changed` (that event only fires for changes `gh` itself made
+  // through THIS app's own IPC calls) -- the only other signal that the CLI's answer may have
+  // changed is the user coming back to the window at all. Replaces the old refresh-on-menu-open
+  // (ProfileItem.tsx, removed: re-reading the list while a non-modal menu is open could unmount
+  // its own focused first row and drop focus to `<body>`) with a refresh on window focus and on
+  // the tab becoming visible again, throttled to once per 5 s and skipped entirely while a read
+  // is already in flight (`githubRefreshing`) or an add-account/sign-in-again flow is waiting on
+  // user action (`addFlow?.status === 'waiting'`) -- refreshing out from under a running `gh auth
+  // login` would be pointless (the list cannot have changed yet) and risks racing its own
+  // completion update.
+  let lastGithubFocusRefresh = 0
+  function refreshGithubOnFocus(): void {
+    const state = useAccountsStore.getState()
+    if (state.githubRefreshing) return
+    if (state.addFlow?.status === 'waiting') return
+    const now = Date.now()
+    if (now - lastGithubFocusRefresh < 5000) return
+    lastGithubFocusRefresh = now
+    void state.refreshGithub()
+  }
+  window.addEventListener('focus', refreshGithubOnFocus)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshGithubOnFocus()
   })
 
   void (async () => {
