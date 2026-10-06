@@ -33,6 +33,7 @@ export interface RemoveRepositoryDialogProps {
    * once a successful removal no longer runs through it. Neither caller renders an
    * `AlertDialogTrigger` (both open via `open={removeOpen}`), so Radix's own close-autofocus has
    * nothing to return to and would otherwise drop focus to `<body>`. */
+  onCancelled?(): void
 }
 
 function describeOwnedSessions(activeCount: number, archivedCount: number): string {
