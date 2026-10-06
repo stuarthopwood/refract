@@ -40,6 +40,20 @@ export class GhError extends Error {
 
 const TIMEOUT_MS = 15_000;
 
+// Quality-gate remediation (Medium "two gh wrappers"): `readiness.ts`'s checkGithubCli and
+// `UpdateChecker.ts`'s checkGithubAccess used to be two independently-written implementations of
+// this exact same probe -- one with no timeout and a coarser not-signed-in-only classification,
+// one through `ghRaw`'s 15s timeout with an offline/not-signed-in split, and one of its two
+// branches was dead code (both returned the same value). `githubCliStatus` is the one
+// implementation both now call.
+// UNVERIFIED: gate T005 pending (research.md decision 3) -- the exact text `gh auth status`
+// prints for "not signed in" versus "offline" has not yet been confirmed live against this
+// private repository; this heuristic is the best available reading of gh's documented error
+// behaviour and keeps both cases out of a generic error toast either way (FR-017).
+const OFFLINE_RE = /could not resolve host|enotfound|getaddrinfo|network is unreachable|timed? ?out|econnrefused|econnreset/i;
+
+export type GithubCliStatus = 'ok' | 'not-installed' | 'not-signed-in' | 'offline';
+
 export interface GhRawResult {
   stdout: string;
   stderr: string;
@@ -48,6 +62,24 @@ export interface GhRawResult {
    * an ordinary non-zero exit, which `code` alone cannot (an aborted `execFile` surfaces as a
    * platform-specific error code, not a dedicated one). */
   timedOut: boolean;
+}
+
+/** Spec 006 shared "is gh signed in" check, used by both `readiness.ts`'s checkGithubCli (FR-008)
+ * and `UpdateChecker.ts`'s checkForUpdates (FR-017). Never throws. */
+export async function githubCliStatus(cwd: string): Promise<GithubCliStatus> {
+  let auth: GhRawResult;
+  try {
+    auth = await ghRaw(cwd, ['auth', 'status']);
+  } catch {
+    // `ghRaw` only ever throws `GhError('gh-unavailable', ...)`, and only when
+    // `resolveExecutable('gh')` itself fails -- never for a network/auth failure (those surface
+    // as a non-zero `auth.code` below instead, since `ghRaw` never throws for an ordinary
+    // non-zero exit).
+    return 'not-installed';
+  }
+  if (auth.code === 0) return 'ok';
+  if (OFFLINE_RE.test(`${auth.stdout}\n${auth.stderr}`)) return 'offline';
+  return 'not-signed-in';
 }
 
 /** Runs `gh <args>` with no shell in `cwd`. Never throws for a nonzero exit; callers branch on
@@ -59,7 +91,11 @@ export interface GhRawResult {
  * Executor form: `Promise.withResolvers()` needs lib "ES2024"; tsconfig.node.json is pinned to
  * "ES2023" (same documented exception as `OmpProcess.ts`'s `start()` and the existing
  * `src/main/git/github.ts`'s `runGh()`). */
-export async function ghRaw(cwd: string, args: string[], opts?: { notFoundCode?: GhErrorCode }): Promise<GhRawResult> {
+export async function ghRaw(
+  cwd: string,
+  args: string[],
+  opts?: { notFoundCode?: GhErrorCode; timeoutMs?: number }
+): Promise<GhRawResult> {
   let ghPath: string;
   try {
     ghPath = await resolveExecutable('gh');
@@ -68,7 +104,11 @@ export async function ghRaw(cwd: string, args: string[], opts?: { notFoundCode?:
   }
   return new Promise((resolve) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    // Quality-gate remediation (HIGH): UpdateInstaller.ts's `gh release download` of a ~146MB
+    // installer needs far longer than the default 15s (which exists for ordinary metadata calls,
+    // not a multi-minute download); `opts.timeoutMs` lets that one caller opt into several
+    // minutes without a second gh wrapper.
+    const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? TIMEOUT_MS);
     execFile(
       ghPath,
       args,

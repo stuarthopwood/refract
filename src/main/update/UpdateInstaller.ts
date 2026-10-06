@@ -48,20 +48,16 @@ export async function downloadUpdate(store: UpdateStateStore): Promise<void> {
     await fs.rm(updatesDir, { recursive: true, force: true });
     await fs.mkdir(updatesDir, { recursive: true });
 
-    const result = await ghRaw(cwd, [
-      'release',
-      'download',
-      tagName,
-      '--repo',
-      REPO,
-      '--pattern',
-      '*.exe',
-      '--pattern',
-      '*.sha256',
-      '--dir',
-      updatesDir,
-      '--clobber'
-    ]);
+    // Quality-gate remediation (HIGH): `ghRaw`'s default 15s timeout exists for ordinary
+    // metadata calls -- the installer this downloads is ~146MB, which needs far longer than that
+    // on anything but a very fast connection; this is the one caller that opts into several
+    // minutes instead.
+    const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
+    const result = await ghRaw(
+      cwd,
+      ['release', 'download', tagName, '--repo', REPO, '--pattern', '*.exe', '--pattern', '*.sha256', '--dir', updatesDir, '--clobber'],
+      { timeoutMs: DOWNLOAD_TIMEOUT_MS }
+    );
     if (result.code !== 0) {
       throw new Error((result.stderr || result.stdout || 'gh release download failed.').trim());
     }
