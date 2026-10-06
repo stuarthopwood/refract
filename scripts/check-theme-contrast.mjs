@@ -275,6 +275,79 @@ if (watermarkOpacity === null) {
   }
 }
 
+// ---- issue #488 quality-gate remediation (HIGH, accessibility-auditor): the destructive Button
+// variant's text used to sit on a translucent destructive-tinted fill, itself composited inside
+// dialog footers (`bg-muted/50` over `bg-popover`, `AlertDialogFooter`/`DialogFooter`) -- at rest
+// that measured well under the 4.5:1 WCAG AA floor, worse again on hover. Fixed in button.tsx by
+// making the `destructive` variant an opaque fill (`bg-destructive text-destructive-foreground`,
+// matching `default`'s own opaque pattern) with a `hover:bg-destructive/80` fade, the same
+// convention as `default`'s `hover:bg-primary/80`. The accompanying Medium finding -- the
+// destructive and shared focus rings measuring under the 3:1 WCAG 1.4.11 non-text floor against
+// that same footer -- is fixed by dropping the shared ring's Tailwind alpha modifier (now
+// rendered at `--ring`'s own full opacity) and raising the destructive variant's own focus ring
+// to `/80`. This block verifies both fixes against the real composited footer backdrop every
+// destructive dialog action (RemoveRepositoryDialog, DeleteDialog, SignOutDialog, RequestCard's
+// Deny) renders on, not just the flat `--background` the PAIRS loop above already checks.
+for (const [themeId, props] of Object.entries(themes)) {
+  const muted = props['muted']
+  const popover = props['popover']
+  const destructive = props['destructive']
+  const destructiveForeground = props['destructive-foreground']
+  const ring = props['ring']
+  if (!muted || !popover || !destructive || !destructiveForeground || !ring) {
+    checkedCount++
+    failCount++
+    rows.push({ themeId, fg: 'destructive-foreground', bg: 'footer', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+    continue
+  }
+  const footerLinear = resolvedLinear({ raw: 'muted/50', alpha: 0.5, linear: muted.linear }, popover)
+  const footerEntry = { raw: 'footer (muted/50 on popover)', alpha: 1, linear: footerLinear }
+
+  const fills = [
+    { label: 'destructive-fill-rest (footer)', entry: { raw: 'destructive (rest)', alpha: 1, linear: destructive.linear } },
+    { label: 'destructive-fill-hover (footer)', entry: { raw: 'destructive/80 (hover)', alpha: 0.8, linear: destructive.linear } },
+  ]
+  for (const { label, entry } of fills) {
+    const fillLinear = resolvedLinear(entry, footerEntry)
+    const ratio = contrastRatio(relativeLuminance(destructiveForeground.linear), relativeLuminance(fillLinear))
+    const pass = ratio >= 4.5
+    checkedCount++
+    if (!pass) failCount++
+    rows.push({
+      themeId,
+      fg: 'destructive-foreground',
+      bg: label,
+      min: 4.5,
+      ratio,
+      pass,
+      fgHex: linearToHex(destructiveForeground.linear),
+      bgHex: linearToHex(fillLinear),
+    })
+  }
+
+  const rings = [
+    { label: 'ring (opaque, focus)', entry: { raw: 'ring (opaque)', alpha: 1, linear: ring.linear } },
+    { label: 'destructive/80 (focus ring)', entry: { raw: 'destructive/80 (focus ring)', alpha: 0.8, linear: destructive.linear } },
+  ]
+  for (const { label, entry } of rings) {
+    const ringLinear = resolvedLinear(entry, footerEntry)
+    const ratio = contrastRatio(relativeLuminance(ringLinear), relativeLuminance(footerLinear))
+    const pass = ratio >= 3
+    checkedCount++
+    if (!pass) failCount++
+    rows.push({
+      themeId,
+      fg: label,
+      bg: 'footer (muted/50 on popover)',
+      min: 3,
+      ratio,
+      pass,
+      fgHex: linearToHex(ringLinear),
+      bgHex: linearToHex(footerLinear),
+    })
+  }
+}
+
 // ---- print the table ---------------------------------------------------------------------
 
 const header = ['theme', 'pair', 'ratio', 'min', 'result']
