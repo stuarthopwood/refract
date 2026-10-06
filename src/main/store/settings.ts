@@ -35,12 +35,15 @@ export class SettingsStore {
     // every reader needs) so an UNRELATED setter's own whole-row write below never silently
     // persists FR-013's in-memory correction to disk on the user's behalf -- only `setTheme`
     // itself, a real save, is allowed to turn this from `undefined`/stale into the new value.
-    private rawTheme: ThemeId | undefined
+    private rawTheme: ThemeId | undefined,
+    // Spec 012: see `open`'s own comment above for why this must stay separate from
+    // `this.data.watermarkEnabled`, the same reasoning as `rawTheme` immediately above.
+    private rawWatermarkEnabled: boolean | undefined
   ) {}
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark' }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark', watermarkEnabled: true }))
     // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
     // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
     // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
@@ -76,7 +79,22 @@ export class SettingsStore {
     if (!isThemeId(data.theme)) {
       data.theme = 'dark'
     }
-    return new SettingsStore(file, data, rawTheme)
+    // Spec 012 data-model.md "Migration"/"Validation" (FR-019/FR-020): an existing settings.json
+    // written before this spec has no `watermarkEnabled` key at all (`undefined`), and a present
+    // but non-boolean value (hand-edited/corrupt) is treated the same way -- both fall back to
+    // `true` in memory here, the same lazy-correction pattern as `theme`/`split` above.
+    // `rawWatermarkEnabled` mirrors `rawTheme`'s own race-safety split: the exact, pre-correction
+    // value as it was actually on disk (a real boolean once the developer has ever saved a
+    // choice, otherwise `undefined`), kept separate from `this.data.watermarkEnabled` (always the
+    // corrected, in-memory value every reader needs) so an UNRELATED setter's own whole-row write
+    // never silently persists this in-memory correction to disk on the user's behalf -- only
+    // `setWatermarkEnabled` itself, a real save, is allowed to turn this from `undefined`/stale
+    // into the new value.
+    const rawWatermarkEnabled = typeof data.watermarkEnabled === 'boolean' ? data.watermarkEnabled : undefined
+    if (typeof data.watermarkEnabled !== 'boolean') {
+      data.watermarkEnabled = true
+    }
+    return new SettingsStore(file, data, rawTheme, rawWatermarkEnabled)
   }
 
   get(): Settings {
@@ -92,7 +110,7 @@ export class SettingsStore {
   // matching the pre-existing migration/lazy-correction comments above.
   private async persistWhole(next: Settings): Promise<Settings> {
     this.data = next
-    await writeJsonFile(this.file, { ...next, theme: this.rawTheme as ThemeId })
+    await writeJsonFile(this.file, { ...next, theme: this.rawTheme as ThemeId, watermarkEnabled: this.rawWatermarkEnabled as boolean })
     return { ...next }
   }
 
@@ -139,5 +157,19 @@ export class SettingsStore {
     this.rawTheme = themeId
     await writeJsonFile(this.file, next)
     return { ...next }
+  }
+
+  /** `settings.setWatermarkEnabled(enabled)` (spec 012 FR-015 to FR-020, contracts/ipc.md):
+   * persists the whole row via `persistWhole`, the same race-safety pattern as `setApprovalMode`/
+   * `setReadoutVisibility`/`setSplit` above (returns this call's own written value, never a
+   * possibly-superseded shared read). The one and only place allowed to turn
+   * `rawWatermarkEnabled` into a real, developer-saved value -- every other setter's own call to
+   * `persistWhole` deliberately writes the OLD `rawWatermarkEnabled` back, not any lazily-
+   * corrected in-memory value, until this method itself runs (mirrors `setTheme`'s own `rawTheme`
+   * handling, data-model.md "Validation"). */
+  async setWatermarkEnabled(enabled: boolean): Promise<Settings> {
+    this.rawWatermarkEnabled = enabled
+    const next = { ...this.data, watermarkEnabled: enabled }
+    return this.persistWhole(next)
   }
 }

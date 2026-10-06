@@ -54,6 +54,7 @@ export interface Settings {
   sessionReadout: Record<ReadoutKind, boolean>; // spec 004 FR-012 to FR-014
   split: SplitLayout | null; // spec 005: null = single pane, no split open
   theme: ThemeId; // spec 007 FR-018: default 'dark'
+  watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
 }
 
 /** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the
