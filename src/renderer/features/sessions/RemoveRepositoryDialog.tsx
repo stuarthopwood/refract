@@ -20,15 +20,19 @@ export interface RemoveRepositoryDialogProps {
   repository: { id: string; name: string }
   open: boolean
   onOpenChange(open: boolean): void
-  /** Called after a successful removal, once the dialog finishes closing (WCAG 2.1 AA
-   * focus-visibility): the caller moves focus to another repository's header, or to the
-   * first-run readiness screen once none remain. */
-  onRemoved?(): void
+  /** Called via `window.setTimeout(…, 0)` right after a successful removal. `remove()` unmounts
+   * the whole repository group -- this dialog included -- synchronously as part of that same
+   * store update, so this can never wait for Radix's own close-autofocus to run; the timeout only
+   * waits for React to commit that unmount (WCAG 2.1 AA focus-visibility). The caller moves focus
+   * to the repository group that was adjacent to the removed one when a `preferredRepositoryId`
+   * is given and still mounted, otherwise the first remaining group's header, or the first-run
+   * readiness screen once none remain. */
+  onRemoved?(preferredRepositoryId?: string): void
   /** Called after the dialog finishes closing without removing anything (Close on the blocked
-   * state, Cancel, Escape, or Cancel-after-error). Neither caller renders an
+   * state, Cancel, Escape, or Cancel-after-error) -- the only path left into `onCloseAutoFocus`
+   * once a successful removal no longer runs through it. Neither caller renders an
    * `AlertDialogTrigger` (both open via `open={removeOpen}`), so Radix's own close-autofocus has
    * nothing to return to and would otherwise drop focus to `<body>`. */
-  onCancelled?(): void
 }
 
 function describeOwnedSessions(activeCount: number, archivedCount: number): string {
@@ -36,6 +40,16 @@ function describeOwnedSessions(activeCount: number, archivedCount: number): stri
   if (activeCount > 0) parts.push(`${activeCount} active Session${activeCount === 1 ? '' : 's'}`)
   if (archivedCount > 0) parts.push(`${archivedCount} archived Session${archivedCount === 1 ? '' : 's'}`)
   return parts.join(' and ')
+}
+
+// Captures the next remaining repository group (or the previous one if the removed group was
+// last) before `remove()` runs and unmounts it, so `onRemoved` can send focus there once React
+// commits -- the DOM order this reads is still the pre-removal order.
+function findAdjacentRepositoryId(repositoryId: string): string | undefined {
+  const groups = Array.from(document.querySelectorAll<HTMLElement>('[data-repository-id]'))
+  const index = groups.findIndex((group) => group.getAttribute('data-repository-id') === repositoryId)
+  if (index === -1) return undefined
+  return groups[index + 1]?.getAttribute('data-repository-id') ?? groups[index - 1]?.getAttribute('data-repository-id') ?? undefined
 }
 
 export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemoved, onCancelled }: RemoveRepositoryDialogProps) {
@@ -63,27 +77,34 @@ export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemov
     if (removingRef.current) return
     removingRef.current = true
     setRemoving(true)
-    const ok = await remove(repository.id)
-    removingRef.current = false
-    setRemoving(false)
-    // A failure already surfaced through `notify` inside the store; nothing else changed, so the
-    // dialog just stays open exactly as it was.
-    if (!ok) return
-    removedRef.current = true
-    onOpenChange(false)
+    const preferredRepositoryId = findAdjacentRepositoryId(repository.id)
+    try {
+      const ok = await remove(repository.id)
+      // A failure already surfaced through `notify` inside the store; nothing else changed, so
+      // the dialog just stays open exactly as it was. A thrown error is treated the same way --
+      // not removed.
+      if (!ok) return
+      removedRef.current = true
+      // `remove()` unmounts this whole repository group -- this dialog included -- synchronously
+      // as part of the store update above, so there is no "after the dialog finishes closing"
+      // moment left to hook here; 0ms (not requestAnimationFrame, which is throttled while the
+      // verification window is hidden) is just long enough for React to commit that unmount.
+      window.setTimeout(() => onRemoved?.(preferredRepositoryId), 0)
+    } finally {
+      removingRef.current = false
+      setRemoving(false)
+    }
   }
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
+        aria-busy={removing}
         onCloseAutoFocus={(event) => {
           event.preventDefault()
-          if (removedRef.current) {
-            removedRef.current = false
-            onRemoved?.()
-          } else {
-            onCancelled?.()
-          }
+          // A successful removal already scheduled `onRemoved` itself above; this only ever runs
+          // for Close/Cancel/Escape, where nothing was removed.
+          if (!removedRef.current) onCancelled?.()
         }}
         onEscapeKeyDown={(event) => {
           if (removing) event.preventDefault()

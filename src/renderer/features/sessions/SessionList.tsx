@@ -296,7 +296,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   ref={menuTriggerRef}
                   type="button"
                   aria-label={`${session.name} actions`}
-                  className="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 aria-expanded:opacity-100"
+                  className="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
                 >
                   <EllipsisVerticalIcon aria-hidden className="size-3.5" />
                 </button>
@@ -411,7 +411,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
                 ref={menuTriggerRef}
                 type="button"
                 aria-label={`Repository actions for ${repository.name}`}
-                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 aria-expanded:opacity-100"
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:bg-sidebar-border hover:text-foreground focus:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
               >
                 <EllipsisVerticalIcon aria-hidden className="size-3.5" />
               </button>
