@@ -3,9 +3,12 @@ import { ArrowLeftRightIcon } from 'lucide-react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
+import { BrandWatermark } from '@/features/chat/BrandWatermark'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
+import { ManageSessionsScreen } from '@/features/profile/ManageSessionsScreen'
+import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
@@ -55,6 +58,17 @@ export function App() {
   // at startup or just after a renderer reload) -- long enough to clear a hidden Session's unread
   // flag the `visible` effect below should not have touched yet. `null` means "not yet measured".
   const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
+  // Quality-gate remediation (test-reviewer Medium; revised gate-3, UI N6 / A11y M3): the
+  // session-list panel's own content stays mounted AND rendered even collapsed to zero width
+  // (react-resizable-panels sets no inert/hidden/display:none on a collapsed Panel by itself) --
+  // unmounting it on collapse (the first fix) dropped the whole left nav's own live state (which
+  // Sessions group was open/closed, scroll position, an in-progress rename) every time the user
+  // dragged the divider shut. The content below is instead kept mounted and marked `inert` +
+  // `aria-hidden` while collapsed -- out of the Tab order and screen-reader browse mode, exactly
+  // like the always-mounted subagents Panel's own content further down, but never torn down.
+  // Tracked via this Panel's own `onResize` (there is no dedicated open/close store for this
+  // one, unlike the subagents panel's `useSubagentPanelStore`).
+  const [navCollapsed, setNavCollapsed] = useState(false)
   // Quality-gate remediation (code-reviewer, round 2, High): the focus-move button's `left` was
   // reading the PERSISTED `dividerPercent`, which `onLayoutChanged` only updates once a drag or
   // keyboard resize finishes (the library's own docs: "not called until the pointer has been
@@ -210,11 +224,34 @@ export function App() {
           <ErrorBoundary>
             <SettingsScreen />
           </ErrorBoundary>
+        ) : view === 'manage-sessions' ? (
+          <ErrorBoundary>
+            <ManageSessionsScreen />
+          </ErrorBoundary>
         ) : (
           <ResizablePanelGroup orientation="horizontal" className="h-full">
-            <ResizablePanel id="session-list" defaultSize={280} minSize={220} maxSize={480} collapsible collapsedSize={0}>
+            <ResizablePanel
+              id="session-list"
+              defaultSize={280}
+              minSize={220}
+              maxSize={480}
+              collapsible
+              collapsedSize={0}
+              onResize={(size) => setNavCollapsed(size.inPixels <= 0)}
+            >
+              {/* Quality-gate remediation (test-reviewer Medium; revised gate-3, UI N6 / A11y
+                  M3): the `ResizablePanel` wrapper stays always mounted either way (so its own
+                  pixel-exact sizing never changes), and now so does the content inside it --
+                  `inert` + `aria-hidden` take it out of the Tab order and screen-reader browse
+                  mode while collapsed, without unmounting it (and losing SessionList's own open
+                  group/scroll/rename state) the way the previous conditional mount did. */}
               <ErrorBoundary>
-                <SessionList />
+                <div className="flex h-full flex-col" inert={navCollapsed} aria-hidden={navCollapsed || undefined}>
+                  <div className="min-h-0 flex-1">
+                    <SessionList />
+                  </div>
+                  <ProfileItem />
+                </div>
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />
@@ -226,7 +263,19 @@ export function App() {
                   // "Pull requests" is a left-nav entry, not a separate shell).
                   <PullRequestsView />
                 ) : paneSessionIds.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  // Spec 012 (research.md decision 3): no pane open at all -- no composer exists
+                  // in this branch, so the mark anchors to this div's own full box.
+                  //
+                  // Quality-gate remediation (code-reviewer/ui-architect, Medium): `20cqw` needs
+                  // this root itself to be the query container (`[container-type:size]`), not the
+                  // window, matching ChatPane.tsx's own transcript container (research.md decision
+                  // 8) -- missing it here sized the mark off the WHOLE window instead of this box.
+                  // `isolate` plus the mark's own `-z-10` (BrandWatermark.tsx) then keeps the
+                  // absolutely-positioned mark painting BEHIND this normal-flow text instead of
+                  // over it: `isolate` is what creates the stacking context here (`container-type`
+                  // does not, it only applies style and size containment).
+                  <div className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground [container-type:size]">
+                    <BrandWatermark variant="live" />
                     Select a Session or create one.
                   </div>
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
@@ -235,6 +284,7 @@ export function App() {
                     paneIndex={isSplit ? focusedIndex : 0}
                     reservesWindowControls
                     otherSession={otherSessionForNarrowCollapse}
+                    showWatermark
                   />
                 ) : (
                   <ResizablePanelGroup
@@ -295,7 +345,9 @@ export function App() {
                     </button>
                     <ResizablePanel id="split-pane-1" defaultSize={`${100 - dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>
-                        <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls />
+                        {/* Spec 012 (research.md decision 3, FR-008): the right-most pane's own
+                            reading area, never paneA -- "one watermark, not one per pane". */}
+                        <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls showWatermark />
                       </ErrorBoundary>
                     </ResizablePanel>
                   </ResizablePanelGroup>

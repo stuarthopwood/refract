@@ -1,7 +1,8 @@
 // Small display helpers shared between `SessionList.tsx` (the row) and `SessionDetailsCard.tsx`
 // (the hover card), split out so neither file has to import the other.
 
-import { BellRingIcon, CircleIcon, LoaderCircleIcon, SquareIcon } from 'lucide-react'
+import { BellRingIcon, CircleIcon, SquareIcon } from 'lucide-react'
+import { BrandSpinner } from '@/components/brand/BrandSpinner'
 import { cn } from '@/lib/utils'
 import type { DiffStat } from '../../../shared/ipc'
 import type { SessionStatus } from '../../../shared/model'
@@ -30,7 +31,7 @@ export function StateIcon({ status }: { status: SessionStatus }) {
  const className = 'size-4 shrink-0'
  switch (status) {
   case 'working':
-   return <LoaderCircleIcon aria-hidden className={cn(className, 'animate-spin text-state-working')} />
+   return <BrandSpinner size={16} className={className} />
   case 'idle':
    return <CircleIcon aria-hidden className={cn(className, 'text-state-idle')} />
   case 'needs-you':

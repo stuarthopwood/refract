@@ -6,8 +6,11 @@ import type {
   ChatAnswer,
   DependencyInstallProgress,
   DiffStat,
+  GitHubAccount,
+  GitHubAddFlowProgress,
   LowMemoryWarning,
   MergeInput,
+  OmpProviderState,
   PullRequestListResult,
   RefractApi,
   Readiness,
@@ -124,7 +127,8 @@ const refract: RefractApi = {
     setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode),
     setReadoutVisibility: (kind, visible) =>
       request<Settings>(IPC_REQUESTS.SETTINGS_SET_READOUT_VISIBILITY, kind, visible),
-    setSplit: (layout) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SPLIT, layout)
+    setSplit: (layout) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SPLIT, layout),
+    setWatermarkEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, enabled)
   },
 
   window: {
@@ -162,7 +166,8 @@ const refract: RefractApi = {
   },
 
   app: {
-    getVersion: () => request<string>(IPC_REQUESTS.APP_GET_VERSION)
+    getVersion: () => request<string>(IPC_REQUESTS.APP_GET_VERSION),
+    openReleaseNotes: () => request<void>(IPC_REQUESTS.APP_OPEN_RELEASE_NOTES)
   },
 
   // Synchronous by design (contracts/ipc.md "Bootstrap", research.md decision 4): called once
@@ -171,6 +176,23 @@ const refract: RefractApi = {
   // (`src/main/ipc/theme.ts`) for why this is the one channel in the app that is not
   // `Result<T>`-shaped.
   themeBootstrap: () => ipcRenderer.sendSync(THEME_BOOTSTRAP_CHANNEL) as { theme: ThemeId },
+
+  accounts: {
+    github: {
+      list: () => request<GitHubAccount[]>(IPC_REQUESTS.ACCOUNTS_GITHUB_LIST),
+      addStart: () => request<{ flowId: string }>(IPC_REQUESTS.ACCOUNTS_GITHUB_ADD_START),
+      addCancel: (flowId) => request<void>(IPC_REQUESTS.ACCOUNTS_GITHUB_ADD_CANCEL, flowId),
+      switch: (host, login) => request<GitHubAccount[]>(IPC_REQUESTS.ACCOUNTS_GITHUB_SWITCH, host, login),
+      signOut: (host, login) => request<GitHubAccount[]>(IPC_REQUESTS.ACCOUNTS_GITHUB_SIGN_OUT, host, login)
+    },
+    omp: {
+      list: () => request<OmpProviderState[]>(IPC_REQUESTS.ACCOUNTS_OMP_LIST),
+      signIn: (providerId) => request<{ requestId: string | null }>(IPC_REQUESTS.ACCOUNTS_OMP_SIGN_IN, providerId),
+      signOut: (providerId) => request<{ requestId: string | null }>(IPC_REQUESTS.ACCOUNTS_OMP_SIGN_OUT, providerId),
+      answer: (requestId, answer) => request<void>(IPC_REQUESTS.ACCOUNTS_OMP_ANSWER, requestId, answer)
+    }
+  },
+
   onSessionStatus: (handler) => on<SessionStatusEvent>(IPC_EVENTS.SESSION_STATUS, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
   onTranscriptPatch: (handler) => on<{ sessionId: string; ops: TranscriptOp[] }>(IPC_EVENTS.TRANSCRIPT_PATCH, handler),
@@ -192,7 +214,9 @@ const refract: RefractApi = {
   onReadinessInstallProgress: (handler) =>
     on<DependencyInstallProgress>(IPC_EVENTS.READINESS_INSTALL_PROGRESS, handler),
   onReadinessChanged: (handler) => on<Readiness>(IPC_EVENTS.READINESS_CHANGED, handler),
-  onUpdatesStateChanged: (handler) => on<UpdateState>(IPC_EVENTS.UPDATES_STATE_CHANGED, handler)
+  onUpdatesStateChanged: (handler) => on<UpdateState>(IPC_EVENTS.UPDATES_STATE_CHANGED, handler),
+  onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
+  onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
 }
 
 contextBridge.exposeInMainWorld('refract', refract)

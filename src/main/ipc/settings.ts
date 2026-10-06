@@ -111,4 +111,19 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });
+
+  // Spec 012 contracts/ipc.md `settings.setWatermarkEnabled` (FR-015 to FR-020): a non-boolean
+  // argument is the existing `invalid-argument` error code, the same catch-all `setSplit`'s own
+  // malformed-payload branch above already uses.
+  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, async (_event, enabled: unknown): Promise<Result<Settings>> => {
+    if (typeof enabled !== 'boolean') {
+      return {
+        ok: false,
+        error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED} expects a boolean enabled` },
+      };
+    }
+    const value = await manager.settings.setWatermarkEnabled(enabled);
+    broadcastSettingsChanged(value, getWindow);
+    return { ok: true, value };
+  });
 }

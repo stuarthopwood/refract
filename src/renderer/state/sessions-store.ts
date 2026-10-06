@@ -15,8 +15,11 @@ interface SessionsState {
   open(id: string): Promise<SessionSnapshot | null>
   create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
-  archive(id: string): Promise<void>
-  restore(id: string): Promise<void>
+  /** Post-build review fix (Phase7PostBuild/code-reviewer, Medium): resolves `result.ok` so a
+   * caller only announces (or runs a focus fallback for) a genuine success, never a failure
+   * already reported through `notify`'s own toast. */
+  archive(id: string): Promise<boolean>
+  restore(id: string): Promise<boolean>
   stopAgent(id: string): Promise<void>
 }
 
@@ -101,10 +104,12 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   archive: async (id) => {
     const result = await window.refract.sessions.archive(id)
     if (!result.ok) notify(result.error)
+    return result.ok
   },
   restore: async (id) => {
     const result = await window.refract.sessions.restore(id)
     if (!result.ok) notify(result.error)
+    return result.ok
   },
   stopAgent: async (id) => {
     const result = await window.refract.sessions.stopAgent(id)

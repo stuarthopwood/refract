@@ -8,6 +8,7 @@ import type { BrowserWindow, Menu } from 'electron';
 import { IPC_EVENTS } from '../../shared/ipc';
 import type { ManagerEvent, SessionManager } from '../SessionManager';
 import type { UpdateStateStore } from '../store/updateState';
+import { registerAccounts } from './accounts';
 import { registerChat } from './chat';
 import { registerClipboard } from './clipboard';
 import { registerConversations } from './conversations';
@@ -27,6 +28,7 @@ export function registerIpc(
   updateStateStore: UpdateStateStore
 ): void {
   registerReadiness(getWindow);
+  registerAccounts(manager, getWindow);
   registerRepositories(manager, getWindow);
   registerSessions(manager);
   registerPullRequests(manager);

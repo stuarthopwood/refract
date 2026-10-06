@@ -32,10 +32,72 @@ prompt, since FR-009 requires showing that progress; (c) what `gh auth switch --
 --user <login>` and `gh auth logout --hostname <h> --user <login>` print and exit with, for both
 the success case and a `--user` that does not match an existing account.
 
+**T001 probe results (2026-10-05)**: only one real GitHub account (`stuarthopwood`) was signed in
+on the workstation and no disposable/secondary account could be added without risking that
+session, so this run only did what a single-account machine can verify safely.
+
+- **re-verified**: `gh auth status --json hosts` still returns exactly the single-entry shape
+  recorded in Decision 1 above —
+  `{"hosts":{"github.com":[{"state":"success","active":true,"host":"github.com",
+  "login":"stuarthopwood","tokenSource":"keyring","scopes":"copilot, gist, read:org,
+  read:packages, repo, workflow","gitProtocol":"https"}]}}` — unchanged from the original
+  planning-pass check; no drift since Decision 1 was written.
+- **partially verified**: `gh auth login --web` was started and killed before completion, never
+  switching or signing in. Command run: `GH_BROWSER=true timeout -s INT 6 gh auth login --web
+  --hostname github.com --git-protocol https` (stdin/stdout not attached to a real terminal — this
+  sandbox has no pty). Exact stdout:
+  ```
+  ! One-time code (5FCF-5515) copied to clipboard
+  Open this URL to continue in your web browser: https://github.com/login/device
+  ```
+  then SIGINT fired (exit 124) before the code could be approved by anyone; `GH_BROWSER=true` was
+  set first so no real browser window ever opened. Per `gh auth login --help`, the token is only
+  written to the credential store "after completion" of the device flow, so killing the process
+  pre-completion should never touch the stored credential — confirmed by re-running `gh auth
+  status --json hosts` and `gh config get git_protocol` immediately after: both byte-for-byte
+  identical to before the attempt, still showing only `stuarthopwood`, still `active: true`.
+  **Still unverified**: the attached-terminal variant of this same prompt. `gh auth login --help`
+  implies an interactive run may add a "press Enter to open in your browser" confirmation step
+  that this non-tty sandbox never triggered (it printed the code and URL immediately instead), so
+  FR-009's exact interactive-terminal wording is still open.
+- **verified 2026-10-05, later the same day, via a scratch `GH_CONFIG_DIR`** (a throwaway config
+  directory holding fake accounts in `hosts.yml`, with `GH_BROWSER` set to a no-op so no real
+  browser ever opens — exercises the multi-account/switch/sign-out paths without a real second
+  account and without ever touching `stuarthopwood`'s real login): (a) with two or three fake
+  accounts on one host, `gh auth status --json hosts` returns exactly ONE array under
+  `hosts["github.com"]`, each entry `{state, error?, active, host, login, tokenSource,
+  gitProtocol}` — the array-of-entries shape this spec always assumed, now confirmed rather than
+  inferred; an invalid token reports `state: "error"` with an HTTP 401 message (this is what
+  Manage accounts' "Needs attention" row keys on, `state !== 'success'`), and `gh` lists the
+  ACTIVE account first (the order changes after a switch). (b) a matching `gh auth switch
+  --hostname <h> --user <login>` completed in ~145 ms, exits 0, with EMPTY stdout and
+  `✓ Switched active account for <h> to <login>` on stderr; a `--user` that does not match any
+  existing account on that host exits 1 with empty stdout and stderr `not logged in to <h>
+  account <login>`. (c) logging out the ACTIVE account makes `gh` activate the first remaining
+  account on that host in its own listing order — confirmed with 2 accounts, 3 accounts (active
+  `carol` -> `alice`), and a non-alphabetical config (active `mid` of `zed`, `mid`, `abe` ->
+  `zed`): `ManageAccountsDialog.tsx`/`SignOutDialog.tsx`'s successor rule ("first remaining
+  account on the same host, in the CLI's listing order") matches reality. A matching `gh auth
+  logout --hostname <h> --user <login>` exits 0 with empty stdout and stderr `✓ Logged out of <h>
+  account <login>`, followed by `✓ Switched active account for <h> to <next>` when another
+  account on that host became the new active one; a `--user` that does not match any existing
+  account exits 1 with empty stdout and the same `not logged in to <h> account <login>` stderr
+  `authSwitch` documents above — **re-verified live 2026-10-05** against the same scratch
+  `GH_CONFIG_DIR`: `--hostname github.com --user nobody-test` (never present in the fake config)
+  for both `switch` and `logout`, each exit 1 with stderr `not logged in to github.com account
+  nobody-test`; a matching `--user bob-test` switch exits 0 with stderr `✓ Switched active
+  account for github.com to bob-test`, and a matching `bob-test` logout exits 0 with stderr
+  `✓ Logged out of github.com account bob-test` then `✓ Switched active account for github.com to
+  alice-test`. This settles the one case the original single-account-workstation attempt could
+  not reach; the three-shapes verification above is otherwise complete, so no part of
+  `ManageAccountsDialog.tsx` ships against an assumed array shape, exit code, or stdout/stderr
+  text any longer.
+
 **Rationale**: constitution Principle IV requires evidence before design for anything the spec
-relies on; `gh auth login --web`'s own interactive browser flow and the two-or-more-account case
-cannot be exercised without mutating a real credential store, which this planning pass
-deliberately did not do.
+relies on. The two-or-more-account case could not be exercised with `stuarthopwood`'s own real,
+only, GitHub login without risking it — resolved not by waiting for a disposable account, but by
+pointing `gh` at a scratch `GH_CONFIG_DIR` of fake accounts instead, which needed no real
+credential store mutation at all.
 
 **Alternatives considered**: shipping Manage accounts against the `--help` text's description
 alone — rejected: the one-time-code line's exact wording is not in `--help` and must be read from
@@ -100,34 +162,36 @@ no new protocol registration and is simpler to validate end-to-end (the same byt
 checked are the bytes handed over, with no separate file-read step that could serve something
 else).
 
-## Decision 6: OMP provider sign-in/out — probe first, reuse the readiness pattern
+## Decision 6: OMP provider sign-in/out — confirmed unusable over rpc-ui; read-only fallback ships
 
-**Decision**: task T002 (tasks.md) probes, before any User Story 3 implementation task, whether
-`/login` and `/logout` are offered by a scratch `omp --mode rpc-ui` process's
-`available_commands_update`, and if so what sending them as a `prompt` produces (an
-`extension_ui_request` dialog, `command_output` text, or both), recording the result in
-`docs/spike/FINDINGS.md` per constitution Principle IV. If the probe confirms a usable flow,
-`src/main/ipc/accounts.ts`'s OMP section spins up a scratch, non-Session `OmpProcess` (the exact
-construction `readiness.ts`'s `checkOmpSignedIn` already uses: a temp-dir cwd, started on demand,
-stopped when the section closes) to call `get_login_providers` for reads and to send `/login`/
-`/logout` and relay any resulting dialog through the existing `dialogs.ts` classifier
-(contracts/omp-usage.md) over a new, non-Session pending-request channel.
+**Decision**: task T002's probe (`docs/spike/omp-signin-probe.mjs`, FINDINGS item 43) confirmed
+`/login` and `/logout` are absent from a scratch `omp --mode rpc-ui` process's
+`available_commands_update` — on both a brand-new isolated profile (198 flattened commands) and
+the real, fully-loaded, already-signed-in default profile (363 flattened commands), ruling out
+`--profile` isolation as the cause. **The fallback branch ships, not the verified-usable branch**:
+`src/main/ipc/accounts.ts`'s OMP section is read-only. It spins up the same scratch, non-Session
+`OmpProcess` construction `readiness.ts`'s `checkOmpSignedIn` already uses (a temp-dir cwd,
+started on demand, stopped when the section closes) only to call `get_login_providers` for reads
+(already proven safe and working, FINDINGS item 15); `accounts.omp.signIn`/`signOut`
+(contracts/ipc.md) unconditionally return error `unsupported`, and signing in or out shows an
+inline instruction to run `omp` in a terminal and use `/login` there rather than attempting an
+unsupported in-app flow. FINDINGS item 43 also found: `omp --help`/`omp login --help` document
+`/login` as a real OMP slash command with its own terminal-only CLI counterpart (`omp login
+[PROVIDER]`, "terminal counterpart of `/login`"), matching this decision's original anticipated
+risk that the flow assumes a real terminal; no CLI `omp logout` counterpart exists in this
+version, so the instruction text names only `/login`, never `/logout`, and never implies a
+terminal sign-out command this probe did not find.
 
-**Fallback if the probe shows it is not possible** (`/login`/`/logout` absent from
-`available_commands_update`, or the dialog it raises cannot be answered over rpc-ui): Manage
-accounts' OMP section becomes read-only — it still lists provider sign-in state via
-`get_login_providers` (already proven safe and working, FINDINGS item 15) — and signing in or out
-shows an inline instruction to run `omp` in a terminal and use `/login`/`/logout` there, rather
-than attempting an unsupported in-app flow. This is the conservative fallback recorded here so the
-implementing task has a concrete instruction either way the probe comes out.
-
-**Rationale**: the spec's own Assumptions flag this as unverified and require a probe before a
-plan relies on it (constitution Principle IV); User Story 3 is Priority P2 and nothing else in
-this spec depends on it, so a read-only fallback does not block Users Stories 1, 2, 4, or 5.
+**Rationale**: constitution Principle IV requires evidence before design; the probe is decisive
+rather than merely absence-of-something-tried, because it reproduced the identical zero-hit
+result on the real, already-signed-in profile too (not only the never-used isolated one). User
+Story 3 is Priority P2 and nothing else in this spec depends on it, so the read-only fallback does
+not block User Stories 1, 2, 4, or 5.
 
 **Alternatives considered**: assuming the RPC-driven flow works and designing only that path —
 rejected, directly against constitution Principle IV ("Features MUST NOT be designed around a
-FINDINGS open item... until a probe resolves it").
+FINDINGS open item... until a probe resolves it"); moot in hindsight since the probe ran and
+confirmed the fallback is the only buildable path.
 
 ## Decision 7: one shared main-area view-switch store, reconciled with specs 003 and 004
 

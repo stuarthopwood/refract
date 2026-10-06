@@ -236,6 +236,15 @@ confirm the session list keeps scrolling smoothly.
 - The spinner is decorative only (`aria-hidden`), so no icon-level colour-contrast requirement
   applies to it the way spec 007 FR-008/FR-009 apply to the other three state icons: the
   information it would otherwise carry is already carried by each call site's existing sr-only text.
+  **Quality-gate remediation** (UI MEDIUM, 3 independent reviewers): "decorative" does not mean
+  "invisible" -- the `working` state's `sr-only` text is screen-reader-only, so for a sighted
+  developer the spinner is in practice the only visible "working" cue, and the other three state
+  icons are still held to spec 007 FR-008's 3:1 floor even though they too carry an `sr-only`
+  label. The Simplified variant's core and arm rest opacity were therefore raised to clear 3:1
+  against both theme presets' `--sidebar` anyway (`BrandSpinner.tsx`, `globals.css`'s
+  `@keyframes`), despite this assumption's original reasoning that no contrast floor formally
+  applies -- a visibility requirement, not an accessible-name requirement, which this assumption's
+  `aria-hidden` framing was never about in the first place.
 - The larger (24px+) size has no shipped call site in this spec, because no full-screen or
   empty-state loading surface exists in the app today for it to go on; it is specified and verified
   during implementation behind a temporary, unshipped harness only (plan.md), the same "build and

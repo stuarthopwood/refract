@@ -51,6 +51,13 @@ export type IpcErrorCode =
   | 'clipboard-failed'
   | 'unsupported-image-type'
   | 'image-too-large'
+  | 'invalid-theme'
+  | 'gh-not-found'
+  | 'gh-failed'
+  | 'timeout'
+  | 'account-not-found'
+  | 'omp-probe-failed'
+  | 'unsupported'
   | 'no-github-remote'
   | 'gh-unavailable'
   | 'rate-limited'
@@ -59,7 +66,6 @@ export type IpcErrorCode =
   | 'not-mergeable'
   | 'checkout-failed'
   | 'disabled'
-  | 'invalid-theme'
   | 'dependency-install-failed'
   | 'update-unavailable'
   | 'checksum-mismatch';
@@ -202,6 +208,40 @@ export interface SessionStatusEvent {
   pendingMode: ApprovalMode | null;
 }
 
+/** spec 008 data-model.md: one GitHub CLI account across every signed-in host; never includes
+ * a token (FR-012, constitution V). `displayName`/`avatarDataUrl` come from `profileCache.json`,
+ * refreshed opportunistically (research.md decision 5) -- both `null` until first fetched, in
+ * which case the UI shows `login` and initials respectively. */
+export interface GitHubAccount {
+  host: string;
+  login: string;
+  active: boolean;
+  state: string;
+  /** Why `state` is not 'success', classified in the main process from gh's own per-account error
+   * text (never shown raw): the token was rejected, gh could not reach the host, or the cause is
+   * unknown. Absent when `state` is 'success'. */
+  problem?: 'expired' | 'unreachable' | 'unknown';
+  displayName: string | null;
+  avatarDataUrl: string | null;
+}
+
+/** spec 008 data-model.md, User Story 3: one OMP provider's sign-in state, read live from
+ * `get_login_providers` over a scratch management `OmpProcess` -- never persisted (contracts/
+ * ipc.md "OMP provider sign-in"), unlike `GitHubAccount`'s cached display fields. */
+export interface OmpProviderState {
+  id: string;
+  authenticated: boolean;
+}
+
+/** spec 008 contracts/ipc.md `accounts:github-add-progress`: the add-account flow's one-time
+ * code and progress (FR-009), pushed until the flow completes, is cancelled, or fails. */
+export interface GitHubAddFlowProgress {
+  flowId: string;
+  code: string;
+  status: 'waiting' | 'completed' | 'cancelled' | 'failed';
+  detail?: string;
+}
+
 // Pull request management (specs/003-pull-request-management/contracts/ipc.md). Entity types
 // (PullRequestSummary, PullRequestDetail, ChangedFile, FilterTab, ReviewVerdict, MergeMethod) live
 // in './github', imported above; these are the per-request wrapper shapes only.
@@ -277,6 +317,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   SETTINGS_SET_SPLIT: 'settings.setSplit',
+  SETTINGS_SET_WATERMARK_ENABLED: 'settings.setWatermarkEnabled',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -294,6 +335,16 @@ export const IPC_REQUESTS = {
   UPDATES_GET_STATE: 'updates.getState',
   UPDATES_INSTALL: 'updates.install',
   APP_GET_VERSION: 'app.getVersion',
+  ACCOUNTS_GITHUB_LIST: 'accounts.github.list',
+  ACCOUNTS_GITHUB_ADD_START: 'accounts.github.addStart',
+  ACCOUNTS_GITHUB_ADD_CANCEL: 'accounts.github.addCancel',
+  ACCOUNTS_GITHUB_SWITCH: 'accounts.github.switch',
+  ACCOUNTS_GITHUB_SIGN_OUT: 'accounts.github.signOut',
+  ACCOUNTS_OMP_LIST: 'accounts.omp.list',
+  ACCOUNTS_OMP_SIGN_IN: 'accounts.omp.signIn',
+  ACCOUNTS_OMP_SIGN_OUT: 'accounts.omp.signOut',
+  ACCOUNTS_OMP_ANSWER: 'accounts.omp.answer',
+  APP_OPEN_RELEASE_NOTES: 'app.openReleaseNotes',
 } as const;
 
 export const IPC_EVENTS = {
@@ -313,6 +364,8 @@ export const IPC_EVENTS = {
   READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
   READINESS_CHANGED: 'readiness:changed',
   UPDATES_STATE_CHANGED: 'updates:state-changed',
+  ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
+  ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
 } as const;
 
 /** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
@@ -432,6 +485,10 @@ export interface RefractApi {
      * broadcasts `settings:changed`; `null` means no split is open. Never starts, stops, or
      * touches any agent -- this call only ever writes the stored layout. */
     setSplit(layout: SplitLayout | null): Promise<Result<Settings>>;
+    /** Spec 012 FR-015 to FR-020: persists the whole `Settings` row and returns this call's own
+     * written value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
+     * `setSplit`. Pushes `settings:changed`, no new event. */
+    setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
   };
 
   window: {
@@ -500,6 +557,10 @@ export interface RefractApi {
     /** The running build's own version (`app.getVersion()`), for the badge and for comparing
      * against a release's `version`. */
     getVersion(): Promise<Result<string>>;
+    /** spec 008 contracts/ipc.md "Release notes": opens the installed version's GitHub release
+     * page in the system browser via the same bounded, scheme-checked helper every other external
+     * link already uses (constitution V); never opened inside an app window. */
+    openReleaseNotes(): Promise<Result<void>>;
   };
 
   /** Spec 007 contracts/ipc.md "Bootstrap": synchronous, called once from `main.tsx`'s very
@@ -509,6 +570,24 @@ export interface RefractApi {
    * nothing paints before the right theme class is already set (FR-012/SC-003). Not
    * `Result<T>`-shaped: there is nothing to fail. */
   themeBootstrap(): { theme: ThemeId };
+
+  // Spec 008 contracts/ipc.md: GitHub accounts and OMP provider sign-in both go through the
+  // developer's own CLI (GitHub CLI / omp) -- Refract never stores a token (FR-012).
+  accounts: {
+    github: {
+      list(): Promise<Result<GitHubAccount[]>>;
+      addStart(): Promise<Result<{ flowId: string }>>;
+      addCancel(flowId: string): Promise<Result<void>>;
+      switch(host: string, login: string): Promise<Result<GitHubAccount[]>>;
+      signOut(host: string, login: string): Promise<Result<GitHubAccount[]>>;
+    };
+    omp: {
+      list(): Promise<Result<OmpProviderState[]>>;
+      signIn(providerId: string): Promise<Result<{ requestId: string | null }>>;
+      signOut(providerId: string): Promise<Result<{ requestId: string | null }>>;
+      answer(requestId: string, answer: ChatAnswer): Promise<Result<void>>;
+    };
+  };
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;
   onSessionListChanged(handler: () => void): Unsubscribe;
   onTranscriptPatch(handler: (payload: { sessionId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
@@ -525,6 +604,8 @@ export interface RefractApi {
   onReadinessInstallProgress(handler: (payload: DependencyInstallProgress) => void): Unsubscribe;
   onReadinessChanged(handler: (payload: Readiness) => void): Unsubscribe;
   onUpdatesStateChanged(handler: (payload: UpdateState) => void): Unsubscribe;
+  onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
+  onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }
 
 declare global {

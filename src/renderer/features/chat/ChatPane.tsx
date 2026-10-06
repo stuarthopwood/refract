@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { cn } from '@/lib/utils'
-import { focusSessionsNav } from '@/lib/focus'
+import { focusPaneContent, focusSessionsNav } from '@/lib/focus'
 import {
   notify,
   useCommandsStore,
@@ -22,6 +22,7 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
 import { Transcript } from './Transcript'
@@ -33,37 +34,6 @@ interface StopInfo {
   detail?: string
 }
 
-/** Quality-gate remediation (accessibility-auditor, round 2, High): a stopped Session
- * (`agent-exited`/`worktree-missing`/`start-failed`) renders MessageInput's textarea `disabled`
- * (MessageInput.tsx), so a plain `textarea?.focus()` silently no-ops there -- both the focus-move
- * chord/button and the close-pane refocus used that one selector, so both regressed identically
- * for a stopped target pane. Round 3 (code-reviewer/accessibility-auditor/test-reviewer, Medium):
- * the first version of this fallback queried the WHOLE pane region, landing on whichever enabled
- * control happened to come first in DOM order -- `ChatHeader` renders before the stopped banner,
- * so it actually landed on the conversation switcher or the narrow-collapse swap chip, not the
- * banner's own Recover/Recreate worktree/Delete button this docblock previously (wrongly) claimed
- * "always exists when the textarea is disabled". It does not: a `start-failed` banner renders no
- * button at all, an `agent-exited` banner mid-recovery has its only button (`Recover`) disabled,
- * and there is a brief window right after a stopped Session is (re)opened where `stopInfo` is
- * still `{}` -- MessageInput already disables the textarea once `status === 'stopped'` (treating
- * an undefined `stopReason` as "not `not-started`"), but `showBanner` requires a truthy
- * `effectiveStopReason`, so no banner has rendered yet either. For all three, this now focuses
- * the pane region itself (`tabIndex={-1}` below) rather than falling through to a generic
- * whole-pane DOM scan, which would otherwise land on a `ChatHeader` control again. */
-function focusPaneContent(container: HTMLElement | null): void {
-  if (!container) return
-  const textarea = container.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')
-  if (textarea) {
-    textarea.focus()
-    return
-  }
-  const bannerButton = container.querySelector<HTMLElement>('[data-pane-banner] button:not(:disabled), [data-pane-banner] [href]')
-  if (bannerButton) {
-    bannerButton.focus()
-    return
-  }
-  container.focus()
-}
 
 /** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
  * contracts/ipc.md) out to the transcript, queue, and pending-request stores for that Session.
@@ -120,9 +90,16 @@ interface ChatPaneProps {
   /** Spec 005 (research.md Decision 6, FR-017): set only by App.tsx's narrow-window collapse,
    * never while both panes are genuinely shown side by side. */
   otherSession?: { id: string; name: string } | null
+  /** Spec 012 (data-model.md "Extended ChatPaneProps"): true for exactly one rendered ChatPane
+   * at a time -- the single pane shown when there is only one, or the right (second, paneIndex
+   * 1) pane of a true two-pane split. App.tsx computes and passes this; ChatPane itself does not
+   * infer it from useSplitStore. Mounts <BrandWatermark variant="live" /> in this pane's
+   * transcript container (the normal case) or its own `!session` Empty fallback, whichever
+   * branch is active. */
+  showWatermark?: boolean
 }
 
-export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession }: ChatPaneProps) {
+export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark }: ChatPaneProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   // bug report point 4: while `sessions-store.ts`'s `open()` is in flight for this Session (a
   // fresh click, or a not-started Session cold-starting its agent), show that here too -- not
@@ -276,8 +253,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   }, [isFocused, isSplit, focusMoveSignal])
 
   if (!session) {
+    // Quality-gate remediation (code-reviewer/ui-architect, Medium): same fix as App.tsx's own
+    // no-pane-open empty state -- `[container-type:size]` makes this root (not the window) the
+    // `20cqw` query container, and `isolate` (plus the mark's own `-z-10`, BrandWatermark.tsx)
+    // keeps the absolutely-positioned mark painting behind this Empty's normal-flow content
+    // instead of over it (research.md decision 8).
     return (
-      <Empty className="h-full">
+      <Empty className="relative isolate h-full [container-type:size]">
+        {showWatermark && <BrandWatermark variant="live" />}
         <EmptyHeader>
           <EmptyMedia variant="icon">
             <MessageSquareIcon />
@@ -339,6 +322,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       role="region"
       aria-label={`${session.name} chat`}
       tabIndex={-1}
+      data-session-pane={sessionId}
       onMouseDownCapture={handleFocusPane}
       onFocusCapture={handleFocusPane}
       className="relative flex h-full flex-col overflow-hidden"
@@ -431,14 +415,19 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           // FR-016: deleting the Session shown in this pane closes the pane itself (a no-op when
           // there is no split to close down to), not just a focus move inside it.
           useSplitStore.getState().closePane(paneIndex)
-          focusSessionsNav()
+          // Quality-gate remediation (code-reviewer Low, gate-4): deferred one frame -- while the
+          // session list is collapsed (inert), `focusSessionsNav`'s own pane fallback can land on
+          // THIS pane, which `closePane` above just scheduled to unmount, before React has
+          // actually committed that change.
+          requestAnimationFrame(() => focusSessionsNav())
         }}
         onCancelled={() => {
           if (deleteBannerButtonRef.current?.isConnected) deleteBannerButtonRef.current.focus()
           else focusSessionsNav()
         }}
       />
-      <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
+        {showWatermark && <BrandWatermark variant="live" />}
         <Transcript sessionId={sessionId} />
       </div>
       <MessageInput

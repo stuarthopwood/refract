@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
+import { LoaderCircleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import type { Check, DependencyInstallProgress, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
 import { useHealthStore } from '@/state'
-
-const CHECK_ORDER = ['git', 'omp', 'ompSignedIn'] as const
+import { CHECK_LABELS, CHECK_ORDER, CheckRow, CheckStatusIcon } from './CheckRow'
 
 type InstallableDependency = 'git' | 'omp' | 'github-cli'
-
-const CHECK_LABELS: Record<(typeof CHECK_ORDER)[number], string> = {
-  git: 'Git found',
-  omp: 'OMP found, on the supported version',
-  ompSignedIn: 'OMP signed in'
-}
 
 // Spec 006 research.md decision 10: `ompSignedIn` has no Install action -- OMP's sign-in step
 // stays a manual hand-off (FR-009), so it is left out of this map entirely.
@@ -39,7 +32,9 @@ export interface ReadinessProps {
 // The first-run checklist (docs/DESIGN.md "First run and empty states", FR-036): git found, OMP
 // found on the supported version, OMP signed in, and (spec 006) an optional GitHub CLI row with
 // its own Install action. One primary Add repository action, disabled until the three required
-// checks pass (research.md decision 10: a missing/signed-out GitHub CLI never blocks it).
+// checks pass (research.md decision 10: a missing/signed-out GitHub CLI never blocks it). Per-row
+// rendering lives in CheckRow.tsx (spec 008 T024), shared with the profile menu's Health check
+// dialog.
 export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
   const [checks, setChecks] = useState<ReadinessChecks | null>(initialChecks ?? null)
   const [checking, setChecking] = useState(false)
@@ -117,24 +112,18 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
             const dependency = INSTALL_DEPENDENCY[key]
             const progress = dependency ? installing[dependency] : undefined
             return (
-              <li key={key} className="flex items-start gap-2.5">
-                <CheckStatusIcon check={check} checking={checking && checks === null} />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm">{CHECK_LABELS[key]}</span>
-                    {dependency && check && !check.ok && (
-                      <InstallButton
-                        progress={progress}
-                        onInstall={() => void install(dependency)}
-                      />
-                    )}
-                  </div>
-                  {check?.found && <span className="text-xs text-muted-foreground">{check.found}</span>}
-                  {check && !check.ok && check.hint && <span className="text-xs text-destructive">{check.hint}</span>}
-                  {check && check.ok && check.warning && check.hint && <span className="text-xs text-amber-500">{check.hint}</span>}
-                  {progress && <InstallProgressText progress={progress} />}
-                </div>
-              </li>
+              <CheckRow
+                key={key}
+                label={CHECK_LABELS[key]}
+                check={check}
+                checking={checking && checks === null}
+                action={
+                  dependency && check && !check.ok ? (
+                    <InstallButton progress={progress} onInstall={() => void install(dependency)} />
+                  ) : undefined
+                }
+                progress={progress && <InstallProgressText progress={progress} />}
+              />
             )
           })}
           <li className="flex items-start gap-2.5">
@@ -190,39 +179,4 @@ function InstallProgressText({ progress }: { progress: DependencyInstallProgress
     return <span className="text-xs text-destructive">{progress.detail ?? 'Install failed. Try Install again.'}</span>
   }
   return null
-}
-
-function CheckStatusIcon({ check, checking }: { check?: Check; checking: boolean }): ReactNode {
-  if (!check) {
-    return checking ? (
-      <>
-        <LoaderCircleIcon aria-hidden className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
-        <span className="sr-only">Checking</span>
-      </>
-    ) : (
-      <>
-        <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <span className="sr-only">Not checked yet</span>
-      </>
-    )
-  }
-  if (check.ok && check.warning) {
-    return (
-      <>
-        <TriangleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-500" />
-        <span className="sr-only">Passed with a warning</span>
-      </>
-    )
-  }
-  return check.ok ? (
-    <>
-      <CircleCheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-500" />
-      <span className="sr-only">Passed</span>
-    </>
-  ) : (
-    <>
-      <CircleXIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
-      <span className="sr-only">Failed</span>
-    </>
-  )
 }

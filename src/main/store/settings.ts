@@ -35,12 +35,15 @@ export class SettingsStore {
     // every reader needs) so an UNRELATED setter's own whole-row write below never silently
     // persists FR-013's in-memory correction to disk on the user's behalf -- only `setTheme`
     // itself, a real save, is allowed to turn this from `undefined`/stale into the new value.
-    private rawTheme: ThemeId | undefined
+    private rawTheme: ThemeId | undefined,
+    // Spec 012: see `open`'s own comment above for why this must stay separate from
+    // `this.data.watermarkEnabled`, the same reasoning as `rawTheme` immediately above.
+    private rawWatermarkEnabled: boolean | undefined
   ) {}
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark' }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark', watermarkEnabled: true }))
     // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
     // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
     // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
@@ -76,7 +79,22 @@ export class SettingsStore {
     if (!isThemeId(data.theme)) {
       data.theme = 'dark'
     }
-    return new SettingsStore(file, data, rawTheme)
+    // Spec 012 data-model.md "Migration"/"Validation" (FR-019/FR-020): an existing settings.json
+    // written before this spec has no `watermarkEnabled` key at all (`undefined`), and a present
+    // but non-boolean value (hand-edited/corrupt) is treated the same way -- both fall back to
+    // `true` in memory here, the same lazy-correction pattern as `theme`/`split` above.
+    // `rawWatermarkEnabled` mirrors `rawTheme`'s own race-safety split: the exact, pre-correction
+    // value as it was actually on disk (a real boolean once the developer has ever saved a
+    // choice, otherwise `undefined`), kept separate from `this.data.watermarkEnabled` (always the
+    // corrected, in-memory value every reader needs) so an UNRELATED setter's own whole-row write
+    // never silently persists this in-memory correction to disk on the user's behalf -- only
+    // `setWatermarkEnabled` itself, a real save, is allowed to turn this from `undefined`/stale
+    // into the new value.
+    const rawWatermarkEnabled = typeof data.watermarkEnabled === 'boolean' ? data.watermarkEnabled : undefined
+    if (typeof data.watermarkEnabled !== 'boolean') {
+      data.watermarkEnabled = true
+    }
+    return new SettingsStore(file, data, rawTheme, rawWatermarkEnabled)
   }
 
   get(): Settings {
@@ -90,9 +108,21 @@ export class SettingsStore {
   // settings.json on the user's behalf. `JSON.stringify` drops an `undefined` value entirely, so
   // `rawTheme === undefined` naturally reproduces "no theme key written yet" on disk, exactly
   // matching the pre-existing migration/lazy-correction comments above.
+  //
+  // Quality-gate remediation (round 2, Medium): the same reasoning applies to
+  // `rawWatermarkEnabled` -- `setTheme` below used to write `next` (the in-memory, possibly
+  // FR-019/FR-020-corrected `watermarkEnabled`) straight to disk, silently persisting that
+  // correction on an unrelated theme save. `serialize` is now the one place every writer in this
+  // class builds its on-disk row from, so `setTheme` (which must write its OWN just-updated
+  // `rawTheme`, unlike every other setter) and `persistWhole` (which writes the OLD `rawTheme`/
+  // `rawWatermarkEnabled`) can never again drift apart on this.
+  private serialize(next: Settings): Settings {
+    return { ...next, theme: this.rawTheme as ThemeId, watermarkEnabled: this.rawWatermarkEnabled as boolean }
+  }
+
   private async persistWhole(next: Settings): Promise<Settings> {
     this.data = next
-    await writeJsonFile(this.file, { ...next, theme: this.rawTheme as ThemeId })
+    await writeJsonFile(this.file, this.serialize(next))
     return { ...next }
   }
 
@@ -135,9 +165,25 @@ export class SettingsStore {
     this.data = next
     // The one and only place allowed to turn `rawTheme` into a real, developer-saved value --
     // every other setter above goes through `persistWhole`, which deliberately writes the OLD
-    // `rawTheme` back, not this new one, until this method itself runs.
+    // `rawTheme` back, not this new one, until this method itself runs. `serialize` still writes
+    // `rawWatermarkEnabled` (unchanged by this call) rather than `next.watermarkEnabled`, so an
+    // in-memory FR-019/FR-020 correction never rides along on an unrelated theme save.
     this.rawTheme = themeId
-    await writeJsonFile(this.file, next)
+    await writeJsonFile(this.file, this.serialize(next))
     return { ...next }
+  }
+
+  /** `settings.setWatermarkEnabled(enabled)` (spec 012 FR-015 to FR-020, contracts/ipc.md):
+   * persists the whole row via `persistWhole`, the same race-safety pattern as `setApprovalMode`/
+   * `setReadoutVisibility`/`setSplit` above (returns this call's own written value, never a
+   * possibly-superseded shared read). The one and only place allowed to turn
+   * `rawWatermarkEnabled` into a real, developer-saved value -- every other setter's own call to
+   * `persistWhole` deliberately writes the OLD `rawWatermarkEnabled` back, not any lazily-
+   * corrected in-memory value, until this method itself runs (mirrors `setTheme`'s own `rawTheme`
+   * handling, data-model.md "Validation"). */
+  async setWatermarkEnabled(enabled: boolean): Promise<Settings> {
+    this.rawWatermarkEnabled = enabled
+    const next = { ...this.data, watermarkEnabled: enabled }
+    return this.persistWhole(next)
   }
 }

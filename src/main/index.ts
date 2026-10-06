@@ -67,7 +67,7 @@ function getWindow(): BrowserWindow | undefined {
 /** Opens `url` in the system browser only when it parses and its protocol is `https:` or
  * `http:`; every other request (a malformed string, `file:`, a UNC path, `mailto:`, `javascript:`,
  * ...) is silently dropped. Never logs the URL itself, only whether/why it was dropped. */
-function openExternalSafe(url: string): void {
+export function openExternalSafe(url: string): void {
   let parsed: URL
   try {
     parsed = new URL(url)
