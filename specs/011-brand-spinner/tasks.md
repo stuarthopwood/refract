@@ -30,7 +30,7 @@ created, and the full mapping is posted as a comment on the tracking issue and k
 
 **Purpose**: the component and its CSS every story builds on.
 
-- [ ] T001 (#398) [P] Write `src/renderer/components/brand/BrandSpinner.tsx`: `BrandSpinnerProps`
+- [X] T001 (#398) [P] Write `src/renderer/components/brand/BrandSpinner.tsx`: `BrandSpinnerProps`
   (`size: 16 | 20 | 24 | 32 | 48`, `className?: string`), the exported `LEGIBILITY_FLOOR_PX = 24`
   constant, the size-ladder-gated choice between two separately authored path sets -- Full (every
   facet, built from the prerequisite mark's own path data) at 24/32/48px, and a placeholder
@@ -40,7 +40,7 @@ created, and the full mapping is posted as a comment on the tracking issue and k
   computed `animation-delay` (`-(Date.now() % 1200)` ms, research.md decisions 3, 5), and the 16px
   internal positioning needed so the rendered mark's vertical centre aligns with adjacent row text
   within 0.5px (FR-015, research.md decision 13).
-- [ ] T002 (#399) [P] Add the spinner's `@keyframes` to `src/renderer/styles/globals.css`: one
+- [X] T002 (#399) [P] Add the spinner's `@keyframes` to `src/renderer/styles/globals.css`: one
   definition (or one reused by all three arms with different `animation-delay`s) whose `0%`/`100%`
   frames are identical "at rest" frames (each arm at its dim 0.35 baseline opacity, never the
   bright peak) with one brief frame partway through reaching the 1.0 peak, 1.2s, ease-in-out,
@@ -48,7 +48,7 @@ created, and the full mapping is posted as a comment on the tracking issue and k
   decisions 3, 5, 6, spec.md FR-005); no edit needed to the existing `@media
   (prefers-reduced-motion: reduce)` block (lines 260-269), which already matches `*, *::before,
   *::after` and therefore already covers the new keyframes.
-- [ ] T009 (#427) Add `@media (forced-colors: active)` to the same stylesheet (`globals.css`): map
+- [X] T009 (#427) Add `@media (forced-colors: active)` to the same stylesheet (`globals.css`): map
   the spinner's arm and core fills to system colour keywords (for example `CanvasText`) instead of
   their fixed brand hex values (FR-014, research.md decision 14) (depends on T002, same file).
 - [ ] T010 (#428) [P] Author and verify the dedicated Simplified path set for real, at both its
@@ -74,7 +74,7 @@ every one of its three callers shows the identical result with no other change.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 1.
 
-- [ ] T003 (#400) [US1] Edit `src/renderer/features/sessions/sessionDisplay.tsx`: remove the
+- [X] T003 (#400) [US1] Edit `src/renderer/features/sessions/sessionDisplay.tsx`: remove the
   `LoaderCircleIcon` import and its use in `StateIcon`'s `working` case; render `<BrandSpinner
   size={16} aria-hidden className={cn(className, 'shrink-0')} />` in its place, leaving `idle`,
   `needs-you`, and `stopped` untouched, and `StateIcon`'s own `{ status: SessionStatus }` props
@@ -128,7 +128,7 @@ fully reverted; `pnpm typecheck` and `pnpm build` pass.
 **Purpose**: documentation and a final repository-wide confirmation that nothing outside this
 feature's stated scope moved.
 
-- [ ] T007 (#404) Edit `docs/DESIGN.md`'s "Shared status icon" bullet: replace "a spinning circle
+- [X] T007 (#404) Edit `docs/DESIGN.md`'s "Shared status icon" bullet: replace "a spinning circle
   for working" with naming the brand mark spinner, and in the same edit correct the bullet's
   surface list from "session list, chat header, status bar, tooltips" to the three real surfaces
   (`SessionList`, `ChatHeader`, `SessionDetailsCard`), leaving the rest of the sentence (one shared

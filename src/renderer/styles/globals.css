@@ -268,6 +268,53 @@
   }
 }
 
+/* Brand spinner (spec 011 T002, data-model.md "Animation"): a per-arm opacity cascade, one
+ * fixed core (`.brand-spinner-core`, opacity 1 throughout) and three arms whose own
+ * `@keyframes` already encode a third-of-a-cycle stagger against each other (0%/100% both at
+ * the 0.35 rest baseline, one frame partway through reaching the 1.0 peak) -- so every arm can
+ * share the exact same `animation-delay`, set once per mounted instance by `BrandSpinner.tsx`
+ * as the `--brand-spinner-delay` custom property (research.md decision 5), and every instance
+ * mounted at any moment lands on the same point in the cycle as every other (FR-007). The
+ * `prefers-reduced-motion: reduce` block above already collapses this to one near-instant
+ * iteration landing back on each arm's shared rest frame (research.md decision 6) -- no new,
+ * component-specific reduced-motion check (FR-008). Never `transform`, `filter`, or
+ * `box-shadow` (FR-005). */
+@keyframes brand-spinner-arm-1 {
+  0%, 100% { opacity: 0.35; }
+  16.667% { opacity: 1; }
+}
+@keyframes brand-spinner-arm-2 {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@keyframes brand-spinner-arm-3 {
+  0%, 100% { opacity: 0.35; }
+  83.333% { opacity: 1; }
+}
+
+.brand-spinner-arm-1,
+.brand-spinner-arm-2,
+.brand-spinner-arm-3 {
+  animation-duration: 1.2s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-delay: var(--brand-spinner-delay, 0ms);
+}
+.brand-spinner-arm-1 { animation-name: brand-spinner-arm-1; }
+.brand-spinner-arm-2 { animation-name: brand-spinner-arm-2; }
+.brand-spinner-arm-3 { animation-name: brand-spinner-arm-3; }
+.brand-spinner-core { opacity: 1; }
+
+/* Brand spinner under Windows forced-colors mode (spec 011 T009, FR-014, research.md decision
+ * 14): every arm and core fill switches from its fixed brand hex value to a system colour
+ * keyword, so the mark stays visible against whatever background the active forced-colors
+ * theme provides, rather than keeping colours never designed against it. */
+@media (forced-colors: active) {
+  .brand-spinner :is(path, use) {
+    fill: CanvasText !important;
+  }
+}
+
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 *::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
