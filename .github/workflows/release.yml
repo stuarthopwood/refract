@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# Least privilege by default; the release job below grants only what it needs.
+permissions: {}
+
+jobs:
+  release:
+    name: Build and publish installer
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # research.md decision 8: a release can never be cut from an un-bumped package.json
+      # (FR-025). Tag/ref values are attacker-influenceable by anyone who can push a tag, so they
+      # arrive via env, never spliced into the script body (harden-github-actions-injection).
+      - name: Check tag matches package.json version
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          pkg_version="$(node -p "require('./package.json').version")"
+          tag_version="${TAG#v}"
+          tag_version="${tag_version%%-*}"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag $TAG does not match package.json version $pkg_version"
+            exit 1
+          fi
+
+      - name: Build
+        run: pnpm build
+
+      # Build only: electron-builder's own GitHub publish step is not used so this workflow
+      # controls the checksum asset and the prerelease flag itself (research.md decision 8).
+      - name: Package
+        run: pnpm package
+
+      - name: Compute installer checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          installer="$(ls release/*.exe)"
+          sha256sum "$installer" | awk '{ print $1 }' > "$installer.sha256"
+          echo "INSTALLER_PATH=$installer" >> "$GITHUB_ENV"
+          echo "CHECKSUM_PATH=$installer.sha256" >> "$GITHUB_ENV"
+
+      - name: Determine prerelease flag
+        id: prerelease
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          flag=""
+          case "$TAG" in
+            *-rc*|*-beta*|*-alpha*) flag="--prerelease" ;;
+          esac
+          echo "flag=$flag" >> "$GITHUB_OUTPUT"
+
+      - name: Publish private GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          # Set entirely by the previous step's own fixed case statement, never from attacker
+          # input, so it is safe to leave unquoted below (an empty value disappears from the
+          # command line instead of passing an empty argument).
+          PRERELEASE_FLAG: ${{ steps.prerelease.outputs.flag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "$INSTALLER_PATH" "$CHECKSUM_PATH" \
+            --repo stuarthopwood/refract \
+            --generate-notes \
+            $PRERELEASE_FLAG
