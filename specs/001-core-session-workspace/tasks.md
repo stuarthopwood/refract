@@ -389,3 +389,13 @@ Scratch Electron instance for this round left on disk at `C:\tmp\refract-ghost-t
 
 
 
+## Phase 26: Convergence
+
+- [X] T105 [US1] Add the footer **Add repository** button to `src/renderer/features/sessions/SessionList.tsx` (a ghost `Button` with the `FolderPlusIcon`, in a `border-t` footer below the repository groups) opening the existing `AddRepositoryDialog` per FR-001, US1/AC13 (missing).
+- [X] T106 [US1] Update the docs and verify live: `docs/DESIGN.md` "First run and empty states" (the persistent footer button, same dialog, focus returned to it on close) and `quickstart.md` Story 1 (a new step adding a second repository from the footer); `contracts/ipc.md`'s `repositories.add` is unchanged, no edit needed; then on the built app in an isolated instance: the button is visible once one repository exists, opens `AddRepositoryDialog`, adding a second repository shows it in the list at once, and focus returns to the button on close.
+
+**Written retroactively, 2026-10-06**: T105 and T106 were written after the feature was already built and merged onto this branch (commits `344c500` and `64c5bb4`) -- Spec Kit was skipped during the original build. This section records the convergence that would have run beforehand: assessed against the pre-change code (`git show origin/main:src/renderer/features/sessions/SessionList.tsx`, which had no footer control at all, and `git show origin/main:src/renderer/App.tsx`, whose `showReadiness = !ready || !hasRepositories` at lines 42-43 made the first-run screen the *only* add-repository entry point once it was dismissed), both tasks close a `missing` gap against FR-001, US1/AC13 as now amended in `spec.md`. Both are marked `[X]` because the code and docs already satisfy them.
+
+Evidence (real, gathered on this branch): commits `344c500` (feat: add repository button after first-run) and `64c5bb4` (docs: clarify add-repository footer comment); `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all clean (0 leaks across 371 files); a live CDP check on a scratch Electron instance showed the footer button, `AddRepositoryDialog` opening from it, a second repository (`repo2`) appearing as a second group in the session list at once after a successful add, and focus returning to the button when the dialog closed; independent review returned VERDICT PASS from code-reviewer, accessibility-auditor, test-reviewer, and security-auditor, with only Low findings.
+
+**Issue**: the GitHub issue for T105/T106 is #447 ("no way to add another repository after first-run setup"); no `Tnnn:` issue was created for this convergence pass.

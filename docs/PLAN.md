@@ -46,7 +46,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 
 | # | Issue | Work | Status | Needs | Files touched |
 |---|---|---|---|---|---|
-| A1 | #447 | Add repository from the session list after first-run | next | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
+| A1 | #447 | Add repository from the session list after first-run | done (PR #486; removal spec follows on `spec/remove-repository`, T107 to T109) | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
