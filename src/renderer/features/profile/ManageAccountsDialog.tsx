@@ -79,16 +79,24 @@ function rowKey(host: string, login: string): string {
 function focusButton(el: HTMLElement | null | undefined): boolean {
   if (!el || !document.body.contains(el)) return false
   el.focus()
-  return true
+  // Report success only if the element actually took focus (a disabled or inert element silently
+  // ignores focus()), so a retry loop never stops on a no-op.
+  return document.activeElement === el
 }
 
-/** Tries `attempt` on successive animation frames (up to `tries`) until it reports success. A
- *  store update's React commit can land after the first frame, so the control being focused may
- *  not exist yet on the frame right after the update; one fixed frame is not reliable. */
-function focusWhenReady(attempt: () => boolean, tries = 12): void {
+/** Retries the PREFERRED focus target on successive animation frames (up to `tries`) until it
+ *  takes focus, then runs the `fallback` chain once. A store update's React commit can land after
+ *  the first frame, so the control being focused may not exist yet; retrying only the preferred
+ *  target (never the whole chain) stops a control that already exists, such as a row's Sign out,
+ *  from winning the race against the one the user should land on. */
+function focusWhenReady(preferred: () => boolean, fallback?: () => boolean, tries = 12): void {
   requestAnimationFrame(() => {
-    if (attempt() || tries <= 1) return
-    focusWhenReady(attempt, tries - 1)
+    if (preferred()) return
+    if (tries <= 1) {
+      fallback?.()
+      return
+    }
+    focusWhenReady(preferred, fallback, tries - 1)
   })
 }
 
@@ -319,20 +327,25 @@ export function ManageAccountsDialog({
     const after = useAccountsStore.getState().github.find((candidate) => candidate.host === account.host && candidate.login === account.login)
     if (after && after.state === 'success') {
       announcePolite('GitHub is reachable again')
-      focusWhenReady(() => {
-        if (focusButton(switchRefs.current.get(key)) || focusButton(signOutRefs.current.get(key))) return true
-        const li = rowLiRefs.current.get(key)
-        if (!li) return false
-        li.focus()
-        return true
-      })
+      // A non-active row offers Switch first; the active row has none, so it goes to Sign out.
+      focusWhenReady(
+        () => focusButton(after.active ? signOutRefs.current.get(key) : switchRefs.current.get(key)),
+        () => {
+          if (focusButton(signOutRefs.current.get(key))) return true
+          const li = rowLiRefs.current.get(key)
+          if (!li) return false
+          li.focus()
+          return true
+        }
+      )
     } else if (after && isUnreachable(after)) {
       announceAssertive("Still can't reach GitHub")
     } else {
       announcePolite(after ? `GitHub is reachable. Sign in again as @${account.login}.` : 'That account is no longer signed in.')
       focusWhenReady(
+        // The row is gone when `after` is undefined, so Add account is the target then.
+        () => (after ? focusButton(signInAgainRefs.current.get(key)) : focusButton(addAccountBtnRef.current)),
         () =>
-          focusButton(signInAgainRefs.current.get(key)) ||
           focusButton(signOutRefs.current.get(key)) ||
           focusButton(addAccountBtnRef.current) ||
           focusButton(checkAgainHeaderRef.current) ||
@@ -362,19 +375,21 @@ export function ManageAccountsDialog({
       return
     }
     announcePolite('GitHub accounts loaded')
-    focusWhenReady(() => {
-      if (focusButton(addAccountBtnRef.current)) return true
-      const freshGithub = useAccountsStore.getState().github
-      const first = [...freshGithub.filter((a) => a.active), ...freshGithub.filter((a) => !a.active)][0]
-      if (!first) return false
-      const key = rowKey(first.host, first.login)
-      if (focusButton(switchRefs.current.get(key))) return true
-      if (focusButton(signOutRefs.current.get(key))) return true
-      const li = rowLiRefs.current.get(key)
-      if (!li) return false
-      li.focus()
-      return true
-    })
+    focusWhenReady(
+      () => focusButton(addAccountBtnRef.current),
+      () => {
+        const freshGithub = useAccountsStore.getState().github
+        const first = [...freshGithub.filter((a) => a.active), ...freshGithub.filter((a) => !a.active)][0]
+        if (!first) return false
+        const key = rowKey(first.host, first.login)
+        if (focusButton(switchRefs.current.get(key))) return true
+        if (focusButton(signOutRefs.current.get(key))) return true
+        const li = rowLiRefs.current.get(key)
+        if (!li) return false
+        li.focus()
+        return true
+      }
+    )
   }
 
   function handleEscape(event: Event): void {
