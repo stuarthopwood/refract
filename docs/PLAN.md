@@ -2,7 +2,7 @@
 
 The ordered work queue for Refract. It exists so one question gets a reliable answer: **what is next?**
 
-- Last updated: 2026-10-06 (after the 2026-10-06 backlog session, issues #443 to #494).
+- Last updated: 2026-10-06 (after the 2026-10-06 backlog session, issues #443 to #510).
 - Source of truth for scope is the GitHub issue. This file holds the **order**, **dependencies** and **status**. Do not copy issue text here.
 - `main` was at `f01e862` when this was last refreshed.
 
@@ -42,10 +42,11 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 
 ### Phase A: unblock daily driving (do first, in order)
 
-Stuart's goal: start using Refract for real work stories. These make that safe.
+Stuart's goal: start using Refract for real work stories. These make that safe. **A0 (#510) is the top of the whole plan** (Stuart, 2026-10-06, `p1`): the first slice to build is the tail-of-file crash detection that #509 (A2g) needs.
 
 | # | Issue | Work | Status | Needs | Files touched |
 |---|---|---|---|---|---|
+| A0 | #510 | **P1: long-running Sessions crash and resume badly** (findings from the 5.8-day, 48 MB OMP session with 7 exits, 6 SIGHUP, 4 manual "resume"s). Build in this order: (1) **detect unexpected termination from the tail of the Conversation `.jsonl`** (`session_exit` record with `reason` and `pendingToolCalls`, tool starts without results, a trailing `aborted` entry; no whole-file read); (2) show "Terminated unexpectedly" on the row and banner, and feed #509's Resume button with a default instruction ("resume") and `goal resume`; (3) render unmatched tool calls as **interrupted**, not running (same family as #489); (4) load big histories with `get_messages_page` plus "Load earlier" instead of the monolithic `get_messages`; (5) re-baseline `lastMessageCount` after compaction (links #449, #506); (6) stalled-tool state with elapsed time and Abort. Use the analysed file (copied outside the repo) as a fixture | **next** | none; the probe in B2 for `session_exit` stability on 18.4.x and 18.5.x runs alongside | `src/main/omp/transcript.ts`, `SessionAgent.ts`, `reattachVerification.ts`, `ChatPane.tsx`, `SessionList.tsx`, `src/main/store/registry.ts`, new tail parser |
 | A1 | #447 | Add repository from the session list after first-run | done (PR #486) | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
@@ -144,6 +145,7 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 10. OMP host tools: `set_host_tools` and `host_tool_call` round trip on 18.4.x and 18.5.x, so Refract can expose FDB Knowledge and Agent Builder to agents without an MCP entry (#392, #391).
 11. FDB discovery (needs Stuart and the FDB owners, not an OMP probe): does the knowledge base have an MCP server (tool list), a REST or GraphQL API (OpenAPI), and what auth; the same for the Agent Builder (#392, #391). Also whether the `fdbrp-sme` MCP server is the knowledge base or something else.
 12. OMP `/shake` and compaction: what `/shake`, `/shake elide`, `/shake images` and `/shake thinking` print, what each removes and whether it is recoverable, whether the manual command emits `auto_compaction_*` frames and reports freed tokens, and whether shake or compaction lowers `get_state().messageCount` (relevant to #449's reattach verification) (#506, #441, #449).
+13. OMP `session_exit` records: are the `reason` and `kind` values (`sighup`, `dispose`, `pendingToolCalls`) stable across 18.4.x and 18.5.x, what other reasons exist (SIGTERM, SIGINT, crash), what a Job Object kill writes (expected: nothing), and what an unmatched tool-start record looks like after resume. Also time how long Refract takes to open a 48 MB Conversation with `get_messages` versus `get_messages_page` (#510, #509, #449).
 
 ## Decisions (Stuart, 2026-10-06)
 
@@ -194,6 +196,8 @@ Also: `SessionList.tsx` (`SessionRow` trailing controls), `SessionManager.ts`, `
 
 Also: `SessionList.tsx` (`SessionRow` trailing area), `ChatPane.tsx` (stop banner), `SessionAgent.ts` (set and clear the turn-in-flight marker), `src/main/store/registry.ts` and `src/shared/model.ts` (`Session.turnInFlightSince`) for #509; the Resume and agents-count buttons (#507) share the row's trailing area and are rarely shown together.
 
+Also: `src/main/omp/transcript.ts`, `SessionAgent.ts` (`get_messages` at lines 355 and 699), `switchRecovery.ts` and a new tail parser for #510, alongside A2, A2c and A2g: **do #510 and #509 as one change set with #449**, one agent on these files at a time.
+
 ## Index of issues filed 2026-10-06
 
 #443 emoji, #444 ask options and tabs, #445 spell suggestions, #446 multi-select loop, #447 add repository, #448 border under window controls, #449 reattach, #450 Settings icon, #452 Dark retune, #453 collapsible left pane, #454 session model, #455 role to model, #456 markdown tokens, #457 thinking and tool toggles, #458 tokenise everything, #459 autoscroll, #460 versioning, #463 explorer, #464 git panel, #465 @ mentions, #466 copy, #467 scroll to your message, #468 scroll to top, #469 tool icons, #470 editing, #471 context menus, #472 conversation list, #473 Ask spacing, #474 design system, #475 advisor, #476 auto-cleanup, #477 pause, #478 Jira, #479 goal mode, #480 rename repository, #482 session status style. Amended: #1 side chat, #3 terminal, #4 fonts, #8, #391 Agent Builder (now `p1`), #392 FDB Knowledge (now `p1`), #393 shell and placeholders (now `p1`), #445, #455.
@@ -221,3 +225,5 @@ Also filed 2026-10-06: #506 context, first-class `/shake` actions on the Context
 Also filed 2026-10-06: #507 session list, agents button with a subagent count on each Session row that opens the Agents panel (row C2d, with #490). Fixed a misplaced probe item #12 (`/shake` and compaction) that had landed under "Decisions still needed".
 
 Also filed 2026-10-06: #509 session list, Resume button on Sessions terminated unexpectedly that restarts the agent and sends a resume instruction (row A2g, after #449 and #489). No button for normal stopped Sessions.
+
+Also filed 2026-10-06: #510 P1 (`p1`), crash and resume resilience for long-running Sessions, from a read-only analysis of the 5.8-day OMP session `01a0f428-1c1f` (row A0, top of the plan). #509 (A2g) becomes its second step.
