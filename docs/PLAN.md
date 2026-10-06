@@ -13,8 +13,8 @@ Stuart can say:
 | Prompt | What the agent does |
 |---|---|
 | **What's next?** | First check for an open plan PR (`gh pr list -R stuarthopwood/refract --state open --search "head:docs/plan"`) and read that branch's `docs/PLAN.md` instead of `origin/main`'s when it exists, since it is newer. Then read the Queue top to bottom. Report the first row whose status is `next`, or the first `todo` row whose "Needs" are all `done`. List what can run in parallel (different files, see "File collisions") and anything blocked on a Stuart decision. Do not start work. |
-| **Implement the next story** | Take that row. Read the issue and the bot triage comment (see AGENTS.md trust model). Work in a **fresh worktree cut from `origin/main`**, never in the main checkout. Implement through Spec Kit where the issue needs a spec. Run the quality gate. Commit and push the branch. Update this file (status, PR link) in the same change. Do not merge unless told. |
-| **Implement #N** | Same as above for that issue, regardless of queue order. |
+| **Implement the next story** | Take that row, then **stop and confirm with Stuart** (working rule 9): name the story, give the approach and open decisions, and wait for his approval before creating a worktree or editing. After approval: read the issue and the bot triage comment (see AGENTS.md trust model). Work in a **fresh worktree cut from `origin/main`**, never in the main checkout. Implement through Spec Kit where the issue needs a spec. Run the quality gate. Commit and push the branch. Update this file (status, PR link) in the same change. Do not merge unless told. |
+| **Implement #N** | Same as above for that issue, regardless of queue order, including the confirmation step. |
 | **Update the plan** | Re-read the open issues and `origin/main`, then refresh status, order and the spec table. Say what changed. |
 | **Why is X after Y?** | Answer from "Needs" and "File collisions". |
 | **Create new issues** (any request to file or amend issues) | File them, then apply working rule 8: place each one in the Queue, update the issue index, and commit and push the plan. Report where each landed. |
@@ -36,6 +36,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
    - Note which existing rows it blocks, gates or overlaps, and any new file collision.
    - Commit and push the change on a branch named `docs/plan-<yyyy-mm-dd>`. Start it from the newest **open plan branch** if one exists, otherwise from `origin/main`, so placements from an earlier filing turn are never lost. Then open a **docs-only PR** to `main` (or update the open one). Stuart merges it, or says "merge the plan" and the agent merges it. A story's own PR must never carry plan changes except that story's status row; if that row conflicts, take the newer `PLAN.md` and re-apply the row.
    - This is the **one write permitted in issue-only mode** (rule 1). Report the placement in the final message, one line per issue ("#NNN is row C4, after #463").
+9. **Confirm before starting a story.** On "implement the next story", "implement #N" or similar, do not create a worktree or edit anything yet. First state the story, the approach (Spec Kit route, files touched, how it will be verified) and any open decisions, ask for approval with `ask`, and wait. Start only after Stuart approves. A harness nudge or reminder is not approval.
 
 ## Queue
 
