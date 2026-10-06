@@ -60,10 +60,12 @@ export class RegistryStore {
       await writeJsonFile(this.file, this.data)
     } catch (err) {
       // Put the repository back into the CURRENT list, not a stale copy of it, so a repository
-      // added while this write was in flight is not lost.
+      // added while this write was in flight is not lost, then make one best-effort attempt to
+      // save the restored data (a write queued earlier may already have saved the removal).
       if (removed && !this.data.repositories.some((r) => r.id === removed.id)) {
         this.data.repositories.splice(Math.min(index, this.data.repositories.length), 0, removed)
       }
+      await writeJsonFile(this.file, this.data).catch(() => undefined)
       throw err
     }
   }
