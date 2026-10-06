@@ -89,7 +89,7 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 
 | Lane | Order | Status |
 |---|---|---|
-| **Transcript** | #459 autoscroll, #430 nested tool boxes, #473 and #360 spacing, then #466 / #467 / #468 message actions and #469 tool icons (the last two after B1), then **#502 subagent bubbles with agent-type icons, grouped and indented by batch** (after #430 and #469: it shares #469's icon mapping module and replaces the one-line `SubagentRow`; coordinate with #490 so the same agent looks the same in the panel) | todo |
+| **Transcript** | #459 autoscroll, #430 nested tool boxes, #473 and #360 spacing, then #466 / #467 / #468 message actions and #469 tool icons (the last two after B1), then **#502 subagent bubbles with agent-type icons, grouped and indented by batch** (after #430 and #469: it shares #469's icon mapping module and replaces the one-line `SubagentRow`; coordinate with #490 so the same agent looks the same in the panel), and **#505 user GitHub avatar on messages** (small and independent: reuses spec 008's `avatarDataUrl`; do it after A2d because it also edits `RequestCard.tsx`, and share one blob URL instead of repeating the data URL per message) | todo |
 | **Ask UI** | #446 multi-select loop, #444 options and tab per question (also fixes the multi-question display seen in #473) | todo |
 | **Session list** | #440 titles (fold #11 in), #439, then #453 collapse, then #472 conversation list | todo, after A4 (same file) |
 | **Settings** | #455 roles (via `omp config`), #457 thinking and tool-call toggles, #475 advisor, #476 auto-cleanup, #454 session model | todo, after B2 |
@@ -181,6 +181,8 @@ Also: `Transcript.tsx`, `ToolRow.tsx` (`SubagentRow`), `AgentMessageRow.tsx`, `s
 
 Also: `SessionList.tsx` (#503 repository header button, #504 GitHub tools block), `src/main/github/gh.ts` (new issue calls for #503 and #504, shared with spec 003), `view-store.ts` (new `issues` view for #504).
 
+Also: `Transcript.tsx`, `message.tsx`, `RequestCard.tsx` (`AskQuestionRow`) and the accounts store selector for #505, alongside the Transcript lane items.
+
 Also: `src/main/index.ts` (A6, and spec 006's `AppUserModelId` task #277; coordinate with the `spec-006-impl` branch before editing).
 
 ## Index of issues filed 2026-10-06
@@ -202,3 +204,5 @@ Also filed 2026-10-06: #497 Ask options do not wrap, #498 Merge dialog overflow,
 Also filed 2026-10-06: #502 chat, subagents rendered as bubbles with agent-type icons, related agents (same `task` batch) grouped and indented, for example the quality gate reviewers (Transcript lane, after #430 and #469).
 
 Also filed 2026-10-06: #503 Report an issue (repository-header button and dialog, scoped to the repository's issue log) and #504 Issues page (cross-repo browser, filters, GitHub tools block spacing), placed in the new GitHub issues lane, after A4. Amended #502 with verified task-tool facts: `agent` is per item, the batch `context` is required and shared, nested ids are dot-qualified.
+
+Also filed 2026-10-06: #505 chat, user's GitHub avatar on their messages with initials as the fallback (Transcript lane; avatar fetch, cache and CSP handling already exist from spec 008).
