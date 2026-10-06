@@ -233,3 +233,10 @@ Phase 1 + Phase 2 + Phase 3 (User Story 1) alone already delivers the visible fe
 for (a faint, correctly anchored, non-duplicating mark). Phase 4 (User Story 2) adds the toggle his
 request also explicitly named. Phases 5-6 harden and prove it; neither blocks shipping Phases 1-4
 first if desired.
+
+## Implementation evidence (parent, 2026-10-06, scratch profile, real CDP, Dark theme)
+
+- T011 (partly verified, unchecked): default on; the mark shows in the "Select a Session" empty state and anchors to the chat reading area's bottom-right corner directly above the composer in a single pane (100px square at 1280px); with a two-pane split open there is exactly one `.watermark-mark`, at x=1155 in the right pane; `aria-hidden="true"`, `pointer-events: none`, opacity 0.06. NOT verified: the composer growing to its 8-line maximum, window resize scaling, the Subagent panel open.
+- T013 (partly verified, unchecked): Settings > Appearance shows "Background watermark" with a switch and a bordered preview box with the mark; a real click turns the switch off, the live watermark count drops to 0, and the value persists across a page reload; turning it back on restores it. Default is on for a fresh profile. NOT verified: a hand-edited missing or non-boolean stored value falling back to on.
+- Forced colors and `prefers-reduced-transparency: reduce` (emulated): the mark computes `display: none` in both.
+- NOT verified: T015 (text selection and clicks through the mark; `pointer-events: none` is confirmed), T016 (drag-resize behaviours), T018 (the full quickstart pass), and the settings screen's dark high-contrast appearance.
