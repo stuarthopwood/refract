@@ -503,7 +503,7 @@ export function SessionList() {
           ))}
         </div>
       </ScrollArea>
-      {/* #447: the only way to add a second repository once the first-run screen is gone. A
+      {/* #447: the only way to add another repository once the first-run screen is gone. A
           persistent footer so it is always reachable; the dialog keeps its own validation and
           returns focus here on close. */}
       <div className="shrink-0 border-t border-sidebar-border p-2">
