@@ -107,8 +107,14 @@ export function initStores(): void {
   })
   // Spec 006 contracts/ipc.md `updates:state-changed`: every persisted transition, including
   // the ones pushed mid-download ('downloading' then 'downloaded'/'failed') for a live
-  // progress indicator in the status bar's update badge.
+  // progress indicator in the status bar's update badge. Quality-gate remediation (Low "init-
+  // stores: apply updates.getState() only if no updates:state-changed broadcast arrived
+  // first"): the same race the accounts.github.list() load below already guards against --
+  // the startup automatic check can push a broadcast before this initial `updates.getState()`
+  // read resolves, and that broadcast's result must never be clobbered by the now-stale read.
+  let updatesBroadcastReceived = false
   window.refract.onUpdatesStateChanged((state) => {
+    updatesBroadcastReceived = true
     useUpdateStore.getState().setState(state)
   })
 
@@ -194,7 +200,7 @@ export function initStores(): void {
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
-    useUpdateStore.getState().setState(updatesLoad.value)
+    if (!updatesBroadcastReceived) useUpdateStore.getState().setState(updatesLoad.value)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
