@@ -33,7 +33,7 @@ export type IpcErrorCode =
   | 'not-a-repo'
   | 'no-commits'
   | 'duplicate'
-  | 'session-running'
+  | 'has-sessions'
   | 'git-failed'
   | 'worktree-failed'
   | 'base-missing'

@@ -1,6 +1,6 @@
 // IPC handlers for `repositories.*` (contracts/ipc.md "Repositories", tasks.md T021). `remove` is
-// refused with `session-running` while any of the Repository's Sessions has a live agent, and
-// never touches disk in that case.
+// refused with `has-sessions` while the Repository still owns any Session, active or archived
+// (FR-059), and never touches disk in that case.
 
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -79,9 +79,9 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     if (typeof id !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_REMOVE} expects a string id`);
     }
-    const running = manager.summaries().some((s) => s.repositoryId === id && s.status !== 'stopped');
-    if (running) {
-      return { ok: false, error: { code: 'session-running', message: 'A Session in this repository is still running.' } };
+    const ownedSessions = manager.registry.snapshot().sessions.filter((s) => s.repositoryId === id);
+    if (ownedSessions.length > 0) {
+      return { ok: false, error: { code: 'has-sessions', message: "Delete this repository's Sessions before removing it." } };
     }
     try {
       await manager.registry.removeRepository(id);

@@ -6,7 +6,7 @@ import path from 'node:path'
 import { readJsonFile, writeJsonFile } from './atomicJson'
 import type { Registry, Repository, Session } from '../../shared/model'
 
-export type RegistryErrorCode = 'duplicate' | 'not-found'
+export type RegistryErrorCode = 'duplicate' | 'not-found' | 'has-sessions'
 
 export class RegistryError extends Error {
   readonly code: RegistryErrorCode
@@ -43,8 +43,10 @@ export class RegistryStore {
   }
 
   async removeRepository(id: string): Promise<void> {
+    if (this.data.sessions.some((s) => s.repositoryId === id)) {
+      throw new RegistryError('has-sessions', 'This repository still owns Sessions; delete them before removing it.')
+    }
     this.data.repositories = this.data.repositories.filter((r) => r.id !== id)
-    this.data.sessions = this.data.sessions.filter((s) => s.repositoryId !== id)
     await writeJsonFile(this.file, this.data)
   }
 
