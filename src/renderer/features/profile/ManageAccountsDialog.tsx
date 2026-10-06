@@ -82,6 +82,16 @@ function focusButton(el: HTMLElement | null | undefined): boolean {
   return true
 }
 
+/** Tries `attempt` on successive animation frames (up to `tries`) until it reports success. A
+ *  store update's React commit can land after the first frame, so the control being focused may
+ *  not exist yet on the frame right after the update; one fixed frame is not reliable. */
+function focusWhenReady(attempt: () => boolean, tries = 12): void {
+  requestAnimationFrame(() => {
+    if (attempt() || tries <= 1) return
+    focusWhenReady(attempt, tries - 1)
+  })
+}
+
 /** UI N4 / A11y M1 (quality-gate remediation, gate-3): an unreachable host -- the `problem`
  *  field (set by main from `gh`'s own per-account error text), or the legacy `timeout` `state`
  *  value from before `problem` existed -- can never be fixed by Sign in again, so every row
@@ -309,20 +319,25 @@ export function ManageAccountsDialog({
     const after = useAccountsStore.getState().github.find((candidate) => candidate.host === account.host && candidate.login === account.login)
     if (after && after.state === 'success') {
       announcePolite('GitHub is reachable again')
-      if (!focusButton(switchRefs.current.get(key)) && !focusButton(signOutRefs.current.get(key))) {
-        rowLiRefs.current.get(key)?.focus()
-      }
+      focusWhenReady(() => {
+        if (focusButton(switchRefs.current.get(key)) || focusButton(signOutRefs.current.get(key))) return true
+        const li = rowLiRefs.current.get(key)
+        if (!li) return false
+        li.focus()
+        return true
+      })
     } else if (after && isUnreachable(after)) {
       announceAssertive("Still can't reach GitHub")
     } else {
       announcePolite(after ? `GitHub is reachable. Sign in again as @${account.login}.` : 'That account is no longer signed in.')
-      requestAnimationFrame(() => {
-        if (focusButton(signInAgainRefs.current.get(key))) return
-        if (focusButton(signOutRefs.current.get(key))) return
-        if (focusButton(addAccountBtnRef.current)) return
-        if (focusButton(checkAgainHeaderRef.current)) return
-        focusButton(installLinkRef.current)
-      })
+      focusWhenReady(
+        () =>
+          focusButton(signInAgainRefs.current.get(key)) ||
+          focusButton(signOutRefs.current.get(key)) ||
+          focusButton(addAccountBtnRef.current) ||
+          focusButton(checkAgainHeaderRef.current) ||
+          focusButton(installLinkRef.current)
+      )
     }
   }
 
@@ -343,21 +358,22 @@ export function ManageAccountsDialog({
     }
     if (status === 'missing-cli') {
       announcePolite('GitHub CLI not found')
-      requestAnimationFrame(() => {
-        focusButton(installLinkRef.current)
-      })
+      focusWhenReady(() => focusButton(installLinkRef.current))
       return
     }
     announcePolite('GitHub accounts loaded')
-    requestAnimationFrame(() => {
-      if (focusButton(addAccountBtnRef.current)) return
+    focusWhenReady(() => {
+      if (focusButton(addAccountBtnRef.current)) return true
       const freshGithub = useAccountsStore.getState().github
       const first = [...freshGithub.filter((a) => a.active), ...freshGithub.filter((a) => !a.active)][0]
-      if (!first) return
+      if (!first) return false
       const key = rowKey(first.host, first.login)
-      if (focusButton(switchRefs.current.get(key))) return
-      if (focusButton(signOutRefs.current.get(key))) return
-      rowLiRefs.current.get(key)?.focus()
+      if (focusButton(switchRefs.current.get(key))) return true
+      if (focusButton(signOutRefs.current.get(key))) return true
+      const li = rowLiRefs.current.get(key)
+      if (!li) return false
+      li.focus()
+      return true
     })
   }
 
