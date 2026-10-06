@@ -69,10 +69,12 @@ pnpm build        # must pass before a change lands on main
 7. Sign out the one remaining account. Expect: the confirmation reads "Sign out @<login> on
    <host>? No account will remain active."; confirming shows "No GitHub account is signed in" in
    Manage accounts and returns the profile item and menu to the signed-out state (Story 1).
-8. Run `gh auth logout` for every account outside Refract, or uninstall the GitHub CLI from PATH,
-   then return to the Refract window (or open Manage accounts, which also re-reads on open).
-   Expect: both the profile item and Manage accounts say so, offering "Sign in to GitHub…" (CLI
-   present) or the Install action from the readiness screen (CLI missing, spec 006).
+8. Run `gh auth logout` for every account outside Refract, then return to the Refract window (or
+   open Manage accounts, which also re-reads on open). Expect: both the profile item and Manage
+   accounts say so, offering "Sign in to GitHub…".
+9. Launch Refract with `gh` not on PATH (for example, start it from a shell where the GitHub
+   CLI's directory has been removed from PATH). Expect: both the profile item and Manage accounts
+   show "GitHub CLI missing" and offer the Install action from the readiness screen (spec 006).
 
 **Story 3: manage OMP sign-in beside GitHub (FR-016, FR-017)**
 

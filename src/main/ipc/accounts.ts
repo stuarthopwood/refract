@@ -228,11 +228,33 @@ async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccou
   return accounts;
 }
 
+/** GateCode008 MEDIUM "profile refetched on every list() call": `listGithubAccounts` now runs on
+ * every renderer window focus/visibility change (throttled to 5s client-side) plus every Manage
+ * accounts open -- far more often than a `gh auth token` read, an api.github.com/user call, an
+ * avatar download, and a `profileCache.json` write should happen for a login whose display
+ * fields were already revalidated recently (research.md decision 5, plan.md:119-122: opportunistic,
+ * never on a timer or on every read). An entry fetched within the last hour is left alone; a login
+ * with no entry yet, or whose last attempt came back with neither a displayName nor an avatar (a
+ * failure) more than five minutes ago, is still due. */
+function isProfileRefreshDue(entry: ReturnType<ProfileCacheStore['get']>): boolean {
+  if (!entry) return true;
+  const ageMs = Date.now() - Date.parse(entry.fetchedAt);
+  const cameBackEmpty = entry.displayName === null && entry.avatarDataUrl === null;
+  return cameBackEmpty ? ageMs > 5 * 60 * 1000 : ageMs > 60 * 60 * 1000;
+}
+
 /** Best-effort: a failed profile fetch leaves the cache entirely untouched (data-model.md "a
  * failed or skipped fetch... leaves the previous entry untouched"); a failed avatar fetch after a
  * successful profile fetch keeps the previously cached avatar rather than clearing it. Never
- * throws -- callers fire this and forget it. */
-async function refreshProfileCache(cache: ProfileCacheStore, host: string, login: string): Promise<void> {
+ * throws -- callers fire this and forget it. `force` bypasses `isProfileRefreshDue` for a login
+ * just added via `finishCompletedAdd`, which must always get its first fetch regardless of any
+ * (nonexistent) prior entry's age. */
+async function refreshProfileCache(
+  cache: ProfileCacheStore,
+  host: string,
+  login: string,
+  options?: { force?: boolean }
+): Promise<void> {
   if (host !== 'github.com') {
     // GateSec008 HIGH / GateCode008 CRITICAL: skip entirely rather than attempt-then-catch --
     // `fetchProfile` itself refuses any non-github.com host too, but a GitHub Enterprise
@@ -240,6 +262,7 @@ async function refreshProfileCache(cache: ProfileCacheStore, host: string, login
     // absent; the UI already falls back to the login/initials for it.
     return;
   }
+  if (!options?.force && !isProfileRefreshDue(cache.get(host, login))) return;
   try {
     const profile = await fetchProfile(host, login);
     const previous = cache.get(host, login);
@@ -305,7 +328,9 @@ async function finishCompletedAdd(
     const added = hostsAfter.filter((entry) => !before.has(`${entry.host}/${entry.login}`));
     const cache = await getProfileCache();
     await Promise.all(
-      added.filter((entry) => entry.host === 'github.com').map((entry) => refreshProfileCache(cache, entry.host, entry.login))
+      added
+        .filter((entry) => entry.host === 'github.com')
+        .map((entry) => refreshProfileCache(cache, entry.host, entry.login, { force: true }))
     );
     broadcastGithubChangedIfCurrent(ticket, getWindow, toGithubAccounts(hostsAfter, cache));
   } catch (err) {
