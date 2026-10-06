@@ -236,8 +236,8 @@ export function App() {
                   // 8) -- missing it here sized the mark off the WHOLE window instead of this box.
                   // `isolate` plus the mark's own `-z-10` (BrandWatermark.tsx) then keeps the
                   // absolutely-positioned mark painting BEHIND this normal-flow text instead of
-                  // over it: `container-type` forces containment/a stacking context too, but
-                  // `isolate` makes that explicit rather than relying on an implementation detail.
+                  // over it: `isolate` is what creates the stacking context here (`container-type`
+                  // does not, it only applies style and size containment).
                   <div className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground [container-type:size]">
                     <BrandWatermark variant="live" />
                     Select a Session or create one.

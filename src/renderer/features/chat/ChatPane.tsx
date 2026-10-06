@@ -452,7 +452,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           else focusSessionsNav()
         }}
       />
-      <div className="relative min-h-0 flex-1 overflow-hidden [container-type:size]">
+      <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
         <Transcript sessionId={sessionId} />
       </div>

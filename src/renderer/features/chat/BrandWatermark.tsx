@@ -22,9 +22,10 @@ export function BrandWatermark({ variant }: BrandWatermarkProps) {
   // (research.md decision 8 -- previously undone in code) so this absolutely-positioned mark
   // paints BEHIND its normal-flow sibling content (App.tsx's no-pane-open text, this ChatPane's
   // own `!session` Empty state, and the real transcript) instead of over it -- every mount point
-  // already establishes its own stacking context (`isolate` or `[container-type:size]`'s implied
-  // containment), so the mark stays visibly behind its own siblings rather than escaping further
-  // up and disappearing under something else entirely.
+  // sets `isolate`, which is what creates its stacking context (`[container-type:size]` applies
+  // only style and size containment, not a stacking context), so the mark stays visibly behind
+  // its own siblings rather than escaping up into an ancestor stacking context where any
+  // background added there later would hide it.
   return (
     <div
       aria-hidden
