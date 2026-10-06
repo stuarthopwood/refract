@@ -324,6 +324,16 @@ export function ManageAccountsDialog({
     if (useAccountsStore.getState().githubRefreshing) return
     const key = rowKey(account.host, account.login)
     await useAccountsStore.getState().refreshGithub()
+    if (useAccountsStore.getState().githubStatus === 'missing-cli') {
+      // The read found no GitHub CLI at all, so the account list was cleared: say that, not that
+      // this account was signed out. The dialog has switched to its CLI-missing branch.
+      announcePolite('GitHub CLI not found')
+      focusWhenReady(
+        () => focusButton(installLinkRef.current),
+        () => focusButton(checkAgainHeaderRef.current)
+      )
+      return
+    }
     const after = useAccountsStore.getState().github.find((candidate) => candidate.host === account.host && candidate.login === account.login)
     if (after && after.state === 'success') {
       announcePolite('GitHub is reachable again')

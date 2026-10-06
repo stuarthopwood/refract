@@ -239,6 +239,8 @@ async function listGithubAccounts(onRefreshed?: () => void): Promise<GitHubAccou
 function isProfileRefreshDue(entry: ReturnType<ProfileCacheStore['get']>): boolean {
   if (!entry) return true;
   const ageMs = Date.now() - Date.parse(entry.fetchedAt);
+  // An unparseable or future `fetchedAt` (hand-edited file, clock moved back) is due, never "fresh".
+  if (!Number.isFinite(ageMs) || ageMs < 0) return true;
   const cameBackEmpty = entry.displayName === null && entry.avatarDataUrl === null;
   return cameBackEmpty ? ageMs > 5 * 60 * 1000 : ageMs > 60 * 60 * 1000;
 }
