@@ -117,6 +117,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const openInSplit = useSplitStore((s) => s.openInSplit)
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
+  const [startingNewId, setStartingNewId] = useState<string | null>(null)
   // Quality-gate remediation (code-reviewer, round 2, High): removing `key={frontSessionId}`
   // from App.tsx's single-pane `ChatPane` (restoring reclaim-focus-on-switch, a separate fix
   // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
@@ -273,6 +274,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   }
 
   const recovering = recoveringId === sessionId
+  const startingNew = startingNewId === sessionId
   // Spec 005 (research.md Decision 4): `stopInfo` stays `{}` for a pristine pane by design (its
   // snapshot-fetch effect is skipped) -- MessageInput's own notStarted/disabled logic needs an
   // EXPLICIT 'not-started' stopReason, not undefined, so derive it from the Session's own
@@ -302,6 +304,21 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     }
     applySnapshot(recoveringFor, result.value)
     if (sessionIdRef.current === recoveringFor) {
+      setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+    }
+  }
+
+  async function handleStartNewConversation() {
+    const startingFor = sessionId
+    setStartingNewId(startingFor)
+    const result = await window.refract.conversations.startNew(startingFor)
+    setStartingNewId(null)
+    if (!result.ok) {
+      notify(result.error)
+      return
+    }
+    applySnapshot(startingFor, result.value)
+    if (sessionIdRef.current === startingFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
   }
@@ -385,6 +402,16 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                   Recover
                 </Button>
               </AlertAction>
+            )}
+            {effectiveStopReason === 'start-failed' && (
+              <div className="col-start-2 mt-2 flex gap-2">
+                <Button size="sm" variant="outline" disabled={recovering} onClick={() => void handleRecover()}>
+                  Retry
+                </Button>
+                <Button size="sm" variant="outline" disabled={startingNew} onClick={() => void handleStartNewConversation()}>
+                  Start new conversation
+                </Button>
+              </div>
             )}
             {effectiveStopReason === 'worktree-missing' && (
               <div className="col-start-2 mt-2 flex gap-2">
