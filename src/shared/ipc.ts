@@ -59,7 +59,10 @@ export type IpcErrorCode =
   | 'not-mergeable'
   | 'checkout-failed'
   | 'disabled'
-  | 'invalid-theme';
+  | 'invalid-theme'
+  | 'dependency-install-failed'
+  | 'update-unavailable'
+  | 'checksum-mismatch';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -86,6 +89,37 @@ export interface Readiness {
   git: Check;
   omp: Check;
   ompSignedIn: Check;
+  /** FR-008, research.md decision 10: optional -- missing or signed-out never affects
+   * `allPass` (Readiness.tsx's `CHECK_ORDER` stays `['git', 'omp', 'ompSignedIn']`). */
+  github: Check;
+}
+
+/** `readiness:install-progress` event payload (data-model.md "DependencyInstallProgress"): one
+ * event per step of a dependency Install action (FR-006, FR-010). */
+export interface DependencyInstallProgress {
+  dependency: 'git' | 'omp' | 'github-cli';
+  phase: 'downloading' | 'running' | 'done' | 'failed';
+  /** Set only on `'failed'`: an actionable reason (exit code, HTTP status, or a caught error's
+   * message), never a raw stack trace. */
+  detail?: string;
+}
+
+/** Persisted update progress (data-model.md "UpdateState", `updateState.json`): the spec.md Key
+ * Entity "Update" (notified -> downloaded and checksum-verified -> installed, see that file's
+ * own "Phase transitions" section). */
+export interface UpdateState {
+  version: 1;
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'failed';
+  availableVersion?: string;
+  notesUrl?: string;
+  installerPath?: string;
+  lastCheckedAt?: string;
+  /** Set on `phase: 'failed'`: an actionable reason (FR-018); cleared on the next successful
+   * phase transition. */
+  lastError?: string;
+  /** Set instead of advancing past `'checking'` when GitHub access is unavailable (FR-017);
+   * cleared on the next check that can actually reach GitHub. */
+  unavailableReason?: 'not-installed' | 'not-signed-in' | 'offline';
 }
 
 /** `sessions.list()` row: a Session plus its live-runtime view. `lastModel`/`lastThinkingLevel`
@@ -255,6 +289,11 @@ export const IPC_REQUESTS = {
   PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST: 'pullRequests.newSessionFromPullRequest',
   THEME_PREVIEW: 'theme.preview',
   THEME_SET: 'theme.set',
+  READINESS_INSTALL_DEPENDENCY: 'readiness.installDependency',
+  UPDATES_CHECK: 'updates.check',
+  UPDATES_GET_STATE: 'updates.getState',
+  UPDATES_INSTALL: 'updates.install',
+  APP_GET_VERSION: 'app.getVersion',
 } as const;
 
 export const IPC_EVENTS = {
@@ -271,6 +310,9 @@ export const IPC_EVENTS = {
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   SUBAGENT_PATCH: 'subagent:patch',
+  READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
+  READINESS_CHANGED: 'readiness:changed',
+  UPDATES_STATE_CHANGED: 'updates:state-changed',
 } as const;
 
 /** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
@@ -291,6 +333,11 @@ export type Unsubscribe = () => void;
 export interface RefractApi {
   readiness: {
     check(): Promise<Result<Readiness>>;
+    /** FR-005, FR-006, FR-010: starts the vendor's own official installer in the background
+     * and awaits the whole install before resolving; progress also arrives incrementally on
+     * `readiness:install-progress`. On success main re-runs `readiness.check()` and emits
+     * `readiness:changed` itself. Errors: `dependency-install-failed`. */
+    installDependency(dependency: 'git' | 'omp' | 'github-cli'): Promise<Result<void>>;
   };
 
   repositories: {
@@ -435,6 +482,26 @@ export interface RefractApi {
     set(themeId: ThemeId): Promise<Result<Settings>>;
   };
 
+  updates: {
+    /** FR-012 to FR-019, FR-026: never errors -- an unreachable GitHub CLI resolves to
+     * `phase: 'idle'` with `unavailableReason` set (FR-017), not an IPC error. */
+    check(): Promise<Result<UpdateState>>;
+    /** The latest known state, for the renderer to render on mount without forcing a fresh
+     * network check. */
+    getState(): Promise<Result<UpdateState>>;
+    /** Awaits the whole download and checksum verification (FR-014) for the release named by
+     * the current `available` state before resolving; `updates:state-changed` also fires
+     * `'downloading'` then `'downloaded'`/`'failed'` for a progress indicator. Errors:
+     * `update-unavailable`, `checksum-mismatch`. */
+    install(): Promise<Result<void>>;
+  };
+
+  app: {
+    /** The running build's own version (`app.getVersion()`), for the badge and for comparing
+     * against a release's `version`. */
+    getVersion(): Promise<Result<string>>;
+  };
+
   /** Spec 007 contracts/ipc.md "Bootstrap": synchronous, called once from `main.tsx`'s very
    * first lines, before React mounts and before any class is set on `<html>` -- replaces the old
    * hardcoded `document.documentElement.classList.add('dark')`. Blocks the renderer's single JS
@@ -455,6 +522,9 @@ export interface RefractApi {
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
+  onReadinessInstallProgress(handler: (payload: DependencyInstallProgress) => void): Unsubscribe;
+  onReadinessChanged(handler: (payload: Readiness) => void): Unsubscribe;
+  onUpdatesStateChanged(handler: (payload: UpdateState) => void): Unsubscribe;
 }
 
 declare global {

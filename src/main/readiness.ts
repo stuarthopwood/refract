@@ -120,7 +120,31 @@ async function signedInFailureHint(proc: OmpProcess): Promise<string> {
   return SIGNED_IN_HINT;
 }
 
+// Spec 006 FR-008, data-model.md "Dependency": `gh --version` resolves on PATH **and** `gh
+// auth status` reports a signed-in account; this is the one Readiness row that never affects
+// `allPass` (research.md decision 10) -- missing or signed-out GitHub CLI never blocks Add
+// repository, it only blocks updates (spec 006) and pull-request access (spec 003 FR-027).
+async function checkGithubCli(): Promise<Check> {
+  let ghPath: string;
+  try {
+    ghPath = await resolveExecutable('gh');
+  } catch {
+    return { ok: false, hint: 'gh not found on PATH. Optional: install the GitHub CLI for updates and pull request access.' };
+  }
+  try {
+    await execFileAsync(ghPath, ['--version'], { windowsHide: true });
+  } catch (err) {
+    return { ok: false, hint: `gh --version failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  try {
+    await execFileAsync(ghPath, ['auth', 'status'], { windowsHide: true });
+  } catch {
+    return { ok: false, hint: 'gh is installed but not signed in. Run gh auth login, then Re-check.' };
+  }
+  return { ok: true };
+}
+
 export async function readinessCheck(): Promise<Readiness> {
-  const [git, omp, ompSignedIn] = await Promise.all([checkGit(), checkOmp(), checkOmpSignedIn()]);
-  return { git, omp, ompSignedIn };
+  const [git, omp, ompSignedIn, github] = await Promise.all([checkGit(), checkOmp(), checkOmpSignedIn(), checkGithubCli()]);
+  return { git, omp, ompSignedIn, github };
 }

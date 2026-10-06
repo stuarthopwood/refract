@@ -4,6 +4,7 @@ import { IPC_EVENTS, IPC_REQUESTS, THEME_BOOTSTRAP_CHANNEL } from '../shared/ipc
 import type {
   BranchEntry,
   ChatAnswer,
+  DependencyInstallProgress,
   DiffStat,
   LowMemoryWarning,
   MergeInput,
@@ -11,6 +12,7 @@ import type {
   RefractApi,
   Readiness,
   Result,
+  UpdateState,
   SessionSnapshot,
   SessionStatusEvent,
   SessionSummary,
@@ -54,7 +56,8 @@ function on<T>(channel: string, handler: (payload: T) => void): Unsubscribe {
 
 const refract: RefractApi = {
   readiness: {
-    check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK)
+    check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK),
+    installDependency: (dependency) => request<void>(IPC_REQUESTS.READINESS_INSTALL_DEPENDENCY, dependency)
   },
 
   repositories: {
@@ -152,6 +155,16 @@ const refract: RefractApi = {
     set: (themeId) => request<Settings>(IPC_REQUESTS.THEME_SET, themeId)
   },
 
+  updates: {
+    check: () => request<UpdateState>(IPC_REQUESTS.UPDATES_CHECK),
+    getState: () => request<UpdateState>(IPC_REQUESTS.UPDATES_GET_STATE),
+    install: () => request<void>(IPC_REQUESTS.UPDATES_INSTALL)
+  },
+
+  app: {
+    getVersion: () => request<string>(IPC_REQUESTS.APP_GET_VERSION)
+  },
+
   // Synchronous by design (contracts/ipc.md "Bootstrap", research.md decision 4): called once
   // from `main.tsx`'s very first lines, before React mounts, so the renderer's single JS thread
   // blocks until the right theme class is already known -- see `theme:bootstrap`'s own handler
@@ -175,7 +188,11 @@ const refract: RefractApi = {
   onSubagentsUpdate: (handler) =>
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
   onSubagentPatch: (handler) =>
-    on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler)
+    on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler),
+  onReadinessInstallProgress: (handler) =>
+    on<DependencyInstallProgress>(IPC_EVENTS.READINESS_INSTALL_PROGRESS, handler),
+  onReadinessChanged: (handler) => on<Readiness>(IPC_EVENTS.READINESS_CHANGED, handler),
+  onUpdatesStateChanged: (handler) => on<UpdateState>(IPC_EVENTS.UPDATES_STATE_CHANGED, handler)
 }
 
 contextBridge.exposeInMainWorld('refract', refract)
