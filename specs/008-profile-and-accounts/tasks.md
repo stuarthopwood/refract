@@ -198,8 +198,14 @@ correctly and are fully keyboard-accessible.
   settings; Esc backs out and focus returns to the profile button; Health check runs against the
   real readiness check and reads Git Passed, OMP Passed with a warning (18.6.1 outside 18.4.x/
   18.5.x), OMP signed in Passed, focus on Done. NOT verified live: What's new (opens the system
-  browser; deliberately not clicked), the Keyboard shortcuts dialog contents in this pass,
-  Theme submenu focus ring with Dark (high contrast) active, selecting a theme.
+  browser; deliberately not clicked) and the Keyboard shortcuts dialog contents in this pass.
+  Cycle-3 live check (2026-10-06, real CDP input): selecting Dark (high contrast) with Enter
+  applies the theme and announces "Applied theme Dark (high contrast)"; reopening the Theme
+  submenu with the keyboard shows the focused current item with the active-indicator bar and
+  checkmark visible; selecting Dark restores the default theme. Also verified: the conditional
+  "Fix sign-in…" item focuses the active row's "Sign in again" button without starting a flow;
+  with gh off PATH the menu and Manage accounts keep the "GitHub CLI missing" state with focus
+  on the Install link.
 
 **Checkpoint**: run quickstart Story 4. `pnpm typecheck` and `pnpm build` pass.
 
