@@ -21,6 +21,22 @@
 ; honoured both interactively, Settings > Apps/Start Menu, and under the silent uninstall switch;
 ; whether the customUnInit guard is reachable; and whether electron-builder's own one-click NSIS
 ; template already warns on a running instance without it).
+;
+; Quality-gate remediation (HIGH, security-auditor): neither MessageBox below used to carry a
+; /SD (silent default) switch, and customUnInstall's data-deletion prompt ran unconditionally --
+; including during the SILENT in-place upgrade every new version's install-on-quit helper runs
+; (electron-builder's own uninstaller.nsh invokes the previous version's uninstaller as
+; `/S --updated` on every upgrade, per app-builder-lib's installUtil.nsh). Un-silenced, that
+; stopped a "silent" update on a modal dialog; answered Yes, it deleted %APPDATA%\pinion against
+; FR-004/FR-023's own "upgrades ... without touching %APPDATA%/pinion".
+; - customUnInstall is now skipped entirely during an upgrade (${isUpdated}, electron-builder's
+;   own LogicLib variable, already set by the time this macro runs) -- the keep/delete prompt only
+;   ever fires for a real, standalone uninstall, never a silent in-place upgrade.
+; - Both MessageBox calls now carry /SD matching their own default button (IDNO for the YESNO
+;   data-deletion prompt, matching MB_DEFBUTTON2/FR-023's own "defaulting to keeping them";
+;   IDCANCEL for the RETRYCANCEL running-process guard, the same silent-default electron-builder's
+;   own templates use for an equivalent RETRYCANCEL box, e.g. installUtil.nsh), so a silent
+;   uninstall can never hang on either dialog.
 
 !macro customUnInit
   refract_uninstall_check_running:
@@ -28,15 +44,17 @@
     Pop $0
     Pop $1
     StrCmp $0 "0" 0 refract_uninstall_not_running
-      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Refract is running. Close it, then try uninstalling again." IDRETRY refract_uninstall_check_running
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Refract is running. Close it, then try uninstalling again." /SD IDCANCEL IDRETRY refract_uninstall_check_running
       Abort
   refract_uninstall_not_running:
 !macroend
 
 !macro customUnInstall
-  MessageBox MB_YESNO|MB_DEFBUTTON2 "Delete Refract's settings and session list?" IDYES refract_uninstall_delete_data
-  Goto refract_uninstall_keep_data
-  refract_uninstall_delete_data:
-    RMDir /r "$APPDATA\pinion"
-  refract_uninstall_keep_data:
+  ${ifNot} ${isUpdated}
+    MessageBox MB_YESNO|MB_DEFBUTTON2 "Delete Refract's settings and session list?" /SD IDNO IDYES refract_uninstall_delete_data
+    Goto refract_uninstall_keep_data
+    refract_uninstall_delete_data:
+      RMDir /r "$APPDATA\pinion"
+    refract_uninstall_keep_data:
+  ${endIf}
 !macroend
