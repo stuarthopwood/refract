@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -21,6 +21,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
@@ -502,6 +503,19 @@ export function SessionList() {
           ))}
         </div>
       </ScrollArea>
+      {/* #447: the only way to add another repository once the first-run screen is gone. A
+          persistent footer so it is always reachable; the dialog keeps its own validation and
+          returns focus here on close. */}
+      <div className="shrink-0 border-t border-sidebar-border p-2">
+        <AddRepositoryDialog
+          trigger={
+            <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-sm font-medium">
+              <FolderPlusIcon aria-hidden className="size-4" />
+              Add repository
+            </Button>
+          }
+        />
+      </div>
     </nav>
   )
 }

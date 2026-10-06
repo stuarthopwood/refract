@@ -46,7 +46,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 
 | # | Issue | Work | Status | Needs | Files touched |
 |---|---|---|---|---|---|
-| A1 | #447 | Add repository from the session list after first-run | **in-flight** | none | `SessionList.tsx`, `AddRepositoryDialog.tsx`. Branch `fix/447-add-repository` (2 commits ahead of `main`, pushed, no PR yet); worktree `C:/Repos/personal/pinion-worktrees/fix-447` has uncommitted spec edits. Another session is on it: do not redo. Next step is its PR and gates. |
+| A1 | #447 | Add repository from the session list after first-run | done (PR #486; removal spec follows on `spec/remove-repository`, T107 to T109) | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
 | A2c | #489 | Bug: after a crash and resume, a still-running agent has no Subagents pill. Seed `runtime.subagents` from `get_subagents` on attach and resume, and mark orphaned `running` agents as "agent exited". Needs the repro from Stuart (what crashed, was a process left?) | todo | none; after A2 (same files) | `SessionAgent.ts`, `readout.ts`, `ReadoutChips.tsx` |

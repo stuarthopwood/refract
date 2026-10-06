@@ -118,6 +118,14 @@ Versions are the npm `latest` (or Electron release table) read on 2026-09-30.
 
 **Not verified**: whether `secure` itself, being secure-listed, can be widened by a directive that adds entries removing something else from the list -- not tried; the `<img>` control above makes only the FINAL DISPLAYED SVG inert, not the brief live-DOM render step itself (see the corrected `Decision` above), so this is not moot on that basis.
 
+## 15. Removing a repository (2026-10-06)
+
+**Decision (user)**: a repository can only be removed from Refract once it owns zero Sessions, archived ones included -- an archived Session still owns a worktree on disk, so it counts the same as a running one for this gate. The existing `session-running` error code is retired in favour of a new `has-sessions` code: the refusal condition changed from "a Session is currently running" to "any Session still exists", so keeping the old name would describe the wrong thing, and it had exactly one caller (`repositories.remove`) to update. `RegistryStore.removeRepository` stops filtering Session records as a side effect and instead refuses (throws) when the Repository it is asked to drop still owns any Session, so the no-orphan-Session invariant (data-model.md) holds even if a future caller forgets to check first -- the IPC handler still checks first for the ordinary refusal path; the registry's own refusal is only a backstop.
+
+**Rationale**: the pre-existing code silently dropped every Session row belonging to the removed Repository, orphaning each one's worktree, branch, and Conversation files on disk with no record left anywhere in Refract to find them again -- a data-loss bug to close, not a feature to keep. Gating at zero Sessions, not zero running Sessions, matches data-model.md's registry invariant that no Session may exist without its own Repository.
+
+**Alternatives**: cascading the delete (removing every Session along with the Repository) was rejected -- Session deletion already has its own confirmation naming uncommitted/unpushed work (FR-029), and silently cascading past that would reintroduce the same data-loss bug this decision closes.
+
 | Unknown | Resolved by |
 |---|---|
 | How OMP reports the change made by an `edit` tool call (diff source) | First chat task: read a real `tool_execution_end.result.details` |
