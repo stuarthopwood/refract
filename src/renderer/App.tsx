@@ -3,6 +3,7 @@ import { ArrowLeftRightIcon } from 'lucide-react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
+import { BrandWatermark } from '@/features/chat/BrandWatermark'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
 import { Readiness } from '@/features/readiness/Readiness'
@@ -226,7 +227,19 @@ export function App() {
                   // "Pull requests" is a left-nav entry, not a separate shell).
                   <PullRequestsView />
                 ) : paneSessionIds.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  // Spec 012 (research.md decision 3): no pane open at all -- no composer exists
+                  // in this branch, so the mark anchors to this div's own full box.
+                  //
+                  // Quality-gate remediation (code-reviewer/ui-architect, Medium): `20cqw` needs
+                  // this root itself to be the query container (`[container-type:size]`), not the
+                  // window, matching ChatPane.tsx's own transcript container (research.md decision
+                  // 8) -- missing it here sized the mark off the WHOLE window instead of this box.
+                  // `isolate` plus the mark's own `-z-10` (BrandWatermark.tsx) then keeps the
+                  // absolutely-positioned mark painting BEHIND this normal-flow text instead of
+                  // over it: `isolate` is what creates the stacking context here (`container-type`
+                  // does not, it only applies style and size containment).
+                  <div className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground [container-type:size]">
+                    <BrandWatermark variant="live" />
                     Select a Session or create one.
                   </div>
                 ) : !showSplit || paneA === undefined || paneB === undefined ? (
@@ -235,6 +248,7 @@ export function App() {
                     paneIndex={isSplit ? focusedIndex : 0}
                     reservesWindowControls
                     otherSession={otherSessionForNarrowCollapse}
+                    showWatermark
                   />
                 ) : (
                   <ResizablePanelGroup
@@ -295,7 +309,9 @@ export function App() {
                     </button>
                     <ResizablePanel id="split-pane-1" defaultSize={`${100 - dividerPercent}%`} minSize={360}>
                       <ErrorBoundary>
-                        <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls />
+                        {/* Spec 012 (research.md decision 3, FR-008): the right-most pane's own
+                            reading area, never paneA -- "one watermark, not one per pane". */}
+                        <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls showWatermark />
                       </ErrorBoundary>
                     </ResizablePanel>
                   </ResizablePanelGroup>

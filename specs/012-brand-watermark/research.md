@@ -187,13 +187,15 @@ benefit.
 ## 8. Mounted inside the existing transcript wrapper; composer clearance by flex geometry, not JS
 
 **Decision**: `BrandWatermark` is added as the FIRST child of `ChatPane.tsx`'s existing transcript
-container (`<div className="relative min-h-0 flex-1 overflow-hidden [container-type:size]">` —
-adding only `relative` and `[container-type:size]` to its current class string), immediately before
+container (`<div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">` —
+adding only `relative`, `isolate` and `[container-type:size]` to its current class string), immediately before
 `<Transcript sessionId={sessionId} />`, guarded by the new `showWatermark` prop (decision 3).
-`BrandWatermark` itself is `absolute inset-0 pointer-events-none -z-10` with its mask-image box
-positioned inside that bound (`absolute right-6 bottom-6`). The App.tsx/ChatPane `<Empty>` mount
-points (decision 3) get the same small `relative` treatment on their own existing root element, no
-extra wrapper div.
+As built, `BrandWatermark` is a single `div` with the `.watermark-mark--live` class (absolute,
+bottom-right 1.5rem inset, `clamp(96px, 20cqw, 280px)` square) plus `-z-10` and `pointer-events-none`.
+`isolate` creates the stacking context so the mark paints behind its siblings (`container-type`
+applies only style and size containment, not a stacking context). The App.tsx/ChatPane `<Empty>`
+mount points (decision 3) get the same `relative isolate [container-type:size]` classes on their own
+existing root element, no extra wrapper div (quality-gate remediation).
 
 **Rationale**: This is a strictly SMALLER change than the first draft's own new wrapper div: the
 transcript container already has `overflow-hidden` (needed for `Transcript`'s own scrolling,

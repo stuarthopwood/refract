@@ -243,6 +243,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   SETTINGS_SET_SPLIT: 'settings.setSplit',
+  SETTINGS_SET_WATERMARK_ENABLED: 'settings.setWatermarkEnabled',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -385,6 +386,10 @@ export interface RefractApi {
      * broadcasts `settings:changed`; `null` means no split is open. Never starts, stops, or
      * touches any agent -- this call only ever writes the stored layout. */
     setSplit(layout: SplitLayout | null): Promise<Result<Settings>>;
+    /** Spec 012 FR-015 to FR-020: persists the whole `Settings` row and returns this call's own
+     * written value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
+     * `setSplit`. Pushes `settings:changed`, no new event. */
+    setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
   };
 
   window: {

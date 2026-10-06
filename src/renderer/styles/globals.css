@@ -84,6 +84,10 @@
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
   --radius: 0.625rem;
+  /* Spec 012 (brand watermark, research.md decision 5): the mark's own starting opacity, kept
+     theme-independent since it is a flat alpha over whatever `--muted-foreground`/`--background`
+     resolve to per theme. Documented ceiling for a future aesthetic tuning pass: 0.12. */
+  --watermark-opacity: 0.06;
 }
 
 .theme-dark {
@@ -234,6 +238,39 @@
   --state-stopped: oklch(0.78 0.17 22);
   --state-stopped-foreground: oklch(0 0 0);
 }
+
+/* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================
+ * A faint, single-colour silhouette of the Refract mark, anchored to the bottom-right corner
+ * of the active chat pane's reading area (BrandWatermark.tsx). `.watermark-mark` carries the
+ * shared mask-image/colour/opacity every variant renders with; `.watermark-mark--live` adds
+ * the responsive clamp and corner anchor the 'live' variant uses (decisions 5-7) -- the
+ * 'preview' variant (AppearanceSection.tsx) uses a plain Tailwind size utility instead, since
+ * it needs no corner anchor. Hidden outright under Windows High Contrast or with "Show
+ * transparency in Windows" off (decision 11) -- both media features confirmed real, supported,
+ * and correctly recognised at this app's pinned Electron/Chromium (44.5.1 / Chromium 152). */
+.watermark-mark {
+  mask-image: url('../assets/brand/refract-hero.svg');
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  background-color: var(--muted-foreground);
+  opacity: var(--watermark-opacity);
+}
+
+.watermark-mark--live {
+  width: clamp(96px, 20cqw, 280px);
+  aspect-ratio: 1;
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.5rem;
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .watermark-mark {
+    display: none;
+  }
+}
+/* ===== End spec 012: Brand watermark ===================================================== */
 
 @layer base {
   * {
