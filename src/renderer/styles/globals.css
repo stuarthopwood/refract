@@ -295,6 +295,10 @@
 .brand-spinner-arm-1,
 .brand-spinner-arm-2,
 .brand-spinner-arm-3 {
+  /* The rest frame is the BASE style, not only the 0%/100% keyframes: when the animation does
+   * not run or ends (prefers-reduced-motion collapses it to one 0.01ms iteration with no fill),
+   * the arm must settle on the dim rest frame, never the bright peak (FR-009). */
+  opacity: 0.35;
   animation-duration: 1.2s;
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;

@@ -183,6 +183,14 @@ clean `pnpm typecheck`/`pnpm build`; committed.
 - GitHub issues created with `gh issue create` directly against the existing
   `stuarthopwood/refract` repo, following the `011-Tnnn: ...` title convention.
 
+### Implementation evidence (parent, 2026-10-06, scratch profile, real CDP, Dark theme)
+
+- T006: a throwaway change to `StateIcon` rendered the 24, 32 and 48px sizes; all three show the Full faceted mark. The harness was reverted (`git diff` shows only the CSS fix below). Checked.
+- T004 (partly verified): session list rows (working x3, idle, needs-you, stopped) show the brand mark for working and the unchanged icons for the other three; the 16px icon's vertical centre equals the row centre for every state (144/194/244 vs 294/344/394 pairs); `aria-hidden="true"`; three concurrent instances share one animation clock (computed delays -0.992s, -1.002s, -1.009s, all within 1.2s). NOT verified: the chat header and details card call sites (they use the same `StateIcon`), the sr-only "Working" announcement.
+- T005 (partly verified): only `opacity` is animated (`brand-spinner-arm-1/2/3` keyframes); arm opacity cycles 0.35 to 1.0 live; under `prefers-reduced-motion: reduce` every arm settles on the uniform 0.35 rest frame and the core stays at 1 (this found a bug, fixed in this branch: the base arm opacity was 1, so the animation's end reverted to the bright frame; the base is now 0.35); under emulated forced colors the arm fills compute to the system `CanvasText` colour. NOT verified: the real Windows "Animation effects" toggle, twenty-plus concurrent instances in the DevTools Performance panel, Dark vs Dark (high contrast) pixel comparison, a real Windows contrast theme.
+- T010: the dedicated Simplified set ships (four separated flat shapes at 16/20px, read clearly at 10x zoom). The side-by-side raster comparison against a scaled-down Full variant was NOT captured, so T010 stays unchecked.
+- T008: `animate-spin` now appears in 11 places, none in `StateIcon`: the seven sites from research.md decision 1 plus four added by spec 003 (`PullRequestDetail` twice, `PullRequestList`, `PullRequestRow`). Unchecked until Stories 1 and 2 are run in one pass.
+
 ### Task-to-issue mapping
 
 | Task | Issue |
