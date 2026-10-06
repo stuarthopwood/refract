@@ -49,6 +49,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 | A1 | #447 | Add repository from the session list after first-run | **in-flight** | none | `SessionList.tsx`, `AddRepositoryDialog.tsx`. Branch `fix/447-add-repository` (2 commits ahead of `main`, pushed, no PR yet); worktree `C:/Repos/personal/pinion-worktrees/fix-447` has uncommitted spec edits. Another session is on it: do not redo. Next step is its PR and gates. |
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
+| A2c | #489 | Bug: after a crash and resume, a still-running agent has no Subagents pill. Seed `runtime.subagents` from `get_subagents` on attach and resume, and mark orphaned `running` agents as "agent exited". Needs the repro from Stuart (what crashed, was a process left?) | todo | none; after A2 (same files) | `SessionAgent.ts`, `readout.ts`, `ReadoutChips.tsx` |
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
 
@@ -67,6 +68,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 |---|---|---|---|---|
 | C1 | #393 + #394 | Right panel shell: icon rail, tab strip, window-controls corner, **plus the FDB Knowledge and Agent Builder placeholder panes** (`p1`, demo-critical, "will sell the prototype to the bosses"). Head start: stash commit `b12a884` ("side-panel placeholder WIP"); also `9053ad5` ("394 a11y WIP"). Cite them by hash, not `stash@{n}`, because stash indices move | todo | A done (touches `App.tsx`); B1 for icons; Stuart's call on demo content (strict empty states vs a labelled "Sample data" toggle) |
 | C2 | #1 | **Side chat (`/btw`)** as the first pane, via the bundled `runEphemeralTurn` extension | todo | C1, B2 (extension probes) |
+| C2c | #490 | **Agents panel**: persistent right side bar tab, always available, all agents grouped by Session, Cancel and Steer actions. Replaces the click-the-pill-only Subagent panel and folds in #10. Builds on A2c's `get_subagents` seed | todo | C1, A2c, B2 (`get_subagents`, `cancel_subagent`, `steer_subagent` on 18.4.x and 18.5.x) |
 | C2a | #392 | **FDB Knowledge**: real integration with FDB's AI knowledge base (`p1`). Routes: its MCP for agents, Refract as MCP client, REST API, OMP host tools (`set_host_tools`) | blocked | C1, FDB discovery (does it have an MCP, an API, auth, data governance), B2 host-tool probe |
 | C2b | #391 | **Agent Builder**: real integration with FDB's cloud agent factory (agents persistent or automated, each in a VM) (`p1`). Routes: API, MCP, host tools, deep link as fallback | blocked | C1, FDB discovery (API, auth, run and log streaming), #479 unattended policy for approvals |
 | C3 | #478 | Jira panel (associated ticket, browse, link, comment, open in Jira) | blocked | C1, **Stuart's integration decision** (A own REST client, B MCP client, C via the agent) |
@@ -139,11 +141,11 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 - Terminal: **per Refract Session, several tabs each** (each Session has its own set in its worktree).
 - Default Dark theme lightening: **somewhere between** x1.15 and +0.15, background about `#1a1a1a` to `#1e1e1e`, chosen by eye. Divider strength reading still open.
 - Scroll to top: **top of the conversation**. Scroll to your message: **the prompt this response answers**.
-- Side chat has priority over the other right-panel panes. #474 is top priority. #447 comes first for daily driving.
+- #474 is top priority. #447 comes first for daily driving. The right panel's high-priority features are the side chat (#1), the FDB panels (#391 to #393) and the Agents panel (#490). Order is **my proposal, awaiting Stuart's confirmation**: shell and FDB placeholders first (C1), then the side chat (C2), then the Agents panel (C2c).
 - Conversation titles: derive from the first message now, rename later (#440).
 - The two FDB panels are named **FDB Knowledge** and **Agent Builder**. Both are **important and demo-critical** ("what is really going to sell this prototype to my bosses"): #391, #392 and #393 are `p1`. Placeholders (#393) first, real integrations after discovery.
 - Session status style (#482): **colour-coded icons by default**, with a Settings option for **dots** and a preview of both.
-- Switching Sessions (and Conversations) always lands at the **end** of the conversation, with no scroll position restore. This amends spec 001 line 148 and the policy in #459 (first slice #485).
+- Switching Sessions should open at the **end** of the conversation, not the top (Stuart, #485). **Proposal, not confirmed:** no restore of the previous scroll position (would amend spec 001 line 148) and the same for Conversation switches. Spec 001 stays as it is until he confirms.
 
 ## Decisions still needed from Stuart
 
@@ -155,13 +157,21 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 6. #393 demo content: strict empty states only, a clearly labelled "Sample data" toggle, or static concept views.
 7. #392 and #391: integration route, once the FDB owners say what exists (MCP, API, host tools).
 8. #482: what happens to the brand spinner (a third style, moved elsewhere, or tinted), and the non-colour cue for dots.
+9. #485 / #459: confirm the "no scroll position restore" and "same for Conversation switches" proposal before spec 001 line 148 is amended.
+10. Right panel order: shell and FDB placeholders, then side chat, then Agents panel. Is that the order he wants?
+11. #490: is the Agents panel meant to stay available but closed by default when idle (my reading), or auto-collapse? And do "all agents" include each Session's own agent as the group header?
+12. #489: what exactly he saw after the crash (Refract or omp crashed, was a process left running).
 
 ## File collisions (one agent per file at a time)
 
 `SessionList.tsx` (A1, A4, #453, #472, #440), `Transcript.tsx` (Transcript lane, Ask UI, #457, #469), `App.tsx` (C1, #453, #393), `SettingsScreen.tsx` (every Settings item, including #482), `sessionDisplay.tsx` (A3, #482), `MessageInput.tsx` (#465, #432, #431, #443, #471), `Markdown.tsx` and `globals.css` (Theme lane, #456), `ChatPane.tsx` (A2, #466 to #468).
 
+Also: `SessionAgent.ts` (A2, A2c, #479, #477), `readout.ts` and `ReadoutChips.tsx` (A2c, #434 to #438), `SessionManager.ts`, `SubagentPanel.tsx` and `readout-store.ts` (C2c, A2c), `ChatPane.tsx` (also A2b).
+
 ## Index of issues filed 2026-10-06
 
 #443 emoji, #444 ask options and tabs, #445 spell suggestions, #446 multi-select loop, #447 add repository, #448 border under window controls, #449 reattach, #450 Settings icon, #452 Dark retune, #453 collapsible left pane, #454 session model, #455 role to model, #456 markdown tokens, #457 thinking and tool toggles, #458 tokenise everything, #459 autoscroll, #460 versioning, #463 explorer, #464 git panel, #465 @ mentions, #466 copy, #467 scroll to your message, #468 scroll to top, #469 tool icons, #470 editing, #471 context menus, #472 conversation list, #473 Ask spacing, #474 design system, #475 advisor, #476 auto-cleanup, #477 pause, #478 Jira, #479 goal mode, #480 rename repository, #482 session status style. Amended: #1 side chat, #3 terminal, #4 fonts, #8, #391 Agent Builder (now `p1`), #392 FDB Knowledge (now `p1`), #393 shell and placeholders (now `p1`), #445, #455.
 
-Also filed 2026-10-06: #485 bug, switching Sessions opens at the top (decision: land at the end; first slice of #459, which is also amended).
+Also filed 2026-10-06: #485 bug, switching Sessions opens at the top (Stuart wants the end; no-restore and Conversation switches are a proposal, first slice of #459, which is also amended).
+
+Also filed 2026-10-06: #489 bug (no Subagents pill after a crash and resume), #490 persistent Agents panel (folds #10, which is a duplicate). Folded: #10 into #490.
