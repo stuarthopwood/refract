@@ -73,7 +73,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
           ))}
         </ul>
         <div className="mt-5 flex items-center gap-2">
-          <AddRepositoryDialog trigger={<Button disabled={!allPass} className="flex-1" aria-disabled={!allPass}>Add repository</Button>} />
+          <AddRepositoryDialog trigger={<Button data-readiness-primary disabled={!allPass} className="flex-1" aria-disabled={!allPass}>Add repository</Button>} />
           <Button variant="outline" onClick={() => void runCheck()} disabled={checking}>
             {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
             Re-check

@@ -96,3 +96,24 @@ export function focusSessionPane(sessionId: string): void {
   const container = document.querySelector<HTMLElement>(`[data-session-pane="${CSS.escape(sessionId)}"]`)
   focusPaneContent(container)
 }
+
+// Issue #488 (T108, FR-059, US1/AC14): removing a repository unmounts its whole group at once.
+// When another repository remains, its header is the natural landing spot; when the removed one
+// was the last, App.tsx's own `showReadiness` swap replaces the entire SessionList with the
+// Readiness screen in the same tick, so there is no repository header, and no Sessions nav
+// either, left to query -- Readiness marks its one primary action with
+// `data-readiness-primary` for exactly this case, mirroring `focusSettingsEntry`'s stable-marker
+// approach above.
+export function focusRepositoryGroupOrReadiness(): void {
+  const header = document.querySelector<HTMLElement>('[data-repository-id] [data-slot="collapsible-trigger"]')
+  if (header) {
+    header.focus()
+    return
+  }
+  const readinessPrimary = document.querySelector<HTMLElement>('[data-readiness-primary]')
+  if (readinessPrimary) {
+    readinessPrimary.focus()
+    return
+  }
+  focusSessionsNav()
+}
