@@ -30,7 +30,7 @@ created, and the full mapping is posted as a comment on the tracking issue and k
 
 **Purpose**: the component and its CSS every story builds on.
 
-- [ ] T001 (#398) [P] Write `src/renderer/components/brand/BrandSpinner.tsx`: `BrandSpinnerProps`
+- [X] T001 (#398) [P] Write `src/renderer/components/brand/BrandSpinner.tsx`: `BrandSpinnerProps`
   (`size: 16 | 20 | 24 | 32 | 48`, `className?: string`), the exported `LEGIBILITY_FLOOR_PX = 24`
   constant, the size-ladder-gated choice between two separately authored path sets -- Full (every
   facet, built from the prerequisite mark's own path data) at 24/32/48px, and a placeholder
@@ -40,7 +40,7 @@ created, and the full mapping is posted as a comment on the tracking issue and k
   computed `animation-delay` (`-(Date.now() % 1200)` ms, research.md decisions 3, 5), and the 16px
   internal positioning needed so the rendered mark's vertical centre aligns with adjacent row text
   within 0.5px (FR-015, research.md decision 13).
-- [ ] T002 (#399) [P] Add the spinner's `@keyframes` to `src/renderer/styles/globals.css`: one
+- [X] T002 (#399) [P] Add the spinner's `@keyframes` to `src/renderer/styles/globals.css`: one
   definition (or one reused by all three arms with different `animation-delay`s) whose `0%`/`100%`
   frames are identical "at rest" frames (each arm at its dim 0.35 baseline opacity, never the
   bright peak) with one brief frame partway through reaching the 1.0 peak, 1.2s, ease-in-out,
@@ -48,7 +48,7 @@ created, and the full mapping is posted as a comment on the tracking issue and k
   decisions 3, 5, 6, spec.md FR-005); no edit needed to the existing `@media
   (prefers-reduced-motion: reduce)` block (lines 260-269), which already matches `*, *::before,
   *::after` and therefore already covers the new keyframes.
-- [ ] T009 (#427) Add `@media (forced-colors: active)` to the same stylesheet (`globals.css`): map
+- [X] T009 (#427) Add `@media (forced-colors: active)` to the same stylesheet (`globals.css`): map
   the spinner's arm and core fills to system colour keywords (for example `CanvasText`) instead of
   their fixed brand hex values (FR-014, research.md decision 14) (depends on T002, same file).
 - [ ] T010 (#428) [P] Author and verify the dedicated Simplified path set for real, at both its
@@ -74,7 +74,7 @@ every one of its three callers shows the identical result with no other change.
 
 **Independent test**: [quickstart.md](quickstart.md) Story 1.
 
-- [ ] T003 (#400) [US1] Edit `src/renderer/features/sessions/sessionDisplay.tsx`: remove the
+- [X] T003 (#400) [US1] Edit `src/renderer/features/sessions/sessionDisplay.tsx`: remove the
   `LoaderCircleIcon` import and its use in `StateIcon`'s `working` case; render `<BrandSpinner
   size={16} aria-hidden className={cn(className, 'shrink-0')} />` in its place, leaving `idle`,
   `needs-you`, and `stopped` untouched, and `StateIcon`'s own `{ status: SessionStatus }` props
@@ -128,7 +128,7 @@ fully reverted; `pnpm typecheck` and `pnpm build` pass.
 **Purpose**: documentation and a final repository-wide confirmation that nothing outside this
 feature's stated scope moved.
 
-- [ ] T007 (#404) Edit `docs/DESIGN.md`'s "Shared status icon" bullet: replace "a spinning circle
+- [X] T007 (#404) Edit `docs/DESIGN.md`'s "Shared status icon" bullet: replace "a spinning circle
   for working" with naming the brand mark spinner, and in the same edit correct the bullet's
   surface list from "session list, chat header, status bar, tooltips" to the three real surfaces
   (`SessionList`, `ChatHeader`, `SessionDetailsCard`), leaving the rest of the sentence (one shared
@@ -182,6 +182,14 @@ clean `pnpm typecheck`/`pnpm build`; committed.
 - FR and SC ids in task text refer to [spec.md](spec.md).
 - GitHub issues created with `gh issue create` directly against the existing
   `stuarthopwood/refract` repo, following the `011-Tnnn: ...` title convention.
+
+### Implementation evidence (parent, 2026-10-06, scratch profile, real CDP, Dark theme)
+
+- T006: a throwaway change to `StateIcon` rendered the 24, 32 and 48px sizes; all three show the Full faceted mark. The harness was reverted (`git diff` shows only the CSS fix below). Checked.
+- T004 (partly verified): session list rows (working x3, idle, needs-you, stopped) show the brand mark for working and the unchanged icons for the other three; the 16px icon's vertical centre equals the row centre for every state (144/194/244 vs 294/344/394 pairs); `aria-hidden="true"`; three concurrent instances share one animation clock (computed delays -0.992s, -1.002s, -1.009s, all within 1.2s). NOT verified: the chat header and details card call sites (they use the same `StateIcon`), the sr-only "Working" announcement.
+- T005 (partly verified): only `opacity` is animated (`brand-spinner-arm-1/2/3` keyframes); arm opacity cycles 0.35 to 1.0 live; under `prefers-reduced-motion: reduce` every arm settles on the uniform 0.35 rest frame and the core stays at 1 (this found a bug, fixed in this branch: the base arm opacity was 1, so the animation's end reverted to the bright frame; the base is now 0.35); under emulated forced colors the arm fills compute to the system `CanvasText` colour. NOT verified: the real Windows "Animation effects" toggle, twenty-plus concurrent instances in the DevTools Performance panel, Dark vs Dark (high contrast) pixel comparison, a real Windows contrast theme.
+- T010: the dedicated Simplified set ships (four separated flat shapes at 16/20px, read clearly at 10x zoom). The side-by-side raster comparison against a scaled-down Full variant was NOT captured, so T010 stays unchecked.
+- T008: `animate-spin` now appears in 11 places, none in `StateIcon`: the seven sites from research.md decision 1 plus four added by spec 003 (`PullRequestDetail` twice, `PullRequestList`, `PullRequestRow`). Unchecked until Stories 1 and 2 are run in one pass.
 
 ### Task-to-issue mapping
 
