@@ -62,7 +62,10 @@ never whatever is newest. The GitHub CLI's own sign-in (`gh auth login`) and OMP
 unattended without an administrator prompt, and whether OMP's pinned-version install script
 installs a version `omp --version` immediately reports as supported (gates T001, T002). If a
 dependency's own installer needs elevation, Windows itself may still prompt for it; Refract
-itself never requests administrator rights.
+itself never requests administrator rights. Also unverified: after a successful install, probing
+each tool's own known fixed install path (the same approach OMP's install already used) correctly
+finds Git/the GitHub CLI without a restart, or falls back to an "Installed. Restart Refract to
+finish." state when it does not (gate T002).
 
 ## Checking for updates
 
@@ -76,7 +79,12 @@ error.
 
 **Unverified**: whether `gh release download`/`gh release view` actually work against this
 private repository's releases while signed in, and whether `gh auth status` reliably
-distinguishes not-installed, signed-out, and offline (gate T005).
+distinguishes not-installed, signed-out, and offline (gate T005). Also unverified: whether the
+install-on-quit helper's own hand-off -- a short-lived process inside Refract's kill-on-close Job
+Object that creates the real wait-then-install process through WMI, specifically so it survives
+Refract's exit instead of being killed with the rest of the process tree
+(`docs/spike/FINDINGS.md` item 12) -- actually installs the new version on a real quit
+(gates T004, T011).
 
 ## Uninstalling
 
@@ -111,6 +119,8 @@ Refract keeps no state in the repo. Everything is under Electron's `userData` di
 | `registry.json` | Every Repository and Session Refract knows about (`src/main/store/registry.ts`). |
 | `settings.json` | The single app-wide Settings row, currently just Approval mode (`src/main/store/settings.ts`). |
 | `processes.json` | pids of live `omp` root processes, used to detect and reap orphans left by a crash (`src/main/process/pidRecords.ts`). |
+| `updateState.json` | The in-progress/last-known update state (notified, downloading, downloaded, installing, failed), `src/main/store/updateState.ts`. |
+| `updates/` | A verified update's downloaded installer and its `.sha256` checksum file (`src/main/update/UpdateInstaller.ts`); removed once it installs successfully. |
 
 A Session's worktree lives next to the Repository it belongs to, not under `userData`: `<repo>/../pinion-worktrees/<repoName>/<name>` (`src/main/git/worktrees.ts`; the folder also keeps the former name).
 
