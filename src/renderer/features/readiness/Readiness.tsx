@@ -65,7 +65,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
         </div>
       </div>
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-card-foreground">
-        <h1 className="text-base font-medium">Get Refract ready</h1>
+        <h1 tabIndex={-1} data-readiness-root className="text-base font-medium outline-none">Get Refract ready</h1>
         <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
         <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-3">
           {CHECK_ORDER.map((key) => (
@@ -73,7 +73,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
           ))}
         </ul>
         <div className="mt-5 flex items-center gap-2">
-          <AddRepositoryDialog trigger={<Button disabled={!allPass} className="flex-1" aria-disabled={!allPass}>Add repository</Button>} />
+          <AddRepositoryDialog trigger={<Button data-readiness-primary disabled={!allPass} className="flex-1" aria-disabled={!allPass}>Add repository</Button>} />
           <Button variant="outline" onClick={() => void runCheck()} disabled={checking}>
             {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
             Re-check

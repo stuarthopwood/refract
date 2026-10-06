@@ -95,7 +95,17 @@ export function registerSessions(manager: SessionManager): void {
         lastActivityAt: now,
         archivedAt: null,
       };
-      await manager.registry.addSession(session);
+      try {
+        await manager.registry.addSession(session);
+      } catch (err) {
+        // Security remediation (Medium): `addSession` can now fail with `not-found` when the
+        // Repository was removed while `listBranches`/`generateName`/`addWorktree` above were
+        // still in flight -- without this, the worktree/branch just created above would be
+        // stranded (orphaned, no Session pointing at them). Reuses the same removal helper
+        // `sessions.delete` already uses, rather than a second cleanup path.
+        await removeWorktree(repository.path, worktreePath, branch, { deleteBranch: true }).catch(() => undefined);
+        return mapStoreThrown(err);
+      }
       manager.notifyListChanged();
       return { ok: true, value: session };
     } catch (err) {

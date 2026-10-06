@@ -54,6 +54,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe.
 | A2e | #492 | Bug: Subagents (Agents) panel content does not wrap and has no padding (Radix `ScrollArea` table child, truncating tool rows, `p-2` vs `px-3`). Do it in a way #490 carries over | todo | none; before C2c | `SubagentPanel.tsx`, `ScrollArea` wrapper, `CollapsedLine.tsx` |
 | A3 | #387 | Guard: odd-indent scan script plus fix the 4 damaged files on `main`; report the write-path tool upstream | todo | none (human part) | `SessionDetailsCard.tsx`, `sessionDisplay.tsx`, `useWorktreeActions.ts`, `modelDisplay.ts`, new script |
 | A4 | #480 | Rename a repository's display name (persisted) | todo | A1 | `SessionList.tsx`, `repositories.ts`, `registry.ts` |
+| A5 | #488 | Remove a repository from the session list, blocked while it owns Sessions (spec 001 FR-059, T107 to T109) | verify (PR #493 open, not merged; it changes the shared destructive Button and focus ring app-wide, Stuart to approve) | A1 | `SessionList.tsx`, `RemoveRepositoryDialog.tsx`, `repositories.ts`, `registry.ts`, `focus.ts`, `Readiness.tsx`, `button.tsx` |
 
 ### Phase B: decisions and probes (can run in parallel with A, no code collisions)
 
