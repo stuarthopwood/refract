@@ -39,8 +39,18 @@ export function isAtScrollEnd(metrics: ViewportMetrics, tolerance: number = SCRO
 /** The `scrollTop` to land a (re)applied Session/Conversation view on (issue #485): the end when
  * there is no memory yet (a never-visited Session, or a Session whose Conversation just changed,
  * `useChatScrollStore`'s `clear`) or the memory says the developer left at the end, otherwise the
- * exact offset they left at. */
-export function resolveLandingScrollTop(memory: SessionScrollState | undefined, scrollHeight: number): number {
-  if (!memory || memory.atEnd) return scrollHeight
-  return memory.scrollTop
+ * exact offset they left at. Clamped to `scrollHeight - clientHeight` (never negative) -- the
+ * same clamp the browser itself applies to `scrollTop` -- so the caller's own "did my last
+ * assignment stick" check can actually compare like with like (quality-gate cycle 2, finding 1):
+ * an unclamped "land at end" target of plain `scrollHeight` can never equal the browser-clamped
+ * `viewport.scrollTop` read back afterwards, so every at-end landing silently spent its entire
+ * settle budget fighting a gap that was never there. */
+export function resolveLandingScrollTop(
+  memory: SessionScrollState | undefined,
+  scrollHeight: number,
+  clientHeight: number
+): number {
+  const maxScrollTop = Math.max(0, scrollHeight - clientHeight)
+  if (!memory || memory.atEnd) return maxScrollTop
+  return Math.min(memory.scrollTop, maxScrollTop)
 }

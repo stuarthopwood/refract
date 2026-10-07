@@ -422,7 +422,18 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // tick a still-settling `content-visibility:auto` row fires, fighting (and eventually beating)
   // the landing effect's own re-assertion below. Disabling its `autoScroll` prop for this window
   // makes every one of its own corrective scrolls a no-op regardless of which mode it thinks it
-  // is in, without touching its internal state at all.
+  // is in, without touching its internal state at all. Gate-fix (quality-gate cycle 2, finding
+  // 2): the vendored scroller's internal mode, once flipped to "following-bottom" (which only
+  // happens while `autoScroll` is true), stays "following-bottom" until a real upward user
+  // scroll clears it -- the function that clears it on demand is only ever handed to the
+  // vendored `MessageScrollerViewport`'s own wheel/touch/key listeners through its internal
+  // context, never exposed to application code. So turning `autoScroll` back on right after a
+  // DETACHED (not-at-end) restore settles would let a still-sticky "following-bottom" mode
+  // immediately re-scroll to the end on its own next render. The landing effect below therefore
+  // only clears this suppression once the settled target is actually at the end; while detached
+  // it stays suppressed (so the vendored scroller's mode can never even become "following-bottom"
+  // in the first place) until a real scroll (`handleViewportScroll` below) brings the developer
+  // back to the end themselves.
   const [autoScrollSuppressed, setAutoScrollSuppressed] = React.useState(false)
 
   // Raised synchronously during render -- strictly before this render's DOM commit -- so a
@@ -430,30 +441,34 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // still being promoted (the race described above) can never land while the guard still reads
   // the OLD key's value and get misrecorded against the NEW `sessionId`. A passive OR layout
   // effect both run too late to beat a clamp that happens as part of the commit itself. Reset to
-  // `false` only by the landing effect below (its terminal branch or its cleanup), never again
-  // here, so a real scroll event once landing has finished is never swallowed.
-  const landingKeyRef = React.useRef<string | null>(null)
+  // `false` only by the landing effect below (its terminal branch, its early-user-input stop, or
+  // its cleanup), never again here, so a real scroll event once landing has finished is never
+  // swallowed. Tracks the previous `landingKey` with the documented "adjusting state during
+  // render" pattern (a `useState` compared and updated in the render body) rather than reading
+  // and writing a plain ref mid-render (quality-gate cycle 2, finding 3).
   const landingKey = `${sessionId}:${transcript.generation}`
-  if (landingKeyRef.current !== landingKey) {
-    landingKeyRef.current = landingKey
+  const [prevLandingKey, setPrevLandingKey] = React.useState(landingKey)
+  if (prevLandingKey !== landingKey) {
+    setPrevLandingKey(landingKey)
     landingInProgressRef.current = true
     if (!autoScrollSuppressed) setAutoScrollSuppressed(true)
   }
 
   // Continuously records this Session's scroll position while the viewport is visible, so
   // whatever was last recorded is exactly where the developer left it (no separate "on leaving"
-  // handler needed).
+  // handler needed). Also the only place that lifts a persisted detached-restore suppression (see
+  // `autoScrollSuppressed` above): once the developer scrolls back to the end themselves, the
+  // vendored scroller's own follow-the-bottom behaviour is safe to re-enable.
   function handleViewportScroll(event: React.UIEvent<HTMLDivElement>) {
     if (landingInProgressRef.current) return
     const viewport = event.currentTarget
-    useChatScrollStore.getState().record(sessionId, {
-      atEnd: isAtScrollEnd({
-        scrollTop: viewport.scrollTop,
-        scrollHeight: viewport.scrollHeight,
-        clientHeight: viewport.clientHeight
-      }),
-      scrollTop: viewport.scrollTop
+    const atEnd = isAtScrollEnd({
+      scrollTop: viewport.scrollTop,
+      scrollHeight: viewport.scrollHeight,
+      clientHeight: viewport.clientHeight
     })
+    useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
+    if (atEnd && autoScrollSuppressed) setAutoScrollSuppressed(false)
   }
 
   // Lands the viewport at the end, or restores the remembered detached position, whenever this
@@ -472,11 +487,22 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // PREVIOUS frame's own assignment actually stuck (`viewport.scrollTop` still reads what was
   // last written) and resets the counter if not, the same as a genuine height change would.
   // Bounded by `SCROLL_LANDING_MAX_FRAMES` so a layout that never truly settles cannot poll
-  // forever. `useLayoutEffect` (not `useEffect`) so the first re-assertion lands before paint,
-  // in the same commit as the DOM update.
+  // forever. `useLayoutEffect` (not `useEffect`) so the first re-assertion lands before paint, in
+  // the same commit as the DOM update. Gate-fix (quality-gate cycle 2, finding 1):
+  // `resolveLandingScrollTop` now clamps its result to `scrollHeight - clientHeight`, matching
+  // the clamp the browser itself applies to `scrollTop` -- an unclamped "land at end" target
+  // could never equal the browser-clamped `viewport.scrollTop` read back afterwards, so
+  // `notPerturbed` was never true and every at-end landing silently spent all
+  // `SCROLL_LANDING_MAX_FRAMES` fighting a gap that was never there. The loop now also stops the
+  // instant it sees real user input on the viewport (wheel, keydown, pointerdown, touchstart): a
+  // developer taking over mid-settle must not keep fighting the loop's own re-assertion.
   React.useLayoutEffect(() => {
     const viewport = viewportRef.current
-    if (!viewport) return
+    if (!viewport) {
+      landingInProgressRef.current = false
+      setAutoScrollSuppressed(false)
+      return
+    }
     landingInProgressRef.current = true
     let cancelled = false
     let frame = 0
@@ -484,21 +510,55 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     let lastHeight = -1
     let lastAssignedScrollTop = -1
 
+    function removeInputListeners() {
+      if (!viewport) return
+      viewport.removeEventListener('wheel', handleUserInput)
+      viewport.removeEventListener('keydown', handleUserInput)
+      viewport.removeEventListener('pointerdown', handleUserInput)
+      viewport.removeEventListener('touchstart', handleUserInput)
+    }
+
+    // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
+    // over mid-settle: stop re-asserting, clear both flags (so the normal scroll handler and the
+    // vendored scroller's own `autoScroll` resume immediately), and record wherever they are now.
+    function handleUserInput() {
+      if (cancelled || !viewport) return
+      cancelled = true
+      removeInputListeners()
+      useChatScrollStore.getState().record(sessionId, {
+        atEnd: isAtScrollEnd({
+          scrollTop: viewport.scrollTop,
+          scrollHeight: viewport.scrollHeight,
+          clientHeight: viewport.clientHeight
+        }),
+        scrollTop: viewport.scrollTop
+      })
+      landingInProgressRef.current = false
+      setAutoScrollSuppressed(false)
+    }
+
+    viewport.addEventListener('wheel', handleUserInput, { passive: true })
+    viewport.addEventListener('keydown', handleUserInput, { passive: true })
+    viewport.addEventListener('pointerdown', handleUserInput, { passive: true })
+    viewport.addEventListener('touchstart', handleUserInput, { passive: true })
+
     function step() {
       if (cancelled || !viewport) return
-      const { scrollHeight } = viewport
+      const { scrollHeight, clientHeight } = viewport
       const heightStable = scrollHeight === lastHeight
       const notPerturbed = lastAssignedScrollTop === -1 || viewport.scrollTop === lastAssignedScrollTop
       stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
       lastHeight = scrollHeight
       frame += 1
       const memory = useChatScrollStore.getState().bySession[sessionId]
-      const target = resolveLandingScrollTop(memory, scrollHeight)
+      const target = resolveLandingScrollTop(memory, scrollHeight, clientHeight)
       viewport.scrollTop = target
       lastAssignedScrollTop = target
       if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
+        cancelled = true
+        removeInputListeners()
         landingInProgressRef.current = false
-        setAutoScrollSuppressed(false)
+        setAutoScrollSuppressed(memory !== undefined && !memory.atEnd)
         return
       }
       requestAnimationFrame(step)
@@ -507,6 +567,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     requestAnimationFrame(step)
     return () => {
       cancelled = true
+      removeInputListeners()
       landingInProgressRef.current = false
     }
   }, [sessionId, transcript.generation])
