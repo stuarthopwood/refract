@@ -94,16 +94,25 @@ function askAnswer(item: AskToolItem): string {
  * heading of medium weight, with the rest rendered as the body; a single-line question has no
  * separate heading, only a body. Splits on the raw text's own newline, not on markdown block
  * boundaries -- the agent's question is plain multi-line text, and the markdown renderer turns
- * each half into its own blocks independently. */
-function splitQuestionHeading(text: string): { heading: string | null; body: string } {
+ * each half into its own blocks independently. A first line that is itself the start of a
+ * markdown block (a fence, a list/blockquote marker, a table row, or an ATX heading) is never
+ * promoted to a heading (quality gate, a11y round 3, issue #491 finding 3): splitting there would
+ * produce a bogus heading and, for a fence, an unclosed code block in the remaining body. */
+export function splitQuestionHeading(text: string): { heading: string | null; body: string } {
   const normalized = text.replace(/\r\n/g, '\n')
   const newlineIndex = normalized.indexOf('\n')
   if (newlineIndex === -1) return { heading: null, body: normalized }
   const heading = normalized.slice(0, newlineIndex).trim()
   const body = normalized.slice(newlineIndex + 1).replace(/^\n+/, '')
-  if (!heading || !body) return { heading: null, body: normalized }
+  if (!heading || !body || MARKDOWN_BLOCK_START.test(heading)) return { heading: null, body: normalized }
   return { heading, body }
 }
+
+// A markdown fence (```/~~~), ATX heading (#), blockquote (>), table row (|), or list marker
+// (bullet or ordered) at the start of a line -- the shapes `splitQuestionHeading` must never cut
+// off as a bare heading string, since react-markdown then parses the remainder as a separate,
+// usually broken, block.
+const MARKDOWN_BLOCK_START = /^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/
 
 interface AskQuestionRowProps {
   item: AskToolItem
@@ -243,17 +252,35 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   // maximum-height scrolling region so a long question never pushes the options or Cancel off
   // screen (WCAG 1.4.10).
   const { heading, body } = splitQuestionHeading(request.title)
+  // Accessible name plumbing for the card (quality gate, a11y round 3, issue #491 findings 1-2):
+  // `CardTitle`/`CardContent` are plain `div`s with no implicit name or landmark role, so the
+  // card is wrapped in `role="group"` with `aria-labelledby` pointing at whichever element holds
+  // the question's visible name -- the heading wrapper when there is one, else the scrolling body
+  // region itself.
+  const headingTitleId = `${request.requestId}-ask-heading-title`
+  const bodyRegionId = `${request.requestId}-ask-question-region`
+  const groupLabelId = heading ? headingTitleId : bodyRegionId
 
   return (
-    <Card size="sm">
+    <Card size="sm" role="group" aria-labelledby={groupLabelId}>
       {heading && (
         <CardHeader>
-          <CardTitle>
+          <CardTitle id={headingTitleId}>
             <Markdown id={`${request.requestId}-ask-heading`} text={heading} />
           </CardTitle>
         </CardHeader>
       )}
-      <CardContent className="max-h-56 space-y-2 overflow-y-auto">
+      {/* `tabIndex`/`role="region"`/`aria-label` match the pattern `Markdown.tsx`'s `CodeBlock`
+       * uses for its own scrollable region (quality gate, a11y round 3, issue #491 finding 1):
+       * keyboard-reachable and named on its own, since nothing else in the card is otherwise
+       * focusable when the question overflows its max height. */}
+      <CardContent
+        id={bodyRegionId}
+        tabIndex={0}
+        role="region"
+        aria-label="Question"
+        className="max-h-56 space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
         <Markdown id={`${request.requestId}-ask-body`} text={body} />
         {request.message && (
           <Markdown id={`${request.requestId}-ask-message`} text={request.message} className="text-muted-foreground" />
@@ -281,11 +308,16 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                 className="h-auto w-full flex-col items-start gap-0 whitespace-normal py-1.5 text-left"
                 onClick={() => void answer({ value: option }, 'answered', option)}
               >
-                <span className="font-medium">{option}</span>
+                {/* `w-full`/`break-words`/`min-w-0` (#497): the button's `items-start` sizes each
+                 * flex-column child to its own content width (cross-axis `align-items: flex-start`
+                 * never stretches), so without `w-full` here `break-words` has no constrained box
+                 * to wrap inside and an unbreakable token (e.g. a long URL with no spaces) just
+                 * overflows the button -- live-verified at 380px before this line was added. */}
+                <span className="w-full min-w-0 break-words font-medium">{option}</span>
                 {/* `optionDetails` is a plain string (main converts OMP's `{description?}` objects
                  * before it reaches here) -- rendered as text, never as an object. */}
                 {request.optionDetails?.[index] && (
-                  <span className="font-normal text-muted-foreground">{request.optionDetails[index]}</span>
+                  <span className="w-full min-w-0 break-words font-normal text-muted-foreground">{request.optionDetails[index]}</span>
                 )}
               </Button>
             ))}
