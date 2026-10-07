@@ -231,7 +231,7 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   occupied the correlation map -- an already-settled summary's key is now recorded regardless of
   status, so a transcript row the data-layer defect keeps rebuilding as `running` is never
   re-seeded, and the merge back into `runtime.subagents` replaces by that SAME key, never by the
-  two sides' differently-schemed `id`. (2) "the last `user` transcript item" was the wrong turn
+  two sides' differently-schemed `id`. (2) **SUPERSEDED, gate fixes 3 below** -- "the last `user`
   boundary: a `steer` or a consumed `followUp` prompt becomes its own `user` item within the SAME
   turn (no fresh `agent_start`), so it could land after a still-running subagent's own row and
   scope it out of "the current turn" entirely, leaving its chat row spinning forever; the
@@ -247,6 +247,26 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   `reapStale()` fallback (run from `main/index.ts` at startup, before any Session attaches)
   actually killing that orphan first, not merely on the assumption that a fresh process can never
   share a registry.
+  **Gate fixes 3, 2026-10-07**: two more corrections. (1) Point (2) above is reverted: the turn
+  boundary is back to the plain "last `user` transcript item" rule, never "the last `subagent`
+  row, walking back to its preceding `user` item" -- that rule's own fix for the steer case
+  created a worse bug, confirmed live: with no `subagent` row of its own in a later plain turn,
+  walking back from an EARLIER turn's last `subagent` row could land on that earlier turn's own
+  preceding `user` item, re-seeding its already-finished subagents as "this turn's" subagents on
+  every subsequent restart/Recover/`openConversation` (`runtime.subagents` is empty on a fresh
+  instance and `agent_start` already clears it, so nothing else bounds the scope). Accepted,
+  documented limitation: if the user steers or sends a consumed `followUp` WHILE a subagent is
+  still running, that steer's own `user` item moves the boundary past the subagent's row and a
+  later restart/Recover does not restore its pill -- deliberately, since the alternative
+  reintroduces the worse bug just described. (2) A second Recover (or Recover then a mode-change
+  restart) with no new turn in between could still leave the chat-transcript row spinning
+  `running` forever even once its `SubagentSummary` had already settled: an already-settled
+  correlation key was skipped outright in the transcript scan, so it never reached
+  `transcriptSettling`, and `candidates.size === 0` returned before any settling ran. Fixed: an
+  already-settled key's still-`running` transcript row is now settled straight to that recorded
+  status instead of skipped, and the early return also checks for pending transcript settling.
+  Also, a resolved `exited` row no longer reports a `durationMs` at all (it was counting the
+  entire app-downtime window the crash and restart spanned, not the subagent's own runtime).
 - The clock and the turn timer tick frequently: neither is announced to assistive technology on
   every tick.
 - No readout's status is ever conveyed by color alone: the context window usage warning always

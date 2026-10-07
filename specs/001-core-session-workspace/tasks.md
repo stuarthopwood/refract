@@ -530,4 +530,42 @@ repeated as a third separate run); `openConversation()`'s own reconcile path (fi
 older-turn settling in isolation (finding 5, beyond what the finding-6 interaction above already
 exercised) were code-reviewed and typechecked, not separately driven live this pass.
 
+**Verified 2026-10-07 (gate fixes 3)**: a third gate-fix pass on the same branch, fixing two
+more Highs the review above raised, plus a medium. Code changes (`SessionAgent.ts`): (1) the
+turn boundary is REVERTED from gate fixes 2's "walk back from the transcript's last `subagent`
+row to ITS preceding `user` item" to the plain "last `user` item" rule -- that walk-back rule
+fixed the mid-subagent steer case but created a worse one: with no `subagent` row of its own in a
+later plain turn, it could land on an EARLIER turn's own preceding `user` item, re-seeding that
+earlier turn's already-finished subagents as "this turn's" on every later restart/Recover/
+`openConversation`. Accepted, documented limitation (spec 004 Edge Cases, `contracts/omp-usage.md`
+§f Finding 2 marked superseded): a steer sent while a subagent is still running now moves the
+boundary past that subagent's row, and a later restart/Recover does not restore its pill -- this
+is the one scenario gate fixes 2's walk-back rule had fixed and gate fixes 3 knowingly gives back.
+(2) a transcript row whose correlation key is already in `settledKeys` (an earlier reconcile
+already resolved it) is no longer skipped outright when `fromHistory` keeps rebuilding it as
+`running` -- it is now settled straight to that already-recorded summary's status, and the early
+return also checks for this pending settling, not only `candidates.size`. Before this fix, a
+SECOND Recover (or Recover then a mode-change restart) with no new turn in between left the
+chat-transcript row spinning `running` forever even once its `SubagentSummary` had already
+settled. (3) Medium: a resolved `exited` row no longer reports `durationMs` at all -- `now -
+startedAt` was counting the entire app-downtime window a crash and restart spanned (can be
+hours), not the subagent's own runtime. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
+all clean.
 
+Live end to end on a scratch Electron instance (isolated `--user-data-dir`, CDP port 9489, a real
+signed-in `omp` 18.8.0 agent, the real `omp.exe` pid read from the scratch instance's own
+`processes.json`, hard-killed only after confirming its command line and image name), three
+separate Sessions. **(1) proven**: one turn, batch `task()` with `Fast`/`Slow`; killed while
+`Slow` ran; Recover #1 settled both to `finished`/`exited` (transcript rows too); killed the NEW
+process AGAIN (no new turn/steer in between) and Recover #2 confirmed no transcript row anywhere
+read `status:'running'`, and `subagents` was still exactly `Fast` finished / `Slow` exited, never
+duplicated. **(2) proven**: turn 1 spawned and finished one subagent `Note`; turn 2 was a plain
+no-tool reply; killed and Recovered: `subagents` returned `[]` -- `Note` did not resurface despite
+still being the transcript's own last `subagent` row. **(3), the main scenario, confirmed still
+correct with no steer**: turn 1 settled, turn 2 spawned exactly one subagent `Worker`; killed
+while running; Recovered: exactly one subagent row, `status:'exited'`, no `durationMs`, matching
+chat-transcript row also `'exited'`. Full detail, including why each scenario needed its own
+preliminary settled turn first (to persist `currentConversation` before the crash) in
+`contracts/omp-usage.md` §g. **Not separately re-driven live this pass**: `openConversation()`'s
+own reconcile path and `settleStaleSubagentRows` in isolation were unchanged by this pass's edits
+and not re-exercised beyond what the three scenarios above already drove.

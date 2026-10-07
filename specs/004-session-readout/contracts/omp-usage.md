@@ -144,9 +144,11 @@ scratch git Repository/Session):
   (`taskkill /PID <pid> /T /F`) while it was confirmed running, then called `sessions.recover`
   on the SAME still-running Electron process. Result: exactly ONE `SubagentSummary` (no
   duplicate), `status: 'exited'`; the matching chat-transcript `subagent` row also settled to
-  `'exited'` (not left spinning); `readout.subagentCount` read `{ running: 1, finished: 0 }` in
-  the single synchronous `recover()` response itself (the 50 ms `READOUT_COALESCE_MS` debounce
-  had not yet fired) but corrected to `{ running: 0, finished: 1 }` on the very next read, matching
+  `'exited'` (not left spinning); `readout.subagentCount` read `{ running: 1, finished: 0,
+  exited: 0, failed: 0 }` in the single synchronous `recover()` response itself (the 50 ms
+  `READOUT_COALESCE_MS` debounce had not yet fired) but corrected to `{ running: 0, finished: 0,
+  exited: 1, failed: 0 }` on the very next read (the current 4-field shape -- corrected here,
+  not re-driven live), matching
   what the renderer's `onReadoutUpdate` subscription would show moments later -- this surfaced and
   fixed a real bug: `reconcileSubagentsOnAttach` never called `scheduleReadoutUpdate()`, so the
   cached `readout.subagentCount` stayed at its pre-crash value ("1 running") forever once nothing
@@ -181,7 +183,8 @@ Section (e)'s "this surfaced and fixed a real bug: `reconcileSubagentsOnAttach` 
 already `await syncFromState(...)` immediately afterward, which unconditionally calls
 `scheduleReadoutUpdate()` itself at its own tail; the explicit call inside reconcile was a true
 no-op duplicate (`scheduleReadoutUpdate` is itself a no-op while a timer is already pending) and
-has been removed. The stale `{ running: 1, finished: 0 }` in the synchronous response, correcting
+has been removed. The stale `{ running: 1, finished: 0, exited: 0, failed: 0 }` (current 4-field
+shape) in the synchronous response, correcting
 moments later, is simply the 50 ms `READOUT_COALESCE_MS` debounce -- real, reproduced again below,
 never a bug reconcile's own call could have fixed either way.
 
@@ -194,10 +197,16 @@ finishes in seconds) and "Slow" (`bash sleep`, still running when killed).
 - **Finding 3** (seed finished subagents too): `sessions.recover()` returned BOTH `Fast`
   (`status: 'finished'`, real `durationMs` untouched) and `Slow` (`status: 'exited'`) -- not only
   the one still running at kill time.
-- **Finding 2** (turn boundary): a `chat.sendNow` steer was sent while `Slow` was still running,
-  producing a `kind: 'user'` transcript item after `Slow`'s own row within the SAME turn; `Slow`
-  still appeared correctly in the very next `recover()` -- the old "last `user` item" boundary
-  would have scoped it out entirely.
+- **Finding 2** (turn boundary) -- **SUPERSEDED, gate fixes 3 (2026-10-07)**: this finding and the
+  "walk back from the last `subagent` row" rule it validated are reverted. That rule fixed this
+  steer case but created a worse one, confirmed live separately: with no `subagent` row of its
+  own in a later plain turn, walking back from an EARLIER turn's last `subagent` row could land
+  on that earlier turn's own preceding `user` item, re-seeding its already-finished subagents as
+  "this turn's" subagents on every later restart/Recover/`openConversation`. The turn boundary is
+  back to the plain "last `user` item" rule this finding originally reported as insufficient;
+  the steer case it exercised is now an accepted, documented limitation (spec.md Edge Cases,
+  gate fixes 3) instead of a fixed one: a steer sent while a subagent is still running moves the
+  boundary past that subagent's row, and a later restart/Recover does not restore its pill.
 - **Finding 1** (no duplicate on a second reconcile): two consecutive `sessions.recover()` calls
   on the SAME instance, no new turn in between, returned byte-identical `subagents` arrays (`Fast`/
   `Slow`, two entries both times).
@@ -220,3 +229,52 @@ finishes in seconds) and "Slow" (`bash sleep`, still running when killed).
 older-turn settling in `fromHistory` in isolation (finding 5, beyond what finding 6's own
 interaction above already exercised) were code-reviewed and typechecked, not separately driven
 live.
+
+### g. Gate fixes 3 live verification (2026-10-07, omp 18.8.0, scratch CDP instance, issue #489)
+
+Driven end to end via `window.refract.*` IPC on a scratch Electron instance (isolated
+`--user-data-dir`, CDP port 9489, a real signed-in `omp` 18.8.0 agent, the real `omp.exe` pid read
+from the scratch instance's own `processes.json`, hard-killed only after confirming its command
+line and image name). Three separate Sessions, one per scenario; each subagent-spawning turn
+first needed its OWN preliminary settled turn (a trivial no-tool reply) so `currentConversation`
+persisted to the registry before the crash -- without it `attachAndVerify` never calls
+`switch_session` and the next `launch()` silently starts a brand-new empty Conversation instead
+of reattaching, which would not exercise either fix.
+
+- **H1 (repeat-Recover row spins forever), finding 1 corrected**: one turn, one batch `task()`
+  call, two subagents -- `Fast` (`echo fast-done`) and `Slow` (`sleep 180`). Hard-killed the real
+  `omp.exe` while `Slow` was confirmed `running`. **Recover #1** (first real crash): returned
+  `Fast` `status:'finished'` and `Slow` `status:'exited'`, both matching chat-transcript rows
+  settled (`'done'`/`'exited'`, neither `'running'`). Hard-killed the NEW `omp.exe` `launch()`
+  spawned (a second real crash, no new turn/steer in between) and called **Recover #2**: the
+  transcript rows for both `Fast` and `Slow` stayed `'done'`/`'exited'` -- no transcript row
+  anywhere in the array had `status === 'running'` -- and `subagents` still read exactly `Fast`
+  finished / `Slow` exited, never duplicated. Before this fix, `Slow`'s already-settled
+  correlation key made the transcript scan `continue` outright, so `fromHistory`'s rebuilt
+  `'running'` row for it never reached `transcriptSettling`, and `candidates.size === 0` returned
+  before any settling ran -- the chat row would have spun `'running'` forever on this second
+  Recover. Confirmed fixed.
+- **H2(a) (earlier turn seeded as current turn), finding 2 reverted correctly**: turn 1, one
+  subagent `Note` (`echo note-done`), settled to `finished` before turn 2 started. Turn 2, a plain
+  no-tool reply ("done"), settled normally. Hard-killed the real `omp.exe`, then **Recover**:
+  `subagents` returned `[]` -- `Note` did NOT resurface as "this turn's" subagent, even though it
+  is still the transcript's own last `kind:'subagent'` row. With gate fixes 2's "walk back from
+  the last `subagent` row" rule still in place, `turnStartIndex` would have walked back from
+  `Note`'s row to ITS OWN preceding `user` item (turn 1's), re-seeding `Note` as current; the
+  reverted plain "last `user` item" rule anchors on turn 2's `user` item instead, correctly
+  scoping `Note` out. Confirmed fixed.
+- **H2(b) (crash-mid-subagent, no steer), the main scenario, confirmed still correct**: turn 1
+  settled, then turn 2 spawned exactly ONE subagent `Worker` (`sleep 180`). Hard-killed while
+  `Worker` was confirmed `running`, then **Recover**: `subagents` returned exactly one entry,
+  `Worker`, `status:'exited'`, with NO `durationMs` field at all (medium fix: an `exited` row's
+  real end time is never known, so `now - startedAt` would have counted the entire crash-to-
+  Recover downtime as "duration" -- confirmed this is no longer emitted). The matching
+  chat-transcript row also read `status:'exited'`. The chip's own `subagentCount` in the
+  synchronous `recover()` response read the stale pre-kill `{running:1,...}` (the known 50 ms
+  `READOUT_COALESCE_MS` debounce, unrelated to this fix), confirming the pill-producing data is
+  reachable.
+
+**Not separately re-driven live this pass**: `openConversation()`'s own reconcile path and
+`transcript.ts`'s `settleStaleSubagentRows` in isolation were not re-exercised beyond what the
+three scenarios above already drove through `reconcileSubagentsOnAttach`; they were unchanged by
+this pass's edits (code-reviewed only).
