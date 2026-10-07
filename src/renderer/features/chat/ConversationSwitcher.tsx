@@ -27,15 +27,21 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   async function handleNewConversation() {
     setCreating(true)
     setSwitching(true)
+    // Quality-gate remediation (round 2, 2026-10-07): clear BEFORE awaiting below (not after),
+    // matching `MessageInput.tsx`'s typed-`/new` fix -- main emits the reset patch synchronously
+    // before replying (`PatchCoalescer.reset`, SessionAgent), so clearing only after `await` risks
+    // the Transcript's landing effect already reading the stale pre-switch offset on first paint.
+    // Snapshot first so a failed switch can put back exactly what it removed (only if nothing
+    // newer has been recorded for this Session meanwhile).
+    const previousScroll = useChatScrollStore.getState().bySession[sessionId]
+    useChatScrollStore.getState().clear(sessionId)
     try {
       const result = await window.refract.conversations.startNew(sessionId)
       if (!result.ok) {
+        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
         notify(result.error)
         return
       }
-      // Issue #485: a Conversation switch always lands at the end, never reusing the
-      // Session's remembered scroll offset from a since-replaced Conversation's own content.
-      useChatScrollStore.getState().clear(sessionId)
       applySnapshot(sessionId, result.value)
     } finally {
       setCreating(false)
@@ -58,20 +64,23 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
 
   async function handleOpenConversation(file: string) {
     setSwitching(true)
+    // Issue #485: same as `handleNewConversation` above.
+    const previousScroll = useChatScrollStore.getState().bySession[sessionId]
+    useChatScrollStore.getState().clear(sessionId)
     try {
       const result = await window.refract.conversations.open(sessionId, file)
       if (!result.ok) {
+        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
         notify(result.error)
         return
       }
-      // Issue #485: same as `handleNewConversation` above.
-      useChatScrollStore.getState().clear(sessionId)
       applySnapshot(sessionId, result.value)
       setHistoryOpen(false)
     } finally {
       setSwitching(false)
     }
   }
+
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">

@@ -25,6 +25,15 @@ interface ScrollMemoryState {
    * developer and has its own content height, so it must land at the end like any other
    * never-visited view, not reuse an offset that applied to the Session's previous Conversation. */
   clear(sessionId: string): void
+  /** Quality-gate remediation (round 2, 2026-10-07): every `clear` call site below clears
+   * speculatively BEFORE its own async switch call resolves, so a landing effect racing the
+   * same event stream never reads a stale pre-switch offset (clearing only after `await`ing is
+   * too late -- main can emit the reset patch, and the Transcript can read the clear, before the
+   * renderer-side promise even settles). A switch that then FAILS must put back exactly what it
+   * removed, but only if nothing newer has been recorded for this Session in the meantime (e.g.
+   * the developer already scrolled the still-showing old Conversation, or landed on yet another
+   * switch); restoring unconditionally could clobber that newer entry with a stale one. */
+  restoreIfAbsent(sessionId: string, previous: SessionScrollState | undefined): void
 }
 
 export const useChatScrollStore = create<ScrollMemoryState>((set, get) => ({
@@ -35,5 +44,10 @@ export const useChatScrollStore = create<ScrollMemoryState>((set, get) => ({
     const bySession = { ...get().bySession }
     delete bySession[sessionId]
     set({ bySession })
+  },
+  restoreIfAbsent: (sessionId, previous) => {
+    if (!previous) return
+    if (sessionId in get().bySession) return
+    set({ bySession: { ...get().bySession, [sessionId]: previous } })
   }
 }))

@@ -342,6 +342,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const focusedAtStart = document.activeElement
     const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
     setStartingNewId(startingFor)
+    // Quality-gate remediation (round 2, 2026-10-07): clear BEFORE awaiting below (not after) --
+    // same fix as `ConversationSwitcher.tsx`'s `handleNewConversation`/`handleOpenConversation`
+    // and `MessageInput.tsx`'s typed-`/new`: main emits the reset patch synchronously before
+    // replying, so clearing only after `await` risks the Transcript's landing effect already
+    // reading the stale pre-switch offset. Snapshot first so a failed `startNew` can put back
+    // exactly what it removed (only if nothing newer has been recorded for this Session meanwhile).
+    const previousScroll = useChatScrollStore.getState().bySession[startingFor]
+    useChatScrollStore.getState().clear(startingFor)
     const result = await window.refract.conversations.startNew(startingFor)
     setStartingNewId(id => (id === startingFor ? null : id))
     // Quality-gate remediation: same fix as handleRecover above, plus round 3 (code-reviewer,
@@ -362,15 +370,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       focusPaneContent(chatPaneRef.current)
     }
     if (!result.ok) {
+      useChatScrollStore.getState().restoreIfAbsent(startingFor, previousScroll)
       notify(result.error)
       requestAnimationFrame(maybeRestoreFocus)
       return
     }
-    // Issue #485: same as ConversationSwitcher's handleNewConversation/handleOpenConversation --
-    // this is the stopped-Session banner's own "Start new conversation" path, a second way to
-    // call conversations.startNew; the new Conversation must land at the end, never reusing the
-    // Session's remembered scroll offset from the since-replaced Conversation's own content.
-    useChatScrollStore.getState().clear(startingFor)
     applySnapshot(startingFor, result.value)
     if (sessionIdRef.current === startingFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })

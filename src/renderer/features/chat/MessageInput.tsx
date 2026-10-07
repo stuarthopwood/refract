@@ -305,12 +305,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // `parsed.name === 'new' && parsed.rest === ''` recognition exactly (the only entry in
     // NATIVE_BUILT_COMMANDS with a working implementation) so the clear runs BEFORE the request
     // is even sent -- clearing only after awaiting the result below risks the reset patch having
-    // already landed and the Transcript's landing effect already reading the stale memory. A
-    // send that then fails (session no longer idle, agent not running) leaves this cleared with
-    // nothing to restore; MessageInput's own disabled state normally prevents reaching here at all
-    // while the Session is not idle.
+    // already landed and the Transcript's landing effect already reading the stale memory.
+    //
+    // Quality-gate remediation (round 2, 2026-10-07): `disabled` (`status === 'stopped' &&
+    // !notStarted`, see its definition above) does NOT cover every non-idle status -- a typed
+    // `/new` while `status === 'working'` reaches here perfectly able to send, then
+    // `SessionAgent.startNewConversation` rejects with `SessionNotIdleError` because a turn is
+    // still running. That failed send must not have silently thrown away the developer's restore
+    // point for whatever they were reading before typing `/new`: snapshot it first, and only put
+    // it back if `chat.send` fails below AND nothing newer has been recorded for this Session in
+    // the meantime (`restoreIfAbsent`).
     const slashInvocation = parseSlashCommand(message)
-    if (slashInvocation?.name === 'new' && slashInvocation.rest === '') {
+    const isNewConversationCommand = slashInvocation?.name === 'new' && slashInvocation.rest === ''
+    const previousScroll = isNewConversationCommand
+      ? useChatScrollStore.getState().bySession[sessionId]
+      : undefined
+    if (isNewConversationCommand) {
       useChatScrollStore.getState().clear(sessionId)
     }
     // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); a listed
@@ -320,6 +330,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // below this `if` runs until `chat.send` actually succeeds.
     const result = await window.refract.chat.send(sessionId, message, images)
     if (!result.ok) {
+      if (isNewConversationCommand) {
+        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
+      }
       notify(result.error)
       return
     }
