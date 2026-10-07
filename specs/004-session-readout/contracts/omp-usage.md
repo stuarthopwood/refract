@@ -173,3 +173,50 @@ scratch git Repository/Session):
 restart shows no phantom 'finished'" scenario (spec.md Edge Cases, finding 2(c)) was designed and
 code-reviewed (current/last-turn scoping by the last `kind: 'user'` transcript item) but not
 exercised against a real scratch instance; say so rather than claim it was.
+
+### f. Gate fixes 2 live verification (2026-10-07, omp 18.8.0, scratch CDP instance, issue #489)
+
+Section (e)'s "this surfaced and fixed a real bug: `reconcileSubagentsOnAttach` never called
+`scheduleReadoutUpdate()`" claim is **retracted**: both call sites (`launch()`, `openConversation()`)
+already `await syncFromState(...)` immediately afterward, which unconditionally calls
+`scheduleReadoutUpdate()` itself at its own tail; the explicit call inside reconcile was a true
+no-op duplicate (`scheduleReadoutUpdate` is itself a no-op while a timer is already pending) and
+has been removed. The stale `{ running: 1, finished: 0 }` in the synchronous response, correcting
+moments later, is simply the 50 ms `READOUT_COALESCE_MS` debounce -- real, reproduced again below,
+never a bug reconcile's own call could have fixed either way.
+
+Driven end to end via `window.refract.*` IPC on a scratch Electron instance (isolated
+`--user-data-dir`, CDP port 9489, a real signed-in `omp` 18.8.0 agent, the real `omp.exe` pid read
+from the scratch instance's own `processes.json`, hard-killed only after confirming its command
+line): a real turn, one batch `task()` call, two parallel subagents -- "Fast" (reads a fixed file,
+finishes in seconds) and "Slow" (`bash sleep`, still running when killed).
+
+- **Finding 3** (seed finished subagents too): `sessions.recover()` returned BOTH `Fast`
+  (`status: 'finished'`, real `durationMs` untouched) and `Slow` (`status: 'exited'`) -- not only
+  the one still running at kill time.
+- **Finding 2** (turn boundary): a `chat.sendNow` steer was sent while `Slow` was still running,
+  producing a `kind: 'user'` transcript item after `Slow`'s own row within the SAME turn; `Slow`
+  still appeared correctly in the very next `recover()` -- the old "last `user` item" boundary
+  would have scoped it out entirely.
+- **Finding 1** (no duplicate on a second reconcile): two consecutive `sessions.recover()` calls
+  on the SAME instance, no new turn in between, returned byte-identical `subagents` arrays (`Fast`/
+  `Slow`, two entries both times).
+- **Finding 6** (notice renders): clicking the real session row, the real Subagents chip, then the
+  real `Slow` row in the real `#subagent-panel` rendered "Agent exited / Info: / No live output:
+  this subagent had already exited when Refract reattached." -- confirmed via `panel.innerText`
+  and a screenshot. This live pass caught two bugs before it worked: (a) `subagentStreams` can
+  already hold an EMPTY array for a subagent id the instant the batch `task()` call starts,
+  blocking the placeholder-if-missing guard from ever firing (`.has()` fixed to check `.length`);
+  (b) a row `transcript.ts`'s own finding-5 fix had already settled to `'exited'` on a fresh
+  instance's first `fromHistory` build was then skipped by an over-eager `reconcileSubagentsOnAttach`
+  guard instead of still being seeded as a resolved candidate (fixed by accepting an already-`exited`
+  transcript row into the candidate set rather than treating it as already handled).
+- **Finding 8 confirmed, not re-"fixed"**: the chip's `subagentCount` in the synchronous `recover()`
+  response itself stayed at the pre-kill value, correcting about a second later (confirmed via the
+  real chip's own accessible name, "Open subagents panel (1 finished, 1 exited)") -- the debounce
+  disclosed above, nothing more.
+
+**Not re-driven live this pass**: `openConversation()`'s own reconcile call (finding 4) and the
+older-turn settling in `fromHistory` in isolation (finding 5, beyond what finding 6's own
+interaction above already exercised) were code-reviewed and typechecked, not separately driven
+live.

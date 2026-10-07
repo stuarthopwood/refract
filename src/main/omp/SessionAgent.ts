@@ -1426,7 +1426,7 @@ export class SessionAgent extends EventEmitter {
       startedAt: number;
       startedAtKnown: boolean;
       transcriptId?: string;
-      finalStatus: 'running' | 'done' | 'error';
+      finalStatus: 'running' | 'done' | 'error' | 'exited';
     }
     const now = Date.now();
 
@@ -1449,10 +1449,15 @@ export class SessionAgent extends EventEmitter {
         finalStatus: 'running',
       });
     }
-    // Gate fixes 2 finding 3: see the doc comment above.
+    // Gate fixes 2 finding 3: see the doc comment above. Live verification found this must also
+    // accept a row transcript.ts's own `settleStaleSubagentRows` (finding 5) already settled to
+    // `'exited'` on THIS brand-new instance's very first `fromHistory` build: a true app restart
+    // never has a `runtime.subagents` entry for it at all, so skipping an already-`'exited'` item
+    // here (as an earlier draft did, reasoning it must already be in `settledKeys`) silently
+    // dropped it from the panel/chip entirely instead of seeding it as a resolved candidate.
     for (let i = turnStartIndex + 1; i < transcript.length; i++) {
       const item = transcript[i]!;
-      if (item.kind !== 'subagent' || item.status === 'exited') continue;
+      if (item.kind !== 'subagent') continue;
       const key = `${item.toolCallId}:${item.specIndex}`;
       if (settledKeys.has(key)) continue;
       const existing = candidates.get(key);
@@ -1491,8 +1496,15 @@ export class SessionAgent extends EventEmitter {
     // `tool_execution_update` this run) never had a `subagentStreams` entry; selecting it in the
     // panel must never throw not-found, so give it an explanatory placeholder instead of leaving
     // it missing -- worded for whichever real status it actually settled to, not always "exited".
+    // Gate fixes 2 finding 6 (live verification, 2026-10-07): an id CAN already have an entry
+    // that is itself empty -- a batch `task()` call seeds `[]` for every subagent id the instant
+    // it starts (`applyToolExecutionStart`), before any progress frame ever arrives for one that
+    // crashed before producing output -- so `.has()` alone missed exactly the orphaned-candidate
+    // case this placeholder exists for (caught live: `chat.subagentSnapshot` returned `[]`,
+    // `#subagent-panel` showed the row list with nothing below it, no explanation). An empty
+    // existing entry is therefore treated the same as a missing one.
     for (const summary of resolved) {
-      if (!this.subagentStreams.has(summary.id)) {
+      if ((this.subagentStreams.get(summary.id) ?? []).length === 0) {
         const verb = summary.status === 'finished' ? 'finished' : summary.status === 'failed' ? 'failed' : 'exited';
         this.subagentStreams.set(summary.id, [
           {

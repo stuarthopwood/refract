@@ -480,3 +480,54 @@ kill, but the subsequent `wait` call that would block for the real result was no
 then mode-change restart shows no phantom finished" scoping check (edge case, finding 2(c)) --
 designed and code-reviewed, not exercised against a real instance; say so rather than claim it.
 
+**Verified 2026-10-07 (gate fixes 2)**: supersedes the "gate fixes" entries above where they
+conflict. Findings 1-11 addressed (`SessionAgent.ts`'s `reconcileSubagentsOnAttach` redesigned
+again: EVERY `runtime.subagents` status -- not only `running` -- occupies the correlation key so
+a second reconcile with no new turn in between never re-seeds a duplicate; turn-boundary scope
+anchored on the transcript's own last `subagent` row walking back to ITS preceding `user` item,
+never simply "the last `user` item", so a steer mid-subagent never scopes a still-running row
+out of the current turn; a subagent that finished or failed before the crash is seeded too, with
+its real recorded status; `openConversation()` now reconciles too; `transcript.ts`'s `fromHistory`
+settles a stale `running` row from an OLDER turn to `exited`; `SubagentPanel.tsx` renders
+`kind:'notice'` stream items via `NoticeRow`; `SessionReadout.subagentCount` splits
+finished/exited/failed into separate counts, worded distinctly by `SubagentsChip`; the redundant
+`scheduleReadoutUpdate()` call removed from `reconcileSubagentsOnAttach` and the false "caught and
+fixed a real bug" claim corrected; unused `GetSubagentsCommand`/`GetSubagentsResponseData` removed
+from `frames.ts`; `model.ts`'s "confirmed gone" wording narrowed to cite `jobObject.ts`/
+`pidRecords.ts`'s `reapStale()` as what actually guarantees it across a real app crash;
+`get-subagents-probe.mjs` now asserts its main finding and has an honest header; PLAN.md row A2c's
+files column lists every touched file. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
+(0 leaks/371 files) all clean.
+
+Live end to end on a scratch Electron instance (isolated `--user-data-dir`, CDP port 9489, a
+scratch git repository, a real signed-in `omp` 18.8.0 agent, driven via `window.refract.*` IPC
+calls, the real `omp.exe` pid read from the scratch instance's own `processes.json` and hard-killed
+only after confirming its command line): a real turn with a batch `task()` call spawning two
+parallel subagents, "Fast" (reads a fixed file, finishes in seconds) and "Slow" (`sleep`, still
+running when killed). **Finding 3** (seed finished subagents too): the live `recover()` response
+showed BOTH `Fast` (`status: 'finished'`, its real `durationMs` untouched) AND `Slow`
+(`status: 'exited'`) -- not only the one still running. **Finding 2** (turn boundary): a
+`chat.sendNow` steer was sent while `Slow` was still running, creating a `user` transcript item
+after `Slow`'s own row within the same turn; `Slow` still correctly appeared in the very next
+`recover()`, proving the boundary is no longer "the last `user` item" (which would have scoped it
+out). **Finding 1** (no duplicate on a second reconcile): two consecutive `sessions.recover()`
+calls on the SAME instance, no new turn in between, returned byte-identical `subagents` arrays --
+`Fast`/`Slow`, two entries both times, never three or four. **Finding 6** (notice renders): after
+fixing two bugs this pass surfaced live (an existing-but-empty `subagentStreams` entry, seeded the
+instant the batch `task()` call starts, blocked the placeholder from ever being added; and a row
+`transcript.ts`'s own finding-5 fix had already settled to `'exited'` on a fresh instance's first
+`fromHistory` build was then skipped by an over-eager guard in `reconcileSubagentsOnAttach` instead
+of still being seeded as a resolved candidate), clicking the real session row, the real Subagents
+chip, then the real `Slow` row in the real `#subagent-panel` rendered: "Fast / Finished / Slow /
+Agent exited / Info: / No live output: this subagent had already exited when Refract reattached."
+-- confirmed both via the rendered DOM (`panel.innerText`) and a screenshot. **Finding 8**: the
+chip's `subagentCount` in the synchronous `recover()` response itself stayed at the pre-kill value
+(`running: 1`) and only corrected (`finished: 1, exited: 1`, confirmed via the real chip's
+accessible name) about a second later -- the debounce is real, as documented; no further
+"caught and fixed" claim is made. **Not re-driven live this pass**: the steer scenario's own
+`recover()` call was the same call already covering finding 3's two-subagent case above (not
+repeated as a third separate run); `openConversation()`'s own reconcile path (finding 4) and the
+older-turn settling in isolation (finding 5, beyond what the finding-6 interaction above already
+exercised) were code-reviewed and typechecked, not separately driven live this pass.
+
+
