@@ -2,7 +2,7 @@
 
 The ordered work queue for Refract. It exists so one question gets a reliable answer: **what is next?**
 
-- Last updated: 2026-10-06 (after the 2026-10-06 backlog session, issues #443 to #510).
+- Last updated: 2026-10-07 (after the backlog session, issues #443 to #512).
 - Source of truth for scope is the GitHub issue. This file holds the **order**, **dependencies** and **status**. Do not copy issue text here.
 - `main` was at `f01e862` when this was last refreshed.
 
@@ -47,6 +47,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe. 
 | # | Issue | Work | Status | Needs | Files touched |
 |---|---|---|---|---|---|
 | A0 | #510 | **P1: long-running Sessions crash and resume badly** (findings from the 5.8-day, 48 MB OMP session with 7 exits, 6 SIGHUP, 4 manual "resume"s). Build in this order: (1) **detect unexpected termination from the tail of the Conversation `.jsonl`** (`session_exit` record with `reason` and `pendingToolCalls`, tool starts without results, a trailing `aborted` entry; no whole-file read); (2) show "Terminated unexpectedly" on the row and banner, and feed #509's Resume button with a default instruction ("resume") and `goal resume`; (3) render unmatched tool calls as **interrupted**, not running (same family as #489); (4) load big histories with `get_messages_page` plus "Load earlier" instead of the monolithic `get_messages`; (5) re-baseline `lastMessageCount` after compaction (links #449, #506); (6) stalled-tool state with elapsed time and Abort. Use the analysed file (copied outside the repo) as a fixture | **next** | none; the probe in B2 for `session_exit` stability on 18.4.x and 18.5.x runs alongside | `src/main/omp/transcript.ts`, `SessionAgent.ts`, `reattachVerification.ts`, `ChatPane.tsx`, `SessionList.tsx`, `src/main/store/registry.ts`, new tail parser |
+| A0b | #512 | **Resume fails with "ready frame not seen within 60s" on a busy machine.** Replace the fixed 60 s kill with a staged wait ("Starting agent… N s", Keep waiting or Cancel, ceiling around 180 s), show the tail of that pid's OMP log in the failure details, retry cleanly, then start agents one or two at a time, defer under low memory, stop idle agents, and probe a `--config` overlay to trim launch cost. Found 2026-10-07: free RAM 539 MB of 15.8 GB, 12 omp processes (2.1 GB), a scheduled extraction job spawning `omp -p` every minute, 17-hour-old agents | todo; a daily-driving blocker, do right after A0's first slice (the staged wait and the log tail are small) | none; probe the overlay on 18.4.x and 18.5.x | `src/main/omp/OmpProcess.ts`, `SessionAgent.ts`, `src/main/memory.ts`, `ChatPane.tsx`, Settings |
 | A1 | #447 | Add repository from the session list after first-run | done (PR #486) | none | `SessionList.tsx`, `AddRepositoryDialog.tsx` |
 | A2 | #449 (+#70) | Reattach verification: a lower message count must not strand a Session; add recovery actions to the `start-failed` banner | todo | none | `src/main/omp/reattachVerification.ts`, `SessionAgent.ts`, `ChatPane.tsx` |
 | A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
@@ -198,6 +199,8 @@ Also: `SessionList.tsx` (`SessionRow` trailing area), `ChatPane.tsx` (stop banne
 
 Also: `src/main/omp/transcript.ts`, `SessionAgent.ts` (`get_messages` at lines 355 and 699), `switchRecovery.ts` and a new tail parser for #510, alongside A2, A2c and A2g: **do #510 and #509 as one change set with #449**, one agent on these files at a time.
 
+Also: `src/main/omp/OmpProcess.ts` (`READY_TIMEOUT_MS`, `buildStartFailure`), `SessionAgent.ts` (start and recover, shared with A0, A2, A2c, A2g) and `src/main/memory.ts` for #512: one agent on these files at a time, after or together with A0.
+
 ## Index of issues filed 2026-10-06
 
 #443 emoji, #444 ask options and tabs, #445 spell suggestions, #446 multi-select loop, #447 add repository, #448 border under window controls, #449 reattach, #450 Settings icon, #452 Dark retune, #453 collapsible left pane, #454 session model, #455 role to model, #456 markdown tokens, #457 thinking and tool toggles, #458 tokenise everything, #459 autoscroll, #460 versioning, #463 explorer, #464 git panel, #465 @ mentions, #466 copy, #467 scroll to your message, #468 scroll to top, #469 tool icons, #470 editing, #471 context menus, #472 conversation list, #473 Ask spacing, #474 design system, #475 advisor, #476 auto-cleanup, #477 pause, #478 Jira, #479 goal mode, #480 rename repository, #482 session status style. Amended: #1 side chat, #3 terminal, #4 fonts, #8, #391 Agent Builder (now `p1`), #392 FDB Knowledge (now `p1`), #393 shell and placeholders (now `p1`), #445, #455.
@@ -227,3 +230,5 @@ Also filed 2026-10-06: #507 session list, agents button with a subagent count on
 Also filed 2026-10-06: #509 session list, Resume button on Sessions terminated unexpectedly that restarts the agent and sends a resume instruction (row A2g, after #449 and #489). No button for normal stopped Sessions.
 
 Also filed 2026-10-06: #510 P1 (`p1`), crash and resume resilience for long-running Sessions, from a read-only analysis of the 5.8-day OMP session `01a0f428-1c1f` (row A0, top of the plan). #509 (A2g) becomes its second step.
+
+Also filed 2026-10-07: #512 bug, resume fails with "ready frame not seen within 60s" when the machine is busy (row A0b, right after A0). Evidence is from the process list, OMP's own per-process logs and the registry; the Session's data was fine.
