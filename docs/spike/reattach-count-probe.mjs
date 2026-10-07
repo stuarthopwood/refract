@@ -22,8 +22,9 @@
 // the scratch copy stay under the OS temp dir, whose path is printed at the end. Quality-gate
 // remediation (gate cycle 2, #449, PROJECT RULE): this scratch dir is now left on disk on
 // purpose and never deleted by this script -- AGENTS.md forbids `fs.rm`/`fs.rmSync` on a target
-// built from a variable (ROOT here is a fresh `Date().toISOString()` path every run). Delete it
-// by hand once you're done with it; the printed path is always the literal one to pass.
+// built from a variable (ROOT here is an `fs.mkdtempSync` directory, private and randomly
+// suffixed, not a predictable `Date().toISOString()` path). Delete it by hand once you're done
+// with it; the printed path is always the literal one to pass.
 
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,8 +49,9 @@ if (!fs.existsSync(CWD)) {
   process.exit(2);
 }
 
-const ROOT = path.join(os.tmpdir(), 'pinion-reattach-count-probe', new Date().toISOString().replace(/[:.]/g, '-'));
-const SESSION_DIR = path.join(ROOT, 'sessions');
+let ROOT;
+let rootCreated = false;
+let SESSION_DIR;
 
 let buf = Buffer.alloc(0);
 const frames = [];
@@ -75,14 +77,20 @@ async function req(cmd) {
 let exitCode = 0;
 
 try {
-  // Quality-gate remediation (gate cycle 2, #449): the `omp --version` check and the transcript
-  // copy both used to run ahead of this `try`, outside the probe's one error-handling path, so a
-  // missing `omp` binary or an unreadable/unwritable source file exited through their own ad hoc
-  // branches (or, for the copy, an uncaught exception) instead of the probe's normal "exit
-  // non-zero with a message" contract. Both now run first here, before the scratch dir is even
-  // created, so a failure never leaves a half-built SESSION_DIR behind either.
+  // Quality-gate remediation (gate cycle 2, #449): the `omp --version` check used to run ahead
+  // of this `try`, outside the probe's one error-handling path, so a missing `omp` binary
+  // exited through an ad hoc branch instead of the probe's normal "exit non-zero with a
+  // message" contract. It now runs first here, before the scratch dir exists at all, so a
+  // failed version check never creates one. The scratch dir itself (round 3, security-auditor
+  // Low: now a private `fs.mkdtempSync` directory, not a predictable timestamp path) is still
+  // created immediately before the transcript copy that follows it, not before the version
+  // check -- a failure in the copy itself can still leave an empty session dir behind; see
+  // `rootCreated` in the `finally` block below for why that case is still reported honestly.
   const ompVersion = execFileSync(OMP, ['--version'], { encoding: 'utf8' }).trim();
 
+  ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'pinion-reattach-count-probe-'));
+  rootCreated = true;
+  SESSION_DIR = path.join(ROOT, 'sessions');
   fs.mkdirSync(SESSION_DIR, { recursive: true });
   const copy = path.join(SESSION_DIR, path.basename(SRC));
   fs.copyFileSync(SRC, copy);
@@ -178,9 +186,12 @@ try {
     try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* already exited */ }
   }
   // Quality-gate remediation (gate cycle 2, #449, PROJECT RULE): no `fs.rmSync` here anymore --
-  // ROOT is a variable (dynamic timestamp) target, which AGENTS.md forbids passing to a
-  // recursive delete. The scratch dir (and its one-file session copy) is left on disk; delete it
-  // by hand once you're done inspecting it.
-  console.log(`\nscratch dir left on disk (not deleted -- delete manually when done): ${ROOT}`);
+  // ROOT is a variable target, which AGENTS.md forbids passing to a recursive delete. Only
+  // reported when `rootCreated` is true -- `fs.mkdtempSync` above is itself inside the `try`, so
+  // a probe that fails before that call (the version check, or `mkdtempSync` itself failing on
+  // an unwritable temp dir) never creates ROOT at all, and must not claim it left one on disk.
+  if (rootCreated) {
+    console.log(`\nscratch dir left on disk (not deleted -- delete manually when done): ${ROOT}`);
+  }
 }
 process.exit(exitCode);
