@@ -21,6 +21,17 @@ field whose bottom bar shows the mode, model, and agent.
   (opens a right side panel pane, shows list of agents - click to open and view stream). PR Number
   (click opens PR view). Current Time as well.
 
+### Session 2026-10-06
+
+- Q: #492 reported the subagent panel's stream content does not wrap (long paths and paragraphs
+  clip at the right edge) and its padding is inconsistent (header `px-3`, list and stream `p-2`)
+  — fix only this panel, or fix the shared cause so the future Agents panel (#490) inherits it?
+  -> A: Fix the shared cause: the `ScrollArea` wrapper's Radix viewport child (an internal
+  `display: table` div that sizes to its widest row instead of the viewport's own width) gets the
+  override once, and `CollapsedLine`'s tool-row summary gets an opt-in wrap so the chat's own rows
+  stay one-line while the narrower subagent panel wraps. Padding on the stream is aligned to
+  `px-3`/`py-2` to match the header and subagent list.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -134,6 +145,10 @@ one and confirm its live stream shows, then close the panel and confirm the chat
    panel updates to show its finished state without closing on its own.
 4. **Given** the subagent panel is open, **When** the developer closes it, **Then** it closes and
    the chat pane is exactly as it was before the panel opened.
+5. **Given** a subagent's stream includes a long file path, a long paragraph, or a long unbroken
+   string as a tool call's argument or in text, **When** the developer views the panel at its
+   narrowest supported width, **Then** the content wraps within the panel instead of clipping,
+   and the panel does not grow wider than its own column.
 
 ---
 
@@ -156,6 +171,13 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   and never hides or overlaps the message box.
 - A pull request lookup fails, or GitHub access is unavailable: the chip is simply not shown; no
   error toast appears.
+- The subagent panel's stream contains a tool call target or paragraph longer than the panel is
+  wide: it wraps across lines (or, for a tool row's summary, breaks within the available width)
+  instead of being clipped with an ellipsis or pushing the panel wider; a code block or diff still
+  scrolls horizontally inside its own box.
+- Many rows are shown in the subagent panel at once: the panel's own vertical scroll still works,
+  and every row keeps the same horizontal padding as the header, with no row touching the panel's
+  left or right edge.
 - The subagent panel is open on a subagent that then ends: the panel stays open and reflects the
   new state instead of closing itself.
 - The clock and the turn timer tick frequently: neither is announced to assistive technology on
@@ -229,6 +251,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   be readable by assistive technology as one phrase (for example "Todo: 2 of 5 tasks done"). It
   replaces the chat's own task-list rows, which are hidden (spec 001 FR-052), so the agent's plan
   progress stays visible.
+- **FR-022**: The subagent panel's content (stream text, paragraphs, tool call summaries) MUST
+  wrap within the panel's own width at every panel width Refract supports, MUST NOT clip text or
+  grow the panel wider to fit it, and MUST use the same horizontal padding on the subagent list and
+  stream as the panel's header; a code block or diff MAY still scroll horizontally inside its own
+  box.
 
 ### Key Entities
 

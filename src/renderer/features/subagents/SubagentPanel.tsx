@@ -58,7 +58,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
         </Button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
-        <ul className="flex shrink-0 flex-col gap-0.5 border-b p-2" aria-label="Current turn's subagents">
+        <ul className="flex shrink-0 flex-col gap-0.5 border-b px-3 py-2" aria-label="Current turn's subagents">
           {subagents.map((subagent) => (
             <li key={subagent.id}>
               <button

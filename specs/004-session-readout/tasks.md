@@ -266,3 +266,74 @@ its fix live entirely in renderer store logic); scratch userData dir left on dis
   order; judged unlikely/lower-value, not worth the complexity this round.
 
 `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all pass clean (0 leaks) after this round.
+
+## Phase 33: Convergence
+
+- [X] T126 [US3] Fix the Subagents panel's wrap and padding at the shared cause (issue #492):
+  Radix `ScrollArea`'s own `Viewport` wraps `children` in an internal
+  `<div style={{ minWidth: '100%', display: 'table' }}>` (measuring natural content width for
+  its scrollbar math), which forces that div to its widest row instead of the viewport's own
+  width -- long tool-call targets and paragraphs never wrap, the panel grows sideways, and the
+  overflow clips. `src/renderer/components/ui/scroll-area.tsx`'s `Viewport` gets
+  `[&>div]:!block [&>div]:!min-w-0` so every `ScrollArea` consumer (this panel's stream,
+  `SessionList.tsx`'s repository list) inherits the fix instead of each panel re-fighting
+  Radix's internal markup; `CollapsedLine.tsx` gains an opt-in `summaryWrap` prop (chat's own
+  rows stay one-line/truncated; the narrower Subagents panel wraps instead), threaded through
+  `ToolGroupRow`/`ToolCallRow` (`ToolRow.tsx`) so the panel's tool rows wrap.
+  `SubagentPanel.tsx`'s stream container and its subagent-list `<ul>` both move from `p-2` to
+  `px-3 py-2`, matching the header's existing `px-3`, so no row's padding differs from the
+  header's (FR-022, edge cases). (#492)
+- [X] T127 [US3] Update the docs and verify live: `specs/004-session-readout/spec.md`
+  (Clarifications, User Story 3's acceptance scenario 5, two Edge Cases, FR-022) and
+  `docs/DESIGN.md` ("Subagent panel" entry); then on a scratch `electron-vite dev` instance with
+  CDP attached (no real repository/OMP agent needed -- the bug and its fix live entirely in
+  shared renderer components, the same route spec 004's T012/T014 and spec 010's T002 already
+  used), seeded through the dev-only `window.__refractStores` hook with three fake subagents
+  (running/finished/failed) and a stream holding a long file path, a 120-character unbroken
+  token, and a long paragraph: at the Subagents panel's own column width dragged to 319px and to
+  484px (inside the 320-480px range this task targets), every row wrapped within the panel with
+  no horizontal scrollbar and no panel growth, the header/list/stream padding was visually even,
+  and a keyboard-focused tool row's focus ring (`outline: 2px solid`, `outline-offset: 2px`,
+  confirmed via `getComputedStyle`) rendered fully inside the panel's own padding, not clipped by
+  the panel's `overflow-hidden` wrapper. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
+  (0 leaks across 371 files) all clean.
+
+**Verified 2026-10-07**: T126 built on `fix/492-agents-panel-wrap`
+(`9dccb56` plus a same-branch follow-up aligning the subagent list's own padding, which the
+original commit had left at `p-2` while only the stream container moved to `px-3 py-2`).
+`pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` (0 leaks across 371 files) all clean.
+Live-verified in an isolated scratch `electron-vite dev` instance (own
+`--user-data-dir=C:/tmp/refract-492-verify/userdata`, CDP on `--remoteDebuggingPort 9492`,
+confirmed by its own main pid's `CommandLine` pointing at this worktree and that scratch
+user-data-dir, distinct from Stuart's live `C:\Repos\personal\pinion` instance) -- no real
+repository or OMP agent was driven; a fake repository and three fake `SubagentSummary` rows
+(running/finished/failed) were seeded via `window.__refractStores.repositories`/`readout`, and a
+fake stream (a long nested file path, a `bash` call echoing a 120-character unbroken token, and
+a long paragraph ending in that same token) via `window.__refractStores.subagentPanel`, then the
+panel was opened the same way the real Subagents chip does
+(`subagentPanel.getState().openPanel(sessionId)`). OS-level window screenshots proved unreliable
+for this background/unfocused scratch window (stale/cached frames that did not reflect a live
+resize); `Page.captureScreenshot` with `fromSurface: true` over the same CDP connection gave an
+accurate frame every time and is what every screenshot below came from. Dragged the real
+"Resize subagents panel" separator (a trusted `Input.dispatchMouseEvent` drag, not a prop
+change) to measure the panel's own column at 319px and at 484px: at both widths the long path
+wrapped across several lines, the 120-character token wrapped mid-token (`break-words`) instead
+of forcing a horizontal scrollbar, the paragraph wrapped normally, and the header/list/stream
+each read with the same horizontal inset -- confirmed by comparing `getBoundingClientRect()` on
+the header's text, a list row's text, and the stream's text against the panel's own edges.
+Tabbed (real `Input.dispatchKeyEvent` Tab, not `.focus()`) to the `read` tool row's
+`CollapsedLine` trigger at the 319px width: `getComputedStyle` confirmed
+`outline: 2px solid`/`outline-offset: 2px`/`matches(':focus-visible') === true`, and the
+captured screenshot showed the ring drawn completely inside the panel's own `px-3` padding, not
+touching or clipped by the panel's `overflow-hidden` outer wrapper. Clicking the panel's own
+**Close** button (`aria-label="Close subagents panel"`) unmounted the panel content
+(`subagentPanel.getState().open === false`, `#subagent-panel` absent from the DOM) per FR-019.
+Not independently driven this round: a real OMP agent actually producing a long tool call or a
+120-character token live (the stream rendering path itself -- `groupToolItems`, `ToolGroupRow`,
+`Markdown` -- is unchanged by this fix and already covered by T016/T018's own live verification);
+the subagent list row names were only ever short strings in this round's fake data, so their own
+`truncate` (unchanged, out of FR-022's scope -- the issue and FR-022 both target the panel's
+*stream*, not the list's name/task column) was not re-exercised narrow. The scratch Electron
+instance (main pid confirmed via `CommandLine` before kill) was closed with a targeted
+`taskkill /PID` (no `/IM`, no force) and its scratch `userdata`/log directory removed afterward
+from a `cwd` outside both the scratch parent and this worktree.
