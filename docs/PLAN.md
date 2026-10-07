@@ -77,7 +77,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe. 
 | # | Issue | Work | Status | Needs |
 |---|---|---|---|---|
 | C1 | #393 + #394 | Right panel shell: icon rail, tab strip, window-controls corner, **plus the FDB Knowledge and Agent Builder placeholder panes** (`p1`, demo-critical, "will sell the prototype to the bosses"). Head start: stash commit `b12a884` ("side-panel placeholder WIP"); also `9053ad5` ("394 a11y WIP"). Cite them by hash, not `stash@{n}`, because stash indices move | todo | A done (touches `App.tsx`); B1 for icons; Stuart's call on demo content (strict empty states vs a labelled "Sample data" toggle) |
-| C2 | #1 + #516 | **Side chat (`/btw`)** as the first pane. **Proposal (#516, needs Stuart's approval and a constitution II change):** build it on OMP's native `btw` RPC (`btw`, `btw_cancel`, `get_btw_history`, `btw_delta` and `btw_record` frames, OMP 18.6.3) instead of the bundled `runEphemeralTurn` extension; this raises the minimum supported OMP version to 18.6.3 | todo | C1, B2 (btw in rpc-ui probe, item 14), Stuart's call on #516 |
+| C2 | #1 + #516 | **Side chat (`/btw`)** as the first pane, built on OMP's **native `btw` RPC** (`btw`, `btw_cancel`, `get_btw_history`, `btw_delta` and `btw_record` frames, OMP 18.6.3), not the bundled `runEphemeralTurn` extension. **Decided by Stuart, 2026-10-07**; constitution II is amended to name the RPC and the minimum supported OMP version becomes 18.6.3 (both done at implementation time) | todo | C1, B2 (btw in rpc-ui probe, item 14) |
 | C2c | #490 | **Agents panel**: persistent right side bar tab, **always available and closed by default**, all agents grouped by Session (Session status as the group header, subagents as rows), Cancel and Steer actions. Replaces the click-the-pill-only Subagent panel and folds in #10. Builds on A2c's `get_subagents` seed | todo | C1, A2c, A2e, B2 (`get_subagents`, `cancel_subagent`, `steer_subagent` on 18.4.x and 18.5.x) |
 | C2d | #507 | **Agents button with a subagent count on each Session row**, opening the Agents panel on that Session. Needs a per-Session `subagents` count on `SessionSummary` and a coalesced `session:list-changed`, which is the first piece of #490's cross-Session tracker (build them together or right after) | todo | C2c (#490 panel and tracker), A2c (#489 seed after resume); serialise on `SessionList.tsx` with A4, #453, #472, #440, #503, #504 |
 | C2a | #392 | **FDB Knowledge**: real integration with FDB's AI knowledge base (`p1`). Routes: its MCP for agents, Refract as MCP client, REST API, OMP host tools (`set_host_tools`) | blocked | C1, FDB discovery (does it have an MCP, an API, auth, data governance), B2 host-tool probe |
@@ -164,6 +164,7 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 - Default Dark theme lightening: **somewhere between** x1.15 and +0.15, background about `#1a1a1a` to `#1e1e1e`, chosen by eye. Divider strength reading still open.
 - Scroll to top: **top of the conversation**. Scroll to your message: **the prompt this response answers**.
 - #474 is top priority. #447 comes first for daily driving. Right-panel build order, **confirmed by Stuart**: shell and FDB placeholders first (C1), then the side chat (C2), then the Agents panel (C2c).
+- **Side chat: native `btw` RPC only** (Stuart, 2026-10-07). The bundled extension is dropped, constitution II is amended, and the **minimum supported OMP version is 18.6.3** (18.4.x and 18.5.x support ends). The probe (item 14) still runs before building.
 - Conversation titles: derive from the first message now, rename later (#440).
 - The two FDB panels are named **FDB Knowledge** and **Agent Builder**. Both are **important and demo-critical** ("what is really going to sell this prototype to my bosses"): #391, #392 and #393 are `p1`. Placeholders (#393) first, real integrations after discovery.
 - Session status style (#482): **colour-coded icons by default**, with a Settings option for **dots** and a preview of both.
@@ -181,7 +182,7 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 7. #392 and #391: integration route, once the FDB owners say what exists (MCP, API, host tools).
 8. #482: what happens to the brand spinner (a third style, moved elsewhere, or tinted), and the non-colour cue for dots.
 9. #489: what exactly he saw after the crash (Refract or omp crashed, was a process left running). Free text, so not in `ask`: he replies when convenient.
-10. #516 side chat on native `btw`: approve the constitution II change and raising the minimum supported OMP version to 18.6.3, or keep the extension. #517: restored queued messages replace or append to the composer text. #521: show only the usage-limit readout, or also a Slow toggle (and Fast mode).
+10. #517: restored queued messages replace or append to the composer text. #521: show only the usage-limit readout, or also a Slow toggle (and Fast mode). (#516 decided 2026-10-07: native `btw`, minimum OMP 18.6.3.)
 
 ## File collisions (one agent per file at a time)
 
