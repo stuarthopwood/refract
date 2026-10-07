@@ -37,8 +37,10 @@ export interface Session {
    * instances, as `${toolCallId}:${specIndex}` keys -- the SAME correlation key
    * `SessionAgent.reconcileSubagentsOnAttach` and `transcript.ts`'s `settleStaleSubagentRows` use
    * to match a `SubagentSummary` to its chat-transcript `kind: 'subagent'` row. Written by
-   * `SessionAgent.handleTaskStart` the instant a `task` call starts (durably, before any crash
-   * can lose it), cleared at the next `agent_start` -- the SAME boundary that clears the
+   * `SessionAgent.handleTaskStart` as soon as a `task` call starts (queued at once and landing
+   * atomically within milliseconds; it can be lost only if the Electron main process itself dies
+   * in that window, or the write fails and is logged), cleared at the next `agent_start` -- the
+   * SAME boundary that clears the
    * in-memory `runtime.subagents` array, never by a steer or a consumed `followUp` inside the
    * same OMP run (steering never fires `agent_start`; a consumed `followUp` can only ever be
    * promoted after the prior turn, including its subagents, already fully settled). Replaces the
