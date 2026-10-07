@@ -64,7 +64,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
         </Button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
-        <ul className="flex shrink-0 flex-col gap-0.5 border-b p-2" aria-label="Current turn's subagents">
+        <ul className="flex shrink-0 flex-col gap-0.5 border-b px-3 py-2" aria-label="Current turn's subagents">
           {subagents.map((subagent) => (
             <li key={subagent.id}>
               <button
@@ -77,7 +77,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                 )}
               >
                 <SubagentStateIcon status={subagent.status} />
-                <span className="min-w-0 flex-1 truncate">{subagent.nameOrTask}</span>
+                <span className="min-w-0 flex-1 truncate" title={subagent.nameOrTask}>{subagent.nameOrTask}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">{STATE_LABEL[subagent.status]}</span>
               </button>
             </li>
@@ -85,11 +85,11 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
           {subagents.length === 0 && <li className="px-2 py-1.5 text-sm text-muted-foreground">No subagents this turn.</li>}
         </ul>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-2 p-2">
+          <div className="flex flex-col gap-2 px-3 py-2">
             {selectedId === null && <p className="px-1 py-2 text-sm text-muted-foreground">Select a subagent to see its live stream.</p>}
             {grouped.map((item) =>
               isToolGroup(item) ? (
-                <ToolGroupRow key={item.id} group={item} />
+                <ToolGroupRow key={item.id} group={item} summaryWrap />
               ) : item.kind === 'assistant-text' ? (
                 <Markdown key={item.id} id={item.id} text={item.text} streaming={item.streaming} />
               ) : null

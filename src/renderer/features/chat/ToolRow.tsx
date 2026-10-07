@@ -140,16 +140,19 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
 
 interface ToolCallRowProps {
   item: ToolItem
+  /** Forwarded to the nested `CollapsedLine`'s `summaryWrap` (see `ToolGroupRowProps`). */
+  summaryWrap?: boolean
 }
 
 // One compact row per tool call, used only for each call nested inside an expanded multi-call
 // group (never at the top-level tree position `ToolGroupRow` itself occupies).
-function ToolCallRow({ item }: ToolCallRowProps) {
+function ToolCallRow({ item, summaryWrap }: ToolCallRowProps) {
   return (
     <CollapsedLine
       icon={<StatusIcon status={item.status} />}
       label={item.tool}
       summary={item.target}
+      summaryWrap={summaryWrap}
       meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
     >
       <ToolCallBody item={item} />
@@ -159,6 +162,9 @@ function ToolCallRow({ item }: ToolCallRowProps) {
 
 interface ToolGroupRowProps {
   group: ToolGroup
+  /** Opt-in (#492, spec 004 FR-022): the Subagents panel's narrower column wraps a long target
+   * instead of truncating it, where the main transcript's own wider rows stay one-line. */
+  summaryWrap?: boolean
 }
 
 // A collapsed run of consecutive calls to the same tool (T074, docs/DESIGN.md "Chat"). Always
@@ -175,7 +181,7 @@ interface ToolGroupRowProps {
 // any call runs, else failed when any call failed; the summary is the last call's target plus
 // "+ N others" (", N failed" appended, text not colour, when any failed), and only the *children*
 // of this one `CollapsedLine` -- never its own presence or type -- switch to the per-call list.
-export function ToolGroupRow({ group }: ToolGroupRowProps) {
+export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
   const status: RowStatus = group.items.some((item) => item.status === 'running') ? 'running' : failedCount > 0 ? 'error' : 'done'
@@ -188,13 +194,13 @@ export function ToolGroupRow({ group }: ToolGroupRowProps) {
   const meta = solo && last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
 
   return (
-    <CollapsedLine icon={<StatusIcon status={status} />} label={label} summary={summary} meta={meta}>
+    <CollapsedLine icon={<StatusIcon status={status} />} label={label} summary={summary} summaryWrap={summaryWrap} meta={meta}>
       {solo ? (
         <ToolCallBody item={last} />
       ) : (
         <div className="space-y-1">
           {group.items.map((item) => (
-            <ToolCallRow key={item.id} item={item} />
+            <ToolCallRow key={item.id} item={item} summaryWrap={summaryWrap} />
           ))}
         </div>
       )}
