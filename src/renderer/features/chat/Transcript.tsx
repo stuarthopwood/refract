@@ -519,22 +519,26 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     }
 
     // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
-    // over mid-settle: stop re-asserting, clear both flags (so the normal scroll handler and the
-    // vendored scroller's own `autoScroll` resume immediately), and record wherever they are now.
+    // over mid-settle: stop re-asserting, clear the in-progress flag (so the normal scroll
+    // handler resumes recording immediately), and record wherever they are now. `autoScroll`
+    // only resumes if that position is actually at the end -- a live check (quality-gate cycle
+    // 2, finding 1 re-verification) found that unconditionally clearing it here let the vendored
+    // scroller's own `autoScroll` re-engage while a still-unsettled `content-visibility:auto`
+    // row above was mid-collapse, overwriting a genuine upward wheel scroll caught very early in
+    // the settle window; the same "only unsuppress once actually at the end" rule the normal
+    // completion branch below already follows avoids that regression here too.
     function handleUserInput() {
       if (cancelled || !viewport) return
       cancelled = true
       removeInputListeners()
-      useChatScrollStore.getState().record(sessionId, {
-        atEnd: isAtScrollEnd({
-          scrollTop: viewport.scrollTop,
-          scrollHeight: viewport.scrollHeight,
-          clientHeight: viewport.clientHeight
-        }),
-        scrollTop: viewport.scrollTop
+      const atEnd = isAtScrollEnd({
+        scrollTop: viewport.scrollTop,
+        scrollHeight: viewport.scrollHeight,
+        clientHeight: viewport.clientHeight
       })
+      useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
       landingInProgressRef.current = false
-      setAutoScrollSuppressed(false)
+      setAutoScrollSuppressed(!atEnd)
     }
 
     viewport.addEventListener('wheel', handleUserInput, { passive: true })
