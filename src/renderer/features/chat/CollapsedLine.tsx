@@ -17,6 +17,10 @@ export interface CollapsedLineProps {
   meta?: React.ReactNode
   /** Overrides the summary's default `text-muted-foreground` (e.g. a notice tinted by level). */
   summaryClassName?: string
+  /** Lets the summary wrap across lines instead of truncating with an ellipsis (#492): opt-in,
+   * because the chat's own rows are deliberately one-line, but a narrow side panel (the
+   * Subagents panel) needs a long path or paragraph visible instead of losing its useful tail. */
+  summaryWrap?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   defaultOpen?: boolean
@@ -37,6 +41,7 @@ export function CollapsedLine({
   summary,
   meta,
   summaryClassName,
+  summaryWrap,
   open,
   onOpenChange,
   defaultOpen,
@@ -53,7 +58,13 @@ export function CollapsedLine({
     <>
       <span className="flex size-3.5 shrink-0 items-center justify-center">{icon}</span>
       {label !== undefined && <span className="shrink-0 font-medium">{label}</span>}
-      {summary !== undefined && <span className={cn('min-w-0 flex-1 truncate', summaryClassName ?? 'text-muted-foreground')}>{summary}</span>}
+      {summary !== undefined && (
+        <span
+          className={cn('min-w-0 flex-1', summaryWrap ? 'break-words whitespace-normal' : 'truncate', summaryClassName ?? 'text-muted-foreground')}
+        >
+          {summary}
+        </span>
+      )}
       {meta !== undefined && <span className="shrink-0 text-xs text-muted-foreground">{meta}</span>}
     </>
   )

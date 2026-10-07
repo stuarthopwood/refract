@@ -373,9 +373,9 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
     <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
         <div className="group flex items-center gap-1 px-1">
-          <CollapsibleTrigger className="group/trigger flex flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <CollapsibleTrigger className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
-            <span className="truncate">{repository.name}</span>
+            <span className="truncate" title={repository.name}>{repository.name}</span>
           </CollapsibleTrigger>
           <Tooltip>
             <TooltipTrigger asChild>
