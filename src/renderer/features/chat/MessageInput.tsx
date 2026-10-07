@@ -322,13 +322,29 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       : undefined
     if (isNewConversationCommand) {
       useChatScrollStore.getState().clear(sessionId)
+      // Quality-gate finding (code review, High): the ONLY one of the four call sites whose
+      // reset reaches the renderer via an ordinary `transcript:patch` (SessionAgent's own event
+      // stream) rather than a `SessionSnapshot` this call site applies itself -- a second
+      // `clear()` right before `applySnapshot` (the other three sites' pattern) has no
+      // equivalent moment here, so the store-level `inFlight` flag (see `scroll-store.ts`) is
+      // the only fix available: blocks `record()` for this Session until `chat.send` below
+      // settles, success or failure, so a scroll on the still-visible OLD Conversation during
+      // the await can never write a detached position the new (empty) Conversation inherits.
+      useChatScrollStore.getState().setInFlight(sessionId, true)
     }
     // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); a listed
     // command given unverified arguments gets `unsupported-arguments` instead (issue #129); notify
     // below shows either as a toast, same as any other IPC error. FR-019: a failed send (whether
     // image-related or not) leaves the draft and every pending attachment untouched -- nothing
     // below this `if` runs until `chat.send` actually succeeds.
-    const result = await window.refract.chat.send(sessionId, message, images)
+    let result
+    try {
+      result = await window.refract.chat.send(sessionId, message, images)
+    } finally {
+      if (isNewConversationCommand) {
+        useChatScrollStore.getState().setInFlight(sessionId, false)
+      }
+    }
     if (!result.ok) {
       if (isNewConversationCommand) {
         useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)

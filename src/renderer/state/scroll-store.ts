@@ -19,19 +19,31 @@ export interface SessionScrollState {
 
 interface ScrollMemoryState {
   bySession: Record<string, SessionScrollState>
+  /** Quality-gate finding (code review, High): per-session flag set by a switch-triggering call
+   * site the instant it clears this Session's memory, BEFORE its own IPC/`chat.send` call --
+   * `record` below becomes a no-op for this session while set, so a scroll on the still-visible
+   * OLD Conversation during the in-flight window can never write a detached position back into
+   * this store for the Session that the brand-new Conversation would otherwise inherit. Replaces
+   * the previous "clear a SECOND time, right before applying the snapshot" pattern for the three
+   * call sites that apply a returned `SessionSnapshot` themselves (still kept as defense-in-depth
+   * below) -- and is the ONLY fix available to `MessageInput.tsx`'s typed `/new`, whose reset
+   * reaches the renderer as an ordinary `transcript:patch` on the same event stream its own
+   * `chat.send` call races against, never as a snapshot that call site could clear-then-apply
+   * itself. Always released in the caller's own `finally`, success or failure. */
+  inFlight: Record<string, boolean>
+  setInFlight(sessionId: string, value: boolean): void
   record(sessionId: string, state: SessionScrollState): void
-  /** Finding 7 (gate fixes 4): called speculatively BEFORE each of the four call sites' own
-   * switch-triggering IPC call -- `ChatPane.tsx`'s `handleStartNewConversation`,
-   * `ConversationSwitcher.tsx`'s `handleNewConversation`/`handleOpenConversation`, and
-   * `MessageInput.tsx`'s typed `/new` -- never from `applySnapshot` itself (corrected from the
-   * prior, inaccurate doc here). The newly-shown Conversation has never been "left" by the
-   * developer and has its own content height, so it must land at the end like any other
-   * never-visited view, not reuse an offset that applied to the Session's previous Conversation;
-   * clearing BEFORE (not after) awaiting avoids a landing effect racing the same event stream
-   * from reading a stale pre-switch offset (gate fixes 2). Three of those four call sites also
-   * clear a SECOND time, right before applying a successful switch's snapshot (finding 4, gate
-   * fixes 4): a scroll made on the still-visible OLD Conversation during the await would
-   * otherwise leave a detached position here that the brand-new Conversation wrongly inherits. */
+  /** Called speculatively BEFORE each of the four call sites' own switch-triggering IPC call --
+   * `ChatPane.tsx`'s `handleStartNewConversation`, `ConversationSwitcher.tsx`'s
+   * `handleNewConversation`/`handleOpenConversation`, and `MessageInput.tsx`'s typed `/new`. The
+   * newly-shown Conversation has never been "left" by the developer and has its own content
+   * height, so it must land at the end like any other never-visited view, not reuse an offset
+   * that applied to the Session's previous Conversation; clearing BEFORE (not after) awaiting
+   * avoids a landing effect racing the same event stream from reading a stale pre-switch offset
+   * (gate fixes 2). Three of those four call sites also clear a SECOND time, right before
+   * applying a successful switch's snapshot (finding 4, gate fixes 4) -- now redundant with
+   * `inFlight` above (which already prevents any write during the await) but kept as
+   * defense-in-depth against a future call site that forgets to set it. */
   clear(sessionId: string): void
   /** Called on a FAILED switch to put back exactly what the matching `clear()` call above
    * removed, but only if nothing newer has been recorded for this Session in the meantime (e.g.
@@ -45,7 +57,17 @@ interface ScrollMemoryState {
 
 export const useChatScrollStore = create<ScrollMemoryState>((set, get) => ({
   bySession: {},
-  record: (sessionId, state) => set({ bySession: { ...get().bySession, [sessionId]: state } }),
+  inFlight: {},
+  setInFlight: (sessionId, value) => {
+    const inFlight = { ...get().inFlight }
+    if (value) inFlight[sessionId] = true
+    else delete inFlight[sessionId]
+    set({ inFlight })
+  },
+  record: (sessionId, state) => {
+    if (get().inFlight[sessionId]) return
+    set({ bySession: { ...get().bySession, [sessionId]: state } })
+  },
   clear: (sessionId) => {
     if (!(sessionId in get().bySession)) return
     const bySession = { ...get().bySession }

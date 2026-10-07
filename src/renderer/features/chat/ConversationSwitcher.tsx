@@ -30,11 +30,15 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
     // Quality-gate remediation (round 2, 2026-10-07): clear BEFORE awaiting below (not after),
     // matching `MessageInput.tsx`'s typed-`/new` fix -- main emits the reset patch synchronously
     // before replying (`PatchCoalescer.reset`, SessionAgent), so clearing only after `await` risks
-    // the Transcript's landing effect already reading the stale pre-switch offset on first paint.
-    // Snapshot first so a failed switch can put back exactly what it removed (only if nothing
-    // newer has been recorded for this Session meanwhile).
+    // the Transcript's landing effect already reading the stale pre-switch offset. Snapshot first
+    // so a failed switch can put back exactly what it removed (only if nothing newer has been
+    // recorded for this Session meanwhile).
     const previousScroll = useChatScrollStore.getState().bySession[sessionId]
     useChatScrollStore.getState().clear(sessionId)
+    // Quality-gate finding (code review, High): also blocks `record()` for this Session for the
+    // whole in-flight window below -- see `scroll-store.ts`'s own `inFlight` doc for why the
+    // second `clear()` right before `applySnapshot` is no longer sufficient on its own.
+    useChatScrollStore.getState().setInFlight(sessionId, true)
     try {
       const result = await window.refract.conversations.startNew(sessionId)
       if (!result.ok) {
@@ -52,6 +56,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
     } finally {
       setCreating(false)
       setSwitching(false)
+      useChatScrollStore.getState().setInFlight(sessionId, false)
     }
   }
 
@@ -73,6 +78,10 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
     // Issue #485: clear BEFORE awaiting below (not after), same reasoning as
     // `handleNewConversation` above.
     useChatScrollStore.getState().clear(sessionId)
+    // Quality-gate finding (code review, High): see `handleNewConversation`'s matching comment
+    // above -- blocks `record()` for this Session for the whole in-flight window, including the
+    // failed-switch recovery race the next comment describes.
+    useChatScrollStore.getState().setInFlight(sessionId, true)
     try {
       const result = await window.refract.conversations.open(sessionId, file)
       if (!result.ok) {
@@ -101,6 +110,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
       setHistoryOpen(false)
     } finally {
       setSwitching(false)
+      useChatScrollStore.getState().setInFlight(sessionId, false)
     }
   }
 

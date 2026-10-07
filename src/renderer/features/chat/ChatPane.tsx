@@ -350,7 +350,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // exactly what it removed (only if nothing newer has been recorded for this Session meanwhile).
     const previousScroll = useChatScrollStore.getState().bySession[startingFor]
     useChatScrollStore.getState().clear(startingFor)
+    // Quality-gate finding (code review, High): see `scroll-store.ts`'s `inFlight` doc --
+    // blocks `record()` for this Session for the whole in-flight window below.
+    useChatScrollStore.getState().setInFlight(startingFor, true)
     const result = await window.refract.conversations.startNew(startingFor)
+    useChatScrollStore.getState().setInFlight(startingFor, false)
     setStartingNewId(id => (id === startingFor ? null : id))
     // Quality-gate remediation: same fix as handleRecover above, plus round 3 (code-reviewer,
     // Low): prefer re-focusing the "Start new conversation" button itself once it's enabled

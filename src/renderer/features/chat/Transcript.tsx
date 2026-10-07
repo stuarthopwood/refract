@@ -555,7 +555,12 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // and 4.1.2 (name/role/value of the currently-focused element). Moves focus to the viewport
   // itself instead, which stays focusable (`role="region" tabIndex={0}` below) across the same
   // transition -- `preventScroll` since the viewport is already exactly where it needs to be.
-  React.useEffect(() => {
+  // Quality-gate finding (code review, Low): `useLayoutEffect` (not the passive `useEffect` this
+  // used to be) -- a passive effect runs after paint, so a rAF-driven `isAtEnd` flip (the settle
+  // loop's own completion branch below, not just a click) could let the browser paint one frame
+  // with focus already dropped to `<body>` by the button going `inert`, before this effect ever
+  // got a chance to move it back to the viewport.
+  React.useLayoutEffect(() => {
     if (!isAtEnd) return
     if (document.activeElement !== buttonRef.current) return
     viewportRef.current?.focus({ preventScroll: true })
@@ -689,8 +694,15 @@ export function Transcript({ sessionId }: { sessionId: string }) {
         cancelled = true
         removeInputListeners()
         landingInProgressRef.current = false
-        setAutoScrollSuppressed(memory !== undefined && !memory.atEnd)
-        setIsAtEnd(memory === undefined || memory.atEnd)
+        // Quality-gate finding (code review, High): decided from where the viewport ACTUALLY
+        // landed (the same `isAtScrollEnd` check `handleViewportScroll`/`handleUserInput` use),
+        // not from `memory` directly -- a stale/incorrect memory entry (e.g. a scroll race the
+        // `inFlight` guard above did not fully close, or any future call site that forgets to
+        // set it) can then never leave auto-follow permanently suppressed for a Conversation
+        // that is actually sitting at its end.
+        const landedAtEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
+        setAutoScrollSuppressed(!landedAtEnd)
+        setIsAtEnd(landedAtEnd)
         return
       }
       requestAnimationFrame(step)
@@ -740,6 +752,13 @@ export function Transcript({ sessionId }: { sessionId: string }) {
           role="region"
           tabIndex={0}
           aria-label="Transcript"
+          // Quality-gate finding (code review, Low): an inset ring (`ring-inset`, `outline-none`
+          // on the base `focus-visible` ring instead) so the focus indicator this component's own
+          // `role="region" tabIndex={0}` relies on (the focus hand-off above, and plain Tab/click
+          // focus) is never clipped by this viewport's own `overflow-y-auto` + the root's
+          // `overflow-hidden` ancestor -- an outer ring drawn outside the scrollable box's own
+          // bounds would be cut off entirely rather than just visually tight.
+          className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
           <MessageScrollerContent ref={contentRef} className="mx-auto w-full max-w-4xl px-4 py-4">
             {!hasConversationStarted && (
