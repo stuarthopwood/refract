@@ -412,6 +412,34 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // fix for issue #485's restore-on-return silently losing the detached position every time.
   const landingInProgressRef = React.useRef(false)
 
+  // Mirrors `landingInProgressRef` into a real render value so `MessageScrollerProvider`'s own
+  // `autoScroll` prop (below) can be turned off for the same settle window: the vendored
+  // `@shadcn/react` message-scroller has its OWN scroll listener that reclassifies itself into
+  // "following-bottom" mode the instant it observes the viewport within `scrollEdgeThreshold` of
+  // the true bottom -- which a transient browser clamp (the race above) or even our own
+  // mid-settle `scrollTop` writes can trigger for one frame even while restoring a MID-transcript
+  // position. Once in that mode it re-asserts the bottom itself on every later `ResizeObserver`
+  // tick a still-settling `content-visibility:auto` row fires, fighting (and eventually beating)
+  // the landing effect's own re-assertion below. Disabling its `autoScroll` prop for this window
+  // makes every one of its own corrective scrolls a no-op regardless of which mode it thinks it
+  // is in, without touching its internal state at all.
+  const [autoScrollSuppressed, setAutoScrollSuppressed] = React.useState(false)
+
+  // Raised synchronously during render -- strictly before this render's DOM commit -- so a
+  // `scroll` event the browser fires from its own clamp/adjust while content-visibility rows are
+  // still being promoted (the race described above) can never land while the guard still reads
+  // the OLD key's value and get misrecorded against the NEW `sessionId`. A passive OR layout
+  // effect both run too late to beat a clamp that happens as part of the commit itself. Reset to
+  // `false` only by the landing effect below (its terminal branch or its cleanup), never again
+  // here, so a real scroll event once landing has finished is never swallowed.
+  const landingKeyRef = React.useRef<string | null>(null)
+  const landingKey = `${sessionId}:${transcript.generation}`
+  if (landingKeyRef.current !== landingKey) {
+    landingKeyRef.current = landingKey
+    landingInProgressRef.current = true
+    if (!autoScrollSuppressed) setAutoScrollSuppressed(true)
+  }
+
   // Continuously records this Session's scroll position while the viewport is visible, so
   // whatever was last recorded is exactly where the developer left it (no separate "on leaving"
   // handler needed).
@@ -431,12 +459,22 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // Lands the viewport at the end, or restores the remembered detached position, whenever this
   // Session's transcript is wholesale-replaced (`transcript.generation`, transcript-store.ts) --
   // a Session switch, a Conversation switch, or this pane's very first mount -- never on an
-  // ordinary streamed `items` update. Polls via `requestAnimationFrame` until the just-applied
-  // content's `scrollHeight` holds steady for `SCROLL_LANDING_STABLE_FRAMES` frames (a
-  // `content-visibility:auto` row can still be settling from its placeholder height right after
-  // commit, #459's same root cause) instead of a fixed sleep, bounded by
-  // `SCROLL_LANDING_MAX_FRAMES` so a layout that never truly settles cannot poll forever.
-  React.useEffect(() => {
+  // ordinary streamed `items` update. Polls via `requestAnimationFrame`, re-applying the target
+  // `scrollTop` on EVERY frame (not just once at the end): a `content-visibility:auto` row above
+  // the target can keep growing `scrollHeight` after a single assignment would have landed, and
+  // Chromium's own scroll-anchoring can independently nudge `scrollTop` while that growth is in
+  // flight (#459's same root cause) -- a one-shot assignment loses the race either way. A long
+  // transcript's settling is NOT purely a `scrollHeight`-stability question either: scroll
+  // anchoring (and, while it is still catching up, `MessageScrollerProvider`'s own `autoScroll`,
+  // suppressed above for this exact window) can silently overwrite `scrollTop` again in the gap
+  // between two of this loop's own frames, leaving `scrollHeight` reading "stable" while the
+  // position itself keeps drifting toward the bottom -- so each frame also checks whether the
+  // PREVIOUS frame's own assignment actually stuck (`viewport.scrollTop` still reads what was
+  // last written) and resets the counter if not, the same as a genuine height change would.
+  // Bounded by `SCROLL_LANDING_MAX_FRAMES` so a layout that never truly settles cannot poll
+  // forever. `useLayoutEffect` (not `useEffect`) so the first re-assertion lands before paint,
+  // in the same commit as the DOM update.
+  React.useLayoutEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
     landingInProgressRef.current = true
@@ -444,17 +482,23 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     let frame = 0
     let stableFrames = 0
     let lastHeight = -1
+    let lastAssignedScrollTop = -1
 
     function step() {
       if (cancelled || !viewport) return
       const { scrollHeight } = viewport
-      stableFrames = scrollHeight === lastHeight ? stableFrames + 1 : 0
+      const heightStable = scrollHeight === lastHeight
+      const notPerturbed = lastAssignedScrollTop === -1 || viewport.scrollTop === lastAssignedScrollTop
+      stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
       lastHeight = scrollHeight
       frame += 1
+      const memory = useChatScrollStore.getState().bySession[sessionId]
+      const target = resolveLandingScrollTop(memory, scrollHeight)
+      viewport.scrollTop = target
+      lastAssignedScrollTop = target
       if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
-        const memory = useChatScrollStore.getState().bySession[sessionId]
-        viewport.scrollTop = resolveLandingScrollTop(memory, viewport.scrollHeight)
         landingInProgressRef.current = false
+        setAutoScrollSuppressed(false)
         return
       }
       requestAnimationFrame(step)
@@ -468,7 +512,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   }, [sessionId, transcript.generation])
 
   return (
-    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
+    <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
       <MessageScroller className="h-full flex-1">
         <MessageScrollerViewport ref={viewportRef} onScroll={handleViewportScroll}>
           <MessageScrollerContent className="mx-auto w-full max-w-4xl px-4 py-4">

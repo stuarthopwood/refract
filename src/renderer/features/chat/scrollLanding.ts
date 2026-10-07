@@ -13,8 +13,15 @@ export const SCROLL_END_TOLERANCE_PX = 48
 export const SCROLL_LANDING_STABLE_FRAMES = 2
 
 /** Upper bound on animation frames the landing effect polls for, so a layout that never truly
- * settles cannot poll forever. */
-export const SCROLL_LANDING_MAX_FRAMES = 20
+ * settles cannot poll forever. Generous on purpose (issue #485 gate fix): a long transcript (many
+ * `content-visibility:auto` rows) can take well over `SCROLL_LANDING_STABLE_FRAMES`' worth of
+ * frames for every row above the landing target to finish promoting from its placeholder height,
+ * and until that is done either Chromium's own scroll anchoring or (while still catching up)
+ * `MessageScrollerProvider`'s own follow-bottom behaviour can keep nudging `scrollTop` away from
+ * the target for longer than a short bound would tolerate -- Transcript.tsx's perturbation check
+ * resets the stable-frame counter on every such nudge, so a generous ceiling here is what actually
+ * gives a big transcript enough time to land correctly instead of giving up early. */
+export const SCROLL_LANDING_MAX_FRAMES = 90
 
 export interface ViewportMetrics {
   scrollTop: number
