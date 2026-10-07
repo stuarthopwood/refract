@@ -11,7 +11,7 @@ import {
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptItem } from '../../../shared/model'
-import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
+import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
@@ -400,6 +400,19 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // Session), so landing has to be driven explicitly rather than relying on `MessageScroller`'s
   // own mount-time `defaultScrollPosition`.
   const viewportRef = React.useRef<HTMLDivElement>(null)
+  // Gate fixes 2 (finding 2): the settle loop's stop-on-user-input listeners (below) are
+  // attached HERE, on the `MessageScroller` root, not on `viewportRef` -- the vendored
+  // `MessageScrollerButton` ("Scroll to end", rendered below) is the viewport's OWN SIBLING,
+  // not its descendant, so listeners scoped to the viewport alone never see a click (or
+  // Enter/Space) on that button; a developer using it to jump to the end mid-settle had to
+  // fight the loop's own re-assertion for up to `SCROLL_LANDING_MAX_FRAMES`. The root is an
+  // ancestor of both the viewport and the button, and these are native `addEventListener`
+  // listeners (not React synthetic ones) attached directly on that ancestor DOM node: a
+  // `pointerdown`/`keydown` bubbling up from the button reaches this listener before React's
+  // own event delegation (which attaches at the React root container, further up the real DOM
+  // tree) ever dispatches the button's synthetic `onClick`, so an internal `stopPropagation()`
+  // there could never suppress it anyway.
+  const scrollerRootRef = React.useRef<HTMLDivElement>(null)
 
   // True from the moment a Session/Conversation switch's landing effect (below) starts until it
   // has applied its own `scrollTop` -- while content-visibility rows are still being promoted
@@ -444,8 +457,26 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // `false` only by the landing effect below (its terminal branch, its early-user-input stop, or
   // its cleanup), never again here, so a real scroll event once landing has finished is never
   // swallowed. Tracks the previous `landingKey` with the documented "adjusting state during
-  // render" pattern (a `useState` compared and updated in the render body) rather than reading
-  // and writing a plain ref mid-render (quality-gate cycle 2, finding 3).
+  // render" pattern (a `useState` compared and updated in the render body); `setAutoScrollSuppressed`
+  // and `setPrevLandingKey` both follow that sanctioned pattern.
+  //
+  // Gate fixes 2 (finding 4): `landingInProgressRef.current = true` on the next line is a PLAIN
+  // REF MUTATION during render, which the above "quality-gate cycle 2, finding 3" comment used
+  // to claim this block had moved away from entirely -- it had not; only `prevLandingKey`/
+  // `autoScrollSuppressed` did, and this ref write is NOT a render-phase side effect this
+  // codebase can route through `useState` instead: `handleViewportScroll` (a plain DOM-event
+  // closure, not a render) must see it BEFORE the browser's own commit-time clamp/adjust can
+  // fire a `scroll` event (the race described two paragraphs up) -- a `useLayoutEffect` runs
+  // after commit, strictly too late to beat a clamp that happens as part of the commit itself,
+  // and a reactive `useState` value read inside a plain closure would still only ever be
+  // CURRENT as of the render that defined the closure, not "updated synchronously right now".
+  // Accepted here as a deliberate, safe exception rather than redesigned away, for two reasons
+  // specific to this renderer (verified by grep, not assumed): (1) this component tree never
+  // uses `Suspense`/`startTransition`/`useTransition` (`main.tsx` wraps `<App>` in `StrictMode`
+  // only), so React here never discards a render after starting it -- the one scenario where a
+  // side effect during render could run against a commit that never happens; (2) `StrictMode`'s
+  // dev-only double-invoke of this render body writes the exact same value (`true`) both times,
+  // so it is idempotent under that double-invoke too.
   const landingKey = `${sessionId}:${transcript.generation}`
   const [prevLandingKey, setPrevLandingKey] = React.useState(landingKey)
   if (prevLandingKey !== landingKey) {
@@ -494,8 +525,13 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // could never equal the browser-clamped `viewport.scrollTop` read back afterwards, so
   // `notPerturbed` was never true and every at-end landing silently spent all
   // `SCROLL_LANDING_MAX_FRAMES` fighting a gap that was never there. The loop now also stops the
-  // instant it sees real user input on the viewport (wheel, keydown, pointerdown, touchstart): a
-  // developer taking over mid-settle must not keep fighting the loop's own re-assertion.
+  // instant it sees real user input (wheel, keydown, pointerdown, touchstart) anywhere inside the
+  // `MessageScroller` root -- the viewport itself, or the vendored sibling "Scroll to end" button
+  // (gate fixes 2, finding 2: that button lives outside `viewportRef`'s own subtree, so listeners
+  // scoped to just the viewport never saw a click/Enter/Space on it, and a developer using it to
+  // jump to the end mid-settle had to fight the loop's own re-assertion for up to
+  // `SCROLL_LANDING_MAX_FRAMES` frames) -- a developer taking over mid-settle must not keep
+  // fighting the loop's own re-assertion either way.
   React.useLayoutEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) {
@@ -503,6 +539,9 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       setAutoScrollSuppressed(false)
       return
     }
+    // Falls back to the viewport itself only if the root ref somehow is not attached yet (it is
+    // always rendered as the viewport's own parent below, so this is defensive, not expected).
+    const root = scrollerRootRef.current ?? viewport
     landingInProgressRef.current = true
     let cancelled = false
     let frame = 0
@@ -511,11 +550,10 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     let lastAssignedScrollTop = -1
 
     function removeInputListeners() {
-      if (!viewport) return
-      viewport.removeEventListener('wheel', handleUserInput)
-      viewport.removeEventListener('keydown', handleUserInput)
-      viewport.removeEventListener('pointerdown', handleUserInput)
-      viewport.removeEventListener('touchstart', handleUserInput)
+      root.removeEventListener('wheel', handleUserInput)
+      root.removeEventListener('keydown', handleUserInput)
+      root.removeEventListener('pointerdown', handleUserInput)
+      root.removeEventListener('touchstart', handleUserInput)
     }
 
     // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
@@ -541,16 +579,16 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       setAutoScrollSuppressed(!atEnd)
     }
 
-    viewport.addEventListener('wheel', handleUserInput, { passive: true })
-    viewport.addEventListener('keydown', handleUserInput, { passive: true })
-    viewport.addEventListener('pointerdown', handleUserInput, { passive: true })
-    viewport.addEventListener('touchstart', handleUserInput, { passive: true })
+    root.addEventListener('wheel', handleUserInput, { passive: true })
+    root.addEventListener('keydown', handleUserInput, { passive: true })
+    root.addEventListener('pointerdown', handleUserInput, { passive: true })
+    root.addEventListener('touchstart', handleUserInput, { passive: true })
 
     function step() {
       if (cancelled || !viewport) return
       const { scrollHeight, clientHeight } = viewport
       const heightStable = scrollHeight === lastHeight
-      const notPerturbed = lastAssignedScrollTop === -1 || viewport.scrollTop === lastAssignedScrollTop
+      const notPerturbed = lastAssignedScrollTop === -1 || Math.abs(viewport.scrollTop - lastAssignedScrollTop) < SCROLL_PERTURBATION_TOLERANCE_PX
       stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
       lastHeight = scrollHeight
       frame += 1
@@ -578,7 +616,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
 
   return (
     <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
-      <MessageScroller className="h-full flex-1">
+      <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
         <MessageScrollerViewport ref={viewportRef} onScroll={handleViewportScroll}>
           <MessageScrollerContent className="mx-auto w-full max-w-4xl px-4 py-4">
             {!hasConversationStarted && (

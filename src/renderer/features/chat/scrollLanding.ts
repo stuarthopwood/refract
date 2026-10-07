@@ -23,6 +23,15 @@ export const SCROLL_LANDING_STABLE_FRAMES = 2
  * gives a big transcript enough time to land correctly instead of giving up early. */
 export const SCROLL_LANDING_MAX_FRAMES = 90
 
+/** Gate fixes 2 (finding 3): how far (in px) `viewport.scrollTop` may read back from the value
+ * the landing loop just assigned it and still count as "stuck" (`notPerturbed`, Transcript.tsx).
+ * At a fractional device pixel ratio (125%/150% Windows scaling) the browser can report back a
+ * `scrollTop` that differs from the assigned value by a sub-pixel rounding amount; strict `===`
+ * then never matches, `notPerturbed` is never true, and an at-end landing spends its entire
+ * `SCROLL_LANDING_MAX_FRAMES` budget fighting a gap that was never really there (the same shape
+ * of bug the `resolveLandingScrollTop` clamp above already fixed for the unclamped-target case). */
+export const SCROLL_PERTURBATION_TOLERANCE_PX = 1
+
 export interface ViewportMetrics {
   scrollTop: number
   scrollHeight: number

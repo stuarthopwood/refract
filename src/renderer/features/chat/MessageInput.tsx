@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
+import { EMPTY_QUEUE, notify, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
@@ -42,6 +42,7 @@ import {
 } from './attachments'
 import type { PendingTextChip } from './attachments'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
+import { parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -296,6 +297,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // sends immediately or queues as a followUp (FR-017) -- `SessionAgent.send` decides which
     // based on the Session's live status, not this call site.
     const images = attachments.images.length > 0 ? attachments.images.map(toImageContent) : undefined
+    // Issue #485: a bare `/new` here is `chat.ts`'s own third `conversations.startNew` call
+    // site (SessionAgent.startNewConversation, via chat.send) -- unlike ConversationSwitcher's
+    // and ChatPane's `handleStartNewConversation`, its reset reaches the renderer as an ordinary
+    // `transcript:patch` on the SAME event stream this call's own result races against, not as a
+    // returned SessionSnapshot this call site could clear-then-apply itself. Mirrors chat.ts's own
+    // `parsed.name === 'new' && parsed.rest === ''` recognition exactly (the only entry in
+    // NATIVE_BUILT_COMMANDS with a working implementation) so the clear runs BEFORE the request
+    // is even sent -- clearing only after awaiting the result below risks the reset patch having
+    // already landed and the Transcript's landing effect already reading the stale memory. A
+    // send that then fails (session no longer idle, agent not running) leaves this cleared with
+    // nothing to restore; MessageInput's own disabled state normally prevents reaching here at all
+    // while the Session is not idle.
+    const slashInvocation = parseSlashCommand(message)
+    if (slashInvocation?.name === 'new' && slashInvocation.rest === '') {
+      useChatScrollStore.getState().clear(sessionId)
+    }
     // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); a listed
     // command given unverified arguments gets `unsupported-arguments` instead (issue #129); notify
     // below shows either as a toast, same as any other IPC error. FR-019: a failed send (whether
