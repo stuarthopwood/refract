@@ -120,11 +120,15 @@ async function req(cmd) {
   child.stdin.write(JSON.stringify({ id, ...cmd }) + '\n');
   return waitFor((f) => f.type === 'response' && f.id === id, REQUEST_MS, cmd.type);
 }
+let exitCode = 0;
 
 try {
   const ready = await waitFor((f) => f.type === 'ready', READY_MS, 'ready');
   if (ready.supportedProtocolVersions?.includes(2)) await req({ type: 'negotiate_protocol', protocolVersion: 2 });
   const sw = await req({ type: 'switch_session', sessionPath: copy });
+  if (!sw.success || sw.data?.cancelled || sw.error) {
+    throw new Error(`switch_session failed: success=${sw.success} cancelled=${sw.data?.cancelled} error=${sw.error}`);
+  }
   const st = (await req({ type: 'get_state' })).data;
   const msgs = (await req({ type: 'get_messages' })).data.messages;
   const byRole = {};
@@ -146,12 +150,18 @@ try {
       2
     )
   );
+  const lower = st.messageCount < rawMessages.length;
+  console.log(
+    `\nRESULT: ${lower ? 'PASS' : 'FAIL'} (informational, not an error) -- live messageCount (${st.messageCount}) is ${lower ? '' : 'NOT '}lower than the raw source message count (${rawMessages.length})`
+  );
 } catch (e) {
   console.log('PROBE ERROR', e.message);
+  console.log('\nRESULT: FAIL -- probe did not complete');
+  exitCode = 1;
 } finally {
   try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* already exited */ }
   // Delete only this run's own scratch dir, by literal absolute path.
   fs.rmSync(ROOT, { recursive: true, force: true });
   console.log(`\ndeleted scratch dir: ${ROOT}`);
 }
-process.exit(0);
+process.exit(exitCode);

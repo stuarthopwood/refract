@@ -39,5 +39,5 @@ export function verifyReattach(session: Session, state: GetStateResponseData): s
  * observed count did not drop). */
 export function reattachRebaselineNotice(session: Session, state: GetStateResponseData): string | undefined {
   if (session.lastMessageCount === null || state.messageCount >= session.lastMessageCount) return undefined;
-  return `This conversation reconnected with ${state.messageCount} messages instead of the ${session.lastMessageCount} last seen; a few in-progress messages were dropped when it reconnected, but nothing you sent was lost.`;
+  return `This conversation reconnected with ${state.messageCount} messages, down from the ${session.lastMessageCount} last seen; the aborted or unsent trailing messages from before it stopped may account for the difference.`;
 }

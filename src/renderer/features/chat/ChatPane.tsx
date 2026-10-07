@@ -295,6 +295,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
 
   async function handleRecover() {
     const recoveringFor = sessionId
+    const hadFocus = !!chatPaneRef.current?.contains(document.activeElement)
     setRecoveringId(recoveringFor)
     const result = await window.refract.sessions.recover(recoveringFor)
     setRecoveringId(null)
@@ -306,10 +307,17 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (sessionIdRef.current === recoveringFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
+    // Quality-gate remediation (accessibility-auditor, High): the banner (and its focused
+    // Recover/Retry button) unmounts once the snapshot clears the stop reason, dropping focus
+    // to <body>. Waits one frame for the fresh content (textarea or a still-stopped banner) to
+    // mount, then reclaims focus via the same `focusPaneContent` helper used elsewhere here --
+    // only when focus was inside this pane to begin with (never steals it from elsewhere).
+    if (hadFocus) requestAnimationFrame(() => focusPaneContent(chatPaneRef.current))
   }
 
   async function handleStartNewConversation() {
     const startingFor = sessionId
+    const hadFocus = !!chatPaneRef.current?.contains(document.activeElement)
     setStartingNewId(startingFor)
     const result = await window.refract.conversations.startNew(startingFor)
     setStartingNewId(null)
@@ -321,6 +329,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (sessionIdRef.current === startingFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
+    // Quality-gate remediation (accessibility-auditor, High): same fix as handleRecover above.
+    if (hadFocus) requestAnimationFrame(() => focusPaneContent(chatPaneRef.current))
   }
 
   async function handleRecreateWorktree() {
@@ -398,18 +408,33 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
             <AlertTitle>{describeStopReason(effectiveStopReason, effectiveStopDetail)}</AlertTitle>
             {effectiveStopReason === 'agent-exited' && (
               <AlertAction>
-                <Button size="sm" variant="outline" disabled={recovering} onClick={() => void handleRecover()}>
-                  Recover
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={recovering || startingNew}
+                  onClick={() => void handleRecover()}
+                >
+                  {recovering ? 'Retrying…' : 'Recover'}
                 </Button>
               </AlertAction>
             )}
             {effectiveStopReason === 'start-failed' && (
               <div className="col-start-2 mt-2 flex gap-2">
-                <Button size="sm" variant="outline" disabled={recovering} onClick={() => void handleRecover()}>
-                  Retry
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={recovering || startingNew}
+                  onClick={() => void handleRecover()}
+                >
+                  {recovering ? 'Retrying…' : 'Retry'}
                 </Button>
-                <Button size="sm" variant="outline" disabled={startingNew} onClick={() => void handleStartNewConversation()}>
-                  Start new conversation
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={recovering || startingNew}
+                  onClick={() => void handleStartNewConversation()}
+                >
+                  {startingNew ? 'Starting…' : 'Start new conversation'}
                 </Button>
               </div>
             )}
