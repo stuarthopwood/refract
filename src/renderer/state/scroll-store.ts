@@ -20,19 +20,26 @@ export interface SessionScrollState {
 interface ScrollMemoryState {
   bySession: Record<string, SessionScrollState>
   record(sessionId: string, state: SessionScrollState): void
-  /** Called on an explicit Conversation switch (`ChatPane.tsx`'s `applySnapshot`, from
-   * `ConversationSwitcher.tsx`): the newly-shown Conversation has never been "left" by the
+  /** Finding 7 (gate fixes 4): called speculatively BEFORE each of the four call sites' own
+   * switch-triggering IPC call -- `ChatPane.tsx`'s `handleStartNewConversation`,
+   * `ConversationSwitcher.tsx`'s `handleNewConversation`/`handleOpenConversation`, and
+   * `MessageInput.tsx`'s typed `/new` -- never from `applySnapshot` itself (corrected from the
+   * prior, inaccurate doc here). The newly-shown Conversation has never been "left" by the
    * developer and has its own content height, so it must land at the end like any other
-   * never-visited view, not reuse an offset that applied to the Session's previous Conversation. */
+   * never-visited view, not reuse an offset that applied to the Session's previous Conversation;
+   * clearing BEFORE (not after) awaiting avoids a landing effect racing the same event stream
+   * from reading a stale pre-switch offset (gate fixes 2). Three of those four call sites also
+   * clear a SECOND time, right before applying a successful switch's snapshot (finding 4, gate
+   * fixes 4): a scroll made on the still-visible OLD Conversation during the await would
+   * otherwise leave a detached position here that the brand-new Conversation wrongly inherits. */
   clear(sessionId: string): void
-  /** Quality-gate remediation (round 2, 2026-10-07): every `clear` call site below clears
-   * speculatively BEFORE its own async switch call resolves, so a landing effect racing the
-   * same event stream never reads a stale pre-switch offset (clearing only after `await`ing is
-   * too late -- main can emit the reset patch, and the Transcript can read the clear, before the
-   * renderer-side promise even settles). A switch that then FAILS must put back exactly what it
+  /** Called on a FAILED switch to put back exactly what the matching `clear()` call above
    * removed, but only if nothing newer has been recorded for this Session in the meantime (e.g.
    * the developer already scrolled the still-showing old Conversation, or landed on yet another
-   * switch); restoring unconditionally could clobber that newer entry with a stale one. */
+   * switch); restoring unconditionally could clobber that newer entry with a stale one. Finding
+   * 3 (gate fixes 4): deliberately NOT called by `ConversationSwitcher.tsx`'s
+   * `handleOpenConversation` -- see its own comment for why a failed `conversations.open` always
+   * lands at the end instead of attempting (and usually losing the race to) a restore. */
   restoreIfAbsent(sessionId: string, previous: SessionScrollState | undefined): void
 }
 

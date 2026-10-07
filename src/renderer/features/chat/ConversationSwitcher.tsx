@@ -42,6 +42,12 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
         notify(result.error)
         return
       }
+      // Finding 4 (gate fixes 4): clears again, right before applying the snapshot -- a scroll
+      // the developer made on the still-visible OLD Conversation while this call was in flight
+      // would have recorded a detached position for `sessionId` in the gap after the clear
+      // above, which the brand-new Conversation (about to render via `applySnapshot` below) would
+      // then wrongly inherit as its own restore target (the #485 bug, in a smaller window).
+      useChatScrollStore.getState().clear(sessionId)
       applySnapshot(sessionId, result.value)
     } finally {
       setCreating(false)
@@ -64,16 +70,33 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
 
   async function handleOpenConversation(file: string) {
     setSwitching(true)
-    // Issue #485: same as `handleNewConversation` above.
-    const previousScroll = useChatScrollStore.getState().bySession[sessionId]
+    // Issue #485: clear BEFORE awaiting below (not after), same reasoning as
+    // `handleNewConversation` above.
     useChatScrollStore.getState().clear(sessionId)
     try {
       const result = await window.refract.conversations.open(sessionId, file)
       if (!result.ok) {
-        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
+        // Finding 3 (gate fixes 4): deliberately does NOT call `restoreIfAbsent` here, unlike
+        // `handleNewConversation`'s `conversations.startNew` failure above. `openConversation`'s
+        // own failure path (`SessionAgent.recoverFromFailedSwitch`) is never a silent no-op the
+        // way `startNewConversation`'s immediate `SessionNotIdleError` throw is: on a failed
+        // reattach verification it ALSO re-switches back to the previous Conversation, reloads
+        // its history, and flushes a fresh `transcript:patch` (a real re-landing) BEFORE this
+        // `await` ever rejects -- or, if that recovery also fails, stops the process and emits
+        // its own stopped/start-failed patch instead. Either way a landing effect driven by that
+        // patch's generation bump runs (and records its own settled position) WHILE this
+        // function is still suspended on the awaited promise, racing a `restoreIfAbsent` call
+        // here in a way that depends on raw IPC timing: the landing's own `record()` call almost
+        // always wins (same-tick in practice), silently making `restoreIfAbsent` a no-op. Rather
+        // than ship a restore that only sometimes takes effect, the deterministic rule here is:
+        // a failed `conversations.open` always lands at the end of wherever recovery leaves the
+        // Session (the reloaded previous Conversation, or nothing if unrecoverable) -- documented
+        // in docs/DESIGN.md's "Scroll landing" bullet, not silently restored.
         notify(result.error)
         return
       }
+      // Finding 4 (gate fixes 4): see `handleNewConversation`'s matching comment above.
+      useChatScrollStore.getState().clear(sessionId)
       applySnapshot(sessionId, result.value)
       setHistoryOpen(false)
     } finally {

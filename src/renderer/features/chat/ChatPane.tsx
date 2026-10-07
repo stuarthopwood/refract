@@ -375,6 +375,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       requestAnimationFrame(maybeRestoreFocus)
       return
     }
+    // Finding 4 (gate fixes 4): clears again, right before applying the snapshot -- see
+    // `ConversationSwitcher.tsx`'s matching comment in `handleNewConversation`.
+    useChatScrollStore.getState().clear(startingFor)
     applySnapshot(startingFor, result.value)
     if (sessionIdRef.current === startingFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })

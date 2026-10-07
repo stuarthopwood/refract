@@ -402,8 +402,8 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // own mount-time `defaultScrollPosition`.
   const viewportRef = React.useRef<HTMLDivElement>(null)
   // Gate fixes 2 (finding 2): the settle loop's stop-on-user-input listeners (below) are
-  // attached HERE, on the `MessageScroller` root, not on `viewportRef` -- the vendored
-  // `MessageScrollerButton` ("Scroll to end", rendered below) is the viewport's OWN SIBLING,
+  // attached HERE, on the `MessageScroller` root, not on `viewportRef` -- the app-owned
+  // "Scroll to end" `Button` (rendered below) is the viewport's OWN SIBLING,
   // not its descendant, so listeners scoped to the viewport alone never see a click (or
   // Enter/Space) on that button; a developer using it to jump to the end mid-settle had to
   // fight the loop's own re-assertion for up to `SCROLL_LANDING_MAX_FRAMES`. The root is an
@@ -414,6 +414,12 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // tree) ever dispatches the button's synthetic `onClick`, so an internal `stopPropagation()`
   // there could never suppress it anyway.
   const scrollerRootRef = React.useRef<HTMLDivElement>(null)
+  // Finding 1 (gate fixes 4, a11y): ref to the "Scroll to end" button so the focus-restoration
+  // effect below can tell whether IT currently holds focus before the button goes `inert`.
+  const buttonRef = React.useRef<HTMLButtonElement>(null)
+  // Finding 6 (gate fixes 4): ref to the scrollable content so the ResizeObserver below can
+  // recompute `isAtEnd` when content reflow changes `scrollHeight` without a `scroll` event.
+  const contentRef = React.useRef<HTMLDivElement>(null)
 
   // True from the moment a Session/Conversation switch's landing effect (below) starts until it
   // has applied its own `scrollTop` -- while content-visibility rows are still being promoted
@@ -449,7 +455,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // in the first place) until a real scroll (`handleViewportScroll` below) brings the developer
   // back to the end themselves.
   const [autoScrollSuppressed, setAutoScrollSuppressed] = React.useState(false)
-  // Quality-gate remediation (round 2, 2026-10-07, finding 3): the vendored `MessageScrollerButton`
+  // Gate fixes 3 (finding 3): the vendored `MessageScrollerButton`
   // ("Scroll to end") hides/disables itself from its OWN internal "mode" tracking, which only
   // ever flips out of "following-bottom" on a real user scroll upward -- a detached restore's
   // programmatic `scrollTop` write never satisfies that heuristic (the vendored mode's own
@@ -497,6 +503,13 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     setPrevLandingKey(landingKey)
     landingInProgressRef.current = true
     if (!autoScrollSuppressed) setAutoScrollSuppressed(true)
+    // Finding 6 (gate fixes 4): resets `isAtEnd` to match the NEW Session/Conversation's own
+    // stored memory immediately, in this same render-phase block -- previously it kept
+    // whichever value the OLD session/generation last measured until the settle loop's
+    // completion up to `SCROLL_LANDING_MAX_FRAMES` frames later, so the button could flicker or
+    // lie (showing "at end" for a detached Conversation, or vice versa) for that whole window.
+    const targetMemory = useChatScrollStore.getState().bySession[sessionId]
+    setIsAtEnd(targetMemory === undefined || targetMemory.atEnd)
   }
 
   // Continuously records this Session's scroll position while the viewport is visible, so
@@ -517,7 +530,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     setIsAtEnd(atEnd)
   }
 
-  // Quality-gate remediation (round 2, 2026-10-07, finding 3): the app-owned "Scroll to end"
+  // Gate fixes 3 (finding 3): the app-owned "Scroll to end"
   // button's click handler. A direct `scrollTop` write (not the vendored scroller's own
   // `scrollToEnd`, which only exists inside its context and would re-engage the same stuck
   // "following-bottom" mode this button was built to route around) -- the resulting native
@@ -532,6 +545,21 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     setAutoScrollSuppressed(false)
     setIsAtEnd(true)
   }
+
+  // Finding 1 (gate fixes 4, a11y): the button above goes `inert` (below) the instant `isAtEnd`
+  // becomes true -- both from this handler's own click AND from a Session/Conversation landing
+  // (the render-phase reset above, or the settle loop's completion below) finishing at the end
+  // while the button happened to be focused. `inert` pulls it out of the focus order and
+  // accessibility tree immediately, which would otherwise stray focus to nowhere useful (the
+  // browser drops it to `<body>`), violating WCAG 2.4.7 (focus visible), 2.4.3 (focus order),
+  // and 4.1.2 (name/role/value of the currently-focused element). Moves focus to the viewport
+  // itself instead, which stays focusable (`role="region" tabIndex={0}` below) across the same
+  // transition -- `preventScroll` since the viewport is already exactly where it needs to be.
+  React.useEffect(() => {
+    if (!isAtEnd) return
+    if (document.activeElement !== buttonRef.current) return
+    viewportRef.current?.focus({ preventScroll: true })
+  }, [isAtEnd])
 
   // Lands the viewport at the end, or restores the remembered detached position, whenever this
   // Session's transcript is wholesale-replaced (`transcript.generation`, transcript-store.ts) --
@@ -557,7 +585,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // `notPerturbed` was never true and every at-end landing silently spent all
   // `SCROLL_LANDING_MAX_FRAMES` fighting a gap that was never there. The loop now also stops the
   // instant it sees real user input (wheel, keydown, pointerdown, touchstart) anywhere inside the
-  // `MessageScroller` root -- the viewport itself, or the vendored sibling "Scroll to end" button
+  // `MessageScroller` root -- the viewport itself, or the app-owned sibling "Scroll to end" button
   // (gate fixes 2, finding 2: that button lives outside `viewportRef`'s own subtree, so listeners
   // scoped to just the viewport never saw a click/Enter/Space on it, and a developer using it to
   // jump to the end mid-settle had to fight the loop's own re-assertion for up to
@@ -585,6 +613,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       root.removeEventListener('keydown', handleKeyInput)
       root.removeEventListener('pointerdown', handleUserInput)
       root.removeEventListener('touchstart', handleUserInput)
+      root.removeEventListener('focusin', handleFocusInput)
     }
 
     // A real wheel, key, pointer, or touch event on the viewport means the developer has taken
@@ -624,10 +653,25 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       handleUserInput()
     }
 
+    // Finding 5 (gate fixes 4, a11y): focus moving INTO the viewport mid-settle (Tab reaching a
+    // focusable row, or a screen reader's virtual cursor driving `scrollIntoView`) is just as
+    // much "the developer took over" as a wheel/key/pointer event -- previously only those were
+    // watched, so an assistive-tech user navigating into the transcript had their own focus
+    // target fought by the loop's own re-assertion for up to `SCROLL_LANDING_MAX_FRAMES` frames.
+    // `focusin` bubbles (unlike `focus`), so one listener on `root` catches it from any
+    // descendant; scoped to `viewport.contains(target)` so focus landing on the sibling button
+    // (handled by its own click path, and by finding 1's focus-restoration effect) doesn't
+    // double-trigger this.
+    function handleFocusInput(event: FocusEvent) {
+      if (!viewport || !viewport.contains(event.target as Node)) return
+      handleUserInput()
+    }
+
     root.addEventListener('wheel', handleUserInput, { passive: true })
     root.addEventListener('keydown', handleKeyInput, { passive: true })
     root.addEventListener('pointerdown', handleUserInput, { passive: true })
     root.addEventListener('touchstart', handleUserInput, { passive: true })
+    root.addEventListener('focusin', handleFocusInput, { passive: true })
 
     function step() {
       if (cancelled || !viewport) return
@@ -660,11 +704,44 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     }
   }, [sessionId, transcript.generation])
 
+  // Finding 6 (gate fixes 4): `isAtEnd` otherwise only updates from a real `scroll` event, the
+  // render-phase reset above, or the settle loop's own completion -- a pane resize (e.g.
+  // toggling split view) can change the viewport's `clientHeight`, and the resulting reflow can
+  // change the content's `scrollHeight`, WITHOUT the browser ever firing `scroll` on either, so
+  // the button could keep lying about whether the transcript is actually at its end. Observes
+  // both: the viewport for `clientHeight` changes, the content for `scrollHeight` changes from
+  // reflow. Skipped while a landing is in progress -- that settle loop already owns `isAtEnd`
+  // for its whole window and is still re-measuring every frame regardless. Mount-once (`[]`):
+  // both refs' elements survive every Session/Conversation switch (comment above `viewportRef`).
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const observer = new ResizeObserver(() => {
+      if (landingInProgressRef.current) return
+      setIsAtEnd(
+        isAtScrollEnd({
+          scrollTop: viewport.scrollTop,
+          scrollHeight: viewport.scrollHeight,
+          clientHeight: viewport.clientHeight
+        })
+      )
+    })
+    observer.observe(viewport)
+    if (contentRef.current) observer.observe(contentRef.current)
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
       <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
-        <MessageScrollerViewport ref={viewportRef} onScroll={handleViewportScroll}>
-          <MessageScrollerContent className="mx-auto w-full max-w-4xl px-4 py-4">
+        <MessageScrollerViewport
+          ref={viewportRef}
+          onScroll={handleViewportScroll}
+          role="region"
+          tabIndex={0}
+          aria-label="Transcript"
+        >
+          <MessageScrollerContent ref={contentRef} className="mx-auto w-full max-w-4xl px-4 py-4">
             {!hasConversationStarted && (
               <div className="px-2 py-8 text-center text-sm text-muted-foreground">
                 Ready. Type a message to get started.
@@ -717,12 +794,12 @@ export function Transcript({ sessionId }: { sessionId: string }) {
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <Button
+          ref={buttonRef}
           type="button"
           variant="secondary"
           size="icon-sm"
           aria-label="Scroll to end"
-          aria-hidden={isAtEnd}
-          tabIndex={isAtEnd ? -1 : 0}
+          inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
             "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-background text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
