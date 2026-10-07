@@ -29,8 +29,8 @@ field whose bottom bar shows the mode, model, and agent.
   -> A: Fix the shared cause: the `ScrollArea` wrapper's Radix viewport child (an internal
   `display: table` div that sizes to its widest row instead of the viewport's own width) gets the
   override once, and `CollapsedLine`'s tool-row summary gets an opt-in wrap so the chat's own rows
-  stay one-line while the narrower subagent panel wraps. Padding on the stream is aligned to
-  `px-3`/`py-2` to match the header and subagent list.
+  stay one-line while the narrower subagent panel wraps. Both the subagent list and the stream
+  move their padding from `p-2` to `px-3`/`py-2`, matching the header (commit `d6a3e63`).
 
 ## User Scenarios & Testing *(mandatory)*
 

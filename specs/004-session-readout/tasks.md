@@ -290,9 +290,11 @@ its fix live entirely in renderer store logic); scratch userData dir left on dis
   shared renderer components, the same route spec 004's T012/T014 and spec 010's T002 already
   used), seeded through the dev-only `window.__refractStores` hook with three fake subagents
   (running/finished/failed) and a stream holding a long file path, a 120-character unbroken
-  token, and a long paragraph: at the Subagents panel's own column width dragged to 319px and to
-  484px (inside the 320-480px range this task targets), every row wrapped within the panel with
-  no horizontal scrollbar and no panel growth, the header/list/stream padding was visually even,
+  token, and a long paragraph: at the Subagents panel's own real minimum and maximum widths
+  (240px and 520px, `App.tsx`'s `minSize={240}`/`maxSize={520}`, confirmed by dragging the
+  separator past each limit and reading the panel's own `getBoundingClientRect()`), every row
+  wrapped within the panel with no horizontal scrollbar and no panel growth, the
+  header/list/stream padding was visually even,
   and a keyboard-focused tool row's focus ring (`outline: 2px solid`, `outline-offset: 2px`,
   confirmed via `getComputedStyle`) rendered fully inside the panel's own padding, not clipped by
   the panel's `overflow-hidden` wrapper. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
@@ -337,3 +339,59 @@ the subagent list row names were only ever short strings in this round's fake da
 instance (main pid confirmed via `CommandLine` before kill) was closed with a targeted
 `taskkill /PID` (no `/IM`, no force) and its scratch `userdata`/log directory removed afterward
 from a `cwd` outside both the scratch parent and this worktree.
+
+**Verified 2026-10-07 (gate fixes)**: a follow-up pass on the same branch, fixing the
+quality-gate findings the review above raised. Code changes: `scroll-area.tsx`'s Viewport
+className moved from the legacy `!` prefix (`[&>div]:!block [&>div]:!min-w-0`) to Tailwind v4's
+suffix form (`[&>div]:block! [&>div]:min-w-0!`, matching `badge.tsx`'s existing `[&>svg]:size-3!`
+precedent); its focus ring changed from `focus-visible:ring-[3px]` to
+`focus-visible:ring-[3px] focus-visible:ring-inset`, since the un-inset ring drew 3px *outside*
+the Viewport and was clipped by `#subagent-panel`'s `overflow-hidden` whenever the Viewport
+itself (not a nested row) held keyboard focus; and the block comment was shortened to state the
+mechanism once instead of naming and re-asserting "verified" for a fixed, hard-coded list of
+consumers. Driving `SessionList.tsx` live with 15 fake repositories (45 sessions, one
+repository name and one session name/branch per repository deliberately overlong) surfaced a
+real bug the original pass never exercised: `RepositoryGroup`'s `CollapsedTrigger` was
+`flex flex-1` with no `min-w-0`, so its `truncate` span never engaged and the repository header
+text pushed the list's own `ScrollArea` viewport to `scrollWidth: 955` against a
+`clientWidth: 280` (a real horizontal scrollbar, visible in a captured screenshot); added
+`min-w-0` alongside the existing `flex-1` fixes it (`scrollWidth`/`clientWidth` both 280
+afterward), and both repository-name and session-name/branch truncation now read as ellipsised
+text with the sidebar's vertical scroll still working (`scrollHeight: 2944` vs
+`clientHeight: 587`). The Subagents panel's real minimum and maximum width (`App.tsx`'s
+`minSize={240}`/`maxSize={520}`, pixels) were driven directly this time by dragging the real
+separator past each limit and reading `#subagent-panel`'s own `getBoundingClientRect().width`:
+it clamped at exactly `240` and exactly `520` (the earlier pass's 319px/484px were valid widths
+but not the panel's actual bounds, and T127's own "inside the 320-480px range" sentence above is
+corrected to cite these real numbers); at both bounds the seeded long path, 120-character token
+and paragraph wrapped with `scrollWidth === clientWidth` on the stream's `ScrollArea` viewport
+(no horizontal scrollbar, no panel growth) and even header/list/stream padding, confirmed in
+captured screenshots. Previously-undriven FR-022 claims were also exercised: a fenced code
+block and a GFM table inside the stream each scroll horizontally inside their own box
+(`pre.scrollWidth: 1538` vs `clientWidth: 294`; the table's wrapper `overflowX: auto` with
+`scrollWidth: 850` vs `clientWidth: 294`) while the panel's own outer viewport stayed at
+`scrollWidth === clientWidth === 320`, not wider; and 40 seeded stream items forced real
+vertical scroll in the stream (`scrollHeight: 2148` vs `clientHeight: 529`) with no horizontal
+growth. The inset focus ring was confirmed on a text-only stream long enough to make the
+Viewport itself keyboard-focusable (Radix only sets `tabIndex=0` on the Viewport once its
+content overflows): tabbing to it with real `Input.dispatchKeyEvent` events (not `.focus()`,
+which Chromium does not treat as `:focus-visible`) produced a computed `boxShadow` ending
+`0px 0px 0px 3px inset` -- inset by construction, so it cannot be clipped by the panel's
+`overflow-hidden` wrapper regardless of where the Viewport sits. `specs/004-session-readout/
+spec.md`'s 2026-10-06 clarification answer is corrected: commit `d6a3e63` moved both the
+subagent list's and the stream's padding to `px-3`/`py-2`, not only the stream as the answer
+previously implied. `docs/PLAN.md` row A2e's files-touched column now lists `ToolRow.tsx`
+alongside the files it already named. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
+(0 leaks across 371 files) all clean after every change in this pass. Not independently driven
+this round: a real OMP agent producing any of this content (still simulated through
+`window.__refractStores`, the same route as the pass above); the Subagents panel's own fixed
+per-subagent `<ul>` list is not itself wrapped in a `ScrollArea` (`shrink-0`, outside FR-022's
+scope) so its own overflow behaviour with many subagents was not separately re-checked; and the
+future Agents panel (#490) does not exist yet to verify inheriting this fix directly, only via
+the shared `ScrollArea`/`CollapsedLine` components it will reuse. Driven in an isolated scratch
+`electron-vite dev` instance (`--remoteDebuggingPort 9492`, a dedicated absolute
+`--user-data-dir` under the OS temp directory, confirmed as this pass's own process by its main
+pid's `CommandLine` naming both this worktree and that scratch directory before any teardown);
+closed with a targeted `taskkill /PID <pid> /T /F` against that confirmed pid tree (not `/IM`),
+and the scratch `--user-data-dir` removed afterward by its own literal absolute path from a
+`cwd` outside both it and this worktree.
