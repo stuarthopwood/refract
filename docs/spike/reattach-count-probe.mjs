@@ -19,8 +19,11 @@
 // Read-only: no prompt is ever sent, and no file under the source's own directory is ever
 // opened directly -- the source is copied into a scratch `--session-dir` first (FINDINGS item
 // 5/61: OMP rewrites a session file on reopen), so the original is never mutated. Raw frames and
-// the scratch copy stay under the OS temp dir (printed at the end) and are deleted on exit;
-// never written into this repo.
+// the scratch copy stay under the OS temp dir, whose path is printed at the end. Quality-gate
+// remediation (gate cycle 2, #449, PROJECT RULE): this scratch dir is now left on disk on
+// purpose and never deleted by this script -- AGENTS.md forbids `fs.rm`/`fs.rmSync` on a target
+// built from a variable (ROOT here is a fresh `Date().toISOString()` path every run). Delete it
+// by hand once you're done with it; the printed path is always the literal one to pass.
 
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -47,39 +50,7 @@ if (!fs.existsSync(CWD)) {
 
 const ROOT = path.join(os.tmpdir(), 'pinion-reattach-count-probe', new Date().toISOString().replace(/[:.]/g, '-'));
 const SESSION_DIR = path.join(ROOT, 'sessions');
-fs.mkdirSync(SESSION_DIR, { recursive: true });
-const copy = path.join(SESSION_DIR, path.basename(SRC));
-fs.copyFileSync(SRC, copy);
 
-// Raw entry count/shape straight from the source file, independent of OMP: every line is one
-// JSON entry; a `"message"` entry's `role` and (for assistant turns) `stopReason` live under
-// its nested `message` object, not at the top level.
-const rawLines = fs.readFileSync(SRC, 'utf8').split('\n').filter((l) => l.trim().length > 0);
-const rawEntries = rawLines.map((l) => JSON.parse(l));
-const rawByType = {};
-for (const e of rawEntries) rawByType[e.type ?? 'unknown'] = (rawByType[e.type ?? 'unknown'] || 0) + 1;
-const rawMessages = rawEntries.filter((e) => e.type === 'message');
-const rawByRole = {};
-for (const m of rawMessages) rawByRole[m.message?.role ?? 'unknown'] = (rawByRole[m.message?.role ?? 'unknown'] || 0) + 1;
-const abortedAssistant = rawMessages.filter((m) => m.message?.role === 'assistant' && m.message?.stopReason === 'aborted').length;
-
-let ompVersion = 'unknown';
-try {
-  ompVersion = execFileSync(OMP, ['--version'], { encoding: 'utf8' }).trim();
-} catch (e) {
-  console.error(`omp not found; set PINION_OMP (${e.message})`);
-  process.exit(2);
-}
-console.log(`omp ${ompVersion}\nsource: ${SRC}\ncwd: ${CWD}\nscratch: ${ROOT}\n`);
-console.log(
-  `raw file: ${rawEntries.length} entries (${JSON.stringify(rawByType)}); ${rawMessages.length} "message" entries by role ${JSON.stringify(rawByRole)}; ${abortedAssistant} aborted assistant message(s)\n`
-);
-
-const child = spawn(OMP, ['--mode', 'rpc-ui', '--approval-mode=always-ask', '--session-dir', SESSION_DIR], {
-  cwd: CWD,
-  stdio: 'pipe',
-  windowsHide: true,
-});
 let buf = Buffer.alloc(0);
 const frames = [];
 const chunks = new Map();
@@ -88,26 +59,6 @@ function dispatch(f) {
   frames.push(f);
   for (const w of [...waiters]) if (w.pred(f)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(f); }
 }
-child.stdout.on('data', (d) => {
-  buf = Buffer.concat([buf, d]);
-  let i;
-  while ((i = buf.indexOf(0x0a)) >= 0) {
-    const line = buf.subarray(0, i).toString('utf8').trim();
-    buf = buf.subarray(i + 1);
-    if (!line) continue;
-    let f;
-    try { f = JSON.parse(line); } catch { continue; }
-    if (f.type === 'rpc_chunk') {
-      let c = chunks.get(f.chunkId);
-      if (!c) { c = { parts: new Array(f.count), got: 0 }; chunks.set(f.chunkId, c); }
-      if (!c.parts[f.index]) c.got++;
-      c.parts[f.index] = Buffer.from(f.data, 'base64');
-      if (c.got === f.count) { chunks.delete(f.chunkId); dispatch(JSON.parse(Buffer.concat(c.parts).toString('utf8'))); }
-      continue;
-    }
-    dispatch(f);
-  }
-});
 const waitFor = (pred, ms, what) => new Promise((resolve, reject) => {
   const hit = frames.find(pred);
   if (hit) return resolve(hit);
@@ -115,6 +66,7 @@ const waitFor = (pred, ms, what) => new Promise((resolve, reject) => {
   waiters.push({ pred, resolve: (f) => { clearTimeout(t); resolve(f); } });
 });
 let n = 0;
+let child;
 async function req(cmd) {
   const id = 'p' + ++n;
   child.stdin.write(JSON.stringify({ id, ...cmd }) + '\n');
@@ -123,7 +75,70 @@ async function req(cmd) {
 let exitCode = 0;
 
 try {
-  const ready = await waitFor((f) => f.type === 'ready', READY_MS, 'ready');
+  // Quality-gate remediation (gate cycle 2, #449): the `omp --version` check and the transcript
+  // copy both used to run ahead of this `try`, outside the probe's one error-handling path, so a
+  // missing `omp` binary or an unreadable/unwritable source file exited through their own ad hoc
+  // branches (or, for the copy, an uncaught exception) instead of the probe's normal "exit
+  // non-zero with a message" contract. Both now run first here, before the scratch dir is even
+  // created, so a failure never leaves a half-built SESSION_DIR behind either.
+  const ompVersion = execFileSync(OMP, ['--version'], { encoding: 'utf8' }).trim();
+
+  fs.mkdirSync(SESSION_DIR, { recursive: true });
+  const copy = path.join(SESSION_DIR, path.basename(SRC));
+  fs.copyFileSync(SRC, copy);
+
+  // Raw entry count/shape straight from the source file, independent of OMP: every line is one
+  // JSON entry; a `"message"` entry's `role` and (for assistant turns) `stopReason` live under
+  // its nested `message` object, not at the top level.
+  const rawLines = fs.readFileSync(SRC, 'utf8').split('\n').filter((l) => l.trim().length > 0);
+  const rawEntries = rawLines.map((l) => JSON.parse(l));
+  const rawByType = {};
+  for (const e of rawEntries) rawByType[e.type ?? 'unknown'] = (rawByType[e.type ?? 'unknown'] || 0) + 1;
+  const rawMessages = rawEntries.filter((e) => e.type === 'message');
+  const rawByRole = {};
+  for (const m of rawMessages) rawByRole[m.message?.role ?? 'unknown'] = (rawByRole[m.message?.role ?? 'unknown'] || 0) + 1;
+  const abortedAssistant = rawMessages.filter((m) => m.message?.role === 'assistant' && m.message?.stopReason === 'aborted').length;
+
+  console.log(`omp ${ompVersion}\nsource: ${SRC}\ncwd: ${CWD}\nscratch: ${ROOT}\n`);
+  console.log(
+    `raw file: ${rawEntries.length} entries (${JSON.stringify(rawByType)}); ${rawMessages.length} "message" entries by role ${JSON.stringify(rawByRole)}; ${abortedAssistant} aborted assistant message(s)\n`
+  );
+
+  child = spawn(OMP, ['--mode', 'rpc-ui', '--approval-mode=always-ask', '--session-dir', SESSION_DIR], {
+    cwd: CWD,
+    stdio: 'pipe',
+    windowsHide: true,
+  });
+  // Quality-gate remediation (gate cycle 2, #449): without this, a spawn failure (e.g. `omp`
+  // resolved by the version check above but gone by the time we actually launch it, or a
+  // permissions error) left the probe hanging until the `ready` wait's own 120s timeout instead
+  // of failing fast with a real message. Raced against the `ready` wait below rather than routed
+  // through `waiters` (which only knows how to resolve, not reject, a pending wait).
+  let spawnErrorReject;
+  const spawnError = new Promise((_resolve, reject) => { spawnErrorReject = reject; });
+  child.on('error', (e) => spawnErrorReject(new Error(`failed to start ${OMP}: ${e.message}`)));
+  child.stdout.on('data', (d) => {
+    buf = Buffer.concat([buf, d]);
+    let i;
+    while ((i = buf.indexOf(0x0a)) >= 0) {
+      const line = buf.subarray(0, i).toString('utf8').trim();
+      buf = buf.subarray(i + 1);
+      if (!line) continue;
+      let f;
+      try { f = JSON.parse(line); } catch { continue; }
+      if (f.type === 'rpc_chunk') {
+        let c = chunks.get(f.chunkId);
+        if (!c) { c = { parts: new Array(f.count), got: 0 }; chunks.set(f.chunkId, c); }
+        if (!c.parts[f.index]) c.got++;
+        c.parts[f.index] = Buffer.from(f.data, 'base64');
+        if (c.got === f.count) { chunks.delete(f.chunkId); dispatch(JSON.parse(Buffer.concat(c.parts).toString('utf8'))); }
+        continue;
+      }
+      dispatch(f);
+    }
+  });
+
+  const ready = await Promise.race([waitFor((f) => f.type === 'ready', READY_MS, 'ready'), spawnError]);
   if (ready.supportedProtocolVersions?.includes(2)) await req({ type: 'negotiate_protocol', protocolVersion: 2 });
   const sw = await req({ type: 'switch_session', sessionPath: copy });
   if (!sw.success || sw.data?.cancelled || sw.error) {
@@ -159,9 +174,13 @@ try {
   console.log('\nRESULT: FAIL -- probe did not complete');
   exitCode = 1;
 } finally {
-  try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* already exited */ }
-  // Delete only this run's own scratch dir, by literal absolute path.
-  fs.rmSync(ROOT, { recursive: true, force: true });
-  console.log(`\ndeleted scratch dir: ${ROOT}`);
+  if (child?.pid) {
+    try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* already exited */ }
+  }
+  // Quality-gate remediation (gate cycle 2, #449, PROJECT RULE): no `fs.rmSync` here anymore --
+  // ROOT is a variable (dynamic timestamp) target, which AGENTS.md forbids passing to a
+  // recursive delete. The scratch dir (and its one-file session copy) is left on disk; delete it
+  // by hand once you're done inspecting it.
+  console.log(`\nscratch dir left on disk (not deleted -- delete manually when done): ${ROOT}`);
 }
 process.exit(exitCode);

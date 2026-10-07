@@ -299,20 +299,33 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     setRecoveringId(recoveringFor)
     const result = await window.refract.sessions.recover(recoveringFor)
     setRecoveringId(null)
+    // Quality-gate remediation (code-reviewer, Medium, gate cycle 2 #449): `hadFocus` is only a
+    // snapshot from before the await -- a user who moved focus elsewhere during a multi-second
+    // recover must not be yanked back, and a FAILED recover must not leave focus stranded on
+    // <body> either (the clicked button was disabled, which blurs it, the moment the call
+    // started). Recheck at completion instead of trusting the pre-await snapshot: restore only
+    // when focus is still inside this pane or has nowhere else to go (<body>/null, the
+    // disabled-button blur case), and only into the Session this call was actually for (the
+    // user may have switched Sessions mid-call).
+    const maybeRestoreFocus = () => {
+      if (!hadFocus || sessionIdRef.current !== recoveringFor) return
+      const active = document.activeElement
+      if (active && active !== document.body && !chatPaneRef.current?.contains(active)) return
+      focusPaneContent(chatPaneRef.current)
+    }
     if (!result.ok) {
       notify(result.error)
+      requestAnimationFrame(maybeRestoreFocus)
       return
     }
     applySnapshot(recoveringFor, result.value)
     if (sessionIdRef.current === recoveringFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
-    // Quality-gate remediation (accessibility-auditor, High): the banner (and its focused
-    // Recover/Retry button) unmounts once the snapshot clears the stop reason, dropping focus
-    // to <body>. Waits one frame for the fresh content (textarea or a still-stopped banner) to
-    // mount, then reclaims focus via the same `focusPaneContent` helper used elsewhere here --
-    // only when focus was inside this pane to begin with (never steals it from elsewhere).
-    if (hadFocus) requestAnimationFrame(() => focusPaneContent(chatPaneRef.current))
+    // The banner (and its focused Recover/Retry button) unmounts once the snapshot clears the
+    // stop reason, dropping focus to <body>. Waits one frame for the fresh content (textarea or
+    // a still-stopped banner) to mount before reclaiming focus.
+    requestAnimationFrame(maybeRestoreFocus)
   }
 
   async function handleStartNewConversation() {
@@ -321,16 +334,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     setStartingNewId(startingFor)
     const result = await window.refract.conversations.startNew(startingFor)
     setStartingNewId(null)
+    // Quality-gate remediation: same fix as handleRecover above.
+    const maybeRestoreFocus = () => {
+      if (!hadFocus || sessionIdRef.current !== startingFor) return
+      const active = document.activeElement
+      if (active && active !== document.body && !chatPaneRef.current?.contains(active)) return
+      focusPaneContent(chatPaneRef.current)
+    }
     if (!result.ok) {
       notify(result.error)
+      requestAnimationFrame(maybeRestoreFocus)
       return
     }
     applySnapshot(startingFor, result.value)
     if (sessionIdRef.current === startingFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
-    // Quality-gate remediation (accessibility-auditor, High): same fix as handleRecover above.
-    if (hadFocus) requestAnimationFrame(() => focusPaneContent(chatPaneRef.current))
+    requestAnimationFrame(maybeRestoreFocus)
   }
 
   async function handleRecreateWorktree() {
