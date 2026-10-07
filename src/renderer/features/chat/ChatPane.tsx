@@ -22,7 +22,7 @@ import {
   useSubagentPanelStore,
   useTranscriptStore
 } from '@/state'
-import type { SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -353,8 +353,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // Quality-gate finding (code review, High): see `scroll-store.ts`'s `inFlight` doc --
     // blocks `record()` for this Session for the whole in-flight window below.
     useChatScrollStore.getState().setInFlight(startingFor, true)
-    const result = await window.refract.conversations.startNew(startingFor)
-    useChatScrollStore.getState().setInFlight(startingFor, false)
+    let result: Result<SessionSnapshot>
+    try {
+      result = await window.refract.conversations.startNew(startingFor)
+    } finally {
+      // Always released, even if the IPC call rejects (a handler throw rejects `invoke`):
+      // otherwise `record()` would stay a no-op for this Session for the app's lifetime.
+      useChatScrollStore.getState().setInFlight(startingFor, false)
+    }
     setStartingNewId(id => (id === startingFor ? null : id))
     // Quality-gate remediation: same fix as handleRecover above, plus round 3 (code-reviewer,
     // Low): prefer re-focusing the "Start new conversation" button itself once it's enabled

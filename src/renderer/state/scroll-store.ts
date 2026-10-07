@@ -30,7 +30,10 @@ interface ScrollMemoryState {
    * reaches the renderer as an ordinary `transcript:patch` on the same event stream its own
    * `chat.send` call races against, never as a snapshot that call site could clear-then-apply
    * itself. Always released in the caller's own `finally`, success or failure. */
-  inFlight: Record<string, boolean>
+  inFlight: Record<string, number>
+  /** `true` begins one in-flight switch for the Session, `false` ends one: a counter, so two
+   * overlapping calls (the banner's "Start new conversation" plus the switcher's "New") cannot
+   * release each other's guard early. */
   setInFlight(sessionId: string, value: boolean): void
   record(sessionId: string, state: SessionScrollState): void
   /** Called speculatively BEFORE each of the four call sites' own switch-triggering IPC call --
@@ -60,7 +63,8 @@ export const useChatScrollStore = create<ScrollMemoryState>((set, get) => ({
   inFlight: {},
   setInFlight: (sessionId, value) => {
     const inFlight = { ...get().inFlight }
-    if (value) inFlight[sessionId] = true
+    const next = (inFlight[sessionId] ?? 0) + (value ? 1 : -1)
+    if (next > 0) inFlight[sessionId] = next
     else delete inFlight[sessionId]
     set({ inFlight })
   },
