@@ -2,7 +2,7 @@
 
 The ordered work queue for Refract. It exists so one question gets a reliable answer: **what is next?**
 
-- Last updated: 2026-10-07 (after the backlog session, issues #443 to #512).
+- Last updated: 2026-10-07 (after the backlog session, issues #443 to #521).
 - Source of truth for scope is the GitHub issue. This file holds the **order**, **dependencies** and **status**. Do not copy issue text here.
 - `main` was at `f01e862` when this was last refreshed.
 
@@ -53,6 +53,7 @@ Stuart's goal: start using Refract for real work stories. These make that safe. 
 | A2b | #485 | Bug: switching Sessions opens at the top; land at the end (remount `Transcript` with a key, or scroll to end after the snapshot renders). First slice of #459 | todo | none; after A2 (same file) | `ChatPane.tsx`, `Transcript.tsx` |
 | A2c | #489 | Bug: after a crash and resume, a still-running agent has no Subagents pill. Seed `runtime.subagents` from `get_subagents` on attach and resume, and mark orphaned `running` agents as "agent exited". Needs the repro from Stuart (what crashed, was a process left?) | todo | none; after A2 (same files) | `SessionAgent.ts`, `readout.ts`, `ReadoutChips.tsx` |
 | A2g | #509 | **Resume button on Sessions terminated unexpectedly** (icon-only, only when `agent-exited` or a persisted turn-in-flight marker says it died mid-turn): recover the agent, then send a configurable resume instruction as a turn; no button for any other stopped Session. Also add Resume next to Recover in the stop banner. Do after #449 (reattach must be reliable) and with A2c's orphan-agent handling | todo | A2 (#449); A2c (#489); serialise on `SessionList.tsx` and `ChatPane.tsx` | `SessionList.tsx`, `ChatPane.tsx`, `SessionAgent.ts`, `registry.ts` (`turnInFlightSince`), `ipc/sessions.ts` |
+| A2h | #515 | **Reattach fails with "Could not restore model" on OMP 18.6.3** (breaking change: a saved model that was renamed or lost its credentials now fails `switch_session` instead of switching silently). Show OMP's error, offer "Open on another model" and retry with the new `provider` and `modelId` on `switch_session`. Probe first whether rpc-ui falls back or errors. Same files and picker as #449 and #454 | todo | A2 (#449, same files); B5 (#520 probe); #454 picker | `SessionAgent.ts` (`attachAndVerify`, `openConversation`), `ChatPane.tsx` |
 | A2d | #491 + #497 | Ask question card: render the question as sanitised markdown at normal weight, heading plus body, vertical options, max height, **and (#497) make option labels and descriptions wrap instead of clipping**. Matters daily because rule 9 starts every story with an `ask` card | todo | none; same file as the Ask UI lane (`RequestCard.tsx`: do before #446, #444, #473) | `RequestCard.tsx`, `card.tsx` use |
 | A2e | #492 | Bug: Subagents (Agents) panel content does not wrap and has no padding (Radix `ScrollArea` table child, truncating tool rows, `p-2` vs `px-3`). Do it in a way #490 carries over | todo | none; before C2c | `SubagentPanel.tsx`, `ScrollArea` wrapper, `CollapsedLine.tsx` |
 | A2f | #500 + #498 | Pull request view fixes: **#500** the repository selector does not open (the header sits in the window drag region: add `no-drag-region`, reserve the caption-button corner), then **#498** the Merge dialog overflows (radio list or wrapping methods, shorter primary button, wider dialog). Same nowrap pattern as #492 and #497 | todo | none | `PullRequestsView.tsx`, `MergeDialog.tsx`, `alert-dialog.tsx` |
@@ -69,13 +70,14 @@ Stuart's goal: start using Refract for real work stories. These make that safe. 
 | B2 | (probe batch) | One read-only probe agent, results appended to `docs/spike/FINDINGS.md` (constitution IV) | todo | none | See "Probe batch" below. Unblocks 6 issues. |
 | B3 | #460 | Versioning and changelog policy decision | blocked | Stuart | Needed before the first release (spec 006). |
 | B4 | #4 / #458 | Token layering decision (part of the #474 grill, items 9 and 10) | blocked | B1 | |
+| B5 | #520 | **Re-verify the Refract contracts on OMP 18.6.3 (and 18.7.x, 18.8.x)** and widen the supported range from 18.4.x and 18.5.x. Fold into the Probe batch below (new items 14 to 19) | todo | none | `docs/spike/*`, `docs/spike/FINDINGS.md`, README, `contracts/omp-usage.md` |
 
 ### Phase C: right panel, FDB panels and side chat (Stuart's highest-priority features)
 
 | # | Issue | Work | Status | Needs |
 |---|---|---|---|---|
 | C1 | #393 + #394 | Right panel shell: icon rail, tab strip, window-controls corner, **plus the FDB Knowledge and Agent Builder placeholder panes** (`p1`, demo-critical, "will sell the prototype to the bosses"). Head start: stash commit `b12a884` ("side-panel placeholder WIP"); also `9053ad5` ("394 a11y WIP"). Cite them by hash, not `stash@{n}`, because stash indices move | todo | A done (touches `App.tsx`); B1 for icons; Stuart's call on demo content (strict empty states vs a labelled "Sample data" toggle) |
-| C2 | #1 | **Side chat (`/btw`)** as the first pane, via the bundled `runEphemeralTurn` extension | todo | C1, B2 (extension probes) |
+| C2 | #1 + #516 | **Side chat (`/btw`)** as the first pane. **Proposal (#516, needs Stuart's approval and a constitution II change):** build it on OMP's native `btw` RPC (`btw`, `btw_cancel`, `get_btw_history`, `btw_delta` and `btw_record` frames, OMP 18.6.3) instead of the bundled `runEphemeralTurn` extension; this raises the minimum supported OMP version to 18.6.3 | todo | C1, B2 (btw in rpc-ui probe, item 14), Stuart's call on #516 |
 | C2c | #490 | **Agents panel**: persistent right side bar tab, **always available and closed by default**, all agents grouped by Session (Session status as the group header, subagents as rows), Cancel and Steer actions. Replaces the click-the-pill-only Subagent panel and folds in #10. Builds on A2c's `get_subagents` seed | todo | C1, A2c, A2e, B2 (`get_subagents`, `cancel_subagent`, `steer_subagent` on 18.4.x and 18.5.x) |
 | C2d | #507 | **Agents button with a subagent count on each Session row**, opening the Agents panel on that Session. Needs a per-Session `subagents` count on `SessionSummary` and a coalesced `session:list-changed`, which is the first piece of #490's cross-Session tracker (build them together or right after) | todo | C2c (#490 panel and tracker), A2c (#489 seed after resume); serialise on `SessionList.tsx` with A4, #453, #472, #440, #503, #504 |
 | C2a | #392 | **FDB Knowledge**: real integration with FDB's AI knowledge base (`p1`). Routes: its MCP for agents, Refract as MCP client, REST API, OMP host tools (`set_host_tools`) | blocked | C1, FDB discovery (does it have an MCP, an API, auth, data governance), B2 host-tool probe |
@@ -103,6 +105,7 @@ Lanes touch different files, so they can run concurrently in separate worktrees.
 | **Readout pills** | **#496 Approval mode pill into the composer box before the model badge, Todo pill first in the pill row** (do this first: it reshapes the row), then #438 (Todo pill opens the task list, now the first pill), #434, #435, #436, #437, then **#441 + #506 the Context pill menu** (click to compact now, plus Shake context, Shake images, Shake thinking, a visible result, and an auto-compaction switch; probe `/shake` semantics first, and check whether shake or compaction lowers `messageCount` and trips #449's reattach check). Coordinate with #454 (model and thinking pickers, same bottom row) and #433 (mode pill) | todo; serialise with the Composer lane (`MessageInput.tsx`); #506 needs the B2 probe |
 | **Pull requests (spec 003)** | #499 filter redesign (compact scope control plus State and Relation, no wrapping tabs); after A2f (same view) | todo; after A2f, and settle the control style with the #474 grill if it is running |
 | **GitHub issues** | **#503 Report an issue** (repository-header button and dialog, v1 without the AI draft: title, description, labels from the repository, live duplicate check, file with `gh issue create --body-file -`), then **#504 Issues page** (cross-repo list, State, Repository, Relation, Label and text filters, detail pane, and the separate **GitHub tools block** with vertical space in the session list), then #503's AI drafting step (needs a mechanism probe) and "Start a Session from this issue". Share one list shell with the Pull requests page (#499, #500) | todo; both edit `SessionList.tsx`, so after A4 (#480) and serialised with the Session list lane; the gh issue wrappers go in `src/main/github/gh.ts` |
+| **OMP adoption (18.6.x)** | **#520 probe first** (B5), then **#515** reattach model error (row A2h, in Phase A), **#517** Stop returns queued messages with `abort_and_restore_queue`, **#521** usage-limit and slow-mode readout (with #454), **#519** generate frame types from OMP's wire schema, and **#518** `message_update` deltas only if #510's analysis says message volume matters. #516 native side chat is row C2. Probe each command on the live OMP before building (items 14 to 19) | todo; #517 and #518 edit `SessionAgent.ts`, `transcript.ts` and `MessageInput.tsx`, so serialise with the Composer and Transcript lanes and A0 |
 
 ### Phase E: later
 
@@ -132,7 +135,7 @@ Not gated: #482 (it reverses an earlier status-icon decision and only needs A3 f
 
 ## Probe batch (B2)
 
-One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs an unverified 18.6.1). Record each result as a FINDINGS row.
+One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs 18.6.3, which is **unverified**: re-verify per #520, and run the new items 14 to 19 on 18.6.3 or later). Record each result as a FINDINGS row.
 
 1. `set_model` and `set_thinking_level` over RPC, including mid-turn and clamped levels (#454).
 2. `omp config get|set|list --json`: can `modelRoles` be set as a record or only per key, do running RPC sessions pick up the change live, and what does `overriddenBy` report (#455, #475, #479).
@@ -147,6 +150,12 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 11. FDB discovery (needs Stuart and the FDB owners, not an OMP probe): does the knowledge base have an MCP server (tool list), a REST or GraphQL API (OpenAPI), and what auth; the same for the Agent Builder (#392, #391). Also whether the `fdbrp-sme` MCP server is the knowledge base or something else.
 12. OMP `/shake` and compaction: what `/shake`, `/shake elide`, `/shake images` and `/shake thinking` print, what each removes and whether it is recoverable, whether the manual command emits `auto_compaction_*` frames and reports freed tokens, and whether shake or compaction lowers `get_state().messageCount` (relevant to #449's reattach verification) (#506, #441, #449).
 13. OMP `session_exit` records: are the `reason` and `kind` values (`sighup`, `dispose`, `pendingToolCalls`) stable across 18.4.x and 18.5.x, what other reasons exist (SIGTERM, SIGINT, crash), what a Job Object kill writes (expected: nothing), and what an unmatched tool-start record looks like after resume. Also time how long Refract takes to open a 48 MB Conversation with `get_messages` versus `get_messages_page` (#510, #509, #449).
+14. OMP native `btw` over `rpc-ui` (#516): does `btw` work in `rpc-ui`, do `btw_delta` and `btw_record` frames match `omp://rpc.md`, does a side question during a streaming turn leave `get_messages` unchanged, and what does `get_btw_history` return after a restart.
+15. OMP `abort_and_restore_queue` (#517): queue two follow-ups and an image, Stop, check the returned `steering` and `followUp`, that no new turn starts, and that `remove_queued_message` returns the images.
+16. OMP 18.6.3 `switch_session` with a saved model that cannot be restored (#515): error text, whether rpc-ui falls back with a warning, whether `provider` and `modelId` bind and skip the check.
+17. OMP `get_state` `usageLimit`, `slowModeSupported`, `slowModeEnabled` and `set_slow_mode` (#521): shapes, when they appear, effect on Copilot and OpenAI models.
+18. OMP wire schema (#519): is `rpc-wire.schema.json` or `rpc-wire.generated.ts` present in the installed binary or only in `@oh-my-pi/pi-coding-agent`, and which supported versions ship it.
+19. OMP `set_event_filter` with `messageUpdates: "delta"` (#518): compare main-process CPU and bytes on a long streamed answer, and which delta event kinds the transcript builder must handle.
 
 ## Decisions (Stuart, 2026-10-06)
 
@@ -172,6 +181,7 @@ One agent, read-only, supported OMP versions 18.4.x and 18.5.x (the machine runs
 7. #392 and #391: integration route, once the FDB owners say what exists (MCP, API, host tools).
 8. #482: what happens to the brand spinner (a third style, moved elsewhere, or tinted), and the non-colour cue for dots.
 9. #489: what exactly he saw after the crash (Refract or omp crashed, was a process left running). Free text, so not in `ask`: he replies when convenient.
+10. #516 side chat on native `btw`: approve the constitution II change and raising the minimum supported OMP version to 18.6.3, or keep the extension. #517: restored queued messages replace or append to the composer text. #521: show only the usage-limit readout, or also a Slow toggle (and Fast mode).
 
 ## File collisions (one agent per file at a time)
 
@@ -202,6 +212,8 @@ Also: `src/main/omp/transcript.ts`, `SessionAgent.ts` (`get_messages` at lines 3
 Also: `src/main/omp/OmpProcess.ts` (`READY_TIMEOUT_MS`, `buildStartFailure`), `SessionAgent.ts` (start and recover, shared with A0, A2, A2c, A2g) and `src/main/memory.ts` for #512: one agent on these files at a time, after or together with A0.
 
 Also: `MessageInput.tsx`, `attachments.ts`, `AttachmentStrip.tsx`, `ImagePreviewModal.tsx`, `Transcript.tsx`, `src/main/omp/transcript.ts` and `src/shared/model.ts` (`user` item `images`), plus a new main-process image file and blob reader and its IPC, for #513, #514, #432 and #431: one agent on these at a time.
+
+Also: `src/main/omp/SessionAgent.ts` (`stop`, `attachAndVerify`, `openConversation`), `src/main/omp/transcript.ts`, `src/shared/frames.ts`, `src/shared/slash-commands.ts` and `.specify/memory/constitution.md` for the OMP-adoption issues #515 to #521: serialise with A0, A2, A2c, A2g, A0b and the Composer and Transcript lanes.
 
 ## Index of issues filed 2026-10-06
 
@@ -236,3 +248,5 @@ Also filed 2026-10-06: #510 P1 (`p1`), crash and resume resilience for long-runn
 Also filed 2026-10-07: #512 bug, resume fails with "ready frame not seen within 60s" when the machine is busy (row A0b, right after A0). Evidence is from the process list, OMP's own per-process logs and the registry; the Session's data was fine.
 
 Also filed 2026-10-07: #513 chat, attached images shown in the user bubble (responsive, click to enlarge, restart-safe) and #514 composer, image file paths parsed and attached like pasted images. Both in the Composer lane behind one shared image file reader; #431 and #432 cross-linked. Verified from a real OMP session: images are stored once by hash and referenced as `blob:sha256:<hash>`.
+
+Also filed 2026-10-07 after reviewing OMP 18.6.3 to 18.8.0: #515 reattach "Could not restore model" (row A2h), #516 native `btw` side chat (amends #1, row C2, needs Stuart's call), #517 Stop uses `abort_and_restore_queue`, #518 `message_update` deltas (measure first), #519 generate frame types from OMP's wire schema, #520 re-verify contracts on 18.6.3 to 18.8.x and widen the supported range (row B5, probe items 14 to 19), #521 usage-limit and slow-mode readout. Amended #1 (side chat native), #8 (fork exists over RPC), #454 (model binding, slow mode), #475 (advisor Anthropic refusal) and #431 and #432 (unchanged scope). Two image issues filed in error as #522 and #523 were closed as duplicates of #513 and #514.
