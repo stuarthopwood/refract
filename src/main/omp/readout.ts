@@ -57,7 +57,7 @@ export async function assembleReadout(session: Session, previous: SessionReadout
   // Story 1's multi-subagent-turn check, the chip vanished right as the final reply landed).
   const activeSubagents = state.subagents.filter((s) => s.status !== 'failed');
   // Issue #489: a seeded 'exited' entry (an attach/resume orphan whose process is confirmed
-  // gone, never a failure of the subagent's own work -- SessionAgent.seedOrphanedSubagents)
+  // gone, never a failure of the subagent's own work -- SessionAgent.reconcileSubagentsOnAttach)
   // folds into the same bucket as 'finished' here; the chip's aggregate count has no third
   // bucket, and both read as "not running any more" to it. The Subagents panel still shows the
   // distinct 'exited' state per row (SubagentPanel.tsx).

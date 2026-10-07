@@ -183,7 +183,16 @@ export interface SwitchSessionResponseData {
  * even seconds after a hard-killed process's own genuinely-running subagent, same Conversation
  * file, same `switch_session` attach SessionAgent.ts uses). `id` is the subagent's own bare name,
  * the same value `tool_execution_update`'s `progress[].id` carries (`contracts/omp-usage.md`
- * section (c)); only `id` is read by Refract, the rest is left loose. */
+ * section (c)).
+ *
+ * Gate finding 5 (2026-10-07): `SessionAgent.reconcileSubagentsOnAttach` no longer calls this --
+ * `launch()` always spawns a brand-new `OmpProcess`, so THIS PROCESS's own registry is
+ * unconditionally empty at the point reconcile runs, per the confirmed-live result above; asking
+ * could never discriminate "genuinely still running" from "gone" for that call site, only ever
+ * return `{ subagents: [] }`. Kept in the wire-protocol union for PLAN.md row C2c's future Agents
+ * panel (`cancel_subagent`/`steer_subagent`, a genuinely different process lifecycle: a
+ * long-lived cross-Session tracker, not a fresh per-launch reconcile) -- currently unused by any
+ * Refract code. */
 export interface GetSubagentsResponseData {
   subagents: Array<{ id: string; status: string; [key: string]: unknown }>;
 }
@@ -486,9 +495,10 @@ export interface GetStateCommand {
   id: string;
 }
 
-/** Issue #489, PLAN.md row A2c: polled once right after an attach/resume's `switch_session` to
- * seed `runtime.subagents` for any subagent the reloaded transcript still remembers as `running`
- * (`SessionAgent.seedOrphanedSubagents`). */
+/** Issue #489, PLAN.md row A2c. Gate finding 5 (2026-10-07): no longer sent by
+ * `SessionAgent.reconcileSubagentsOnAttach` -- see `GetSubagentsResponseData`'s own doc comment
+ * for why a freshly launched process can never answer it usefully there. Kept for PLAN.md row
+ * C2c's future Agents panel; currently unused by any Refract code. */
 export interface GetSubagentsCommand {
   type: 'get_subagents';
   id: string;

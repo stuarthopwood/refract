@@ -1,18 +1,32 @@
 // `get_subagents` payload shape probe (issue #489, PLAN.md row A2c): confirms the response field
-// names (not yet in src/shared/frames.ts -- no use of `get_subagents` anywhere in src) and,
-// crucially, whether a *second, freshly-spawned* `omp` process that `switch_session`s onto the
-// same Conversation file sees the first process's own in-flight subagent as `status: "running"`
-// in its own `get_subagents` snapshot -- this is the exact "crash and resume" shape #489's fix
-// seeds from and must downgrade to "agent exited".
+// names and, crucially, whether a *second, freshly-spawned* `omp` process that `switch_session`s
+// onto the same Conversation file sees the first process's own in-flight subagent as
+// `status: "running"` in its own `get_subagents` snapshot -- this is the exact "crash and resume"
+// shape #489's fix seeds from and must downgrade to "agent exited".
 //
-// Checked against the installed omp 18.6.1 -- OUTSIDE spec 004's supported 18.4.x/18.5.x pin,
-// labelled here because that is what was available to probe with.
+// The omp version actually run is printed at runtime (`omp --version`) and recorded in
+// `result.json`'s own `ompVersion` field -- never hardcode a version number in this comment, it
+// goes stale the moment a newer `omp` is installed (gate finding 10, 2026-10-07: this header used
+// to claim "18.6.1" long after 18.8.0 was the version actually in use elsewhere in this repo's
+// own docs). `get_subagents`'s response/command shapes are already declared in
+// `src/shared/frames.ts` (`GetSubagentsResponseData`/`GetSubagentsCommand`) -- this probe's own
+// job is re-confirming the live contract those types document, not discovering it from scratch
+// (this header used to claim no such declaration existed; it was already stale when written).
 //
 // This uses Stuart's REAL default OMP profile (no --profile flag), same safety posture as
 // docs/spike/subagent-stream-probe.mjs: `--session-dir`/cwd are scratch-only, and
 // `--approval-mode=always-ask` approves ONLY the task tool's own "Allow tool: task" gate. The
 // scenario prompt only asks the subagent to read a fixed scratch file -- no writes, no network,
-// no shell commands outside the scratch cwd.
+// no shell commands outside the scratch cwd. The run still makes one real model call against the
+// real signed-in account, and leaves this run's own raw, UNREDACTED frame logs under
+// `%TEMP%/pinion-get-subagents-probe/<timestamp>/` (gate finding 10) -- never attach that
+// directory verbatim to anything leaving this machine.
+//
+// Asserts every response it depends on and exits non-zero on the first failure (gate finding 10:
+// an earlier draft silently ignored `switch_session`'s own `success` field, skipped the whole
+// reattach half of the probe without error if `sessionFile` ever came back `null`, declared the
+// subagent "probably" still running at kill time from timing alone rather than confirming it via
+// `get_subagents` itself, and always exited 0 regardless of any of that).
 //
 // Run:  node docs/spike/get-subagents-probe.mjs
 // Env:  PINION_OMP          omp executable (default "omp" from PATH)
@@ -178,6 +192,16 @@ function approveTaskOnly(frame, proc) {
   return false;
 }
 
+// Gate finding 10: every request this probe depends on must be asserted, never left to silently
+// carry a `success: false` (or missing-data) response forward into `result.json` as if it were
+// usable evidence.
+function assertSuccess(label, res) {
+  if (!res || res.success !== true) {
+    throw new Error(`${label} failed: ${JSON.stringify(res)}`);
+  }
+  return res;
+}
+
 let ompVersion = 'unknown';
 try {
   ompVersion = execFileSync(OMP, ['--version'], { encoding: 'utf8' }).trim();
@@ -196,12 +220,15 @@ try {
   a = new OmpProc('A', { sessionDir: dir('session-dir'), cwd: dir('repo'), onDialog: approveTaskOnly });
   await a.ready();
 
-  results.emptySnapshot = await a.request({ type: 'get_subagents' });
+  results.emptySnapshot = assertSuccess('emptySnapshot', await a.request({ type: 'get_subagents' }));
 
-  // Hypothesis: the registry only tracks subagents once a host has subscribed (rpc.md does not
-  // say this explicitly; testing it directly since emptySnapshot-while-genuinely-running would
-  // otherwise look identical to "no subagents exist").
-  results.subscriptionResponse = await a.request({ type: 'set_subagent_subscription', level: 'progress' });
+  // Sent once here, before the task ever starts, and left on for the rest of process A's life:
+  // this CONFOUNDS whether `get_subagents` itself needs a subscription to populate its registry
+  // with whether it populates regardless -- `midFlightSnapshot` below is only ever observed
+  // WITH a subscription already active, never without one while a subagent is genuinely running.
+  // Gate finding 9: do not cite this probe as proof that subscription makes "no observable
+  // difference" to `get_subagents` -- that specific causal claim was never isolated here.
+  results.subscriptionResponse = assertSuccess('subscriptionResponse', await a.request({ type: 'set_subagent_subscription', level: 'progress' }));
 
   const taskPrompt =
     'Use the task tool to start one subagent (pass a tasks array with one entry, named Alpha). ' +
@@ -215,13 +242,23 @@ try {
   // owning `task` tool call's own start/end brackets fire almost immediately, well before the
   // registry itself is populated). Generous timeout: model latency varied 20-90s across runs.
   await a.waitFor((f) => f.type === 'subagent_progress', { timeout: 150_000, what: 'subagent_progress' });
-  results.midFlightSnapshot = await a.request({ type: 'get_subagents' });
+  results.midFlightSnapshot = assertSuccess('midFlightSnapshot', await a.request({ type: 'get_subagents' }));
+  // Gate finding 10: a `subagent_progress` frame alone only means a subagent WAS running at some
+  // point before this; `get_subagents` reporting at least one entry right here is what actually
+  // confirms it is still running right before the kill below, not merely "probably".
+  const midFlightSubagents = results.midFlightSnapshot.data?.subagents ?? [];
+  if (midFlightSubagents.length === 0) {
+    throw new Error(`expected get_subagents to report a running subagent mid-flight, got ${JSON.stringify(results.midFlightSnapshot)}`);
+  }
 
-  const stateA = await a.request({ type: 'get_state' });
+  const stateA = assertSuccess('get_state (A)', await a.request({ type: 'get_state' }));
   results.sessionFile = stateA.data?.sessionFile ?? null;
+  if (!results.sessionFile) {
+    throw new Error('process A reported no sessionFile from get_state; cannot verify the reattach half of this probe');
+  }
 
-  // Simulate the crash: hard-kill process A while the subagent is still (probably) running,
-  // without ever waiting for prompt_result/session_settled.
+  // Simulate the crash: hard-kill process A while the subagent is CONFIRMED still running (see
+  // the midFlightSubagents assertion above), without ever waiting for prompt_result/session_settled.
   a.hardKill();
   await a.exitPromise;
 
@@ -229,11 +266,12 @@ try {
   // file the same way SessionAgent.attachAndVerify does (`switch_session`, never `--resume`).
   b = new OmpProc('B', { sessionDir: dir('session-dir'), cwd: dir('repo'), onDialog: approveTaskOnly });
   await b.ready();
-  if (results.sessionFile) {
-    results.switchSessionResponse = await b.request({ type: 'switch_session', sessionPath: results.sessionFile });
+  results.switchSessionResponse = assertSuccess('switchSessionResponse', await b.request({ type: 'switch_session', sessionPath: results.sessionFile }));
+  if (results.switchSessionResponse.data?.cancelled !== false) {
+    throw new Error(`switch_session was cancelled: ${JSON.stringify(results.switchSessionResponse)}`);
   }
-  results.reattachedSnapshot = await b.request({ type: 'get_subagents' });
-  const stateB = await b.request({ type: 'get_state' });
+  results.reattachedSnapshot = assertSuccess('reattachedSnapshot', await b.request({ type: 'get_subagents' }));
+  const stateB = assertSuccess('get_state (B)', await b.request({ type: 'get_state' }));
   results.reattachedState = { messageCount: stateB.data?.messageCount, isSettled: stateB.data?.isSettled, sessionFile: stateB.data?.sessionFile };
 
   await b.closeGracefully();

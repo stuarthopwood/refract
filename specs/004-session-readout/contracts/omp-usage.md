@@ -84,17 +84,25 @@ into synthetic `TranscriptItem`-shaped rows per subagent id, the same upsert-by-
 
 ### d. `get_subagents` on attach/resume (Subagents chip/panel seeding, FR-007, FR-017, issue #489)
 
-**Resolved**: `get_subagents` (no subscription needed) returns `{ subagents: SubagentEntry[] }`,
-scoped to the issuing process's own in-memory registry only. Confirmed live
-(`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0): a process with no Conversation yet
-returns `{ subagents: [] }`; the SAME process, mid-batch `task()` call, returns one entry per
-genuinely running subagent; a process A hard-killed while its subagent is still running, then a
-brand-new process B `switch_session`-attached onto the exact same Conversation file, returns `{
-subagents: [] }` -- **the registry is never replayed from a Conversation's history onto a fresh
-process**, confirming the hypothesis Refract's attach/resume fix (`SessionAgent.ts`'s
-`reconcileSubagentsOnAttach`) needs: any transcript-remembered `running` subagent a freshly attached
-process's `get_subagents` does not also report has no further update coming and is seeded
-straight to Refract's own terminal `exited` state.
+**Resolved, then superseded by gate finding 5 (2026-10-07)**: `get_subagents` returns
+`{ subagents: SubagentEntry[] }`, scoped to the issuing process's own in-memory registry only.
+Confirmed live (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0): a process with no
+Conversation yet returns `{ subagents: [] }`; the SAME process, mid-batch `task()` call, returns
+one entry per genuinely running subagent; a process A hard-killed while its subagent is still
+running, then a brand-new process B `switch_session`-attached onto the exact same Conversation
+file, returns `{ subagents: [] }` -- **the registry is never replayed from a Conversation's
+history onto a fresh process**.
+
+This is exactly why `SessionAgent.ts`'s `reconcileSubagentsOnAttach` no longer calls
+`get_subagents` at all: `launch()` always spawns a brand-new `OmpProcess` (never reuses one), so
+by the result above its own registry is unconditionally `{ subagents: [] }` at the point reconcile
+runs -- there is no live case this process lifecycle can ever observe where asking would
+discriminate "genuinely still running" from "gone" differently from simply assuming "gone". Every
+`running` candidate reconcile finds (from `runtime.subagents` or a still-`running` transcript
+`kind: 'subagent'` row) is therefore resolved straight to Refract's own terminal `exited` state
+unconditionally, with no RPC round trip. The `SubagentEntry` shape below is kept for reference
+(PLAN.md row C2c's future Agents panel may still need it against a *long-lived* process, a
+genuinely different lifecycle) but is currently unused by any Refract code:
 
 ```ts
 interface SubagentEntry {
@@ -112,7 +120,56 @@ interface SubagentEntry {
 }
 ```
 
-`set_subagent_subscription` (`level: 'progress'`) was sent before `get_subagents` in the probe and
-returned `{ success: true }`, but made no observable difference to `get_subagents` itself (it
-gates the unrelated streaming `tool_execution_update` frames section (c) already documents); not
-required for this contract.
+**Not proven (gate finding 9, 2026-10-07)**: `set_subagent_subscription` (`level: 'progress'`) was
+sent once, before the task ever started, and left active for the rest of process A's life in the
+probe above -- `midFlightSnapshot` was therefore only ever observed WITH a subscription already
+active, never without one while a subagent was genuinely running. This confounds, rather than
+settles, whether `get_subagents` itself needs a subscription to populate its own registry; an
+earlier draft of this section claimed subscription "made no observable difference to
+`get_subagents` itself", which overstated what this probe actually isolated, and separately
+contradicted section (c)'s own "not required" framing for the *unrelated* streaming
+`tool_execution_update` frames. Both claims are retracted pending a probe that takes a
+mid-flight `get_subagents` snapshot *before* ever sending `set_subagent_subscription`, then again
+after, on the same running subagent. Moot for Refract's own behaviour either way, since
+`reconcileSubagentsOnAttach` no longer calls `get_subagents` (above).
+
+### e. Gate fixes live verification (2026-10-07, omp 18.8.0, scratch CDP instance, issue #489)
+
+Both recovery paths driven end to end via `window.refract.*` IPC on a scratch Electron instance
+(`--user-data-dir`/CDP port isolated from any live Session; a real signed-in account; a real
+scratch git Repository/Session):
+
+- **Same-instance Recover**: started a subagent (`task`, long-running `bash` sleep), confirmed
+  `status: 'running'` via `sessions.open`, hard-killed the owning `omp.exe` process tree
+  (`taskkill /PID <pid> /T /F`) while it was confirmed running, then called `sessions.recover`
+  on the SAME still-running Electron process. Result: exactly ONE `SubagentSummary` (no
+  duplicate), `status: 'exited'`; the matching chat-transcript `subagent` row also settled to
+  `'exited'` (not left spinning); `readout.subagentCount` read `{ running: 1, finished: 0 }` in
+  the single synchronous `recover()` response itself (the 50 ms `READOUT_COALESCE_MS` debounce
+  had not yet fired) but corrected to `{ running: 0, finished: 1 }` on the very next read, matching
+  what the renderer's `onReadoutUpdate` subscription would show moments later -- this surfaced and
+  fixed a real bug: `reconcileSubagentsOnAttach` never called `scheduleReadoutUpdate()`, so the
+  cached `readout.subagentCount` stayed at its pre-crash value ("1 running") forever once nothing
+  else was left pending to trigger a recompute (fixed, `SessionAgent.ts`).
+- **True app restart**: started a second subagent, confirmed running, hard-killed its `omp.exe`
+  tree AND the whole scratch Electron process, relaunched Electron fresh with the SAME
+  `--user-data-dir` (a brand-new `SessionAgent` instance, `subagentStreams` starting empty), then
+  called `sessions.open`/`sessions.recover`. Result: exactly ONE `SubagentSummary`, seeded purely
+  from the reattached transcript's own `kind: 'subagent'` row (id `subagent:<toolCallId>:0`, the
+  transcript's own scheme, confirming no live summary ever existed in this fresh instance),
+  `status: 'exited'`; selecting it via `chat.subagentSnapshot` returned the explanatory placeholder
+  notice ("No live output: this subagent had already exited when Refract reattached") instead of
+  throwing not-found. Reading the real session `.jsonl` directly: the owning `task` toolCall's own
+  `toolResult` message (the orchestrator's immediate "Spawned agent ... Results auto-deliver"
+  acknowledgment, written well before the subagent's real work finishes) WAS already persisted
+  before the kill; the subsequent `wait` toolCall that would have blocked for the actual subagent
+  result was recorded as started but never completed, and the file gained zero new lines after
+  the kill. Despite the task call's own toolResult already being on disk, `fromHistory` still
+  rebuilt the row as `status: 'running'` on reattach (confirmed live by `reconcileSubagentsOnAttach`
+  finding and seeding it) -- the task tool's own near-instant "spawned" acknowledgment is not
+  itself a completion signal `applyBatchTaskResult` treats as final.
+
+**Not driven live (time-boxed out of this gate pass)**: the "later clean turn, then a mode-change
+restart shows no phantom 'finished'" scenario (spec.md Edge Cases, finding 2(c)) was designed and
+code-reviewed (current/last-turn scoping by the last `kind: 'user'` transcript item) but not
+exercised against a real scratch instance; say so rather than claim it was.

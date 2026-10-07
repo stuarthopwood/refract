@@ -17,8 +17,8 @@ const STATE_LABEL: Record<SubagentSummary['status'], string> = {
   finished: 'Finished',
   failed: 'Failed',
   // Issue #489: seeded on attach/resume for a subagent the reloaded transcript still remembers
-  // as 'running' whose owning process is confirmed gone (SessionAgent.seedOrphanedSubagents) --
-  // distinct from 'Failed': nothing about its own work is known to have failed.
+  // as 'running' whose owning process is confirmed gone (SessionAgent.reconcileSubagentsOnAttach)
+  // -- distinct from 'Failed': nothing about its own work is known to have failed.
   exited: 'Agent exited'
 }
 

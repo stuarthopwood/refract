@@ -173,7 +173,11 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
  * turn's subagents are still running, else a quiet "N finished" total once none are (folding a
  * seeded 'exited' orphan from issue #489 into that same quiet count -- readout.ts); hidden when
  * the turn has started none. Activating it opens the Subagents panel (T021) with an accessible
- * name stating the shown count. */
+ * name stating the shown count -- built from the SAME `phrase` the visible `aria-hidden` text
+ * uses (gate finding 7, WCAG 2.5.3 Label in Name): an accessible name of "Open subagents panel (2
+ * running)" does not CONTAIN the visible text "2 subagents running", so a voice-control user
+ * saying the visible words could never target this chip; reusing `phrase` verbatim inside the
+ * name makes that impossible to drift apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
   const openPanel = useSubagentPanelStore((s) => s.openPanel)
@@ -187,7 +191,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
       // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
       // focus-move retarget (research.md Decision 10).
       onActivate={() => openPanel(sessionId)}
-      accessibleName={running > 0 ? `Open subagents panel (${running} running)` : `Open subagents panel (${finished} finished)`}
+      accessibleName={`Open subagents panel (${phrase})`}
       className={running === 0 ? 'text-muted-foreground' : undefined}
     >
       <span aria-hidden>{phrase}</span>

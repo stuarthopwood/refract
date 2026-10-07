@@ -32,13 +32,23 @@ field whose bottom bar shows the mode, model, and agent.
 - Q: Issue #489 found a crashed-and-resumed Session's still-remembered-running subagent has no
   Subagents pill at all (`runtime.subagents` is rebuilt empty on every attach/resume and only a
   live `task` tool call ever repopulates it). What should attach/resume do? -> A: Seed
-  `runtime.subagents` from the reattached transcript's own still-`running` `subagent` rows, then
-  call OMP's `get_subagents` once to tell genuinely-still-running (rare: the same process somehow
-  survived) from provably-gone; the second case is a new terminal `exited` state, distinct from
-  `failed` (see Edge Cases, FR-007, FR-017). The exact scenario Stuart saw (what crashed, whether
-  a process was left running) is still unconfirmed — PLAN.md open question 9 — so this is
-  designed from the `get_subagents` contract (confirmed live, `docs/spike/get-subagents-probe.mjs`,
-  2026-10-07) rather than a specific repro.
+  `runtime.subagents` from the reattached transcript's own still-`running` `subagent` rows,
+  correlated against any already-live `runtime.subagents` entry by `toolCallId`+`specIndex` (not
+  by either side's own `id` string, which use unrelated schemes) so the SAME subagent instance
+  never produces two candidates. **Superseded 2026-10-07 (gate fixes)**: the original design
+  additionally called OMP's `get_subagents` once per candidate to tell genuinely-still-running
+  from provably-gone; live verification found `launch()` always spawns a brand-new `OmpProcess`
+  (never reuses one), so that call's own registry is unconditionally empty at this point --
+  asking can never discriminate differently from assuming "gone" for this call site. Every
+  surviving `running` candidate is therefore now resolved straight to the terminal `exited` state
+  unconditionally, with no RPC round trip (see Edge Cases, FR-007, FR-017, and
+  `contracts/omp-usage.md` section (d)). Scoped to the current/last turn only (the last `user`
+  transcript item onward): an older turn's `subagent` row OMP's own history keeps rebuilding as
+  `running` must never resurface as a phantom "finished" once a newer turn has started none of
+  its own. The exact scenario Stuart saw (what crashed, whether a process was left running) is
+  still unconfirmed — PLAN.md open question 9 — so this remains designed from the `get_subagents`
+  contract (confirmed live, `docs/spike/get-subagents-probe.mjs`, 2026-10-07) rather than a
+  specific repro.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -179,11 +189,19 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   new state instead of closing itself.
 - A Session attaches or resumes (a fresh start, or after the agent process exited, crashed or
   otherwise) while its reattached transcript still shows a subagent as `running` from before this
-  process existed: it is seeded into `runtime.subagents` as `running` only if OMP's own
-  `get_subagents` (THIS process's registry) still reports it; otherwise it is seeded as `exited`
-  (issue #489) — distinct from `failed`, since nothing about its own work is known to have gone
-  wrong, only its process is gone. This makes the Subagents chip/panel reachable again instead of
-  silently empty.
+  process existed: it is unconditionally seeded as `exited` (issue #489) — distinct from
+  `failed`, since nothing about its own work is known to have gone wrong, only its process is
+  gone. **Gate fixes, 2026-10-07**: no `get_subagents` RPC call is made to decide this (a freshly
+  launched process can never share a registry with a previous one, confirmed live); a `running`
+  `runtime.subagents` entry and a `running` transcript `subagent` row for the SAME instance are
+  first collapsed to one candidate (correlated by `toolCallId`+`specIndex`); only candidates from
+  the current/last turn (after the last `user` transcript item) are ever seeded, so an older
+  turn's row never resurfaces as a phantom "finished" once a newer turn started none; the
+  matching chat-transcript row is settled to `exited` too, not left spinning "running"; a
+  seeded-only candidate (no live stream this run) gets an explanatory placeholder stream instead
+  of erroring when selected; and no fabricated ~0s duration is shown when the original start time
+  was never known (a row built from history has no wall clock). This makes the Subagents
+  chip/panel reachable again instead of silently empty.
 - The clock and the turn timer tick frequently: neither is announced to assistive technology on
   every tick.
 - No readout's status is ever conveyed by color alone: the context window usage warning always
@@ -328,9 +346,13 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - The subagent panel is the first feature to use Refract's right side pane. The right pane's
   other planned content — git changes, a file browser, and a side chat (backlog issue #1) — is
   out of scope here and remains its own, later spec.
-- Issue #489's attach/resume seeding (FR-007, FR-017, Edge Cases) is designed from OMP's
-  `get_subagents` contract, confirmed live (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp
-  18.8.0): a freshly attached process's own `get_subagents` is scoped to that process only and
-  never replays a previous process's registry, even onto the same Conversation file. The exact
-  scenario Stuart saw when he filed #489 (what crashed, Refract or `omp`, and whether a process
-  was left running) is unconfirmed and logged as PLAN.md's open question 9, not assumed here.
+- Issue #489's attach/resume seeding (FR-007, FR-017, Edge Cases) was originally designed from
+  OMP's `get_subagents` contract, confirmed live (`docs/spike/get-subagents-probe.mjs`,
+  2026-10-07, omp 18.8.0): a freshly attached process's own `get_subagents` is scoped to that
+  process only and never replays a previous process's registry, even onto the same Conversation
+  file. **Gate fixes, 2026-10-07**: `reconcileSubagentsOnAttach` no longer calls `get_subagents`
+  at all -- `launch()` always spawns a brand-new process, so that same confirmed-live result means
+  its registry is unconditionally empty at this point; every surviving `running` candidate is
+  resolved straight to `exited` with no RPC round trip. The exact scenario Stuart saw when he
+  filed #489 (what crashed, Refract or `omp`, and whether a process was left running) is unconfirmed
+  and logged as PLAN.md's open question 9, not assumed here.

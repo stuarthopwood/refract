@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { CheckIcon, Loader2Icon, XIcon } from 'lucide-react'
+import { CheckIcon, Loader2Icon, UnplugIcon, XIcon } from 'lucide-react'
 import type { TranscriptItem } from '../../../shared/model'
 import { Button } from '@/components/ui/button'
 import { CodeBlock, inferOutputBlock } from './Markdown'
@@ -16,7 +16,7 @@ function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
-type RowStatus = 'running' | 'done' | 'error'
+type RowStatus = 'running' | 'done' | 'error' | 'exited'
 
 // Language inference for a tool call's Arguments block (T083, FR-050): always `json`, except a
 // `bash` call's own `command` string, shown verbatim and highlighted as `bash` instead of being
@@ -45,14 +45,17 @@ function inferArgumentsBlock(item: ToolItem): { lang: string; code: string } {
   return { lang: 'json', code: JSON.stringify(item.args, null, 2) }
 }
 
-// A distinct icon shape per status (never colour alone, T080/WCAG 2.1 AA): spinner, check, cross.
+// A distinct icon shape per status (never colour alone, T080/WCAG 2.1 AA): spinner, check, cross,
+// unplug (`'exited'`, issue #489 gate finding 4 -- matches `SubagentPanel.tsx`'s own icon/wording
+// for the same state so the chat row and the panel row never disagree).
 function StatusIcon({ status }: { status: RowStatus }) {
-  const label = status === 'running' ? 'Running' : status === 'error' ? 'Failed' : 'Done'
+  const label = status === 'running' ? 'Running' : status === 'error' ? 'Failed' : status === 'exited' ? 'Agent exited' : 'Done'
   return (
     <>
       {status === 'running' && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />}
       {status === 'error' && <XIcon className="size-3.5 shrink-0 text-destructive" />}
-      {status !== 'running' && status !== 'error' && <CheckIcon className="size-3.5 shrink-0 text-state-working" />}
+      {status === 'exited' && <UnplugIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+      {status !== 'running' && status !== 'error' && status !== 'exited' && <CheckIcon className="size-3.5 shrink-0 text-state-working" />}
       <span className="sr-only">{label}</span>
     </>
   )

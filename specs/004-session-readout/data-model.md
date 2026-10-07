@@ -114,10 +114,11 @@ from.
 interface SubagentSummary {
   id: string;                               // `${toolCallId}:${name-or-fallback}` (remediation round, see tasks.md) -- globally unique, not just stable within one turn
   toolCallId: string;                       // the owning task() call's own id; scopes correlation across 2+ parallel task calls in one turn
+  specIndex: number;                        // this spec's position in the owning call's own tasks[] (gate fix, 2026-10-07): the correlation key reconcileSubagentsOnAttach uses against the chat transcript's own subagent row, since the two sides' id schemes never match
   nameOrTask: string;                       // the subagent's name, or its task text when unnamed
   status: 'running' | 'finished' | 'failed' | 'exited'; // 'exited': issue #489, seeded on attach/resume, process confirmed gone, nothing known about its own work
   startedAt: number;
-  durationMs?: number;                      // present once status is finished, failed, or exited
+  durationMs?: number;                      // present once status is finished, failed, or exited, and startedAt was genuinely known (gate fix, 2026-10-07: never fabricated from a history row with no wall clock)
 }
 ```
 
@@ -164,6 +165,6 @@ interface ViewState {
 | a `SubagentSummary` | its tool call ends (success) | `status: 'finished'`, `durationMs` set |
 | a `SubagentSummary` | its tool call ends (error) | `status: 'failed'`, `durationMs` set |
 | `subagents: [...]` | a new turn starts (`agent_start`) | cleared to `[]` (FR-007: count is "the current turn's") |
-| a `SubagentSummary` at `status: 'running'` carried over from before a crash, or a `kind: 'subagent'` transcript row still `status: 'running'` with no such summary yet (fresh instance) | an attach/resume (`launch()`, issue #489) | `status: 'running'` if THIS process's own `get_subagents` still reports that id (rare), else `status: 'exited'` with `durationMs` set |
+| a `SubagentSummary` at `status: 'running'` carried over from before a crash, or a `kind: 'subagent'` transcript row still `status: 'running'` with no such summary yet (fresh instance) -- the two collapsed to ONE candidate by `toolCallId`+`specIndex` if both represent the same instance, and scoped to the current/last turn only | an attach/resume (`launch()`, issue #489) | `status: 'exited'` unconditionally, `durationMs` set only if a genuine `startedAt` was ever known (gate fixes, 2026-10-07: no `get_subagents` RPC call -- a freshly launched process's own registry is confirmed-live always empty here, so it can never discriminate "still running" from "gone"); the matching chat-transcript `subagent` row is settled to `status: 'exited'` too |
 | `view: 'chat' \| 'pull-requests' \| 'manage-sessions'` | `openSettings(section?)` | `view: 'settings'`, `settingsSection` set |
 | `view: 'settings'` | `openChat(repositoryId?)`, or any left-nav/Session action that returns to chat | `view: 'chat'` (and `repositoryId` set when provided) |

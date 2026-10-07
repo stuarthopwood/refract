@@ -453,3 +453,30 @@ Evidence (real, gathered on this branch): commits `344c500` (feat: add repositor
 
 **Verified 2026-10-07**: `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` (0 leaks across 371 files) all clean. Live end to end on a scratch Electron instance (scratch `--user-data-dir`, a throwaway scratch git repository registered as its one Repository, a real signed-in `omp` 18.8.0 agent reached through the real "+ New conversation"/session-row UI, driven over CDP with trusted mouse events and `window.refract.*` IPC calls for session create/chat send -- same mechanism other verification rounds in this file use): created a real Session, prompted it to start one real `task()` subagent named "Reader", waited for the Subagents chip to read "1 subagent running", then hard-killed the real `omp.exe` process recorded for that Session (`taskkill /PID <pid> /T /F`, the exact PID `processes.json` recorded, confirmed gone via `tasklist` afterward) while the subagent was genuinely still running -- a real version of the crash #489 describes, not a simulated one. Refract's existing crash detection fired first (the "The agent stopped" banner, `stopReason: 'agent-exited'`, unrelated to this change). Clicking **Recover** respawned a brand-new `omp` process and reattached; this surfaced a real bug in the task's first-draft design (transcript-only candidates): the pre-crash `SubagentSummary` survives untouched on `runtime.subagents` across a `recover()` on the same `SessionAgent` instance (only `agent_start` clears it), so a transcript-only check never ran the reconciliation at all and the stale `running` entry leaked straight through -- fixed by adding `runtime.subagents` itself as a second candidate source (T123's final description above, `reconcileSubagentsOnAttach`). Re-verified after the fix: the Subagents chip read **"1 finished"** in a visibly quieter (muted-foreground) style within a couple seconds of Recover completing (the debounced `readout:update`, confirmed by polling rather than a fixed wait), and opening the panel showed **"Reader" / "Agent exited"** with a distinct `UnplugIcon` (`lucide-unplug`), not spinning, not the finished check or failed cross icon. Screenshots captured and read: the pre-crash running chip, the crash banner, the post-recover quiet chip, and the panel's exited row. The scratch instance's `electron.exe` (confirmed by PID against its own `--user-data-dir`/`--remote-debugging-port=9489` command line) and the two `omp.exe` processes it spawned (pre-crash and post-recover, confirmed by `processes.json`) were killed by exact PID; `tasklist` afterward showed none of this run's processes remaining, and the scratch parent directory was removed by its literal absolute path from a cwd outside it. The exact scenario Stuart originally saw (PLAN.md open question 9: what crashed, whether a process was left running) remains unconfirmed -- this verification exercises the `omp`-process-crash reading of #489's title, the one `get_subagents`'s contract (T122) makes buildable, not a claim about which crash he actually hit.
 
+**Verified 2026-10-07 (gate fixes)**: quality-gate findings 1-11 addressed in `SessionAgent.ts`
+(`reconcileSubagentsOnAttach` redesigned around `toolCallId`+`specIndex` correlation, current/
+last-turn scoping, unconditional `exited` resolution with no `get_subagents` RPC, chat-transcript
+settling, explanatory stream placeholder, no-fabricated-duration), `model.ts`/`transcript.ts`
+(`specIndex` field, `exited` transcript status), `ToolRow.tsx`/`SubagentPanel.tsx` (icon/wording),
+`ReadoutChips.tsx` (WCAG 2.5.3 accessible-name fix), `get-subagents-probe.mjs` (assertions, honest
+header), and this spec's own docs (`spec.md`, `data-model.md`, `contracts/omp-usage.md` section
+(e), `quickstart.md` step 7b). `pnpm typecheck` and `pnpm build` clean.
+
+Both recovery paths driven live end to end on a scratch Electron instance (isolated
+`--user-data-dir`/CDP port, scratch git Repository/Session, real signed-in `omp` 18.8.0, driven via
+`window.refract.*` IPC): (a) same-instance Recover -- exactly ONE `SubagentSummary` (the original
+bug reported "2 finished"/two panel rows), `status: 'exited'`, matching chat row settled too; this
+pass also caught and fixed a real bug `reconcileSubagentsOnAttach` never called
+`scheduleReadoutUpdate()`, so the chip read `{ running: 1, finished: 0 }` in the immediate
+`recover()` response and only corrected to `{ running: 0, finished: 1 }` ~50ms later (now fixed).
+(b) True app restart -- hard-killed the owning `omp.exe` tree AND the whole scratch Electron
+process, relaunched with the SAME `--user-data-dir` (brand-new `SessionAgent`), recovered: exactly
+ONE `SubagentSummary` seeded purely from the reattached transcript, `status: 'exited'`, selecting
+it returned the explanatory placeholder instead of throwing not-found. Reading the real session
+`.jsonl`: the `task` toolCall's own "spawned" acknowledgment WAS already persisted before the
+kill, but the subsequent `wait` call that would block for the real result was not, and
+`fromHistory` still rebuilt the row as `'running'` regardless -- confirming the near-instant
+"spawned" ack is not itself a completion signal. **Not driven live this pass**: the "clean turn,
+then mode-change restart shows no phantom finished" scoping check (edge case, finding 2(c)) --
+designed and code-reviewed, not exercised against a real instance; say so rather than claim it.
+

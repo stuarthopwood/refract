@@ -135,7 +135,7 @@ function upsertSubagentItems(items: TranscriptItem[], toolCallId: string, specs:
     const task = typeof spec.task === 'string' ? spec.task : '';
     const existingIndex = result.findIndex((item) => item.id === id);
     if (existingIndex === -1) {
-      const created: TranscriptItem = { kind: 'subagent', id, toolCallId, name, task, status: 'running', startedAt: Date.now() };
+      const created: TranscriptItem = { kind: 'subagent', id, toolCallId, specIndex: index, name, task, status: 'running', startedAt: Date.now() };
       result = [...result, created];
       return;
     }
@@ -557,6 +557,7 @@ function buildAssistantItems(
                 kind: 'subagent',
                 id: subId,
                 toolCallId: part.id,
+                specIndex,
                 name,
                 task,
                 status: 'running',

@@ -55,8 +55,13 @@ These OMP facts are unverified and are checked before the work that depends on t
 7b. Crash the agent process mid-subagent-run and reopen the Session (`taskkill /PID <omp pid> /F`
     while a `task()` call is genuinely running, then reopen the Session from the list — issue
     #489). Expect: the Subagents chip is reachable again (not silently hidden), the panel lists
-    the interrupted subagent with state "Agent exited" (a distinct icon, never the spinner or the
-    check/cross finished/failed icons), and the chip's quiet count includes it.
+    the interrupted subagent exactly ONCE (gate fix, 2026-10-07: a prior build double-counted it
+    as two rows/"2 finished" because the live summary and the chat-transcript row used
+    unrelated id schemes) with state "Agent exited" (a distinct icon, never the spinner or the
+    check/cross finished/failed icons), the chat transcript's own collapsed subagent line shows
+    the same settled state (not left spinning "running" while the panel disagrees), selecting
+    that row in the panel shows an explanatory placeholder instead of erroring, and the chip's
+    quiet count includes it with no duration shown if the agent's own start time was never known.
 8. Ask the agent to keep a task list for the current work, and read it partway through. Expect: a
    Todo chip reads "Todo N/M"; it disappears once the agent has no task list at all.
 9. Resize the window very narrow with several chips enabled. Expect: the row wraps onto a further

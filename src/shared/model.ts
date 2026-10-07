@@ -158,16 +158,27 @@ export interface SubagentSummary {
    * need this to correlate a `tool_execution_update`/`tool_execution_end` frame to the right
    * batch -- `id` alone (name or position) is not unique enough across calls. */
   toolCallId: string;
+  /** This subagent's position within the owning `task()` call's own `tasks[]` array (spec 004
+   * remediation, HIGH, issue #489 gate finding 1): the ONE value both this summary and the chat
+   * transcript's own `kind: 'subagent'` row (`subagent:<toolCallId>:<specIndex>`, transcript.ts)
+   * derive from the SAME source array in the SAME order -- their respective `id` strings use
+   * unrelated schemes and must never be compared directly, so `reconcileSubagentsOnAttach`
+   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex`
+   * instead. */
+  specIndex: number;
   nameOrTask: string;
   /** `'exited'` (issue #489, FINDINGS item 45): Refract still remembered this subagent as
-   * `running` but its owning process is gone by the time the next attach/resume's
-   * `get_subagents` snapshot comes back -- that snapshot is scoped to the CURRENT process only
-   * (confirmed live: OMP never replays subagent history onto a fresh process), so anything it
-   * does not also report is provably orphaned. Distinct from `failed`: nothing about the
-   * subagent's own work is known to have failed, only its process disappeared. */
+   * `running` from a previous process life by the time the next attach/resume runs. A freshly
+   * launched `OmpProcess` never reuses a previous one (`SessionAgent.launch` always spawns a new
+   * child), so its own `get_subagents` registry is unconditionally empty -- confirmed live even
+   * seconds after a hard-killed process's own genuinely-running subagent, same Conversation file
+   * (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) -- so every surviving `running`
+   * candidate `reconcileSubagentsOnAttach` finds is unconditionally resolved to `exited`, never
+   * by asking OMP. Distinct from `failed`: nothing about the subagent's own work is known to
+   * have failed, only its process disappeared. */
   status: 'running' | 'finished' | 'failed' | 'exited';
   startedAt: number;
-  durationMs?: number; // present once status is finished, failed, or exited
+  durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
 }
 
 /** Built in the main process from OMP frames; the renderer only renders items. */
@@ -210,14 +221,18 @@ export type TranscriptItem =
   | {
       /** One subagent started by a batch `task()` call (T078): a `tasks` array of N starts N of
        * these, never a single `tool` item, so each has its own collapsed line and (later, spec
-       * 004) its own transcript panel. `id` stays stable (`subagent:<toolCallId>:<index>`) across
-       * the run so re-opening it keeps the same identity. */
+       * 004) its own transcript panel. `id` stays stable (`subagent:<toolCallId>:<specIndex>`)
+       * across the run so re-opening it keeps the same identity. */
       kind: 'subagent';
       id: string;
       toolCallId: string; // the parent `task` call's id
+      specIndex: number; // this spec's position in the owning call's own `tasks[]` (issue #489 gate finding 1: the correlation key `reconcileSubagentsOnAttach` uses, since `id`'s scheme never matches `SubagentSummary.id`'s)
       name: string; // the task's own `name`, else its `task` text truncated
       task: string; // the full prompt text (`tasks[i].task`), shown on expansion
-      status: 'running' | 'done' | 'error';
+      /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
+       * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
+       * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
+      status: 'running' | 'done' | 'error' | 'exited';
       /** Absent when built from history (no reliable wall clock to derive it from), matching
        * the `thinking` item's `startedAt`. */
       startedAt?: number;
