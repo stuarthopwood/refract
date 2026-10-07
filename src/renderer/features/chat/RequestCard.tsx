@@ -108,7 +108,16 @@ export function splitQuestionHeading(text: string): { heading: string | null; bo
   const rawFirstLine = normalized.slice(0, newlineIndex)
   const heading = rawFirstLine.trim()
   const body = normalized.slice(newlineIndex + 1).replace(/^\n+/, '')
-  if (!heading || !body || /^(    |\t)/.test(rawFirstLine) || MARKDOWN_BLOCK_START.test(heading) || THEMATIC_BREAK.test(heading)) {
+  const bodyFirstLineEnd = body.indexOf('\n')
+  const bodyFirstLine = bodyFirstLineEnd === -1 ? body : body.slice(0, bodyFirstLineEnd)
+  if (
+    !heading ||
+    !body ||
+    /^(    |\t)/.test(rawFirstLine) ||
+    MARKDOWN_BLOCK_START.test(heading) ||
+    THEMATIC_BREAK.test(heading) ||
+    SETEXT_UNDERLINE.test(bodyFirstLine)
+  ) {
     return { heading: null, body: normalized }
   }
   return { heading, body }
@@ -124,6 +133,16 @@ const MARKDOWN_BLOCK_START = /^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/
 // alone on the line) -- also never promoted to a heading (quality gate, a11y round 4, issue #491
 // finding 3), since react-markdown renders it as an `<hr>`, not text.
 const THEMATIC_BREAK = /^([-*_])(?:\s*\1){2,}$/
+
+// A setext heading underline (CommonMark: one or more `=` or up to three leading spaces then
+// `-`, alone on the line, trailing spaces allowed) as the BODY's first line -- if the question's
+// first line were kept as a heading, this line would otherwise either disappear (absorbed as the
+// setext underline of a would-be preceding paragraph, `=`) or render as a bare `<hr>` (`-`), per
+// gate cycle 3, issue #491 finding 2. Suppressing the heading split here falls back to rendering
+// the whole normalised text as one body, where the raw `---`/`===` line reaches react-markdown
+// attached to the line above it and stays literal/becomes `<hr>` as plain body content, exactly
+// like unsplit agent text would.
+const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/
 
 interface AskQuestionRowProps {
   item: AskToolItem
@@ -159,7 +178,11 @@ export function AskQuestionRow({ item, userName }: AskQuestionRowProps) {
       {heading && (
         <Markdown id={`${item.id}-ask-heading`} text={heading} className="font-medium text-muted-foreground" />
       )}
-      <Markdown id={`${item.id}-ask-body`} text={body} className="text-muted-foreground" />
+      <Markdown
+        id={`${item.id}-ask-body`}
+        text={body}
+        className="text-muted-foreground [&_p]:whitespace-pre-line"
+      />
       {options.length > 0 && (
         <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
           {options.map((option) => (
@@ -264,45 +287,72 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   // screen (WCAG 1.4.10).
   const { heading, body } = splitQuestionHeading(request.title)
   // Accessible name plumbing for the card (quality gate, a11y round 3, issue #491 findings 1-2;
-  // round 4 finding 1): `CardTitle`/`CardContent` are plain `div`s with no implicit name or
-  // landmark role, so the card is wrapped in `role="group"` with `aria-labelledby` pointing at
-  // whichever element holds the question's visible name -- the heading wrapper when there is
-  // one, else an id on the body question text itself. It must NOT point at the surrounding
-  // scroll region: that region carries its own `aria-label="Question"` (see below), and in the
-  // accessible-name computation an element's own `aria-label` wins over a name borrowed via
-  // `aria-labelledby` from a *descendant* that itself has one, so labelling the group from the
-  // region collapsed the group's name to the literal word "Question" instead of the question
-  // text (verified via the CDP accessibility tree).
-  const headingTitleId = `${request.requestId}-ask-heading-title`
-  const bodyTextId = `${request.requestId}-ask-question-text`
-  const groupLabelId = heading ? headingTitleId : bodyTextId
+  // round 4 finding 1; gate cycle 3 findings 3-5): `CardTitle`/`CardContent` are plain `div`s
+  // with no implicit name or landmark role, so the card is wrapped in `role="group"` whose name
+  // comes from whichever element holds the question's visible name. With a heading, that is the
+  // heading wrapper. Without one, a single-line body (one short paragraph, no newline) still
+  // reads naturally as the group's name via `aria-labelledby`; a multi-line/long body would
+  // otherwise make the entire body text the group's accessible name, so the group instead gets a
+  // literal `aria-label="Question"` with `aria-describedby` pointing at the body for its
+  // description. An empty title (input/editor/confirm frames send `title: ''`, main/omp/
+  // dialogs.ts:61,66) leaves no heading AND no body: the group falls back to the same literal
+  // `aria-label="Question"`, and the scroll region below is skipped entirely rather than
+  // rendering an empty focusable area (gate cycle 3 finding 3). The group must NOT borrow its
+  // name from the surrounding scroll region: that region carries its own `aria-label="Question"`
+  // (below), and in the accessible-name computation an element's own `aria-label` wins over a
+  // name borrowed via `aria-labelledby` from a *descendant* that itself has one, so labelling the
+  // group from the region collapsed its name to the literal word "Question" instead of the
+  // question text (verified via the CDP accessibility tree).
+  // `requestId` arrives from the main process and is sanitised the same way `Markdown.tsx`'s
+  // `footnotePrefix` sanitises its own id source, since it ends up raw inside `id`/
+  // `aria-labelledby`/`aria-describedby` attributes (gate cycle 3 finding 5).
+  const safeRequestId = request.requestId.replace(/[^a-zA-Z0-9_-]/g, '-')
+  const headingTitleId = `${safeRequestId}-ask-heading-title`
+  const bodyTextId = `${safeRequestId}-ask-question-text`
+  const hasBody = body.trim().length > 0
+  const isMultilineBody = body.includes('\n')
+  const groupAriaLabelledBy = heading ? headingTitleId : hasBody && !isMultilineBody ? bodyTextId : undefined
+  const groupAriaLabel = !heading && (!hasBody || isMultilineBody) ? 'Question' : undefined
+  const groupAriaDescribedBy = !heading && hasBody && isMultilineBody ? bodyTextId : undefined
 
   return (
-    <Card size="sm" role="group" aria-labelledby={groupLabelId}>
+    <Card
+      size="sm"
+      role="group"
+      aria-labelledby={groupAriaLabelledBy}
+      aria-label={groupAriaLabel}
+      aria-describedby={groupAriaDescribedBy}
+    >
       {heading && (
         <CardHeader>
           <CardTitle id={headingTitleId}>
-            <Markdown id={`${request.requestId}-ask-heading`} text={heading} />
+            <Markdown id={`${safeRequestId}-ask-heading`} text={heading} />
           </CardTitle>
         </CardHeader>
       )}
       {/* `tabIndex`/`role="region"`/`aria-label` match the pattern `Markdown.tsx`'s `CodeBlock`
        * uses for its own scrollable region (quality gate, a11y round 3, issue #491 finding 1):
        * keyboard-reachable and named on its own, since nothing else in the card is otherwise
-       * focusable when the question overflows its max height. */}
-      <CardContent
-        tabIndex={0}
-        role="region"
-        aria-label="Question"
-        className="max-h-56 space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-      >
-        <div id={bodyTextId}>
-          <Markdown id={`${request.requestId}-ask-body`} text={body} />
-        </div>
-        {request.message && (
-          <Markdown id={`${request.requestId}-ask-message`} text={request.message} className="text-muted-foreground" />
-        )}
-      </CardContent>
+       * focusable when the question overflows its max height. Skipped entirely when there is no
+       * body and no message (gate cycle 3 finding 3), e.g. an empty title, so no empty focusable
+       * region is left behind. */}
+      {(hasBody || request.message) && (
+        <CardContent
+          tabIndex={0}
+          role="region"
+          aria-label="Question"
+          className="max-h-56 space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        >
+          {hasBody && (
+            <div id={bodyTextId}>
+              <Markdown id={`${safeRequestId}-ask-body`} text={body} className="[&_p]:whitespace-pre-line" />
+            </div>
+          )}
+          {request.message && (
+            <Markdown id={`${safeRequestId}-ask-message`} text={request.message} className="text-muted-foreground" />
+          )}
+        </CardContent>
+      )}
       <CardContent className="space-y-2">
         {request.inputKind === 'confirm' && (
           <div className="flex gap-2">
