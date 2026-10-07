@@ -2,7 +2,7 @@
 //
 // Question: after a reload (switch_session on a copy of a real Conversation file), does
 // `get_state.messageCount`/`get_messages` ever come back LOWER than the raw entry count the
-// file itself holds? Constitution v1.5.0's Principle III treated any drop as a hard reattach
+// file itself holds? Constitution v1.7.0's Principle III treated any drop as a hard reattach
 // failure ("messageCount N is below last known M"); this probe reproduces that exact failure
 // against a real Conversation copy to settle whether the drop is a genuine corruption (the old
 // rule's assumption) or an OMP-side artifact of reload dropping some message class (aborted
@@ -18,8 +18,9 @@
 //
 // Read-only: no prompt is ever sent, and no file under the source's own directory is ever
 // opened directly -- the source is copied into a scratch `--session-dir` first (FINDINGS item
-// 5/61: OMP rewrites a session file on reopen), so the original is never mutated. Raw frames and
-// the scratch copy stay under the OS temp dir, whose path is printed at the end. Quality-gate
+// 5/61: OMP rewrites a session file on reopen), so the original is never mutated. Raw RPC frames
+// are held in memory only, never written to disk; only the scratch copy of the transcript lives
+// on disk, under the OS temp dir, whose path is printed at the end. Quality-gate
 // remediation (gate cycle 2, #449, PROJECT RULE): this scratch dir is now left on disk on
 // purpose and never deleted by this script -- AGENTS.md forbids `fs.rm`/`fs.rmSync` on a target
 // built from a variable (ROOT here is an `fs.mkdtempSync` directory, private and randomly

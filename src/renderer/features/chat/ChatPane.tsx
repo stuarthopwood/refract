@@ -306,7 +306,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
     setRecoveringId(recoveringFor)
     const result = await window.refract.sessions.recover(recoveringFor)
-    setRecoveringId(null)
+    setRecoveringId(id => (id === recoveringFor ? null : id))
     // Quality-gate remediation (code-reviewer, Medium, gate cycle 3 #449): the previous check
     // treated ANY element still inside the pane as "focus didn't leave", including a ChatHeader
     // control (close/swap) the user deliberately moved to mid-call, which this then yanked
@@ -342,7 +342,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
     setStartingNewId(startingFor)
     const result = await window.refract.conversations.startNew(startingFor)
-    setStartingNewId(null)
+    setStartingNewId(id => (id === startingFor ? null : id))
     // Quality-gate remediation: same fix as handleRecover above, plus round 3 (code-reviewer,
     // Low): prefer re-focusing the "Start new conversation" button itself once it's enabled
     // again -- `focusPaneContent`'s generic banner-button query always lands on "Retry" (the
