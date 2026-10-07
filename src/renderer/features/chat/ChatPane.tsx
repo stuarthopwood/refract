@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { focusPaneContent, focusSessionsNav } from '@/lib/focus'
 import {
   notify,
+  useChatScrollStore,
   useCommandsStore,
   usePendingRequestsStore,
   useQueueStore,
@@ -365,6 +366,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       requestAnimationFrame(maybeRestoreFocus)
       return
     }
+    // Issue #485: same as ConversationSwitcher's handleNewConversation/handleOpenConversation --
+    // this is the stopped-Session banner's own "Start new conversation" path, a second way to
+    // call conversations.startNew; the new Conversation must land at the end, never reusing the
+    // Session's remembered scroll offset from the since-replaced Conversation's own content.
+    useChatScrollStore.getState().clear(startingFor)
     applySnapshot(startingFor, result.value)
     if (sessionIdRef.current === startingFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
