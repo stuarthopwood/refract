@@ -1,13 +1,14 @@
 import * as React from 'react'
-import { BrainIcon, Loader2Icon } from 'lucide-react'
+import { ArrowDownIcon, BrainIcon, Loader2Icon } from 'lucide-react'
 import {
   MessageScroller,
-  MessageScrollerButton,
   MessageScrollerContent,
   MessageScrollerItem,
   MessageScrollerProvider,
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
+import { Button } from '@/components/ui/button'
+import { cn } from 'cn'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptItem } from '../../../shared/model'
@@ -448,6 +449,19 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // in the first place) until a real scroll (`handleViewportScroll` below) brings the developer
   // back to the end themselves.
   const [autoScrollSuppressed, setAutoScrollSuppressed] = React.useState(false)
+  // Quality-gate remediation (round 2, 2026-10-07, finding 3): the vendored `MessageScrollerButton`
+  // ("Scroll to end") hides/disables itself from its OWN internal "mode" tracking, which only
+  // ever flips out of "following-bottom" on a real user scroll upward -- a detached restore's
+  // programmatic `scrollTop` write never satisfies that heuristic (the vendored mode's own
+  // last-known position was the Conversation's PREVIOUS resting spot, not this restore's target,
+  // so its direction-of-travel check reads the jump the wrong way round), leaving the library's
+  // button permanently inert exactly when a developer far from the end most needs it (tasks.md
+  // ~485 recorded data-active staying false 6000-13000px from the end). Rather than fight that
+  // closed-source state machine, the button below is app-owned: `isAtEnd` is this component's own
+  // measured distance-from-end, updated from the exact same `isAtScrollEnd` check already driving
+  // `autoScrollSuppressed` and the scroll-memory store, so it is always correct regardless of the
+  // vendored library's internal mode.
+  const [isAtEnd, setIsAtEnd] = React.useState(true)
 
   // Raised synchronously during render -- strictly before this render's DOM commit -- so a
   // `scroll` event the browser fires from its own clamp/adjust while content-visibility rows are
@@ -500,6 +514,23 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     })
     useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
     if (atEnd && autoScrollSuppressed) setAutoScrollSuppressed(false)
+    setIsAtEnd(atEnd)
+  }
+
+  // Quality-gate remediation (round 2, 2026-10-07, finding 3): the app-owned "Scroll to end"
+  // button's click handler. A direct `scrollTop` write (not the vendored scroller's own
+  // `scrollToEnd`, which only exists inside its context and would re-engage the same stuck
+  // "following-bottom" mode this button was built to route around) -- the resulting native
+  // `scroll` event still reaches `handleViewportScroll` above, which records the new position
+  // and clears `autoScrollSuppressed` once it reads back as at-end.
+  function handleScrollToEnd() {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
+    viewport.scrollTop = target
+    useChatScrollStore.getState().record(sessionId, { atEnd: true, scrollTop: target })
+    setAutoScrollSuppressed(false)
+    setIsAtEnd(true)
   }
 
   // Lands the viewport at the end, or restores the remembered detached position, whenever this
@@ -551,7 +582,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
 
     function removeInputListeners() {
       root.removeEventListener('wheel', handleUserInput)
-      root.removeEventListener('keydown', handleUserInput)
+      root.removeEventListener('keydown', handleKeyInput)
       root.removeEventListener('pointerdown', handleUserInput)
       root.removeEventListener('touchstart', handleUserInput)
     }
@@ -577,10 +608,24 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
       landingInProgressRef.current = false
       setAutoScrollSuppressed(!atEnd)
+      setIsAtEnd(atEnd)
+    }
+
+    // Quality-gate remediation (round 2, 2026-10-07, a11y): the vendored scroller only reacts to
+    // a handful of navigation keys itself (ArrowUp/ArrowDown/Home/End/PageUp/PageDown/Space); a
+    // bare `keydown` listener here used to treat EVERY key -- Shift, Ctrl, even Ctrl+C -- as "the
+    // developer took over", cancelling the landing settle loop on keystrokes that never move the
+    // viewport at all. Filtered to exactly the keys the library itself moves on.
+    const SCROLL_NAVIGATION_KEYS: Record<string, true> = {
+      ArrowUp: true, ArrowDown: true, Home: true, End: true, PageUp: true, PageDown: true, ' ': true
+    }
+    function handleKeyInput(event: KeyboardEvent) {
+      if (!SCROLL_NAVIGATION_KEYS[event.key]) return
+      handleUserInput()
     }
 
     root.addEventListener('wheel', handleUserInput, { passive: true })
-    root.addEventListener('keydown', handleUserInput, { passive: true })
+    root.addEventListener('keydown', handleKeyInput, { passive: true })
     root.addEventListener('pointerdown', handleUserInput, { passive: true })
     root.addEventListener('touchstart', handleUserInput, { passive: true })
 
@@ -601,6 +646,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
         removeInputListeners()
         landingInProgressRef.current = false
         setAutoScrollSuppressed(memory !== undefined && !memory.atEnd)
+        setIsAtEnd(memory === undefined || memory.atEnd)
         return
       }
       requestAnimationFrame(step)
@@ -670,7 +716,24 @@ export function Transcript({ sessionId }: { sessionId: string }) {
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
-        <MessageScrollerButton direction="end" />
+        <Button
+          type="button"
+          variant="secondary"
+          size="icon-sm"
+          aria-label="Scroll to end"
+          aria-hidden={isAtEnd}
+          tabIndex={isAtEnd ? -1 : 0}
+          onClick={handleScrollToEnd}
+          className={cn(
+            "absolute inset-s-1/2 bottom-4 -translate-x-1/2 border-border bg-background text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground rtl:translate-x-1/2",
+            isAtEnd
+              ? "pointer-events-none translate-y-full scale-95 opacity-0 duration-400 ease-[cubic-bezier(0.7,0,0.84,0)]"
+              : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"
+          )}
+        >
+          <ArrowDownIcon />
+          <span className="sr-only">Scroll to end</span>
+        </Button>
       </MessageScroller>
     </MessageScrollerProvider>
   )
