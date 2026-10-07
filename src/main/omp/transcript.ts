@@ -19,7 +19,17 @@ import type {
 } from '../../shared/frames';
 import { isKnownFrame } from '../../shared/frames';
 import { HIDDEN_TOOLS, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX } from '../../shared/model';
-import type { TranscriptItem } from '../../shared/model';
+import type { Session, TranscriptItem } from '../../shared/model';
+
+/** Issue #489 hardening: `registry.json` is hand-editable disk state (gate fixes 3, section h
+ * finding (e)) and goes through no runtime validation on load -- a `currentTurnSubagents` field
+ * holding a number or object would make `new Set(x ?? [])` throw, and a plain string would be
+ * silently split into one key per character instead of treated as absent/malformed. Every read
+ * site threads the raw field through here instead of trusting it directly. */
+export function currentTurnKeys(session: Pick<Session, 'currentTurnSubagents'> | undefined | null): string[] {
+  const raw = session?.currentTurnSubagents;
+  return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === 'string') : [];
+}
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
 type ThinkingItem = Extract<TranscriptItem, { kind: 'thinking' }>;

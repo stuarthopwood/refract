@@ -39,7 +39,10 @@ field whose bottom bar shows the mode, model, and agent.
   was). What should it show instead? -> A: The running count alone while any subagent is still
   running (for example "1 subagent running"); once none are, a quiet "N finished" total instead
   (folding in any subagent issue #489 seeds as `exited` — see Edge Cases). Matches issue #507's
-  row-count definition.
+  row-count definition. **SUPERSEDED, gate fixes 2 finding 7 (2026-10-07)**: a single folded-in
+  "N finished" total was itself found misleading once seeded `exited`/`failed` subagents could
+  coexist with genuinely `finished` ones -- the shipped wording is a comma-joined list of
+  whichever of `finished`/`exited`/`failed` are non-zero (FR-007, `ReadoutChips.tsx`).
 - Q: Issue #489 found a crashed-and-resumed Session's still-remembered-running subagent has no
   Subagents pill at all (`runtime.subagents` is rebuilt empty on every attach/resume and only a
   live `task` tool call ever repopulates it). What should attach/resume do? -> A: Seed
@@ -56,7 +59,10 @@ field whose bottom bar shows the mode, model, and agent.
   `contracts/omp-usage.md` section (d)). Scoped to the current/last turn only (the last `user`
   transcript item onward): an older turn's `subagent` row OMP's own history keeps rebuilding as
   `running` must never resurface as a phantom "finished" once a newer turn has started none of
-  its own. The exact scenario Stuart saw (what crashed, whether a process was left running) is
+  its own. **SUPERSEDED, durable turn marker (2026-10-07)**: "the last `user` transcript item
+  onward" is no longer the scoping rule; scope is now the persisted `Session.currentTurnSubagents`
+  registry marker (see Edge Cases "Durable turn marker" entry, FR-007, data-model.md). The exact
+  scenario Stuart saw (what crashed, whether a process was left running) is
   still unconfirmed — PLAN.md open question 9 — so this remains designed from the `get_subagents`
   contract (confirmed live, `docs/spike/get-subagents-probe.mjs`, 2026-10-07) rather than a
   specific repro.
@@ -217,7 +223,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   launched process can never share a registry with a previous one, confirmed live); a `running`
   `runtime.subagents` entry and a `running` transcript `subagent` row for the SAME instance are
   first collapsed to one candidate (correlated by `toolCallId`+`specIndex`); only candidates from
-  the current/last turn (after the last `user` transcript item) are ever seeded, so an older
+  the current/last turn (after the last `user` transcript item) are ever seeded, **SUPERSEDED,
+  durable turn marker below** (scope is now the persisted `Session.currentTurnSubagents` set, not
+  transcript position), so an older
   turn's row never resurfaces as a phantom "finished" once a newer turn started none; the
   matching chat-transcript row is settled to `exited` too, not left spinning "running"; a
   seeded-only candidate (no live stream this run) gets an explanatory placeholder stream instead
@@ -241,7 +249,10 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   "the current turn's subagents", not a subset. (4) `fromHistory` itself now settles a `running`
   subagent row from an OLDER turn to `exited` once a later `user` item exists, so the main chat
   transcript stops showing it as perpetually running even for a turn `reconcileSubagentsOnAttach`'s
-  own scope rule will never touch again. Narrowed: an orphaned previous-life `omp.exe` genuinely
+  own scope rule will never touch again. **SUPERSEDED, durable turn marker below**: "once a later
+  `user` item exists" is no longer the rule `settleStaleSubagentRows` (`transcript.ts`) uses; it
+  now settles any `running` row whose `toolCallId:specIndex` key is absent from the persisted
+  `Session.currentTurnSubagents` set. Narrowed: an orphaned previous-life `omp.exe` genuinely
   CAN outlive a real Refract app crash for a window on Windows -- the `exited` resolution above
   relies on `src/main/process/jobObject.ts`'s Job Object (primary) and `pidRecords.ts`'s
   `reapStale()` fallback (run from `main/index.ts` at startup, before any Session attaches)
@@ -317,8 +328,12 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   when a lookup fails or GitHub access is unavailable it MUST be hidden without an error message.
   Activating it MUST open that pull request in the Pull requests view (spec 003).
 - **FR-007**: The Subagents chip MUST show the running count of the current turn's subagents
-  while any are running; once none are, it MUST show a quiet "N finished" total of the ones that
-  reached `finished` or `exited` (issue #536); it MUST be hidden when the turn has started none.
+  while any are running; **SUPERSEDED, gate fixes 2 finding 7 (2026-10-07)**: once none are
+  running, it is no longer a single "N finished" total of `finished`-or-`exited` ones -- it MUST
+  show a quiet, comma-joined total of whichever of `finished`/`exited`/`failed` are non-zero (for
+  example "1 finished, 1 exited", or "1 failed" when a turn's only subagents failed), worded
+  distinctly per status rather than folded into one misleading "finished" bucket (issue #536); it
+  MUST be hidden when the turn has started none.
 - **FR-008**: Every chip MUST update live as the underlying value changes, MUST retain its last
   known value when a live reading is momentarily unavailable but the readout is otherwise
   meaningful (FR-002, FR-003), and MUST NOT block typing into or sending from the message box.

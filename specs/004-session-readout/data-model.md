@@ -48,7 +48,13 @@ file-corruption path.
 **New request**: `settings.setReadoutVisibility(kind, visible)` replaces one entry and persists
 the whole `Settings` row the same way `setApprovalMode` already does (spec 001
 `src/main/store/settings.ts`), including that function's race-safety note: it returns the value
-*this* call wrote, never a possibly-superseded shared read (see contracts/ipc.md).
+*this* call wrote, never a possibly-superseded shared read (see contracts/ipc.md). The registry
+write for `Session.currentTurnSubagents` (below) is queued immediately on an atomic per-file write
+queue and lands within milliseconds; it survives an omp process crash, a Refract restart, or a
+normal shutdown, and can be lost only if the Electron main process itself dies in the narrow
+window between the task frame and the atomic rename (or the write fails, which is logged) -- in
+that case the Session degrades to the pre-marker behaviour: the running row settles to `exited`
+with no pill (see row below, and `SessionAgent.ts` `handleTaskStart`).
 
 ## Held in memory
 
@@ -165,6 +171,6 @@ interface ViewState {
 | a `SubagentSummary` | its tool call ends (success) | `status: 'finished'`, `durationMs` set |
 | a `SubagentSummary` | its tool call ends (error) | `status: 'failed'`, `durationMs` set |
 | `subagents: [...]` | a new turn starts (`agent_start`) | cleared to `[]` (FR-007: count is "the current turn's") |
-| a `SubagentSummary` at `status: 'running'` carried over from before a crash, or a `kind: 'subagent'` transcript row still `status: 'running'` with no such summary yet (fresh instance) -- the two collapsed to ONE candidate by `toolCallId`+`specIndex` if both represent the same instance, and scoped to the current/last turn only | an attach/resume (`launch()`, issue #489) | `status: 'exited'` unconditionally, `durationMs` set only if a genuine `startedAt` was ever known (gate fixes, 2026-10-07: no `get_subagents` RPC call -- a freshly launched process's own registry is confirmed-live always empty here, so it can never discriminate "still running" from "gone"); the matching chat-transcript `subagent` row is settled to `status: 'exited'` too |
+| a `SubagentSummary` at `status: 'running'` carried over from before a crash, or a `kind: 'subagent'` transcript row still `status: 'running'` with no such summary yet (fresh instance) -- the two collapsed to ONE candidate by `toolCallId`+`specIndex` if both represent the same instance, and scoped to membership in the persisted `Session.currentTurnSubagents` set (**SUPERSEDED, durable turn marker, 2026-10-07**: previously "the current/last turn" meant transcript position -- the last `user` item onward; now it means this persisted marker, written by `handleTaskStart` and cleared only at `agent_start`, so a steer mid-subagent no longer loses scope) | an attach/resume (`launch()`, issue #489) | `status: 'exited'` unconditionally, `durationMs` set only if a genuine `startedAt` was ever known (gate fixes, 2026-10-07: no `get_subagents` RPC call -- a freshly launched process's own registry is confirmed-live always empty here, so it can never discriminate "still running" from "gone"); the matching chat-transcript `subagent` row is settled to `status: 'exited'` too |
 | `view: 'chat' \| 'pull-requests' \| 'manage-sessions'` | `openSettings(section?)` | `view: 'settings'`, `settingsSection` set |
 | `view: 'settings'` | `openChat(repositoryId?)`, or any left-nav/Session action that returns to chat | `view: 'chat'` (and `repositoryId` set when provided) |

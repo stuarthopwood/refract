@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { OmpProcess } from './OmpProcess';
-import { applyFrame, fromHistory, tryBuildAgentMessageFromUnknownFrame } from './transcript';
+import { applyFrame, currentTurnKeys, fromHistory, tryBuildAgentMessageFromUnknownFrame } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
 import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './transcriptDiff';
@@ -364,7 +364,7 @@ export class SessionAgent extends EventEmitter {
         // wrote to it after that snapshot was taken.
         transcript = fromHistory(
           (messagesRes.data as GetMessagesResponseData).messages,
-          new Set(this.registry.getSession(this.sessionId)?.currentTurnSubagents ?? []),
+          new Set(currentTurnKeys(this.registry.getSession(this.sessionId))),
         );
         messagesOk = true;
       } else {
@@ -727,9 +727,9 @@ export class SessionAgent extends EventEmitter {
 
     const state = stateRes.data as GetStateResponseData;
     const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
-    const currentTurnKeys = new Set(this.registry.getSession(this.sessionId)?.currentTurnSubagents ?? []);
+    const currentTurnKeySet = new Set(currentTurnKeys(this.registry.getSession(this.sessionId)));
     const transcript = messagesRes.success
-      ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeys)
+      ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet)
       : [];
     // Gate fixes 2 finding 4: reconcile here too, same rule as `launch()` -- without it a
     // Conversation whose last turn crashed mid-subagent opens with a row stuck on 'running'
@@ -923,7 +923,7 @@ export class SessionAgent extends EventEmitter {
         // the common case -- never costs a registry write.
         {
           const currentSession = this.registry.getSession(this.sessionId);
-          if (currentSession && (currentSession.currentTurnSubagents?.length ?? 0) > 0) {
+          if (currentSession && currentTurnKeys(currentSession).length > 0) {
             this.registry.updateSession(this.sessionId, { currentTurnSubagents: [] }).catch((err) => {
               console.error(`SessionAgent ${this.sessionId}: failed to clear currentTurnSubagents on agent_start`, err);
             });
@@ -1294,19 +1294,24 @@ export class SessionAgent extends EventEmitter {
     this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
     this.scheduleReadoutUpdate();
     // Issue #489 (durable turn marker, 2026-10-07): persists this batch's `toolCallId:specIndex`
-    // keys into `Session.currentTurnSubagents` the instant the call starts -- BEFORE any crash
-    // can lose them -- so `reconcileSubagentsOnAttach`/`settleStaleSubagentRows` can later scope
-    // "this turn" by durable identity instead of transcript position. One write for the WHOLE
-    // batch (every spec in this one `task()` call), never one write per spec, so a parallel
-    // batch costs exactly one registry write regardless of how many subagents it starts; the
-    // write is fire-and-forget (not awaited) but still durable in order -- `registry.updateSession`
-    // mutates its in-memory `Session` synchronously before its own disk write, and
-    // `atomicJson.ts`'s per-file write queue serialises every writer, so this can never race the
-    // `agent_start` clear above or a later batch's own append.
+    // keys into `Session.currentTurnSubagents` the instant the call starts, so
+    // `reconcileSubagentsOnAttach`/`settleStaleSubagentRows` can later scope "this turn" by
+    // durable identity instead of transcript position. One write for the WHOLE batch (every spec
+    // in this one `task()` call), never one write per spec, so a parallel batch costs exactly one
+    // registry write regardless of how many subagents it starts. The write is queued
+    // immediately (not awaited -- the `task` call is dispatched inside omp before Refract's
+    // `handleTaskStart` even sees this frame, so there is nothing useful to await) onto
+    // `atomicJson.ts`'s per-file atomic write queue, which lands it within milliseconds and
+    // serialises it against the `agent_start` clear and any later batch's own append, so write
+    // order is still guaranteed. It survives an omp process crash, a Refract restart, and a
+    // normal shutdown; it can be lost only if the Electron main process itself dies in the
+    // narrow window between this frame and the atomic rename, or the write itself fails
+    // (logged below) -- either way the Session degrades to the pre-marker behaviour: the stale
+    // `running` row is later settled to `exited` with no pill, same as before this feature.
     const session = this.registry.getSession(this.sessionId);
     if (session) {
       const newKeys = created.map((c) => `${c.toolCallId}:${c.specIndex}`);
-      const nextKeys = [...new Set([...(session.currentTurnSubagents ?? []), ...newKeys])];
+      const nextKeys = [...new Set([...currentTurnKeys(session), ...newKeys])];
       this.registry.updateSession(this.sessionId, { currentTurnSubagents: nextKeys }).catch((err) => {
         console.error(`SessionAgent ${this.sessionId}: failed to persist currentTurnSubagents on task start`, err);
       });
@@ -1459,7 +1464,7 @@ export class SessionAgent extends EventEmitter {
 
     // Durable turn marker: see the doc comment above -- scope is the persisted
     // `currentTurnSubagents` set, not transcript position.
-    const currentTurnKeys = new Set(this.registry.getSession(this.sessionId)?.currentTurnSubagents ?? []);
+    const currentTurnKeySet = new Set(currentTurnKeys(this.registry.getSession(this.sessionId)));
 
     interface Candidate {
       id: string;
@@ -1518,7 +1523,7 @@ export class SessionAgent extends EventEmitter {
       // belongs to an earlier, already-concluded turn and is left for `settleStaleSubagentRows`
       // (transcript.ts) to settle to `exited` on the same `fromHistory` build, using this SAME
       // set; it is never re-seeded as "this turn's" here.
-      if (!currentTurnKeys.has(key)) continue;
+      if (!currentTurnKeySet.has(key)) continue;
       const settledStatus = settledKeys.get(key);
       if (settledStatus !== undefined) {
         if (item.status === 'running') {

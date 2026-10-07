@@ -316,6 +316,31 @@ untouched throughout, confirmed in the final process listing. Not separately re-
 (code-reviewed/typechecked only). `pnpm typecheck`, `pnpm build`, `pnpm check:ui-text` (0 leaks)
 all clean.
 
+**Verified 2026-10-07 (spec alignment)**: gate round found spec/docs still describing the OLD
+transcript-position turn boundary as current behaviour after T128/T129 replaced it with the
+durable registry marker. This pass: (1) added `**SUPERSEDED, durable turn marker**` pointers at
+every stale "the last `user` transcript item" passage (spec.md Clarifications, three Edge Cases
+passages, `contracts/omp-usage.md`'s "accepted, documented limitation" text, and
+`data-model.md`'s state-transition row), keeping the original audit trail intact rather than
+deleting it. (2) Corrected FR-007 and the #536 Clarification to the shipped wording (running
+count while any running; otherwise a comma-joined list of whichever of
+`finished`/`exited`/`failed` are non-zero, per `ReadoutChips.tsx`'s `SubagentsChip`), and matched
+quickstart step 7. (3) Corrected the "persisted durably, before any crash can lose it" overclaim
+in `specs/001-core-session-workspace/data-model.md` and `SessionAgent.ts`'s `handleTaskStart`
+comment to the true queued/fire-and-forget write, its millisecond landing time, and its one real
+loss window (the Electron main process dying between the task frame and the atomic rename, or a
+logged write failure) with the resulting degrade-to-pre-marker behaviour. (4) Disclosed in
+`contracts/omp-usage.md` section h that the consumed-`followUp` claim was inferred, not
+exercised live; that scenario (e) only proves an already-empty key set loads fine, not the
+pre-#489-crash upgrade case; and that the marker is not Conversation-scoped (different
+`toolCallId`s simply never match); added quickstart step 7c (steer-then-crash-then-reopen). (5)
+Hardened every `Session.currentTurnSubagents` read site (`SessionAgent.ts` launch/
+openConversation/handleTaskStart/reconcileSubagentsOnAttach/agent_start-clear, and
+`switchRecovery.ts`) through a new `currentTurnKeys()` helper (`transcript.ts`) that filters to
+`string[]`, so a hand-edited or malformed registry field (number, object, bare string) can no
+longer throw or silently iterate per-character instead of being treated as absent. `pnpm
+typecheck`, `pnpm build`, `pnpm check:ui-text` all clean after this pass.
+
 
 ## Phase 33: Convergence
 

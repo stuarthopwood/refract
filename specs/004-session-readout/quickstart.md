@@ -50,8 +50,10 @@ These OMP facts are unverified and are checked before the work that depends on t
 7. Ask the agent a request that starts two or more subagents. Expect: while any are still
    running, the Subagents chip shows the running count only (for example "2 subagents running",
    issue #536 — never a combined running-plus-finished total worded "running"); once the turn
-   settles with none still running, it shows a quiet "N finished" instead, and keeps showing that
-   same total until a later turn starts (and clears the prior turn's subagent list).
+   settles with none still running, it shows a quiet, comma-joined total of whichever of
+   `finished`/`exited`/`failed` are non-zero (for example "2 finished", or "1 finished, 1 exited"
+   — gate fixes 2 finding 7, never folded into one misleading "N finished" bucket), and keeps
+   showing that same total until a later turn starts (and clears the prior turn's subagent list).
 7b. Crash the agent process mid-subagent-run and reopen the Session (`taskkill /PID <omp pid> /F`
     while a `task()` call is genuinely running, then reopen the Session from the list — issue
     #489). Expect: the Subagents chip is reachable again (not silently hidden), the panel lists
@@ -62,6 +64,12 @@ These OMP facts are unverified and are checked before the work that depends on t
     the same settled state (not left spinning "running" while the panel disagrees), selecting
     that row in the panel shows an explanatory placeholder instead of erroring, and the chip's
     quiet count includes it with no duration shown if the agent's own start time was never known.
+7c. Steer the agent (send a new message) while a subagent is still running, then crash the agent
+    process and reopen the Session (durable turn marker, issue #489). Expect: the steered
+    subagent's pill survives — it still settles to "Agent exited" on reattach, not silently
+    dropped — because scope is now the persisted `Session.currentTurnSubagents` registry marker,
+    not transcript position, so the steer's own `user` item can no longer move the turn boundary
+    past the still-running subagent's row.
 8. Ask the agent to keep a task list for the current work, and read it partway through. Expect: a
    Todo chip reads "Todo N/M"; it disappears once the agent has no task list at all.
 9. Resize the window very narrow with several chips enabled. Expect: the row wraps onto a further

@@ -207,6 +207,12 @@ finishes in seconds) and "Slow" (`bash sleep`, still running when killed).
   the steer case it exercised is now an accepted, documented limitation (spec.md Edge Cases,
   gate fixes 3) instead of a fixed one: a steer sent while a subagent is still running moves the
   boundary past that subagent's row, and a later restart/Recover does not restore its pill.
+  **SUPERSEDED, durable turn marker (section h below)**: this limitation is fixed. Scope is no
+  longer the transcript's last `user` item at all; it is the persisted
+  `Session.currentTurnSubagents` registry marker, written the instant a `task` call starts and
+  cleared only at the next `agent_start`, so a steer's own `user` item can never move the
+  boundary past a still-running subagent's row. Section h scenario (a) drove this exact steer
+  case live and confirmed the pill survives it.
 - **Finding 1** (no duplicate on a second reconcile): two consecutive `sessions.recover()` calls
   on the SAME instance, no new turn in between, returned byte-identical `subagents` arrays (`Fast`/
   `Slow`, two entries both times).
@@ -331,8 +337,26 @@ confirmed untouched throughout, including in the final process listing.
   `currentTurnSubagents` write covering both keys from the single batch). Hard-killed the real
   `omp.exe`, called `sessions.recover()`: transcript read `Fast` `status:'done'` (unchanged, its
   real recorded status) and `Slow` `status:'exited'` -- both seeded, neither dropped.
-
 **Not separately re-driven live this pass**: `openConversation()`'s own reconcile path and
 `switchRecovery.ts`'s `recoverFromFailedSwitch` path were updated to read the same persisted set
 (code-reviewed, typechecked) but not independently exercised through a live failed-switch or
 Conversation-change scenario this round.
+
+**Caveats disclosed on gate review (2026-10-07)**:
+- The spec.md "Durable turn marker" bullet's claim that a consumed `followUp` can only be
+  promoted once the prior turn's subagents "already fully settled" is an inference, not something
+  exercised live this pass: every scenario above drove a `steer` (`chat.sendNow`), never a queued
+  `followUp` left to be auto-promoted; section (e) shows `task()` itself returns an instant
+  "Spawned" acknowledgment rather than blocking, which is consistent with the inference but does
+  not confirm it for the `followUp`-promotion path specifically.
+- Scenario (e) deleted `currentTurnSubagents` from a registry row (`mellow-heron`) whose key set
+  was already empty (turn 1's `Worker` had already settled and turn 2's plain reply had cleared
+  it). This proves only that an old-format row with no such key still loads without error; it does
+  NOT exercise the upgrade case where a Session crashed under the OLD (pre-#489) build and so has
+  no marker at all with a genuinely `running` row still pending: that Session's running row is
+  settled to `exited` with no pill on first attach under the new build, same as the pre-marker
+  behaviour, never re-tested against a row actually missing the key while non-empty.
+- The marker is not tied to a Conversation: `toolCallId` values are unique per OMP run, so opening
+  a different Conversation (B) within the same Session simply has no matching keys in
+  `currentTurnSubagents` -- Conversation B's own last-turn finished subagents are never seeded
+  from it, by construction, not because of any Conversation-aware scoping logic.
