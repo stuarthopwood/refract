@@ -107,12 +107,12 @@ export function splitQuestionHeading(text: string): { heading: string | null; bo
   if (newlineIndex === -1) return { heading: null, body: normalized }
   const rawFirstLine = normalized.slice(0, newlineIndex)
   const heading = rawFirstLine.trim()
-  const body = normalized.slice(newlineIndex + 1).replace(/^\n+/, '')
+  const body = normalized.slice(newlineIndex + 1).replace(/^(?:[ \t]*\n)+/, '')
   const bodyFirstLineEnd = body.indexOf('\n')
   const bodyFirstLine = bodyFirstLineEnd === -1 ? body : body.slice(0, bodyFirstLineEnd)
   if (
     !heading ||
-    !body ||
+    !body.trim() ||
     /^(    |\t)/.test(rawFirstLine) ||
     MARKDOWN_BLOCK_START.test(heading) ||
     THEMATIC_BREAK.test(heading) ||
@@ -135,13 +135,13 @@ const MARKDOWN_BLOCK_START = /^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/
 const THEMATIC_BREAK = /^([-*_])(?:\s*\1){2,}$/
 
 // A setext heading underline (CommonMark: one or more `=` or up to three leading spaces then
-// `-`, alone on the line, trailing spaces allowed) as the BODY's first line -- if the question's
-// first line were kept as a heading, this line would otherwise either disappear (absorbed as the
-// setext underline of a would-be preceding paragraph, `=`) or render as a bare `<hr>` (`-`), per
-// gate cycle 3, issue #491 finding 2. Suppressing the heading split here falls back to rendering
-// the whole normalised text as one body, where the raw `---`/`===` line reaches react-markdown
-// attached to the line above it and stays literal/becomes `<hr>` as plain body content, exactly
-// like unsplit agent text would.
+// `-`, alone on the line, trailing spaces allowed) as the BODY's first non-blank line -- if the
+// question's first line were kept as a heading, unsplit text would send this underline line to
+// react-markdown attached to the line above it, rendering as a heading (`===` -> `<h1>`, `---` ->
+// `<h2>`, per `Markdown.tsx`'s heading renderer), not as literal text or an `<hr>` (gate cycle 3,
+// issue #491 finding 2; gate cycle 5 finding 3). Suppressing the heading split here falls back to
+// rendering the whole normalised text as one body, where a lone `---`/`===` line has no preceding
+// paragraph to attach to and so stays literal text, exactly like unsplit agent text would.
 const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/
 
 interface AskQuestionRowProps {
