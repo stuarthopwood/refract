@@ -18,7 +18,7 @@ import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNo
 import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './transcriptDiff';
 import { bailIfStopRequested, exitedDuringStart, stopIfRunning } from './launchStopGuard';
 import { PatchCoalescer } from './patchCoalescer';
-import { assertConversationFileExists, verifyReattach } from './reattachVerification';
+import { assertConversationFileExists, reattachRebaselineNotice, verifyReattach } from './reattachVerification';
 import { recoverFromFailedSwitch } from './switchRecovery';
 import { waitForIdleStatus } from './statusWait';
 import type {
@@ -344,6 +344,10 @@ export class SessionAgent extends EventEmitter {
       this.recordStartFailure(failurePrefix + (err instanceof Error ? err.message : String(err)));
       return { ok: false, error: err };
     }
+    // Constitution v1.9.0 / FINDINGS item 44: computed from the PRE-launch `session` (the
+    // registry's last known `lastMessageCount`) vs the freshly observed `state`, before
+    // `syncFromState` re-baselines it below -- see `reattachRebaselineNotice`'s doc comment.
+    const rebaselineNotice = session.currentConversation ? reattachRebaselineNotice(session, state) : undefined;
     const bail2 = await bailIfStopRequested(this.stopRequested, proc, () => {
       this.process = undefined;
       this.setStatus('stopped', { stopReason: 'not-started' });
@@ -375,6 +379,9 @@ export class SessionAgent extends EventEmitter {
       pendingMode: currentMode === approvalMode ? null : currentMode,
       transcript: messagesOk ? mergeLiveTranscript(transcript, this.runtime.transcript) : this.runtime.transcript,
     };
+    // Told once here (after the merge above so it isn't dropped as an unpersisted notice by
+    // `mergeLiveTranscript`, and only on this reattach's settle, not on every later one).
+    if (rebaselineNotice) this.appendNotice(rebaselineNotice);
 
     await this.syncFromState(state);
     const exitedDuringStart2 = exitedDuringStart(this.process === proc, failurePrefix, (d) => this.recordStartFailure(d));
