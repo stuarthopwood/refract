@@ -9,6 +9,7 @@ import { usePendingRequestsStore } from './pending-requests-store'
 import { EMPTY_QUEUE, useQueueStore } from './queue-store'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
+import { useChatScrollStore } from './scroll-store'
 import { useSessionsStore } from './sessions-store'
 import { EMPTY_TRANSCRIPT, useTranscriptStore } from './transcript-store'
 import { useViewStore } from './view-store'
@@ -30,6 +31,7 @@ export { usePendingRequestsStore }
 export { EMPTY_QUEUE, useQueueStore }
 export { useRepositoriesStore }
 export { DEFAULT_SETTINGS, useSettingsStore }
+export { useChatScrollStore }
 export { useSessionsStore }
 export { EMPTY_TRANSCRIPT, useTranscriptStore }
 export { useViewStore }
@@ -52,6 +54,7 @@ export interface RefractDevStores {
   queue: typeof useQueueStore
   repositories: typeof useRepositoriesStore
   settings: typeof useSettingsStore
+  scroll: typeof useChatScrollStore
   sessions: typeof useSessionsStore
   transcript: typeof useTranscriptStore
   view: typeof useViewStore
@@ -82,6 +85,7 @@ if (import.meta.env.DEV) {
     queue: useQueueStore,
     repositories: useRepositoriesStore,
     settings: useSettingsStore,
+    scroll: useChatScrollStore,
     sessions: useSessionsStore,
     transcript: useTranscriptStore,
     view: useViewStore,

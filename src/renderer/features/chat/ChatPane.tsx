@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { focusPaneContent, focusSessionsNav } from '@/lib/focus'
 import {
   notify,
+  useChatScrollStore,
   useCommandsStore,
   usePendingRequestsStore,
   useQueueStore,
@@ -21,7 +22,7 @@ import {
   useSubagentPanelStore,
   useTranscriptStore
 } from '@/state'
-import type { SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -341,7 +342,25 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const focusedAtStart = document.activeElement
     const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
     setStartingNewId(startingFor)
-    const result = await window.refract.conversations.startNew(startingFor)
+    // Quality-gate remediation (round 2, 2026-10-07): clear BEFORE awaiting below (not after) --
+    // same fix as `ConversationSwitcher.tsx`'s `handleNewConversation`/`handleOpenConversation`
+    // and `MessageInput.tsx`'s typed-`/new`: main emits the reset patch synchronously before
+    // replying, so clearing only after `await` risks the Transcript's landing effect already
+    // reading the stale pre-switch offset. Snapshot first so a failed `startNew` can put back
+    // exactly what it removed (only if nothing newer has been recorded for this Session meanwhile).
+    const previousScroll = useChatScrollStore.getState().bySession[startingFor]
+    useChatScrollStore.getState().clear(startingFor)
+    // Quality-gate finding (code review, High): see `scroll-store.ts`'s `inFlight` doc --
+    // blocks `record()` for this Session for the whole in-flight window below.
+    useChatScrollStore.getState().setInFlight(startingFor, true)
+    let result: Result<SessionSnapshot>
+    try {
+      result = await window.refract.conversations.startNew(startingFor)
+    } finally {
+      // Always released, even if the IPC call rejects (a handler throw rejects `invoke`):
+      // otherwise `record()` would stay a no-op for this Session for the app's lifetime.
+      useChatScrollStore.getState().setInFlight(startingFor, false)
+    }
     setStartingNewId(id => (id === startingFor ? null : id))
     // Quality-gate remediation: same fix as handleRecover above, plus round 3 (code-reviewer,
     // Low): prefer re-focusing the "Start new conversation" button itself once it's enabled
@@ -361,10 +380,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       focusPaneContent(chatPaneRef.current)
     }
     if (!result.ok) {
+      useChatScrollStore.getState().restoreIfAbsent(startingFor, previousScroll)
       notify(result.error)
       requestAnimationFrame(maybeRestoreFocus)
       return
     }
+    // Finding 4 (gate fixes 4): clears again, right before applying the snapshot -- see
+    // `ConversationSwitcher.tsx`'s matching comment in `handleNewConversation`.
+    useChatScrollStore.getState().clear(startingFor)
     applySnapshot(startingFor, result.value)
     if (sessionIdRef.current === startingFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
