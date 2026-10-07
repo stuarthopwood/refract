@@ -281,7 +281,7 @@ its fix live entirely in renderer store logic); scratch userData dir left on dis
   rows stay one-line/truncated; the narrower Subagents panel wraps instead), threaded through
   `ToolGroupRow`/`ToolCallRow` (`ToolRow.tsx`) so the panel's tool rows wrap.
   `SubagentPanel.tsx`'s stream container and its subagent-list `<ul>` both move from `p-2` to
-  `px-3 py-2`, matching the header's existing `px-3`, so no row's padding differs from the
+  `px-3 py-2`, matching the header's existing `px-3`, so no container's padding differs from the
   header's (FR-022, edge cases). (#492)
 - [X] T127 [US3] Update the docs and verify live: `specs/004-session-readout/spec.md`
   (Clarifications, User Story 3's acceptance scenario 5, two Edge Cases, FR-022) and
@@ -294,7 +294,7 @@ its fix live entirely in renderer store logic); scratch userData dir left on dis
   (240px and 520px, `App.tsx`'s `minSize={240}`/`maxSize={520}`, confirmed by dragging the
   separator past each limit and reading the panel's own `getBoundingClientRect()`), every row
   wrapped within the panel with no horizontal scrollbar and no panel growth, the
-  header/list/stream padding was visually even,
+  header/list/stream container padding was visually even,
   and a keyboard-focused tool row's focus ring (`outline: 2px solid`, `outline-offset: 2px`,
   confirmed via `getComputedStyle`) rendered fully inside the panel's own padding, not clipped by
   the panel's `overflow-hidden` wrapper. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
@@ -428,7 +428,7 @@ installed Radix build sets no `tabIndex` on the Viewport -- it is keyboard-focus
 Chromium's own keyboard-focusable-scroller behavior once its content overflows, not a Radix
 `tabIndex=0`) and its header/list/stream "same horizontal inset" claim is reworded to "same
 container padding" (the list row's own text sits further in, behind the row's own `px-2` button,
-icon, and `gap-2`, roughly 44px more than the header's and stream's own padding); and the
+icon, and `gap-2`, roughly 30px more than the header's and stream's own container padding, so about 42px from the panel edge); and the
 `gate fixes` paragraph's `CollapsedTrigger` typo is corrected to `CollapsibleTrigger` (the actual
 component name). `docs/PLAN.md` row A2e's files-touched column now also lists `SessionList.tsx`.
 `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all clean after every change in this
