@@ -6,7 +6,7 @@
 // fails or there was no prior Conversation.
 import type { OmpProcess } from './OmpProcess';
 import { verifyReattach } from './reattachVerification';
-import { fromHistory } from './transcript';
+import { currentTurnKeys, fromHistory } from './transcript';
 import type { GetMessagesResponseData, GetStateResponseData, SwitchSessionResponseData } from '../../shared/frames';
 import type { Session, TranscriptItem } from '../../shared/model';
 
@@ -39,7 +39,13 @@ export async function recoverFromFailedSwitch(
           const backFailure = verifyReattach(session, backStateRes.data as GetStateResponseData);
           if (!backFailure) {
             const messagesRes = await process.request({ type: 'get_messages', id: '' });
-            const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
+            // Issue #489 (durable turn marker, 2026-10-07): scopes by the SAME persisted
+            // `currentTurnSubagents` set `reconcileSubagentsOnAttach` uses, read from the
+            // `session` just fetched above (fresh, not a stale earlier snapshot).
+            const currentTurnKeySet = new Set(currentTurnKeys(session));
+            const transcript = messagesRes.success
+              ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet)
+              : [];
             ctx.applyTranscript(transcript);
             return;
           }

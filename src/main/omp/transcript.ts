@@ -19,7 +19,17 @@ import type {
 } from '../../shared/frames';
 import { isKnownFrame } from '../../shared/frames';
 import { HIDDEN_TOOLS, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX } from '../../shared/model';
-import type { TranscriptItem } from '../../shared/model';
+import type { Session, TranscriptItem } from '../../shared/model';
+
+/** Issue #489 hardening: `registry.json` is hand-editable disk state (gate fixes 3, section h
+ * finding (e)) and goes through no runtime validation on load -- a `currentTurnSubagents` field
+ * holding a number or object would make `new Set(x ?? [])` throw, and a plain string would be
+ * silently split into one key per character instead of treated as absent/malformed. Every read
+ * site threads the raw field through here instead of trusting it directly. */
+export function currentTurnKeys(session: Pick<Session, 'currentTurnSubagents'> | undefined | null): string[] {
+  const raw = session?.currentTurnSubagents;
+  return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === 'string') : [];
+}
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
 type ThinkingItem = Extract<TranscriptItem, { kind: 'thinking' }>;
@@ -135,7 +145,7 @@ function upsertSubagentItems(items: TranscriptItem[], toolCallId: string, specs:
     const task = typeof spec.task === 'string' ? spec.task : '';
     const existingIndex = result.findIndex((item) => item.id === id);
     if (existingIndex === -1) {
-      const created: TranscriptItem = { kind: 'subagent', id, toolCallId, name, task, status: 'running', startedAt: Date.now() };
+      const created: TranscriptItem = { kind: 'subagent', id, toolCallId, specIndex: index, name, task, status: 'running', startedAt: Date.now() };
       result = [...result, created];
       return;
     }
@@ -557,6 +567,7 @@ function buildAssistantItems(
                 kind: 'subagent',
                 id: subId,
                 toolCallId: part.id,
+                specIndex,
                 name,
                 task,
                 status: 'running',
@@ -835,9 +846,36 @@ function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage
   return items.map((item) => (item === existing ? updated : item));
 }
 
+/** Issue #489 (durable turn marker, 2026-10-07; supersedes gate fixes 2 finding 5's transcript-
+ * position rule): `fromHistory` has no live frame telling it a `task` call crashed mid-flight --
+ * OMP's own persisted `.jsonl` just keeps replaying the call's "spawned" acknowledgment forever,
+ * so a `subagent` row from an older turn can still show `status: 'running'` on every single
+ * `get_messages` call. `SessionAgent.reconcileSubagentsOnAttach` only ever seeds a candidate
+ * whose key is in the persisted `currentTurnKeys` set (`Session.currentTurnSubagents`) -- a row
+ * outside that set is out of scope by definition and would spin in the main chat transcript
+ * forever if left alone. Settles every such row to `'exited'` here (never `'finished'`/
+ * `'failed'` -- nothing about its own work is known, only that it is no longer the current
+ * turn's concern), using the IDENTICAL set reconcile uses -- not the previous "a later
+ * `kind: 'user'` item exists" transcript-position rule, which could not tell a steer
+ * mid-subagent apart from a genuinely new turn. */
+function settleStaleSubagentRows(items: TranscriptItem[], currentTurnKeys: ReadonlySet<string>): TranscriptItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.kind === 'subagent' && item.status === 'running' && !currentTurnKeys.has(`${item.toolCallId}:${item.specIndex}`)) {
+      changed = true;
+      return { ...item, status: 'exited' as const };
+    }
+    return item;
+  });
+  return changed ? next : items;
+}
+
 /** Builds the transcript for a stored session's history (from `get_messages`), per
- * contracts/omp-usage.md "Message parts". */
-export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
+ * contracts/omp-usage.md "Message parts". `currentTurnKeys` (issue #489, durable turn marker,
+ * 2026-10-07) is `Session.currentTurnSubagents` as a Set -- the SAME `toolCallId:specIndex` keys
+ * `SessionAgent.reconcileSubagentsOnAttach` scopes by, threaded through to
+ * `settleStaleSubagentRows` so both agree on what "the current turn" means. */
+export function fromHistory(messages: OmpMessage[], currentTurnKeys: ReadonlySet<string>): TranscriptItem[] {
   let items: TranscriptItem[] = [];
   messages.forEach((message, index) => {
     const messageId = `h${index}`;
@@ -882,5 +920,5 @@ export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
         return;
     }
   });
-  return items;
+  return settleStaleSubagentRows(items, currentTurnKeys);
 }

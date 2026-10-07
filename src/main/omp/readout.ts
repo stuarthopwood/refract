@@ -55,12 +55,17 @@ export async function assembleReadout(session: Session, previous: SessionReadout
   // too (as an earlier draft of this function did) hid the chip the instant the turn finished,
   // before the next turn had a chance to clear the underlying list (caught live: quickstart
   // Story 1's multi-subagent-turn check, the chip vanished right as the final reply landed).
-  const activeSubagents = state.subagents.filter((s) => s.status !== 'failed');
+  // Gate fixes 2 finding 7: `finished`/`exited`/`failed` are kept as separate counts here (never
+  // folded together) so the chip can word them distinctly ("1 finished, 1 exited", "2 failed")
+  // instead of either hiding a failure entirely or reporting a misleading "0 finished" for a
+  // turn whose only subagents failed.
   const subagentCount =
     state.subagents.length > 0
       ? {
-          running: activeSubagents.filter((s) => s.status === 'running').length,
-          finished: activeSubagents.filter((s) => s.status === 'finished').length,
+          running: state.subagents.filter((s) => s.status === 'running').length,
+          finished: state.subagents.filter((s) => s.status === 'finished').length,
+          exited: state.subagents.filter((s) => s.status === 'exited').length,
+          failed: state.subagents.filter((s) => s.status === 'failed').length,
         }
       : null;
 

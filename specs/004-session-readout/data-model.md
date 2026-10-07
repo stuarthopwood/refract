@@ -48,7 +48,13 @@ file-corruption path.
 **New request**: `settings.setReadoutVisibility(kind, visible)` replaces one entry and persists
 the whole `Settings` row the same way `setApprovalMode` already does (spec 001
 `src/main/store/settings.ts`), including that function's race-safety note: it returns the value
-*this* call wrote, never a possibly-superseded shared read (see contracts/ipc.md).
+*this* call wrote, never a possibly-superseded shared read (see contracts/ipc.md). The registry
+write for `Session.currentTurnSubagents` (below) is queued immediately on an atomic per-file write
+queue and lands within milliseconds; it survives an omp process crash, a Refract restart, or a
+normal shutdown, and can be lost only if the Electron main process itself dies in the narrow
+window between the task frame and the atomic rename (or the write fails, which is logged) -- in
+that case the Session degrades to the pre-marker behaviour: the running row settles to `exited`
+with no pill (see row below, and `SessionAgent.ts` `handleTaskStart`).
 
 ## Held in memory
 
@@ -79,7 +85,7 @@ interface SessionReadout {
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
   turnTime: { startedAt: number } | null;        // null = no turn running (chip hidden); renderer computes elapsed
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
-  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed, per FR-007's own wording
+  subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden); gate fixes 2 finding 7: finished/exited/failed kept separate, never folded together
   todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
 }
 
@@ -98,8 +104,12 @@ FR-002 wording ("Not available" rather than a silently absent chip).
 
 **Retention rule (FR-008, edge cases)**: `changes`, `pullRequest`, and `contextUsage` keep their
 last non-null reading when the agent is not running or a lookup momentarily fails, rather than
-reverting to `null`; `turnTime` and `subagentCount` are always `null` outside a running turn (they
-are only meaningful for one, per the spec's own edge case).
+reverting to `null`; `turnTime` is always `null` outside a running turn. `subagentCount` persists
+after its turn settles (a developer still asking "what did it delegate to" afterward) and, since
+issue #489, can also be non-`null` immediately on attach/resume with no turn running at all, when
+the reattached transcript still shows a seeded `exited` subagent from before this process
+existed; both are cleared only by the *next* turn starting (`agent_start`), never by settling or
+attaching alone.
 
 ### `SubagentSummary` (new)
 
@@ -110,10 +120,11 @@ from.
 interface SubagentSummary {
   id: string;                               // `${toolCallId}:${name-or-fallback}` (remediation round, see tasks.md) -- globally unique, not just stable within one turn
   toolCallId: string;                       // the owning task() call's own id; scopes correlation across 2+ parallel task calls in one turn
+  specIndex: number;                        // this spec's position in the owning call's own tasks[] (gate fix, 2026-10-07): the correlation key reconcileSubagentsOnAttach uses against the chat transcript's own subagent row, since the two sides' id schemes never match
   nameOrTask: string;                       // the subagent's name, or its task text when unnamed
-  status: 'running' | 'finished' | 'failed';
+  status: 'running' | 'finished' | 'failed' | 'exited'; // 'exited': issue #489, seeded on attach/resume, process confirmed gone, nothing known about its own work
   startedAt: number;
-  durationMs?: number;                      // present once status is finished or failed
+  durationMs?: number;                      // present once status is finished, failed, or exited, and startedAt was genuinely known (gate fix, 2026-10-07: never fabricated from a history row with no wall clock)
 }
 ```
 
@@ -160,5 +171,6 @@ interface ViewState {
 | a `SubagentSummary` | its tool call ends (success) | `status: 'finished'`, `durationMs` set |
 | a `SubagentSummary` | its tool call ends (error) | `status: 'failed'`, `durationMs` set |
 | `subagents: [...]` | a new turn starts (`agent_start`) | cleared to `[]` (FR-007: count is "the current turn's") |
+| a `SubagentSummary` at `status: 'running'` carried over from before a crash, or a `kind: 'subagent'` transcript row still `status: 'running'` with no such summary yet (fresh instance) -- the two collapsed to ONE candidate by `toolCallId`+`specIndex` if both represent the same instance, and scoped to membership in the persisted `Session.currentTurnSubagents` set (**SUPERSEDED, durable turn marker, 2026-10-07**: previously "the current/last turn" meant transcript position -- the last `user` item onward; now it means this persisted marker, written by `handleTaskStart` and cleared only at `agent_start`, so a steer mid-subagent no longer loses scope) | an attach/resume (`launch()`, issue #489) | `status: 'exited'` unconditionally, `durationMs` set only if a genuine `startedAt` was ever known (gate fixes, 2026-10-07: no `get_subagents` RPC call -- a freshly launched process's own registry is confirmed-live always empty here, so it can never discriminate "still running" from "gone"); the matching chat-transcript `subagent` row is settled to `status: 'exited'` too |
 | `view: 'chat' \| 'pull-requests' \| 'manage-sessions'` | `openSettings(section?)` | `view: 'settings'`, `settingsSection` set |
 | `view: 'settings'` | `openChat(repositoryId?)`, or any left-nav/Session action that returns to chat | `view: 'chat'` (and `repositoryId` set when provided) |

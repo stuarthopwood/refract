@@ -176,6 +176,14 @@ export interface SwitchSessionResponseData {
   cancelled: boolean;
 }
 
+// Gate fixes 2 finding 9: `GetSubagentsResponseData`/`GetSubagentsCommand` (`get_subagents`)
+// removed -- YAGNI, currently unused by any Refract code (`SessionAgent.reconcileSubagentsOnAttach`
+// never calls it: `launch()` always spawns a brand-new `OmpProcess`, so THIS PROCESS's own
+// registry is unconditionally empty at the point reconcile runs -- confirmed live,
+// `docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0). The wire-protocol notes (request/
+// response shape, the live-probe result) live only in `specs/004-session-readout/contracts/
+// omp-usage.md` section (d); re-add the types here if PLAN.md row C2c's future Agents panel
+// (`cancel_subagent`/`steer_subagent`) ever actually calls `get_subagents`.
 export interface GetAvailableCommandsResponseData {
   commands: SlashCommandDescriptor[];
 }
@@ -473,6 +481,9 @@ export interface GetStateCommand {
   type: 'get_state';
   id: string;
 }
+
+// Gate fixes 2 finding 9: `GetSubagentsCommand` removed alongside `GetSubagentsResponseData`
+// above -- same YAGNI rationale, see that comment.
 
 export interface GetMessagesCommand {
   type: 'get_messages';

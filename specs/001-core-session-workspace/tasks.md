@@ -548,3 +548,129 @@ Cleanup: the scratch Electron process (PID 22856, command line re-confirmed via 
 **Verified 2026-10-07 (gate cycle 4)**: four further quality-gate findings against this branch, all logic-only or doc-only (no live CDP re-run for these changes). (1, code) `RequestCard.tsx`'s `isMultilineBody` tested the untrimmed `body`, so a single-line title whose text arrives with a trailing newline (e.g. `"Pick a colour\n"`) was misread as multi-line and the group fell back to the generic `aria-label="Question"` instead of the body text naming it; changed to `body.trim().includes('\n')`. Checked with a throwaway `node` script (deleted after): `"Pick a colour\n"` -> `false` (single-line, named by body, as intended), `"A\nB"` -> `true` (genuinely multi-line), a plain single line -> `false`, and a line with only trailing spaces before the newline -> `false`. (2, code) Documented as an accepted edge case rather than changed: a markdown hard break (two trailing spaces or a trailing backslash at a line end) renders both the renderer's own `<br>` and the paragraph's preserved `\n` text node under `[&_p]:whitespace-pre-line`, showing one extra blank line; noted in `spec.md`'s Edge Cases (a new entry alongside the existing single-short-line and raw-HTML entries) and in `docs/DESIGN.md`'s "Question formatting" bullet, with no CSS change. (3, spec+code) `spec.md`'s Clarification entry and FR-018, and `docs/DESIGN.md` line ~69, state the setext-underline exception fires when the underline is "on the very next line"/"on the next line", but `splitQuestionHeading` actually tests the body's first line after stripping leading blank lines -- the next *non-blank* line, not necessarily the line immediately following the heading. Wording corrected to "the next non-blank line" in both Clarification and FR-018 (`docs/DESIGN.md`'s existing "setext underline" phrase names no line position and needed no change; the `SETEXT_UNDERLINE` code comment likewise never said "very next" and needed no change). (4, docs) This paragraph; the gate-cycle-2 paragraph above gains a trailing **Superseded** note pointing at gate-cycle-3 finding (4), since that paragraph's finding (1) claimed the no-heading `aria-labelledby`-on-body-wrapper fix applied generally, which gate cycle 3 narrowed to single-line bodies only. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all ran clean after these edits. Not re-verified live: these four findings are a one-line logic fix, two documentation-wording corrections, and a documentation-only edge-case note, none of which change any DOM structure, ARIA attribute, or renderer behaviour reachable only through a live CDP walk beyond what prior rounds already covered; the `node`-script cases above are the only runtime check performed for finding (1), and findings (2)-(4) were verified by direct re-reading of the edited spec/doc text.
 
 **Verified 2026-10-07 (gate cycle 5)**: three further quality-gate findings against this branch, all logic-only or doc-only (no live CDP re-run for these changes -- pure-logic and doc changes). (1, code) `splitQuestionHeading` checked `!body` (only raw newlines stripped), so a remainder made only of spaces (e.g. `"Q\n   "`) still produced a heading with a whitespace-only body, against FR-018's "no heading when the remaining text would be blank"; changed the blank check to `!body.trim()`. (2, code) the setext-underline check strips only `/^\\n+/` off the body before taking its first line, so a whitespace-only line before a `---`/`===` underline (e.g. `"Q\n  \n---"`) was not stripped and the underline was missed, keeping a heading against the spec's "next non-blank line"; the strip now uses `/^(?:[ \\t]*\n)+/` to also skip whitespace-only lines. (3, code) the comment above `SETEXT_UNDERLINE` claimed unsplit `Q\\n===`/`Q\\n---` renders as literal text or an `<hr>`; it actually renders as `<h1>`/`<h2>` (`Markdown.tsx`'s heading renderer, ~lines 547-548) -- rewritten to say so. (4, docs) the gate-cycle-2 and gate-cycle-3 paragraphs above said a blank body takes `aria-label="Question"` plus `aria-describedby`; the code only sets `aria-describedby` when `hasBody && isMultilineBody`, so a blank body (`!hasBody`) gets the literal `aria-label` alone, with no `aria-describedby` -- both paragraphs corrected. Re-checked all 10 prior cases from gate cycle 4 (single line, CRLF, blank second line, leading fence, leading list item, leading `# heading`, thematic break, indented line, setext `---` and `===`) plus the three new cases above (`"Q\n   "`, `"Q\n  \n---"`, `"Pick a colour\n"`) with a throwaway `node --experimental-strip-types` script (deleted after) importing a copy of the function: all 13 matched the intended behaviour, including the three new/changed cases now returning no heading.
+
+## Phase 32: Convergence
+
+- [X] T122 [US7] Probe `get_subagents`'s contract (constitution IV, issue #489, PLAN.md row A2c): `docs/spike/get-subagents-probe.mjs` spawns a scratch process A, starts a batch `task()` subagent, confirms the registry id/shape mid-flight (`get_subagents` while genuinely running), hard-kills A while the subagent is still running, then attaches a brand-new process B onto the exact same Conversation file via `switch_session` and calls `get_subagents` again. Record the result in `specs/004-session-readout/contracts/omp-usage.md` section (d) and `src/shared/frames.ts`'s `GetSubagentsResponseData`/`GetSubagentsCommand` doc comments. -- Verified 2026-10-07 live against a real signed-in `omp` 18.8.0: process A's mid-flight snapshot showed the subagent (`status: "running"`, `id: "Alpha"`); process B's snapshot (same Conversation file) came back `{ subagents: [] }` -- confirming the registry is scoped to the issuing process only and never replayed from a Conversation's history onto a fresh process.
+- [X] T123 [US1] Seed `runtime.subagents` on attach/resume (issue #489): add `SessionAgent.reconcileSubagentsOnAttach` (`src/main/omp/SessionAgent.ts`), called from `launch()` once the reattached transcript is final. Builds its candidate set from two places (live-verification below found the narrower transcript-only design this task started from misses the common case): any `SubagentSummary` already in `runtime.subagents` at `status: 'running'` (a `recover()`/mode-change restart reuses the SAME `SessionAgent` instance -- a crashed `OmpProcess` never clears it, only the next `agent_start` does), plus any `kind: 'subagent'` transcript row at `status: 'running'` not already represented there (a true app restart: a brand-new instance, `subagents` starts `[]`). It then calls `get_subagents` (T122's confirmed shape) once and resolves each candidate `'running'` if its bare name is still in the live registry, else the new terminal `'exited'` status (`src/shared/model.ts`'s `SubagentSummary['status']`) -- distinct from `'failed'`, since nothing about the subagent's own work is known to have gone wrong, only its process is gone.
+- [X] T124 [US1] Make `'exited'` render and count correctly, and fix the Subagents chip's wording bug found alongside it (issue #536, decided with #489 per PLAN.md row "Subagents pill fix": same files, one agent at a time): `src/main/omp/readout.ts`'s `subagentCount` folds `'exited'` into the `finished` bucket (no third bucket on the chip); `SubagentsChip` (`ReadoutChips.tsx`) now shows the running count alone while any subagent is running, else a quiet "N finished" total (never the old combined-count-worded-"running" bug), with matching accessible names; `SubagentPanel.tsx`'s `STATE_LABEL`/`SubagentStateIcon` add `'exited'` -> "Agent exited" with a distinct `UnplugIcon` (never colour alone).
+- [X] T125 [US1] Update the docs: `specs/004-session-readout/spec.md` (two Clarifications entries, amended FR-007/FR-017, a Key Entities update, and an Edge Cases entry for the attach/resume seeding), `data-model.md` (`SessionReadout.subagentCount`, `SubagentSummary.status`, the retention rule, and a new state-transition row), `contracts/omp-usage.md` (section (d), T122's result), `quickstart.md` (Story 1 step 7 reworded for #536, a new step 7b for #489's crash/resume check, Story 3 step 1's state list), and `docs/DESIGN.md` (Subagent panel bullet); then PLAN.md's A2c row.
+
+**Verified 2026-10-07**: `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` (0 leaks across 371 files) all clean. Live end to end on a scratch Electron instance (scratch `--user-data-dir`, a throwaway scratch git repository registered as its one Repository, a real signed-in `omp` 18.8.0 agent reached through the real "+ New conversation"/session-row UI, driven over CDP with trusted mouse events and `window.refract.*` IPC calls for session create/chat send -- same mechanism other verification rounds in this file use): created a real Session, prompted it to start one real `task()` subagent named "Reader", waited for the Subagents chip to read "1 subagent running", then hard-killed the real `omp.exe` process recorded for that Session (`taskkill /PID <pid> /T /F`, the exact PID `processes.json` recorded, confirmed gone via `tasklist` afterward) while the subagent was genuinely still running -- a real version of the crash #489 describes, not a simulated one. Refract's existing crash detection fired first (the "The agent stopped" banner, `stopReason: 'agent-exited'`, unrelated to this change). Clicking **Recover** respawned a brand-new `omp` process and reattached; this surfaced a real bug in the task's first-draft design (transcript-only candidates): the pre-crash `SubagentSummary` survives untouched on `runtime.subagents` across a `recover()` on the same `SessionAgent` instance (only `agent_start` clears it), so a transcript-only check never ran the reconciliation at all and the stale `running` entry leaked straight through -- fixed by adding `runtime.subagents` itself as a second candidate source (T123's final description above, `reconcileSubagentsOnAttach`). Re-verified after the fix: the Subagents chip read **"1 finished"** in a visibly quieter (muted-foreground) style within a couple seconds of Recover completing (the debounced `readout:update`, confirmed by polling rather than a fixed wait), and opening the panel showed **"Reader" / "Agent exited"** with a distinct `UnplugIcon` (`lucide-unplug`), not spinning, not the finished check or failed cross icon. Screenshots captured and read: the pre-crash running chip, the crash banner, the post-recover quiet chip, and the panel's exited row. The scratch instance's `electron.exe` (confirmed by PID against its own `--user-data-dir`/`--remote-debugging-port=9489` command line) and the two `omp.exe` processes it spawned (pre-crash and post-recover, confirmed by `processes.json`) were killed by exact PID; `tasklist` afterward showed none of this run's processes remaining, and the scratch parent directory was removed by its literal absolute path from a cwd outside it. The exact scenario Stuart originally saw (PLAN.md open question 9: what crashed, whether a process was left running) remains unconfirmed -- this verification exercises the `omp`-process-crash reading of #489's title, the one `get_subagents`'s contract (T122) makes buildable, not a claim about which crash he actually hit.
+
+**Verified 2026-10-07 (gate fixes)**: quality-gate findings 1-11 addressed in `SessionAgent.ts`
+(`reconcileSubagentsOnAttach` redesigned around `toolCallId`+`specIndex` correlation, current/
+last-turn scoping, unconditional `exited` resolution with no `get_subagents` RPC, chat-transcript
+settling, explanatory stream placeholder, no-fabricated-duration), `model.ts`/`transcript.ts`
+(`specIndex` field, `exited` transcript status), `ToolRow.tsx`/`SubagentPanel.tsx` (icon/wording),
+`ReadoutChips.tsx` (WCAG 2.5.3 accessible-name fix), `get-subagents-probe.mjs` (assertions, honest
+header), and this spec's own docs (`spec.md`, `data-model.md`, `contracts/omp-usage.md` section
+(e), `quickstart.md` step 7b). `pnpm typecheck` and `pnpm build` clean.
+
+Both recovery paths driven live end to end on a scratch Electron instance (isolated
+`--user-data-dir`/CDP port, scratch git Repository/Session, real signed-in `omp` 18.8.0, driven via
+`window.refract.*` IPC): (a) same-instance Recover -- exactly ONE `SubagentSummary` (the original
+bug reported "2 finished"/two panel rows), `status: 'exited'`, matching chat row settled too; this
+pass also caught and fixed a real bug `reconcileSubagentsOnAttach` never called
+`scheduleReadoutUpdate()`, so the chip read `{ running: 1, finished: 0 }` in the immediate
+`recover()` response and only corrected to `{ running: 0, finished: 1 }` ~50ms later (now fixed).
+(b) True app restart -- hard-killed the owning `omp.exe` tree AND the whole scratch Electron
+process, relaunched with the SAME `--user-data-dir` (brand-new `SessionAgent`), recovered: exactly
+ONE `SubagentSummary` seeded purely from the reattached transcript, `status: 'exited'`, selecting
+it returned the explanatory placeholder instead of throwing not-found. Reading the real session
+`.jsonl`: the `task` toolCall's own "spawned" acknowledgment WAS already persisted before the
+kill, but the subsequent `wait` call that would block for the real result was not, and
+`fromHistory` still rebuilt the row as `'running'` regardless -- confirming the near-instant
+"spawned" ack is not itself a completion signal. **Not driven live this pass**: the "clean turn,
+then mode-change restart shows no phantom finished" scoping check (edge case, finding 2(c)) --
+designed and code-reviewed, not exercised against a real instance; say so rather than claim it.
+
+**Verified 2026-10-07 (gate fixes 2)**: supersedes the "gate fixes" entries above where they
+conflict. Findings 1-11 addressed (`SessionAgent.ts`'s `reconcileSubagentsOnAttach` redesigned
+again: EVERY `runtime.subagents` status -- not only `running` -- occupies the correlation key so
+a second reconcile with no new turn in between never re-seeds a duplicate; turn-boundary scope
+anchored on the transcript's own last `subagent` row walking back to ITS preceding `user` item,
+never simply "the last `user` item", so a steer mid-subagent never scopes a still-running row
+out of the current turn; a subagent that finished or failed before the crash is seeded too, with
+its real recorded status; `openConversation()` now reconciles too; `transcript.ts`'s `fromHistory`
+settles a stale `running` row from an OLDER turn to `exited`; `SubagentPanel.tsx` renders
+`kind:'notice'` stream items via `NoticeRow`; `SessionReadout.subagentCount` splits
+finished/exited/failed into separate counts, worded distinctly by `SubagentsChip`; the redundant
+`scheduleReadoutUpdate()` call removed from `reconcileSubagentsOnAttach` and the false "caught and
+fixed a real bug" claim corrected; unused `GetSubagentsCommand`/`GetSubagentsResponseData` removed
+from `frames.ts`; `model.ts`'s "confirmed gone" wording narrowed to cite `jobObject.ts`/
+`pidRecords.ts`'s `reapStale()` as what actually guarantees it across a real app crash;
+`get-subagents-probe.mjs` now asserts its main finding and has an honest header; PLAN.md row A2c's
+files column lists every touched file. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
+(0 leaks/371 files) all clean.
+
+Live end to end on a scratch Electron instance (isolated `--user-data-dir`, CDP port 9489, a
+scratch git repository, a real signed-in `omp` 18.8.0 agent, driven via `window.refract.*` IPC
+calls, the real `omp.exe` pid read from the scratch instance's own `processes.json` and hard-killed
+only after confirming its command line): a real turn with a batch `task()` call spawning two
+parallel subagents, "Fast" (reads a fixed file, finishes in seconds) and "Slow" (`sleep`, still
+running when killed). **Finding 3** (seed finished subagents too): the live `recover()` response
+showed BOTH `Fast` (`status: 'finished'`, its real `durationMs` untouched) AND `Slow`
+(`status: 'exited'`) -- not only the one still running. **Finding 2** (turn boundary): a
+`chat.sendNow` steer was sent while `Slow` was still running, creating a `user` transcript item
+after `Slow`'s own row within the same turn; `Slow` still correctly appeared in the very next
+`recover()`, proving the boundary is no longer "the last `user` item" (which would have scoped it
+out). **Finding 1** (no duplicate on a second reconcile): two consecutive `sessions.recover()`
+calls on the SAME instance, no new turn in between, returned byte-identical `subagents` arrays --
+`Fast`/`Slow`, two entries both times, never three or four. **Finding 6** (notice renders): after
+fixing two bugs this pass surfaced live (an existing-but-empty `subagentStreams` entry, seeded the
+instant the batch `task()` call starts, blocked the placeholder from ever being added; and a row
+`transcript.ts`'s own finding-5 fix had already settled to `'exited'` on a fresh instance's first
+`fromHistory` build was then skipped by an over-eager guard in `reconcileSubagentsOnAttach` instead
+of still being seeded as a resolved candidate), clicking the real session row, the real Subagents
+chip, then the real `Slow` row in the real `#subagent-panel` rendered: "Fast / Finished / Slow /
+Agent exited / Info: / No live output: this subagent had already exited when Refract reattached."
+-- confirmed both via the rendered DOM (`panel.innerText`) and a screenshot. **Finding 8**: the
+chip's `subagentCount` in the synchronous `recover()` response itself stayed at the pre-kill value
+(`running: 1`) and only corrected (`finished: 1, exited: 1`, confirmed via the real chip's
+accessible name) about a second later -- the debounce is real, as documented; no further
+"caught and fixed" claim is made. **Not re-driven live this pass**: the steer scenario's own
+`recover()` call was the same call already covering finding 3's two-subagent case above (not
+repeated as a third separate run); `openConversation()`'s own reconcile path (finding 4) and the
+older-turn settling in isolation (finding 5, beyond what the finding-6 interaction above already
+exercised) were code-reviewed and typechecked, not separately driven live this pass.
+
+**Verified 2026-10-07 (gate fixes 3)**: a third gate-fix pass on the same branch, fixing two
+more Highs the review above raised, plus a medium. Code changes (`SessionAgent.ts`): (1) the
+turn boundary is REVERTED from gate fixes 2's "walk back from the transcript's last `subagent`
+row to ITS preceding `user` item" to the plain "last `user` item" rule -- that walk-back rule
+fixed the mid-subagent steer case but created a worse one: with no `subagent` row of its own in a
+later plain turn, it could land on an EARLIER turn's own preceding `user` item, re-seeding that
+earlier turn's already-finished subagents as "this turn's" on every later restart/Recover/
+`openConversation`. Accepted, documented limitation (spec 004 Edge Cases, `contracts/omp-usage.md`
+§f Finding 2 marked superseded): a steer sent while a subagent is still running now moves the
+boundary past that subagent's row, and a later restart/Recover does not restore its pill -- this
+is the one scenario gate fixes 2's walk-back rule had fixed and gate fixes 3 knowingly gives back.
+(2) a transcript row whose correlation key is already in `settledKeys` (an earlier reconcile
+already resolved it) is no longer skipped outright when `fromHistory` keeps rebuilding it as
+`running` -- it is now settled straight to that already-recorded summary's status, and the early
+return also checks for this pending settling, not only `candidates.size`. Before this fix, a
+SECOND Recover (or Recover then a mode-change restart) with no new turn in between left the
+chat-transcript row spinning `running` forever even once its `SubagentSummary` had already
+settled. (3) Medium: a resolved `exited` row no longer reports `durationMs` at all -- `now -
+startedAt` was counting the entire app-downtime window a crash and restart spanned (can be
+hours), not the subagent's own runtime. `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text`
+all clean.
+
+Live end to end on a scratch Electron instance (isolated `--user-data-dir`, CDP port 9489, a real
+signed-in `omp` 18.8.0 agent, the real `omp.exe` pid read from the scratch instance's own
+`processes.json`, hard-killed only after confirming its command line and image name), three
+separate Sessions. **(1) proven**: one turn, batch `task()` with `Fast`/`Slow`; killed while
+`Slow` ran; Recover #1 settled both to `finished`/`exited` (transcript rows too); killed the NEW
+process AGAIN (no new turn/steer in between) and Recover #2 confirmed no transcript row anywhere
+read `status:'running'`, and `subagents` was still exactly `Fast` finished / `Slow` exited, never
+duplicated. **(2) proven**: turn 1 spawned and finished one subagent `Note`; turn 2 was a plain
+no-tool reply; killed and Recovered: `subagents` returned `[]` -- `Note` did not resurface despite
+still being the transcript's own last `subagent` row. **(3), the main scenario, confirmed still
+correct with no steer**: turn 1 settled, turn 2 spawned exactly one subagent `Worker`; killed
+while running; Recovered: exactly one subagent row, `status:'exited'`, no `durationMs`, matching
+chat-transcript row also `'exited'`. Full detail, including why each scenario needed its own
+preliminary settled turn first (to persist `currentConversation` before the crash) in
+`contracts/omp-usage.md` §g. **Not separately re-driven live this pass**: `openConversation()`'s
+own reconcile path and `settleStaleSubagentRows` in isolation were unchanged by this pass's edits
+and not re-exercised beyond what the three scenarios above already drove.

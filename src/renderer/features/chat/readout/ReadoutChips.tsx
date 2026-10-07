@@ -169,15 +169,30 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
   )
 }
 
-/** FR-007, FR-017: the count of this turn's subagents that are running or finished (excluding
- * failed), hidden when the turn has started none. Activating it opens the Subagents panel
- * (T021) with an accessible name stating the running count. */
+/** FR-007, FR-017; amended 2026-10-07 for issue #536: shows the running count while any of this
+ * turn's subagents are still running, else a quiet comma-joined total of whichever of
+ * `finished`/`exited`/`failed` are non-zero (gate fixes 2 finding 7: these are worded
+ * distinctly -- "1 finished, 1 exited" -- never folded into one misleading "finished" bucket, and
+ * a turn whose only subagents failed reads "1 failed", never a muted, misleading "0 finished");
+ * hidden when the turn has started none. Activating it opens the Subagents panel (T021) with an
+ * accessible name stating the shown count -- built from the SAME `phrase` the visible
+ * `aria-hidden` text uses (gate finding 7 (round 1), WCAG 2.5.3 Label in Name): an accessible
+ * name of "Open subagents panel (2 running)" does not CONTAIN the visible text "2 subagents
+ * running", so a voice-control user saying the visible words could never target this chip;
+ * reusing `phrase` verbatim inside the name makes that impossible to drift apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
   const openPanel = useSubagentPanelStore((s) => s.openPanel)
   if (subagentCount === null) return null
-  const total = subagentCount.running + subagentCount.finished
-  const phrase = `${total} subagent${total === 1 ? '' : 's'} ${subagentCount.running > 0 ? 'running' : 'finished'}`
+  const { running, finished, exited, failed } = subagentCount
+  const phrase = (() => {
+    if (running > 0) return `${running} subagent${running === 1 ? '' : 's'} running`
+    const parts: string[] = []
+    if (finished > 0) parts.push(`${finished} finished`)
+    if (exited > 0) parts.push(`${exited} exited`)
+    if (failed > 0) parts.push(`${failed} failed`)
+    return parts.join(', ')
+  })()
   return (
     <ReadoutChip
       icon={UsersIcon}
@@ -185,7 +200,8 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
       // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
       // focus-move retarget (research.md Decision 10).
       onActivate={() => openPanel(sessionId)}
-      accessibleName={`Open subagents panel (${subagentCount.running} running)`}
+      accessibleName={`Open subagents panel (${phrase})`}
+      className={running === 0 ? 'text-muted-foreground' : undefined}
     >
       <span aria-hidden>{phrase}</span>
     </ReadoutChip>

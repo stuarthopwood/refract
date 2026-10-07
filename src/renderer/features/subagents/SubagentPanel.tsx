@@ -2,7 +2,7 @@
 // opened by activating the Subagents chip. Lists the current turn's subagents; selecting one
 // shows its live stream (text and tool calls) through the same renderers the main transcript
 // uses (`groupToolItems`/`ToolGroupRow` for tool calls, `Markdown` for text).
-import { CheckCircle2Icon, LoaderCircleIcon, XCircleIcon, XIcon } from 'lucide-react'
+import { CheckCircle2Icon, LoaderCircleIcon, UnplugIcon, XCircleIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
@@ -11,11 +11,16 @@ import type { SubagentSummary } from '../../../shared/model'
 import { groupToolItems, isToolGroup } from '../chat/groupToolItems'
 import { ToolGroupRow } from '../chat/ToolRow'
 import { Markdown } from '../chat/Markdown'
+import { NoticeRow } from '../chat/NoticeRow'
 
 const STATE_LABEL: Record<SubagentSummary['status'], string> = {
   running: 'Running',
   finished: 'Finished',
-  failed: 'Failed'
+  failed: 'Failed',
+  // Issue #489: seeded on attach/resume for a subagent the reloaded transcript still remembers
+  // as 'running' whose owning process is confirmed gone (SessionAgent.reconcileSubagentsOnAttach)
+  // -- distinct from 'Failed': nothing about its own work is known to have failed.
+  exited: 'Agent exited'
 }
 
 /** A distinct icon per state, never colour alone (docs/DESIGN.md "Look and feel"). */
@@ -28,6 +33,8 @@ function SubagentStateIcon({ status }: { status: SubagentSummary['status'] }) {
       return <CheckCircle2Icon aria-hidden className={cn(className, 'text-state-idle')} />
     case 'failed':
       return <XCircleIcon aria-hidden className={cn(className, 'text-destructive')} />
+    case 'exited':
+      return <UnplugIcon aria-hidden className={cn(className, 'text-muted-foreground')} />
   }
 }
 
@@ -86,6 +93,12 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                 <ToolGroupRow key={item.id} group={item} summaryWrap />
               ) : item.kind === 'assistant-text' ? (
                 <Markdown key={item.id} id={item.id} text={item.text} streaming={item.streaming} />
+              ) : item.kind === 'notice' ? (
+                // Gate fixes 2 finding 6: a candidate seeded purely from the transcript
+                // (`SessionAgent.reconcileSubagentsOnAttach`) has no tool-group/assistant-text at
+                // all, only this explanatory `notice` placeholder -- mapping it to `null` left
+                // the pane blank with no explanation once selected.
+                <NoticeRow key={item.id} level={item.level} text={item.text} />
               ) : null
             )}
           </div>

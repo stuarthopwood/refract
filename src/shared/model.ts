@@ -33,8 +33,23 @@ export interface Session {
   createdAt: string;
   lastActivityAt: string;
   archivedAt: string | null; // non-null = archived
+  /** Issue #489 (PLAN.md row A2c, durable turn marker, 2026-10-07): the current turn's subagent
+   * instances, as `${toolCallId}:${specIndex}` keys -- the SAME correlation key
+   * `SessionAgent.reconcileSubagentsOnAttach` and `transcript.ts`'s `settleStaleSubagentRows` use
+   * to match a `SubagentSummary` to its chat-transcript `kind: 'subagent'` row. Written by
+   * `SessionAgent.handleTaskStart` as soon as a `task` call starts (queued at once and landing
+   * atomically within milliseconds; it can be lost only if the Electron main process itself dies
+   * in that window, or the write fails and is logged), cleared at the next `agent_start` -- the
+   * SAME boundary that clears the
+   * in-memory `runtime.subagents` array, never by a steer or a consumed `followUp` inside the
+   * same OMP run (steering never fires `agent_start`; a consumed `followUp` can only ever be
+   * promoted after the prior turn, including its subagents, already fully settled). Replaces the
+   * previous transcript-position ("last `kind: 'user'` item") heuristic, which could not tell a
+   * steer mid-subagent apart from a genuinely new turn without reintroducing an EARLIER turn's
+   * finished subagents resurfacing as "current". Absent (old registries, or no subagents this
+   * turn) means empty scope -- no migration needed. */
+  currentTurnSubagents?: string[];
 }
-
 /** The app-wide setting for how much the agent may do without asking. Reads are never prompted. */
 export type ApprovalMode = 'ask' | 'edit-freely' | 'auto';
 
@@ -136,7 +151,11 @@ export interface SessionReadout {
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
   turnTime: { startedAt: number } | null; // null = no turn running (chip hidden)
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
-  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed
+  // Gate fixes 2 finding 7: `finished`/`exited`/`failed` are separate counts, not folded
+  // together -- the chip's own wording must be able to distinguish "1 finished, 1 exited" from
+  // a plain "2 finished", and a turn whose only subagents failed must never read a misleading
+  // "0 finished" (SubagentsChip, ReadoutChips.tsx).
+  subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden)
   todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
 }
 
@@ -158,10 +177,37 @@ export interface SubagentSummary {
    * need this to correlate a `tool_execution_update`/`tool_execution_end` frame to the right
    * batch -- `id` alone (name or position) is not unique enough across calls. */
   toolCallId: string;
+  /** This subagent's position within the owning `task()` call's own `tasks[]` array (spec 004
+   * remediation, HIGH, issue #489 gate finding 1): the ONE value both this summary and the chat
+   * transcript's own `kind: 'subagent'` row (`subagent:<toolCallId>:<specIndex>`, transcript.ts)
+   * derive from the SAME source array in the SAME order -- their respective `id` strings use
+   * unrelated schemes and must never be compared directly, so `reconcileSubagentsOnAttach`
+   * correlates the two representations of one subagent instance by `toolCallId`+`specIndex`
+   * instead. */
+  specIndex: number;
   nameOrTask: string;
-  status: 'running' | 'finished' | 'failed';
+  /** `'exited'` (issue #489, FINDINGS item 45): Refract still remembered this subagent as
+   * `running` from a previous process life by the time the next attach/resume runs. A freshly
+   * launched `OmpProcess` never reuses a previous one (`SessionAgent.launch` always spawns a new
+   * child), so its own `get_subagents` registry is unconditionally empty -- confirmed live even
+   * seconds after a hard-killed process's own genuinely-running subagent, same Conversation file
+   * (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) -- so every surviving `running`
+   * candidate `reconcileSubagentsOnAttach` finds is unconditionally resolved to `exited`, never
+   * by asking OMP. Distinct from `failed`: nothing about the subagent's own work is known to
+   * have failed, only its process disappeared.
+   *
+   * Gate fixes 2 finding 9: that probe exercised two `omp` processes within one Node script, never
+   * an actual Refract app crash -- across a REAL crash/restart an orphaned `omp.exe` genuinely
+   * CAN outlive it on Windows for a window, so "its process disappeared" is not simply assumed:
+   * `src/main/process/jobObject.ts`'s Job Object kills every descendant the instant Refract's own
+   * process dies (primary defence), and `src/main/process/pidRecords.ts`'s `reapStale()` is the
+   * fallback for the rarer case Refract itself was killed too abruptly even for that -- run from
+   * `src/main/index.ts` at startup, awaited before any Session/`SessionAgent` ever attaches, so by
+   * the time `reconcileSubagentsOnAttach` runs the previous life's process is confirmed gone for
+   * real, not merely assumed. */
+  status: 'running' | 'finished' | 'failed' | 'exited';
   startedAt: number;
-  durationMs?: number; // present once status is finished or failed
+  durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
 }
 
 /** Built in the main process from OMP frames; the renderer only renders items. */
@@ -204,14 +250,18 @@ export type TranscriptItem =
   | {
       /** One subagent started by a batch `task()` call (T078): a `tasks` array of N starts N of
        * these, never a single `tool` item, so each has its own collapsed line and (later, spec
-       * 004) its own transcript panel. `id` stays stable (`subagent:<toolCallId>:<index>`) across
-       * the run so re-opening it keeps the same identity. */
+       * 004) its own transcript panel. `id` stays stable (`subagent:<toolCallId>:<specIndex>`)
+       * across the run so re-opening it keeps the same identity. */
       kind: 'subagent';
       id: string;
       toolCallId: string; // the parent `task` call's id
+      specIndex: number; // this spec's position in the owning call's own `tasks[]` (issue #489 gate finding 1: the correlation key `reconcileSubagentsOnAttach` uses, since `id`'s scheme never matches `SubagentSummary.id`'s)
       name: string; // the task's own `name`, else its `task` text truncated
       task: string; // the full prompt text (`tasks[i].task`), shown on expansion
-      status: 'running' | 'done' | 'error';
+      /** `'exited'` (issue #489 gate finding 4): settled by `SessionAgent.reconcileSubagentsOnAttach`
+       * alongside the matching `SubagentSummary` so the chat row stops spinning "running" in step
+       * with the Subagents panel, instead of only the panel ever reflecting the orphaned state. */
+      status: 'running' | 'done' | 'error' | 'exited';
       /** Absent when built from history (no reliable wall clock to derive it from), matching
        * the `thinking` item's `startedAt`. */
       startedAt?: number;
