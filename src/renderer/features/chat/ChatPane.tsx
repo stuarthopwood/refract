@@ -117,6 +117,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const openInSplit = useSplitStore((s) => s.openInSplit)
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
+  const [startingNewId, setStartingNewId] = useState<string | null>(null)
   // Quality-gate remediation (code-reviewer, round 2, High): removing `key={frontSessionId}`
   // from App.tsx's single-pane `ChatPane` (restoring reclaim-focus-on-switch, a separate fix
   // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
@@ -134,6 +135,13 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // remount (so no stale/duplicate instance race either).
   const [deleteForId, setDeleteForId] = useState<string | null>(null)
   const deleteBannerButtonRef = useRef<HTMLButtonElement>(null)
+  // Quality-gate remediation (code-reviewer/a11y, round 3, Low, #449): `focusPaneContent`'s
+  // generic banner-button query (`lib/focus.ts`) always lands on the FIRST enabled
+  // `[data-pane-banner]` button, which on a `start-failed` banner is "Retry", not "Start new
+  // conversation" -- so a failed Start-new used to steal focus onto the wrong control. Captured
+  // so `handleStartNewConversation`'s own restore can prefer the button the user actually
+  // pressed, falling back to `focusPaneContent` only when it is gone or still disabled.
+  const startNewButtonRef = useRef<HTMLButtonElement>(null)
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
   // Tracks whether focus is currently somewhere inside the chat pane (the message textarea,
@@ -273,6 +281,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   }
 
   const recovering = recoveringId === sessionId
+  const startingNew = startingNewId === sessionId
   // Spec 005 (research.md Decision 4): `stopInfo` stays `{}` for a pristine pane by design (its
   // snapshot-fetch effect is skipped) -- MessageInput's own notStarted/disabled logic needs an
   // EXPLICIT 'not-started' stopReason, not undefined, so derive it from the Session's own
@@ -293,17 +302,74 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
 
   async function handleRecover() {
     const recoveringFor = sessionId
+    const focusedAtStart = document.activeElement
+    const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
     setRecoveringId(recoveringFor)
     const result = await window.refract.sessions.recover(recoveringFor)
-    setRecoveringId(null)
+    setRecoveringId(id => (id === recoveringFor ? null : id))
+    // Quality-gate remediation (code-reviewer, Medium, gate cycle 3 #449): the previous check
+    // treated ANY element still inside the pane as "focus didn't leave", including a ChatHeader
+    // control (close/swap) the user deliberately moved to mid-call, which this then yanked
+    // back. `focusedAtStart` instead captures the exact element focused when the call began
+    // (the clicked banner button); restore only when focus is still there (now disabled) or has
+    // nowhere else to go (<body>/null/disconnected) -- never onto some other in-pane control
+    // the user actively chose.
+    const maybeRestoreFocus = () => {
+      if (!hadFocus || sessionIdRef.current !== recoveringFor) return
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (!stranded && active !== focusedAtStart) return
+      focusPaneContent(chatPaneRef.current)
+    }
     if (!result.ok) {
       notify(result.error)
+      requestAnimationFrame(maybeRestoreFocus)
       return
     }
     applySnapshot(recoveringFor, result.value)
     if (sessionIdRef.current === recoveringFor) {
       setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
     }
+    // The banner (and its focused Recover/Retry button) unmounts once the snapshot clears the
+    // stop reason, dropping focus to <body>. Waits one frame for the fresh content (textarea or
+    // a still-stopped banner) to mount before reclaiming focus.
+    requestAnimationFrame(maybeRestoreFocus)
+  }
+
+  async function handleStartNewConversation() {
+    const startingFor = sessionId
+    const focusedAtStart = document.activeElement
+    const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
+    setStartingNewId(startingFor)
+    const result = await window.refract.conversations.startNew(startingFor)
+    setStartingNewId(id => (id === startingFor ? null : id))
+    // Quality-gate remediation: same fix as handleRecover above, plus round 3 (code-reviewer,
+    // Low): prefer re-focusing the "Start new conversation" button itself once it's enabled
+    // again -- `focusPaneContent`'s generic banner-button query always lands on "Retry" (the
+    // first enabled button in DOM order on a `start-failed` banner), not the control the user
+    // actually pressed.
+    const maybeRestoreFocus = () => {
+      if (!hadFocus || sessionIdRef.current !== startingFor) return
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (!stranded && active !== focusedAtStart) return
+      const pressed = startNewButtonRef.current
+      if (pressed && pressed.isConnected && !pressed.disabled) {
+        pressed.focus()
+        return
+      }
+      focusPaneContent(chatPaneRef.current)
+    }
+    if (!result.ok) {
+      notify(result.error)
+      requestAnimationFrame(maybeRestoreFocus)
+      return
+    }
+    applySnapshot(startingFor, result.value)
+    if (sessionIdRef.current === startingFor) {
+      setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+    }
+    requestAnimationFrame(maybeRestoreFocus)
   }
 
   async function handleRecreateWorktree() {
@@ -364,13 +430,30 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         role="status"
         className={cn(
           'flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground',
-          !isOpening && 'sr-only'
+          !isOpening && !recovering && !startingNew && 'sr-only'
         )}
       >
         {isOpening && (
           <>
             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
             Starting the agent…
+          </>
+        )}
+        {/* Quality-gate remediation (a11y, Medium, gate cycle 3 #449): the Recover/Retry/Start
+            new banner button is disabled (and so loses focus) for the whole await, which left
+            its "Retrying…"/"Starting…" text announced to nobody -- a disabled element is pulled
+            out of the accessibility tree. Mirrors that same busy text into this already-`role=
+            "status"` region instead of adding a second live region. */}
+        {!isOpening && recovering && (
+          <>
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
+            Retrying…
+          </>
+        )}
+        {!isOpening && !recovering && startingNew && (
+          <>
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
+            Starting new conversation…
           </>
         )}
       </div>
@@ -381,10 +464,36 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
             <AlertTitle>{describeStopReason(effectiveStopReason, effectiveStopDetail)}</AlertTitle>
             {effectiveStopReason === 'agent-exited' && (
               <AlertAction>
-                <Button size="sm" variant="outline" disabled={recovering} onClick={() => void handleRecover()}>
-                  Recover
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={recovering || startingNew}
+                  onClick={() => void handleRecover()}
+                >
+                  {recovering ? 'Retrying…' : 'Recover'}
                 </Button>
               </AlertAction>
+            )}
+            {effectiveStopReason === 'start-failed' && (
+              <div className="col-start-2 mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={recovering || startingNew}
+                  onClick={() => void handleRecover()}
+                >
+                  {recovering ? 'Retrying…' : 'Retry'}
+                </Button>
+                <Button
+                  ref={startNewButtonRef}
+                  size="sm"
+                  variant="outline"
+                  disabled={recovering || startingNew}
+                  onClick={() => void handleStartNewConversation()}
+                >
+                  {startingNew ? 'Starting…' : 'Start new conversation'}
+                </Button>
+              </div>
             )}
             {effectiveStopReason === 'worktree-missing' && (
               <div className="col-start-2 mt-2 flex gap-2">

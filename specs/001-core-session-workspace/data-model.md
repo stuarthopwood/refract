@@ -32,7 +32,7 @@ interface Session {
   worktreePath: string;        // absolute; also the agent's cwd
   sessionDir: string | null;   // OMP's session directory for that cwd; null until first learned (see below)
   currentConversation: string | null; // absolute path of the current Conversation's file; null before the first message
-  lastMessageCount: number | null;    // messageCount at the last settle; reattach requires messageCount >= this
+  lastMessageCount: number | null;    // messageCount at the last settle; a lower observed count on reattach re-baselines this (FINDINGS item 44) rather than failing
   lastModel?: { provider: string; id: string; name?: string }; // T062: last known model from get_state; absent = unknown
   lastThinkingLevel?: string;  // T062: last known thinking level/reasoning effort from get_state; absent = unknown
   createdAt: string;
@@ -163,5 +163,5 @@ type PendingRequest =
 After starting an agent, binding it with `switch_session` to the saved Conversation, and reading `get_state`:
 
 1. `sessionFile` must equal `Session.currentConversation` (case-insensitive path compare).
-2. `messageCount` must be `> 0`, and must be `>= Session.lastMessageCount` when that is not null. It may be higher: OMP appends messages (advisor, hooks, background notices) outside the turn and `session_settled` flow Refract counts, so exact equality would fail a healthy Session after a Stop or Recover. A lower count means a truncated or different file and fails.
+2. `messageCount` must be `> 0`. It may differ from `Session.lastMessageCount` in either direction: OMP appends messages (advisor, hooks, background notices) outside the turn and `session_settled` flow Refract counts, so exact equality would fail a healthy Session after a Stop or Recover; OMP can also drop messages (at least aborted assistant turns) on reload, so a lower count is not itself a failure either (FINDINGS item 44). A lower count re-baselines `lastMessageCount` to the observed value and shows a one-time notice; it does not fail verification.
 3. If either fails, the Session becomes `stopped` with a notice saying which check failed. The empty session OMP created is left unused and no message can be sent until the user chooses recover or another Conversation.
