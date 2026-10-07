@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
+import { EMPTY_QUEUE, notify, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
@@ -42,6 +42,7 @@ import {
 } from './attachments'
 import type { PendingTextChip } from './attachments'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
+import { parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -296,13 +297,58 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // sends immediately or queues as a followUp (FR-017) -- `SessionAgent.send` decides which
     // based on the Session's live status, not this call site.
     const images = attachments.images.length > 0 ? attachments.images.map(toImageContent) : undefined
+    // Issue #485: a bare `/new` here is `chat.ts`'s own third `conversations.startNew` call
+    // site (SessionAgent.startNewConversation, via chat.send) -- unlike ConversationSwitcher's
+    // and ChatPane's `handleStartNewConversation`, its reset reaches the renderer as an ordinary
+    // `transcript:patch` on the SAME event stream this call's own result races against, not as a
+    // returned SessionSnapshot this call site could clear-then-apply itself. Mirrors chat.ts's own
+    // `parsed.name === 'new' && parsed.rest === ''` recognition exactly (the only entry in
+    // NATIVE_BUILT_COMMANDS with a working implementation) so the clear runs BEFORE the request
+    // is even sent -- clearing only after awaiting the result below risks the reset patch having
+    // already landed and the Transcript's landing effect already reading the stale memory.
+    //
+    // Quality-gate remediation (round 2, 2026-10-07): `disabled` (`status === 'stopped' &&
+    // !notStarted`, see its definition above) does NOT cover every non-idle status -- a typed
+    // `/new` while `status === 'working'` reaches here perfectly able to send, then
+    // `SessionAgent.startNewConversation` rejects with `SessionNotIdleError` because a turn is
+    // still running. That failed send must not have silently thrown away the developer's restore
+    // point for whatever they were reading before typing `/new`: snapshot it first, and only put
+    // it back if `chat.send` fails below AND nothing newer has been recorded for this Session in
+    // the meantime (`restoreIfAbsent`).
+    const slashInvocation = parseSlashCommand(message)
+    const isNewConversationCommand = slashInvocation?.name === 'new' && slashInvocation.rest === ''
+    const previousScroll = isNewConversationCommand
+      ? useChatScrollStore.getState().bySession[sessionId]
+      : undefined
+    if (isNewConversationCommand) {
+      useChatScrollStore.getState().clear(sessionId)
+      // Quality-gate finding (code review, High): the ONLY one of the four call sites whose
+      // reset reaches the renderer via an ordinary `transcript:patch` (SessionAgent's own event
+      // stream) rather than a `SessionSnapshot` this call site applies itself -- a second
+      // `clear()` right before `applySnapshot` (the other three sites' pattern) has no
+      // equivalent moment here, so the store-level `inFlight` flag (see `scroll-store.ts`) is
+      // the only fix available: blocks `record()` for this Session until `chat.send` below
+      // settles, success or failure, so a scroll on the still-visible OLD Conversation during
+      // the await can never write a detached position the new (empty) Conversation inherits.
+      useChatScrollStore.getState().setInFlight(sessionId, true)
+    }
     // Unknown `/name` text is rejected by chat.send with `unknown-command` (FR-033); a listed
     // command given unverified arguments gets `unsupported-arguments` instead (issue #129); notify
     // below shows either as a toast, same as any other IPC error. FR-019: a failed send (whether
     // image-related or not) leaves the draft and every pending attachment untouched -- nothing
     // below this `if` runs until `chat.send` actually succeeds.
-    const result = await window.refract.chat.send(sessionId, message, images)
+    let result
+    try {
+      result = await window.refract.chat.send(sessionId, message, images)
+    } finally {
+      if (isNewConversationCommand) {
+        useChatScrollStore.getState().setInFlight(sessionId, false)
+      }
+    }
     if (!result.ok) {
+      if (isNewConversationCommand) {
+        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
+      }
       notify(result.error)
       return
     }
