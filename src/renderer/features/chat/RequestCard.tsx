@@ -310,7 +310,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   const headingTitleId = `${safeRequestId}-ask-heading-title`
   const bodyTextId = `${safeRequestId}-ask-question-text`
   const hasBody = body.trim().length > 0
-  const isMultilineBody = body.includes('\n')
+  const isMultilineBody = body.trim().includes('\n')
   const groupAriaLabelledBy = heading ? headingTitleId : hasBody && !isMultilineBody ? bodyTextId : undefined
   const groupAriaLabel = !heading && (!hasBody || isMultilineBody) ? 'Question' : undefined
   const groupAriaDescribedBy = !heading && hasBody && isMultilineBody ? bodyTextId : undefined
