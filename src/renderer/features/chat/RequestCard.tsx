@@ -95,16 +95,22 @@ function askAnswer(item: AskToolItem): string {
  * separate heading, only a body. Splits on the raw text's own newline, not on markdown block
  * boundaries -- the agent's question is plain multi-line text, and the markdown renderer turns
  * each half into its own blocks independently. A first line that is itself the start of a
- * markdown block (a fence, a list/blockquote marker, a table row, or an ATX heading) is never
- * promoted to a heading (quality gate, a11y round 3, issue #491 finding 3): splitting there would
- * produce a bogus heading and, for a fence, an unclosed code block in the remaining body. */
+ * markdown block (a fence, a list/blockquote marker, a table row, an ATX heading, a thematic
+ * break, or a 4-space/tab indented code line) is never promoted to a heading (quality gate, a11y
+ * round 3, issue #491 finding 3; round 4 finding 3): splitting there would produce a bogus
+ * heading and, for a fence or indented code line, an unclosed/misrendered code block in the
+ * remaining body. The indent check runs on the RAW first line, before trimming, since trimming
+ * is exactly what would erase the leading whitespace that makes it a code line. */
 export function splitQuestionHeading(text: string): { heading: string | null; body: string } {
   const normalized = text.replace(/\r\n/g, '\n')
   const newlineIndex = normalized.indexOf('\n')
   if (newlineIndex === -1) return { heading: null, body: normalized }
-  const heading = normalized.slice(0, newlineIndex).trim()
+  const rawFirstLine = normalized.slice(0, newlineIndex)
+  const heading = rawFirstLine.trim()
   const body = normalized.slice(newlineIndex + 1).replace(/^\n+/, '')
-  if (!heading || !body || MARKDOWN_BLOCK_START.test(heading)) return { heading: null, body: normalized }
+  if (!heading || !body || /^(    |\t)/.test(rawFirstLine) || MARKDOWN_BLOCK_START.test(heading) || THEMATIC_BREAK.test(heading)) {
+    return { heading: null, body: normalized }
+  }
   return { heading, body }
 }
 
@@ -113,6 +119,11 @@ export function splitQuestionHeading(text: string): { heading: string | null; bo
 // off as a bare heading string, since react-markdown then parses the remainder as a separate,
 // usually broken, block.
 const MARKDOWN_BLOCK_START = /^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/
+
+// A thematic break (CommonMark: three or more matching `-`/`*`/`_`, optionally space-separated,
+// alone on the line) -- also never promoted to a heading (quality gate, a11y round 4, issue #491
+// finding 3), since react-markdown renders it as an `<hr>`, not text.
+const THEMATIC_BREAK = /^([-*_])(?:\s*\1){2,}$/
 
 interface AskQuestionRowProps {
   item: AskToolItem
@@ -252,14 +263,19 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   // maximum-height scrolling region so a long question never pushes the options or Cancel off
   // screen (WCAG 1.4.10).
   const { heading, body } = splitQuestionHeading(request.title)
-  // Accessible name plumbing for the card (quality gate, a11y round 3, issue #491 findings 1-2):
-  // `CardTitle`/`CardContent` are plain `div`s with no implicit name or landmark role, so the
-  // card is wrapped in `role="group"` with `aria-labelledby` pointing at whichever element holds
-  // the question's visible name -- the heading wrapper when there is one, else the scrolling body
-  // region itself.
+  // Accessible name plumbing for the card (quality gate, a11y round 3, issue #491 findings 1-2;
+  // round 4 finding 1): `CardTitle`/`CardContent` are plain `div`s with no implicit name or
+  // landmark role, so the card is wrapped in `role="group"` with `aria-labelledby` pointing at
+  // whichever element holds the question's visible name -- the heading wrapper when there is
+  // one, else an id on the body question text itself. It must NOT point at the surrounding
+  // scroll region: that region carries its own `aria-label="Question"` (see below), and in the
+  // accessible-name computation an element's own `aria-label` wins over a name borrowed via
+  // `aria-labelledby` from a *descendant* that itself has one, so labelling the group from the
+  // region collapsed the group's name to the literal word "Question" instead of the question
+  // text (verified via the CDP accessibility tree).
   const headingTitleId = `${request.requestId}-ask-heading-title`
-  const bodyRegionId = `${request.requestId}-ask-question-region`
-  const groupLabelId = heading ? headingTitleId : bodyRegionId
+  const bodyTextId = `${request.requestId}-ask-question-text`
+  const groupLabelId = heading ? headingTitleId : bodyTextId
 
   return (
     <Card size="sm" role="group" aria-labelledby={groupLabelId}>
@@ -275,13 +291,14 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
        * keyboard-reachable and named on its own, since nothing else in the card is otherwise
        * focusable when the question overflows its max height. */}
       <CardContent
-        id={bodyRegionId}
         tabIndex={0}
         role="region"
         aria-label="Question"
         className="max-h-56 space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
-        <Markdown id={`${request.requestId}-ask-body`} text={body} />
+        <div id={bodyTextId}>
+          <Markdown id={`${request.requestId}-ask-body`} text={body} />
+        </div>
         {request.message && (
           <Markdown id={`${request.requestId}-ask-message`} text={request.message} className="text-muted-foreground" />
         )}
