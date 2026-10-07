@@ -176,6 +176,18 @@ export interface SwitchSessionResponseData {
   cancelled: boolean;
 }
 
+/** `get_subagents` (issue #489, PLAN.md row A2c; confirmed live, `docs/spike/get-subagents-probe.mjs`,
+ * 2026-10-07, omp 18.8.0): one entry per subagent THIS PROCESS's own registry still tracks --
+ * confirmed scoped to the current process only, never replayed from a Conversation's history onto
+ * a freshly attached process (a fresh process's own `get_subagents` returned `{ subagents: [] }`
+ * even seconds after a hard-killed process's own genuinely-running subagent, same Conversation
+ * file, same `switch_session` attach SessionAgent.ts uses). `id` is the subagent's own bare name,
+ * the same value `tool_execution_update`'s `progress[].id` carries (`contracts/omp-usage.md`
+ * section (c)); only `id` is read by Refract, the rest is left loose. */
+export interface GetSubagentsResponseData {
+  subagents: Array<{ id: string; status: string; [key: string]: unknown }>;
+}
+
 export interface GetAvailableCommandsResponseData {
   commands: SlashCommandDescriptor[];
 }
@@ -474,6 +486,14 @@ export interface GetStateCommand {
   id: string;
 }
 
+/** Issue #489, PLAN.md row A2c: polled once right after an attach/resume's `switch_session` to
+ * seed `runtime.subagents` for any subagent the reloaded transcript still remembers as `running`
+ * (`SessionAgent.seedOrphanedSubagents`). */
+export interface GetSubagentsCommand {
+  type: 'get_subagents';
+  id: string;
+}
+
 export interface GetMessagesCommand {
   type: 'get_messages';
   id: string;
@@ -520,6 +540,7 @@ export type RpcCommand =
   | NewSessionCommand
   | SwitchSessionCommand
   | GetStateCommand
+  | GetSubagentsCommand
   | GetMessagesCommand
   | NegotiateProtocolCommand
   | ExtensionUiResponseFrame

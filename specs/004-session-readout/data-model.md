@@ -79,7 +79,7 @@ interface SessionReadout {
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
   turnTime: { startedAt: number } | null;        // null = no turn running (chip hidden); renderer computes elapsed
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
-  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed, per FR-007's own wording
+  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed, folds a seeded 'exited' (issue #489) into finished
   todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
 }
 
@@ -98,8 +98,12 @@ FR-002 wording ("Not available" rather than a silently absent chip).
 
 **Retention rule (FR-008, edge cases)**: `changes`, `pullRequest`, and `contextUsage` keep their
 last non-null reading when the agent is not running or a lookup momentarily fails, rather than
-reverting to `null`; `turnTime` and `subagentCount` are always `null` outside a running turn (they
-are only meaningful for one, per the spec's own edge case).
+reverting to `null`; `turnTime` is always `null` outside a running turn. `subagentCount` persists
+after its turn settles (a developer still asking "what did it delegate to" afterward) and, since
+issue #489, can also be non-`null` immediately on attach/resume with no turn running at all, when
+the reattached transcript still shows a seeded `exited` subagent from before this process
+existed; both are cleared only by the *next* turn starting (`agent_start`), never by settling or
+attaching alone.
 
 ### `SubagentSummary` (new)
 
@@ -111,9 +115,9 @@ interface SubagentSummary {
   id: string;                               // `${toolCallId}:${name-or-fallback}` (remediation round, see tasks.md) -- globally unique, not just stable within one turn
   toolCallId: string;                       // the owning task() call's own id; scopes correlation across 2+ parallel task calls in one turn
   nameOrTask: string;                       // the subagent's name, or its task text when unnamed
-  status: 'running' | 'finished' | 'failed';
+  status: 'running' | 'finished' | 'failed' | 'exited'; // 'exited': issue #489, seeded on attach/resume, process confirmed gone, nothing known about its own work
   startedAt: number;
-  durationMs?: number;                      // present once status is finished or failed
+  durationMs?: number;                      // present once status is finished, failed, or exited
 }
 ```
 
@@ -160,5 +164,6 @@ interface ViewState {
 | a `SubagentSummary` | its tool call ends (success) | `status: 'finished'`, `durationMs` set |
 | a `SubagentSummary` | its tool call ends (error) | `status: 'failed'`, `durationMs` set |
 | `subagents: [...]` | a new turn starts (`agent_start`) | cleared to `[]` (FR-007: count is "the current turn's") |
+| a `SubagentSummary` at `status: 'running'` carried over from before a crash, or a `kind: 'subagent'` transcript row still `status: 'running'` with no such summary yet (fresh instance) | an attach/resume (`launch()`, issue #489) | `status: 'running'` if THIS process's own `get_subagents` still reports that id (rare), else `status: 'exited'` with `durationMs` set |
 | `view: 'chat' \| 'pull-requests' \| 'manage-sessions'` | `openSettings(section?)` | `view: 'settings'`, `settingsSection` set |
 | `view: 'settings'` | `openChat(repositoryId?)`, or any left-nav/Session action that returns to chat | `view: 'chat'` (and `repositoryId` set when provided) |

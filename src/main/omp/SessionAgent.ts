@@ -26,6 +26,7 @@ import type {
   ExtensionUiRequestFrame,
   Frame,
   GetMessagesResponseData,
+  GetSubagentsResponseData,
   GetStateResponseData,
   ImageContent,
   PredictWordResponseData,
@@ -383,6 +384,15 @@ export class SessionAgent extends EventEmitter {
     // `mergeLiveTranscript`, and only on this reattach's settle, not on every later one).
     if (rebaselineNotice) this.appendNotice(rebaselineNotice);
 
+    // Issue #489 (PLAN.md row A2c): reconcile `runtime.subagents` against OMP's own registry on
+    // every attach/resume. Two distinct ways a `running` entry can be stale by the time this
+    // runs: (a) `recover()`/a mode-change restart reuses THIS SAME `SessionAgent` instance --
+    // `runtime.subagents` is never cleared by a crash (only by the next `agent_start`), so a
+    // `SubagentSummary` a live `tool_execution_update` set to `running` before the old process
+    // died is still sitting there untouched; (b) a true app restart builds a brand-new instance
+    // whose `subagents` starts `[]` -- only the reattached transcript's own `kind: 'subagent'`
+    // row remembers it. `reconcileSubagentsOnAttach` covers both.
+    await this.reconcileSubagentsOnAttach(proc);
     await this.syncFromState(state);
     const exitedDuringStart2 = exitedDuringStart(this.process === proc, failurePrefix, (d) => this.recordStartFailure(d));
     if (exitedDuringStart2) return exitedDuringStart2;
@@ -1315,6 +1325,63 @@ export class SessionAgent extends EventEmitter {
       this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
     }
     this.scheduleReadoutUpdate();
+  }
+
+  /**
+   * Issue #489 (PLAN.md row A2c): called from every `launch()` to reconcile `runtime.subagents`
+   * against OMP's own `get_subagents` registry. Builds its candidate set from two places, since
+   * either can be the only surviving record depending on exactly what crashed (`#489`'s own
+   * crash repro is unconfirmed, PLAN.md open question 9): any `SubagentSummary` already in
+   * `runtime.subagents` at `status: 'running'` (a `recover()`/mode-change restart reuses this
+   * SAME `SessionAgent` instance -- a crashed `OmpProcess` is never cleared from it, only the
+   * next `agent_start` does that), plus any `kind: 'subagent'` transcript row at `status:
+   * 'running'` not already represented there (a true app restart builds a brand-new instance
+   * whose `subagents` starts `[]`; only the reattached transcript, reloaded via `get_messages`
+   * above, remembers it). `get_subagents` is the one live signal that can tell "genuinely still
+   * running" (THIS process's own registry already has it, matched by OMP's bare name, the same
+   * value `tool_execution_update`'s `progress[].id` and `nameOrTask` carry) from "provably gone":
+   * confirmed live (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) that a freshly
+   * attached process's own `get_subagents` never replays a previous process's registry -- it is
+   * scoped to the current process only -- so any candidate this snapshot does not also report
+   * has no further update coming and is resolved straight to the terminal `'exited'` state,
+   * never left spinning forever. A no-op (no RPC call at all) when there is nothing to check.
+   */
+  private async reconcileSubagentsOnAttach(proc: OmpProcess): Promise<void> {
+    const candidates = new Map<string, SubagentSummary>();
+    for (const s of this.runtime.subagents) {
+      if (s.status === 'running') candidates.set(s.id, s);
+    }
+    for (const item of this.runtime.transcript) {
+      if (item.kind === 'subagent' && item.status === 'running' && !candidates.has(item.id)) {
+        candidates.set(item.id, {
+          id: item.id,
+          toolCallId: item.toolCallId,
+          nameOrTask: item.name,
+          status: 'running',
+          startedAt: item.startedAt ?? Date.now(),
+        });
+      }
+    }
+    if (candidates.size === 0) return;
+
+    let liveNames: Set<string>;
+    try {
+      const res = await proc.request({ type: 'get_subagents', id: '' });
+      liveNames = new Set(res.success ? (res.data as GetSubagentsResponseData).subagents.map((s) => s.id) : []);
+    } catch (err) {
+      console.error(`SessionAgent ${this.sessionId}: get_subagents threw`, err);
+      liveNames = new Set();
+    }
+
+    const now = Date.now();
+    const resolved = [...candidates.values()].map((candidate) => {
+      if (liveNames.has(candidate.nameOrTask)) return candidate;
+      return { ...candidate, status: 'exited' as const, durationMs: now - candidate.startedAt };
+    });
+    const resolvedIds = new Set(resolved.map((r) => r.id));
+    const subagents = [...this.runtime.subagents.filter((s) => !resolvedIds.has(s.id)), ...resolved];
+    this.runtime = { ...this.runtime, subagents };
+    this.emit('subagents', { sessionId: this.sessionId, subagents });
   }
 
   /** `chat.setVisibleSubagent` (FR-017 to FR-020): no immediate push -- the caller fetches the

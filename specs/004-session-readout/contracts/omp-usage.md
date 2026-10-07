@@ -81,3 +81,38 @@ into synthetic `TranscriptItem`-shaped rows per subagent id, the same upsert-by-
   task T078's one-collapsed-line-per-subagent chat rendering; this spec's subagent tracking reads
   the same calls, just builds a richer in-memory structure from them (id, status, stream) instead
   of only a chat row.
+
+### d. `get_subagents` on attach/resume (Subagents chip/panel seeding, FR-007, FR-017, issue #489)
+
+**Resolved**: `get_subagents` (no subscription needed) returns `{ subagents: SubagentEntry[] }`,
+scoped to the issuing process's own in-memory registry only. Confirmed live
+(`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0): a process with no Conversation yet
+returns `{ subagents: [] }`; the SAME process, mid-batch `task()` call, returns one entry per
+genuinely running subagent; a process A hard-killed while its subagent is still running, then a
+brand-new process B `switch_session`-attached onto the exact same Conversation file, returns `{
+subagents: [] }` -- **the registry is never replayed from a Conversation's history onto a fresh
+process**, confirming the hypothesis Refract's attach/resume fix (`SessionAgent.ts`'s
+`reconcileSubagentsOnAttach`) needs: any transcript-remembered `running` subagent a freshly attached
+process's `get_subagents` does not also report has no further update coming and is seeded
+straight to Refract's own terminal `exited` state.
+
+```ts
+interface SubagentEntry {
+  id: string;              // the subagent's own name; same value as SubagentProgress.id above
+  index: number;
+  agent: string;            // e.g. "sonic"
+  agentSource: string;      // e.g. "bundled"
+  status: 'running' | 'completed' | string;
+  task: string;
+  assignment: string;
+  sessionFile: string;      // this subagent's own per-subagent Conversation .jsonl path
+  lastUpdate: number;       // epoch ms
+  parentToolCallId: string; // the owning task() call's own id, not resolvable to Refract's own toolCallId format without it
+  progress: SubagentProgress; // identical shape to section (c) above, same object
+}
+```
+
+`set_subagent_subscription` (`level: 'progress'`) was sent before `get_subagents` in the probe and
+returned `{ success: true }`, but made no observable difference to `get_subagents` itself (it
+gates the unrelated streaming `tool_execution_update` frames section (c) already documents); not
+required for this contract.

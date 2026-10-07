@@ -21,6 +21,25 @@ field whose bottom bar shows the mode, model, and agent.
   (opens a right side panel pane, shows list of agents - click to open and view stream). PR Number
   (click opens PR view). Current Time as well.
 
+### Session 2026-10-07
+
+- Q: Issue #536 found the Subagents chip's wording wrong — `12 finished, 1 running` read as "13
+  subagents running" (the count was `running + finished`, the word always "running" while any
+  was). What should it show instead? -> A: The running count alone while any subagent is still
+  running (for example "1 subagent running"); once none are, a quiet "N finished" total instead
+  (folding in any subagent issue #489 seeds as `exited` — see Edge Cases). Matches issue #507's
+  row-count definition.
+- Q: Issue #489 found a crashed-and-resumed Session's still-remembered-running subagent has no
+  Subagents pill at all (`runtime.subagents` is rebuilt empty on every attach/resume and only a
+  live `task` tool call ever repopulates it). What should attach/resume do? -> A: Seed
+  `runtime.subagents` from the reattached transcript's own still-`running` `subagent` rows, then
+  call OMP's `get_subagents` once to tell genuinely-still-running (rare: the same process somehow
+  survived) from provably-gone; the second case is a new terminal `exited` state, distinct from
+  `failed` (see Edge Cases, FR-007, FR-017). The exact scenario Stuart saw (what crashed, whether
+  a process was left running) is still unconfirmed — PLAN.md open question 9 — so this is
+  designed from the `get_subagents` contract (confirmed live, `docs/spike/get-subagents-probe.mjs`,
+  2026-10-07) rather than a specific repro.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See a session's state at a glance (Priority: P1)
@@ -158,6 +177,13 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   error toast appears.
 - The subagent panel is open on a subagent that then ends: the panel stays open and reflects the
   new state instead of closing itself.
+- A Session attaches or resumes (a fresh start, or after the agent process exited, crashed or
+  otherwise) while its reattached transcript still shows a subagent as `running` from before this
+  process existed: it is seeded into `runtime.subagents` as `running` only if OMP's own
+  `get_subagents` (THIS process's registry) still reports it; otherwise it is seeded as `exited`
+  (issue #489) — distinct from `failed`, since nothing about its own work is known to have gone
+  wrong, only its process is gone. This makes the Subagents chip/panel reachable again instead of
+  silently empty.
 - The clock and the turn timer tick frequently: neither is announced to assistive technology on
   every tick.
 - No readout's status is ever conveyed by color alone: the context window usage warning always
@@ -192,8 +218,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   Session's branch; it MUST be hidden when there is no such pull request or no GitHub remote, and
   when a lookup fails or GitHub access is unavailable it MUST be hidden without an error message.
   Activating it MUST open that pull request in the Pull requests view (spec 003).
-- **FR-007**: The Subagents chip MUST show the count of the current turn's subagents that are
-  running or finished, and MUST be hidden when the turn has started none.
+- **FR-007**: The Subagents chip MUST show the running count of the current turn's subagents
+  while any are running; once none are, it MUST show a quiet "N finished" total of the ones that
+  reached `finished` or `exited` (issue #536); it MUST be hidden when the turn has started none.
 - **FR-008**: Every chip MUST update live as the underlying value changes, MUST retain its last
   known value when a live reading is momentarily unavailable but the readout is otherwise
   meaningful (FR-002, FR-003), and MUST NOT block typing into or sending from the message box.
@@ -217,7 +244,8 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **FR-016**: The Settings screen MUST be fully operable by keyboard, with a visible focus
   indicator at every control.
 - **FR-017**: Activating the Subagents chip MUST open a right side panel listing the current
-  turn's subagents, each with its name or task and its state (running, finished, or failed).
+  turn's subagents, each with its name or task and its state (running, finished, failed, or
+  exited — issue #489).
 - **FR-018**: Selecting a subagent in that panel MUST show its live stream — what it is saying and
   which tools it is running — inside the panel.
 - **FR-019**: The subagent panel MUST be closeable, and closing it MUST leave the chat pane
@@ -240,7 +268,8 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - **Subagent panel**: the right side panel opened from the Subagents chip, listing the current
   turn's subagents and showing the live stream of whichever one is selected.
 - **Subagent entry**: one row in the subagent panel: a name or task, a state (running, finished,
-  or failed), and, when selected, its stream of output and tool calls.
+  failed, or exited — a process confirmed gone with nothing known about its own work, issue
+  #489), and, when selected, its stream of output and tool calls.
 
 ## Success Criteria *(mandatory)*
 
@@ -299,3 +328,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
 - The subagent panel is the first feature to use Refract's right side pane. The right pane's
   other planned content — git changes, a file browser, and a side chat (backlog issue #1) — is
   out of scope here and remains its own, later spec.
+- Issue #489's attach/resume seeding (FR-007, FR-017, Edge Cases) is designed from OMP's
+  `get_subagents` contract, confirmed live (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp
+  18.8.0): a freshly attached process's own `get_subagents` is scoped to that process only and
+  never replays a previous process's registry, even onto the same Conversation file. The exact
+  scenario Stuart saw when he filed #489 (what crashed, Refract or `omp`, and whether a process
+  was left running) is unconfirmed and logged as PLAN.md's open question 9, not assumed here.

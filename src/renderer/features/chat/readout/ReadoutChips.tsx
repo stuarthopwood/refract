@@ -169,15 +169,17 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
   )
 }
 
-/** FR-007, FR-017: the count of this turn's subagents that are running or finished (excluding
- * failed), hidden when the turn has started none. Activating it opens the Subagents panel
- * (T021) with an accessible name stating the running count. */
+/** FR-007, FR-017; amended 2026-10-07 for issue #536: shows the running count while any of this
+ * turn's subagents are still running, else a quiet "N finished" total once none are (folding a
+ * seeded 'exited' orphan from issue #489 into that same quiet count -- readout.ts); hidden when
+ * the turn has started none. Activating it opens the Subagents panel (T021) with an accessible
+ * name stating the shown count. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
   const openPanel = useSubagentPanelStore((s) => s.openPanel)
   if (subagentCount === null) return null
-  const total = subagentCount.running + subagentCount.finished
-  const phrase = `${total} subagent${total === 1 ? '' : 's'} ${subagentCount.running > 0 ? 'running' : 'finished'}`
+  const { running, finished } = subagentCount
+  const phrase = running > 0 ? `${running} subagent${running === 1 ? '' : 's'} running` : `${finished} finished`
   return (
     <ReadoutChip
       icon={UsersIcon}
@@ -185,7 +187,8 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
       // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
       // focus-move retarget (research.md Decision 10).
       onActivate={() => openPanel(sessionId)}
-      accessibleName={`Open subagents panel (${subagentCount.running} running)`}
+      accessibleName={running > 0 ? `Open subagents panel (${running} running)` : `Open subagents panel (${finished} finished)`}
+      className={running === 0 ? 'text-muted-foreground' : undefined}
     >
       <span aria-hidden>{phrase}</span>
     </ReadoutChip>

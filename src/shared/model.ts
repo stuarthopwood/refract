@@ -136,7 +136,7 @@ export interface SessionReadout {
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
   turnTime: { startedAt: number } | null; // null = no turn running (chip hidden)
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
-  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed
+  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed, folds a seeded 'exited' (#489) into finished
   todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
 }
 
@@ -159,9 +159,15 @@ export interface SubagentSummary {
    * batch -- `id` alone (name or position) is not unique enough across calls. */
   toolCallId: string;
   nameOrTask: string;
-  status: 'running' | 'finished' | 'failed';
+  /** `'exited'` (issue #489, FINDINGS item 45): Refract still remembered this subagent as
+   * `running` but its owning process is gone by the time the next attach/resume's
+   * `get_subagents` snapshot comes back -- that snapshot is scoped to the CURRENT process only
+   * (confirmed live: OMP never replays subagent history onto a fresh process), so anything it
+   * does not also report is provably orphaned. Distinct from `failed`: nothing about the
+   * subagent's own work is known to have failed, only its process disappeared. */
+  status: 'running' | 'finished' | 'failed' | 'exited';
   startedAt: number;
-  durationMs?: number; // present once status is finished or failed
+  durationMs?: number; // present once status is finished, failed, or exited
 }
 
 /** Built in the main process from OMP frames; the renderer only renders items. */
