@@ -401,10 +401,22 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // own mount-time `defaultScrollPosition`.
   const viewportRef = React.useRef<HTMLDivElement>(null)
 
+  // True from the moment a Session/Conversation switch's landing effect (below) starts until it
+  // has applied its own `scrollTop` -- while content-visibility rows are still being promoted
+  // from their placeholder size, the browser can clamp/adjust `scrollTop` on its own (the
+  // just-mounted content's placeholder-sized `scrollHeight` is smaller than the real one, so a
+  // leftover `scrollTop` from the PREVIOUS Session gets silently clamped down), firing a genuine
+  // `scroll` event that `handleViewportScroll` would otherwise misrecord as "the developer's
+  // position" -- corrupting the very memory the landing effect is about to read. Suppressing
+  // recording for this one settle window (never for real scrolling once it is over) was the
+  // fix for issue #485's restore-on-return silently losing the detached position every time.
+  const landingInProgressRef = React.useRef(false)
+
   // Continuously records this Session's scroll position while the viewport is visible, so
   // whatever was last recorded is exactly where the developer left it (no separate "on leaving"
   // handler needed).
   function handleViewportScroll(event: React.UIEvent<HTMLDivElement>) {
+    if (landingInProgressRef.current) return
     const viewport = event.currentTarget
     useChatScrollStore.getState().record(sessionId, {
       atEnd: isAtScrollEnd({
@@ -427,6 +439,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   React.useEffect(() => {
     const viewport = viewportRef.current
     if (!viewport) return
+    landingInProgressRef.current = true
     let cancelled = false
     let frame = 0
     let stableFrames = 0
@@ -441,6 +454,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
         const memory = useChatScrollStore.getState().bySession[sessionId]
         viewport.scrollTop = resolveLandingScrollTop(memory, viewport.scrollHeight)
+        landingInProgressRef.current = false
         return
       }
       requestAnimationFrame(step)
@@ -449,6 +463,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     requestAnimationFrame(step)
     return () => {
       cancelled = true
+      landingInProgressRef.current = false
     }
   }, [sessionId, transcript.generation])
 
