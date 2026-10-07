@@ -254,11 +254,11 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   walking back from an EARLIER turn's last `subagent` row could land on that earlier turn's own
   preceding `user` item, re-seeding its already-finished subagents as "this turn's" subagents on
   every subsequent restart/Recover/`openConversation` (`runtime.subagents` is empty on a fresh
-  instance and `agent_start` already clears it, so nothing else bounds the scope). Accepted,
-  documented limitation: if the user steers or sends a consumed `followUp` WHILE a subagent is
-  still running, that steer's own `user` item moves the boundary past the subagent's row and a
-  later restart/Recover does not restore its pill -- deliberately, since the alternative
-  reintroduces the worse bug just described. (2) A second Recover (or Recover then a mode-change
+  instance and `agent_start` already clears it, so nothing else bounds the scope).
+  **SUPERSEDED, durable turn marker below** -- this round accepted a documented limitation here:
+  if the user steered or sent a consumed `followUp` WHILE a subagent was still running, that
+  steer's own `user` item moved the boundary past the subagent's row, and a later restart/Recover
+  did not restore its pill. (2) A second Recover (or Recover then a mode-change
   restart) with no new turn in between could still leave the chat-transcript row spinning
   `running` forever even once its `SubagentSummary` had already settled: an already-settled
   correlation key was skipped outright in the transcript scan, so it never reached
@@ -267,6 +267,21 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   status instead of skipped, and the early return also checks for pending transcript settling.
   Also, a resolved `exited` row no longer reports a `durationMs` at all (it was counting the
   entire app-downtime window the crash and restart spanned, not the subagent's own runtime).
+- **Durable turn marker, 2026-10-07 (PLAN.md row A2c, supersedes gate fixes 3's turn-boundary
+  rule above)**: "the current turn's subagents" (FR-007) is no longer defined by transcript
+  position at all. `Session.currentTurnSubagents` (registry.json, data-model.md) persists the
+  `toolCallId:specIndex` keys of the current turn's subagents, written by `handleTaskStart` the
+  instant a `task` call starts and cleared only at the next `agent_start` -- the SAME boundary
+  `runtime.subagents` already uses, never by a steer (`chat.sendNow`) or a consumed `followUp`
+  (a steer never fires `agent_start`; a consumed `followUp` can only be promoted once the prior
+  turn, including its subagents, already fully settled, so clearing at `agent_start` is always
+  correct for it too). `reconcileSubagentsOnAttach` and `transcript.ts`'s
+  `settleStaleSubagentRows` both scope by this SAME persisted set instead of the transcript's
+  last `kind: 'user'` item, so a steer mid-subagent no longer loses the pill (the bug this spec
+  accepted above) WITHOUT reintroducing gate fixes 2's worse bug (an earlier turn's
+  already-finished subagents resurfacing as "current"), because scope is now keyed by exact
+  subagent identity, never by walking the transcript. Absent (old registries, or a turn that
+  started no subagents) means empty scope -- no migration needed.
 - The clock and the turn timer tick frequently: neither is announced to assistive technology on
   every tick.
 - No readout's status is ever conveyed by color alone: the context window usage warning always

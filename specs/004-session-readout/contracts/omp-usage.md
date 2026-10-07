@@ -278,3 +278,61 @@ of reattaching, which would not exercise either fix.
 `transcript.ts`'s `settleStaleSubagentRows` in isolation were not re-exercised beyond what the
 three scenarios above already drove through `reconcileSubagentsOnAttach`; they were unchanged by
 this pass's edits (code-reviewed only).
+
+### h. Durable turn marker live verification (2026-10-07, omp 18.8.0, scratch CDP instance, issue #489)
+
+Replaces transcript position with `Session.currentTurnSubagents` (registry-backed). Driven end
+to end via `window.refract.*` IPC on a scratch Electron instance (isolated absolute
+`--user-data-dir` under the OS temp dir, CDP port 9489, a real signed-in `omp` 18.8.0 agent
+confirmed via `readiness.check().ompSignedIn.ok`); every kill targeted the exact `omp.exe` pid
+read from the scratch instance's own `processes.json`, confirmed via `Win32_Process`
+`ParentProcessId`/`CommandLine` against the scratch Electron main pid before every `taskkill`.
+The user's live pinion instance (a separate `omp.exe` parent pid, `%APPDATA%\pinion`) was
+confirmed untouched throughout, including in the final process listing.
+
+- **(a) Steer mid-subagent, same-instance Recover AND a full app restart**: session
+  `bold-osprey`, one subagent `Worker` (`sleep 240`). Confirmed `running`
+  (`currentTurnSubagents: ["toolu_01LCnwwttW8TYPA9Wu51ovdV:0"]`), then queued + `sendNow`
+  steered a message in (`{queued:true}` then `{steered:true}`) -- the resulting transcript order
+  was `[...,subagent(running),tool:wait,user(STEER),assistant-text("OK")]`, i.e. the steer's own
+  `user` item landed AFTER the subagent row, the exact #489 trigger. `currentTurnSubagents`
+  stayed `["toolu_...:0"]` through the steer (no `agent_start` fired). Hard-killed the real
+  `omp.exe`, called `sessions.recover()`: transcript showed exactly ONE `subagent` row,
+  `status:'exited'`, chat row settled, steer's `user` item still positioned after it. Then killed
+  the WHOLE scratch Electron tree and relaunched with the identical `--user-data-dir`: the
+  registry's `currentTurnSubagents` survived the restart unchanged, and reopening the Session
+  again produced the identical result -- one `subagent` row, `status:'exited'`, chat row settled.
+- **(b) Turn 1 with a subagent, turn 2 plain, kill+Recover -- no earlier-turn agents**: session
+  `mellow-heron`. Turn 1's subagent `Worker` finished normally before a turn 2 plain reply was
+  sent (confirmed via `sessions.list()`: `currentTurnSubagents: []` after turn 2, since
+  `agent_start` cleared turn 1's key). Hard-killed the real `omp.exe`, called
+  `sessions.recover()`: the captured `onSubagentsUpdate` event read `subagents: []` -- `Worker`
+  did NOT resurface as "this turn's" subagent, and its transcript row stayed `status:'done'`,
+  untouched.
+- **(c) Crash mid-subagent, no steer**: session `brisk-raven`, one subagent `Worker`
+  (`sleep 240`), confirmed `running`. Hard-killed the real `omp.exe`, called
+  `sessions.recover()`: transcript showed one `subagent` row `status:'exited'`; the captured
+  `onSubagentsUpdate` event read one entry `status:'exited'`; the captured `onReadoutUpdate`
+  event read `subagentCount:{running:0,finished:0,exited:1,failed:0}` -- chip, array, and
+  transcript row all agree.
+- **(d) Two consecutive Recovers, no new turn in between**: same `brisk-raven` session.
+  Hard-killed the NEW `omp.exe` `recover()` had just spawned (a second real crash, no new turn),
+  called `sessions.recover()` again: the transcript still read exactly ONE `subagent` row,
+  `status:'exited'` (zero rows at `status:'running'`), and no new `onSubagentsUpdate` event fired
+  (the already-settled key correctly skipped re-seeding and the early-return path took no action).
+- **(e) A registry written by the previous build loads fine**: with the scratch app stopped,
+  `currentTurnSubagents` was deleted from `mellow-heron`'s own `registry.json` entry by hand
+  (simulating a pre-this-change row), then the whole scratch Electron tree was restarted against
+  the SAME `--user-data-dir`: `sessions.list()` returned `{ok:true, count:5}`, including the
+  edited row, with no error and no crash.
+- **(f) Parallel batch, one finished before the kill -- both seeded**: session `gallant-walrus`,
+  one batch `task()` call, two subagents -- `Fast` (`echo fast-done`) and `Slow` (`sleep 240`).
+  Confirmed before the kill: `Fast` `status:'done'`, `Slow` `status:'running'` (one
+  `currentTurnSubagents` write covering both keys from the single batch). Hard-killed the real
+  `omp.exe`, called `sessions.recover()`: transcript read `Fast` `status:'done'` (unchanged, its
+  real recorded status) and `Slow` `status:'exited'` -- both seeded, neither dropped.
+
+**Not separately re-driven live this pass**: `openConversation()`'s own reconcile path and
+`switchRecovery.ts`'s `recoverFromFailedSwitch` path were updated to read the same persisted set
+(code-reviewed, typechecked) but not independently exercised through a live failed-switch or
+Conversation-change scenario this round.

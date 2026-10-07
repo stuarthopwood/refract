@@ -267,6 +267,56 @@ its fix live entirely in renderer store logic); scratch userData dir left on dis
 
 `pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all pass clean (0 leaks) after this round.
 
+## Phase 32: Durable turn marker for issue #489
+
+**Goal**: replace `reconcileSubagentsOnAttach`'s transcript-position turn boundary (gate fixes
+3's plain "last `kind:'user'` item" rule, which could not tell a steer mid-subagent apart from a
+genuinely new turn) with a persisted registry marker, `Session.currentTurnSubagents`.
+
+- [X] T128 Add `Session.currentTurnSubagents?: string[]` (`shared/model.ts`, data-model.md):
+  `toolCallId:specIndex` keys for the current turn's subagents. `SessionAgent.handleTaskStart`
+  persists the new keys the instant a `task` call starts (one `registry.updateSession` write per
+  batch, fire-and-forget but durable -- `atomicJson.ts`'s per-file write queue serialises it
+  against the `agent_start` clear). `onFrame`'s `agent_start` case clears it at the SAME trigger
+  that clears `runtime.subagents`, skipped when already empty. `reconcileSubagentsOnAttach` and
+  `transcript.ts`'s `settleStaleSubagentRows` both scope "the current turn" by membership in this
+  persisted set instead of transcript position; `launch()`, `openConversation()`, and
+  `switchRecovery.ts` thread it into `fromHistory`. (#489)
+- [X] T129 Live-verify (a)-(f) against a real signed-in `omp` 18.8.0 agent on an isolated scratch
+  CDP instance: steer mid-subagent (same-instance Recover AND a full app restart), an earlier
+  turn's subagent never resurfacing after a later plain turn, a plain crash with no steer, two
+  consecutive Recovers with no new turn, an old-format registry row loading fine, and a parallel
+  batch seeding both a finished and a still-running subagent. See
+  `contracts/omp-usage.md` section h for the full evidence. `pnpm typecheck`, `pnpm build`, and
+  `pnpm check:ui-text` all clean. (#489)
+
+**Verified 2026-10-07 (durable turn marker)**: all six scenarios driven live end to end via
+`window.refract.*` IPC on a scratch Electron instance (own absolute `--user-data-dir` under the
+OS temp dir, CDP port 9489, a real signed-in `omp` 18.8.0 agent). (a) session `bold-osprey`,
+subagent `Worker` (`sleep 240`): queued+`sendNow`-steered while running (`currentTurnSubagents`
+unchanged through the steer), hard-killed the real `omp.exe`, `sessions.recover()` settled it to
+one `exited` row with the steer's own `user` item still positioned after it in the transcript;
+then the whole scratch Electron tree was killed and relaunched against the SAME
+`--user-data-dir` -- the registry's `currentTurnSubagents` survived and reopening the Session
+reproduced the identical one-row `exited` result. (b) session `mellow-heron`: turn 1's finished
+subagent did not resurface after a plain turn 2, crash, and Recover (`onSubagentsUpdate` read
+`subagents: []`). (c) session `brisk-raven`: a plain crash mid-subagent settled to one `exited`
+row, confirmed on the transcript row, the `onSubagentsUpdate` array, and the `onReadoutUpdate`
+chip (`subagentCount:{running:0,finished:0,exited:1,failed:0}`). (d) two consecutive Recovers on
+`brisk-raven` with no new turn left exactly one row, no spinning `running` row, and no duplicate
+event. (e) `currentTurnSubagents` was deleted by hand from a registry row, the scratch app
+restarted against the same `--user-data-dir`, and `sessions.list()` still returned the row with
+no error. (f) session `gallant-walrus`, a parallel batch (`Fast`/`Slow`): `Fast` already `done`
+and `Slow` still `running` at kill time both seeded correctly after Recover (`done`/`exited`).
+Every `taskkill` targeted a pid read from the scratch instance's own `processes.json`, confirmed
+via `Win32_Process` `ParentProcessId`/`CommandLine` against the scratch Electron main pid first;
+the user's live pinion instance (separate `omp.exe` parent pid, `%APPDATA%\pinion`) was
+untouched throughout, confirmed in the final process listing. Not separately re-driven live:
+`openConversation()`'s own reconcile path and `switchRecovery.ts`'s own `fromHistory` call
+(code-reviewed/typechecked only). `pnpm typecheck`, `pnpm build`, `pnpm check:ui-text` (0 leaks)
+all clean.
+
+
 ## Phase 33: Convergence
 
 - [X] T126 [US3] Fix the Subagents panel's wrap and padding at the shared cause (issue #492):
