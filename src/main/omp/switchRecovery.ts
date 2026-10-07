@@ -39,7 +39,13 @@ export async function recoverFromFailedSwitch(
           const backFailure = verifyReattach(session, backStateRes.data as GetStateResponseData);
           if (!backFailure) {
             const messagesRes = await process.request({ type: 'get_messages', id: '' });
-            const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
+            // Issue #489 (durable turn marker, 2026-10-07): scopes by the SAME persisted
+            // `currentTurnSubagents` set `reconcileSubagentsOnAttach` uses, read from the
+            // `session` just fetched above (fresh, not a stale earlier snapshot).
+            const currentTurnKeys = new Set(session.currentTurnSubagents ?? []);
+            const transcript = messagesRes.success
+              ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeys)
+              : [];
             ctx.applyTranscript(transcript);
             return;
           }

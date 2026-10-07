@@ -33,8 +33,21 @@ export interface Session {
   createdAt: string;
   lastActivityAt: string;
   archivedAt: string | null; // non-null = archived
+  /** Issue #489 (PLAN.md row A2c, durable turn marker, 2026-10-07): the current turn's subagent
+   * instances, as `${toolCallId}:${specIndex}` keys -- the SAME correlation key
+   * `SessionAgent.reconcileSubagentsOnAttach` and `transcript.ts`'s `settleStaleSubagentRows` use
+   * to match a `SubagentSummary` to its chat-transcript `kind: 'subagent'` row. Written by
+   * `SessionAgent.handleTaskStart` the instant a `task` call starts (durably, before any crash
+   * can lose it), cleared at the next `agent_start` -- the SAME boundary that clears the
+   * in-memory `runtime.subagents` array, never by a steer or a consumed `followUp` inside the
+   * same OMP run (steering never fires `agent_start`; a consumed `followUp` can only ever be
+   * promoted after the prior turn, including its subagents, already fully settled). Replaces the
+   * previous transcript-position ("last `kind: 'user'` item") heuristic, which could not tell a
+   * steer mid-subagent apart from a genuinely new turn without reintroducing an EARLIER turn's
+   * finished subagents resurfacing as "current". Absent (old registries, or no subagents this
+   * turn) means empty scope -- no migration needed. */
+  currentTurnSubagents?: string[];
 }
-
 /** The app-wide setting for how much the agent may do without asking. Reads are never prompted. */
 export type ApprovalMode = 'ask' | 'edit-freely' | 'auto';
 

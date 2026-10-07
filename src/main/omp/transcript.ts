@@ -836,28 +836,22 @@ function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage
   return items.map((item) => (item === existing ? updated : item));
 }
 
-/** Issue #489 gate fixes 2 finding 5 (2026-10-07): `fromHistory` has no live frame telling it a
- * `task` call crashed mid-flight -- OMP's own persisted `.jsonl` just keeps replaying the call's
- * "spawned" acknowledgment forever, so a `subagent` row from a turn several turns back can still
- * show `status: 'running'` on every single `get_messages` call. `SessionAgent.
- * reconcileSubagentsOnAttach`'s own turn-boundary rule means a later turn's reconcile will never
- * touch this older row again -- it is out of scope by definition -- so left alone it would spin
- * in the main chat transcript forever even after the CURRENT turn's own subagents are seeded
- * correctly. Once a LATER `kind: 'user'` item exists after it, a newer turn has definitely
- * already started: settle it to `'exited'` here (never `'finished'`/`'failed'` -- nothing about
- * its own work is known, only that it is no longer the current turn's concern). */
-function settleStaleSubagentRows(items: TranscriptItem[]): TranscriptItem[] {
-  let lastUserIndex = -1;
-  for (let i = items.length - 1; i >= 0; i--) {
-    if (items[i]!.kind === 'user') {
-      lastUserIndex = i;
-      break;
-    }
-  }
-  if (lastUserIndex === -1) return items;
+/** Issue #489 (durable turn marker, 2026-10-07; supersedes gate fixes 2 finding 5's transcript-
+ * position rule): `fromHistory` has no live frame telling it a `task` call crashed mid-flight --
+ * OMP's own persisted `.jsonl` just keeps replaying the call's "spawned" acknowledgment forever,
+ * so a `subagent` row from an older turn can still show `status: 'running'` on every single
+ * `get_messages` call. `SessionAgent.reconcileSubagentsOnAttach` only ever seeds a candidate
+ * whose key is in the persisted `currentTurnKeys` set (`Session.currentTurnSubagents`) -- a row
+ * outside that set is out of scope by definition and would spin in the main chat transcript
+ * forever if left alone. Settles every such row to `'exited'` here (never `'finished'`/
+ * `'failed'` -- nothing about its own work is known, only that it is no longer the current
+ * turn's concern), using the IDENTICAL set reconcile uses -- not the previous "a later
+ * `kind: 'user'` item exists" transcript-position rule, which could not tell a steer
+ * mid-subagent apart from a genuinely new turn. */
+function settleStaleSubagentRows(items: TranscriptItem[], currentTurnKeys: ReadonlySet<string>): TranscriptItem[] {
   let changed = false;
-  const next = items.map((item, i) => {
-    if (i < lastUserIndex && item.kind === 'subagent' && item.status === 'running') {
+  const next = items.map((item) => {
+    if (item.kind === 'subagent' && item.status === 'running' && !currentTurnKeys.has(`${item.toolCallId}:${item.specIndex}`)) {
       changed = true;
       return { ...item, status: 'exited' as const };
     }
@@ -867,8 +861,11 @@ function settleStaleSubagentRows(items: TranscriptItem[]): TranscriptItem[] {
 }
 
 /** Builds the transcript for a stored session's history (from `get_messages`), per
- * contracts/omp-usage.md "Message parts". */
-export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
+ * contracts/omp-usage.md "Message parts". `currentTurnKeys` (issue #489, durable turn marker,
+ * 2026-10-07) is `Session.currentTurnSubagents` as a Set -- the SAME `toolCallId:specIndex` keys
+ * `SessionAgent.reconcileSubagentsOnAttach` scopes by, threaded through to
+ * `settleStaleSubagentRows` so both agree on what "the current turn" means. */
+export function fromHistory(messages: OmpMessage[], currentTurnKeys: ReadonlySet<string>): TranscriptItem[] {
   let items: TranscriptItem[] = [];
   messages.forEach((message, index) => {
     const messageId = `h${index}`;
@@ -913,5 +910,5 @@ export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
         return;
     }
   });
-  return settleStaleSubagentRows(items);
+  return settleStaleSubagentRows(items, currentTurnKeys);
 }
