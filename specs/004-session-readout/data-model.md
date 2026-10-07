@@ -79,7 +79,7 @@ interface SessionReadout {
   contextUsage: ContextUsage | 'not-available' | null; // null = agent does not report it at all (hidden, not shown)
   turnTime: { startedAt: number } | null;        // null = no turn running (chip hidden); renderer computes elapsed
   pullRequest: { number: number; url: string } | null; // null = none, no remote, lookup failed, or GitHub unavailable
-  subagentCount: { running: number; finished: number } | null; // null = turn has started none (chip hidden); excludes failed, folds a seeded 'exited' (issue #489) into finished
+  subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden); gate fixes 2 finding 7: finished/exited/failed kept separate, never folded together
   todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
 }
 

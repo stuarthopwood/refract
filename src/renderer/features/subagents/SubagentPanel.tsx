@@ -11,6 +11,7 @@ import type { SubagentSummary } from '../../../shared/model'
 import { groupToolItems, isToolGroup } from '../chat/groupToolItems'
 import { ToolGroupRow } from '../chat/ToolRow'
 import { Markdown } from '../chat/Markdown'
+import { NoticeRow } from '../chat/NoticeRow'
 
 const STATE_LABEL: Record<SubagentSummary['status'], string> = {
   running: 'Running',
@@ -92,6 +93,12 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                 <ToolGroupRow key={item.id} group={item} summaryWrap />
               ) : item.kind === 'assistant-text' ? (
                 <Markdown key={item.id} id={item.id} text={item.text} streaming={item.streaming} />
+              ) : item.kind === 'notice' ? (
+                // Gate fixes 2 finding 6: a candidate seeded purely from the transcript
+                // (`SessionAgent.reconcileSubagentsOnAttach`) has no tool-group/assistant-text at
+                // all, only this explanatory `notice` placeholder -- mapping it to `null` left
+                // the pane blank with no explanation once selected.
+                <NoticeRow key={item.id} level={item.level} text={item.text} />
               ) : null
             )}
           </div>

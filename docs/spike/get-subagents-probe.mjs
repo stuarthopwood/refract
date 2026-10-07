@@ -1,17 +1,22 @@
 // `get_subagents` payload shape probe (issue #489, PLAN.md row A2c): confirms the response field
 // names and, crucially, whether a *second, freshly-spawned* `omp` process that `switch_session`s
 // onto the same Conversation file sees the first process's own in-flight subagent as
-// `status: "running"` in its own `get_subagents` snapshot -- this is the exact "crash and resume"
-// shape #489's fix seeds from and must downgrade to "agent exited".
+// `status: "running"` in its own `get_subagents` snapshot. Gate fixes 2 finding 10 (2026-10-07):
+// this header used to claim this was "the exact crash and resume shape #489's fix seeds from" --
+// stale the moment `SessionAgent.reconcileSubagentsOnAttach` stopped calling `get_subagents` at
+// all (gate finding 5): the live contract this probe confirms is now the REASON that RPC is never
+// sent there (a fresh process's own registry is unconditionally empty, so asking could never
+// discriminate "genuinely still running" from "gone"), not something the fix "seeds from".
 //
 // The omp version actually run is printed at runtime (`omp --version`) and recorded in
 // `result.json`'s own `ompVersion` field -- never hardcode a version number in this comment, it
-// goes stale the moment a newer `omp` is installed (gate finding 10, 2026-10-07: this header used
-// to claim "18.6.1" long after 18.8.0 was the version actually in use elsewhere in this repo's
-// own docs). `get_subagents`'s response/command shapes are already declared in
-// `src/shared/frames.ts` (`GetSubagentsResponseData`/`GetSubagentsCommand`) -- this probe's own
-// job is re-confirming the live contract those types document, not discovering it from scratch
-// (this header used to claim no such declaration existed; it was already stale when written).
+// goes stale the moment a newer `omp` is installed (gate finding 10 (round 1), 2026-10-07: this
+// header used to claim "18.6.1" long after 18.8.0 was the version actually in use elsewhere in
+// this repo's own docs). `get_subagents`'s response/command shapes are documented in
+// `specs/004-session-readout/contracts/omp-usage.md` section (d) -- gate fixes 2 finding 9
+// removed the corresponding `GetSubagentsResponseData`/`GetSubagentsCommand` declarations from
+// `src/shared/frames.ts` as unused (YAGNI); this probe's own job is re-confirming that live
+// contract from scratch against the raw wire frames, not type-checking against them.
 //
 // This uses Stuart's REAL default OMP profile (no --profile flag), same safety posture as
 // docs/spike/subagent-stream-probe.mjs: `--session-dir`/cwd are scratch-only, and
@@ -20,7 +25,14 @@
 // no shell commands outside the scratch cwd. The run still makes one real model call against the
 // real signed-in account, and leaves this run's own raw, UNREDACTED frame logs under
 // `%TEMP%/pinion-get-subagents-probe/<timestamp>/` (gate finding 10) -- never attach that
-// directory verbatim to anything leaving this machine.
+// directory verbatim to anything leaving this machine. Gate fixes 2 finding 10: unlike the
+// isolated-profile probes (`slash-commands-probe.mjs`, `omp-signin-probe.mjs`,
+// `predict-word-probe.mjs`), this one forwards the full `process.env` to the child, including
+// every credential-shaped var, rather than `sanitizedEnv()` under a brand-new `--profile`; this
+// is a deliberate, disclosed trade-off, not an oversight -- a `task()` subagent needs a REAL,
+// signed-in model to actually run, which an isolated profile's unreachable fake model cannot
+// provide (same trade-off `chat-lines-probe.mjs`/`subagent-stream-probe.mjs`/
+// `todo-progress-probe.mjs`/`context-usage-probe.mjs` already accept for the same reason).
 //
 // Asserts every response it depends on and exits non-zero on the first failure (gate finding 10:
 // an earlier draft silently ignored `switch_session`'s own `success` field, skipped the whole
@@ -271,6 +283,16 @@ try {
     throw new Error(`switch_session was cancelled: ${JSON.stringify(results.switchSessionResponse)}`);
   }
   results.reattachedSnapshot = assertSuccess('reattachedSnapshot', await b.request({ type: 'get_subagents' }));
+  // Gate fixes 2 finding 10: this is the probe's main finding -- a freshly attached process's own
+  // `get_subagents` registry never carries over the previous process's genuinely-running
+  // subagent, even onto the SAME Conversation file -- and it was only ever eyeballed from the
+  // console dump below, never actually asserted.
+  const reattachedSubagents = results.reattachedSnapshot.data?.subagents ?? [];
+  if (reattachedSubagents.length !== 0) {
+    throw new Error(
+      `expected a freshly attached process's get_subagents to report no subagents (a previous process's registry never carries over), got ${JSON.stringify(results.reattachedSnapshot)}`,
+    );
+  }
   const stateB = assertSuccess('get_state (B)', await b.request({ type: 'get_state' }));
   results.reattachedState = { messageCount: stateB.data?.messageCount, isSettled: stateB.data?.isSettled, sessionFile: stateB.data?.sessionFile };
 

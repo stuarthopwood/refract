@@ -721,7 +721,15 @@ export class SessionAgent extends EventEmitter {
     const state = stateRes.data as GetStateResponseData;
     const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
     const transcript = messagesRes.success ? fromHistory((messagesRes.data as GetMessagesResponseData).messages) : [];
-    this.runtime = { ...this.runtime, transcript };
+    // Gate fixes 2 finding 4: reconcile here too, same rule as `launch()` -- without it a
+    // Conversation whose last turn crashed mid-subagent opens with a row stuck on 'running'
+    // forever. A different Conversation has an entirely different subagent history, and nothing
+    // else clears `runtime.subagents` on a plain Conversation switch (only the next
+    // `agent_start` does), so it is reset to `[]` first: this reconciles purely from the fresh
+    // `transcript` just fetched above, same as a true app restart, never carrying a PREVIOUS
+    // Conversation's entries into this one.
+    this.runtime = { ...this.runtime, transcript, subagents: [] };
+    this.reconcileSubagentsOnAttach();
     await this.syncFromState(state);
     this.emitPatchReset();
   }
@@ -1335,18 +1343,21 @@ export class SessionAgent extends EventEmitter {
   }
 
   /**
-   * Issue #489 (PLAN.md row A2c; gate findings 1/3/4/5/6/8): called from every `launch()`,
-   * synchronously, to settle any subagent still remembered as `running` from a PREVIOUS process
-   * life. `launch()` always spawns a brand-new `OmpProcess` (never reuses one), so that fresh
-   * process's own `get_subagents` registry is unconditionally empty -- confirmed live even
-   * seconds after a hard-killed process's own genuinely-running subagent, same Conversation file
-   * (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) -- so asking it here can never
-   * discriminate "genuinely still running" from "gone": every surviving candidate below is
-   * unconditionally resolved straight to `'exited'`, with no RPC call and no `await` at all
-   * (gate finding 5; this also makes gate finding 6's post-await race structurally impossible,
-   * not just guarded -- there is no longer an await in this method for `this.process`/
-   * `stopRequested` to change under). Open question 9 (PLAN.md) stays open and honestly worded:
-   * this process lifecycle has no live case where asking would ever answer differently.
+   * Issue #489 (PLAN.md row A2c; gate fixes 2, 2026-10-07, findings 1/2/3/4/5/6/8): called from
+   * every `launch()` and `openConversation()`, synchronously, to settle any subagent the
+   * reattached transcript still remembers from before this process existed, and to seed this
+   * turn's finished/failed subagents too (FR-007/FR-017: "the current turn's subagents", not
+   * only the still-running ones). `launch()` always spawns a brand-new `OmpProcess` (never
+   * reuses one), so that fresh process's own `get_subagents` registry is unconditionally empty
+   * -- confirmed live even seconds after a hard-killed process's own genuinely-running subagent,
+   * same Conversation file (`docs/spike/get-subagents-probe.mjs`, 2026-10-07, omp 18.8.0) -- so
+   * asking it here can never discriminate "genuinely still running" from "gone": every
+   * surviving `running` candidate below is unconditionally resolved straight to `'exited'`, with
+   * no RPC call and no `await` at all (gate finding 5; this also makes gate finding 6's
+   * post-await race structurally impossible, not just guarded -- there is no longer an await in
+   * this method for `this.process`/`stopRequested` to change under). Open question 9 (PLAN.md)
+   * stays open and honestly worded: this process lifecycle has no live case where asking would
+   * ever answer differently.
    *
    * Two distinct sources can each hold a stale `running` record for the SAME subagent instance,
    * and must collapse to exactly ONE candidate, never two (issue #489's "2 finished" bug, gate
@@ -1362,18 +1373,47 @@ export class SessionAgent extends EventEmitter {
    * compared directly; both are instead correlated by `toolCallId`+`specIndex` -- the one value
    * both derive from the SAME source `tasks[]` array, in the SAME order.
    *
-   * Scoped to the CURRENT/last turn only (FR-007's own scope for the Subagents count/panel,
-   * gate finding 1): a `kind: 'subagent'` row from several turns back that the data-layer defect
-   * above keeps rebuilding as `running` must never resurface here once a newer turn has
-   * started -- that later turn started zero subagents of its own and must show none, not a
-   * phantom "1 finished" revived from ancient history on every later attach.
+   * Gate fixes 2 finding 1 (repeat-launch double count): collapsing by `toolCallId`+`specIndex`
+   * on the way IN is not enough on its own -- a SECOND reconcile on the SAME instance with no new
+   * turn in between (Recover twice, or Recover then a mode-change restart) must also never treat
+   * an already-settled key as a brand-new candidate. `settledKeys` below records every
+   * `runtime.subagents` key regardless of status (not only `running`), so a transcript row
+   * `fromHistory` keeps rebuilding as `running` for a key this method already resolved is skipped
+   * outright rather than minted as a second summary under a different id scheme; the merge back
+   * into `runtime.subagents` likewise replaces by that SAME key, never by comparing the two id
+   * schemes directly.
+   *
+   * Gate fixes 2 finding 2 (turn boundary): the scope below is anchored on the transcript's own
+   * LAST `kind: 'subagent'` row, walking back from there to find ITS preceding `kind: 'user'`
+   * item -- never simply "the transcript's last `user` item". A `steer` (`sendNow`) or a consumed
+   * `followUp` prompt becomes its own `kind: 'user'` item within the SAME OMP turn, with no fresh
+   * `agent_start` in between (the boundary `runtime.subagents` itself is cleared on, which this
+   * method must match); scanning for the latest `user` item outright can land AFTER a
+   * still-running subagent's own row, scoping it out of "the current turn" and leaving its chat
+   * row spinning forever on the next attach/resume (issue #489 again).
+   *
+   * Gate fixes 2 finding 3: every `kind: 'subagent'` row in that same scope is seeded here, not
+   * only the `running` ones -- a subagent that finished or failed before the crash is still part
+   * of "this turn's subagents" (FR-007/FR-017) and must not silently disappear from the panel/chip
+   * just because nothing left it `running`. Seeded with its REAL recorded status (`finished`/
+   * `failed`); only a row still `running` with no live process left behind is ever resolved to
+   * the terminal `exited` state.
    */
   private reconcileSubagentsOnAttach(): void {
     const transcript = this.runtime.transcript;
-    let lastUserIndex = -1;
+
+    // Gate fixes 2 finding 2: see the doc comment above.
+    let lastSubagentIndex = -1;
     for (let i = transcript.length - 1; i >= 0; i--) {
+      if (transcript[i]!.kind === 'subagent') {
+        lastSubagentIndex = i;
+        break;
+      }
+    }
+    let turnStartIndex = -1;
+    for (let i = lastSubagentIndex === -1 ? transcript.length - 1 : lastSubagentIndex; i >= 0; i--) {
       if (transcript[i]!.kind === 'user') {
-        lastUserIndex = i;
+        turnStartIndex = i;
         break;
       }
     }
@@ -1386,27 +1426,39 @@ export class SessionAgent extends EventEmitter {
       startedAt: number;
       startedAtKnown: boolean;
       transcriptId?: string;
+      finalStatus: 'running' | 'done' | 'error';
     }
     const now = Date.now();
+
+    // Gate fixes 2 finding 1: see the doc comment above.
+    const settledKeys = new Set<string>();
     const candidates = new Map<string, Candidate>();
     for (const s of this.runtime.subagents) {
-      if (s.status !== 'running') continue;
-      candidates.set(`${s.toolCallId}:${s.specIndex}`, {
+      const key = `${s.toolCallId}:${s.specIndex}`;
+      if (s.status !== 'running') {
+        settledKeys.add(key);
+        continue;
+      }
+      candidates.set(key, {
         id: s.id,
         toolCallId: s.toolCallId,
         specIndex: s.specIndex,
         nameOrTask: s.nameOrTask,
         startedAt: s.startedAt,
         startedAtKnown: true,
+        finalStatus: 'running',
       });
     }
-    for (let i = lastUserIndex + 1; i < transcript.length; i++) {
+    // Gate fixes 2 finding 3: see the doc comment above.
+    for (let i = turnStartIndex + 1; i < transcript.length; i++) {
       const item = transcript[i]!;
-      if (item.kind !== 'subagent' || item.status !== 'running') continue;
+      if (item.kind !== 'subagent' || item.status === 'exited') continue;
       const key = `${item.toolCallId}:${item.specIndex}`;
+      if (settledKeys.has(key)) continue;
       const existing = candidates.get(key);
       if (existing) {
         existing.transcriptId = item.id;
+        if (item.status !== 'running') existing.finalStatus = item.status;
         continue;
       }
       candidates.set(key, {
@@ -1417,6 +1469,7 @@ export class SessionAgent extends EventEmitter {
         startedAt: item.startedAt ?? now,
         startedAtKnown: item.startedAt !== undefined,
         transcriptId: item.id,
+        finalStatus: item.status,
       });
     }
     if (candidates.size === 0) return;
@@ -1429,36 +1482,51 @@ export class SessionAgent extends EventEmitter {
       toolCallId: c.toolCallId,
       specIndex: c.specIndex,
       nameOrTask: c.nameOrTask,
-      status: 'exited',
+      status: c.finalStatus === 'done' ? 'finished' : c.finalStatus === 'error' ? 'failed' : 'exited',
       startedAt: c.startedAt,
       ...(c.startedAtKnown ? { durationMs: Math.max(0, now - c.startedAt) } : {}),
     }));
 
-    // Gate finding 3: a candidate seeded purely from the transcript (no live `tool_execution_update`
-    // this run) never had a `subagentStreams` entry; selecting it in the panel must never throw
-    // not-found, so give it an explanatory placeholder instead of leaving it missing.
+    // Gate finding 3/6: a candidate seeded purely from the transcript (no live
+    // `tool_execution_update` this run) never had a `subagentStreams` entry; selecting it in the
+    // panel must never throw not-found, so give it an explanatory placeholder instead of leaving
+    // it missing -- worded for whichever real status it actually settled to, not always "exited".
     for (const summary of resolved) {
       if (!this.subagentStreams.has(summary.id)) {
+        const verb = summary.status === 'finished' ? 'finished' : summary.status === 'failed' ? 'failed' : 'exited';
         this.subagentStreams.set(summary.id, [
           {
             kind: 'notice',
             id: `${summary.id}:reattach-notice`,
             level: 'info',
-            text: 'No live output: this subagent had already exited when Refract reattached.',
+            text: `No live output: this subagent had already ${verb} when Refract reattached.`,
           },
         ]);
       }
     }
 
-    const resolvedIds = new Set(resolved.map((r) => r.id));
-    this.runtime = { ...this.runtime, subagents: [...this.runtime.subagents.filter((s) => !resolvedIds.has(s.id)), ...resolved] };
+    // Gate fixes 2 finding 1: replace by `toolCallId`+`specIndex`, never by `id` -- the two sides
+    // use unrelated id schemes (see the doc comment above), so filtering the OLD list by the NEW
+    // summaries' own `id`s would leave the stale entry behind, duplicating it instead of
+    // replacing it.
+    const resolvedKeys = new Set(resolved.map((r) => `${r.toolCallId}:${r.specIndex}`));
+    this.runtime = {
+      ...this.runtime,
+      subagents: [...this.runtime.subagents.filter((s) => !resolvedKeys.has(`${s.toolCallId}:${s.specIndex}`)), ...resolved],
+    };
 
     // Gate finding 4: settle the matching chat-transcript row too -- without this the chat line
-    // keeps spinning "running" forever while the panel already says "Agent exited".
-    const transcriptIdsToSettle = new Set([...candidates.values()].map((c) => c.transcriptId).filter((id): id is string => id !== undefined));
-    if (transcriptIdsToSettle.size > 0) {
+    // keeps spinning "running" forever while the panel already shows the real state.
+    const transcriptSettling = new Map<string, 'done' | 'error' | 'exited'>();
+    for (const c of candidates.values()) {
+      if (c.transcriptId === undefined) continue;
+      transcriptSettling.set(c.transcriptId, c.finalStatus === 'running' ? 'exited' : c.finalStatus);
+    }
+    if (transcriptSettling.size > 0) {
       const nextTranscript = this.runtime.transcript.map((item) =>
-        item.kind === 'subagent' && item.status === 'running' && transcriptIdsToSettle.has(item.id) ? { ...item, status: 'exited' as const } : item,
+        item.kind === 'subagent' && item.status === 'running' && transcriptSettling.has(item.id)
+          ? { ...item, status: transcriptSettling.get(item.id)! }
+          : item,
       );
       const ops = diffTranscript(this.runtime.transcript, nextTranscript);
       this.runtime = { ...this.runtime, transcript: nextTranscript };
@@ -1466,14 +1534,18 @@ export class SessionAgent extends EventEmitter {
     }
 
     this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
-    // Gate fix (live verification, 2026-10-07): without this, the Subagents chip's own
-    // `readout.subagentCount` -- cached on `this.runtime.readout`, only ever recomputed by
-    // `scheduleReadoutUpdate` -- stays at whatever it was the instant before the crash (here,
-    // "1 running") forever, because nothing else is left pending to trigger a recompute once the
-    // crashed turn already settled. Caught live: a `sessions.recover()` snapshot kept reporting
-    // `{ running: 1, finished: 0 }` even though `subagents` in that SAME snapshot already showed
-    // the one entry `status: 'exited'`.
-    this.scheduleReadoutUpdate();
+    // Gate fixes 2 finding 8: no `scheduleReadoutUpdate()` call here -- both callers
+    // (`launch()`, `openConversation()`) already `await this.syncFromState(...)` immediately
+    // after this method returns, synchronously-before-that mutating `this.runtime`, and
+    // `syncFromState` unconditionally calls `scheduleReadoutUpdate()` itself at its own tail; an
+    // explicit call here would just schedule a second, no-op recompute (`scheduleReadoutUpdate`
+    // is a no-op while a timer is already pending -- `READOUT_COALESCE_MS`, `runReadoutUpdate`).
+    // An earlier draft of this comment claimed this call "caught and fixed a real bug" where the
+    // chip stayed stale forever without it; that was never actually true for either call site --
+    // `scheduleReadoutUpdate`'s own debounce means a caller reading from a live `readout:update`
+    // push (rather than the synchronous `recover()`/`openConversation()` response) can still see
+    // a stale value for up to `READOUT_COALESCE_MS` (50ms), which is real and worth knowing, but
+    // is not a bug this method introduced or fixed.
   }
 
   /** `chat.setVisibleSubagent` (FR-017 to FR-020): no immediate push -- the caller fetches the

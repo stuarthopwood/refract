@@ -836,6 +836,36 @@ function attachToolResult(items: TranscriptItem[], message: OmpToolResultMessage
   return items.map((item) => (item === existing ? updated : item));
 }
 
+/** Issue #489 gate fixes 2 finding 5 (2026-10-07): `fromHistory` has no live frame telling it a
+ * `task` call crashed mid-flight -- OMP's own persisted `.jsonl` just keeps replaying the call's
+ * "spawned" acknowledgment forever, so a `subagent` row from a turn several turns back can still
+ * show `status: 'running'` on every single `get_messages` call. `SessionAgent.
+ * reconcileSubagentsOnAttach`'s own turn-boundary rule means a later turn's reconcile will never
+ * touch this older row again -- it is out of scope by definition -- so left alone it would spin
+ * in the main chat transcript forever even after the CURRENT turn's own subagents are seeded
+ * correctly. Once a LATER `kind: 'user'` item exists after it, a newer turn has definitely
+ * already started: settle it to `'exited'` here (never `'finished'`/`'failed'` -- nothing about
+ * its own work is known, only that it is no longer the current turn's concern). */
+function settleStaleSubagentRows(items: TranscriptItem[]): TranscriptItem[] {
+  let lastUserIndex = -1;
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i]!.kind === 'user') {
+      lastUserIndex = i;
+      break;
+    }
+  }
+  if (lastUserIndex === -1) return items;
+  let changed = false;
+  const next = items.map((item, i) => {
+    if (i < lastUserIndex && item.kind === 'subagent' && item.status === 'running') {
+      changed = true;
+      return { ...item, status: 'exited' as const };
+    }
+    return item;
+  });
+  return changed ? next : items;
+}
+
 /** Builds the transcript for a stored session's history (from `get_messages`), per
  * contracts/omp-usage.md "Message parts". */
 export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
@@ -883,5 +913,5 @@ export function fromHistory(messages: OmpMessage[]): TranscriptItem[] {
         return;
     }
   });
-  return items;
+  return settleStaleSubagentRows(items);
 }

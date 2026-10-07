@@ -224,6 +224,29 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   of erroring when selected; and no fabricated ~0s duration is shown when the original start time
   was never known (a row built from history has no wall clock). This makes the Subagents
   chip/panel reachable again instead of silently empty.
+  **Gate fixes 2, 2026-10-07**: round 1's own claims above needed four corrections. (1)
+  Collapsing by `toolCallId`+`specIndex` on the way in was not enough by itself: a SECOND
+  reconcile on the SAME instance with no new turn in between (Recover twice, or Recover then a
+  mode-change restart) could still re-seed a duplicate, because only a `running` summary ever
+  occupied the correlation map -- an already-settled summary's key is now recorded regardless of
+  status, so a transcript row the data-layer defect keeps rebuilding as `running` is never
+  re-seeded, and the merge back into `runtime.subagents` replaces by that SAME key, never by the
+  two sides' differently-schemed `id`. (2) "the last `user` transcript item" was the wrong turn
+  boundary: a `steer` or a consumed `followUp` prompt becomes its own `user` item within the SAME
+  turn (no fresh `agent_start`), so it could land after a still-running subagent's own row and
+  scope it out of "the current turn" entirely, leaving its chat row spinning forever; the
+  boundary is now anchored on the transcript's own last `subagent` row, walking back to ITS
+  preceding `user` item. (3) A subagent that finished or failed before the crash is now seeded
+  too, with its real recorded status, not only the ones left `running` -- FR-007/FR-017 call for
+  "the current turn's subagents", not a subset. (4) `fromHistory` itself now settles a `running`
+  subagent row from an OLDER turn to `exited` once a later `user` item exists, so the main chat
+  transcript stops showing it as perpetually running even for a turn `reconcileSubagentsOnAttach`'s
+  own scope rule will never touch again. Narrowed: an orphaned previous-life `omp.exe` genuinely
+  CAN outlive a real Refract app crash for a window on Windows -- the `exited` resolution above
+  relies on `src/main/process/jobObject.ts`'s Job Object (primary) and `pidRecords.ts`'s
+  `reapStale()` fallback (run from `main/index.ts` at startup, before any Session attaches)
+  actually killing that orphan first, not merely on the assumption that a fresh process can never
+  share a registry.
 - The clock and the turn timer tick frequently: neither is announced to assistive technology on
   every tick.
 - No readout's status is ever conveyed by color alone: the context window usage warning always
