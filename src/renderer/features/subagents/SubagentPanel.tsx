@@ -71,7 +71,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                 )}
               >
                 <SubagentStateIcon status={subagent.status} />
-                <span className="min-w-0 flex-1 truncate">{subagent.nameOrTask}</span>
+                <span className="min-w-0 flex-1 truncate" title={subagent.nameOrTask}>{subagent.nameOrTask}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">{STATE_LABEL[subagent.status]}</span>
               </button>
             </li>

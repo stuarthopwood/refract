@@ -275,7 +275,7 @@ its fix live entirely in renderer store logic); scratch userData dir left on dis
   its scrollbar math), which forces that div to its widest row instead of the viewport's own
   width -- long tool-call targets and paragraphs never wrap, the panel grows sideways, and the
   overflow clips. `src/renderer/components/ui/scroll-area.tsx`'s `Viewport` gets
-  `[&>div]:!block [&>div]:!min-w-0` so every `ScrollArea` consumer (this panel's stream,
+  `[&>div]:block! [&>div]:min-w-0!` so every `ScrollArea` consumer (this panel's stream,
   `SessionList.tsx`'s repository list) inherits the fix instead of each panel re-fighting
   Radix's internal markup; `CollapsedLine.tsx` gains an opt-in `summaryWrap` prop (chat's own
   rows stay one-line/truncated; the narrower Subagents panel wraps instead), threaded through
@@ -321,8 +321,10 @@ accurate frame every time and is what every screenshot below came from. Dragged 
 change) to measure the panel's own column at 319px and at 484px: at both widths the long path
 wrapped across several lines, the 120-character token wrapped mid-token (`break-words`) instead
 of forcing a horizontal scrollbar, the paragraph wrapped normally, and the header/list/stream
-each read with the same horizontal inset -- confirmed by comparing `getBoundingClientRect()` on
-the header's text, a list row's text, and the stream's text against the panel's own edges.
+containers shared the same padding -- confirmed by comparing `getBoundingClientRect()` on the
+header's, a list row's, and the stream's own padded container against the panel's edges (not the
+text itself, which in a list row sits further in behind the row's own `px-2` button, icon, and
+`gap-2`).
 Tabbed (real `Input.dispatchKeyEvent` Tab, not `.focus()`) to the `read` tool row's
 `CollapsedLine` trigger at the 319px width: `getComputedStyle` confirmed
 `outline: 2px solid`/`outline-offset: 2px`/`matches(':focus-visible') === true`, and the
@@ -351,7 +353,7 @@ itself (not a nested row) held keyboard focus; and the block comment was shorten
 mechanism once instead of naming and re-asserting "verified" for a fixed, hard-coded list of
 consumers. Driving `SessionList.tsx` live with 15 fake repositories (45 sessions, one
 repository name and one session name/branch per repository deliberately overlong) surfaced a
-real bug the original pass never exercised: `RepositoryGroup`'s `CollapsedTrigger` was
+real bug the original pass never exercised: `RepositoryGroup`'s `CollapsibleTrigger` was
 `flex flex-1` with no `min-w-0`, so its `truncate` span never engaged and the repository header
 text pushed the list's own `ScrollArea` viewport to `scrollWidth: 955` against a
 `clientWidth: 280` (a real horizontal scrollbar, visible in a captured screenshot); added
@@ -373,8 +375,9 @@ block and a GFM table inside the stream each scroll horizontally inside their ow
 `scrollWidth === clientWidth === 320`, not wider; and 40 seeded stream items forced real
 vertical scroll in the stream (`scrollHeight: 2148` vs `clientHeight: 529`) with no horizontal
 growth. The inset focus ring was confirmed on a text-only stream long enough to make the
-Viewport itself keyboard-focusable (Radix only sets `tabIndex=0` on the Viewport once its
-content overflows): tabbing to it with real `Input.dispatchKeyEvent` events (not `.focus()`,
+Viewport itself keyboard-focusable (the installed Radix build sets no `tabIndex` on the
+Viewport; it is keyboard-focusable via Chromium's own keyboard-focusable-scroller behavior once
+its content overflows): tabbing to it with real `Input.dispatchKeyEvent` events (not `.focus()`,
 which Chromium does not treat as `:focus-visible`) produced a computed `boxShadow` ending
 `0px 0px 0px 3px inset` -- inset by construction, so it cannot be clipped by the panel's
 `overflow-hidden` wrapper regardless of where the Viewport sits. `specs/004-session-readout/
@@ -395,3 +398,42 @@ pid's `CommandLine` naming both this worktree and that scratch directory before 
 closed with a targeted `taskkill /PID <pid> /T /F` against that confirmed pid tree (not `/IM`),
 and the scratch `--user-data-dir` removed afterward by its own literal absolute path from a
 `cwd` outside both it and this worktree.
+
+**Verified 2026-10-07 (gate fixes 2)**: a second gate-fix pass on the same branch. Code changes:
+`SessionList.tsx`'s repository-name span and `SubagentPanel.tsx`'s subagent `nameOrTask` span
+each gained a `title` attribute carrying the full (untruncated) text, since neither already used
+the project's `Tooltip` component for this row. Live-verified in an isolated scratch
+`electron-vite dev` instance (own `--remote-debugging-port=9492`, a dedicated absolute
+`--user-data-dir` under the OS temp directory, confirmed as this pass's own process by its main
+pid's `CommandLine` naming both this worktree and that scratch directory): seeded one
+over-long repository name and session name via `window.__refractStores.repositories`/`sessions`,
+and one over-long subagent `nameOrTask` via `window.__refractStores.readout`, then read each
+truncating span's own `getAttribute('title')` from the live DOM -- both matched the full
+untruncated string. Also re-drove T127's tool-row focus-ring claim at the Subagents panel's own
+real minimum and maximum widths this time (240px and 520px, not the earlier passes' 319px/484px):
+dragged the real "Resize subagents panel" separator (a trusted `Input.dispatchMouseEvent` drag)
+until `#subagent-panel`'s own `getBoundingClientRect().width` read exactly `240` and, separately,
+exactly `520`; at both widths, tabbed to the seeded `read` tool row's `CollapsedLine` trigger with
+real `Input.dispatchKeyEvent` Tab events (not `.focus()`) and read `getComputedStyle` on the
+resulting `document.activeElement`: `outline: 2px solid`, `outline-offset: 2px`,
+`matches(':focus-visible') === true`, and the trigger's own `getBoundingClientRect()` stayed
+fully inside the panel's edges at both widths (not touching or clipped by `overflow-hidden`). The
+scratch Electron instance (main pid confirmed via `CommandLine` before kill) was closed with a
+targeted `taskkill /PID <pid> /T /F` against that confirmed pid tree (not `/IM`), and its scratch
+`--user-data-dir` removed afterward by its own literal absolute path from a `cwd` outside both the
+scratch parent and this worktree. Doc changes: T126 now cites the suffix form
+(`` `[&>div]:block! [&>div]:min-w-0!` ``) that actually shipped, not the legacy `!`-prefix form;
+the first `Verified 2026-10-07` paragraph's Radix `tabIndex` explanation is corrected (the
+installed Radix build sets no `tabIndex` on the Viewport -- it is keyboard-focusable via
+Chromium's own keyboard-focusable-scroller behavior once its content overflows, not a Radix
+`tabIndex=0`) and its header/list/stream "same horizontal inset" claim is reworded to "same
+container padding" (the list row's own text sits further in, behind the row's own `px-2` button,
+icon, and `gap-2`, roughly 44px more than the header's and stream's own padding); and the
+`gate fixes` paragraph's `CollapsedTrigger` typo is corrected to `CollapsibleTrigger` (the actual
+component name). `docs/PLAN.md` row A2e's files-touched column now also lists `SessionList.tsx`.
+`pnpm typecheck`, `pnpm build`, and `pnpm check:ui-text` all clean after every change in this
+pass. Not independently driven this round: a real OMP agent producing any of this content (still
+simulated through `window.__refractStores`, the same route as every prior pass); hover-triggered
+(mouse `:hover`) display of the `title` tooltip itself was not captured (the attribute's presence
+and value were read directly from the DOM instead, which is what a screen reader/assistive
+technology also exposes, independent of mouse hover).
