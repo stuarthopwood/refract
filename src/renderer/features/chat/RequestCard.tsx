@@ -135,13 +135,12 @@ const MARKDOWN_BLOCK_START = /^(```|~~~|#{1,6}\s|>|\||[-*+]\s|\d+[.)]\s)/
 const THEMATIC_BREAK = /^([-*_])(?:\s*\1){2,}$/
 
 // A setext heading underline (CommonMark: one or more `=` or up to three leading spaces then
-// `-`, alone on the line, trailing spaces allowed) as the BODY's first non-blank line -- if the
-// question's first line were kept as a heading, unsplit text would send this underline line to
-// react-markdown attached to the line above it, rendering as a heading (`===` -> `<h1>`, `---` ->
-// `<h2>`, per `Markdown.tsx`'s heading renderer), not as literal text or an `<hr>` (gate cycle 3,
-// issue #491 finding 2; gate cycle 5 finding 3). Suppressing the heading split here falls back to
-// rendering the whole normalised text as one body, where a lone `---`/`===` line has no preceding
-// paragraph to attach to and so stays literal text, exactly like unsplit agent text would.
+// `-`, alone on the line, trailing spaces allowed) as the BODY's first non-blank line. Splitting
+// the question here would separate that underline from the line it underlines, so the heading
+// would be wrong (gate cycle 3, issue #491 finding 2; gate cycle 5 finding 3). Suppressing the
+// split falls back to rendering the whole normalised text as one body, exactly as the agent sent
+// it: `Q\n---` renders as `<h2>` (`===` as `<h1>`, per `Markdown.tsx`'s heading renderer), and an
+// underline after a blank line renders as `<hr>` (`---`) or literal text (`===`).
 const SETEXT_UNDERLINE = /^\s{0,3}(=+|-+)\s*$/
 
 interface AskQuestionRowProps {
