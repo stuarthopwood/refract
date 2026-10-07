@@ -39,7 +39,7 @@ pnpm build        # must pass before a change lands on main
 **Story 2: approvals and questions (FR-015 to FR-019)**
 
 1. With Approval mode **Ask**, request "create a file hello.txt". Expect: an approval card naming the tool and target; Deny leaves no file; repeat and Approve creates it. Reads (for example listing files) never prompt.
-2. Ask the agent to ask you a multiple-choice question. Expect: options render and the answer reaches the agent; once answered, the question collapses to "Asked user:" plus the question cut to one line, expanding to the full question, its options, and (indented below, with your initials and git/Windows account name) "Answer:" the chosen option; a cancelled question shows "Cancelled" instead.
+2. Ask the agent to ask you a multiple-choice question. Expect: the question renders as sanitised markdown at normal weight (a multi-line question shows its first line as a heading with the rest as body text, scrolling inside a maximum height if long) and the options stack vertically; the answer reaches the agent; once answered, the question collapses to "Asked user:" plus the question cut to one line, expanding to the full question, its options, and (indented below, with your initials and git/Windows account name) "Answer:" the chosen option; a cancelled question shows "Cancelled" instead.
 3. Switch to another Session while a request is pending. Expect: the first Session shows **needs you** and the request is still there when you return.
 
 **Story 3: Approval mode (FR-015, FR-020, SC-009)**
@@ -71,6 +71,7 @@ pnpm build        # must pass before a change lands on main
 
 1. Type `/`. Expect: the menu lists only the commands Refract has verified work (the fixed supported set in `src/shared/slash-commands.ts`, built from the probe table in `docs/spike/FINDINGS.md` item 23 and `contracts/omp-usage.md`) -- never OMP's raw, unfiltered list, and never a native command Refract has not built yet. Run each listed command one by one: each shows a visible result (its own output line, the dialog it raises answered through the ordinary request cards, or an error notice) and the Session returns to idle ready for the next message, never stuck. Send `/notacommand` (unknown to OMP) and a hidden command typed by hand (one the probe denylisted, or OMP's own, e.g. `/mcp`): both get the same unknown-command warning and nothing is sent. Adding a newly-probed command to the menu is a code change (rerun the probe, record it, add the name to `SUPPORTED_OMP_COMMANDS`), not a setting.
 2. Kill a Session's `omp.exe` by pid from Task Manager. Expect: the Session shows stopped; **Recover** reattaches and the history is intact.
+3. Force a Session into `start-failed` (for example point its registry at a renamed/missing conversation file, issue #449). Expect: the stop banner offers both **Retry** and **Start new conversation**; either one brings the Session back to a usable state, never a dead end (FR-034). Separately, reopen a Session whose saved conversation's live `messageCount` comes back lower than last recorded (constitution Principle III v1.9.0, FINDINGS item 44) -- for example after it was Stopped mid-turn: the Session still reaches idle with no failure, and a one-time notice in the transcript names the old and new counts.
 
 **Story 8: ghost-text word completion (FR-058)**
 
