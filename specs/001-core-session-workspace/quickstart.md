@@ -39,7 +39,7 @@ pnpm build        # must pass before a change lands on main
 **Story 2: approvals and questions (FR-015 to FR-019)**
 
 1. With Approval mode **Ask**, request "create a file hello.txt". Expect: an approval card naming the tool and target; Deny leaves no file; repeat and Approve creates it. Reads (for example listing files) never prompt.
-2. Ask the agent to ask you a multiple-choice question. Expect: options render and the answer reaches the agent; once answered, the question collapses to "Asked user:" plus the question cut to one line, expanding to the full question, its options, and (indented below, with your initials and git/Windows account name) "Answer:" the chosen option; a cancelled question shows "Cancelled" instead.
+2. Ask the agent to ask you a multiple-choice question. Expect: the question renders as sanitised markdown at normal weight (a multi-line question shows its first line as a heading with the rest as body text, scrolling inside a maximum height if long) and the options stack vertically; the answer reaches the agent; once answered, the question collapses to "Asked user:" plus the question cut to one line, expanding to the full question, its options, and (indented below, with your initials and git/Windows account name) "Answer:" the chosen option; a cancelled question shows "Cancelled" instead.
 3. Switch to another Session while a request is pending. Expect: the first Session shows **needs you** and the request is still there when you return.
 
 **Story 3: Approval mode (FR-015, FR-020, SC-009)**
