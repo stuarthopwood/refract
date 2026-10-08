@@ -102,6 +102,12 @@ export interface SessionSummary extends Session {
   /** T043: surfaces `worktree-missing`/`not-started` in the list row itself, so a missing
    * worktree shows a distinct badge without opening the Session. */
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
+  /** Issue #510 slice 2 (PLAN.md row A0): `true` only for a `stopped` Session whose Conversation
+   * file's tail (`detectUnexpectedTermination`, terminationDetection.ts) shows the writing
+   * process went away mid-turn, independent of `stopReason` -- this is what still flags a cold
+   * app restart after a crash, which only ever carries `stopReason: 'not-started'`. Always
+   * `false`/absent for a Session with no Conversation yet. */
+  terminatedUnexpectedly?: boolean;
   unread: boolean;
   /** The mode the Session's live process actually launched with (settings' current mode for one
    * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
@@ -122,6 +128,14 @@ export interface SessionRuntimeView {
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   stopDetail?: string;
+  /** Issue #510 slice 2 (PLAN.md row A0): see `SessionSummary.terminatedUnexpectedly`; computed
+   * the same way (`buildSnapshot`), carried here too so `sessions.open`/`sessions.recover`'s
+   * stop banner can show it without a second round-trip. */
+  terminatedUnexpectedly?: boolean;
+  /** Tool names left without a result when `terminatedUnexpectedly` is true (quality gate
+   * 2026-10-08: the stop banner names the interrupted tool instead of leaving the detected
+   * detail computed-but-unused). Absent/empty when there was none to name. */
+  pendingToolNames?: string[];
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
   unread: boolean;
@@ -169,6 +183,16 @@ export interface SessionStatusEvent {
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   stopDetail?: string;
+  /** Issue #510 (quality gate 2026-10-08): set only on a live transition to `stopped`, so the
+   * session-list row's "Terminated unexpectedly" text is never stale until the next unrelated
+   * `sessions.list()` refresh. Quality-gate fix (cycle 3, 2026-10-08): `undefined` on a `stopped`
+   * transition (for example `clearUnread`'s own status re-emit, which carries no new value at
+   * all) means "not applicable to THIS transition" -- the renderer (`sessions-store.ts`'s
+   * `applyStatus`, `ChatPane.tsx`'s `onSessionStatus`) keeps whatever this row/pane already
+   * showed, never wipes it back to `false`. A transition to a LIVE status (working/idle/
+   * needs-you) does reset it to `false`: a Session that is running is definitely not
+   * "terminated". */
+  terminatedUnexpectedly?: boolean;
   unread: boolean;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
@@ -262,6 +286,7 @@ export const IPC_REQUESTS = {
   SESSIONS_DELETE: 'sessions.delete',
   SESSIONS_RECREATE_WORKTREE: 'sessions.recreateWorktree',
   SESSIONS_RECOVER: 'sessions.recover',
+  SESSIONS_RESUME: 'sessions.resume',
   SESSIONS_STOP_AGENT: 'sessions.stopAgent',
   SESSIONS_SET_VISIBLE: 'sessions.setVisible',
   SESSIONS_DIFF_STAT: 'sessions.diffStat',
@@ -365,13 +390,22 @@ export interface RefractApi {
     list(): Promise<Result<SessionSummary[]>>;
     create(input: { repositoryId: string; baseBranch: string }): Promise<Result<Session>>;
     rename(id: string, name: string): Promise<Result<void>>;
-    open(id: string): Promise<Result<SessionSnapshot>>;
+    /** Issue #509 quality-gate fix: `userAction` (default false) bypasses `canAutoStart` exactly
+     * like `recover` does, for the one case that is a genuine explicit user request rather than a
+     * passive pane-open -- sending a typed message to a not-yet-started Session (MessageInput's
+     * own `notStarted` path). */
+    open(id: string, userAction?: boolean): Promise<Result<SessionSnapshot>>;
     archive(id: string): Promise<Result<void>>;
     restore(id: string): Promise<Result<void>>;
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;
     delete(id: string, options: { confirmed: true }): Promise<Result<void>>;
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;
+    /** Issue #509 (PLAN.md row A2g): recover (if needed) then send `DEFAULT_RESUME_INSTRUCTION`
+     * as a real turn, atomically and server-side-locked per Session id -- the single path both
+     * the session-list row button and the ChatPane stop banner's Resume button call, so neither
+     * can ever send the instruction twice. */
+    resume(id: string): Promise<Result<SessionSnapshot>>;
     stopAgent(sessionId: string): Promise<Result<void>>;
     /** Spec 005 contracts/ipc.md: every session id currently shown in any pane (0, 1, or 2
      * elements), replacing the single-id/`null` form. Selects which sessions' `transcript:patch`

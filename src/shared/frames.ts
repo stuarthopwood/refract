@@ -172,6 +172,20 @@ export interface GetMessagesResponseData {
   messages: OmpMessage[];
 }
 
+/** Issue #510 slice 4 (PLAN.md row A0), docs/spike/FINDINGS.md item 47 (confirmed real on omp
+ * 18.8.0, 2026-10-08): `limit` and `cursor` both work; the top-level `offset` request field is
+ * silently ignored (confirmed, not inferred -- a systematic sweep returned the identical first
+ * page for every offset tried) and must never be sent. `nextCursor` is an opaque, server-issued
+ * continuation token -- pass it straight back as `cursor` on the next call, never decode or
+ * construct one (see the finding's own "Engineering decision"); absent once every message has
+ * been returned. `totalMessages` is the Conversation's live message count, the same number
+ * `get_state().messageCount` and a plain `get_messages().data.messages.length` both report. */
+export interface GetMessagesPageResponseData {
+  messages: OmpMessage[];
+  nextCursor?: string;
+  totalMessages: number;
+}
+
 export interface SwitchSessionResponseData {
   cancelled: boolean;
 }
@@ -501,6 +515,18 @@ export interface GetMessagesCommand {
   id: string;
 }
 
+/** `limit` is required here (unbounded is exactly what `get_messages` is for); `cursor`, when
+ * given, MUST be a value this same process previously returned as `nextCursor` -- see
+ * `GetMessagesPageResponseData`'s doc comment. There is deliberately no `offset` field: it is a
+ * confirmed-dead parameter name in the real RPC surface (FINDINGS item 47), so this type cannot
+ * even typo it back in. */
+export interface GetMessagesPageCommand {
+  type: 'get_messages_page';
+  id: string;
+  limit: number;
+  cursor?: string;
+}
+
 export interface NegotiateProtocolCommand {
   type: 'negotiate_protocol';
   id: string;
@@ -543,6 +569,7 @@ export type RpcCommand =
   | SwitchSessionCommand
   | GetStateCommand
   | GetMessagesCommand
+  | GetMessagesPageCommand
   | NegotiateProtocolCommand
   | ExtensionUiResponseFrame
   | GetAvailableCommandsCommand

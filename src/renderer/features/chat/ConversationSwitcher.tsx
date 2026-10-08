@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { notify, useChatScrollStore, useSessionsStore } from '@/state'
 import type { ConversationInfo } from '../../../shared/model'
-import { applySnapshot } from './ChatPane'
+import { applySnapshot } from './applySnapshot'
 
 export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)

@@ -4,7 +4,7 @@
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
-import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
@@ -23,6 +23,8 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import { canResumeSession, resumeSession } from './resume'
+import { applySnapshot } from './applySnapshot'
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -33,33 +35,8 @@ type StopReason = SessionStatusEvent['stopReason']
 interface StopInfo {
   reason?: StopReason
   detail?: string
-}
-
-
-/** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
- * contracts/ipc.md) out to the transcript, queue, and pending-request stores for that Session.
- * Shared by ChatPane, ConversationSwitcher, and MessageInput's "not-started" open-then-send path. */
-export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): void {
-  useTranscriptStore.getState().reset(sessionId, snapshot.runtime.transcript)
-  useQueueStore.getState().apply(sessionId, snapshot.runtime.queue.followUp, snapshot.runtime.queue.steering)
-  usePendingRequestsStore.getState().setForSession(sessionId, snapshot.runtime.pending)
-  // Spec 004: the chip row's initial bundle, including the current turn's subagents as of this
-  // snapshot (T024 live-finding fix: seeding `[]` here unconditionally wiped the Subagent panel's
-  // list back to empty on every re-application of a snapshot -- a Settings round-trip or a
-  // session switch away and back both remount ChatPane and so re-run this -- even though the
-  // finished turn's subagents were still live in `SessionAgent.runtime.subagents` and its own
-  // `readout.subagentCount` kept showing the real count the whole time); live updates still fold
-  // on top via `subagents:update`.
-  useReadoutStore.getState().reset(sessionId, snapshot.readout, snapshot.subagents)
-  // Spec 004 FR-020: a Session switch leaves no stale subagent panel open for a different
-  // Session's turn. Medium remediation (code-reviewer): only actually reset when this snapshot
-  // is for a DIFFERENT Session than the panel was last open for -- a Settings round-trip (or any
-  // other remount that re-applies a snapshot for the Session already visible, e.g. ChatPane
-  // remounting on return from Settings) must never drop a panel the user deliberately opened for
-  // a turn still in progress just because `sessions.open` ran again for the same Session.
-  if (useSubagentPanelStore.getState().sessionId !== sessionId) {
-    useSubagentPanelStore.getState().reset()
-  }
+  terminatedUnexpectedly?: boolean
+  pendingToolNames?: string[]
 }
 
 /** `SessionSummary` (the sessions-store list row) carries `status` but not `stopReason`/
@@ -119,6 +96,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
   const [startingNewId, setStartingNewId] = useState<string | null>(null)
+  const [resumingId, setResumingId] = useState<string | null>(null)
   // Quality-gate remediation (code-reviewer, round 2, High): removing `key={frontSessionId}`
   // from App.tsx's single-pane `ChatPane` (restoring reclaim-focus-on-switch, a separate fix
   // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
@@ -169,7 +147,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     () =>
       window.refract.onSessionStatus((event) => {
         if (event.sessionId !== sessionIdRef.current) return
-        setStopInfo({ reason: event.stopReason, detail: event.stopDetail })
+        // Quality-gate fix (cycle 3, 2026-10-08): this used to replace the whole object,
+        // unconditionally dropping `terminatedUnexpectedly`/`pendingToolNames` -- a snapshot-
+        // derived flag (from `sessions.open`/`recover`/`startNew` above) was wiped the instant
+        // ANY later live status event arrived for this Session, even one carrying no
+        // information about either field (e.g. a readout-only re-emit), which also hid #585's
+        // Resume button and mismatched the row's own "Terminated unexpectedly" text against
+        // this pane's banner title. Same three-way rule `sessions-store.ts`'s `applyStatus`
+        // already uses: an explicit value on the event wins; a still-`stopped` event with none
+        // keeps whatever this pane already had; a LIVE status resets both to nothing, since a
+        // working/idle Session is definitely not "terminated" and has nothing pending.
+        setStopInfo((prev) => ({
+          reason: event.stopReason,
+          detail: event.stopDetail,
+          terminatedUnexpectedly:
+            event.terminatedUnexpectedly ?? (event.status === 'stopped' ? prev.terminatedUnexpectedly : false),
+          pendingToolNames: event.status === 'stopped' ? prev.pendingToolNames : undefined
+        }))
       }),
     []
   )
@@ -190,7 +184,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         const snapshot = await useSessionsStore.getState().open(sessionId)
         if (cancelled || !snapshot) return
         applySnapshot(sessionId, snapshot)
-        setStopInfo({ reason: snapshot.runtime.stopReason, detail: snapshot.runtime.stopDetail })
+        setStopInfo({
+          reason: snapshot.runtime.stopReason,
+          detail: snapshot.runtime.stopDetail,
+          terminatedUnexpectedly: snapshot.runtime.terminatedUnexpectedly,
+          pendingToolNames: snapshot.runtime.pendingToolNames
+        })
         // `commands:update` only pushes on the next `available_commands_update` frame from
         // OMP (SessionAgent.ts), which may not arrive again for a Session that was already
         // running before this pane (re)mounted -- e.g. a warm switch back, or a renderer
@@ -283,6 +282,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
 
   const recovering = recoveringId === sessionId
   const startingNew = startingNewId === sessionId
+  const resuming = resumingId === sessionId
   // Spec 005 (research.md Decision 4): `stopInfo` stays `{}` for a pristine pane by design (its
   // snapshot-fetch effect is skipped) -- MessageInput's own notStarted/disabled logic needs an
   // EXPLICIT 'not-started' stopReason, not undefined, so derive it from the Session's own
@@ -290,8 +290,25 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // session with no live runtime this run) while pristine, instead of the live-fetched value.
   const effectiveStopReason = isPristine ? session.stopReason : stopInfo.reason
   const effectiveStopDetail = isPristine ? undefined : stopInfo.detail
-  // `not-started` is idle-and-asleep, not an error (data-model.md); it gets no banner.
-  const showBanner = session.status === 'stopped' && !!effectiveStopReason && effectiveStopReason !== 'not-started'
+  // Issue #510 slice 2 (PLAN.md row A0): independent of `effectiveStopReason` -- this is what
+  // still flags a Session reopened after a Refract crash, which only ever carries `stopReason:
+  // 'not-started'` (no live `onExit` ever ran this run to set `agent-exited`).
+  const effectiveTerminatedUnexpectedly = isPristine ? !!session.terminatedUnexpectedly : !!stopInfo.terminatedUnexpectedly
+  const effectivePendingToolNames = isPristine ? undefined : stopInfo.pendingToolNames
+  // `not-started` is idle-and-asleep, not an error (data-model.md) UNLESS the Conversation tail
+  // shows it died mid-turn, in which case it still needs a banner (just no Recover action yet --
+  // #509 adds the Resume button for exactly this case).
+  const showBanner =
+    session.status === 'stopped' &&
+    ((!!effectiveStopReason && effectiveStopReason !== 'not-started') || effectiveTerminatedUnexpectedly)
+  // Quality-gate fix (a11y, Medium, 2026-10-08): `worktree-missing`/`start-failed` have their own
+  // dedicated actions below (Recreate/Archive/Delete, Retry/Start new) that have nothing to do
+  // with a Resume instruction, so the title must keep naming THAT real reason even when the tail
+  // also happens to read as terminated unexpectedly -- otherwise the banner says "Terminated
+  // unexpectedly" while offering only worktree-recovery actions, naming a problem those buttons
+  // do not fix.
+  const showTerminatedTitle =
+    effectiveTerminatedUnexpectedly && effectiveStopReason !== 'worktree-missing' && effectiveStopReason !== 'start-failed'
   // `key={sessionId}` below remounts MessageInput on every session switch, dropping its
   // textarea's focus. Reclaim it only when the switch happened while focus was already inside
   // this pane (e.g. a notification reopening the Session the user was typing in), never on
@@ -329,11 +346,60 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     }
     applySnapshot(recoveringFor, result.value)
     if (sessionIdRef.current === recoveringFor) {
-      setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+      setStopInfo({
+        reason: result.value.runtime.stopReason,
+        detail: result.value.runtime.stopDetail,
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        pendingToolNames: result.value.runtime.pendingToolNames
+      })
     }
     // The banner (and its focused Recover/Retry button) unmounts once the snapshot clears the
     // stop reason, dropping focus to <body>. Waits one frame for the fresh content (textarea or
     // a still-stopped banner) to mount before reclaiming focus.
+    requestAnimationFrame(maybeRestoreFocus)
+  }
+
+  // Issue #509 (PLAN.md row A2g): recovers the agent AND sends the default resume instruction as
+  // a real turn (`resumeSession`, shared with the session-list row's own Resume button). Mirrors
+  // `handleRecover`'s focus-restore discipline exactly; the only difference is the shared helper
+  // also sends the turn, so a successful result still carries the post-recover snapshot (from
+  // before that turn settles) for `stopInfo`.
+  async function handleResume() {
+    // Quality-gate fix (cycle 5, 2026-10-08): the button below now uses `aria-disabled` (not
+    // `disabled`, matching the session-list row's own Resume button) so it stays focusable
+    // during the call -- this guard is what actually stops a second concurrent invocation now
+    // that the DOM no longer does.
+    if (recovering || startingNew || resuming) return
+    const resumingFor = sessionId
+    const focusedAtStart = document.activeElement
+    const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
+    setResumingId(resumingFor)
+    const result = await resumeSession(resumingFor)
+    setResumingId(id => (id === resumingFor ? null : id))
+    const maybeRestoreFocus = () => {
+      if (!hadFocus || sessionIdRef.current !== resumingFor) return
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (!stranded && active !== focusedAtStart) return
+      focusPaneContent(chatPaneRef.current)
+    }
+    if (!result.ok) {
+      notify(result.error)
+      requestAnimationFrame(maybeRestoreFocus)
+      return
+    }
+    if (sessionIdRef.current === resumingFor) {
+      setStopInfo({
+        reason: result.value.runtime.stopReason,
+        detail: result.value.runtime.stopDetail,
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        // Quality-gate fix (cycle 2, 2026-10-08): dropped here, unlike handleRecover/
+        // handleStartNewConversation's own identical setStopInfo calls -- the banner's
+        // "Still waiting on <tools>" description line went blank specifically after a Resume
+        // whose restart itself failed (still-pending tools genuinely exist on that snapshot).
+        pendingToolNames: result.value.runtime.pendingToolNames
+      })
+    }
     requestAnimationFrame(maybeRestoreFocus)
   }
 
@@ -390,7 +456,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     useChatScrollStore.getState().clear(startingFor)
     applySnapshot(startingFor, result.value)
     if (sessionIdRef.current === startingFor) {
-      setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+      setStopInfo({
+        reason: result.value.runtime.stopReason,
+        detail: result.value.runtime.stopDetail,
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        pendingToolNames: result.value.runtime.pendingToolNames
+      })
     }
     requestAnimationFrame(maybeRestoreFocus)
   }
@@ -453,7 +524,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         role="status"
         className={cn(
           'flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground',
-          !isOpening && !recovering && !startingNew && 'sr-only'
+          !isOpening && !recovering && !startingNew && !resuming && 'sr-only'
         )}
       >
         {isOpening && (
@@ -467,13 +538,19 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
             its "Retrying…"/"Starting…" text announced to nobody -- a disabled element is pulled
             out of the accessibility tree. Mirrors that same busy text into this already-`role=
             "status"` region instead of adding a second live region. */}
-        {!isOpening && recovering && (
+        {!isOpening && resuming && (
+          <>
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
+            Resuming…
+          </>
+        )}
+        {!isOpening && !resuming && recovering && (
           <>
             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
             Retrying…
           </>
         )}
-        {!isOpening && !recovering && startingNew && (
+        {!isOpening && !resuming && !recovering && startingNew && (
           <>
             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
             Starting new conversation…
@@ -484,18 +561,47 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         <div data-pane-banner className="shrink-0 px-4 pt-3">
           <Alert variant="destructive">
             <AlertTriangleIcon />
-            <AlertTitle>{describeStopReason(effectiveStopReason, effectiveStopDetail)}</AlertTitle>
-            {effectiveStopReason === 'agent-exited' && (
-              <AlertAction>
+            <AlertTitle>
+              {showTerminatedTitle ? 'Terminated unexpectedly' : describeStopReason(effectiveStopReason, effectiveStopDetail)}
+            </AlertTitle>
+            {showTerminatedTitle && (
+              <AlertDescription>
+                Its Conversation ended mid-turn, not a clean stop.
+                {effectivePendingToolNames && effectivePendingToolNames.length > 0
+                  ? ` Still waiting on ${effectivePendingToolNames.join(', ')}.`
+                  : ''}
+              </AlertDescription>
+            )}
+            {canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly, !!session.archivedAt) && (
+              // Quality-gate fix (2026-10-08): normal flow (`col-start-2 mt-2`, matching the
+              // start-failed/worktree-missing banners below), not `AlertAction` -- `AlertAction`
+              // is `absolute top-2 right-2` (alert.tsx), which covered the terminated-unexpectedly
+              // description text instead of flowing after it. Recover (when shown) comes FIRST in
+              // DOM order: `focusPaneContent`'s generic banner-button query (lib/focus.ts) always
+              // focuses the first enabled `[data-pane-banner]` button, and Recover is the safe,
+              // non-money-spending one -- Resume sends a real turn and must never be where focus
+              // lands by accident.
+              <div className="col-start-2 mt-2 flex gap-2">
+                {effectiveStopReason === 'agent-exited' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={recovering || startingNew || resuming}
+                    onClick={() => void handleRecover()}
+                  >
+                    {recovering ? 'Retrying…' : 'Recover'}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={recovering || startingNew}
-                  onClick={() => void handleRecover()}
+                  aria-disabled={recovering || startingNew || resuming || undefined}
+                  className="aria-disabled:opacity-50"
+                  onClick={() => void handleResume()}
                 >
-                  {recovering ? 'Retrying…' : 'Recover'}
+                  {resuming ? 'Resuming…' : 'Resume'}
                 </Button>
-              </AlertAction>
+              </div>
             )}
             {effectiveStopReason === 'start-failed' && (
               <div className="col-start-2 mt-2 flex gap-2">
