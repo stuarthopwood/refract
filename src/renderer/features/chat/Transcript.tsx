@@ -22,6 +22,7 @@ import { ToolGroupRow, SubagentRow } from './ToolRow'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
+import { windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type UserItem = Extract<TranscriptItem, { kind: 'user' }>
@@ -385,6 +386,18 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   }, [items])
 
   const turns = React.useMemo(() => splitIntoTurns(items), [items])
+
+  // Issue #510 slice 4 (PLAN.md row A0): "Load earlier" over the already-fully-fetched
+  // transcript (see windowTranscriptTurns.ts's own doc comment) -- reset whenever this instance
+  // is reused for a DIFFERENT Session (`ChatPane.tsx` swaps `sessionId` on the same `Transcript`
+  // without remounting it), so a long Session's earlier reveal never leaks into the next one
+  // shown in the same pane.
+  const [revealedEarlier, setRevealedEarlier] = React.useState(false)
+  React.useEffect(() => setRevealedEarlier(false), [sessionId])
+  const { visible: visibleTurns, hiddenCount } = React.useMemo(
+    () => windowTranscriptTurns(turns, revealedEarlier),
+    [turns, revealedEarlier]
+  )
 
   // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
   // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
@@ -766,9 +779,16 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                 Ready. Type a message to get started.
               </div>
             )}
+            {hasConversationStarted && hiddenCount > 0 && (
+              <div className="px-2 pb-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setRevealedEarlier(true)}>
+                  Load earlier ({hiddenCount} more)
+                </Button>
+              </div>
+            )}
             {hasConversationStarted &&
-              turns.map((turn, turnIndex) => {
-                const previousTurn = turnIndex > 0 ? turns[turnIndex - 1] : undefined
+              visibleTurns.map((turn, turnIndex) => {
+                const previousTurn = turnIndex > 0 ? visibleTurns[turnIndex - 1] : undefined
                 const showTimeGapDivider =
                   previousTurn?.userItem != null &&
                   previousTurn.userItem.at !== 0 &&
@@ -803,7 +823,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                     })}
                     <TurnTotalLine
                       turn={turn}
-                      isLastTurn={turnIndex === turns.length - 1}
+                      isLastTurn={turnIndex === visibleTurns.length - 1}
                       isTurnRunning={isTurnRunning}
                       receivedAt={receivedAt}
                     />

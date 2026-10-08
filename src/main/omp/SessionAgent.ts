@@ -22,11 +22,11 @@ import { assertConversationFileExists, reattachRebaselineNotice, verifyReattach 
 import { recoverFromFailedSwitch } from './switchRecovery';
 import { detectUnexpectedTermination } from './terminationDetection';
 import { waitForIdleStatus } from './statusWait';
+import { fetchAllMessages } from './fetchAllMessages';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
   Frame,
-  GetMessagesResponseData,
   GetStateResponseData,
   ImageContent,
   PredictWordResponseData,
@@ -347,8 +347,11 @@ export class SessionAgent extends EventEmitter {
     let transcript: TranscriptItem[] = [];
     let messagesOk = false;
     try {
-      const messagesRes = await proc.request({ type: 'get_messages', id: '' });
-      if (messagesRes.success) {
+      // Issue #510 slice 4 (PLAN.md row A0): several bounded `get_messages_page` round trips
+      // instead of one unbounded `get_messages` -- see `fetchAllMessages.ts`'s own doc comment
+      // and docs/spike/FINDINGS.md item 47. `complete` mirrors the old single-call `success`.
+      const { messages, complete } = await fetchAllMessages(proc);
+      if (complete) {
         // Issue #489 (durable turn marker, 2026-10-07): re-fetched fresh here, not the `session`
         // parameter captured earlier in `doStart()`, so this always reflects the latest
         // `currentTurnSubagents` even on the rare chance a prior life of this SAME instance
@@ -359,16 +362,16 @@ export class SessionAgent extends EventEmitter {
         // `interrupted` instead (`settleInterruptedToolRows`).
         const terminatedUnexpectedly = (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly;
         transcript = fromHistory(
-          (messagesRes.data as GetMessagesResponseData).messages,
+          messages,
           new Set(currentTurnKeys(this.registry.getSession(this.sessionId))),
           terminatedUnexpectedly,
         );
         messagesOk = true;
       } else {
-        console.error(`SessionAgent ${this.sessionId}: get_messages failed`, messagesRes.error);
+        console.error(`SessionAgent ${this.sessionId}: fetchAllMessages did not complete`);
       }
     } catch (err) {
-      console.error(`SessionAgent ${this.sessionId}: get_messages threw`, err);
+      console.error(`SessionAgent ${this.sessionId}: fetchAllMessages threw`, err);
     }
     const exitedDuringStart1 = exitedDuringStart(this.process === proc, failurePrefix, (d) => this.recordStartFailure(d));
     if (exitedDuringStart1) return exitedDuringStart1;
@@ -757,15 +760,15 @@ export class SessionAgent extends EventEmitter {
     }
 
     const state = stateRes.data as GetStateResponseData;
-    const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
+    // Issue #510 slice 4 (PLAN.md row A0): see `fetchAllMessages.ts`'s own doc comment and
+    // docs/spike/FINDINGS.md item 47.
+    const { messages, complete } = await fetchAllMessages(this.process);
     const currentTurnKeySet = new Set(currentTurnKeys(this.registry.getSession(this.sessionId)));
     // Issue #510 slice 3 (PLAN.md row A0): `file` is the historical Conversation just switched
     // to -- if ITS tail shows it was abandoned mid tool-call, that row is settled to
     // `interrupted` rather than left spinning `running` forever once rendered as history.
     const terminatedUnexpectedly = (await detectUnexpectedTermination(file)).terminatedUnexpectedly;
-    const transcript = messagesRes.success
-      ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet, terminatedUnexpectedly)
-      : [];
+    const transcript = complete ? fromHistory(messages, currentTurnKeySet, terminatedUnexpectedly) : [];
     // Gate fixes 2 finding 4: reconcile here too, same rule as `launch()` -- without it a
     // Conversation whose last turn crashed mid-subagent opens with a row stuck on 'running'
     // forever. A different Conversation has an entirely different subagent history, and nothing
