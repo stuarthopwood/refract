@@ -47,17 +47,33 @@ export class RegistryStore {
     await writeJsonFile(this.file, this.data)
   }
 
-  /** Issue #480: display-name-only edit (and any future non-structural field). No uniqueness
-   * check on `name` -- two repositories may share a display name (the path distinguishes them in
-   * the header tooltip and details card). Never touches `path`, `defaultBranch`, or anything a
-   * Session points at. */
-  async updateRepository(id: string, patch: Partial<Repository>): Promise<Repository> {
+  /** Issue #480: display-name-only edit. No uniqueness check on `name` -- two repositories may
+   * share a display name (the path distinguishes them in the header tooltip and details card).
+   * Quality-gate fix (code-reviewer/security-auditor, Low, 2026-10-08): narrowed from
+   * `Partial<Repository>` to `Pick<Repository, 'name'>` -- the wider type let a future caller
+   * slip in `path` or `defaultBranch` despite this comment's own "never touches path" claim;
+   * nothing else ever calls this for any other field, so the type itself is the guard now.
+   * Rolls back on a failed write, the same discipline `removeRepository` below already uses:
+   * memory must not keep a name the disk copy never got, or the next unrelated write would
+   * silently persist it. */
+  async updateRepository(id: string, patch: Pick<Repository, 'name'>): Promise<Repository> {
     const index = this.data.repositories.findIndex((r) => r.id === id)
     if (index === -1) throw new RegistryError('not-found', `Repository not found: ${id}`)
     const current = this.data.repositories[index]!
-    const next: Repository = { ...current, ...patch, id: current.id }
+    // Only `name` is ever copied from `patch` (never a `{ ...patch }` spread): the narrowed
+    // `Pick<Repository, 'name'>` parameter type is a compile-time guard against a future caller
+    // passing `path`/`defaultBranch`, but a cast or an `as unknown as` could still defeat it --
+    // this makes the restriction real at runtime too, not just in the type checker.
+    const next: Repository = { ...current, name: patch.name }
     this.data.repositories[index] = next
-    await writeJsonFile(this.file, this.data)
+    try {
+      await writeJsonFile(this.file, this.data)
+    } catch (err) {
+      const stillIndex = this.data.repositories.findIndex((r) => r.id === id)
+      if (stillIndex !== -1) this.data.repositories[stillIndex] = current
+      await writeJsonFile(this.file, this.data).catch(() => undefined)
+      throw err
+    }
     return next
   }
 

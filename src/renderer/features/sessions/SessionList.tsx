@@ -29,6 +29,7 @@ import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
+import { MAX_REPOSITORY_NAME_LENGTH } from '../../../shared/repositoryName'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
@@ -358,10 +359,15 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   // row's own rename (`SessionRow` above) -- the model the issue names to copy.
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(repository.name)
+  // Quality-gate fix (a11y, Medium, 2026-10-08): a failed rename keeps the field open (never
+  // `setRenaming(false)` before the IPC call resolves) and shows this inline, tied to the input
+  // via `aria-describedby`, instead of only a toast that drops the user's typed draft.
+  const [renameError, setRenameError] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const restoreFocusRef = useRef(false)
   const renameRequestedRef = useRef(false)
+  const renameErrorId = `repository-rename-error-${repository.id}`
 
   async function handleQuickCreate(): Promise<void> {
     if (creatingRef.current) return
@@ -378,14 +384,29 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
 
   function startRenaming(): void {
     setDraftName(repository.name)
+    setRenameError(null)
     setRenaming(true)
   }
 
+  // Quality-gate fix (a11y, Medium, 2026-10-08): stays open on failure -- `setRenaming(false)`
+  // only runs on an unchanged name or a successful rename, never before the IPC call settles --
+  // so a rejected name (too long, a control character) keeps the field mounted with the user's
+  // own typed text still in it and the error shown next to it, instead of a toast and a lost
+  // draft.
   async function commitRename(): Promise<void> {
     const name = draftName.trim()
+    if (name === repository.name) {
+      setRenameError(null)
+      setRenaming(false)
+      return
+    }
+    const error = await renameRepository(repository.id, name)
+    if (error) {
+      setRenameError(error)
+      return
+    }
+    setRenameError(null)
     setRenaming(false)
-    if (name !== repository.name) await renameRepository(repository.id, name)
-    else setDraftName(repository.name)
   }
 
   function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
@@ -396,6 +417,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
     }
     if (event.key === 'Escape') {
       restoreFocusRef.current = true
+      setRenameError(null)
       setDraftName(repository.name)
       setRenaming(false)
     }
@@ -428,16 +450,29 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
       <Collapsible defaultOpen>
         <div className="group flex items-center gap-1 px-1">
           {renaming ? (
-            <input
-              ref={renameInputRef}
-              autoFocus
-              value={draftName}
-              onChange={(event) => setDraftName(event.target.value)}
-              onBlur={() => void commitRename()}
-              onKeyDown={handleNameKeyDown}
-              aria-label="Repository name"
-              className="min-w-0 flex-1 rounded border border-ring bg-transparent px-1.5 py-1 text-sm uppercase tracking-wide outline-none"
-            />
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <input
+                ref={renameInputRef}
+                autoFocus
+                value={draftName}
+                maxLength={MAX_REPOSITORY_NAME_LENGTH}
+                onChange={(event) => {
+                  setDraftName(event.target.value)
+                  setRenameError(null)
+                }}
+                onBlur={() => void commitRename()}
+                onKeyDown={handleNameKeyDown}
+                aria-label="Repository name"
+                aria-invalid={renameError ? true : undefined}
+                aria-describedby={renameError ? renameErrorId : undefined}
+                className="min-w-0 flex-1 rounded border border-border bg-transparent px-1.5 py-1 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              />
+              {renameError && (
+                <p id={renameErrorId} role="alert" className="px-1.5 text-xs text-destructive">
+                  {renameError}
+                </p>
+              )}
+            </div>
           ) : (
             <CollapsibleTrigger
               ref={triggerRef}
@@ -446,7 +481,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
               className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
-              <span className="truncate" title={repository.name}>{repository.name}</span>
+              <span className="truncate" title={repository.path}>{repository.name}</span>
             </CollapsibleTrigger>
           )}
           <Tooltip>
