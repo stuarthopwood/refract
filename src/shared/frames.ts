@@ -463,7 +463,20 @@ export interface RemoveQueuedMessageCommand {
   type: 'remove_queued_message';
   id: string;
   message: string;
-  queue: 'followUp';
+  // Issue #540: was hard-coded to `'followUp'` only, so a steering-queue chip's Remove always
+  // asked OMP to look in the wrong queue and got `removed: false` back, with no way to ever
+  // remove one.
+  queue: 'followUp' | 'steering';
+}
+
+// Issue #540 (rpc.md "promote_queued_message payload"): moves the first matching queued
+// follow-up to the end of the steering queue -- atomic, keeps attachments, no reprocessing, no
+// duplicate. Replaces the old hand-made remove-then-steer `sendNow` built from
+// `RemoveQueuedMessageCommand` + `SteerCommand`.
+export interface PromoteQueuedMessageCommand {
+  type: 'promote_queued_message';
+  id: string;
+  message: string;
 }
 
 export interface NewSessionCommand {
@@ -528,6 +541,7 @@ export type RpcCommand =
   | SteerCommand
   | AbortCommand
   | RemoveQueuedMessageCommand
+  | PromoteQueuedMessageCommand
   | NewSessionCommand
   | SwitchSessionCommand
   | GetStateCommand

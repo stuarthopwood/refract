@@ -80,6 +80,11 @@ function isGhostTextEligible(text: string, cursor: number): boolean {
 interface QueuedChip {
   key: string
   text: string
+  // Issue #540: carried through from `queue_update` so Send now/Remove act on the chip's real
+  // queue instead of a hard-coded one -- a steering chip was previously matched against
+  // `followUp` only, so it could never be removed and the issue's reported "several clicks"
+  // symptom was, for a steering chip, actually "never works at all".
+  queue: 'followUp' | 'steering'
 }
 
 interface MessageInputProps {
@@ -104,6 +109,24 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const modelLabel = formatModelLabel(modelSession ?? {})
   const thinkingLabel = formatThinkingLevelLabel(modelSession ?? {})
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
+  // Issue #540: `optimisticPromotions` holds follow-up text just sent via "Send now", shown as a
+  // steering chip immediately rather than waiting for OMP's own `queue_update`; `inFlightChips`
+  // single-flights Send now/Remove per chip text (disabled with "Sending..." while a request is
+  // out), since neither action had a busy state before, so a user who saw no immediate change
+  // after the first click often clicked again before the first request even returned.
+  const [optimisticPromotions, setOptimisticPromotions] = useState<string[]>([])
+  const [inFlightChips, setInFlightChips] = useState<ReadonlySet<string>>(new Set())
+  // Garbage-collects an optimistic promotion once the real queue confirms it one way or another
+  // (landed in `steering`, or left the queue by any other route) -- `visibleOptimisticPromotions`
+  // above already hides a duplicate the instant `steering` catches up, so this only prevents the
+  // set from growing unbounded over a long session.
+  useEffect(() => {
+    setOptimisticPromotions((prev) => {
+      if (prev.length === 0) return prev
+      const next = prev.filter((chipText) => followUp.includes(chipText))
+      return next.length === prev.length ? prev : next
+    })
+  }, [followUp])
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
   // Spec 010: draft text lives in draft-store.ts, keyed by sessionId, instead of local useState,
   // so it survives this component unmounting (a ChatPane.tsx `key={sessionId}` Session switch,
@@ -229,9 +252,21 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // point at a row that no longer exists.
   const clampedSlashActiveIndex = slashMatches.length > 0 ? Math.min(slashActiveIndex, slashMatches.length - 1) : 0
 
+  // Issue #540: shows a chip as already-steering the instant Send now is clicked (optimistic),
+  // corrected by the next real `queue_update` -- the first click previously looked like nothing
+  // happened (no visual change until OMP's own event arrived), so a user clicked again, which hit
+  // the separate "steering chips can never succeed" bug below.
+  const visibleOptimisticPromotions = optimisticPromotions.filter((chipText) => !steering.includes(chipText))
   const chips: QueuedChip[] = [
-    ...followUp.map((chipText, index) => ({ key: `followUp-${index}-${chipText}`, text: chipText })),
-    ...steering.map((chipText, index) => ({ key: `steering-${index}-${chipText}`, text: chipText }))
+    ...followUp
+      .filter((chipText) => !optimisticPromotions.includes(chipText))
+      .map((chipText, index) => ({ key: `followUp-${index}-${chipText}`, text: chipText, queue: 'followUp' as const })),
+    ...steering.map((chipText, index) => ({ key: `steering-${index}-${chipText}`, text: chipText, queue: 'steering' as const })),
+    ...visibleOptimisticPromotions.map((chipText, index) => ({
+      key: `optimistic-${index}-${chipText}`,
+      text: chipText,
+      queue: 'steering' as const
+    }))
   ]
 
   // The active row resets whenever the typed query changes, so a stale index from a longer list
@@ -593,24 +628,51 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (!result.ok) notify(result.error)
   }
 
-  async function handleRemoveQueued(queuedText: string) {
-    const result = await window.refract.chat.removeQueued(sessionId, queuedText)
+  // Issue #540: single-flight per chip text -- the button already disables while `inFlightChips`
+  // has this text (see the chip render below), but this guard also stops a second call that
+  // somehow still lands (e.g. a fast double Enter on a focused button) from firing a duplicate
+  // request.
+  async function handleRemoveQueued(queuedText: string, queue: 'followUp' | 'steering') {
+    if (inFlightChips.has(queuedText)) return
+    setInFlightChips((prev) => new Set(prev).add(queuedText))
+    const result = await window.refract.chat.removeQueued(sessionId, queuedText, queue)
+    setInFlightChips((prev) => {
+      const next = new Set(prev)
+      next.delete(queuedText)
+      return next
+    })
     if (!result.ok) notify(result.error)
   }
 
   async function handleSendNow(queuedText: string) {
-    // High remediation (test-reviewer): `chat.sendNow` no longer takes an `images` argument from
-    // here at all. The old code forwarded whatever images happen to be pending in the composer
-    // RIGHT NOW -- usually meant for a later, different message -- while the queued message's own
-    // real images were silently dropped (`remove_queued_message` removes the whole queued prompt,
-    // images included). `SessionAgent` now records a queued prompt's own images at the moment it
-    // was queued and re-attaches THAT message's own images to the `steer` command itself, so this
-    // call site must never touch, forward, or clear the composer's own current pending images.
+    if (inFlightChips.has(queuedText)) return
+    setInFlightChips((prev) => new Set(prev).add(queuedText))
+    // Issue #540: shows the chip as already-steering the instant the request goes out (see
+    // `visibleOptimisticPromotions` above), corrected the moment the real `queue_update` lands.
+    setOptimisticPromotions((prev) => (prev.includes(queuedText) ? prev : [...prev, queuedText]))
+    // `chat.sendNow` takes no `images` argument: OMP's `promote_queued_message` moves the queued
+    // message (attachments included) rather than reprocessing it, so this call site must never
+    // touch, forward, or clear the composer's own current pending images.
     const result = await window.refract.chat.sendNow(sessionId, queuedText)
+    setInFlightChips((prev) => {
+      const next = new Set(prev)
+      next.delete(queuedText)
+      return next
+    })
     if (!result.ok) {
+      setOptimisticPromotions((prev) => prev.filter((chipText) => chipText !== queuedText))
       notify(result.error)
       return
     }
+    if (!result.value.promoted) {
+      // Issue #540: `promoted: false` means it was no longer pending at dispatch time (e.g.
+      // already delivered) -- not an RPC-level error, so `notify` is not the right surface, but
+      // silence is exactly the bug this story fixes.
+      setOptimisticPromotions((prev) => prev.filter((chipText) => chipText !== queuedText))
+      announceAttachment('Message could not be sent: it is no longer queued.')
+      return
+    }
+    announceAttachment('Message moved to send at the next step.')
   }
 
   /** Accessibility remediation (High): announces a chip's own silent removal (`pruneDanglingChips`
@@ -698,29 +760,44 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     <div className="flex shrink-0 flex-col gap-2 border-t border-border px-4 py-3">
       {chips.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {chips.map((chip) => (
-            <Badge key={chip.key} variant="secondary" className="max-w-full gap-1.5 py-1 pr-1">
-              <span className="max-w-64 truncate" title={chip.text}>
-                {chip.text}
-              </span>
-              <button
-                type="button"
-                aria-label={`Send now: ${chip.text}`}
-                className="rounded-full px-1 text-[0.7rem] font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                onClick={() => void handleSendNow(chip.text)}
-              >
-                Send now
-              </button>
-              <button
-                type="button"
-                aria-label={`Remove queued message: ${chip.text}`}
-                className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                onClick={() => void handleRemoveQueued(chip.text)}
-              >
-                <XIcon className="size-3" />
-              </button>
-            </Badge>
-          ))}
+          {chips.map((chip) => {
+            const busy = inFlightChips.has(chip.text)
+            return (
+              <Badge key={chip.key} variant="secondary" className="max-w-full gap-1.5 py-1 pr-1">
+                <span className="max-w-64 truncate" title={chip.text}>
+                  {chip.text}
+                </span>
+                {/* Issue #540: Send now is offered only for follow-up chips -- OMP's
+                 * `promote_queued_message` only ever matches a queued follow-up, so a steering
+                 * chip's "Send now" could never succeed. A steering chip instead shows a quiet
+                 * status: it is already on its way to the agent's next step. */}
+                {chip.queue === 'followUp' ? (
+                  <button
+                    type="button"
+                    aria-label={busy ? `Sending now: ${chip.text}` : `Send now: ${chip.text}`}
+                    aria-busy={busy}
+                    disabled={busy}
+                    className="rounded-full px-1 text-[0.7rem] font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50"
+                    onClick={() => void handleSendNow(chip.text)}
+                  >
+                    {busy ? 'Sending…' : 'Send now'}
+                  </button>
+                ) : (
+                  <span className="px-1 text-[0.7rem] text-muted-foreground">Sending at the next step</span>
+                )}
+                <button
+                  type="button"
+                  aria-label={busy ? `Removing queued message: ${chip.text}` : `Remove queued message: ${chip.text}`}
+                  aria-busy={busy}
+                  disabled={busy}
+                  className="rounded-full p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50"
+                  onClick={() => void handleRemoveQueued(chip.text, chip.queue)}
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </Badge>
+            )
+          })}
         </div>
       )}
       {disabled && (
