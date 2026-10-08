@@ -10,6 +10,7 @@ import type { ImageContent } from '../../shared/frames';
 import type { Session, SessionStatus } from '../../shared/model';
 import { DEFAULT_RESUME_INSTRUCTION } from '../../shared/model';
 import type { TerminationDetectionResult } from '../omp/terminationDetection';
+import { isStoppedOnRequestMarkerValid } from '../omp/stoppedOnRequestMarker';
 import { checkResumeEligible } from './resumeEligibility';
 import type { ResumeRefusalCode } from './resumeEligibility';
 import { notFound } from './util';
@@ -50,8 +51,13 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
   const agent = deps.getOrCreateAgent(id);
   // Quality-gate fix (cycle 2, 2026-10-08): a requested stop is never eligible to resume (it is
   // never "terminated unexpectedly" by definition) -- see `SessionRuntime.stoppedOnRequest`'s
-  // own doc comment. Never reads the tail for one.
-  const detection = agent.runtimeSnapshot.stoppedOnRequest
+  // own doc comment. Never reads the tail for one. Quality-gate fix (cycle 4, 2026-10-08):
+  // `agent.runtimeSnapshot.stoppedOnRequest` is THIS life's own in-memory flag -- the persisted
+  // marker is checked alongside it so resuming a Session reattached fresh after an app restart
+  // still refuses correctly (`not-eligible`, never `agent-exited`'s own resumable state) for a
+  // stop that was only ever requested, as long as the Conversation has not grown since (see
+  // `Session.stoppedOnRequestConversation`'s own doc comment).
+  const detection = (agent.runtimeSnapshot.stoppedOnRequest || (await isStoppedOnRequestMarkerValid(session)))
     ? { terminatedUnexpectedly: false, reason: { kind: 'clean' as const }, pendingToolNames: [] }
     : await deps.detectUnexpectedTermination(session.currentConversation);
   const refusal = checkResumeEligible(

@@ -3,6 +3,10 @@
 // function works, never that the HANDLER actually skips the tail read for a requested stop
 // (FR-038), threads the one computed `detection` into `buildSnapshot` instead of a second read,
 // or genuinely restarts (`forceStart`) regardless of what the tail shows.
+import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import { attachSnapshotCore } from './attachSnapshot';
 import type { AttachableAgent, AttachSnapshotDeps } from './attachSnapshot';
@@ -166,5 +170,52 @@ describe('attachSnapshotCore', () => {
     const { agent: startingAgent } = makeAgent({ stopReason: 'not-started', stoppedOnRequest: true });
     await attachSnapshotCore('session-1', false, makeDeps({ getOrCreateAgent: () => startingAgent, notifyListChanged }));
     expect(notifyListChanged).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Quality-gate fix (cycle 4, 2026-10-08): `agent.runtimeSnapshot.stoppedOnRequest` is reset
+// `false` for a Session not yet started THIS run (a fresh in-memory agent after an app restart)
+// -- the persisted marker must still be consulted so a passive open auto-starts it, exactly as
+// if the in-memory flag itself were true (same outcome as the FR-038 test above, different
+// source of truth).
+describe('attachSnapshotCore persisted stoppedOnRequest marker', () => {
+  it('auto-starts a requested stop via the persisted marker alone, with the in-memory flag false', async () => {
+    const conversation = path.join(os.tmpdir(), `refract-attach-marker-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const { size } = await fs.stat(conversation);
+    const { agent, start } = makeAgent({ stopReason: 'not-started', stoppedOnRequest: false });
+    const detectUnexpectedTermination = vi.fn(async () => CRASHED);
+    const buildSnapshot = vi.fn(async () => makeSnapshot());
+    const deps = makeDeps({
+      getSession: () => makeSession({ currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: size }),
+      getOrCreateAgent: () => agent,
+      detectUnexpectedTermination,
+      buildSnapshot,
+    });
+
+    await attachSnapshotCore('session-1', false, deps);
+
+    expect(detectUnexpectedTermination).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(buildSnapshot).toHaveBeenCalledWith(agent, expect.anything(), CLEAN);
+  });
+
+  it('ignores the marker once the Conversation has grown, reading the tail and refusing to auto-start', async () => {
+    const conversation = path.join(os.tmpdir(), `refract-attach-marker-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const { size: sizeAtStop } = await fs.stat(conversation);
+    await fs.appendFile(conversation, '{"type":"assistant"}\n');
+    const { agent, start } = makeAgent({ stopReason: 'not-started', stoppedOnRequest: false });
+    const detectUnexpectedTermination = vi.fn(async () => CRASHED);
+    const deps = makeDeps({
+      getSession: () => makeSession({ currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: sizeAtStop }),
+      getOrCreateAgent: () => agent,
+      detectUnexpectedTermination,
+    });
+
+    await attachSnapshotCore('session-1', false, deps);
+
+    expect(detectUnexpectedTermination).toHaveBeenCalledWith(conversation);
+    expect(start).not.toHaveBeenCalled(); // CRASHED -> terminatedUnexpectedly:true -> canAutoStart refuses
   });
 });

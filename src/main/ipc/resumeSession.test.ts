@@ -3,6 +3,10 @@
 // `checkResumeEligible` function works, never that the HANDLER actually adds to the lock before
 // any await, releases it on every exit path, or sends the instruction exactly once under real
 // concurrency.
+import { randomUUID } from 'node:crypto';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import { resumeSessionCore } from './resumeSession';
 import type { ResumableAgent, ResumeSessionDeps } from './resumeSession';
@@ -214,5 +218,64 @@ describe('resumeSessionCore', () => {
 
     await expect(resumeSessionCore(resumingIds, 'session-1', deps)).rejects.toThrow('ENOENT: no such file');
     expect(resumingIds.has('session-1')).toBe(false);
+  });
+});
+
+// Quality-gate fix (cycle 4, 2026-10-08): `agent.runtimeSnapshot.stoppedOnRequest` is reset
+// `false` for a Session not yet started THIS run (a fresh in-memory agent after an app restart)
+// -- the persisted marker must still be consulted so a Resume is correctly refused for a
+// deliberate stop, exactly as if the in-memory flag itself were true.
+describe('resumeSessionCore persisted stoppedOnRequest marker', () => {
+  it('refuses as not-eligible via the persisted marker alone, with the in-memory flag false', async () => {
+    const resumingIds = new Set<string>();
+    const conversation = path.join(os.tmpdir(), `refract-resume-marker-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const { size } = await fs.stat(conversation);
+    const agent = {
+      runtimeSnapshot: { status: 'stopped', stopReason: 'not-started', stoppedOnRequest: false },
+      start: vi.fn(async () => undefined),
+      send: vi.fn(async () => ({ queued: false })),
+    } as unknown as ResumableAgent;
+    const detectUnexpectedTermination = vi.fn(async () => ({ terminatedUnexpectedly: true, reason: { kind: 'unmatched-tool' as const }, pendingToolNames: ['bash'] }));
+    const deps = makeDeps({
+      getSession: () => makeSession({ currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: size }),
+      getOrCreateAgent: () => agent,
+      detectUnexpectedTermination,
+    });
+
+    const result = await resumeSessionCore(resumingIds, 'session-1', deps);
+
+    expect(detectUnexpectedTermination).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe('Session is not eligible to resume.');
+  });
+
+  it('ignores the marker once the Conversation has grown, reading the tail and allowing the resume', async () => {
+    const resumingIds = new Set<string>();
+    const conversation = path.join(os.tmpdir(), `refract-resume-marker-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const { size: sizeAtStop } = await fs.stat(conversation);
+    await fs.appendFile(conversation, '{"type":"assistant"}\n');
+    const runtimeSnapshot = { status: 'stopped' as 'stopped' | 'idle', stopReason: 'not-started' as const, stoppedOnRequest: false };
+    const send = vi.fn(async () => ({ queued: false }));
+    const agent = {
+      runtimeSnapshot,
+      start: vi.fn(async () => {
+        runtimeSnapshot.status = 'idle';
+      }),
+      send,
+    } as unknown as ResumableAgent;
+    const detectUnexpectedTermination = vi.fn(async () => ({ terminatedUnexpectedly: true, reason: { kind: 'unmatched-tool' as const }, pendingToolNames: ['bash'] }));
+    const deps = makeDeps({
+      getSession: () => makeSession({ currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: sizeAtStop }),
+      getOrCreateAgent: () => agent,
+      detectUnexpectedTermination,
+    });
+
+    const result = await resumeSessionCore(resumingIds, 'session-1', deps);
+
+    expect(detectUnexpectedTermination).toHaveBeenCalledWith(conversation);
+    expect(result.ok).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });
