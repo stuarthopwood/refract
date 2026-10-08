@@ -296,6 +296,28 @@ export function registerSessions(manager: SessionManager): void {
     return { ok: true, value: undefined };
   });
 
+  // Issue #512: "Keep waiting" and "Cancel" only ever apply to a Session already starting, so
+  // both are a deliberate no-op (not an error) for a known Session that isn't starting -- a stale
+  // button click racing the wait's own resolution must never surface an error toast. An unknown
+  // sessionId is still `notFound`, same as every sibling handler below.
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_KEEP_WAITING_FOR_START, async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') {
+      return invalidArgument(`${IPC_REQUESTS.SESSIONS_KEEP_WAITING_FOR_START} expects a string sessionId`);
+    }
+    if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
+    // getAgent (not getOrCreateAgent): nothing to act on for a Session with no agent this run
+    // (it cannot possibly be mid-start), so there is no reason to construct one just to no-op.
+    manager.getAgent(sessionId)?.keepWaitingForStart();
+    return { ok: true, value: undefined };
+  });
+
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_CANCEL_START, async (_event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_CANCEL_START} expects a string sessionId`);
+    if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
+    manager.getAgent(sessionId)?.cancelStart();
+    return { ok: true, value: undefined };
+  });
+
   // Spec 005 contracts/ipc.md: sessionIds is every session id currently shown in any pane
   // (0, 1, or 2 elements), replacing the single-id/null form. Quality-gate remediation
   // (security-auditor, Low): capped at 2 (the contract's own stated maximum) and validated by

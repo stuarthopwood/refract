@@ -11,7 +11,8 @@
 import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { OmpProcess } from './OmpProcess';
+import { OmpProcess, ReadyCeilingError } from './OmpProcess';
+import type { ReadyWaitStage } from './readyWait';
 import { applyFrame, currentTurnKeys, fromHistory, tryBuildAgentMessageFromUnknownFrame } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
@@ -39,7 +40,7 @@ import type {
   ToolExecutionStartFrame,
   ToolExecutionUpdateFrame,
 } from '../../shared/frames';
-import type { ApprovalMode, PendingRequest, Session, SessionReadout, SessionRuntime, SessionStatus, SubagentSummary, TranscriptItem } from '../../shared/model';
+import type { ApprovalMode, PendingRequest, Session, SessionReadout, SessionRuntime, SessionStartProgress, SessionStatus, SubagentSummary, TranscriptItem } from '../../shared/model';
 import type { ChatAnswer, SessionStatusEvent, SlashCommand, TranscriptOp } from '../../shared/ipc';
 import { filterSupportedCommands } from '../../shared/slash-commands';
 import type { RegistryStore } from '../store/registry';
@@ -144,6 +145,10 @@ export class SessionAgent extends EventEmitter {
   private readonly isWindowFocused: () => boolean;
 
   private process: OmpProcess | undefined;
+  /** Issue #512: the `OmpProcess` currently mid-`start()`, distinct from `this.process` (only
+   * assigned once `start()` resolves) -- this is what `keepWaitingForStart()`/`cancelStart()`
+   * act on while the staged ready-wait is still in flight. */
+  private startingProcess: OmpProcess | undefined;
   private runtime: SessionRuntime;
   private commands: SlashCommand[] = [];
   /** Quality-gate fix (cycle 3, 2026-10-08): bumped at the top of every `launch()` attempt.
@@ -316,7 +321,11 @@ export class SessionAgent extends EventEmitter {
   /** Shared spawn/reattach/history-reload sequence for `doStart()` and `doRestart()`: create the
    * `OmpProcess`, start it, reattach via `attachAndVerify`, reload history, and bring the runtime
    * to `idle`. `failurePrefix` distinguishes a fresh start's notice text from a restart's. */
-  private async launch(session: Session, failurePrefix: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  private async launch(
+    session: Session,
+    failurePrefix: string,
+    allowRetry = true,
+  ): Promise<{ ok: true } | { ok: false; error: unknown }> {
     // Quality-gate fix (cycle 2, 2026-10-08): a fresh launch attempt (success or failure) always
     // ends the "the user just stopped this on purpose" window -- see `SessionRuntime.
     // stoppedOnRequest`'s own doc comment.
@@ -345,16 +354,63 @@ export class SessionAgent extends EventEmitter {
     proc.on('exit', (info: { code: number | null; requested: boolean }) => {
       void this.onExit(info).catch((err) => console.error(`SessionAgent ${this.sessionId}: onExit threw`, err));
     });
+    // Issue #512 requirement 1: relays OmpProcess's staged ready-wait onto `runtime.startProgress`
+    // so the Session row and chat pane can show "Starting agent... N s" live. 'ceiling' is not a
+    // `SessionStartProgress` kind: the wait rejects moments later anyway, so there is nothing
+    // useful to show beyond clearing back to no progress.
+    proc.on('start-progress', (stage: ReadyWaitStage) => {
+      if (stage.kind === 'ceiling') {
+        this.setStartProgress(undefined);
+        return;
+      }
+      this.setStartProgress({ kind: stage.kind, elapsedMs: stage.elapsedMs });
+    });
+    proc.on('start-queued', () => this.setStartProgress({ kind: 'queued' }));
+    proc.on('start-memory-deferred', (payload: { elapsedMs: number }) => {
+      this.setStartProgress({ kind: 'memory-deferred', elapsedMs: payload.elapsedMs });
+    });
 
+    // Tracked separately from `this.process` (only assigned once `start()` resolves): this is
+    // what `keepWaitingForStart()`/`cancelStart()` act on while the wait is still in flight.
+    this.startingProcess = proc;
+    // Gate-fixes Medium finding (cycle 2): shutdown() can arrive while doStart()'s own `fs.stat`
+    // await, or startWith()'s `prepare()` (restart), is still running -- before this method had
+    // even been called, let alone assigned `this.startingProcess` for shutdown() to cancel. That
+    // window used to let a fresh process spawn and run its whole queue+memory+ready wait despite
+    // `stopRequested` already being set. Caught the instant a fresh process exists instead.
+    if (this.stopRequested) proc.cancelStart();
     try {
       await proc.start();
     } catch (err) {
+      this.startingProcess = undefined;
+      const message = err instanceof Error ? err.message : String(err);
+      // Issue #512 requirement 3: one automatic retry when the failure looks like load -- the
+      // ceiling was reached with nobody cancelling (a typed `ReadyCeilingError`, not a message
+      // regex: gate-fixes Medium finding, a reworded message can no longer silently turn this
+      // off) -- the busy machine that caused it may already have eased a moment later. Never
+      // retries a second time (`allowRetry` only ever passed `false` below), a cancel or a real
+      // spawn/exit error, or once `shutdown()`/`stop()` has asked this Session to stop (gate-
+      // fixes High finding: a stop request must never spawn a brand-new `omp` process).
+      const willRetry = allowRetry && !this.stopRequested && err instanceof ReadyCeilingError;
+      // Gate-fixes Medium finding (cycle 4): a retry used to clear startProgress to undefined
+      // first, which (on a Recover/Retry-launched start, where the OLD stopReason from a
+      // previous failure is still set) let `showBanner` flip true for the whole gap between
+      // this attempt failing and the next one's first real progress event -- flashing the
+      // stale failure banner, with an enabled Retry button a user could click mid-retry, while
+      // a retry was already under way. `{ kind: 'queued' }` is a placeholder the next attempt's
+      // own first progress event overwrites moments later; a final failure still clears it.
+      this.setStartProgress(willRetry ? { kind: 'queued' } : undefined);
       // A failed handshake (ready timeout, negotiate failure, spawn error) must never leave a
       // child behind: `this.process` was never set, so nothing else will ever stop it.
       await proc.stop();
-      this.recordStartFailure(failurePrefix + (err instanceof Error ? err.message : String(err)));
+      if (willRetry) {
+        return this.launch(session, failurePrefix, false);
+      }
+      this.recordStartFailure(failurePrefix + message);
       return { ok: false, error: err };
     }
+    this.startingProcess = undefined;
+    this.setStartProgress(undefined);
     this.process = proc;
     const bail1 = await bailIfStopRequested(this.stopRequested, proc, () => {
       this.process = undefined;
@@ -499,11 +555,29 @@ export class SessionAgent extends EventEmitter {
     this.emitPatchReset();
   }
 
+  /** Issue #512's "Keep waiting" button: dismisses the ready-wait prompt without affecting the
+   * ceiling. A no-op if this Session is not currently starting, or its wait is not at the
+   * 'prompt' stage (a stale click racing the wait's own resolution must never throw). */
+  keepWaitingForStart(): void {
+    this.startingProcess?.keepWaitingForReady();
+  }
+
+  /** Issue #512's "Cancel" button: fails an in-flight start immediately instead of waiting out
+   * the ceiling. A no-op if this Session is not currently starting. */
+  cancelStart(): void {
+    this.startingProcess?.cancelStart();
+  }
+
   /** Stops the whole agent process: idempotent, a no-op once already exited or never started.
    * Marks `stopRequested` and drains any in-flight `start()`/`restart()` before stopping the
    * process (`launchStopGuard.ts`); distinct from `stop()`, which only aborts the running turn. */
   async shutdown(): Promise<void> {
     this.stopRequested = true;
+    // Gate-fixes High finding (#512): a start can now run for queue-wait + up to 60s memory
+    // defer + up to 180s ready-wait + a full retry of all of that -- cancelling the in-flight
+    // wait (if any) is what keeps `shutdown()` from blocking minutes behind a busy machine the
+    // user has already asked to stop. A no-op if nothing is starting.
+    this.startingProcess?.cancelStart();
     while (this.startPromise || this.restartPromise) {
       await (this.startPromise ?? this.restartPromise)?.catch(() => undefined);
     }
@@ -1207,6 +1281,14 @@ export class SessionAgent extends EventEmitter {
   /** T037: a Session that finishes (`working` -> `idle`) while it is not the visible Session, or
    * no Refract window is focused, becomes `unread`; cleared by `clearUnread()` when it becomes
    * visible. */
+  /** Issue #512: updates `runtime.startProgress` and re-emits `status` (the same event the
+   * Session row and chat pane already subscribe to for `stopReason`/`stopDetail`), so no new
+   * IPC channel is needed for this to reach the renderer live. */
+  private setStartProgress(progress: SessionStartProgress | undefined): void {
+    this.runtime = { ...this.runtime, startProgress: progress };
+    this.emitStatus();
+  }
+
   private setStatus(
     status: SessionStatus,
     extra?: { stopReason?: SessionRuntime['stopReason']; stopDetail?: string; terminatedUnexpectedly?: boolean },
@@ -1242,6 +1324,11 @@ export class SessionAgent extends EventEmitter {
       stopReason: this.runtime.stopReason,
       stopDetail: this.runtime.stopDetail,
       terminatedUnexpectedly,
+      // Issue #512 (gate-fixes Critical): this was missing entirely, so every live event
+      // carried `startProgress: undefined` for the whole duration of a real start -- the
+      // banner, Keep waiting/Cancel and row text never showed. `SessionStatusEvent.startProgress`
+      // is required (not optional) specifically so this omission is a compile error again.
+      startProgress: this.runtime.startProgress,
       unread: this.runtime.unread,
       launchedMode: this.runtime.launchedMode,
       pendingMode: this.runtime.pendingMode,

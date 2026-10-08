@@ -14,6 +14,7 @@ import type {
   Repository,
   Session,
   SessionReadout,
+  SessionStartProgress,
   SessionStatus,
   Settings,
   SplitLayout,
@@ -125,6 +126,9 @@ export interface SessionSummary extends Session {
    * app restart after a crash, which only ever carries `stopReason: 'not-started'`. Always
    * `false`/absent for a Session with no Conversation yet. */
   terminatedUnexpectedly?: boolean;
+  /** Issue #512: live while this Session's start is in flight (row-level "Starting agent... N
+   * s"); absent once it settles. */
+  startProgress?: SessionStartProgress;
   unread: boolean;
   /** The mode the Session's live process actually launched with (settings' current mode for one
    * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
@@ -153,6 +157,10 @@ export interface SessionRuntimeView {
    * 2026-10-08: the stop banner names the interrupted tool instead of leaving the detected
    * detail computed-but-unused). Absent/empty when there was none to name. */
   pendingToolNames?: string[];
+  /** Issue #512: see `SessionSummary.startProgress`; carried here too so the chat pane's own
+   * direct `onSessionStatus` subscription is not the only path to it (the open/recover snapshot
+   * itself can race a start already in flight -- e.g. opening a Session mid-queue). */
+  startProgress?: SessionStartProgress;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
   unread: boolean;
@@ -210,6 +218,11 @@ export interface SessionStatusEvent {
    * needs-you) does reset it to `false`: a Session that is running is definitely not
    * "terminated". */
   terminatedUnexpectedly?: boolean;
+  /** Issue #512: live while a start is in flight (`SessionRuntime.startProgress`); `undefined`
+   * once it settles. Required (not optional) so `emitStatus()` omitting it is a compile error --
+   * a gate-fixes Critical finding: it previously went missing from every live event, carrying
+   * `startProgress: undefined` the whole time a Session was actually starting. */
+  startProgress: SessionStartProgress | undefined;
   unread: boolean;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
@@ -305,6 +318,9 @@ export const IPC_REQUESTS = {
   SESSIONS_RECOVER: 'sessions.recover',
   SESSIONS_RESUME: 'sessions.resume',
   SESSIONS_STOP_AGENT: 'sessions.stopAgent',
+  // Issue #512: dismiss the "Keep waiting?" prompt, or cancel an in-flight start outright.
+  SESSIONS_KEEP_WAITING_FOR_START: 'sessions.keepWaitingForStart',
+  SESSIONS_CANCEL_START: 'sessions.cancelStart',
   SESSIONS_SET_VISIBLE: 'sessions.setVisible',
   SESSIONS_DIFF_STAT: 'sessions.diffStat',
   SESSIONS_REVEAL_WORKTREE: 'sessions.revealWorktree',
@@ -427,6 +443,12 @@ export interface RefractApi {
      * can ever send the instruction twice. */
     resume(id: string): Promise<Result<SessionSnapshot>>;
     stopAgent(sessionId: string): Promise<Result<void>>;
+    /** Issue #512's "Keep waiting" button: dismisses the ready-wait prompt without affecting the
+     * ceiling. A no-op (still `ok: true`) if the Session is not currently starting. */
+    keepWaitingForStart(sessionId: string): Promise<Result<void>>;
+    /** Issue #512's "Cancel" button: fails an in-flight start immediately instead of waiting out
+     * the ceiling. A no-op (still `ok: true`) if the Session is not currently starting. */
+    cancelStart(sessionId: string): Promise<Result<void>>;
     /** Spec 005 contracts/ipc.md: every session id currently shown in any pane (0, 1, or 2
      * elements), replacing the single-id/`null` form. Selects which sessions' `transcript:patch`
      * events are forwarded; for each id newly present, clears its `unread` and flushes a full

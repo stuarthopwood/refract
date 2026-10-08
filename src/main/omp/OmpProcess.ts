@@ -8,22 +8,56 @@
 //                     internally by request() and never emitted (constitution: one way
 //                     to read a response).
 //   'exit'  ({ code: number | null; requested: boolean })  fires exactly once.
+//   'start-progress' (ReadyWaitStage)  staged ready-wait progress during start() (issue
+//                     #512: "Starting agent… N s"); never fires outside an in-flight start().
+//   'start-queued' ()  emitted the instant start() actually has to wait for a process-wide
+//                     start slot (issue #512 requirement 5, startQueue.ts), before the wait
+//                     begins, not after it ends; never fires when a slot was free and granted
+//                     immediately.
+//   'start-memory-deferred' ({ elapsedMs: number })  emitted while start() defers because
+//                     free memory is low (issue #512 requirement 5, reuses memory.ts).
 
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { type ApprovalMode, OMP_APPROVAL_MODE } from '../../shared/model'
 import type { Frame, ReadyFrame, ResponseFrame, RpcChunkFrame, RpcCommand } from '../../shared/frames'
+import { tailOmpLogForPid } from './ompLogTail'
+import { redactSecrets } from './redact'
+import { ReadyWaitController, type ReadyWaitStage } from './readyWait'
+import { acquireStartSlot } from './startQueue'
+import { isMemoryLow } from '../memory'
 import { recordProcess, removeProcessRecord } from '../process/pidRecords'
 import { resolveExecutable, taskkillPath } from '../process/executables'
 
-const READY_TIMEOUT_MS = 60_000
+// Issue #512: a single fixed 60s cutoff killed a slow-but-healthy start with no progress
+// and no reason shown. READY_PROMPT_AFTER_MS is now only the point at which the caller
+// should offer "Keep waiting"/"Cancel" (see ReadyWaitController); the wait keeps going
+// regardless, up to READY_CEILING_MS, where it fails outright. Both are overridable per
+// `OmpProcessOptions` (Settings-configurable, requirement 1).
+const READY_PROMPT_AFTER_MS = 60_000
+const READY_CEILING_MS = 180_000
+// Issue #512 requirement 5: how long a start will defer while memory.ts's isMemoryLow()
+// says the machine is under pressure, before giving up and spawning anyway (never defers
+// forever: that would just be a quieter version of the #512 bug it fixes).
+const MEMORY_DEFER_POLL_MS = 2_000
+const MEMORY_DEFER_CEILING_MS = 60_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
 const STOP_GRACE_MS = 10_000
 const STDERR_TAIL_BYTES = 4 * 1024
 const STDERR_FAILURE_TAIL_BYTES = 2 * 1024
+// Issue #512 requirement 2: the tail of that pid's own `~/.omp/logs` file, appended to a
+// start failure alongside the stderr tail (OMP logs to its own file, not stderr).
+const OMP_LOG_TAIL_BYTES = 4 * 1024
 // FINDINGS C22b: v1 frames are capped at maxFrameBytes; a reassembled rpc_chunk sequence
 // above this ceiling is treated as corrupt rather than buffered without bound.
 const MAX_REASSEMBLED_BYTES = 64 * 1024 * 1024
+
+/** Thrown specifically when the ready-wait's ceiling is reached with nobody cancelling (gate-
+ * fixes Medium finding: a caller used to tell this apart from every other start failure by
+ * regex-matching the error message, which also carries the appended stderr/log tail and would
+ * silently stop matching if that wording ever changed). Carries the same full message
+ * (hint/stderr/log tail included) as every other start failure; only its type differs. */
+export class ReadyCeilingError extends Error {}
 
 export interface OmpProcessOptions {
   cwd: string
@@ -34,6 +68,19 @@ export interface OmpProcessOptions {
    * `~/.omp/agent/sessions` (omp-usage.md's `--no-session` flag; issue #362). Only safe for
    * callers that never issue `open_session` or any other command requiring persistence. */
   noSession?: boolean
+  /** Overrides READY_PROMPT_AFTER_MS (issue #512 requirement 1, Settings-configurable). */
+  readyPromptAfterMs?: number
+  /** Overrides READY_CEILING_MS (issue #512 requirement 1, Settings-configurable). */
+  readyCeilingMs?: number
+  /** Gate-fixes Medium finding (cycle 2): an overall ceiling across the queue wait, the
+   * memory defer AND the ready wait combined, not just the ready wait's own ceiling above --
+   * readiness.ts/loginProviders.ts's probes need this so a slow Session start elsewhere can
+   * never hold one of them hostage for longer than this, regardless of which phase it is stuck
+   * in. Reuses `cancelStart()`'s own abort signal, so a deadline behaves exactly like an
+   * external cancel once it fires. `undefined` (the default): no overall deadline, only the
+   * phase-specific ceilings above apply (real Session starts: the ceiling screen shows "Keep
+   * waiting"/"Cancel", so an invisible overall cutoff would be actively wrong for them). */
+  startDeadlineMs?: number
 }
 
 interface PendingRequestEntry {
@@ -62,6 +109,29 @@ export class OmpProcess extends EventEmitter {
   private exitWaiters: Array<() => void> = []
   private stopPromise: Promise<void> | undefined
   private lastSpawnError: NodeJS.ErrnoException | undefined
+  private readyWait: ReadyWaitController | undefined
+  // Issue #512 gate-fixes High finding: cancelStart() used to only reach `readyWait`, which
+  // does not exist yet while a start is still queued or deferring for memory, so a cancel (or
+  // shutdown()) during either phase was silently lost and the process spawned anyway. Checked
+  // right after the slot is granted and on every tick of the memory-defer poll.
+  private startCancelled = false
+  // Gate-fixes Low finding (cycle 2): the old `if (this.child)` guard only rejected a second
+  // start() once the first had already spawned, so a second call made while the first was still
+  // queued or deferring for memory (`this.child` not yet assigned) was not rejected. Set at the
+  // very top of start(), before anything else.
+  private startCalled = false
+  // Gate-fixes High finding (cycle 2): lets cancelStart()/shutdown() abort the queue wait and the
+  // memory-defer sleep immediately, instead of leaving them to find out via `startCancelled` only
+  // on the next poll or once some other Session's start happens to free a slot.
+  private startAbortController: AbortController | undefined
+  // Issue #512 gate-fixes security finding: the pid's own spawn time, so `buildStartFailure`'s
+  // omp log tail lookup never attributes an older, pid-reused process's log to this one.
+  private spawnedAtMs: number | undefined
+  // Gate-fixes security Low finding (cycle 2): true once `onStderrData`'s own sliding window has
+  // ever dropped bytes, so `buildStartFailure` knows `stderrTail`'s first line may be a truncated
+  // fragment of a credential with no recognisable prefix left for `redactSecrets` to match, and
+  // drops it before redacting.
+  private stderrTruncated = false
 
   constructor(opts: OmpProcessOptions) {
     super()
@@ -78,93 +148,247 @@ export class OmpProcess extends EventEmitter {
 
   /** Spawns `omp` and resolves once the ready handshake (and v2 negotiation) completes. */
   async start(): Promise<void> {
-    if (this.child) {
+    if (this.startCalled) {
       throw new Error('OmpProcess: start() already called')
     }
+    this.startCalled = true
 
-    const ompPath = this.opts.ompPath ?? (await resolveExecutable('omp'))
-    const args: string[] = ['--mode', 'rpc-ui', `--approval-mode=${OMP_APPROVAL_MODE[this.opts.approvalMode]}`]
-    if (this.opts.noSession) {
-      args.push('--no-session')
-    }
+    const startAbort = new AbortController()
+    this.startAbortController = startAbort
+    // Gate-fixes High finding (cycle 3): a cancelStart()/shutdown() issued BEFORE start() is
+    // ever called (SessionAgent.launch()'s own `if (this.stopRequested) proc.cancelStart()`,
+    // right after assigning `this.startingProcess`) used to be lost entirely: `cancelStart()`
+    // only set `startCancelled`, since this fresh AbortController did not exist yet for it to
+    // abort. The queue wait then proceeded as if nothing had been cancelled, which could block
+    // `shutdown()` behind another Session's start for minutes. Aborts immediately if a cancel
+    // already landed before this point.
+    if (this.startCancelled) startAbort.abort()
+    // Gate-fixes Medium finding (cycle 2): see `OmpProcessOptions.startDeadlineMs` -- bounds the
+    // queue wait, the memory defer and the ready wait combined, by reusing `cancelStart()`'s own
+    // abort signal so expiry behaves exactly like an external cancel.
+    const deadlineTimer =
+      this.opts.startDeadlineMs !== undefined ? setTimeout(() => this.cancelStart(), this.opts.startDeadlineMs) : undefined
 
-    // stdio omitted: the default ('pipe' for all three streams) is exactly what the
-    // contract asks for, and omitting it lets TypeScript pick the
-    // ChildProcessWithoutNullStreams overload instead of the nullable-stream one.
-    const child = spawn(ompPath, args, {
-      cwd: this.opts.cwd,
-      windowsHide: true,
-    })
-    this.child = child
-
-    child.on('error', (err: NodeJS.ErrnoException) => {
-      this.lastSpawnError = err
-      console.error('OmpProcess: child process error', err)
-    })
-    child.stdout.on('data', (chunk: Buffer) => this.onStdoutData(chunk))
-    child.stderr.on('data', (chunk: Buffer) => this.onStderrData(chunk))
-    child.on('exit', (code) => this.onExit(code))
-
-    // Record the pid immediately after spawn returns, before wiring anything else that
-    // could throw; Job Object membership is inherited, so this pid record is the fallback
-    // protection if that job is ever lost.
-    if (typeof child.pid === 'number') {
-      recordProcess(child.pid, this.opts.sessionId).catch((err: unknown) => {
-        console.error('OmpProcess: recordProcess failed', err)
-      })
-    }
-
-    // Promise.withResolvers() would read cleaner here, but it needs lib "ES2024" and
-    // tsconfig.node.json is pinned to "ES2023" (owned by another task); executor form kept.
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        cleanup()
-        reject(this.buildStartFailure(`ready frame not seen within ${READY_TIMEOUT_MS / 1000}s`))
-      }, READY_TIMEOUT_MS)
-
-      const cleanup = (): void => {
-        clearTimeout(timer)
-        this.off('frame', onFrame)
-        this.off('exit', onExitDuringStart)
-        child.off('error', onSpawnErrorDuringStart)
+    try {
+      // Issue #512 requirement 5: "start agents one or two at a time" plus "defer under low
+      // memory". Every start() queues for a process-wide slot before spawning (startQueue.ts)
+      // and, once granted, waits out a low-memory window (memory.ts's existing threshold)
+      // before paying the heavy discovery/MCP/embedding-worker cost; the slot is released in
+      // `finally` so a failed start never holds it. Gate-fixes High finding (cycle 2): the wait
+      // is now abortable (`startAbort.signal`), so a cancelStart()/shutdown() that arrives while
+      // still queued takes effect immediately instead of waiting out another Session's start.
+      let releaseStartSlot: () => void
+      try {
+        releaseStartSlot = await acquireStartSlot({
+          onQueued: () => this.emit('start-queued'),
+          signal: startAbort.signal,
+        })
+      } catch {
+        throw await this.buildStartFailure('start cancelled')
       }
 
-      const onExitDuringStart = (info: { code: number | null; requested: boolean }): void => {
-        cleanup()
-        reject(this.buildStartFailure(`process exited before ready (code ${String(info.code)})`))
-      }
-      this.once('exit', onExitDuringStart)
+      try {
+        // Gate-fixes High finding: a cancelStart()/shutdown() that arrived while this start was
+        // still queued or memory-deferred used to be lost entirely (`readyWait` does not exist
+        // yet), so the process spawned anyway. Checked here and again after the memory defer.
+        if (this.startCancelled) {
+          throw await this.buildStartFailure('start cancelled')
+        }
+        await this.deferStartIfMemoryLow()
+        if (this.startCancelled) {
+          throw await this.buildStartFailure('start cancelled')
+        }
 
-      // A spawn failure (e.g. ENOENT) does not reliably produce a child 'exit' event, so
-      // fail fast here instead of waiting out the full ready timeout.
-      const onSpawnErrorDuringStart = (err: NodeJS.ErrnoException): void => {
-        cleanup()
-        reject(this.buildStartFailure(`process failed to spawn: ${err.message}`))
-      }
-      child.once('error', onSpawnErrorDuringStart)
+        const ompPath = this.opts.ompPath ?? (await resolveExecutable('omp'))
+        // Gate-fixes Medium finding (cycle 3): `resolveExecutable('omp')` is uncached the first
+        // time the app runs it (readiness.ts/loginProviders.ts's probes run in parallel via
+        // Promise.all, so this is the common case on a fresh launch), and it is the only await
+        // between the last `startCancelled` check above and spawning below. A cancel/shutdown/
+        // deadline that lands during it used to only reach the already-granted slot (released
+        // early), not `readyWait` (which doesn't exist yet) -- so the process still spawned and
+        // ran out its full ceiling. Closes that window before paying the spawn cost at all.
+        if (this.startCancelled) {
+          throw await this.buildStartFailure('start cancelled')
+        }
+        const args: string[] = ['--mode', 'rpc-ui', `--approval-mode=${OMP_APPROVAL_MODE[this.opts.approvalMode]}`]
+        if (this.opts.noSession) {
+          args.push('--no-session')
+        }
 
-      const onFrame = (frame: Frame): void => {
-        if (frame.type !== 'ready') return
-        cleanup()
-        // `type` narrowing alone can't isolate ReadyFrame from the Frame union because
-        // UnknownFrame's index signature accepts any key; the check above already
-        // confirmed this is a ready frame.
-        const ready = frame as ReadyFrame
-        void (async () => {
-          try {
-            if (ready.supportedProtocolVersions.includes(2)) {
-              const res = await this.request({ type: 'negotiate_protocol', id: '', protocolVersion: 2 })
-              if (!res.success) {
-                throw new Error(`negotiate_protocol failed: ${res.error ?? 'unknown error'}`)
-              }
-            }
-            resolve()
-          } catch (err) {
-            reject(err instanceof Error ? err : new Error(String(err)))
+        // stdio omitted: the default ('pipe' for all three streams) is exactly what the
+        // contract asks for, and omitting it lets TypeScript pick the
+        // ChildProcessWithoutNullStreams overload instead of the nullable-stream one.
+        // Captured before spawning: `buildStartFailure`'s omp log tail lookup uses this to
+        // reject an older, pid-reused process's log as "the real reason" for this one.
+        this.spawnedAtMs = Date.now()
+        const child = spawn(ompPath, args, {
+          cwd: this.opts.cwd,
+          windowsHide: true,
+        })
+        this.child = child
+
+        child.on('error', (err: NodeJS.ErrnoException) => {
+          this.lastSpawnError = err
+          console.error('OmpProcess: child process error', err)
+        })
+        child.stdout.on('data', (chunk: Buffer) => this.onStdoutData(chunk))
+        child.stderr.on('data', (chunk: Buffer) => this.onStderrData(chunk))
+        child.on('exit', (code) => this.onExit(code))
+
+        // Record the pid immediately after spawn returns, before wiring anything else that
+        // could throw; Job Object membership is inherited, so this pid record is the fallback
+        // protection if that job is ever lost.
+        if (typeof child.pid === 'number') {
+          recordProcess(child.pid, this.opts.sessionId).catch((err: unknown) => {
+            console.error('OmpProcess: recordProcess failed', err)
+          })
+        }
+
+        // Promise.withResolvers() would read cleaner here, but it needs lib "ES2024" and
+        // tsconfig.node.json is pinned to "ES2023" (owned by another task); executor form kept.
+        await new Promise<void>((resolve, reject) => {
+          const cleanup = (): void => {
+            this.readyWait = undefined
+            readyWait.dispose()
+            this.off('frame', onFrame)
+            this.off('exit', onExitDuringStart)
+            child.off('error', onSpawnErrorDuringStart)
           }
-        })()
+
+          // Issue #512: replaces the old single 60s `setTimeout` kill. The wait keeps going
+          // regardless of the prompt stage; only the ceiling (or an explicit cancel) fails it.
+          const readyWait = new ReadyWaitController({
+            promptAfterMs: this.opts.readyPromptAfterMs ?? READY_PROMPT_AFTER_MS,
+            ceilingMs: this.opts.readyCeilingMs ?? READY_CEILING_MS,
+          })
+          this.readyWait = readyWait
+          readyWait.onStage((stage) => this.emit('start-progress', stage))
+          readyWait.onOutcome((outcome) => {
+            if (outcome.kind === 'ready') return
+            cleanup()
+            void (async () => {
+              if (outcome.kind === 'cancelled') {
+                reject(await this.buildStartFailure('start cancelled'))
+                return
+              }
+              // Gate-fixes Medium finding: a typed error instead of a message-text regex, so
+              // SessionAgent's one-shot retry can never be silently turned off by rewording this.
+              reject(await this.buildStartFailure(`ready frame not seen within ${Math.round(outcome.elapsedMs / 1000)}s`, ReadyCeilingError))
+            })()
+          })
+          readyWait.start()
+
+          const onExitDuringStart = (info: { code: number | null; requested: boolean }): void => {
+            cleanup()
+            void (async () => {
+              reject(await this.buildStartFailure(`process exited before ready (code ${String(info.code)})`))
+            })()
+          }
+          this.once('exit', onExitDuringStart)
+
+          // A spawn failure (e.g. ENOENT) does not reliably produce a child 'exit' event, so
+          // fail fast here instead of waiting out the full ready wait.
+          const onSpawnErrorDuringStart = (err: NodeJS.ErrnoException): void => {
+            cleanup()
+            void (async () => {
+              reject(await this.buildStartFailure(`process failed to spawn: ${err.message}`))
+            })()
+          }
+          child.once('error', onSpawnErrorDuringStart)
+
+          const onFrame = (frame: Frame): void => {
+            if (frame.type !== 'ready') return
+            cleanup()
+            readyWait.ready()
+            // `type` narrowing alone can't isolate ReadyFrame from the Frame union because
+            // UnknownFrame's index signature accepts any key; the check above already
+            // confirmed this is a ready frame.
+            const ready = frame as ReadyFrame
+            void (async () => {
+              try {
+                if (ready.supportedProtocolVersions.includes(2)) {
+                  const res = await this.request({ type: 'negotiate_protocol', id: '', protocolVersion: 2 })
+                  if (!res.success) {
+                    throw new Error(`negotiate_protocol failed: ${res.error ?? 'unknown error'}`)
+                  }
+                }
+                resolve()
+              } catch (err) {
+                reject(err instanceof Error ? err : new Error(String(err)))
+              }
+            })()
+          }
+          this.on('frame', onFrame)
+          // Gate-fixes test Low finding (cycle 4): purely defensive, not load-bearing for any
+          // window that exists today -- the actual `resolveExecutable('omp')` cancel window
+          // (cycle 3's Medium finding) is already closed by the synchronous re-check right
+          // after that await, before this code even runs. Kept as a last-resort safety net for
+          // any future await ever added between here and spawn, placed after every listener
+          // above so `cancel()`'s synchronous `cleanup()` (which references `onFrame`/
+          // `onExitDuringStart`/`onSpawnErrorDuringStart`) never runs before they exist.
+          if (this.startCancelled) readyWait.cancel()
+        })
+      } finally {
+        releaseStartSlot()
       }
-      this.on('frame', onFrame)
+    } finally {
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer)
+    }
+  }
+
+  /** Dismisses the "Keep waiting?" prompt without affecting the ceiling (issue #512's "Keep
+   * waiting" button). No-op outside an in-flight start()'s 'prompt' stage. */
+  keepWaitingForReady(): void {
+    this.readyWait?.keepWaiting()
+  }
+
+  /** User-cancelled an in-flight start (issue #512's "Cancel" button): fails the wait
+   * immediately instead of waiting out the ceiling, including while still queued or deferring
+   * for memory (`startCancelled`, checked at both those points -- `readyWait` does not exist
+   * yet until the process actually spawns). Safe to call more than once or after start() has
+   * already settled. */
+  cancelStart(): void {
+    this.startCancelled = true
+    // Gate-fixes High finding (cycle 2): wakes an in-flight queue wait or memory-defer sleep
+    // immediately (see acquireStartSlot()'s `signal` and deferStartIfMemoryLow()'s own sleep
+    // below) instead of leaving `startCancelled` to be noticed only on the next poll.
+    this.startAbortController?.abort()
+    this.readyWait?.cancel()
+  }
+
+  /** Issue #512 requirement 5: waits while `isMemoryLow()` (memory.ts) says the machine is
+   * under pressure, emitting `'start-memory-deferred'` so a caller can show "Waiting for
+   * memory to free up...". Gives up after MEMORY_DEFER_CEILING_MS and lets the start proceed
+   * regardless: a start that is merely slow is still better than one that never happens. */
+  private async deferStartIfMemoryLow(): Promise<void> {
+    const startedAt = Date.now()
+    const signal = this.startAbortController?.signal
+    while (isMemoryLow() && !this.startCancelled && Date.now() - startedAt < MEMORY_DEFER_CEILING_MS) {
+      this.emit('start-memory-deferred', { elapsedMs: Date.now() - startedAt })
+      await this.abortableSleep(MEMORY_DEFER_POLL_MS, signal)
+    }
+  }
+
+  /** Gate-fixes Low finding (cycle 2): a plain `setTimeout` sleep only noticed a cancel on its
+   * next tick, so `deferStartIfMemoryLow`'s poll could sit on an already-cancelled start for up
+   * to MEMORY_DEFER_POLL_MS. Resolves early the instant `signal` aborts instead.
+   * Executor form (not `Promise.withResolvers()`): see acquireStartSlot() in startQueue.ts for
+   * why -- same tsconfig.node.json `lib: ["ES2023"]` constraint. */
+  private abortableSleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal?.aborted) {
+        resolve()
+        return
+      }
+      const onAbort = (): void => {
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort)
+        resolve()
+      }, ms)
+      signal?.addEventListener('abort', onAbort, { once: true })
     })
   }
 
@@ -294,11 +518,28 @@ export class OmpProcess extends EventEmitter {
     }
   }
 
-  private buildStartFailure(reason: string): Error {
-    const tail = this.stderrTail.slice(-STDERR_FAILURE_TAIL_BYTES)
+  private async buildStartFailure(reason: string, ErrorClass: new (message: string) => Error = Error): Promise<Error> {
+    // Gate-fixes Medium/Low findings (cycle 2): redact BEFORE the final slice, not after -- a
+    // cut landing between "Bearer " and its token used to leave the token exposed with no
+    // prefix left for the pattern to match. Also drop a truncated tail's own leading partial
+    // line first (`stderrTruncated`, set by `onStderrData`'s sliding window): that fragment can
+    // carry a credential's tail end with no recognisable prefix of its own.
+    const stderrForRedaction = this.stderrTruncated ? this.stderrTail.replace(/^[^\n]*\n?/, '') : this.stderrTail
+    const tail = redactSecrets(stderrForRedaction).slice(-STDERR_FAILURE_TAIL_BYTES)
     const hint = this.lastSpawnError?.code === 'ENOENT' ? ' (omp not found on PATH; set ompPath)' : ''
     const stderrPart = tail ? `\n--- stderr tail ---\n${tail}` : ''
-    return new Error(`OmpProcess: ${reason}${hint}${stderrPart}`)
+    const pid = this.child?.pid
+    const spawnedAtMs = this.spawnedAtMs
+    // Issue #512 requirement 2: OMP logs to its own per-process file, not stderr, so the
+    // stderr tail alone rarely explains a slow or failed start; read that pid's own log tail.
+    // `spawnedAtMs` guards against a reused pid's older log being misattributed to this start.
+    const ompLogTailRaw =
+      typeof pid === 'number' && spawnedAtMs !== undefined
+        ? await tailOmpLogForPid(pid, OMP_LOG_TAIL_BYTES, spawnedAtMs).catch(() => undefined)
+        : undefined
+    const ompLogTail = ompLogTailRaw !== undefined ? redactSecrets(ompLogTailRaw) : undefined
+    const ompLogPart = ompLogTail ? `\n--- omp log tail (pid ${pid}) ---\n${ompLogTail}` : ''
+    return new ErrorClass(`OmpProcess: ${reason}${hint}${stderrPart}${ompLogPart}`)
   }
 
   private onStdoutData(chunk: Buffer): void {
@@ -321,6 +562,7 @@ export class OmpProcess extends EventEmitter {
     this.stderrBuf = Buffer.concat([this.stderrBuf, chunk])
     if (this.stderrBuf.length > STDERR_TAIL_BYTES) {
       this.stderrBuf = this.stderrBuf.subarray(this.stderrBuf.length - STDERR_TAIL_BYTES)
+      this.stderrTruncated = true
     }
   }
 

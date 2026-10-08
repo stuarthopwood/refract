@@ -80,6 +80,14 @@ export class SessionManager {
     for (const listener of this.listeners) listener(event);
   }
 
+  /** Returns the Session's `SessionAgent` if one already exists this run, without creating
+   * one. Issue #512 gate-fixes Medium finding: `keepWaitingForStart`/`cancelStart` only ever
+   * act on an agent that might be mid-start, so building a brand-new (never-started)
+   * `SessionAgent` just to perform a no-op on it, as `getOrCreateAgent` would, is pointless. */
+  getAgent(sessionId: string): SessionAgent | undefined {
+    return this.agents.get(sessionId);
+  }
+
   /** Returns the Session's `SessionAgent`, creating one (not yet started) on first access. */
   getOrCreateAgent(sessionId: string): SessionAgent {
     const existing = this.agents.get(sessionId);
@@ -190,6 +198,7 @@ export class SessionManager {
           status: runtime.status,
           stopReason: runtime.stopReason,
           terminatedUnexpectedly,
+          startProgress: runtime.startProgress,
           unread: runtime.unread,
           launchedMode: runtime.launchedMode,
           pendingMode: runtime.pendingMode,

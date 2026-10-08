@@ -231,12 +231,23 @@ export interface Registry {
 
 export type SessionStatus = 'idle' | 'working' | 'needs-you' | 'stopped';
 
+/** Issue #512 requirement 1: the staged ready-wait's live progress while a Session is starting,
+ * mirroring `OmpProcess`'s own `'start-progress'`/`'start-queued'`/`'start-memory-deferred'`
+ * events one-for-one. Absent once `start()` settles (success or failure) either way -- this is
+ * never a persisted Session state, only a transient overlay on top of `status`/`stopReason`. */
+export type SessionStartProgress =
+  | { kind: 'queued' }
+  | { kind: 'memory-deferred'; elapsedMs: number }
+  | { kind: 'waiting' | 'prompt' | 'extended'; elapsedMs: number };
+
 /** Held in memory: one per Session with a live or recently live agent. */
 export interface SessionRuntime {
   sessionId: string;
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   stopDetail?: string; // exit code, missing path, or setup message
+  /** Issue #512: set while a `start()`/`restart()` is in flight, cleared the instant it settles. */
+  startProgress?: SessionStartProgress;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null; // set while a mode change waits for idle
   unread: boolean;

@@ -31,6 +31,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { SessionDetailsCard } from './SessionDetailsCard'
+import { describeStartProgress } from './startProgressDisplay'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
@@ -349,16 +350,33 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-medium">{session.name}</span>
                     <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
-                    {/* Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): mirrors ChatPane's
-                        `showTerminatedTitle` -- `worktree-missing`/`start-failed` have their own
-                        dedicated reason text and actions, so this row must not also claim the
-                        session "Terminated unexpectedly" for those two reasons. */}
-                    {session.status === 'stopped' &&
+                    {session.startProgress ? (
+                      // Issue #512 requirement 1: the Session row's own "Starting agent... N s"
+                      // (the chat pane's banner carries the Keep waiting/Cancel buttons; this row
+                      // just needs the live text, shown instead of the stale "Terminated
+                      // unexpectedly" note underneath while a fresh start is already under way).
+                      // Gate-fixes a11y finding: this span sits inside the row's open `<button>`,
+                      // so a ticking visible name would re-speak the whole row every second while
+                      // it has focus. `aria-hidden` keeps the tick visible-only; the `sr-only`
+                      // sibling gives the button a static accessible name instead.
+                      <span className="truncate text-xs text-muted-foreground">
+                        <span aria-hidden>{describeStartProgress(session.startProgress)}</span>
+                        <span className="sr-only">
+                          {session.startProgress.kind === 'queued' ? 'Waiting to start' : 'Starting agent'}
+                        </span>
+                      </span>
+                    ) : (
+                      // Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): mirrors ChatPane's
+                      // `showTerminatedTitle` -- `worktree-missing`/`start-failed` have their own
+                      // dedicated reason text and actions, so this row must not also claim the
+                      // session "Terminated unexpectedly" for those two reasons.
+                      session.status === 'stopped' &&
                       session.terminatedUnexpectedly &&
                       session.stopReason !== 'worktree-missing' &&
                       session.stopReason !== 'start-failed' && (
                         <span className="truncate text-xs text-destructive">Terminated unexpectedly</span>
-                      )}
+                      )
+                    )}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
                   {session.unread && (

@@ -3,13 +3,14 @@
 // Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
+import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { cn } from '@/lib/utils'
 import { focusPaneContent, focusSessionsNav } from '@/lib/focus'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import {
   notify,
   useChatScrollStore,
@@ -25,6 +26,9 @@ import {
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { canResumeSession, resumeSession } from './resume'
 import { applySnapshot } from './applySnapshot'
+import { DEFAULT_RESUME_INSTRUCTION } from '../../../shared/model'
+import type { SessionStartProgress } from '../../../shared/model'
+import { describeStartProgress } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -38,6 +42,14 @@ interface StopInfo {
   terminatedUnexpectedly?: boolean
   pendingToolNames?: string[]
 }
+
+// Gate-fixes a11y Low finding (cycle 2): mirrors OmpProcess.ts's READY_CEILING_MS default so
+// "Keep waiting" can announce the time actually left instead of a flat, usually-wrong "3
+// minutes" (the ceiling counts from the wait's start, not from this click). Not wired to a
+// Settings override (OmpProcessOptions.readyCeilingMs) -- this is only an announcement nicety,
+// not a functional ceiling, so a mismatch here only makes the spoken estimate slightly off
+// rather than breaking the wait itself.
+const READY_CEILING_MS_FOR_ANNOUNCE = 180_000
 
 /** `SessionSummary` (the sessions-store list row) carries `status` but not `stopReason`/
  * `stopDetail` (only `SessionRuntimeView` does). This is the one place that tracks them for a
@@ -94,6 +106,42 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const closePane = useSplitStore((s) => s.closePane)
   const openInSplit = useSplitStore((s) => s.openInSplit)
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
+  // Issue #512: live while this pane's Session is starting; cleared the instant it settles
+  // (the same `onSessionStatus`/snapshot paths `stopInfo` already uses).
+  const [startProgress, setStartProgress] = useState<SessionStartProgress | undefined>(undefined)
+  // Gate-fixes a11y High finding (cycle 3): hoisted above the announcement effect below, which
+  // needs `showBanner` to gate its prompt-stage announcement. A Recover/Retry start reuses the
+  // OLD stopReason (SessionAgent only clears it on success), so `showBanner` used to stay true
+  // for the whole wait and the interactive start banner (Keep waiting/Cancel) never rendered --
+  // yet the announcement below still told screen-reader users to use controls that weren't
+  // there. A live start now takes priority over a stale failure banner (`!startProgress` first).
+  const effectiveStopReason = session ? (isPristine ? session.stopReason : stopInfo.reason) : undefined
+  const effectiveTerminatedUnexpectedly = session
+    ? isPristine
+      ? !!session.terminatedUnexpectedly
+      : !!stopInfo.terminatedUnexpectedly
+    : false
+  // `not-started` is idle-and-asleep, not an error (data-model.md) UNLESS the Conversation tail
+  // shows it died mid-turn, in which case it still needs a banner (just no Recover action yet --
+  // #509 adds the Resume button for exactly this case).
+  const showBanner =
+    !!session &&
+    !startProgress &&
+    session.status === 'stopped' &&
+    ((!!effectiveStopReason && effectiveStopReason !== 'not-started') || effectiveTerminatedUnexpectedly)
+  const [startAnnouncement, announceStart] = useClearedAnnouncement()
+  // Tracks the previous `startProgress.kind` (not just presence/absence) so the one-time
+  // announcement effect below can tell "a start just began" apart from "the wait just reached
+  // its prompt stage" -- two different messages, each announced exactly once.
+  const prevStartProgressKindRef = useRef<SessionStartProgress['kind'] | undefined>(undefined)
+  // Gate-fixes a11y finding: focuses the Cancel button once Keep waiting dismisses the prompt
+  // (the Keep waiting button itself unmounts, since it only renders in the 'prompt' stage).
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  // Gate-fixes a11y finding: Cancel's own IPC call resolves almost immediately, but the real
+  // state change (the start-failed banner replacing this one) arrives later via the live
+  // `onSessionStatus` event. Captured at click time, consumed by the `showBanner` effect below,
+  // same two-step pattern `handleRecover`/`handleStartNewConversation` use for their own buttons.
+  const cancelFocusPendingRef = useRef<{ focusedAtStart: Element | null; hadFocus: boolean } | null>(null)
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
   const [startingNewId, setStartingNewId] = useState<string | null>(null)
   const [resumingId, setResumingId] = useState<string | null>(null)
@@ -164,9 +212,43 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
             event.terminatedUnexpectedly ?? (event.status === 'stopped' ? prev.terminatedUnexpectedly : false),
           pendingToolNames: event.status === 'stopped' ? prev.pendingToolNames : undefined
         }))
+        setStartProgress(event.startProgress)
       }),
     []
   )
+
+  // Issue #512: a polite, one-time announcement for each of the two moments that matter (not
+  // re-announced on every per-second tick, which the elapsed-time text alone already shows
+  // visibly -- same "no aria-live region for the routine tick" rule ReadoutChips.tsx's clock
+  // follows for the same reason): the start beginning, and the wait reaching its 'prompt'
+  // stage (gate-fixes a11y finding: Keep waiting/Cancel appearing was previously silent).
+  // Gate-fixes a11y Low finding (cycle 3): remembers whether the in-flight attempt reached the
+  // 'prompt'/'extended' stage before it cleared, so the next "Starting agent for X" below can
+  // instead say a retry is under way -- otherwise the automatic ceiling retry re-announces a
+  // plain "Starting agent for X" with no sign the previous attempt timed out first.
+  const hadReachedPromptRef = useRef(false)
+  useEffect(() => {
+    const previousKind = prevStartProgressKindRef.current
+    if (startProgress?.kind === 'prompt' || startProgress?.kind === 'extended') {
+      hadReachedPromptRef.current = true
+    }
+    if (session && startProgress && previousKind === undefined) {
+      if (hadReachedPromptRef.current) {
+        announceStart(`Retrying start for ${session.name}`)
+        hadReachedPromptRef.current = false
+      } else {
+        announceStart(`Starting agent for ${session.name}`)
+      }
+    } else if (session && !showBanner && startProgress?.kind === 'prompt' && previousKind !== 'prompt') {
+      // Gate-fixes a11y High finding (cycle 3): only announce "Keep waiting or cancel" when the
+      // interactive banner offering them is actually about to render (`!showBanner`) -- a
+      // Recover/Retry start used to announce this while the stale failure banner still hid it.
+      announceStart(
+        `${session.name} is still starting after ${Math.round(startProgress.elapsedMs / 1000)} seconds. Keep waiting or cancel.`
+      )
+    }
+    prevStartProgressKindRef.current = startProgress?.kind
+  }, [startProgress, session, announceStart, showBanner])
 
   // Asks for a full snapshot whenever this pane's Session changes (contracts/ipc.md: "the
   // renderer ... asks for a full snapshot via sessions.open when it switches"). Also covers the
@@ -178,6 +260,15 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   useEffect(() => {
     if (isPristine) return
     setStopInfo({})
+    setStartProgress(undefined)
+    // Gate-fixes a11y Low finding (cycle 2): a cancelFocusPendingRef left over from a Cancel
+    // click in the PREVIOUS Session shown in this pane must never move focus later for an
+    // unrelated banner in this new one.
+    cancelFocusPendingRef.current = null
+    // Gate-fixes a11y Low finding (cycle 4): hadReachedPromptRef must not survive a Session
+    // switch either -- otherwise an unrelated Session's first start in this pane could be
+    // misannounced as "Retrying start for X".
+    hadReachedPromptRef.current = false
     let cancelled = false
     void (async () => {
       try {
@@ -190,6 +281,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           terminatedUnexpectedly: snapshot.runtime.terminatedUnexpectedly,
           pendingToolNames: snapshot.runtime.pendingToolNames
         })
+        setStartProgress(snapshot.runtime.startProgress)
         // `commands:update` only pushes on the next `available_commands_update` frame from
         // OMP (SessionAgent.ts), which may not arrive again for a Session that was already
         // running before this pane (re)mounted -- e.g. a warm switch back, or a renderer
@@ -260,6 +352,77 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     focusPaneContent(chatPaneRef.current)
   }, [isFocused, isSplit, focusMoveSignal])
 
+  // Gate-fixes a11y finding: restores focus after Cancel (issue #512) the same way
+  // `handleRecover`/`handleStartNewConversation` already do for their own buttons -- the start
+  // banner (with the focused Cancel button) unmounts the instant `showBanner` flips true, so
+  // without this, focus would otherwise silently fall back to <body>.
+  // Gate-fixes CRITICAL finding (cycle 4): these three effects (and the ref below) used to sit
+  // AFTER the `if (!session) return` early return further down -- a Rules-of-Hooks violation.
+  // Every render that takes the early-return branch (the open Session vanishing: delete, or a
+  // pane mounting ahead of the store) called fewer hooks than the branch that doesn't, which
+  // React reports as "Rendered fewer/more hooks than expected" and can crash the renderer.
+  // Moved above the early return; `showBanner`, `startProgress` and `session` are all already
+  // defined above this point, and `showBanner`/`startProgress` are both already falsy/undefined
+  // whenever `session` is missing, so no behaviour changes for the `!session` render.
+  useEffect(() => {
+    if (!showBanner) return
+    const pending = cancelFocusPendingRef.current
+    if (!pending) return
+    cancelFocusPendingRef.current = null
+    if (!pending.hadFocus) return
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (stranded) focusPaneContent(chatPaneRef.current)
+    })
+  }, [showBanner])
+  // Gate-fixes a11y Medium finding (cycle 2): the effect above only restores focus once
+  // `showBanner` turns true (the Cancel path). Two other paths remove the interactive start
+  // banner (the one with Keep waiting/Cancel, 'prompt'/'extended') while it can still hold
+  // focus, without ever setting `showBanner`: the agent becoming ready, and the ceiling's
+  // automatic retry (both just clear `startProgress`, SessionAgent.ts). Tracks whether the
+  // interactive banner was showing the PREVIOUS render so this only fires on the transition away
+  // from it; `stranded` below already covers "focus was never in the banner to begin with" and
+  // "the user moved focus elsewhere on their own" -- both leave `document.activeElement`
+  // un-stranded, so this never steals focus from somewhere the user put it deliberately.
+  const prevInteractiveBannerRef = useRef(false)
+  useEffect(() => {
+    const wasInteractive = prevInteractiveBannerRef.current
+    const isInteractive = !showBanner && (startProgress?.kind === 'prompt' || startProgress?.kind === 'extended')
+    prevInteractiveBannerRef.current = isInteractive
+    // Gate-fixes a11y Medium finding (cycle 4): dropped the `|| showBanner` exclusion this guard
+    // used to have. On the Recover/Retry path, the OLD stopReason is still set, so the instant
+    // the ceiling's automatic retry clears `startProgress`, `showBanner` flips true immediately
+    // (the old failure reason, not a fresh one) -- the exclusion skipped this effect entirely in
+    // exactly that case, stranding focus on <body> for the whole second attempt. The Cancel path
+    // below is unaffected: `cancelFocusPendingRef.current` (checked next) is still set then, so
+    // this still defers to the `showBanner` effect above for that case specifically.
+    if (!wasInteractive || isInteractive) return
+    // Gate-fixes a11y High finding (cycle 3): a pending Cancel (`handleCancelStart`'s own
+    // `cancelFocusPendingRef`) must be LEFT for the `showBanner` effect above to consume once the
+    // start-failed event actually arrives, not cleared here. SessionAgent sends two separate
+    // status events for a cancelled start -- `startProgress` cleared first, then `stopReason:
+    // 'start-failed'` moments later once `proc.stop()` finishes -- and this effect's own
+    // interactive-to-none transition fires on the FIRST one. Clearing or consuming the pending
+    // record here (as cycle 2 did) left focus on whatever this effect restored to instead (the
+    // textarea, briefly, before it goes disabled again), and the later `showBanner` effect then
+    // found nothing left to act on.
+    if (cancelFocusPendingRef.current) return
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (stranded) focusPaneContent(chatPaneRef.current)
+    })
+  }, [startProgress?.kind, showBanner])
+  // Gate-fixes a11y High finding (cycle 3): the one genuinely stale case the effect above used to
+  // clear inline -- `cancelStart()` resolved ok but did nothing because the start had already
+  // succeeded -- is still cleared, just separately and only once the Session actually leaves
+  // 'stopped' (a successful start): nothing will ever land on a start-failed banner after that,
+  // so any pending cancel record left over is unreachable and must not move focus later.
+  useEffect(() => {
+    if (session?.status !== 'stopped') cancelFocusPendingRef.current = null
+  }, [session?.status])
+
   if (!session) {
     // Quality-gate remediation (code-reviewer/ui-architect, Medium): same fix as App.tsx's own
     // no-pane-open empty state -- `[container-type:size]` makes this root (not the window) the
@@ -288,19 +451,16 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // EXPLICIT 'not-started' stopReason, not undefined, so derive it from the Session's own
   // already-known SessionSummary (main's sessions.list() already reports 'not-started' for any
   // session with no live runtime this run) while pristine, instead of the live-fetched value.
-  const effectiveStopReason = isPristine ? session.stopReason : stopInfo.reason
+  // (`effectiveStopReason`, `effectiveTerminatedUnexpectedly` and `showBanner` itself are
+  // computed earlier, above, where the announcement effect needs them too.)
   const effectiveStopDetail = isPristine ? undefined : stopInfo.detail
   // Issue #510 slice 2 (PLAN.md row A0): independent of `effectiveStopReason` -- this is what
   // still flags a Session reopened after a Refract crash, which only ever carries `stopReason:
-  // 'not-started'` (no live `onExit` ever ran this run to set `agent-exited`).
-  const effectiveTerminatedUnexpectedly = isPristine ? !!session.terminatedUnexpectedly : !!stopInfo.terminatedUnexpectedly
+  // 'not-started'` (no live `onExit` ever ran this run to set `agent-exited`). (`
+  // effectiveTerminatedUnexpectedly`/`effectiveStopReason`/`showBanner` are all computed
+  // earlier, above -- see that comment -- so only `effectivePendingToolNames` and
+  // `showTerminatedTitle` are new here.)
   const effectivePendingToolNames = isPristine ? undefined : stopInfo.pendingToolNames
-  // `not-started` is idle-and-asleep, not an error (data-model.md) UNLESS the Conversation tail
-  // shows it died mid-turn, in which case it still needs a banner (just no Recover action yet --
-  // #509 adds the Resume button for exactly this case).
-  const showBanner =
-    session.status === 'stopped' &&
-    ((!!effectiveStopReason && effectiveStopReason !== 'not-started') || effectiveTerminatedUnexpectedly)
   // Quality-gate fix (a11y, Medium, 2026-10-08): `worktree-missing`/`start-failed` have their own
   // dedicated actions below (Recreate/Archive/Delete, Retry/Start new) that have nothing to do
   // with a Resume instruction, so the title must keep naming THAT real reason even when the tail
@@ -352,6 +512,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
         pendingToolNames: result.value.runtime.pendingToolNames
       })
+      setStartProgress(result.value.runtime.startProgress)
     }
     // The banner (and its focused Recover/Retry button) unmounts once the snapshot clears the
     // stop reason, dropping focus to <body>. Waits one frame for the fresh content (textarea or
@@ -462,6 +623,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
         pendingToolNames: result.value.runtime.pendingToolNames
       })
+      setStartProgress(result.value.runtime.startProgress)
     }
     requestAnimationFrame(maybeRestoreFocus)
   }
@@ -469,6 +631,62 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   async function handleRecreateWorktree() {
     const result = await window.refract.sessions.recreateWorktree(sessionId)
     if (!result.ok) notify(result.error)
+  }
+
+  // Issue #512's "Keep waiting"/"Cancel" buttons: fire-and-forget IPC. Neither needs a local
+  // optimistic update for the TEXT -- the live `onSessionStatus` subscription above already
+  // reflects the outcome (a dismissed prompt, or the failure banner once cancelStart() fails
+  // the wait) the instant main processes it -- but each needs its own focus/announcement
+  // follow-up (gate-fixes a11y findings), which the live event alone cannot drive.
+  async function handleKeepWaitingForStart() {
+    const focusedAtStart = document.activeElement
+    const startedForSessionId = sessionId
+    // Gate-fixes a11y Low finding (cycle 3): `keepWaiting()` is a documented no-op outside the
+    // 'prompt' stage (readyWait.ts) -- announcing "Keep waiting" when it did nothing is
+    // misleading, so both the elapsed time and whether to announce at all are captured here, at
+    // click time, not read again after the IPC await below.
+    const wasPrompt = startProgress?.kind === 'prompt'
+    const elapsedMsAtClick = wasPrompt && startProgress ? startProgress.elapsedMs : 0
+    const result = await window.refract.sessions.keepWaitingForStart(sessionId)
+    if (!result.ok) {
+      notify(result.error)
+      return
+    }
+    // Gate-fixes a11y Low finding (cycle 3): the pane may have switched to a different Session
+    // during the IPC await; a stale announcement/focus-move for the Session this click was for
+    // must never land on whatever Session is shown now.
+    if (sessionIdRef.current !== startedForSessionId) return
+    if (!wasPrompt) return
+    // Gate-fixes a11y Low finding (cycle 2): "up to 3 minutes" was wrong once the prompt stage
+    // (60s in) had already been reached -- the ceiling counts from the wait's START, not from
+    // this click, so only the time actually left is accurate.
+    const minutesLeft = Math.max(1, Math.round((READY_CEILING_MS_FOR_ANNOUNCE - elapsedMsAtClick) / 60_000))
+    announceStart(`Keep waiting: about ${minutesLeft} more minute${minutesLeft === 1 ? '' : 's'}`)
+    // The Keep waiting button itself unmounts once the stage moves to 'extended' (it only
+    // renders in 'prompt'); focus moves to the remaining Cancel button instead of falling back
+    // to <body> -- but only if focus is still where this click left it (gate-fixes a11y Low
+    // finding, cycle 2: the user may have moved focus elsewhere during the IPC await).
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      const stillOnOriginal = active === focusedAtStart
+      const stuck = !active || active === document.body || !active.isConnected
+      if (stillOnOriginal || stuck) {
+        cancelButtonRef.current?.focus()
+      }
+    })
+  }
+
+  async function handleCancelStart() {
+    const focusedAtStart = document.activeElement
+    cancelFocusPendingRef.current = {
+      focusedAtStart,
+      hadFocus: !!chatPaneRef.current?.contains(focusedAtStart)
+    }
+    const result = await window.refract.sessions.cancelStart(sessionId)
+    if (!result.ok) {
+      cancelFocusPendingRef.current = null
+      notify(result.error)
+    }
   }
 
   async function handleArchive() {
@@ -556,6 +774,50 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
             Starting new conversation…
           </>
         )}
+      </div>
+      {!showBanner && startProgress && (
+        <div data-pane-banner className="shrink-0 px-4 pt-3">
+          {/* Gate-fixes a11y High finding: `role="status"` made the whole banner an implicit
+              polite live region, so a screen reader re-read the ticking "N s" title every
+              second for up to 180s. `role="group"` plus a static `aria-label` keeps this an
+              ordinary (non-live) landmark; the only announcing channel is the separate
+              `startAnnouncement` region below, fired exactly twice (start begins, prompt
+              reached), never per-tick. */}
+          <Alert role="group" aria-label="Agent start">
+            <LoaderCircleIcon aria-hidden className="animate-spin" />
+            <AlertTitle>
+              {/* Gate-fixes a11y Low finding (cycle 2): same kind-based static label as the
+                  Session row (SessionList.tsx), instead of always "Starting agent" even while
+                  'queued'/'memory-deferred', whose visible text reads otherwise. */}
+              <span className="sr-only">{startProgress.kind === 'queued' ? 'Waiting to start' : 'Starting agent'}</span>
+              <span aria-hidden>{describeStartProgress(startProgress)}</span>
+            </AlertTitle>
+            {(startProgress.kind === 'prompt' || startProgress.kind === 'extended') && (
+              <>
+                <AlertDescription>
+                  {/* Gate-fixes a11y Low finding (cycle 2): the 'extended' stage has no Keep
+                      waiting button, so its description must not still offer one. */}
+                  {startProgress.kind === 'prompt'
+                    ? 'Still starting. Keep waiting, or cancel?'
+                    : 'Still starting. Cancel to stop waiting.'}
+                </AlertDescription>
+                <div className="col-start-2 mt-2 flex gap-2">
+                  {startProgress.kind === 'prompt' && (
+                    <Button size="sm" variant="outline" onClick={() => void handleKeepWaitingForStart()}>
+                      Keep waiting
+                    </Button>
+                  )}
+                  <Button ref={cancelButtonRef} size="sm" variant="outline" onClick={() => void handleCancelStart()}>
+                    Cancel
+                  </Button>
+                </div>
+              </>
+            )}
+          </Alert>
+        </div>
+      )}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {startAnnouncement}
       </div>
       {showBanner && (
         <div data-pane-banner className="shrink-0 px-4 pt-3">
