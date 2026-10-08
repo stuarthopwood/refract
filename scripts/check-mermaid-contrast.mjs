@@ -65,33 +65,33 @@ const repoRoot = path.resolve(__dirname, '..')
 // gained an active+crit combined overflowing row.)
 
 const DIAGRAMS = {
- flowchart: `flowchart TD\n  A[Start] --> B{Decision}\n  B -->|Yes| C[Do thing]\n  B -->|No| D[Other thing]\n`,
- sequence: `sequenceDiagram\n  participant Alice\n  participant Bob\n  Alice->>Bob: Hello\n  Note over Alice,Bob: a note\n  Bob-->>Alice: Hi\n`,
- er: `erDiagram\n  CUSTOMER {\n    string name\n    string id\n    string email\n  }\n  CUSTOMER ||--o{ ORDER : places\n`,
- // Round 5: `excludes` moved off `weekends` onto two specific dates (2024-02-10/11) that fall
- // only within the Inside section's long, non-overflowing bars, not anywhere near the Overflow
- // section's deliberately long overflow labels -- `excludes weekends` recurs every 7 days, which
- // a ~230px-wide overflow label (spanning multiple day-columns) is geometrically guaranteed to
- // cross for at least one of the five Overflow tasks regardless of start date, compositing the
- // exclude-range band's own fill UNDER the alternating section-row stripe at that exact pixel --
- // a real, measured, but purely coincidental LAYOUT collision between two unrelated decorative
- // bands, not a theme-colour defect (Mermaid attaches no CSS class either one could target based
- // on what it happens to visually overlap). The dedicated `.exclude-range vs background` check
- // below still exercises the same real rendered band/colour either way. Round 6: `i1`-`i3` (the
- // Inside section's short-label-on-long-bar tasks) are also made clickable, via `click <id> href
- // "<url>"` -- these are the ONLY tasks whose rendered label sits fully INSIDE its own done/
- // active/crit bar (the Overflow section's labels are deliberately long enough to always spill
- // OUTSIDE their bar instead, a different Mermaid CSS codepath -- see this file's own header
- // comment), so this is what actually exercises `.taskText.clickable.activeText*`/
- // `.taskText.clickable.activeCritText*` (round 6's High fix) rather than just `.doneText*`
- // (round 5's fix, the only one the Overflow section's own clickable-free fixture ever reached).
- gantt: `gantt\n  title A Gantt Diagram\n  dateFormat YYYY-MM-DD\n  excludes 2024-02-10,2024-02-11\n  section Overflow\n  Done task with a very long label that overflows :done, o1, 2024-01-08, 1d\n  Active task with a very long label that overflows :active, o2, after o1, 1d\n  Critical task with a very long label that overflows :crit, o3, after o2, 1d\n  Active critical task with a very long label that overflows :active, crit, o3b, after o3, 1d\n  Future task with a very long label that overflows :o4, after o3b, 1d\n  section Inside\n  Done :done, i1, 2024-02-01, 20d\n  Active :active, i2, after i1, 20d\n  Crit :crit, i3, after i2, 20d\n  click i1 href "about:blank"\n  click i2 href "about:blank"\n  click i3 href "about:blank"\n`,
- pie: `pie title Twelve\n${Array.from({ length: 12 }, (_, i) => `  "S${i}" : ${i + 1}`).join('\n')}\n`,
- mindmap: `mindmap\n  root((Root))\n${Array.from({ length: 11 }, (_, i) => `    B${i}`).join('\n')}\n`,
- xychart: `xychart-beta\n  title "Sales"\n  x-axis [jan, feb, mar, apr]\n  y-axis "Revenue" 0 --> 100\n  bar [20, 40, 60, 80]\n  line [10, 30, 50, 70]\n`,
- timeline: `timeline\n  title Multi-section\n${Array.from({ length: 12 }, (_, i) => `  section S${i}\n    Y${2000 + i} : E${i}`).join('\n')}\n`,
- journey: `journey\n  title My day\n  section Morning\n    Wake up: 5: Me\n    Coffee: 3: Me\n  section Evening\n    Sleep: 4: Me\n`,
- gitGraph: `gitGraph\n  commit\n${Array.from({ length: 7 }, (_, i) => `  branch b${i}\n  checkout b${i}\n  commit`).join('\n')}\n  checkout main\n  merge b0\n`
+  flowchart: `flowchart TD\n  A[Start] --> B{Decision}\n  B -->|Yes| C[Do thing]\n  B -->|No| D[Other thing]\n`,
+  sequence: `sequenceDiagram\n  participant Alice\n  participant Bob\n  Alice->>Bob: Hello\n  Note over Alice,Bob: a note\n  Bob-->>Alice: Hi\n`,
+  er: `erDiagram\n  CUSTOMER {\n    string name\n    string id\n    string email\n  }\n  CUSTOMER ||--o{ ORDER : places\n`,
+  // Round 5: `excludes` moved off `weekends` onto two specific dates (2024-02-10/11) that fall
+  // only within the Inside section's long, non-overflowing bars, not anywhere near the Overflow
+  // section's deliberately long overflow labels -- `excludes weekends` recurs every 7 days, which
+  // a ~230px-wide overflow label (spanning multiple day-columns) is geometrically guaranteed to
+  // cross for at least one of the five Overflow tasks regardless of start date, compositing the
+  // exclude-range band's own fill UNDER the alternating section-row stripe at that exact pixel --
+  // a real, measured, but purely coincidental LAYOUT collision between two unrelated decorative
+  // bands, not a theme-colour defect (Mermaid attaches no CSS class either one could target based
+  // on what it happens to visually overlap). The dedicated `.exclude-range vs background` check
+  // below still exercises the same real rendered band/colour either way. Round 6: `i1`-`i3` (the
+  // Inside section's short-label-on-long-bar tasks) are also made clickable, via `click <id> href
+  // "<url>"` -- these are the ONLY tasks whose rendered label sits fully INSIDE its own done/
+  // active/crit bar (the Overflow section's labels are deliberately long enough to always spill
+  // OUTSIDE their bar instead, a different Mermaid CSS codepath -- see this file's own header
+  // comment), so this is what actually exercises `.taskText.clickable.activeText*`/
+  // `.taskText.clickable.activeCritText*` (round 6's High fix) rather than just `.doneText*`
+  // (round 5's fix, the only one the Overflow section's own clickable-free fixture ever reached).
+  gantt: `gantt\n  title A Gantt Diagram\n  dateFormat YYYY-MM-DD\n  excludes 2024-02-10,2024-02-11\n  section Overflow\n  Done task with a very long label that overflows :done, o1, 2024-01-08, 1d\n  Active task with a very long label that overflows :active, o2, after o1, 1d\n  Critical task with a very long label that overflows :crit, o3, after o2, 1d\n  Active critical task with a very long label that overflows :active, crit, o3b, after o3, 1d\n  Future task with a very long label that overflows :o4, after o3b, 1d\n  section Inside\n  Done :done, i1, 2024-02-01, 20d\n  Active :active, i2, after i1, 20d\n  Crit :crit, i3, after i2, 20d\n  click i1 href "about:blank"\n  click i2 href "about:blank"\n  click i3 href "about:blank"\n`,
+  pie: `pie title Twelve\n${Array.from({ length: 12 }, (_, i) => `  "S${i}" : ${i + 1}`).join('\n')}\n`,
+  mindmap: `mindmap\n  root((Root))\n${Array.from({ length: 11 }, (_, i) => `    B${i}`).join('\n')}\n`,
+  xychart: `xychart-beta\n  title "Sales"\n  x-axis [jan, feb, mar, apr]\n  y-axis "Revenue" 0 --> 100\n  bar [20, 40, 60, 80]\n  line [10, 30, 50, 70]\n`,
+  timeline: `timeline\n  title Multi-section\n${Array.from({ length: 12 }, (_, i) => `  section S${i}\n    Y${2000 + i} : E${i}`).join('\n')}\n`,
+  journey: `journey\n  title My day\n  section Morning\n    Wake up: 5: Me\n    Coffee: 3: Me\n  section Evening\n    Sleep: 4: Me\n`,
+  gitGraph: `gitGraph\n  commit\n${Array.from({ length: 7 }, (_, i) => `  branch b${i}\n  checkout b${i}\n  commit`).join('\n')}\n  checkout main\n  merge b0\n`
 }
 
 // ---- per-diagram-type minimum resolved-check counts: an actual count BELOW this is a hard
@@ -101,16 +101,16 @@ const DIAGRAMS = {
 // minimum. -------------------------------------------------------------------------------------
 
 const MIN_CHECKS_PER_DIAGRAM = {
- flowchart: 2,
- sequence: 2,
- er: 1,
- gantt: 10,
- pie: 24, // 12 slices x (% label text, stroke vs fill) + 12 shape-vs-background
- mindmap: 11, // section--1 (root) through section-9 label text, at minimum
- xychart: 2,
- timeline: 12, // >=1 label/connector check per section, 12 sections
- journey: 4,
- gitGraph: 8 // >=1 branch-label check per branch, 8 branches
+  flowchart: 2,
+  sequence: 2,
+  er: 1,
+  gantt: 10,
+  pie: 24, // 12 slices x (% label text, stroke vs fill) + 12 shape-vs-background
+  mindmap: 11, // section--1 (root) through section-9 label text, at minimum
+  xychart: 2,
+  timeline: 12, // >=1 label/connector check per section, 12 sections
+  journey: 4,
+  gitGraph: 8 // >=1 branch-label check per branch, 8 branches
 }
 
 // ---- real `--card` surface colour per theme, parsed straight from the same CSS tokens
@@ -128,29 +128,29 @@ const MIN_CHECKS_PER_DIAGRAM = {
 // against the surface it is ACTUALLY painted on in the app, not an adjacent Mermaid-internal
 // approximation of it.
 function oklabToLinearSrgb(L, a, b) {
- const l_ = L + 0.3963377774 * a + 0.2158037573 * b
- const m_ = L - 0.1055613458 * a - 0.0638541728 * b
- const s_ = L - 0.0894841775 * a - 1.2914855480 * b
- const l = l_ * l_ * l_
- const m = m_ * m_ * m_
- const s = s_ * s_ * s_
- return [
-  +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-  -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-  -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
- ]
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b
+  const l = l_ * l_ * l_
+  const m = m_ * m_ * m_
+  const s = s_ * s_ * s_
+  return [
+    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+  ]
 }
 function oklchToLinearSrgb(L, C, Hdeg) {
- const hRad = (Hdeg * Math.PI) / 180
- return oklabToLinearSrgb(L, C * Math.cos(hRad), C * Math.sin(hRad))
+  const hRad = (Hdeg * Math.PI) / 180
+  return oklabToLinearSrgb(L, C * Math.cos(hRad), C * Math.sin(hRad))
 }
 function srgbGammaEncode(c) {
- const clamped = Math.min(1, Math.max(0, c))
- return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
+  const clamped = Math.min(1, Math.max(0, c))
+  return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
 }
 function linearToHex([r, g, b]) {
- const toByte = (c) => Math.round(srgbGammaEncode(c) * 255)
- return '#' + [r, g, b].map((c) => toByte(c).toString(16).padStart(2, '0')).join('')
+  const toByte = (c) => Math.round(srgbGammaEncode(c) * 255)
+  return '#' + [r, g, b].map((c) => toByte(c).toString(16).padStart(2, '0')).join('')
 }
 
 const globalsCssPath = path.join(repoRoot, 'src/renderer/styles/globals.css')
@@ -158,13 +158,13 @@ const globalsCss = readFileSync(globalsCssPath, 'utf-8')
 const OKLCH_RE = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%)?\s*\)$/i
 const realCardColors = {}
 for (const blockMatch of globalsCss.matchAll(/\.theme-([a-z0-9-]+)\s*\{([^}]*)\}/g)) {
- const themeId = blockMatch[1]
- const cardMatch = blockMatch[2].match(/--card:\s*([^;]+);/i)
- if (!cardMatch) continue
- const oklchMatch = cardMatch[1].trim().match(OKLCH_RE)
- if (!oklchMatch) continue
- const [, L, C, H] = oklchMatch
- realCardColors[themeId] = linearToHex(oklchToLinearSrgb(Number(L), Number(C), Number(H)))
+  const themeId = blockMatch[1]
+  const cardMatch = blockMatch[2].match(/--card:\s*([^;]+);/i)
+  if (!cardMatch) continue
+  const oklchMatch = cardMatch[1].trim().match(OKLCH_RE)
+  if (!oklchMatch) continue
+  const [, L, C, H] = oklchMatch
+  realCardColors[themeId] = linearToHex(oklchToLinearSrgb(Number(L), Number(C), Number(H)))
 }
 
 // ---- stage a scratch dir: harness HTML (imports the real installed mermaid package and this
@@ -173,15 +173,15 @@ for (const blockMatch of globalsCss.matchAll(/\.theme-([a-z0-9-]+)\s*\{([^}]*)\}
 
 const workDir = mkdtempSync(path.join(tmpdir(), 'pinion-mermaid-contrast-'))
 try {
- const mermaidEntry = pathToFileURL(
-  path.join(repoRoot, 'node_modules/mermaid/dist/mermaid.esm.min.mjs')
- ).href
+  const mermaidEntry = pathToFileURL(
+    path.join(repoRoot, 'node_modules/mermaid/dist/mermaid.esm.min.mjs')
+  ).href
 
- cpSync(path.join(__dirname, 'mermaid-contrast-measure.mjs'), path.join(workDir, 'mermaid-contrast-measure.mjs'))
+  cpSync(path.join(__dirname, 'mermaid-contrast-measure.mjs'), path.join(workDir, 'mermaid-contrast-measure.mjs'))
 
- writeFileSync(
-  path.join(workDir, 'harness.html'),
-  `<!DOCTYPE html><html><body><script type="module">
+  writeFileSync(
+    path.join(workDir, 'harness.html'),
+    `<!DOCTYPE html><html><body><script type="module">
 import mermaid from '${mermaidEntry}'
 import { prepare, hideGlyphs, cleanup } from './mermaid-contrast-measure.mjs'
 window.__mermaid = mermaid
@@ -190,29 +190,29 @@ window.__hideGlyphs = hideGlyphs
 window.__cleanup = cleanup
 window.__ready = true
 </script></body></html>`
- )
+  )
 
- // Import the app's own real theme-variable AND themeCSS source (src/shared/mermaidTheme.ts) with
- // Node's built-in TypeScript support: copied to a `.mts` path so Node treats it as ESM+TS
- // regardless of this package's own `"type": "commonjs"`. This is the SAME module Markdown.tsx's
- // `MermaidBlock` imports -- not a hand-copied duplicate that could silently drift from it.
- const tsSourcePath = path.join(repoRoot, 'src/shared/mermaidTheme.ts')
- const mtsPath = path.join(workDir, 'mermaidTheme.mts')
- cpSync(tsSourcePath, mtsPath)
- const { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } = await import(pathToFileURL(mtsPath).href)
+  // Import the app's own real theme-variable AND themeCSS source (src/shared/mermaidTheme.ts) with
+  // Node's built-in TypeScript support: copied to a `.mts` path so Node treats it as ESM+TS
+  // regardless of this package's own `"type": "commonjs"`. This is the SAME module Markdown.tsx's
+  // `MermaidBlock` imports -- not a hand-copied duplicate that could silently drift from it.
+  const tsSourcePath = path.join(repoRoot, 'src/shared/mermaidTheme.ts')
+  const mtsPath = path.join(workDir, 'mermaidTheme.mts')
+  cpSync(tsSourcePath, mtsPath)
+  const { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } = await import(pathToFileURL(mtsPath).href)
 
- const themeCSSByTheme = Object.fromEntries(
-  Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(themeId)])
- )
+  const themeCSSByTheme = Object.fromEntries(
+    Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(themeId)])
+  )
 
- // Quality-gate remediation (round 6): `force-device-scale-factor=1` makes every CSS pixel this
- // harness measures (`getBoundingClientRect`, `window.innerWidth`/`innerHeight`) map 1:1 onto the
- // real pixel buffer `webContents.capturePage()` returns below, regardless of this host's own OS
- // display-scaling setting -- verified against a real capture (red square at a known CSS rect
- // landed at the identical pixel offset in the captured bitmap, with `image.getSize()` matching
- // `window.innerWidth`/`innerHeight` exactly) before relying on it for the per-pixel glyph/
- // background diffing `measureTextFromScreenshots` below performs.
- const mainScript = `
+  // Quality-gate remediation (round 6): `force-device-scale-factor=1` makes every CSS pixel this
+  // harness measures (`getBoundingClientRect`, `window.innerWidth`/`innerHeight`) map 1:1 onto the
+  // real pixel buffer `webContents.capturePage()` returns below, regardless of this host's own OS
+  // display-scaling setting -- verified against a real capture (red square at a known CSS rect
+  // landed at the identical pixel offset in the captured bitmap, with `image.getSize()` matching
+  // `window.innerWidth`/`innerHeight` exactly) before relying on it for the per-pixel glyph/
+  // background diffing `measureTextFromScreenshots` below performs.
+  const mainScript = `
 const { app, BrowserWindow } = require('electron')
 const fs = require('fs')
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
@@ -376,75 +376,75 @@ async function main() {
 }
 app.whenReady().then(main)
 `
- const mainPath = path.join(workDir, 'main.js')
- writeFileSync(mainPath, mainScript)
+  const mainPath = path.join(workDir, 'main.js')
+  writeFileSync(mainPath, mainScript)
 
- // `require('electron')` resolves to the real electron.exe path on disk (works cross-platform
- // without a shell, unlike the node_modules/.bin/electron.cmd shim).
- const electronBin = (await import('electron')).default
- await execFileAsync(electronBin, [mainPath, '--no-sandbox'], { cwd: repoRoot, timeout: 90_000 })
+  // `require('electron')` resolves to the real electron.exe path on disk (works cross-platform
+  // without a shell, unlike the node_modules/.bin/electron.cmd shim).
+  const electronBin = (await import('electron')).default
+  await execFileAsync(electronBin, [mainPath, '--no-sandbox'], { cwd: repoRoot, timeout: 90_000 })
 
- const results = JSON.parse(readFileSync(path.join(workDir, 'results.json'), 'utf-8'))
+  const results = JSON.parse(readFileSync(path.join(workDir, 'results.json'), 'utf-8'))
 
- // ---- assemble the check table + MIN_CHECKS_PER_DIAGRAM gate ---------------------------------
+  // ---- assemble the check table + MIN_CHECKS_PER_DIAGRAM gate ---------------------------------
 
- const rows = []
- let failCount = 0
+  const rows = []
+  let failCount = 0
 
- for (const [themeId, diagrams] of Object.entries(results)) {
-  for (const [diagramType, result] of Object.entries(diagrams)) {
-   if (!result.ok) {
-    rows.push({ themeId, diagramType, label: 'render', ratio: null, min: null, pass: false, note: result.error })
-    failCount++
-    continue
-   }
-   for (const check of result.checks) {
-    rows.push({ themeId, diagramType, label: check.label, ratio: check.ratio, min: check.min, pass: check.pass, note: check.note })
-    if (!check.pass) failCount++
-   }
-   const expected = MIN_CHECKS_PER_DIAGRAM[diagramType] ?? 1
-   const actual = result.checks.length
-   if (actual < expected) {
-    rows.push({
-     themeId,
-     diagramType,
-     label: 'insufficient checks resolved',
-     ratio: null,
-     min: null,
-     pass: false,
-     note: `expected >=${expected}, resolved ${actual} -- a selector likely stopped matching Mermaid's rendered markup`
-    })
-    failCount++
-   }
+  for (const [themeId, diagrams] of Object.entries(results)) {
+    for (const [diagramType, result] of Object.entries(diagrams)) {
+      if (!result.ok) {
+        rows.push({ themeId, diagramType, label: 'render', ratio: null, min: null, pass: false, note: result.error })
+        failCount++
+        continue
+      }
+      for (const check of result.checks) {
+        rows.push({ themeId, diagramType, label: check.label, ratio: check.ratio, min: check.min, pass: check.pass, note: check.note })
+        if (!check.pass) failCount++
+      }
+      const expected = MIN_CHECKS_PER_DIAGRAM[diagramType] ?? 1
+      const actual = result.checks.length
+      if (actual < expected) {
+        rows.push({
+          themeId,
+          diagramType,
+          label: 'insufficient checks resolved',
+          ratio: null,
+          min: null,
+          pass: false,
+          note: `expected >=${expected}, resolved ${actual} -- a selector likely stopped matching Mermaid's rendered markup`
+        })
+        failCount++
+      }
+    }
   }
- }
 
- // ---- print the table -------------------------------------------------------------------------
+  // ---- print the table -------------------------------------------------------------------------
 
- const header = ['theme', 'diagram', 'check', 'ratio', 'min', 'result']
- const widths = [18, 10, 50, 8, 5, 6]
- const row = (cells) => cells.map((c, i) => String(c).padEnd(widths[i])).join(' ')
- console.log(row(header))
- console.log(row(widths.map((w) => '-'.repeat(w))))
- for (const r of rows) {
-  if (r.ratio === null) {
-   console.log(row([r.themeId, r.diagramType, r.label, 'n/a', '-', 'FAIL']) + `  (${r.note})`)
-   continue
+  const header = ['theme', 'diagram', 'check', 'ratio', 'min', 'result']
+  const widths = [18, 10, 50, 8, 5, 6]
+  const row = (cells) => cells.map((c, i) => String(c).padEnd(widths[i])).join(' ')
+  console.log(row(header))
+  console.log(row(widths.map((w) => '-'.repeat(w))))
+  for (const r of rows) {
+    if (r.ratio === null) {
+      console.log(row([r.themeId, r.diagramType, r.label, 'n/a', '-', 'FAIL']) + `  (${r.note})`)
+      continue
+    }
+    console.log(row([r.themeId, r.diagramType, r.label, r.ratio.toFixed(2) + ':1', r.min, r.pass ? 'PASS' : 'FAIL']))
   }
-  console.log(row([r.themeId, r.diagramType, r.label, r.ratio.toFixed(2) + ':1', r.min, r.pass ? 'PASS' : 'FAIL']))
- }
 
- console.log('')
- if (rows.length === 0) {
-  console.log('no mermaid colour checks resolved -- diagram rendering may have changed shape')
-  process.exitCode = 2
- } else if (failCount > 0) {
-  console.log(`${failCount} of ${rows.length} mermaid colour check(s) FAILED their contrast minimum`)
-  process.exitCode = 1
- } else {
-  console.log(`all ${rows.length} mermaid colour checks across ${Object.keys(results).length} theme(s) PASS`)
-  process.exitCode = 0
- }
+  console.log('')
+  if (rows.length === 0) {
+    console.log('no mermaid colour checks resolved -- diagram rendering may have changed shape')
+    process.exitCode = 2
+  } else if (failCount > 0) {
+    console.log(`${failCount} of ${rows.length} mermaid colour check(s) FAILED their contrast minimum`)
+    process.exitCode = 1
+  } else {
+    console.log(`all ${rows.length} mermaid colour checks across ${Object.keys(results).length} theme(s) PASS`)
+    process.exitCode = 0
+  }
 } finally {
- rmSync(workDir, { recursive: true, force: true })
+  rmSync(workDir, { recursive: true, force: true })
 }

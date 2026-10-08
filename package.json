@@ -9,6 +9,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "check:indent": "node scripts/check-indent.mjs",
     "check:ui-text": "node scripts/check-ui-text.mjs",
     "check:theme-contrast": "node scripts/check-theme-contrast.mjs",
     "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs"
