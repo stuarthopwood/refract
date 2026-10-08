@@ -3,7 +3,7 @@
 // invocation, no child_process mocking needed, matching this repo's existing
 // `src/**/*.test.ts` vitest convention (node environment, see `vitest.config.ts`).
 import { describe, expect, it } from 'vitest';
-import { OmpConfigError, mergeModelRole, parseCatalogResponse, rawModelRolesRecord, stringEntriesOnly } from './config';
+import { OmpConfigError, enqueueWrite, mergeModelRole, parseCatalogResponse, rawModelRolesRecord, stringEntriesOnly } from './config';
 
 describe('rawModelRolesRecord', () => {
   it('returns an empty record for null', () => {
@@ -131,5 +131,47 @@ describe('parseCatalogResponse', () => {
     expect(() => parseCatalogResponse(null)).toThrow(OmpConfigError);
     expect(() => parseCatalogResponse('garbage')).toThrow(OmpConfigError);
     expect(() => parseCatalogResponse(42)).toThrow(OmpConfigError);
+  });
+});
+
+// Quality-gate remediation (code-reviewer/security-auditor HIGH): "concurrent role changes can
+// silently lose a write" -- this proves the serialisation guarantee `setModelRole` relies on
+// (`enqueueWrite`) directly, without spawning the real `omp` CLI: two tasks representing
+// independent read-merge-write cycles must run strictly one after the other, never overlapping,
+// even when the first is slower than the second.
+describe('enqueueWrite', () => {
+  it('runs two queued tasks strictly in enqueue order, never overlapping', async () => {
+    const events: string[] = [];
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const taskA = enqueueWrite(async () => {
+      events.push('A-start');
+      await delay(20);
+      events.push('A-end');
+      return 'A';
+    });
+    const taskB = enqueueWrite(async () => {
+      events.push('B-start');
+      await delay(1);
+      events.push('B-end');
+      return 'B';
+    });
+
+    const [resultA, resultB] = await Promise.all([taskA, taskB]);
+    expect(resultA).toBe('A');
+    expect(resultB).toBe('B');
+    // B's task body must not even START until A's has fully finished -- if the two raced (the
+    // bug this queue exists to close), B-start would appear before A-end.
+    expect(events).toEqual(['A-start', 'A-end', 'B-start', 'B-end']);
+  });
+
+  it('a failed task never wedges later queued work behind a permanently-rejected chain', async () => {
+    const failing = enqueueWrite(async () => {
+      throw new Error('simulated omp failure');
+    });
+    await expect(failing).rejects.toThrow('simulated omp failure');
+
+    const after = enqueueWrite(async () => 'still works');
+    await expect(after).resolves.toBe('still works');
   });
 });

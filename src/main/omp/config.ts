@@ -254,8 +254,10 @@ let writeChain: Promise<unknown> = Promise.resolve();
 /** Serialises every `setModelRole` call through one promise chain (see module header for why).
  * `writeChain` is always resettled to a void, never-rejecting promise after `task` finishes
  * (success or failure), so one failed write never permanently wedges every later call behind a
- * rejected chain link. */
-function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+ * rejected chain link. Exported for direct unit testing of the serialisation guarantee itself
+ * (quality-gate remediation, code-reviewer/security-auditor HIGH), independent of the real
+ * `omp` CLI timing. */
+export function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
   const chained = writeChain.then(task, task);
   writeChain = chained.then(
     () => undefined,
