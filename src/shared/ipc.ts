@@ -185,9 +185,13 @@ export interface SessionStatusEvent {
   stopDetail?: string;
   /** Issue #510 (quality gate 2026-10-08): set only on a live transition to `stopped`, so the
    * session-list row's "Terminated unexpectedly" text is never stale until the next unrelated
-   * `sessions.list()` refresh. `undefined` for every other transition (working/idle/needs-you, or
-   * a stop this value genuinely does not apply to); the renderer treats that as `false`, never as
-   * "keep whatever the row already showed". */
+   * `sessions.list()` refresh. Quality-gate fix (cycle 3, 2026-10-08): `undefined` on a `stopped`
+   * transition (for example `clearUnread`'s own status re-emit, which carries no new value at
+   * all) means "not applicable to THIS transition" -- the renderer (`sessions-store.ts`'s
+   * `applyStatus`, `ChatPane.tsx`'s `onSessionStatus`) keeps whatever this row/pane already
+   * showed, never wipes it back to `false`. A transition to a LIVE status (working/idle/
+   * needs-you) does reset it to `false`: a Session that is running is definitely not
+   * "terminated". */
   terminatedUnexpectedly?: boolean;
   unread: boolean;
   launchedMode: ApprovalMode;

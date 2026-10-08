@@ -102,7 +102,7 @@ There is no `window.toggleMaximize`: verified live (tasks.md T100) that double-c
 
 | Event | Payload | Purpose |
 |---|---|---|
-| `session:status` | `{ sessionId, status, stopReason?, stopDetail?, terminatedUnexpectedly?, unread, launchedMode, pendingMode }` | List badges, the Approval mode pill above the message box. `terminatedUnexpectedly` (issue #510) is set only on a live transition to `stopped`; `undefined` on every other transition, read by the renderer as `false`, never as "keep the last known value". |
+| `session:status` | `{ sessionId, status, stopReason?, stopDetail?, terminatedUnexpectedly?, unread, launchedMode, pendingMode }` | List badges, the Approval mode pill above the message box. `terminatedUnexpectedly` (issue #510) is set only on a live transition to `stopped`; quality-gate fix (cycle 3): `undefined` on a `stopped` transition (for example a re-emit with no new value, such as `clearUnread`) means the renderer keeps whatever it already showed; a transition to a LIVE status resets it to `false`. |
 | `session:list-changed` | none | Renderer re-fetches `sessions.list()` (created, renamed, archived, deleted, reordered by activity). |
 | `transcript:patch` | `{ sessionId, ops: TranscriptOp[] }` | `TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] }`. Coalesced to at most one per 50 ms per Session; only sent for the Session the user is viewing, plus a final flush when a Session becomes visible. |
 | `queue:update` | `{ sessionId, followUp: string[]; steering: string[] }` | Queue chips. |

@@ -22,7 +22,7 @@ import { ToolGroupRow, SubagentRow } from './ToolRow'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
-import { windowTranscriptTurns } from './windowTranscriptTurns'
+import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type UserItem = Extract<TranscriptItem, { kind: 'user' }>
@@ -402,6 +402,10 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // effect right after the newly-revealed turns commit to the DOM (see that effect's own doc
   // comment for why a raw `scrollTop` cannot be reused directly).
   const loadEarlierAnchorRef = React.useRef<number | null>(null)
+  // Quality-gate fix (a11y, cycle 3, 2026-10-08): see `handleLoadEarlier`'s own doc comment --
+  // suppresses `MessageScrollerContent`'s default `role="log"` live announcements for the one
+  // reveal that would otherwise flood a screen reader with every newly-visible turn at once.
+  const [suppressLogAnnouncements, setSuppressLogAnnouncements] = React.useState(false)
   const { visible: visibleTurns, hiddenCount } = React.useMemo(
     () => windowTranscriptTurns(turns, revealedEarlier),
     [turns, revealedEarlier]
@@ -588,7 +592,14 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   function handleLoadEarlier() {
     const viewport = viewportRef.current
     loadEarlierAnchorRef.current = viewport ? viewport.scrollHeight - viewport.scrollTop : null
-    setRevealedAnnouncement(`Loaded ${hiddenCount} earlier turn${hiddenCount === 1 ? '' : 's'}.`)
+    setRevealedAnnouncement(loadEarlierAnnouncement(hiddenCount))
+    // Quality-gate fix (a11y, cycle 3, 2026-10-08): `MessageScrollerContent` renders
+    // `role="log"` by default (an implicit polite live region with `aria-relevant="additions"`),
+    // so revealing up to hundreds of hidden turns at once would otherwise queue the WHOLE
+    // revealed history as log-addition announcements, burying the one message that actually
+    // matters. Suppressed for this one reveal only; the layout effect below clears it again
+    // once the new turns have committed.
+    setSuppressLogAnnouncements(true)
     setRevealedEarlier(true)
   }
 
@@ -607,9 +618,16 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     if (anchor === null) return
     loadEarlierAnchorRef.current = null
     const viewport = viewportRef.current
-    if (!viewport) return
-    viewport.scrollTop = viewport.scrollHeight - anchor
-    viewport.focus({ preventScroll: true })
+    if (viewport) {
+      viewport.scrollTop = restoreScrollTop(viewport.scrollHeight, anchor)
+      viewport.focus({ preventScroll: true })
+    }
+    // Quality-gate fix (a11y, cycle 3): re-enables the log's own live announcements only once
+    // the revealed turns have actually committed and the scroll/focus restore above has run --
+    // one frame later, so the log's own additions-announcement machinery (which reacts to the
+    // committed DOM, not this render) never sees them as "new" in the first place.
+    const frame = requestAnimationFrame(() => setSuppressLogAnnouncements(false))
+    return () => cancelAnimationFrame(frame)
   }, [visibleTurns])
 
   // Finding 1 (gate fixes 4, a11y): the button above goes `inert` (below) the instant `isAtEnd`
@@ -826,18 +844,22 @@ export function Transcript({ sessionId }: { sessionId: string }) {
           // bounds would be cut off entirely rather than just visually tight.
           className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
-          <MessageScrollerContent ref={contentRef} className="mx-auto w-full max-w-4xl px-4 py-4">
+          <MessageScrollerContent
+            ref={contentRef}
+            className="mx-auto w-full max-w-4xl px-4 py-4"
+            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default
+            // (an implicit polite live region, `aria-relevant="additions"`) -- `off` for the one
+            // frame window `handleLoadEarlier`'s reveal needs, so revealing up to hundreds of
+            // hidden turns at once never queues the whole revealed history as log-addition
+            // announcements. `undefined` (the log's own default) the rest of the time, so
+            // ordinary streamed turns are still announced as they always were.
+            aria-live={suppressLogAnnouncements ? 'off' : undefined}
+          >
             {!hasConversationStarted && (
               <div className="px-2 py-8 text-center text-sm text-muted-foreground">
                 Ready. Type a message to get started.
               </div>
             )}
-            {/* Quality-gate fix (a11y, cycle 2): always mounted (never created together with
-                its own text, which a screen reader generally fails to announce) -- empty until
-                `handleLoadEarlier` sets it. */}
-            <span role="status" aria-live="polite" className="sr-only">
-              {revealedAnnouncement}
-            </span>
             {hasConversationStarted && hiddenCount > 0 && (
               <div className="px-2 pb-2">
                 <Button type="button" variant="ghost" size="sm" onClick={handleLoadEarlier}>
@@ -891,6 +913,15 @@ export function Transcript({ sessionId }: { sessionId: string }) {
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
+        {/* Quality-gate fix (a11y, cycle 2/3, 2026-10-08): a sibling of the viewport, OUTSIDE
+            `MessageScrollerContent`'s own `role="log"` -- nested inside the log, this status
+            text's own insertion was itself just one more log addition (announced twice: once as
+            a log addition, once as the status message). Always mounted (never created together
+            with its own text, which a screen reader generally fails to announce) -- empty until
+            `handleLoadEarlier` sets it. */}
+        <span role="status" aria-live="polite" className="sr-only">
+          {revealedAnnouncement}
+        </span>
         <Button
           ref={buttonRef}
           type="button"

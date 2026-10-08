@@ -171,7 +171,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     () =>
       window.refract.onSessionStatus((event) => {
         if (event.sessionId !== sessionIdRef.current) return
-        setStopInfo({ reason: event.stopReason, detail: event.stopDetail })
+        // Quality-gate fix (cycle 3, 2026-10-08): this used to replace the whole object,
+        // unconditionally dropping `terminatedUnexpectedly`/`pendingToolNames` -- a snapshot-
+        // derived flag (from `sessions.open`/`recover`/`startNew` above) was wiped the instant
+        // ANY later live status event arrived for this Session, even one carrying no
+        // information about either field (e.g. a readout-only re-emit), which also hid #585's
+        // Resume button and mismatched the row's own "Terminated unexpectedly" text against
+        // this pane's banner title. Same three-way rule `sessions-store.ts`'s `applyStatus`
+        // already uses: an explicit value on the event wins; a still-`stopped` event with none
+        // keeps whatever this pane already had; a LIVE status resets both to nothing, since a
+        // working/idle Session is definitely not "terminated" and has nothing pending.
+        setStopInfo((prev) => ({
+          reason: event.stopReason,
+          detail: event.stopDetail,
+          terminatedUnexpectedly:
+            event.terminatedUnexpectedly ?? (event.status === 'stopped' ? prev.terminatedUnexpectedly : false),
+          pendingToolNames: event.status === 'stopped' ? prev.pendingToolNames : undefined
+        }))
       }),
     []
   )

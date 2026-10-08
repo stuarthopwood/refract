@@ -24,3 +24,19 @@ export function windowTranscriptTurns<T>(turns: T[], revealed: boolean): TurnWin
     hiddenCount: turns.length - INITIAL_VISIBLE_TURN_COUNT,
   };
 }
+
+/** Quality-gate fix (test-reviewer, Medium, cycle 3, 2026-10-08): the scroll-anchor arithmetic
+ * `Transcript.tsx`'s "Load earlier" reveal depends on, pulled out so it is unit-testable without
+ * a real DOM/jsdom (this project has no jsdom test environment anywhere yet). `anchor` is the
+ * distance-from-end (`scrollHeight - scrollTop`) recorded BEFORE the reveal; once the newly
+ * revealed turns have pushed `scrollHeight` out, this is the `scrollTop` that restores the same
+ * distance from the end, so the view never jumps to the oldest newly-revealed content. */
+export function restoreScrollTop(newScrollHeight: number, anchor: number): number {
+  return newScrollHeight - anchor;
+}
+
+/** Quality-gate fix (test-reviewer, Medium, cycle 3): the "Load earlier" announcement text,
+ * pulled out so its singular/plural wording is unit-tested directly. */
+export function loadEarlierAnnouncement(revealedCount: number): string {
+  return `Loaded ${revealedCount} earlier turn${revealedCount === 1 ? '' : 's'}.`;
+}

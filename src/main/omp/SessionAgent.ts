@@ -23,6 +23,7 @@ import { recoverFromFailedSwitch } from './switchRecovery';
 import { detectUnexpectedTermination } from './terminationDetection';
 import { waitForIdleStatus } from './statusWait';
 import { fetchAllMessages } from './fetchAllMessages';
+import { shouldApplyCrashExitVerdict } from './exitVerdictGuard';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
@@ -144,6 +145,11 @@ export class SessionAgent extends EventEmitter {
   private process: OmpProcess | undefined;
   private runtime: SessionRuntime;
   private commands: SlashCommand[] = [];
+  /** Quality-gate fix (cycle 3, 2026-10-08): bumped at the top of every `launch()` attempt.
+   * `onExit`'s crash branch captures this before its own `await`; if a NEWER life has since
+   * started by the time that resolves, this exit's "agent-exited" verdict is for a life nobody
+   * cares about any more and must never overwrite whatever the newer life has since recorded. */
+  private lifeEpoch = 0;
 
   private readonly patches = new PatchCoalescer((ops) => this.emit('patch', { sessionId: this.sessionId, ops }));
   /** True only while `restart()` is tearing down and respawning the process, so `onExit`'s
@@ -306,6 +312,9 @@ export class SessionAgent extends EventEmitter {
     // ends the "the user just stopped this on purpose" window -- see `SessionRuntime.
     // stoppedOnRequest`'s own doc comment.
     this.runtime = { ...this.runtime, stoppedOnRequest: false };
+    // Quality-gate fix (cycle 3, 2026-10-08): a new life starting -- see `lifeEpoch`'s own doc
+    // comment.
+    this.lifeEpoch += 1;
     const approvalMode = this.settings.get().approvalMode;
     const proc = new OmpProcess({
       cwd: session.worktreePath,
@@ -314,7 +323,12 @@ export class SessionAgent extends EventEmitter {
       ompPath: this.ompPath,
     });
     proc.on('frame', (frame: Frame) => this.onFrame(frame));
-    proc.on('exit', (info: { code: number | null; requested: boolean }) => this.onExit(info));
+    // Quality-gate fix (cycle 3, 2026-10-08, Low): `onExit` is `async` (it awaits a tail read on
+    // the crash path); an unhandled rejection from it would otherwise surface as a process-level
+    // warning with no Session context.
+    proc.on('exit', (info: { code: number | null; requested: boolean }) => {
+      void this.onExit(info).catch((err) => console.error(`SessionAgent ${this.sessionId}: onExit threw`, err));
+    });
 
     try {
       await proc.start();
@@ -952,8 +966,18 @@ export class SessionAgent extends EventEmitter {
     // definitionally NOT a requested stop, so this life's own flag must never read stale `true`
     // from however this Session got here.
     this.runtime = { ...this.runtime, stoppedOnRequest: false };
+    // Quality-gate fix (cycle 3, 2026-10-08): captured BEFORE the tail-read await below, which a
+    // concurrent `launch()` attempt for the SAME exit can easily outrun (its own handshake/attach
+    // failure handling runs synchronously, no file read involved) -- without this guard, this
+    // branch used to unconditionally overwrite whatever `launch()`'s own `recordStartFailure`
+    // (or a `bailIfStopRequested` bail) had ALREADY recorded with the generic 'agent-exited',
+    // losing the specific reason (start-failed, its stderr detail, worktree-missing, not-started)
+    // and, through #585's `canResumeSession`, wrongly offering Resume instead of #449's own
+    // Retry/Start-new actions on a start failure.
+    const epochAtExit = this.lifeEpoch;
     const currentConversation = this.registry.getSession(this.sessionId)?.currentConversation ?? null;
     const terminatedUnexpectedly = (await detectUnexpectedTermination(currentConversation)).terminatedUnexpectedly;
+    if (!shouldApplyCrashExitVerdict(this.runtime.status, this.lifeEpoch, epochAtExit)) return;
     this.setStatus('stopped', {
       stopReason: 'agent-exited',
       stopDetail: `exit code ${String(info.code)}`,

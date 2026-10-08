@@ -155,6 +155,56 @@ describe('fetchAllMessages', () => {
     expect(result).toEqual({ messages: [], complete: false });
   });
 
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer): the remaining first-page-failure
+  // shapes were untested -- only the non-array-messages malformed case was covered.
+  it('returns incomplete, empty messages, when the first page fails and its get_messages fallback itself throws', async () => {
+    const brokenEverything: MessagesPageRequester = {
+      async request(cmd) {
+        if (cmd.type === 'get_messages_page') throw new Error('unknown command');
+        throw new Error('get_messages also unreachable');
+      },
+    };
+    const result = await fetchAllMessages(brokenEverything);
+    expect(result).toEqual({ messages: [], complete: false });
+  });
+
+  it('returns incomplete, empty messages, when the first page fails and its get_messages fallback returns non-array messages', async () => {
+    const brokenEverything: MessagesPageRequester = {
+      async request(cmd) {
+        if (cmd.type === 'get_messages_page') throw new Error('unknown command');
+        return { type: 'response', id: cmd.id, command: 'get_messages', success: true, data: { messages: 'not-an-array' } };
+      },
+    };
+    const result = await fetchAllMessages(brokenEverything as MessagesPageRequester);
+    expect(result).toEqual({ messages: [], complete: false });
+  });
+
+  it('falls back to get_messages when the first page responds success:true with data undefined', async () => {
+    const messages = [userMessage('a')];
+    const real = fakeServer(messages);
+    const brokenFirstPage: MessagesPageRequester = {
+      async request(cmd) {
+        if (cmd.type === 'get_messages_page') return { type: 'response', id: cmd.id, command: 'get_messages_page', success: true, data: undefined };
+        return real.request(cmd);
+      },
+    };
+    const result = await fetchAllMessages(brokenFirstPage);
+    expect(result).toEqual({ messages, complete: true });
+  });
+
+  it('falls back to get_messages when the first page is missing totalMessages (non-number)', async () => {
+    const messages = [userMessage('a')];
+    const real = fakeServer(messages);
+    const brokenFirstPage: MessagesPageRequester = {
+      async request(cmd) {
+        if (cmd.type === 'get_messages_page') return { type: 'response', id: cmd.id, command: 'get_messages_page', success: true, data: { messages: [userMessage('a')] } };
+        return real.request(cmd);
+      },
+    };
+    const result = await fetchAllMessages(brokenFirstPage as MessagesPageRequester);
+    expect(result).toEqual({ messages, complete: true });
+  });
+
   it('stops once the accumulated count reaches totalMessages even if nextCursor is still present', async () => {
     const messages = [userMessage('a'), userMessage('b')];
     const stubborn: MessagesPageRequester = {
@@ -221,7 +271,11 @@ describe('fetchAllMessages', () => {
     expect(calls).toBe(1);
   });
 
-  it('stops immediately (one request) when the exact same cursor is offered twice', async () => {
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Low): renamed -- this stops on the
+  // SECOND request, not the first, since the very first call's `cursor` is unknown yet (there
+  // is nothing earlier to compare it against); only once the identical cursor comes back a
+  // second time is it recognisably stuck.
+  it('stops on the second request when the exact same cursor is offered twice', async () => {
     let calls = 0;
     const page1 = [userMessage('a')];
     const stuck: MessagesPageRequester = {
@@ -240,7 +294,8 @@ describe('fetchAllMessages', () => {
     };
     const result = await fetchAllMessages(stuck);
     expect(result.complete).toBe(false);
-    expect(calls).toBe(2); // the first call's cursor is unknown yet; the second repeats it and is caught
+    expect(calls).toBe(2);
+    expect(result.messages).toHaveLength(1);
   });
 
   it('gives up after the safety cap when a server keeps genuinely paginating but never reaches totalMessages', async () => {

@@ -224,4 +224,18 @@ describe('detectUnexpectedTermination', () => {
     const second = await detectUnexpectedTermination(file);
     expect(second).toEqual(CLEAN);
   });
+
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer): the 'user' case clearing
+  // `outstandingToolCalls` (cycle 2's fix) was only ever tested where it produces CLEAN.
+  // This proves the earlier life's own orphan ('eval') is genuinely gone, not merely masked --
+  // a STILL-unmatched later call ('bash') must report only itself, never both.
+  it('excludes an earlier life\'s orphaned call from a later, still-unmatched one\'s pendingToolNames', async () => {
+    const file = await writeScratch(
+      assistantToolCall('call-1', 'eval') + userMessage() + assistantToolCall('call-2', 'bash')
+    );
+    const result = await detectUnexpectedTermination(file);
+    expect(result.terminatedUnexpectedly).toBe(true);
+    expect(result.reason).toEqual({ kind: 'unmatched-tool' });
+    expect(result.pendingToolNames).toEqual(['bash']);
+  });
 });
