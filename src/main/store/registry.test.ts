@@ -128,4 +128,33 @@ describe('RegistryStore.updateRepository', () => {
     await expect(slowCall).rejects.toThrow('disk full');
     expect(store.getRepository(repository.id)?.name).toBe('Fast, wins');
   });
+
+  // Quality-gate fix (cycle 5, 2026-10-08, test-reviewer, Medium): the test above uses two
+  // DIFFERENT names, which a value-compare rollback (`?.name === next.name`) would ALSO happen
+  // to get right by coincidence (the fast call's name never matches the slow call's own patch
+  // value). The real gap only shows with the SAME name on both calls: a value-compare rollback
+  // would then match the fast call's entry by name and put back the name from before EITHER
+  // call, even though the fast call already reported success and persisted its own write.
+  // Identity (`=== next`), not value, is what actually closes it.
+  it('does not clobber a second call to the SAME name, when the first is slower and fails', async () => {
+    const dir = await freshDir();
+    const repository = makeRepository();
+    const store = await RegistryStore.open(dir);
+    await store.addRepository(repository);
+
+    let rejectSlow!: (err: Error) => void;
+    const slowWrite = new Promise<void>((_resolve, reject) => {
+      rejectSlow = reject;
+    });
+    vi.mocked(writeJsonFile).mockImplementationOnce(() => slowWrite);
+
+    const slowCall = store.updateRepository(repository.id, { name: 'Same name' });
+    await store.updateRepository(repository.id, { name: 'Same name' });
+    rejectSlow(new Error('disk full'));
+
+    await expect(slowCall).rejects.toThrow('disk full');
+    expect(store.getRepository(repository.id)?.name).toBe('Same name');
+    const reopened = await RegistryStore.open(dir);
+    expect(reopened.getRepository(repository.id)?.name).toBe('Same name');
+  });
 });

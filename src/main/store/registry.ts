@@ -69,13 +69,16 @@ export class RegistryStore {
     try {
       await writeJsonFile(this.file, this.data)
     } catch (err) {
-      // Quality-gate fix (cycle 3, 2026-10-08, security-auditor, Low): only restores `current`
-      // when the entry still shows exactly the name THIS call just set -- without that check, a
-      // second rename for the same repository that completed (and persisted) while this failed
-      // write's own `await` was still in flight would get silently clobbered back to the state
-      // from BEFORE either call, not just this one's own attempted change undone.
+      // Quality-gate fix (cycle 5, 2026-10-08, test-reviewer, Medium): compares by IDENTITY
+      // (`=== next`), not by value -- a value compare (the cycle-3 fix: `?.name === next.name`)
+      // still had a gap: two concurrent renames to the SAME name, where the first's write fails
+      // late. The first's rollback would match the second's entry by name (since both set the
+      // identical string) and put back the name from BEFORE EITHER call, even though the second
+      // call already reported success and the renderer is already showing its own new name --
+      // the store and the renderer would silently disagree. Reference equality has no such gap:
+      // only THIS call's own `next` object can ever match, regardless of what string it holds.
       const stillIndex = this.data.repositories.findIndex((r) => r.id === id)
-      if (stillIndex !== -1 && this.data.repositories[stillIndex]?.name === next.name) {
+      if (stillIndex !== -1 && this.data.repositories[stillIndex] === next) {
         this.data.repositories[stillIndex] = current
       }
       await writeJsonFile(this.file, this.data).catch(() => undefined)

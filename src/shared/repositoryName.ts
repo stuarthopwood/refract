@@ -44,8 +44,17 @@ export function validateRepositoryName(trimmed: string): string | undefined {
  * anyone who ever reads the stored name back, and must reset to the basename the same way, not
  * silently store an invisible name. A name where a joiner sits between real characters (the
  * legitimate case) is unaffected: `visible` only goes empty when EVERY code point is one of
- * these two. */
+ * these two.
+ *
+ * Quality-gate fix (cycle 5, 2026-10-08, test-reviewer, Medium): a name mixing a joiner with
+ * ordinary (non-leading/trailing-only) whitespace, e.g. `'\u200D \u200D'` or `'\u200D\u00A0'`,
+ * still slipped through -- `trimmed` had already had its OWN leading/trailing whitespace removed
+ * by the caller before a joiner ever appeared at the edge, so stripping just the joiners left an
+ * internal space (or a lone U+00A0 non-breaking space) that reads as truthy. The extra `.trim()`
+ * here catches exactly that: it also removes U+00A0 (ECMAScript's `trim()` follows the Unicode
+ * White_Space property, which includes it), so a bare non-breaking space or a joiner-flanked
+ * space both correctly fall back to the basename too. */
 export function resolveRepositoryName(trimmed: string, basename: string): string {
-  const visible = trimmed.replace(/[\u200C\u200D]/g, '');
+  const visible = trimmed.replace(/[\u200C\u200D]/g, '').trim();
   return visible ? trimmed : basename;
 }

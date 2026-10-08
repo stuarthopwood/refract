@@ -101,4 +101,16 @@ describe('resolveRepositoryName', () => {
   it('keeps a name where a zero-width joiner sits between real characters (an emoji ZWJ sequence)', () => {
     expect(resolveRepositoryName('\u{1F468}\u200D\u{1F469}', 'pinion')).toBe('\u{1F468}\u200D\u{1F469}');
   });
+
+  // Quality-gate fix (cycle 5, 2026-10-08, test-reviewer, Medium): a joiner mixed with ordinary
+  // whitespace (not just other joiners) must also reset to the basename -- stripping only the
+  // joiners used to leave a lone internal space, or a lone non-breaking space, which read as
+  // truthy.
+  it('resets to the folder basename when the trimmed name is a joiner flanking a space', () => {
+    expect(resolveRepositoryName('\u200D \u200D', 'pinion')).toBe('pinion');
+  });
+
+  it('resets to the folder basename when the trimmed name is a joiner plus a non-breaking space', () => {
+    expect(resolveRepositoryName('\u200D\u00A0', 'pinion')).toBe('pinion');
+  });
 });

@@ -54,6 +54,17 @@ describe('renameRepositoryCore', () => {
     expect(updateRepository).toHaveBeenCalledWith('repo-1', { name: 'pinion' });
   });
 
+  // Quality-gate fix (cycle 5, 2026-10-08, test-reviewer): this file's own header has long
+  // claimed "joiner-only" coverage, but no test here actually passed one through the full
+  // handler (only repositoryName.test.ts exercised resolveRepositoryName directly) -- proves the
+  // handler's own trim -> validate -> resolve sequence doesn't somehow re-introduce it.
+  it('resolves a name made only of zero-width joiners to the folder basename, not an error', async () => {
+    const updateRepository = vi.fn(async (id: string, patch: { name: string }) => ({ ...makeRepository(), ...patch }));
+    const result = await renameRepositoryCore('repo-1', '\u200D\u200C', makeDeps({ basename: () => 'pinion', updateRepository }));
+    expect(result.ok).toBe(true);
+    expect(updateRepository).toHaveBeenCalledWith('repo-1', { name: 'pinion' });
+  });
+
   it('rejects an over-length name with an unprefixed, inline-safe message', async () => {
     const result = await renameRepositoryCore('repo-1', 'x'.repeat(61), makeDeps());
     expect(result.ok).toBe(false);
