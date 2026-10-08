@@ -19,7 +19,7 @@ import { listConversations } from '../conversations';
 import { detectUnexpectedTermination } from '../omp/terminationDetection';
 import type { SessionManager } from '../SessionManager';
 import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util';
-import { canAutoStart } from './canAutoStart';
+import { attachSnapshotCore } from './attachSnapshot';
 import { resumeSessionCore } from './resumeSession';
 import type { SessionAgent } from '../omp/SessionAgent';
 
@@ -139,9 +139,10 @@ export function registerSessions(manager: SessionManager): void {
    * wrong to begin with. The tail detection is computed at most once here and threaded into
    * `buildSnapshot` (quality-gate fix: avoids a second 256 KiB read of the same file). */
   async function attachSnapshot(id: string, forceStart: boolean): Promise<Result<SessionSnapshot>> {
-    const session = manager.registry.getSession(id);
-    if (!session) return notFound(`Session not found: ${id}`);
-    const agent = manager.getOrCreateAgent(id);
+    // Quality-gate fix (cycle 3, 2026-10-08): the actual logic (the `stoppedOnRequest`
+    // short-circuit, the `canAutoStart` gate, threading `detection` into `buildSnapshot`) now
+    // lives in `attachSnapshotCore` (`attachSnapshot.ts`), injected with this manager's own real
+    // dependencies, so it is unit-testable against fakes -- same reasoning as `resumeSessionCore`.
     // Visibility is NOT set here. It is set solely by the explicit `sessions.setVisible` IPC.
     // Round 3 (code-reviewer, Low): App.tsx's own rendered-panes effect is the SOLE caller now,
     // and it fires AFTER this call's snapshot resolves (reacting to the resulting state change),
@@ -150,28 +151,13 @@ export function registerSessions(manager: SessionManager): void {
     // start) while the renderer's own visible-Session state did not flip until this whole IPC
     // round-trip returned: main and the renderer disagreed about which Session was visible for
     // the entire cold start (bug report point 5).
-    let detection: Awaited<ReturnType<typeof detectUnexpectedTermination>> | undefined;
-    if (agent.runtimeSnapshot.status === 'stopped') {
-      // Quality-gate fix (cycle 2, 2026-10-08): a requested stop is never read from the tail at
-      // all -- see `SessionRuntime.stoppedOnRequest`'s own doc comment. Without this, FR-038
-      // ("stopAgent reattaches when reopened") broke for exactly the Session #510's own cycle 1
-      // fix was supposed to protect: a tool call still outstanding when the stop fired looks
-      // identical, from the file alone, to a crash, so `canAutoStart` below would wrongly refuse
-      // to reattach a Session the user only ever stopped on purpose.
-      detection = agent.runtimeSnapshot.stoppedOnRequest
-        ? { terminatedUnexpectedly: false, reason: { kind: 'clean' }, pendingToolNames: [] }
-        : await detectUnexpectedTermination(session.currentConversation);
-      if (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason, detection.terminatedUnexpectedly)) {
-        await agent.start().catch(() => undefined);
-        // T062: `agent.start()` runs `syncFromState` against the registry before resolving
-        // (`lastModel`/`lastThinkingLevel`, `sessionDir`, ...), so the row the renderer already
-        // cached from a previous `sessions.list()` is now stale; tell it to re-fetch, the same way
-        // every other Session-row-affecting mutation in this file already does.
-        manager.notifyListChanged();
-      }
-    }
-    const refreshed = manager.registry.getSession(id) ?? session;
-    return { ok: true, value: await buildSnapshot(agent, refreshed, detection) };
+    return attachSnapshotCore(id, forceStart, {
+      getSession: (sessionId) => manager.registry.getSession(sessionId),
+      getOrCreateAgent: (sessionId) => manager.getOrCreateAgent(sessionId),
+      notifyListChanged: () => manager.notifyListChanged(),
+      detectUnexpectedTermination,
+      buildSnapshot: (agent, session, detection) => buildSnapshot(agent as SessionAgent, session, detection),
+    });
   }
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_OPEN, async (_event, id: unknown, userAction: unknown) => {

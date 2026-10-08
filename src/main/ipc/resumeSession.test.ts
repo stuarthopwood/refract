@@ -182,4 +182,37 @@ describe('resumeSessionCore', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('not-found');
   });
+
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium): `agent.start()`'s own
+  // `.catch(() => undefined)` was never proven to actually swallow a rejection rather than merely
+  // happening to work when `start()` resolves cleanly in every other test above.
+  it('swallows a rejected agent.start() and still returns the (still-stopped) resulting snapshot', async () => {
+    const resumingIds = new Set<string>();
+    const agent = {
+      runtimeSnapshot: { status: 'stopped', stopReason: 'agent-exited', stoppedOnRequest: false },
+      start: vi.fn(async () => { throw new Error('spawn ENOENT'); }),
+      send: vi.fn(async () => ({ queued: false })),
+    } as unknown as ResumableAgent;
+    const deps = makeDeps({ getOrCreateAgent: () => agent, buildSnapshot: async () => makeSnapshot('stopped') });
+
+    const result = await resumeSessionCore(resumingIds, 'session-1', deps);
+
+    expect(result.ok).toBe(true);
+    expect((agent.send as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(resumingIds.has('session-1')).toBe(false);
+  });
+
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium): unlike `agent.start()` and
+  // `agent.send()`, nothing here catches a thrown `buildSnapshot` -- proves the lock is still
+  // released (the `finally`), and that this propagates as a rejection rather than being silently
+  // swallowed, same as every other `buildSnapshot` caller in this codebase (for example
+  // `conversations.ts`'s own unguarded `await buildSnapshot(...)` calls).
+  it('propagates a thrown buildSnapshot as a rejection, still releasing the lock', async () => {
+    const resumingIds = new Set<string>();
+    const { agent } = makeAgent(undefined, 0);
+    const deps = makeDeps({ getOrCreateAgent: () => agent, buildSnapshot: async () => { throw new Error('ENOENT: no such file'); } });
+
+    await expect(resumeSessionCore(resumingIds, 'session-1', deps)).rejects.toThrow('ENOENT: no such file');
+    expect(resumingIds.has('session-1')).toBe(false);
+  });
 });
