@@ -7,6 +7,13 @@
 // for every FR-007/FR-008 token pair this codebase actually renders, and prints a PASS/FAIL table.
 // Usage: node scripts/check-theme-contrast.mjs
 // Exits 1 if any pair fails its WCAG minimum, 0 if every pair across every theme passes.
+// Methodology note: several of this app's `oklch()` severity/accent colours are outside the
+// sRGB gamut (their converted linear-sRGB channel is briefly >1 before the per-channel clamp
+// below), so this script clips them the same way a non-wide-gamut sRGB display does. A real
+// wide-gamut (P3) Chromium display may render those exact pixels slightly differently, so their
+// true on-screen luminance can differ a little from the clipped value this script computes.
+// Not a bug to fix now -- noted so a future pass can switch to CSS Color 4 chroma-reduction
+// gamut mapping if that gap ever matters in practice.
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -15,7 +22,26 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '..')
 const cssPath = path.join(repoRoot, 'src/renderer/styles/globals.css')
-const css = readFileSync(cssPath, 'utf-8')
+// A11y/quality-gate remediation (HIGH): THEME_BLOCK_RE/PROP_RE below match raw text with no
+// comment-awareness, so a `--token: value;`-shaped line sitting INSIDE a `/* ... */` CSS
+// comment -- whether commented out on purpose or swallowed by an editing accident that dropped
+// a comment's closing `*/` -- would silently parse as if it were a live declaration. Strip every
+// `/* ... */` block before any matching, and fail loudly (not silently) if stripping still
+// leaves an unbalanced or unterminated comment marker behind, which would otherwise mean the
+// strip itself swallowed real CSS or missed a real comment.
+function stripCssComments(source, label) {
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, '')
+  const openCount = (source.match(/\/\*/g) || []).length
+  const closeCount = (source.match(/\*\//g) || []).length
+  if (openCount !== closeCount || stripped.includes('/*') || stripped.includes('*/')) {
+    console.error(
+      `${label}: unterminated or unbalanced CSS comment (found ${openCount} '/*' and ${closeCount} '*/') -- refusing to parse`,
+    )
+    process.exit(2)
+  }
+  return stripped
+}
+const css = stripCssComments(readFileSync(cssPath, 'utf-8'), path.relative(repoRoot, cssPath))
 
 // ---- OKLCH / hex -> linear sRGB -----------------------------------------------------------
 
@@ -89,7 +115,14 @@ const VAR_RE = /^var\(\s*--([a-z0-9-]+)\s*\)$/i
 // not blending, is the exact operation `color-mix(..., transparent)` performs.
 const COLOR_MIX_TRANSPARENT_RE = /^color-mix\(\s*in\s+[\w-]+\s*,\s*var\(\s*--([a-z0-9-]+)\s*\)\s+([\d.]+)%\s*,\s*transparent\s*\)$/i
 
-function parseColorLiteral(rawValue, rawProps) {
+// Security review (LOW): `color-mix(...)` can reference another `color-mix(...)` token (e.g. a
+// theme writing `--a: color-mix(in oklab, var(--b) 50%, transparent)` and `--b` pointing back at
+// `--a` the same way) -- `resolveRawValue`'s own `seen` set only guards a plain `var()` chain, a
+// fresh one each recursive call here, so a mutual color-mix cycle would recurse forever and
+// crash with a stack overflow instead of failing cleanly. `seen` below is threaded through this
+// function's own recursive call (not `resolveRawValue`'s, which is unrelated) and returns
+// `undefined` (treated as "token missing" by every caller) the moment a name repeats.
+function parseColorLiteral(rawValue, rawProps, seen = new Set()) {
   const oklchMatch = rawValue.match(OKLCH_RE)
   if (oklchMatch) {
     const [, L, C, H, alphaPct] = oklchMatch
@@ -106,9 +139,11 @@ function parseColorLiteral(rawValue, rawProps) {
   const mixMatch = rawValue.match(COLOR_MIX_TRANSPARENT_RE)
   if (mixMatch) {
     const [, refName, pct] = mixMatch
+    if (seen.has(refName)) return undefined
+    seen.add(refName)
     const resolvedRef = resolveRawValue(refName, rawProps)
     if (resolvedRef === undefined) return undefined
-    const base = parseColorLiteral(resolvedRef, rawProps)
+    const base = parseColorLiteral(resolvedRef, rawProps, seen)
     if (base === undefined) return undefined
     return { raw: rawValue, alpha: base.alpha * (Number(pct) / 100), linear: base.linear }
   }
@@ -132,11 +167,12 @@ function resolveRawValue(name, rawProps, seen = new Set()) {
 // throws instead of reporting "token missing". Dev-only tool reading a trusted repo file, so
 // this is robustness, not an exploit.
 const themes = Object.create(null)
-// Captured alongside `themes`: whether a preset's own `--sidebar-border` is written as the
-// LITERAL text `var(--divider)` -- an unresolved-text check, not a resolved-value comparison,
-// because `.theme-dark-high-contrast` happens to set `--sidebar-border`/`--divider`/`--border`
-// to the SAME coincidental value independently (all three equal `oklch(0.6 0 0)` there without
-// one aliasing another), which a resolved-value comparison would misreport as an alias.
+// Captured alongside `themes`: whether a preset's own `--sidebar-border` is written as a `var()`
+// reference to `--divider` specifically -- matched via `VAR_RE` (tolerates `var( --divider )`
+// spacing, unlike a bare string-equality check), not a resolved-value comparison, because
+// `.theme-dark-high-contrast` happens to set `--sidebar-border`/`--divider`/`--border` to the
+// SAME coincidental value independently (all three equal `oklch(0.6 0 0)` there without one
+// aliasing another), which a resolved-value comparison would misreport as an alias.
 const sidebarBorderAliasesDivider = Object.create(null)
 
 for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
@@ -146,7 +182,8 @@ for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   for (const propMatch of body.matchAll(PROP_RE)) {
     rawProps[propMatch[1]] = propMatch[2].trim()
   }
-  sidebarBorderAliasesDivider[themeId] = rawProps['sidebar-border'] === 'var(--divider)'
+  const sidebarBorderAliasMatch = (rawProps['sidebar-border'] ?? '').match(VAR_RE)
+  sidebarBorderAliasesDivider[themeId] = sidebarBorderAliasMatch?.[1] === 'divider'
   const props = Object.create(null)
   for (const name of Object.keys(rawProps)) {
     const rawValue = resolveRawValue(name, rawProps)
@@ -171,10 +208,10 @@ for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
 // `declaredThemeIds = []` that would quietly turn off both this check and the one below it.
 const themesTsPath = path.join(repoRoot, 'src/shared/themes.ts')
 const themesTs = readFileSync(themesTsPath, 'utf-8')
-const THEME_ID_UNION_RE = /export type ThemeId\s*=\s*([\s\S]+?)(?:\r?\n\s*\r?\n|\r?\nexport|;)/
+const THEME_ID_UNION_RE = /export type ThemeId\s*=\s*([\s\S]+?)(?:\r?\n\s*\r?\n|\r?\n\s*\/\/|\r?\nexport|;)/
 const themeIdUnionMatch = themesTs.match(THEME_ID_UNION_RE)
 const declaredThemeIds = themeIdUnionMatch
-  ? [...themeIdUnionMatch[1].matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1])
+  ? [...themeIdUnionMatch[1].matchAll(/['"]([a-z0-9-]+)['"]/g)].map((m) => m[1])
   : []
 if (declaredThemeIds.length === 0) {
   console.error(`could not parse ThemeId union in ${path.relative(repoRoot, themesTsPath)}`)
@@ -251,7 +288,7 @@ function resolvedLinear(propEntry, backdropEntry) {
 // (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
 // text). `--divider` is NOT a control edge (#550: it is the soft decorative edge, read by no
 // component yet except where it IS a real rendered fill -- see DIVIDER_PAIRS's own comment
-// here. `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
+// below). `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
 // rendering every un-migrated `border-border` call site with it, unchanged; Obsidian's own
 // `--border` is tuned to the same floor) -- checked here, same as `--border-strong`, its alias.
 
@@ -500,10 +537,9 @@ for (const [themeId, props] of Object.entries(themes)) {
 for (const [themeId, props] of Object.entries(themes)) {
   if (!sidebarBorderAliasesDivider[themeId]) continue
   const sidebarBorder = props['sidebar-border']
-  if (!sidebarBorder) continue
   const mutedForeground = props['muted-foreground']
   checkedCount++
-  if (!mutedForeground) {
+  if (!sidebarBorder || !mutedForeground) {
     failCount++
     rows.push({ themeId, fg: 'muted-foreground', bg: 'sidebar-border', min: 4.5, ratio: null, pass: false, note: 'token missing' })
     continue
@@ -536,8 +572,8 @@ for (const [themeId, props] of Object.entries(themes)) {
   let prevName, prevLum
   for (const name of SURFACE_LADDER) {
     const entry = props[name]
-    checkedCount++
     if (!entry) {
+      checkedCount++
       failCount++
       rows.push({ themeId, fg: name, bg: '(surface ladder)', min: 'order', ratio: null, pass: false, note: 'token missing' })
       prevName = undefined
@@ -546,6 +582,7 @@ for (const [themeId, props] of Object.entries(themes)) {
     const linear = resolvedLinear(entry, entry)
     const lum = relativeLuminance(linear)
     if (prevName !== undefined) {
+      checkedCount++
       const pass = lum >= prevLum - 1e-9
       if (!pass) failCount++
       rows.push({
@@ -569,11 +606,16 @@ for (const [themeId, props] of Object.entries(themes)) {
 // is a translucent tint of its opaque severity colour (globals.css's own comment records the
 // chosen alpha and why). Checked the way the design is actually used -- a severity banner's own
 // coloured text directly on its own tint, AND plain `--foreground` on that same tint (the more
-// common case: a neutral-text notice with a coloured tint background) -- composited over BOTH
-// `--background` and `--card` (dialogs/menus sit on the latter), since the tint's OWN alpha
-// means its final rendered colour depends on what real surface it sits on.
+// common case: a neutral-text notice with a coloured tint background) -- composited over
+// `--background`, `--card` AND `--popover` (dialog.tsx, alert-dialog.tsx, sheet.tsx,
+// dropdown-menu.tsx, popover.tsx and select.tsx all render on `bg-popover`, not `--card`), since
+// the tint's OWN alpha means its final rendered colour depends on what real surface it sits on.
+// Deliberately NOT `--muted`: no component puts a severity banner there today, and Obsidian's
+// severity colours cannot clear 4.5:1 against a `--muted` tint at any alpha that still clears
+// 4.5:1 against `--popover` too (the two surfaces pull in opposite directions) -- if a future
+// change puts a severity banner on `--muted`, add it here and re-tune, don't assume it passes.
 const SEVERITIES = ['success', 'warning', 'error', 'info']
-const SEVERITY_BACKDROPS = ['background', 'card']
+const SEVERITY_BACKDROPS = ['background', 'card', 'popover']
 for (const [themeId, props] of Object.entries(themes)) {
   const foreground = props['foreground']
   for (const severity of SEVERITIES) {
@@ -581,9 +623,9 @@ for (const [themeId, props] of Object.entries(themes)) {
     const tintEntry = props[`severity-${severity}-bg`]
     for (const backdropName of SEVERITY_BACKDROPS) {
       const backdropEntry = props[backdropName]
-      checkedCount++
       if (!severityEntry || !tintEntry || !backdropEntry || !foreground) {
-        failCount++
+        checkedCount += 2
+        failCount += 2
         rows.push({
           themeId,
           fg: `severity-${severity}`,
@@ -593,8 +635,18 @@ for (const [themeId, props] of Object.entries(themes)) {
           pass: false,
           note: 'token missing',
         })
+        rows.push({
+          themeId,
+          fg: 'foreground',
+          bg: `severity-${severity}-bg on ${backdropName}`,
+          min: 4.5,
+          ratio: null,
+          pass: false,
+          note: 'token missing',
+        })
         continue
       }
+      checkedCount++
       const tintLinear = resolvedLinear(tintEntry, backdropEntry)
       const tintLum = relativeLuminance(tintLinear)
       const tintBackdropEntry = { raw: `severity-${severity}-bg on ${backdropName}`, alpha: 1, linear: tintLinear }

@@ -148,14 +148,17 @@
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
-  /* `--border` must clear 3:1 (WCAG AA non-text floor) everywhere it renders as a control
-   * edge, not just against `--background`: a semi-transparent `oklch(1 0 0 / 16%)` blends
-   * (gamma-correctly, matching how Chromium actually composites) to only 1.53:1 against this
-   * theme's `--background` -- under the floor, though the floor was measured only there before
-   * `scripts/check-theme-contrast.mjs` added `--card`/`--popover`/`--muted` pairs. Opaque
-   * `oklch(0.56 0 0)` (`#747474`) clears all four: 4.25:1 on `--background`, 3.85:1 on
-   * `--card`/`--popover`, 3.25:1 on `--muted`. `--input` below is raised to 36% alpha for the
-   * same reason (15% measured 1.47:1 on `--background` -- the border of every
+  /* Quality-gate remediation (HIGH, 3 independent reviewers + corrected check-theme-contrast.mjs):
+   * the previous semi-transparent `oklch(1 0 0 / 16%)` blends (gamma-correctly, matching how
+   * Chromium actually composites) to only 1.53:1 against this theme's `--background` -- well
+   * under the 3:1 WCAG AA non-text floor, despite the old (linear-space) version of this script
+   * misreporting it as 4.01:1 PASS. Now opaque at `oklch(0.5 0 0)`, measured 3.30:1 against
+   * `--background` by the corrected script -- but quality-gate remediation, round 2 (corrected
+   * script's own expanded PAIRS list) found `--border` ALSO sits directly on `--card`/
+   * `--popover` (2.99:1, under the 3:1 floor) and `--muted` (2.52:1) elsewhere in this app, which
+   * `0.5` didn't clear. Raised to `0.56` (`#747474`): 4.25:1 on `--background`, 3.85:1 on
+   * `--card`/`--popover`, 3.25:1 on `--muted`, all now >=3:1. `--input` below raised to 36%
+   * alpha for the same reason (15% measured 1.47:1 on `--background` -- the border of every
    * Input/Textarea/Select/outline-Toggle/outline-Button in this theme). */
   --border: oklch(0.56 0 0);
   --input: oklch(1 0 0 / 36%);
@@ -232,18 +235,24 @@
   --severity-error: var(--destructive);
   --severity-info: #38BDF8;
   /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): each `-bg` is the
-   * same severity hue as `color-mix(in oklab, …)`, 18% opaque mixed into transparent, and is
+   * same severity hue as `color-mix(in oklab, …)`, 12% opaque mixed into transparent, and is
    * checked two ways by `scripts/check-theme-contrast.mjs`: the severity colour read as text
    * directly on its own tint, and plain `--foreground` read on that same tint -- both >=4.5:1
-   * (WCAG AA body text), composited over both `--background` and `--card` (dialogs/menus sit on
-   * the latter). 18% is the highest alpha that still clears 4.5:1 for every severity in every
-   * theme with margin; the binding case is Obsidian's `--severity-error` on its own `--card`
-   * (4.62:1 for error-on-tint, comfortably more for `--foreground`-on-tint everywhere). This
-   * theme's own tightest case is `--severity-error` on `--card` (4.80:1). */
-  --severity-success-bg: color-mix(in oklab, var(--severity-success) 18%, transparent);
-  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 18%, transparent);
-  --severity-error-bg: color-mix(in oklab, var(--severity-error) 18%, transparent);
-  --severity-info-bg: color-mix(in oklab, var(--severity-info) 18%, transparent);
+   * (WCAG AA body text), composited over `--background`, `--card` AND `--popover` (dialog,
+   * alert-dialog, sheet, dropdown-menu, popover and select all render on `bg-popover`, not
+   * `--card`). 12% is the highest alpha that still clears 4.5:1 for every severity against every
+   * one of those three surfaces, in every theme, with margin; the binding case across all three
+   * themes is Obsidian's `--severity-error` on its own `--popover` (4.58:1 for error-on-tint,
+   * comfortably more for `--foreground`-on-tint everywhere). This theme's own tightest case is
+   * `--severity-error` on `--card`/`--popover` (5.29:1, identical since this theme's `--card`
+   * and `--popover` share one value). Deliberately NOT checked against `--muted`: no component
+   * puts a severity banner there today, and no shared alpha clears 4.5:1 against both `--muted`
+   * and `--popover` in Obsidian (the two pull in opposite directions -- see the script's own
+   * comment on this). */
+  --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
+  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
+  --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
+  --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
 }
 
 /* #550 (theme foundation, palette v2): the mock's own Obsidian canvas (`#0F1014`) and
@@ -288,7 +297,7 @@
    * separate, lighter indigo step for text/links (never the fill), retuned with margin so it
    * clears 4.5:1 against `--background` (6.18:1), `--surface-1` (5.35:1) AND `--surface-2`/
    * popover (4.78:1, the binding constraint -- the earlier `#7A7DF3` cleared only 4.24:1
-   * there).
+   * there). */
   --accent-text: #8588F4;
   /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
    * app's `--state-*` already uses elsewhere (same meaning, not a second set); error is
@@ -302,14 +311,15 @@
   --severity-warning: oklch(0.769 0.188 70.08);
   --severity-error: oklch(0.74 0.191 22.216);
   --severity-info: #38BDF8;
-  /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 18%-into-
+  /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 12%-into-
    * transparent tint as Dark/HC (see `.theme-dark`'s own comment for the floor/verification
-   * method and why 18%) -- this preset's own binding case, and the tightest of all three
-   * themes, is `--severity-error` on `--card` (4.62:1 for error-on-tint). */
-  --severity-success-bg: color-mix(in oklab, var(--severity-success) 18%, transparent);
-  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 18%, transparent);
-  --severity-error-bg: color-mix(in oklab, var(--severity-error) 18%, transparent);
-  --severity-info-bg: color-mix(in oklab, var(--severity-info) 18%, transparent);
+   * method, the three checked surfaces, and why 12%) -- this preset's own binding case, and the
+   * tightest of all three themes, is `--severity-error` on `--popover` (4.58:1 for
+   * error-on-tint). */
+  --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
+  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
+  --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
+  --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
 
   /* ---- Layer 3: component tokens ---------------------------------------------------------- */
   --scrollbar-thumb: var(--muted-foreground);
@@ -413,9 +423,9 @@
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.78 0.17 22);
   --destructive-foreground: oklch(0 0 0);
-  /* `--input` at 30% measured 2.46:1 against this theme's `--background` -- under the 3:1
-   * floor, same real component-boundary token as the `dark` theme's fix above. Raised to 38%
-   * alpha: 3.39:1. */
+  /* Quality-gate remediation (round 2): `--input` at 30% measured 2.46:1 against this
+   * theme's `--background` -- under the 3:1 floor, same real component-boundary token as the
+   * `dark` theme's fix above. Raised to 38% alpha: 3.39:1. */
   --border: oklch(0.6 0 0);
   --input: oklch(1 0 0 / 38%);
   --ring: oklch(0.9 0 0);
@@ -479,14 +489,14 @@
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: oklch(0.82 0.13 220);
-  /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 18%-into-
+  /* Severity tinted backgrounds (#550 item 2, "tinted severity backgrounds"): same 12%-into-
    * transparent tint as Dark (see `.theme-dark`'s own comment for the floor/verification
-   * method) -- this preset's margins are the widest of the three (its own tightest case,
-   * `--severity-error` on `--card`, still clears 6.54:1). */
-  --severity-success-bg: color-mix(in oklab, var(--severity-success) 18%, transparent);
-  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 18%, transparent);
-  --severity-error-bg: color-mix(in oklab, var(--severity-error) 18%, transparent);
-  --severity-info-bg: color-mix(in oklab, var(--severity-info) 18%, transparent);
+   * method and the three checked surfaces) -- this preset's margins are the widest of the three
+   * (its own tightest case, `--severity-error` on `--card`/`--popover`, still clears 7.31:1). */
+  --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);
+  --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
+  --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
+  --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
 }
 
 /* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================

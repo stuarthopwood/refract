@@ -154,7 +154,24 @@ function linearToHex([r, g, b]) {
 }
 
 const globalsCssPath = path.join(repoRoot, 'src/renderer/styles/globals.css')
-const globalsCss = readFileSync(globalsCssPath, 'utf-8')
+// A11y/quality-gate remediation (HIGH, shared with check-theme-contrast.mjs's own sister fix):
+// the `.theme-<id>` block/property regexes below match raw text with no comment-awareness, so a
+// `--token: value;`-shaped line sitting INSIDE a `/* ... */` CSS comment would otherwise silently
+// parse as if it were live. Strip every comment first, and fail loudly if stripping leaves an
+// unbalanced or unterminated marker behind.
+function stripCssComments(source, label) {
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, '')
+  const openCount = (source.match(/\/\*/g) || []).length
+  const closeCount = (source.match(/\*\//g) || []).length
+  if (openCount !== closeCount || stripped.includes('/*') || stripped.includes('*/')) {
+    console.error(
+      `${label}: unterminated or unbalanced CSS comment (found ${openCount} '/*' and ${closeCount} '*/') -- refusing to parse`,
+    )
+    process.exit(2)
+  }
+  return stripped
+}
+const globalsCss = stripCssComments(readFileSync(globalsCssPath, 'utf-8'), path.relative(repoRoot, globalsCssPath))
 const OKLCH_RE = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%)?\s*\)$/i
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // Quality-gate remediation: `--card` can now be `var(--surface-1)` (the three-layer token model,

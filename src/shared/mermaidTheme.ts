@@ -629,7 +629,7 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   taskTextOutsideColor: '#F8FAFC',
   taskTextClickableColor: '#F8FAFC',
   taskTextColor: '#F8FAFC',
-  // `.theme-dark-high-contrast`'s own entry below overrides these same two keys to its own
+  // `.theme-dark-high-contrast`'s own entry below overrides these same two key families to its own
   // muted-foreground rather than leaving DARK_FAMILY's neutral `#b5b5b5` grey; matching that
   // pattern here too, to this preset's own `--muted-foreground` (`#94A3B8`, same value as
   // `lineColor` above), rather than a neutral grey unrelated to its own palette.
