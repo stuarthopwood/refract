@@ -979,6 +979,18 @@ export class SessionAgent extends EventEmitter {
       this.scheduleReadoutUpdate();
     }
     if (info.requested) {
+      // Quality-gate fix (HIGH, cycle 6, 2026-10-08): `info.requested` only reflects
+      // `OmpProcess`'s own internal flag, set unconditionally by `OmpProcess.stop()` -- which
+      // `launch()`'s own failed-handshake/failed-attach cleanup also calls (both catch blocks
+      // above), for a process that was never asked to stop by the user at all. Without this
+      // check, a `launch()` failure was wrongly recorded as a deliberate stop: `stoppedOnRequest`
+      // set true, the persisted marker written at the Conversation's current size, and
+      // `terminatedUnexpectedly: false` emitted -- hiding the exact crash evidence `recordStart
+      // Failure` (called right after, by `launch()`'s own catch block) was about to report, and
+      // outliving even an app restart via the marker. `this.stopRequested` is set ONLY by
+      // `shutdown()`, never by `launch()`'s internal cleanup, so it is the correct signal for
+      // "the USER asked this Session to stop" that `info.requested` is not.
+      if (!this.stopRequested) return;
       // A requested stop is never "unexpected" by definition, regardless of what the
       // Conversation's own tail happens to show (quality gate 2026-10-08). Quality-gate fix
       // (cycle 2): stored on `this.runtime` too (not just sent on this one live event), so

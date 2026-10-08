@@ -243,4 +243,33 @@ describe('RegistryStore.updateSession rollback on a failed write', () => {
     expect(persisted?.stoppedOnRequestConversation).toBeNull();
     expect(persisted?.stoppedOnRequestAtSize).toBeNull();
   });
+
+  // Quality-gate fix (cycle 6, 2026-10-08, test-reviewer, Medium): the test above proves the
+  // disk-write side by reopening right after the failure, but `updateSession`'s own catch block
+  // already does its own best-effort retry write (restoring `current`), so that reopen alone
+  // could in principle pass even if a LATER, genuinely unrelated write were the only thing that
+  // ever actually reached disk. This drives a REAL subsequent write (a plain, unrelated rename)
+  // after the failed one and reopens again, proving the registry keeps working normally post-
+  // failure and that the later write's own result -- not some leftover from the failed one -- is
+  // what disk actually shows.
+  it('a real subsequent write still succeeds and persists correctly after an earlier write failed', async () => {
+    const { dir, registry } = await freshRegistry();
+    const session = makeSession({ stoppedOnRequestConversation: null, stoppedOnRequestAtSize: null });
+    await registry.addSession(session);
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(
+      registry.updateSession(session.id, { stoppedOnRequestConversation: session.currentConversation, stoppedOnRequestAtSize: 42 }),
+    ).rejects.toThrow('disk full');
+
+    const updated = await registry.updateSession(session.id, { name: 'Renamed after a failed write' } as Partial<Session>);
+    expect(updated.name).toBe('Renamed after a failed write');
+    expect(updated.stoppedOnRequestConversation).toBeNull();
+
+    const reopened = await RegistryStore.open(dir);
+    const persisted = reopened.getSession(session.id);
+    expect(persisted?.name).toBe('Renamed after a failed write');
+    expect(persisted?.stoppedOnRequestConversation).toBeNull();
+    expect(persisted?.stoppedOnRequestAtSize).toBeNull();
+  });
 });

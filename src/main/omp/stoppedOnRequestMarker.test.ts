@@ -112,6 +112,31 @@ describe('recordStoppedOnRequestMarker', () => {
 
     expect(registry.getSession(session.id)?.stoppedOnRequestConversation).toBe(conversation);
   });
+
+  // Quality-gate fix (cycle 6, 2026-10-08, test-reviewer, Medium): the two tests above only ever
+  // pass a STATIC `stillCurrent` (always `true` or always `false`), which would pass identically
+  // whether the real implementation checks it before OR after the `fs.stat` await -- neither
+  // proves the ordering the fix actually depends on (`SessionAgent.onExit`'s own `lifeEpoch`
+  // comparison is only ever accurate once read AFTER the stat has had a chance to lose a race to
+  // a concurrent `launch()`). This flips the flag in the SAME synchronous tick as the call,
+  // before the real `fs.stat`'s own promise can possibly have settled -- a check performed
+  // before the stat would still observe `true` (the call's own synchronous portion runs before
+  // this test's very next line), while the correct after-the-stat check observes `false`.
+  it('checks stillCurrent() AFTER the stat, not before -- a flag flipped during the stat still blocks the write', async () => {
+    const { dir, registry } = await freshRegistry();
+    const conversation = await freshConversation();
+    const session = makeSession({ currentConversation: conversation });
+    await registry.addSession(session);
+
+    let current = true;
+    const pending = recordStoppedOnRequestMarker(registry, session.id, conversation, () => current);
+    current = false;
+    await pending;
+
+    expect(registry.getSession(session.id)?.stoppedOnRequestConversation).toBeUndefined();
+    const reopened = await RegistryStore.open(dir);
+    expect(reopened.getSession(session.id)?.stoppedOnRequestConversation).toBeUndefined();
+  });
 });
 
 describe('clearStoppedOnRequestMarker', () => {
