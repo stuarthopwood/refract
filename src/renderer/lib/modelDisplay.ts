@@ -8,14 +8,14 @@ import type { Session } from '../../shared/model'
 // but an unrecognised future value still renders (falls back to the raw string) instead of
 // disappearing.
 const THINKING_LEVEL_LABEL: Record<string, string> = {
- off: 'Off',
- inherit: 'Inherit',
- minimal: 'Minimal',
- low: 'Low',
- medium: 'Medium',
- high: 'High',
- xhigh: 'Extra high',
- max: 'Max'
+  off: 'Off',
+  inherit: 'Inherit',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max'
 }
 
 /** "provider/model-name" for a Session's last known model, or `null` before any `get_state`
@@ -23,20 +23,20 @@ const THINKING_LEVEL_LABEL: Record<string, string> = {
  * separately-iconed chips (docs/DESIGN.md "No bracket/parenthetical UI copy") -- both
  * SessionDetailsCard.tsx and MessageInput.tsx -- never has to re-parse a combined string. */
 export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | null {
- if (!session.lastModel) return null
- const { provider, id, name } = session.lastModel
- return `${provider}/${name ?? id}`
+  if (!session.lastModel) return null
+  const { provider, id, name } = session.lastModel
+  return `${provider}/${name ?? id}`
 }
 
 /** The human label for a Session's last known thinking level, or `null` if none has been
  * reported yet. */
 export function formatThinkingLevelLabel(session: Pick<Session, 'lastThinkingLevel'>): string | null {
- if (!session.lastThinkingLevel) return null
- // Security audit finding (2026-10-03, Low): a plain object literal lookup also returns
- // inherited Object.prototype properties for a key like "constructor" or "toString" --
- // `Object.hasOwn` keeps the fallback to the raw string for any key that isn't a real,
- // own-declared effort label.
- return Object.hasOwn(THINKING_LEVEL_LABEL, session.lastThinkingLevel)
-  ? (THINKING_LEVEL_LABEL[session.lastThinkingLevel] ?? session.lastThinkingLevel)
-  : session.lastThinkingLevel
+  if (!session.lastThinkingLevel) return null
+  // Security audit finding (2026-10-03, Low): a plain object literal lookup also returns
+  // inherited Object.prototype properties for a key like "constructor" or "toString" --
+  // `Object.hasOwn` keeps the fallback to the raw string for any key that isn't a real,
+  // own-declared effort label.
+  return Object.hasOwn(THINKING_LEVEL_LABEL, session.lastThinkingLevel)
+    ? (THINKING_LEVEL_LABEL[session.lastThinkingLevel] ?? session.lastThinkingLevel)
+    : session.lastThinkingLevel
 }
