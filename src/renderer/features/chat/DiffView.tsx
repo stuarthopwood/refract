@@ -28,31 +28,36 @@ function renderGutter({ change, side, renderDefault }: GutterOptions) {
 // the diff text itself, it never interprets it as markup.
 export function DiffView({ path, oldText, newText }: DiffViewProps) {
   const patch = buildUnifiedDiff(path, oldText, newText)
-  const file = patch ? parseDiff(patch)[0] : undefined
-  const hasChanges = Boolean(file) && file!.hunks.length > 0
+  const parsed = patch ? parseDiff(patch)[0] : undefined
+  // Quality-gate remediation (Medium): narrows to a single `changedFile` once, instead of a
+  // `hasChanges` boolean paired with non-null `!` assertions at every later use -- the type
+  // checker now actually proves `changedFile.hunks` is non-empty everywhere it's read.
+  const changedFile = parsed && parsed.hunks.length > 0 ? parsed : undefined
 
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
-      <div className="group flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
         <span className="truncate" title={path}>
           {path}
         </span>
         {/* Copies the full unified diff (git header plus hunks) shown below -- the same "copy
          * exactly the displayed text" rule `CodeBlock`'s Copy button follows (#524); there is
-         * nothing to copy for an unchanged file, so the button only renders when a hunk exists. */}
-        {hasChanges && (
+         * nothing to copy for an unchanged file, so the button only renders when a hunk exists.
+         * Always visible (quality-gate round 2, issue #524's "visible without hover" AC); `-my-1`
+         * keeps the 24px icon-xs target from growing this header past its original height. */}
+        {changedFile && (
           <CopyButton
             getText={() => patch}
             label="Copy diff"
             announcement="Diff copied"
-            className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+            className="-my-1 text-muted-foreground"
           />
         )}
       </div>
-      {!hasChanges ? (
+      {!changedFile ? (
         <div className="px-2.5 py-1.5 text-xs text-muted-foreground">No changes</div>
       ) : (
-        <Diff viewType="unified" diffType={file!.type} hunks={file!.hunks} renderGutter={renderGutter}>
+        <Diff viewType="unified" diffType={changedFile.type} hunks={changedFile.hunks} renderGutter={renderGutter}>
           {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
         </Diff>
       )}
@@ -74,32 +79,38 @@ interface DiffViewFromPatchProps {
 /** GitHub's pull request diffs arrive as a ready-made patch body, not an old/new text pair --
  * this is `DiffView`'s sibling for that shape, sharing its rendering but not its diff-building. */
 export function DiffViewFromPatch({ path, patch }: DiffViewFromPatchProps) {
-  const wrapped = `diff --git a/${path} b/${path}
---- a/${path}
-+++ b/${path}
+  // Security remediation (Low): a GitHub file path can contain embedded CR/LF (git itself
+  // allows it); interpolated raw into the diff header below, a crafted path could inject extra
+  // header or hunk lines into both the parsed diff AND the exact text the Copy button puts on
+  // the clipboard. Stripped here, once, so parsing and copying always agree. The visible
+  // `title`/text below still shows the real path -- it is a React text node, never markup.
+  const safePath = path.replace(/[\r\n]/g, '')
+  const wrapped = `diff --git a/${safePath} b/${safePath}
+--- a/${safePath}
++++ b/${safePath}
 ${patch}`
-  const file = parseDiff(wrapped)[0]
-  const hasChanges = Boolean(file) && file!.hunks.length > 0
+  const parsed = parseDiff(wrapped)[0]
+  const changedFile = parsed && parsed.hunks.length > 0 ? parsed : undefined
 
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
-      <div className="group flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
         <span className="truncate" title={path}>
           {path}
         </span>
-        {hasChanges && (
+        {changedFile && (
           <CopyButton
             getText={() => wrapped}
             label="Copy diff"
             announcement="Diff copied"
-            className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
+            className="-my-1 text-muted-foreground"
           />
         )}
       </div>
-      {!hasChanges ? (
+      {!changedFile ? (
         <div className="px-2.5 py-1.5 text-xs text-muted-foreground">No changes</div>
       ) : (
-        <Diff viewType="unified" diffType={file!.type} hunks={file!.hunks} renderGutter={renderGutter}>
+        <Diff viewType="unified" diffType={changedFile.type} hunks={changedFile.hunks} renderGutter={renderGutter}>
           {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
         </Diff>
       )}

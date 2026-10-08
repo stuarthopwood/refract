@@ -67,17 +67,25 @@ function getHighlighter(): Promise<Highlighter> {
 // `copyText` is the full, untruncated value the Copy button puts on the clipboard -- distinct
 // from `label` (the language shown) so a caller whose visible body is capped (ToolRow.tsx's
 // "Show all" truncation) can still copy the complete original text (#524, PLAN.md "Code
-// snippets" row).
+// snippets" row). The button is always rendered (never hover/focus-only, quality-gate round 2:
+// issue #524's own "visible without hover" acceptance criterion), `-my-1` so the 24px icon-xs
+// target doesn't grow this header past its original ~24px row height, and hidden entirely when
+// `copyText` is empty (an untagged empty fence, or a tool call with no output) so Copy never
+// silently clears the user's clipboard. The accessible name/tooltip includes the same language
+// label shown in the header ("Copy code, typescript"), per the issue's intended behaviour, so
+// multiple blocks in one transcript are distinguishable in a screen reader's button list.
 function CodeBlockHeader({ label, copyText }: { label: string; copyText: string }) {
   return (
-    <div className="group flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+    <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
       <span className="truncate">{label}</span>
-      <CopyButton
-        getText={() => copyText}
-        label="Copy code"
-        announcement="Code copied"
-        className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-      />
+      {copyText !== '' && (
+        <CopyButton
+          getText={() => copyText}
+          label={`Copy code, ${label}`}
+          announcement="Code copied"
+          className="-my-1 text-muted-foreground"
+        />
+      )}
     </div>
   )
 }
