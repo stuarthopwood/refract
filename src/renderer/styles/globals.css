@@ -40,16 +40,19 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-active-indicator: var(--active-indicator);
-  /* #550 (theme foundation, palette v2): the surface ladder, the control-edge token, the
-   * brand-indigo text/link/focus step, and the severity roles -- wired through so a later
-   * component pass (#579) can reach for `bg-surface-2`/`border-border-strong`/`text-accent-text`/
-   * `bg-severity-warning` etc directly, the same way every existing semantic role already is.
-   * Nothing in this story's own scope reads these Tailwind utilities yet (components keep their
-   * current classes unchanged); this only makes the new tokens reachable. */
+  /* #550 (theme foundation, palette v2), remediated per quality-gate review: PURELY ADDITIVE
+   * for Dark and Dark (high contrast) -- every token below is new and unused by any component
+   * (components keep their current classes unchanged; #579 migrates them later). Neither
+   * preset's EXISTING tokens change value here; the "#452 retune" (tinted Dark surfaces) is
+   * separate, not-yet-built work. Obsidian is the one preset built out in full in this story,
+   * including a strong `--border` (unlike the mock's own soft literal) so every un-migrated
+   * `border-border` call site still reads correctly; its own soft/decorative aesthetic lives
+   * on the new `--divider` token instead, also unused for now. */
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
   --color-surface-hover: var(--surface-hover);
+  --color-divider: var(--divider);
   --color-border-strong: var(--border-strong);
   --color-accent-text: var(--accent-text);
   --color-severity-success: var(--severity-success);
@@ -108,129 +111,143 @@
 
 .theme-dark {
   color-scheme: dark;
-
-  /* ---- #550 (theme foundation, palette v2): semantic roles ------------------------------
-   * Layer 1 (palette: raw values, never read by a component) lives inline below -- each raw
-   * hex/oklch literal appears exactly once, on its semantic-role token. Layer 2 (semantic
-   * roles) is this group: background/foreground/the surface ladder/the two edge classes/
-   * accent-text/the severity colours. Layer 3 (component tokens, further down) only ever
-   * reads these through `var()`, never a literal.
-   *
-   * Retuned per #452 (Stuart, 2026-10-06, re-scoped into this issue 2026-10-07): "somewhere
-   * between" the two literal readings floated there -- background lands at the same rendered
-   * darkness as `#1a1a1a` (measured WCAG relative luminance 0.0104 vs `#1a1a1a`'s 0.0103),
-   * tinted with the same slate-blue hue (~226 deg) the Obsidian preset below uses rather than
-   * staying neutral grey (#550's own decision: "adopt the mock's palette ... for Dark", not a
-   * neutral-grey lighten) -- one step lighter than Obsidian's own `#0F1014` canvas, which keeps
-   * Dark and Obsidian visibly distinct presets sharing one palette family. */
-  --background: #181A21;
-  --foreground: #F8FAFC;
-  --muted-foreground: #94A3B8;
-  --sidebar: #1E2029;
-  /* Surface ladder (#550 "surface ladder rule"): depth from a step of surfaces, not elevation
-   * -- background, then surface-1/2/3, each a step lighter. `--sidebar` above is its own
-   * structural step, not a ladder member (#550: "the sidebar is a structural step ... plus a
-   * divider, not a surface-ladder member"). */
-  --surface-1: #252933;
-  --surface-2: #2E323F;
-  --surface-3: #353A4A;
-  /* Two edge classes (#550 "divider versus control-edge rule"): `--border` is the soft
-   * decorative divider (~1.6:1 against its neighbours -- exempt from WCAG 1.4.11, carries no
-   * meaning, checked but not floored by DIVIDER_PAIRS in check-theme-contrast.mjs);
-   * `--border-strong` is the control edge (inputs, outline buttons, toggles, tabs, menus --
-   * >=3:1 against both `--background` and `--surface-1`, verified below). */
-  --border: #383D4D;
-  --border-strong: #6B7898;
-  /* Accent (#550 item 6): `--primary` keeps the mock's indigo fill for the one filled
-   * ("commit") button variant -- `#6366F1` itself measures 4.467:1 for white text, just under
-   * the 4.5:1 AA floor, so the fill is nudged to `#5A5EEE` (4.92:1 for white text, verified by
-   * check-theme-contrast.mjs's `primary-foreground`/`primary` pair). `--accent-text` is the
-   * separate, lighter indigo step for text/links (never the fill): #6366F1 directly on this
-   * canvas is only ~4.3:1, under the 4.5:1 text floor, so it is lightened until both this
-   * canvas and `--surface-1` clear 4.5:1 (5.01:1 / 4.19:1 measured). */
-  --accent-text: #8285F4;
-  /* Severity roles (#550 item 2 + item 5): the mock's success/warning/error/info map onto this
-   * app's existing `--state-*`/`--destructive` colours where the meaning already matches --
-   * same values as before, not a second set, just promoted to a named semantic role so every
-   * state/destructive component token below can default to one. `--severity-info` is the one
-   * genuinely new colour (no existing OMP session state means "info" today). */
-  --severity-success: oklch(0.696 0.17 162.48);
-  --severity-warning: oklch(0.769 0.188 70.08);
-  --severity-error: oklch(0.704 0.191 22.216);
-  --severity-info: #38BDF8;
-
-  /* ---- Layer 3: component tokens (each defaults to a semantic role above) ---------------- */
-  --scrollbar-thumb: var(--muted-foreground);
-  --scrollbar-thumb-hover: var(--foreground);
+  --scrollbar-thumb: #757575;
+  --scrollbar-thumb-hover: #8c8c8c;
   --scrollbar-track: transparent;
-  /* Chat prose colour (docs/DESIGN.md "Chat text colour", Stuart 2026-10-04): dimmer than
-   * --foreground, brighter than --muted-foreground (contrast ~13.2:1 against the retuned
-   * canvas, comfortably above the 7:1 AAA threshold), tinted the same slate-blue hue as the
-   * rest of this palette instead of staying achromatic. */
-  --chat-foreground: #DFE0E2;
-  /* Composer fill (docs/DESIGN.md "Composer tone"; MessageInput.tsx): must stay strictly
-   * darker than --background (0.0104 relative luminance) -- 0.0044 clears that with room to
-   * spare, same slate-blue hue, nearly black. */
-  --composer-background: #0D0E12;
-  --card: var(--surface-1);
-  --card-foreground: var(--foreground);
-  --popover: var(--surface-2);
-  --popover-foreground: var(--foreground);
-  /* New hover surface (#550 token mapping item 2): one step above --popover, the mock's
-   * `bgSurface2`-hover tone. Not consumed by any component yet (#579 sweep). */
-  --surface-hover: var(--surface-3);
-  --primary: #5A5EEE;
-  --primary-foreground: #FFFFFF;
-  /* The shadcn-convention "neutral highlight" trio (hover/selected backgrounds on menus, list
-   * rows, badges) already shared one value before this change -- they default to the new
-   * --surface-hover role together, same relationship, now tinted instead of achromatic. */
-  --secondary: var(--surface-hover);
-  --secondary-foreground: var(--foreground);
-  --muted: var(--surface-hover);
-  --accent: var(--surface-hover);
-  --accent-foreground: var(--foreground);
-  --destructive: var(--severity-error);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  /* Chat prose colour (docs/DESIGN.md "Chat text colour", Stuart 2026-10-04): 0.90 lightness
+   * reads as a genuinely perceptible light grey against the dark background (contrast ratio
+   * ~14.7:1, computed via OKLab->linear-sRGB->WCAG relative luminance, comfortably above the
+   * 7:1 AAA threshold) while staying visibly dimmer than --foreground's 0.985 (~18.96:1, which
+   * reads as indistinguishable from pure white) and well short of --muted-foreground's 0.708
+   * (~7.6:1, reserved for secondary/meta text). */
+  --chat-foreground: oklch(0.90 0 0);
+  /* Composer fill (docs/DESIGN.md "Composer tone"; MessageInput.tsx): a literal, solid colour
+   * rather than an alpha composite over --card/--muted, matched exactly to this theme's previous
+   * hardcoded `bg-[oklch(0.09_0_0)]` so nothing visibly changes now that it is a token
+   * (MessageInput.tsx's own comment records why an alpha composite doesn't work here). Must stay
+   * strictly darker than --background (0.145) so the composer reads as the page's most recessive
+   * field; 0.09 clears that with room to spare. */
+  --composer-background: oklch(0.09 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.145 0 0);
+  /* Quality-gate remediation (HIGH, 3 independent reviewers + corrected check-theme-contrast.mjs):
+   * the previous semi-transparent `oklch(1 0 0 / 16%)` blends (gamma-correctly, matching how
+   * Chromium actually composites) to only 1.53:1 against this theme's `--background` -- well
+   * under the 3:1 WCAG AA non-text floor, despite the old (linear-space) version of this script
+   * misreporting it as 4.01:1 PASS. Now opaque at `oklch(0.5 0 0)`, measured 3.30:1 against
+   * `--background` by the corrected script -- but quality-gate remediation, round 2 (corrected
+   * script's own expanded PAIRS list) found `--border` ALSO sits directly on `--card`/
+   * `--popover` (2.99:1, under the 3:1 floor) and `--muted` (2.52:1) elsewhere in this app, which
+   * `0.5` didn't clear. Raised to `0.56` (`#747474`): 4.25:1 on `--background`, 3.85:1 on
+   * `--card`/`--popover`, 3.25:1 on `--muted`, all now >=3:1. `--input` below raised to 36%
+   * alpha for the same reason (15% measured 1.47:1 on `--background` -- the border of every
+   * Input/Textarea/Select/outline-Toggle/outline-Button in this theme). */
+  --border: oklch(0.56 0 0);
   --input: oklch(1 0 0 / 36%);
-  /* Brightened from the pre-#550 value (oklch 0.556, #737373) to oklch 0.62 (#868686): the new
-   * three-step surface ladder lightens the muted/50-over-popover dialog-footer backdrop (issue
-   * #488's own composited check) enough that the old ring value dropped under 3:1 against it;
-   * 0.62 restores that margin (3.30:1, verified by check-theme-contrast.mjs) without touching
-   * ring WIDTH, which stays whatever the component classes already set (#552's open question,
-   * not decided here). */
-  --ring: oklch(0.62 0 0);
-  --active-indicator: var(--accent-text);
+  --ring: oklch(0.556 0 0);
+  --active-indicator: oklch(0.58 0.22 264.376);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar-foreground: var(--foreground);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: var(--surface-hover);
-  --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
 
-  --state-working: var(--severity-success);
+  --state-working: oklch(0.696 0.17 162.48);
   --state-working-foreground: oklch(0.145 0 0);
   --state-idle: oklch(0.708 0 0);
-  --state-needs-you: var(--severity-warning);
+  --state-needs-you: oklch(0.769 0.188 70.08);
   --state-needs-you-foreground: oklch(0.145 0 0);
-  --state-stopped: var(--severity-error);
+  --state-stopped: oklch(0.704 0.191 22.216);
   --state-stopped-foreground: oklch(0.145 0 0);
+
+  /* ---- #550 (theme foundation, palette v2), remediated per quality-gate review (PR #596) ----
+   * PURELY ADDITIVE from here down: every property above this comment is byte-identical to
+   * `origin/main` -- nothing this preset already rendered changes value. The "#452 retune"
+   * (tinted slate surfaces for Dark) is separate, not-yet-built work; this story does not ship
+   * it for Dark. Every token below is new and read by no component yet (#579 migrates call
+   * sites later), so none of it can regress anything live today.
+   *
+   * Surface ladder: `--surface-1`/`--surface-2` alias the existing `--card`/`--popover` (both
+   * 0.205 today -- this preset's ladder genuinely has only two distinct tiers, not three,
+   * which is why `--surface-1` equals `--surface-2`); `--surface-3` aliases the existing
+   * `--muted`/`--secondary`/`--accent`/`--sidebar-accent` (0.269). The alias points FROM the
+   * new name TO the existing, canonical one -- the opposite direction from the brand-new
+   * Obsidian preset below, where `--surface-1`/`2`/`3` are themselves canonical and legacy
+   * names alias to them -- so there is exactly one literal for each value, never two. */
+  --surface-1: var(--card);
+  --surface-2: var(--popover);
+  --surface-3: var(--muted);
+  --surface-hover: var(--surface-3);
+  /* Two edge classes (#550 "divider versus control-edge rule"): `--border` above stays
+   * EXACTLY what it already is -- the control edge every outline Button/Toggle/Input-adjacent
+   * component edge, menu bar, card and code-block border already renders with, at its existing
+   * >=3:1 margin. `--divider` is the NEW soft/decorative name for the OTHER edge class the
+   * design doc calls for; since Dark is not being retuned in this story, there is no
+   * mock-inspired soft value to adopt here, so this reuses the one historical precedent this
+   * exact file already measured for a soft edge on this exact canvas: the pre-remediation
+   * `oklch(1 0 0 / 16%)` value the comment above says measured 1.53:1 (recomputed here: 1.53:1
+   * against `--background`, 1.63:1 against `--card`/`--popover`). `--border-strong` is a plain
+   * alias of `--border`, so a future component migrated onto the "control edge" name reads the
+   * exact same value `border-border` already renders today. */
+  --divider: oklch(1 0 0 / 16%);
+  --border-strong: var(--border);
+  /* Accent (#550 item 6): NOT delivered for Dark in this remediated cut -- `--primary` stays
+   * its existing near-white fill above (the indigo "#550 item 4" fill is Obsidian-only; folding
+   * it into Dark here would be a second value change to an existing, live token, which this
+   * remediation's whole point is to avoid). `--accent-text` is still added as a new, read-by-
+   * nothing token: a lighter indigo step that clears 4.5:1 against both this theme's existing
+   * `--background` (5.24:1) and `--card`/`--popover` (4.74:1). */
+  --accent-text: #7375F2;
+  /* Severity roles (#550 item 2 + item 5): aliases of the EXISTING `--state-*`/`--destructive`
+   * values above (not a second set, and not a value change -- #550's own "do not create a
+   * second set" rule). `--severity-info` is the one genuinely new colour (no existing OMP
+   * session state means "info" today), verified >=3:1 against both `--background` (9.24:1) and
+   * `--card`/`--popover` (8.37:1), the non-text floor every other severity/state colour here is
+   * already held to. */
+  --severity-success: var(--state-working);
+  --severity-warning: var(--state-needs-you);
+  --severity-error: var(--destructive);
+  --severity-info: #38BDF8;
 }
 
-/* #550 (theme foundation, palette v2): a NEW built-in preset, additive beside `.theme-dark`
- * above -- the mock's own Obsidian canvas (`#0F1014`) taken literally, one step darker/moodier
- * than Dark's retuned `#181A21`, sharing the same slate-blue hue family, surface ladder shape,
- * edge-class rule, and severity colours. Registered in src/shared/themes.ts; #552 covers
- * Nordic Frost/Cyber Amber, not this issue. */
+/* #550 (theme foundation, palette v2), remediated per quality-gate review (PR #596): the mock's
+ * own Obsidian canvas (`#0F1014`) and tinted-slate palette, built out in full as a brand-new,
+ * additive preset -- unlike Dark/Dark (high contrast) above, there is no existing rendering to
+ * protect, so this is the one place #550's full token set (including the corrected indigo
+ * accent) actually ships. Every token here that a currently-un-migrated component still reads
+ * (`--border` via the universal `border-border` utility, `--muted`/`--accent`/`--secondary`/
+ * `--sidebar-accent` via the shadcn "neutral highlight" classes, `--primary`, `--input`,
+ * `--ring`) is tuned to meet the SAME floors those components already rely on in Dark/HC, not
+ * the mock's own softer literals -- the mock's soft aesthetic lives entirely on the new,
+ * unused `--divider` token instead. Registered in src/shared/themes.ts; #551 covers Nordic
+ * Frost/Cyber Amber, not this issue. */
 .theme-obsidian {
   color-scheme: dark;
 
-  /* ---- Layer 2: semantic roles (see .theme-dark above for the full rationale) ------------ */
+  /* ---- Layer 2: semantic roles. Canonical here (the opposite of Dark/HC above): --card/
+   * --popover/--muted etc below alias INTO these, not the other way round. ------------------ */
   --background: #0F1014;
   --foreground: #F8FAFC;
   --muted-foreground: #94A3B8;
@@ -238,21 +255,38 @@
   --surface-1: #1C1F28;
   --surface-2: #242834;
   --surface-3: #2A3040;
-  /* `--border` here is the mock's own literal divider (`#2E3342`, verified 1.51:1 against this
-   * canvas -- matches #550's own measured table exactly). `--border-strong` lightens the
-   * mock's claimed "strong" border (`#434B5F`, measured 2.18:1 -- fails the 3:1 control-edge
-   * floor, per #550 item 4) until it clears 3:1 against both this canvas and --surface-1
-   * (3.68:1 / 3.18:1 measured). */
-  --border: #2E3342;
-  --border-strong: #616D8A;
-  /* Same correction as Dark: `#6366F1` fails 4.467:1 for white fill text and ~4.3:1 for its own
-   * text on this canvas; `--primary` below moves to the corrected fill, `--accent-text` is a
-   * separate lighter step clearing 4.5:1 against both this canvas and --surface-1 (5.48:1 /
-   * 4.75:1 measured). */
-  --accent-text: #7A7DF3;
+  /* `--border` is the actual rendered control/container edge every un-migrated `border-border`
+   * call site (cards, code blocks, menu bar, outline buttons whose `dark:` variant doesn't
+   * already redirect to `--input`) draws with on this preset -- retuned with margin so it
+   * clears 3:1 against `--background` (4.57:1), `--surface-1` (3.95:1) AND `--surface-2`/
+   * popover (3.53:1, the binding constraint: dialogs and menus sit on this lighter surface,
+   * quality-gate review found the mock-derived `#616D8A` cleared only 2.84:1 there).
+   * `--border-strong` is a plain alias, so a future "control edge" migration reads this same
+   * value. The mock's own soft literal (`#2E3342`, ~1.51:1) lives on the new `--divider` token
+   * below instead, unused by any component yet, matching Dark/HC's own split. */
+  --border: #6F7C9D;
+  --border-strong: var(--border);
+  --divider: #2E3342;
+  /* Accent (#550 item 6): `--primary` keeps the mock's indigo fill for the one filled
+   * ("commit") button variant -- `#6366F1` itself measures 4.467:1 for white text, just under
+   * the 4.5:1 AA floor, so the fill is nudged to `#5A5EEE` (4.92:1 for white text, verified by
+   * check-theme-contrast.mjs's `primary-foreground`/`primary` pair). `--accent-text` is the
+   * separate, lighter indigo step for text/links (never the fill), retuned with margin so it
+   * clears 4.5:1 against `--background` (5.98:1), `--surface-1` (5.18:1) AND `--surface-2`/
+   * popover (4.63:1, the binding constraint -- quality-gate review found the earlier `#7A7DF3`
+   * cleared only 4.24:1 there). */
+  --accent-text: #8588F4;
+  /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
+   * app's `--state-*` already uses elsewhere (same meaning, not a second set); error is
+   * retuned specifically for this preset (lightness 0.74 vs Dark/HC's shared 0.704/0.78) so it
+   * still clears 4.5:1 once drawn as `focus:bg-destructive/10` over `--surface-2`/popover (the
+   * dropdown-menu destructive-item fill behind "Sign out" -- 4.73:1, quality-gate review found
+   * the shared 0.704 value cleared only 4.46:1 there) as well as plain text on popover (5.47:1).
+   * All four also clear the >=3:1 non-text floor against `--background`/`--surface-1`/
+   * `--surface-2`. */
   --severity-success: oklch(0.696 0.17 162.48);
   --severity-warning: oklch(0.769 0.188 70.08);
-  --severity-error: oklch(0.704 0.191 22.216);
+  --severity-error: oklch(0.74 0.191 22.216);
   --severity-info: #38BDF8;
 
   /* ---- Layer 3: component tokens ---------------------------------------------------------- */
@@ -279,8 +313,11 @@
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --input: oklch(1 0 0 / 36%);
-  /* Same brightening as .theme-dark's own --ring above, for the same reason (the dialog-footer
-   * composite check against this preset's own surface ladder): 3.83:1 measured. */
+  /* Brightened from the achromatic `oklch(0.556)` plain-grey Dark/HC both still use (not
+   * reverted here -- this preset has no legacy value to protect): the muted/50-over-popover
+   * dialog-footer composite (issue #488's own check) on this preset's own surface ladder needs
+   * >=3:1, measured 3.82:1 at 0.62 without touching ring WIDTH (#552's open question, not
+   * decided here). */
   --ring: oklch(0.62 0 0);
   --active-indicator: var(--accent-text);
   --chart-1: oklch(0.488 0.243 264.376);
@@ -293,7 +330,11 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: var(--surface-hover);
   --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: var(--border);
+  /* Unlike `--border` above (retuned strong so un-migrated controls still read correctly), the
+   * sidebar's own divider is purely decorative, so it points at the soft `--divider` token --
+   * Obsidian's own choice, independent of Dark/HC (which keep their existing sidebar-border
+   * values unchanged). */
+  --sidebar-border: var(--divider);
   --sidebar-ring: var(--ring);
 
   --state-working: var(--severity-success);
@@ -314,44 +355,11 @@
  * starkest possible background this design system can express. */
 .theme-dark-high-contrast {
   color-scheme: dark;
+  --scrollbar-thumb: #d4d4d4;
+  --scrollbar-thumb-hover: #ffffff;
+  --scrollbar-track: transparent;
   --background: oklch(0 0 0);
   --foreground: oklch(1 0 0);
-  --muted-foreground: oklch(0.85 0 0);
-  --sidebar: oklch(0.1 0 0);
-  /* #550 item 7: this preset keeps its existing modest tone steps (card/popover at 0.14, one
-   * step up from pure black) but gives them the surface-ladder names too, so the contrast
-   * script's foundation pairs (border-strong/accent-text/severity-* etc, all generic across
-   * every `.theme-*` block) don't fail this preset with "token missing". `--surface-3` is new
-   * -- no existing token matched it -- one step above --surface-2/popover, for a future hover
-   * state. */
-  --surface-1: oklch(0.14 0 0);
-  --surface-2: oklch(0.14 0 0);
-  --surface-3: oklch(0.18 0 0);
-  /* #550 "High contrast preset" (foundations-tokens-theming.md): soft dividers are switched
-   * off here -- every edge, including dividers, raises to the same 4.5:1 text floor as
-   * everything else in this preset (DIVIDER_PAIRS in check-theme-contrast.mjs enforces this
-   * for any theme id containing "high-contrast"). The pre-#550 value (0.6, #808080) cleared
-   * background/card/popover/sidebar (5.04 to 5.32:1) but not --muted (0.26, only 3.94:1) --
-   * the one neighbour the old 3:1-floor version of this token never had to clear. Brightened
-   * to 0.66 (#929292), which clears all five (4.62 to 6.75:1 measured). */
-  --border: oklch(0.66 0 0);
-  --border-strong: var(--border);
-  /* #550 item 6: raised accent-text, reusing the existing --active-indicator/--chart-1 hue
-   * (264, the brand indigo family) at the same lightness -- already 9.27:1 against this
-   * background, comfortably above this preset's 7:1 text floor. */
-  --accent-text: oklch(0.75 0.17 264);
-  /* Severity roles: same hues this preset already used for --state-working/--state-needs-you/
-   * --destructive (kept, not replaced -- #550 item 2's "do not create a second set" applies
-   * here too). `--severity-info` is the one new colour, picked for the same very-high margin
-   * against pure black (12.45:1) as its siblings. */
-  --severity-success: oklch(0.8 0.17 162);
-  --severity-warning: oklch(0.85 0.17 70);
-  --severity-error: oklch(0.78 0.17 22);
-  --severity-info: oklch(0.82 0.13 220);
-
-  --scrollbar-thumb: var(--muted-foreground);
-  --scrollbar-thumb-hover: var(--foreground);
-  --scrollbar-track: transparent;
   /* Dimmer than --foreground (so chat prose still reads as distinct from UI chrome text, same
    * intent as .theme-dark's own --chat-foreground) but still far above the 4.5:1 floor against
    * pure black. */
@@ -369,46 +377,86 @@
    * --card's 0.14) keeps the composer visually distinct from (not identical to) dialogs/popovers
    * while staying lighter than --background. */
   --composer-background: oklch(0.08 0 0);
-  --card: var(--surface-1);
+  --card: oklch(0.14 0 0);
   --card-foreground: oklch(1 0 0);
-  --popover: var(--surface-2);
+  --popover: oklch(0.14 0 0);
   --popover-foreground: oklch(1 0 0);
-  --surface-hover: var(--surface-3);
   --primary: oklch(1 0 0);
   --primary-foreground: oklch(0 0 0);
   --secondary: oklch(0.26 0 0);
   --secondary-foreground: oklch(1 0 0);
   --muted: oklch(0.26 0 0);
+  --muted-foreground: oklch(0.85 0 0);
   --accent: oklch(0.26 0 0);
   --accent-foreground: oklch(1 0 0);
-  --destructive: var(--severity-error);
+  --destructive: oklch(0.78 0.17 22);
   --destructive-foreground: oklch(0 0 0);
   /* Quality-gate remediation (round 2): `--input` at 30% measured 2.46:1 against this
    * theme's `--background` -- under the 3:1 floor, same real component-boundary token as the
    * `dark` theme's fix above. Raised to 38% alpha: 3.39:1. */
+  --border: oklch(0.6 0 0);
   --input: oklch(1 0 0 / 38%);
   --ring: oklch(0.9 0 0);
-  --active-indicator: var(--accent-text);
+  --active-indicator: oklch(0.75 0.17 264);
   --chart-1: oklch(0.75 0.17 264);
   --chart-2: oklch(0.8 0.17 162);
   --chart-3: oklch(0.85 0.17 70);
   --chart-4: oklch(0.78 0.2 304);
   --chart-5: oklch(0.78 0.17 16);
+  --sidebar: oklch(0.1 0 0);
   --sidebar-foreground: oklch(1 0 0);
   --sidebar-primary: oklch(0.75 0.17 264);
   --sidebar-primary-foreground: oklch(0 0 0);
   --sidebar-accent: oklch(0.26 0 0);
   --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: var(--border);
+  --sidebar-border: oklch(0.6 0 0);
   --sidebar-ring: oklch(0.9 0 0);
 
-  --state-working: var(--severity-success);
+  --state-working: oklch(0.8 0.17 162);
   --state-working-foreground: oklch(0 0 0);
   --state-idle: oklch(0.85 0 0);
-  --state-needs-you: var(--severity-warning);
+  --state-needs-you: oklch(0.85 0.17 70);
   --state-needs-you-foreground: oklch(0 0 0);
-  --state-stopped: var(--severity-error);
+  --state-stopped: oklch(0.78 0.17 22);
   --state-stopped-foreground: oklch(0 0 0);
+
+  /* ---- #550 (theme foundation, palette v2), remediated per quality-gate review (PR #596) ----
+   * PURELY ADDITIVE, same rule as `.theme-dark` above: every property before this comment is
+   * byte-identical to `origin/main`. `--surface-1`/`--surface-2` alias the existing `--card`/
+   * `--popover` (both 0.14); `--surface-3` now aliases the existing `--muted`/`--accent`/
+   * `--secondary`/`--sidebar-accent` (0.26) -- quality-gate review flagged an earlier draft
+   * that gave this preset a THIRD, un-aliased 0.18 literal nothing else used, which would have
+   * made a future `bg-surface-hover` migration render weaker than the hovers this preset
+   * already has today; aliasing to the real existing value fixes that and costs nothing.
+   *
+   * This preset's own "soft dividers switched off, every edge/text reaches a stricter floor"
+   * design intent (foundations-tokens-theming.md "High contrast preset") is NOT delivered here:
+   * raising `--input`/`--ring`/`--muted`/`--accent` to a 4.5:1-edge/7:1-text floor would mean
+   * changing values this preset's live components already render with today, exactly what this
+   * remediated cut exists to avoid. `--divider` and `--border-strong` below are therefore plain
+   * aliases of the existing `--border` (one edge strength, same value, same margin this preset
+   * has always had: 5.32:1 on background, 5.04:1 on card/popover, 3.94:1 on muted -- all still
+   * only held to the ordinary 3:1 non-text floor here, not a stricter one). The stricter
+   * high-contrast-specific floor is deferred to #552, which owns this preset's actual design. */
+  --surface-1: var(--card);
+  --surface-2: var(--popover);
+  --surface-3: var(--muted);
+  --surface-hover: var(--surface-3);
+  --divider: var(--border);
+  --border-strong: var(--border);
+  /* `--accent-text`: a new token, reusing this preset's own existing `--active-indicator`/
+   * `--chart-1` hue (264, the brand indigo family) at the same lightness -- already 9.27:1
+   * against `--background` and 8.79:1 against `--card`/`--popover`, comfortably above the
+   * ordinary 4.5:1 text floor (the enhanced 7:1 this preset's own design intent calls for is
+   * also cleared, incidentally, but is not the floor this story enforces -- see above). */
+  --accent-text: oklch(0.75 0.17 264);
+  /* Severity roles: aliases of the EXISTING `--state-*`/`--destructive` values above (#550's
+   * "do not create a second set" rule, same as Dark). `--severity-info` is the one new colour,
+   * verified >=3:1 against `--background` (12.45:1) and `--card`/`--popover` (11.80:1). */
+  --severity-success: var(--state-working);
+  --severity-warning: var(--state-needs-you);
+  --severity-error: var(--destructive);
+  --severity-info: oklch(0.82 0.13 220);
 }
 
 /* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================

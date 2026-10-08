@@ -92,16 +92,21 @@ function resolveRawValue(name, rawProps, seen = new Set()) {
   return resolveRawValue(refName, rawProps, seen)
 }
 
-const themes = {}
+// Quality-gate remediation (security review, LOW): `Object.create(null)` rather than `{}` for
+// every one of these token maps -- a theme block that writes `var(--constructor)` (or another
+// `Object.prototype` name) which the block itself never defines would otherwise return a
+// function from a plain-object lookup, and `.match` on it throws instead of reporting "token
+// missing". Dev-only tool reading a trusted repo file, so this is robustness, not an exploit.
+const themes = Object.create(null)
 
 for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   const themeId = blockMatch[1]
   const body = blockMatch[2]
-  const rawProps = {}
+  const rawProps = Object.create(null)
   for (const propMatch of body.matchAll(PROP_RE)) {
     rawProps[propMatch[1]] = propMatch[2].trim()
   }
-  const props = {}
+  const props = Object.create(null)
   for (const name of Object.keys(rawProps)) {
     const rawValue = resolveRawValue(name, rawProps)
     if (rawValue === undefined) continue
@@ -170,8 +175,11 @@ function resolvedLinear(propEntry, backdropEntry) {
 // ---- FR-007/FR-008 token pairs actually rendered by this codebase ----------------------------
 // `min: 4.5` = WCAG AA body/UI text; `min: 3` = WCAG AA large text and non-text UI components
 // (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
-// text). `--border` itself is NOT a control edge any more (#550: it is the soft decorative
-// divider token) -- its pairs live in DIVIDER_PAIRS below, not here.
+// text). `--divider` is NOT a control edge (#550, remediated per quality-gate review: it is the
+// soft decorative edge, read by no component yet) -- its pairs live in DIVIDER_PAIRS below, not
+// here. `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
+// rendering every un-migrated `border-border` call site with it, unchanged; Obsidian's own
+// `--border` is tuned to the same floor) -- checked here, same as `--border-strong`, its alias.
 
 const PAIRS = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
@@ -198,42 +206,77 @@ const PAIRS = [
   // measure as genuine failures -- `--input` (the border of every Input/Textarea/Select/
   // outline-Toggle/outline-Button, including the Appearance section's own Cancel button).
   { fg: 'input', bg: 'background', min: 3 },
-  // #550 (theme foundation, palette v2): the control-edge token (`--border-strong`, >=3:1
-  // against both canvas and the card surface -- #550's own divider-versus-control-edge rule) and
-  // the new semantic roles the contrast script must learn or it would silently pass a theme that
-  // never defines them (the 'token missing' path below still fires if any of these are absent).
+  // #550 (theme foundation, palette v2): the control-edge tokens (`--border`, the one every
+  // un-migrated component actually renders with, and `--border-strong`, its forward-looking
+  // alias -- #550's own divider-versus-control-edge rule) and the new semantic roles the
+  // contrast script must learn or it would silently pass a theme that never defines them (the
+  // 'token missing' path below still fires if any of these are absent).
+  { fg: 'border', bg: 'background', min: 3 },
+  { fg: 'border', bg: 'card', min: 3 },
+  { fg: 'border', bg: 'popover', min: 3 },
+  { fg: 'border', bg: 'muted', min: 3 },
   { fg: 'border-strong', bg: 'background', min: 3 },
   { fg: 'border-strong', bg: 'card', min: 3 },
+  { fg: 'border-strong', bg: 'popover', min: 3 },
+  { fg: 'border-strong', bg: 'muted', min: 3 },
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
+  { fg: 'accent-text', bg: 'popover', min: 4.5 },
   { fg: 'severity-success', bg: 'background', min: 3 },
   { fg: 'severity-success', bg: 'card', min: 3 },
+  { fg: 'severity-success', bg: 'popover', min: 3 },
   { fg: 'severity-warning', bg: 'background', min: 3 },
   { fg: 'severity-warning', bg: 'card', min: 3 },
+  { fg: 'severity-warning', bg: 'popover', min: 3 },
   { fg: 'severity-error', bg: 'background', min: 3 },
   { fg: 'severity-error', bg: 'card', min: 3 },
+  { fg: 'severity-error', bg: 'popover', min: 3 },
   { fg: 'severity-info', bg: 'background', min: 3 },
   { fg: 'severity-info', bg: 'card', min: 3 },
+  { fg: 'severity-info', bg: 'popover', min: 3 },
+  // Quality-gate remediation: `muted-foreground` and `destructive` are rendered as actual BODY
+  // TEXT (code-block/diff-path headers, inactive tab labels, notice text, dropdown-menu
+  // destructive items, alert descriptions), not just against the page `--background` the two
+  // pre-existing pairs above already covered -- against `--muted`/`--accent` (the shadcn
+  // "neutral highlight" hover/selected fills text sits on) and `--card`/`--popover`
+  // (dialog/menu surfaces) respectively. Both were genuine quality-gate HIGH findings against
+  // an earlier, retuned draft of Dark; this remediated cut reverted Dark/HC (so these pass at
+  // their original, already-correct values again) and retuned Obsidian specifically to pass
+  // them too.
+  { fg: 'muted-foreground', bg: 'muted', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'accent', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'card', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'popover', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'surface-hover', min: 4.5 },
+  { fg: 'destructive', bg: 'card', min: 4.5 },
+  { fg: 'destructive', bg: 'popover', min: 4.5 },
+  // Quality-gate remediation: `--input`/`--ring`, the control-edge tokens every dialog footer's
+  // outline Cancel button and every focus ring actually render, checked only against
+  // `--background` before -- dialogs and menus sit on `--popover`/`--muted`, not the page.
+  { fg: 'input', bg: 'popover', min: 3 },
+  { fg: 'input', bg: 'muted', min: 3 },
+  { fg: 'ring', bg: 'popover', min: 3 },
+  { fg: 'ring', bg: 'muted', min: 3 },
 ]
 
-// #550: the OTHER edge class -- soft decorative dividers (panes, rows, headers, sections). Not
-// required by WCAG 1.4.11 because they never identify a control, so these carry no contrast
-// floor in an ordinary preset (checked -- so a theme missing the token still fails below -- but
-// not held to any ratio). Dark (high contrast) is the one exception: its own design decision
-// switches soft dividers off, raising every edge including these to the same 4.5:1 text floor as
-// everything else in that preset (foundations-tokens-theming.md "High contrast preset"). A theme
-// is treated as that preset generically by its id containing "high-contrast", the same
-// not-hardcoded-to-today's-two spirit as THEME_BLOCK_RE above, so a future stricter preset gets
-// the same treatment for free.
+// #550 (remediated per quality-gate review): the OTHER edge class -- soft decorative dividers
+// (panes, rows, headers, sections), now named `--divider` (never `--border`, which stays a
+// real control edge everywhere in this cut -- see PAIRS above). Not required by WCAG 1.4.11
+// because a decorative divider never identifies a control, so this carries no contrast floor in
+// any theme (checked for presence only -- a theme missing the token still fails below). The
+// design doc's own stricter high-contrast treatment ("soft dividers switched off, every edge
+// reaches 4.5:1 text / 7:1") is real but NOT delivered in this story for Dark (high contrast):
+// doing so would mean raising that preset's existing, live `--input`/`--ring`/`--muted`/
+// `--accent` values, which this remediated cut's whole point is to avoid changing. Deferred to
+// #552, which owns that preset's actual design; `.theme-dark-high-contrast`'s own CSS comment
+// records the same deferral.
 const DIVIDER_PAIRS = [
-  { fg: 'border', bg: 'background' },
-  { fg: 'border', bg: 'card' },
-  { fg: 'border', bg: 'popover' },
-  { fg: 'border', bg: 'muted' },
-  { fg: 'border', bg: 'sidebar' },
+  { fg: 'divider', bg: 'background' },
+  { fg: 'divider', bg: 'card' },
+  { fg: 'divider', bg: 'popover' },
+  { fg: 'divider', bg: 'muted' },
+  { fg: 'divider', bg: 'sidebar' },
 ]
-const DIVIDER_MIN_HIGH_CONTRAST = 4.5
-const isHighContrastTheme = (themeId) => themeId.includes('high-contrast')
 
 // ---- run every pair against every parsed theme ------------------------------------------------
 
@@ -270,37 +313,33 @@ for (const [themeId, props] of Object.entries(themes)) {
   }
 }
 
-// #550: decorative-divider pairs -- exempt from any floor in an ordinary preset (still fails if
-// the token is missing outright, same as every other pair above), enforced at the high-contrast
-// text floor when `isHighContrastTheme` says this preset switched soft dividers off.
+// #550 (remediated per quality-gate review): decorative-divider pairs -- exempt from any floor
+// in every theme (deferred, see DIVIDER_PAIRS's own comment above), still failing if the token
+// is missing outright, same as every other pair above.
 for (const [themeId, props] of Object.entries(themes)) {
-  const highContrast = isHighContrastTheme(themeId)
   for (const { fg, bg } of DIVIDER_PAIRS) {
     const fgEntry = props[fg]
     const bgEntry = props[bg]
-    const min = highContrast ? DIVIDER_MIN_HIGH_CONTRAST : null
     if (!fgEntry || !bgEntry) {
       checkedCount++
       failCount++
-      rows.push({ themeId, fg, bg, min: min ?? 'soft', ratio: null, pass: false, note: 'token missing' })
+      rows.push({ themeId, fg, bg, min: 'soft', ratio: null, pass: false, note: 'token missing' })
       continue
     }
     const fgLinear = resolvedLinear(fgEntry, bgEntry)
     const bgLinear = resolvedLinear(bgEntry, bgEntry)
     const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear))
-    const pass = min === null ? true : ratio >= min
     checkedCount++
-    if (!pass) failCount++
     rows.push({
       themeId,
       fg,
       bg,
-      min: min ?? 'soft',
+      min: 'soft',
       ratio,
-      pass,
+      pass: true,
       fgHex: linearToHex(fgLinear),
       bgHex: linearToHex(bgLinear),
-      note: min === null ? 'decorative divider, no floor' : undefined,
+      note: 'decorative divider, no floor (deferred, see #552)',
     })
   }
 }

@@ -156,15 +156,45 @@ function linearToHex([r, g, b]) {
 const globalsCssPath = path.join(repoRoot, 'src/renderer/styles/globals.css')
 const globalsCss = readFileSync(globalsCssPath, 'utf-8')
 const OKLCH_RE = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%)?\s*\)$/i
+const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+// Quality-gate remediation: `--card` can now be `var(--surface-1)` (the three-layer token model,
+// #550) rather than a literal `oklch()`/hex value. The old version here matched only a literal
+// and silently skipped any theme whose `--card` didn't match, which made the cardColor fallback
+// below (`REAL_CARD_COLORS[themeId] || themeVariables.primaryColor`) quietly substitute Mermaid's
+// own unrelated `primaryColor` stand-in -- exactly the drift round 6's own header comment says
+// this file exists to prevent. This resolves one or more `var(--name)` hops per theme (same
+// algorithm as check-theme-contrast.mjs's own `resolveRawValue`, duplicated rather than shared --
+// see that script's header for why these two one-off scripts don't import from each other) before
+// matching a literal colour, and a theme whose `--card` still can't be resolved is a hard failure
+// below, never a silent fallback.
+const VAR_RE = /^var\(\s*--([a-z0-9-]+)\s*\)$/i
+function resolveRawValue(name, rawProps, seen = new Set()) {
+  const raw = rawProps[name]
+  if (raw === undefined) return undefined
+  const varMatch = raw.match(VAR_RE)
+  if (!varMatch) return raw
+  const refName = varMatch[1]
+  if (seen.has(refName)) return undefined
+  seen.add(refName)
+  return resolveRawValue(refName, rawProps, seen)
+}
 const realCardColors = {}
 for (const blockMatch of globalsCss.matchAll(/\.theme-([a-z0-9-]+)\s*\{([^}]*)\}/g)) {
   const themeId = blockMatch[1]
-  const cardMatch = blockMatch[2].match(/--card:\s*([^;]+);/i)
-  if (!cardMatch) continue
-  const oklchMatch = cardMatch[1].trim().match(OKLCH_RE)
-  if (!oklchMatch) continue
-  const [, L, C, H] = oklchMatch
-  realCardColors[themeId] = linearToHex(oklchToLinearSrgb(Number(L), Number(C), Number(H)))
+  const rawProps = {}
+  for (const propMatch of blockMatch[2].matchAll(/--([a-z0-9-]+):\s*([^;]+);/gi)) {
+    rawProps[propMatch[1]] = propMatch[2].trim()
+  }
+  const resolved = resolveRawValue('card', rawProps)
+  if (resolved === undefined) continue
+  const oklchMatch = resolved.match(OKLCH_RE)
+  const hexMatch = resolved.match(HEX_RE)
+  if (oklchMatch) {
+    const [, L, C, H] = oklchMatch
+    realCardColors[themeId] = linearToHex(oklchToLinearSrgb(Number(L), Number(C), Number(H)))
+  } else if (hexMatch) {
+    realCardColors[themeId] = resolved
+  }
 }
 
 // ---- stage a scratch dir: harness HTML (imports the real installed mermaid package and this
@@ -204,6 +234,19 @@ window.__ready = true
   const themeCSSByTheme = Object.fromEntries(
     Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(themeId)])
   )
+
+  // Hard failure, not the old `REAL_CARD_COLORS[themeId] || themeVariables.primaryColor`
+  // fallback: every theme `MERMAID_THEME_VARIABLES` declares must have a real, resolvable
+  // `--card` in globals.css, or every pie-slice-vs-card and shape check below is silently
+  // measured against the wrong backdrop.
+  const unresolvedCardThemes = Object.keys(MERMAID_THEME_VARIABLES).filter((themeId) => !realCardColors[themeId])
+  if (unresolvedCardThemes.length > 0) {
+    throw new Error(
+      `check-mermaid-contrast: --card could not be resolved to a real colour for: ${unresolvedCardThemes.join(', ')} ` +
+      `(globals.css's .theme-<id> block is missing --card, or it is a var() chain this script's resolver can't follow). ` +
+      `Refusing to fall back to Mermaid's own primaryColor stand-in.`
+    )
+  }
 
   // Quality-gate remediation (round 6): `force-device-scale-factor=1` makes every CSS pixel this
   // harness measures (`getBoundingClientRect`, `window.innerWidth`/`innerHeight`) map 1:1 onto the
@@ -354,7 +397,9 @@ async function main() {
   const results = {}
   for (const [themeId, themeVariables] of Object.entries(THEMES)) {
     results[themeId] = {}
-    const cardColor = REAL_CARD_COLORS[themeId] || themeVariables.primaryColor
+    // No \`|| themeVariables.primaryColor\` fallback: the hard check above guarantees every
+    // theme here already has a real, resolved \`--card\`.
+    const cardColor = REAL_CARD_COLORS[themeId]
     const themeCSS = THEME_CSS[themeId]
     for (const [diagramType, code] of Object.entries(DIAGRAMS)) {
       const args = { themeVariables, themeCSS, code, cardColor, diagramType }
