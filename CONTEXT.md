@@ -77,7 +77,7 @@ Any of comment, reply, resolve, unresolve, submit a review (comment/approve/requ
 _Avoid_: PR action, operation
 
 **Theme** (spec 007):
-One of the built-in dark-toned colour presets (Dark, Dark (high contrast)) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
+One of the built-in dark-toned colour presets (Dark, Dark (high contrast), Obsidian -- #550, theme foundation palette v2) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
 _Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system
 
 ## Flagged ambiguities

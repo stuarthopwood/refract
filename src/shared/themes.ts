@@ -2,7 +2,7 @@
 // "Non-IPC: shared theme data"): imported directly by main, preload, and renderer -- the
 // existing shared-module pattern (plan.md "Source code"), never served over IPC (research.md
 // decision 3). The actual colour VALUES stay as CSS custom properties in
-// `src/renderer/styles/globals.css`, one class per theme (`.theme-dark`,
+// `src/renderer/styles/globals.css`, one class per theme (`.theme-<id>`, e.g. `.theme-dark`,
 // `.theme-dark-high-contrast`); this file only carries the small, reasoned metadata every
 // process needs: the picker's name/swatch, which Shiki theme a code block uses, and the
 // title-bar overlay colour main applies.
@@ -10,7 +10,7 @@
 /** Additive: a further dark preset adds a key here, never removes `dark` or
  * `dark-high-contrast` (research.md decision 1). No `mode` field anywhere in this module --
  * every built-in theme is dark-toned, so there is nothing left to distinguish by mode. */
-export type ThemeId = 'dark' | 'dark-high-contrast'
+export type ThemeId = 'dark' | 'dark-high-contrast' | 'obsidian'
 
 export interface ThemeDefinition {
   id: ThemeId
@@ -45,12 +45,24 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   'dark-high-contrast': {
     id: 'dark-high-contrast',
     name: 'Dark (high contrast)',
-    // Matches `.theme-dark-high-contrast`'s own `--background: oklch(0 0 0)` (pure black,
-    // globals.css) -- a deliberately starker background than `dark`'s, maximising the margin
-    // above the WCAG AA contrast floors every built-in theme must clear.
+    // Matches `.theme-dark-high-contrast`'s own `--background` (pure black, globals.css) -- a
+    // deliberately starker background than `dark`'s, maximising the margin above the WCAG AA
+    // contrast floors every built-in theme must clear.
     swatch: '#000000',
     syntaxTheme: 'github-dark-high-contrast',
     titleBarOverlay: { color: '#000000', symbolColor: '#ffffff' }
+  },
+  // #550 (theme foundation, palette v2): a further dark preset, additive per the module comment
+  // above -- the mock's own Obsidian canvas and palette, taken literally (`.theme-obsidian`,
+  // globals.css): a blue-tinted slate canvas, very slightly lighter than `dark`'s near-black
+  // (`#0a0a0a`), not darker -- `#0F1014`'s relative luminance (~0.0052) is marginally above
+  // `#0a0a0a`'s (~0.0030).
+  obsidian: {
+    id: 'obsidian',
+    name: 'Obsidian',
+    swatch: '#0F1014',
+    syntaxTheme: 'github-dark',
+    titleBarOverlay: { color: '#0F1014', symbolColor: '#F8FAFC' }
   }
 }
 
