@@ -127,14 +127,18 @@ interface AttachmentsState {
 
 Not part of `SessionRuntime` (data-model.md, spec 001): attachments belong to the composer's current
 draft, not to the Session's transcript or queue state, and the renderer never sends these pending
-images to main except as the `images` array of one outgoing `chat.send` call (remediation, quality
-gate 2026-10-04: `chat.sendNow` no longer takes an `images` argument from the renderer at all --
-`SessionAgent` resends a queued message's own recorded images itself; see contracts/ipc.md).
+images to main except as the `images` array of one outgoing `chat.send` call (superseded, issue
+#540, 2026-10-07: the quality-gate-era `queuedImages` resend mechanism described below is gone --
+`chat.sendNow` now takes no `images` argument because OMP's own `promote_queued_message` moves a
+queued message's existing attachments itself; see `contracts/ipc.md`).
 
 ## IPC surface change (`src/shared/ipc.ts`, `contracts/ipc.md`)
 
 ```ts
 chat.send(sessionId: string, text: string, images?: ImageContent[]): Result<{ queued: boolean }>
+// Superseded (issue #540, 2026-10-07): sendNow no longer returns `{ steered: boolean }` -- see
+// specs/001-core-session-workspace/contracts/ipc.md "Chat" for the current `{ promoted: boolean }`
+// signature.
 chat.sendNow(sessionId: string, text: string): Result<{ steered: boolean }>
 ```
 

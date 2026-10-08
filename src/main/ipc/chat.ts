@@ -48,8 +48,9 @@ function isChatAnswer(value: unknown): value is ChatAnswer {
  * same place the existing `sessionId`/argument-shape checks already do, additive to them, never
  * replacing their failure modes; the first failing entry's code is returned and nothing is sent.
  * `undefined` (no `images` argument at all) is valid and carries no images. Used by `CHAT_SEND`
- * only -- `CHAT_SEND_NOW` no longer accepts an `images` argument (High remediation: a resend's own
- * images are recorded and resent by `SessionAgent` itself, never supplied by the caller).
+ * only -- `CHAT_SEND_NOW` no longer accepts an `images` argument (High remediation: OMP's own
+ * `promote_queued_message` moves the queued message together with its own attachments, so a
+ * resend never needs images supplied by the caller).
  *
  * Critical/High remediation (code-reviewer): builds a FRESH `ImageContent` containing ONLY the
  * three validated fields, never `candidate as unknown as ImageContent`. The old cast forwarded the
@@ -163,22 +164,26 @@ export function registerChat(manager: SessionManager): void {
     }
   });
 
-  ipcMain.handle(IPC_REQUESTS.CHAT_REMOVE_QUEUED, async (_event, sessionId: unknown, text: unknown) => {
-    if (typeof sessionId !== 'string' || typeof text !== 'string') {
-      return invalidArgument(`${IPC_REQUESTS.CHAT_REMOVE_QUEUED} expects (sessionId, text) strings`);
+  // Issue #540: `queue` carries which of OMP's two queues the chip actually belongs to --
+  // the old hard-coded `'followUp'` made a steering chip's Remove always report
+  // `removed: false` (OMP never had it in that queue), so it could never be removed.
+  ipcMain.handle(IPC_REQUESTS.CHAT_REMOVE_QUEUED, async (_event, sessionId: unknown, text: unknown, queue: unknown) => {
+    if (typeof sessionId !== 'string' || typeof text !== 'string' || (queue !== 'followUp' && queue !== 'steering')) {
+      return invalidArgument(`${IPC_REQUESTS.CHAT_REMOVE_QUEUED} expects (sessionId, text, queue) with queue 'followUp' or 'steering'`);
     }
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     try {
-      const result = await manager.getOrCreateAgent(sessionId).removeQueued(text);
+      const result = await manager.getOrCreateAgent(sessionId).removeQueued(text, queue);
       return { ok: true, value: result };
     } catch (err) {
       return mapChatError(err);
     }
   });
 
-  // High remediation (test-reviewer): no `images` argument here at all -- a resend must carry
-  // the queued message's OWN images, recorded by `SessionAgent` when it was originally queued,
-  // never whatever the caller's composer happens to have pending right now.
+  // Issue #540: no `images` argument here at all -- OMP keeps the queued message's own images
+  // with it (`promote_queued_message` moves the existing message, attachments included,
+  // rather than reprocessing it), never whatever the caller's composer happens to have
+  // pending right now.
   ipcMain.handle(IPC_REQUESTS.CHAT_SEND_NOW, async (_event, sessionId: unknown, text: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') {
       return invalidArgument(`${IPC_REQUESTS.CHAT_SEND_NOW} expects (sessionId, text) strings`);

@@ -3,7 +3,7 @@
 // renderer; this is the only file that may cross that boundary (constitution V).
 
 import type { ApprovalMode, ConversationInfo, DiffStat, PendingRequest, ReadoutKind, Repository, Session, SessionReadout, SessionStatus, Settings, SplitLayout, SubagentSummary, TranscriptItem } from './model';
-import type { ImageContent, SlashCommandDescriptor } from './frames';
+import type { ImageContent, QueueKind, SlashCommandDescriptor } from './frames';
 import type {
   ChangedFile,
   FilterTab,
@@ -398,11 +398,19 @@ export interface RefractApi {
      * first failing entry and sending nothing. */
     send(sessionId: string, text: string, images?: ImageContent[]): Promise<Result<{ queued: boolean }>>;
     stop(sessionId: string): Promise<Result<void>>;
-    removeQueued(sessionId: string, text: string): Promise<Result<{ removed: boolean }>>;
-    /** High remediation (spec 009 quality gate): no `images?` parameter -- a resend must carry
-     * the queued message's OWN images, recorded by `SessionAgent` at the moment it was queued,
-     * never whatever the caller's composer happens to have pending right now (contracts/ipc.md). */
-    sendNow(sessionId: string, text: string): Promise<Result<{ steered: boolean }>>;
+    // Issue #540: carries the queue the chip actually belongs to -- the old hard-coded
+    // `'followUp'` meant a steering chip's Remove always reported `removed: false` (OMP never
+    // had it in that queue), so a steering chip could never be removed at all.
+    removeQueued(sessionId: string, text: string, queue: QueueKind): Promise<Result<{ removed: boolean }>>;
+    /** Issue #540: implemented with OMP's atomic `promote_queued_message` (moves the message,
+     * attachments included, with no reprocessing and no duplicate), replacing the old hand-made
+     * remove-then-steer -- offered only for follow-up chips, since `promote_queued_message` only
+     * ever matches a queued follow-up. `promoted: false` means it was no longer pending at
+     * dispatch time (for example, already delivered); the caller still shows a notice rather
+     * than silently doing nothing. No `images?` parameter -- OMP keeps the queued message's own
+     * images with it; a resend never needs the caller's current composer images
+     * (contracts/omp-usage.md "Send now (steer)"). */
+    sendNow(sessionId: string, text: string): Promise<Result<{ promoted: boolean }>>;
     answer(sessionId: string, requestId: string, answer: ChatAnswer): Promise<Result<void>>;
     commands(sessionId: string): Promise<Result<SlashCommand[]>>;
     /** Ghost-text composer completion (T103, FR-058): `null` whenever there is no live agent

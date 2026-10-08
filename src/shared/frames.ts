@@ -447,23 +447,34 @@ export interface PromptCommand {
   streamingBehavior?: 'followUp'; // present when the Session is already working
 }
 
-export interface SteerCommand {
-  type: 'steer';
-  id: string;
-  message: string;
-  images?: ImageContent[]; // spec 009, FR-006, FR-017
-}
-
 export interface AbortCommand {
   type: 'abort';
   id: string;
 }
 
+// Issue #540 (Medium gate fix, #591): one named alias for the queue-kind literal union,
+// repeated at every call site that threads a chip's queue through (frames.ts here, ipc.ts,
+// SessionAgent.ts, MessageInput.tsx) instead of retyping `'followUp' | 'steering'` five times.
+export type QueueKind = 'followUp' | 'steering';
+
 export interface RemoveQueuedMessageCommand {
   type: 'remove_queued_message';
   id: string;
   message: string;
-  queue: 'followUp';
+  // Issue #540: was hard-coded to `'followUp'` only, so a steering-queue chip's Remove always
+  // asked OMP to look in the wrong queue and got `removed: false` back, with no way to ever
+  // remove one.
+  queue: QueueKind;
+}
+
+// Issue #540 (rpc.md "promote_queued_message payload"): moves the first matching queued
+// follow-up to the end of the steering queue -- atomic, keeps attachments, no reprocessing, no
+// duplicate. Replaces the old hand-made remove-then-steer `sendNow` built from
+// `RemoveQueuedMessageCommand` + `SteerCommand`.
+export interface PromoteQueuedMessageCommand {
+  type: 'promote_queued_message';
+  id: string;
+  message: string;
 }
 
 export interface NewSessionCommand {
@@ -525,9 +536,9 @@ export interface PredictWordFeedbackCommand {
 
 export type RpcCommand =
   | PromptCommand
-  | SteerCommand
   | AbortCommand
   | RemoveQueuedMessageCommand
+  | PromoteQueuedMessageCommand
   | NewSessionCommand
   | SwitchSessionCommand
   | GetStateCommand

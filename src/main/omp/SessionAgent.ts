@@ -29,6 +29,7 @@ import type {
   GetStateResponseData,
   ImageContent,
   PredictWordResponseData,
+  QueueKind,
   QueueUpdateFrame,
   SwitchSessionResponseData,
   ToolExecutionEndFrame,
@@ -160,17 +161,6 @@ export class SessionAgent extends EventEmitter {
    * `prompt_result.sessionSettled:true` and a separate `session_settled` frame for the same
    * turn. Reset at the next `agent_start`. */
   private turnSettleHandled = false;
-  /** High remediation (spec 009 quality gate): images that went out with a queued `followUp`
-   * prompt (`send()` while `working`), keyed by the exact same `message` text OMP's own
-   * `remove_queued_message`/`steer` commands already match a queued chip by. `sendNow()` reads
-   * (and removes) the entry for its own text instead of ever being handed images by the caller --
-   * the old code forwarded whatever images happen to be pending in the composer right now,
-   * silently dropping the queued message's own real images and sending someone else's. Entries
-   * are cleaned up here (on successful removal/resend) and in `setQueue` (when a queued message
-   * leaves the queue by any other route, e.g. OMP itself promoting it once the turn ends), so this
-   * map never grows unbounded. */
-  private readonly queuedImages = new Map<string, ImageContent[]>();
-
   /** `transcript.ts`'s `applyFrame` reads this to tell OMP's own unsolicited startup banner
    * apart from a user-run slash command's output (`STARTUP_NOTICE_PREFIX`): `false` only for the
    * window between this `SessionAgent`'s construction and the user's first `send()` call, which
@@ -564,17 +554,10 @@ export class SessionAgent extends EventEmitter {
     }
     const working = this.runtime.status === 'working' || this.runtime.status === 'needs-you';
     const imagesField = images && images.length > 0 ? { images } : {};
-    // High remediation (spec 009 quality gate): record this queued message's own images (if any)
-    // against its exact text, so a later `sendNow(text)` resends THESE images, never whatever the
-    // composer happens to have pending at that later moment. Only meaningful when this prompt is
-    // actually being queued (`working`); an idle send starts a turn immediately and has no queue
-    // chip for `sendNow` to ever resend.
-    if (working && images && images.length > 0) this.queuedImages.set(text, images);
     const res = working
       ? await this.process.request({ type: 'prompt', id: '', message: text, ...imagesField, streamingBehavior: 'followUp' })
       : await this.process.request({ type: 'prompt', id: '', message: text, ...imagesField });
     if (!res.success) {
-      if (working && images && images.length > 0) this.queuedImages.delete(text); // never actually queued
       this.appendNotice(`prompt failed: ${res.error ?? 'unknown error'}`, 'error');
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: prompt failed: ${res.error ?? 'unknown error'}`);
     }
@@ -596,18 +579,24 @@ export class SessionAgent extends EventEmitter {
     await waitForIdleStatus(this, this.runtime.status, ABORT_SETTLE_TIMEOUT_MS, this.sessionId);
   }
 
-  /** `chat.removeQueued`: hides the chip only when OMP reports `removed: true`. */
-  async removeQueued(text: string): Promise<{ removed: boolean }> {
+  /** `chat.removeQueued` (issue #540): `queue` is the chip's own queue -- OMP's
+   * `remove_queued_message` only matches within the exact queue given, so the old hard-coded
+   * `'followUp'` made a steering chip's Remove always report `removed: false` (the message was
+   * never in that queue), with no way to ever remove one. Hides the chip only when OMP reports
+   * `removed: true`. Gate fix (Medium, #591 cycle 2): an RPC-level failure now throws (mirroring
+   * `sendNow`'s own High fix) instead of being folded into `{ removed: false }`, which the
+   * renderer otherwise read as the untruthful "already being delivered" notice regardless of the
+   * real cause. */
+  async removeQueued(text: string, queue: QueueKind): Promise<{ removed: boolean }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot remove a queued message, no live process`);
     }
-    const res = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue: 'followUp' });
+    const res = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue });
     if (!res.success) {
       this.appendNotice(`remove_queued_message failed: ${res.error ?? 'unknown error'}`, 'error');
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: remove_queued_message failed: ${res.error ?? 'unknown error'}`);
     }
-    const removed = res.success && (res.data as { removed?: boolean } | undefined)?.removed === true;
-    if (removed) this.queuedImages.delete(text); // High remediation: this message is gone, never resend its images
-    return { removed };
+    return { removed: (res.data as { removed?: boolean } | undefined)?.removed === true };
   }
 
   /** `chat.predictWord` (T103, FR-058): ghost-text composer completion. Issues `predict_word`
@@ -641,33 +630,29 @@ export class SessionAgent extends EventEmitter {
     }
   }
 
-  /** `chat.sendNow` (contracts/omp-usage.md "Send now (steer)"): removes the queued chip, then
-   * steers with the same text. If it had already left the queue on its own, does nothing more.
-   * High remediation (spec 009 quality gate): no `images` parameter -- the `steer` command this
-   * builds from scratch carries whatever images `send()` recorded against this exact text at the
-   * moment it was originally queued (`this.queuedImages`), never images supplied by this call's
-   * own caller. The old signature took a caller-supplied `images?` and forwarded it unchanged,
-   * which in practice meant the composer's CURRENT pending images (meant for a later, different
-   * message) went out on this resend instead of the queued message's own real images. */
-  async sendNow(text: string): Promise<{ steered: boolean }> {
+  /** `chat.sendNow` (contracts/omp-usage.md "Send now (steer)", issue #540): a single atomic
+   * `promote_queued_message` call -- OMP moves the existing queued follow-up (attachments and any
+   * contiguous hidden companions included) to the end of the steering queue, with no reprocessing
+   * and no duplicate, replacing the old hand-made remove-then-steer (which could leave a message
+   * removed from the queue but never steered if the `steer` half failed). Only ever called for a
+   * follow-up chip (the renderer offers "Send now" on follow-up chips only, matching
+   * `promote_queued_message`'s own semantics: it never matches a steering-queue message).
+   * `promoted: false` means it was no longer pending at dispatch time (e.g. already delivered). */
+  async sendNow(text: string): Promise<{ promoted: boolean }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot send now, no live process`);
     }
-    const removeRes = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue: 'followUp' });
-    if (!removeRes.success) {
-      this.appendNotice(`remove_queued_message failed: ${removeRes.error ?? 'unknown error'}`, 'error');
+    const res = await this.process.request({ type: 'promote_queued_message', id: '', message: text });
+    if (!res.success) {
+      // Gate fix (High, #591): an RPC-level failure here is NOT the legitimate "already
+      // delivered" case below -- it must surface as `!result.ok` so the renderer's `notify`
+      // path fires a visible toast, instead of being folded into `{ promoted: false }` (which
+      // the renderer reads as the message simply having left the queue already).
+      this.appendNotice(`promote_queued_message failed: ${res.error ?? 'unknown error'}`, 'error');
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: promote_queued_message failed: ${res.error ?? 'unknown error'}`);
     }
-    if (!(removeRes.success && (removeRes.data as { removed?: boolean } | undefined)?.removed === true)) {
-      return { steered: false };
-    }
-    const images = this.queuedImages.get(text);
-    this.queuedImages.delete(text);
-    const imagesField = images && images.length > 0 ? { images } : {};
-    const steerRes = await this.process.request({ type: 'steer', id: '', message: text, ...imagesField });
-    if (!steerRes.success) {
-      this.appendNotice(`steer failed: ${steerRes.error ?? 'unknown error'}`, 'error');
-    }
-    return { steered: steerRes.success };
+    const promoted = (res.data as { promoted?: boolean } | undefined)?.promoted === true;
+    return { promoted };
   }
 
   /** `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same
@@ -1055,16 +1040,6 @@ export class SessionAgent extends EventEmitter {
 
   private setQueue(followUp: string[], steering: string[]): void {
     this.runtime = { ...this.runtime, queue: { followUp, steering } };
-    // High remediation cleanup: a queued message can also leave the `followUp` queue by OMP's
-    // own route (e.g. promoted into a real turn once the previous one settles), never going
-    // through `removeQueued`/`sendNow` at all -- drop its recorded images here too, so
-    // `queuedImages` never grows unbounded over a long-lived Session.
-    if (this.queuedImages.size > 0) {
-      const stillQueued = new Set(followUp);
-      for (const key of this.queuedImages.keys()) {
-        if (!stillQueued.has(key)) this.queuedImages.delete(key);
-      }
-    }
     this.emit('queue', { sessionId: this.sessionId, followUp, steering });
   }
 

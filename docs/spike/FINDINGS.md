@@ -179,3 +179,43 @@ Why not the others:
    **Verified 2026-10-07 (gate cycle 3)**
    - `pnpm typecheck`, `pnpm build` (Vite renderer + main/preload, clean), and `pnpm check:ui-text` (0 leaks across 371 files) all ran clean in this worktree after the fixes below. Fixes: (1) `ChatPane.tsx`'s `handleRecover`/`handleStartNewConversation` now capture the exact `document.activeElement` at call start (`focusedAtStart`) instead of only a `hadFocus` boolean, and `maybeRestoreFocus` restores only when the current `document.activeElement` is `<body>`/`null`/disconnected or still `focusedAtStart` -- never onto some other in-pane control (e.g. a `ChatHeader` close/swap button) the user deliberately moved to mid-call, which the previous `chatPaneRef.contains(active)` check wrongly treated as "focus never left". (2) `handleStartNewConversation` captures the pressed "Start new conversation" button (`startNewButtonRef`) and, on restore, re-focuses it directly when it is still connected and enabled, instead of `focusPaneContent`'s generic banner-button query (which always lands on "Retry", the first enabled button in DOM order). (3) The `role="status"` live region (previously driven only by `isOpening`) now also shows "Retrying…"/"Starting new conversation…" while `recovering`/`startingNew`, so the busy state is announced even though the clicked button itself is disabled (and so loses focus) for the call's duration. (4) `docs/spike/reattach-count-probe.mjs`'s scratch dir is now `fs.mkdtempSync(path.join(os.tmpdir(), 'pinion-reattach-count-probe-'))` (private, randomly suffixed) instead of a predictable `Date().toISOString()` path, with a `rootCreated` flag so the "scratch dir left on disk" line is only printed when one was actually created.
    - Live re-verified on a scratch Electron instance (scratch `--user-data-dir`, CDP port 9449, two seeded Sessions each `stopped`/`start-failed` against a genuinely missing conversation file, trusted `Input.dispatchMouseEvent` clicks, polled DOM conditions, no fixed sleeps, real `omp` 18.8.0 agent): opened Session A (real spawn + failed `switch_session` reached `start-failed`), Ctrl+clicked Session B into a split, then clicked pane A's **Retry** and, while the call was still in flight, called `.focus()` on that same pane's `ChatHeader` **"Close Session A's pane"** button (a header control, never the clicked banner button) to simulate the user moving focus there mid-call. Read live: `document.activeElement` was that Close button immediately after the move, the pane's `role="status"` region read **"Retrying…"** (screenshotted), and -- once the call resolved back to the same `start-failed` reason (file still missing, as expected) -- `document.activeElement` was *still* that Close button, `isBody: false`: focus was not yanked back into the pane, confirming fix (1). Then clicked pane A's **"Start new conversation"**: it succeeded (missing file cleared, fresh conversation started) and `document.activeElement` ended up the in-pane `<textarea>` (`inPaneA: true`), the existing success-path behaviour unchanged. Finally repeated the old scenario C on pane B (clicked **Retry**, then `.focus()`ed `nav[aria-label="Sessions"]` mid-call): once resolved, `document.activeElement.tagName` was `NAV` with `aria-label: "Sessions"` -- the nav root itself was not yanked back into the pane either. The scratch Electron process (confirmed by its own spawned pid via `Get-CimInstance Win32_Process`, command line checked before each kill) was `taskkill`ed (graceful, then `/F` after it did not exit within ~10s) and confirmed exited with zero leftover `electron.exe` processes referencing the scratch `--user-data-dir`; the scratch parent directory was deleted afterward by literal absolute path from a cwd outside both it and this repo. Not exercised live (same gap as gate cycle 2, see the corrected "Did NOT drive" note above): a genuine `conversations.startNew` `{ok:false}` (`SessionNotIdleError` or a failed `prepare()` registry write), so fix (2)'s pressed-button preference was verified by code reading only, not a live failing `Start new conversation` click.
+
+## Issue #540 (Atomic queued-message send-now/remove) probe
+
+46. **`promote_queued_message` confirmed to promote the FIRST matching follow-up (FIFO) when two
+    queued follow-ups share identical text, never both-or-neither, and `promoted`/`removed` false
+    cases confirmed non-erroring (PLAN row 111's "Probe promote_queued_message first", 2026-10-08,
+    omp 18.8.0 -- the only `omp` installed on this machine; no 18.5.x binary was available to
+    re-confirm against, see note below):** `promote-queued-message-probe.mjs` (next to this file)
+    spawned Stuart's real default profile (scratch `--session-dir`, scratch cwd, no tool use
+    requested so no approval dialog ever appeared) and sent a long pure-text prompt to open a
+    "working" window, then queued the exact same text ("please also mention a seagull") as a
+    follow-up TWICE. `queue_update` showed both: `followUp: ["please also mention a seagull",
+    "please also mention a seagull"], steering: []`. A first `promote_queued_message` call with
+    that text returned `{promoted: true}`, and the next `queue_update` showed exactly one moved:
+    `followUp: ["please also mention a seagull"], steering: ["please also mention a seagull"]` --
+    this directly confirms the FIFO "first matching follow-up only" semantics `contracts/
+    omp-usage.md` documents and that MessageInput.tsx's duplicate-text chip fix (issue #540, PR
+    #591) depends on: when two identical-text follow-up chips are showing and one is promoted,
+    exactly one occurrence moves, never zero and never both. A second `promote_queued_message`
+    call with the same text promoted the SECOND duplicate too (`followUp: [], steering:
+    ["please also mention a seagull", "please also mention a seagull"]`). A THIRD call, with
+    nothing left in follow-up for that text, returned `{promoted: false}` cleanly -- no error,
+    confirming the "no longer pending at dispatch time" case PR #591's renderer fix (visible
+    toast, corrected copy) handles is a real, reachable OMP response shape, not a hypothetical.
+    `remove_queued_message` with `queue: 'steering'` against the two now-steering duplicates
+    returned `{removed: true}` twice (one occurrence drained per call, confirming #540's
+    steering-removal fix actually works against a real OMP process, not just the IPC/type layer),
+    then `{removed: false}` on a third call once none remained.
+    **Note on the 18.5.x re-confirmation this item's own headline promises:** only `omp 18.8.0`
+    is installed on this machine (`omp --version`); unlike FINDINGS item 29/30 (which pulled an
+    exact pinned `@oh-my-pi/pi-coding-agent@18.5.1` package to get a second binary), `promote_
+    queued_message`/`remove_queued_message` are real, interactive RPC commands this probe must
+    run against a genuine signed-in session, not just read static `.d.ts` shapes from an
+    installed package -- so no second installable binary gives a live 18.5.x session here. This
+    probe is scoped to confirming the FIFO/no-crash contract once end to end on the version this
+    worktree's own readiness check already treats as supported (`src/main/readiness.ts`), not to
+    re-running Principle IV's version-pin amendment procedure.
+    Scratch dir (raw frames, contains real model output, left on disk per the project's standing
+    "never auto-delete a probe scratch dir" convention): printed by the script at run time, not
+    recorded here (would otherwise hardcode a one-off machine-specific temp path into this file).
