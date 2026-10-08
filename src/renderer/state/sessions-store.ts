@@ -12,7 +12,11 @@ interface SessionsState {
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
   refresh(): Promise<void>
-  open(id: string): Promise<SessionSnapshot | null>
+  /** `userAction` true bypasses `canAutoStart` exactly like `recover`/`restore` already do --
+   * for the one case that is a genuine explicit user request through this path: MessageInput's
+   * typed-send to a not-yet-started Session (quality-gate fix, issue #509). Omitted (the pane's
+   * own mount-time open) keeps the existing allow-list check. */
+  open(id: string, userAction?: boolean): Promise<SessionSnapshot | null>
   create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
   /** Post-build review fix (Phase7PostBuild/code-reviewer, Medium): resolves `result.ok` so a
@@ -86,13 +90,35 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       notify(result.error)
     }
   },
-  open: (id) => {
-    const existing = openPromises.get(id)
+  open: (id, userAction) => {
+    // Quality-gate fix (cycle 2, 2026-10-08): keyed by `id:userAction`, not just `id` -- a
+    // passive, in-flight mount-time open (no `userAction`) must never be silently joined by a
+    // concurrent EXPLICIT one (MessageInput's typed-send, `userAction: true`): the passive call
+    // may resolve with a still-stopped snapshot (`canAutoStart` said no) that the forced caller's
+    // own `chat.send` would then fail against, having dropped its own `userAction: true` on the
+    // floor entirely. Both keys still dedupe their own kind of call exactly as before.
+    const key = `${id}:${userAction === true}`
+    // Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): a passive, in-flight open
+    // (no `userAction`) should join an already-in-flight FORCED open for the same session
+    // instead of starting a redundant second IPC round-trip -- the forced call's own result is
+    // always a safe answer for a passive caller too.
+    //
+    // Quality-gate fix (cycle 7, 2026-10-08, code-reviewer, Low): reworded -- the reverse must
+    // never happen: a forced open must never join a passive one, whose result may be a
+    // still-stopped snapshot (the passive caller's own `canAutoStart` check said no) that would
+    // silently drop the forced caller's own `userAction: true` intent, exactly the hazard the
+    // cycle-2 comment above this dedupe key was introduced to avoid.
+    const forcedKey = `${id}:true`
+    if (key !== forcedKey) {
+      const inFlightForced = openPromises.get(forcedKey)
+      if (inFlightForced) return inFlightForced
+    }
+    const existing = openPromises.get(key)
     if (existing) return existing
     set({ openingIds: new Set(get().openingIds).add(id) })
     const promise = (async () => {
       try {
-        const result = await window.refract.sessions.open(id)
+        const result = await window.refract.sessions.open(id, userAction)
         if (!result.ok) {
           notify(result.error)
           return null
@@ -102,10 +128,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         const openingIds = new Set(get().openingIds)
         openingIds.delete(id)
         set({ openingIds })
-        openPromises.delete(id)
+        openPromises.delete(key)
       }
     })()
-    openPromises.set(id, promise)
+    openPromises.set(key, promise)
     return promise
   },
   // The one create path for every entry point (the header's one-click + and the Base branch

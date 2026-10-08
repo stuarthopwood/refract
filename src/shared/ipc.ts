@@ -286,6 +286,7 @@ export const IPC_REQUESTS = {
   SESSIONS_DELETE: 'sessions.delete',
   SESSIONS_RECREATE_WORKTREE: 'sessions.recreateWorktree',
   SESSIONS_RECOVER: 'sessions.recover',
+  SESSIONS_RESUME: 'sessions.resume',
   SESSIONS_STOP_AGENT: 'sessions.stopAgent',
   SESSIONS_SET_VISIBLE: 'sessions.setVisible',
   SESSIONS_DIFF_STAT: 'sessions.diffStat',
@@ -389,13 +390,22 @@ export interface RefractApi {
     list(): Promise<Result<SessionSummary[]>>;
     create(input: { repositoryId: string; baseBranch: string }): Promise<Result<Session>>;
     rename(id: string, name: string): Promise<Result<void>>;
-    open(id: string): Promise<Result<SessionSnapshot>>;
+    /** Issue #509 quality-gate fix: `userAction` (default false) bypasses `canAutoStart` exactly
+     * like `recover` does, for the one case that is a genuine explicit user request rather than a
+     * passive pane-open -- sending a typed message to a not-yet-started Session (MessageInput's
+     * own `notStarted` path). */
+    open(id: string, userAction?: boolean): Promise<Result<SessionSnapshot>>;
     archive(id: string): Promise<Result<void>>;
     restore(id: string): Promise<Result<void>>;
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;
     delete(id: string, options: { confirmed: true }): Promise<Result<void>>;
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;
+    /** Issue #509 (PLAN.md row A2g): recover (if needed) then send `DEFAULT_RESUME_INSTRUCTION`
+     * as a real turn, atomically and server-side-locked per Session id -- the single path both
+     * the session-list row button and the ChatPane stop banner's Resume button call, so neither
+     * can ever send the instruction twice. */
+    resume(id: string): Promise<Result<SessionSnapshot>>;
     stopAgent(sessionId: string): Promise<Result<void>>;
     /** Spec 005 contracts/ipc.md: every session id currently shown in any pane (0, 1, or 2
      * elements), replacing the single-id/`null` form. Selects which sessions' `transcript:patch`

@@ -4,6 +4,7 @@ import { listConversations } from '../conversations';
 import { ReattachFailedError, SessionNotIdleError } from '../omp/errors';
 import type { SessionAgent } from '../omp/SessionAgent';
 import { resolveTermination } from '../omp/stoppedOnRequestMarker';
+import type { TerminationDetectionResult } from '../omp/terminationDetection';
 import { GitError } from '../git/git';
 import { RegistryError } from '../store/registry';
 import { GhError } from '../github/gh';
@@ -29,7 +30,11 @@ export function mapStoreThrown(err: unknown): Result<never> {
   return { ok: false, error: { code: 'git-failed', message: err instanceof Error ? err.message : String(err) } };
 }
 
-export async function buildSnapshot(agent: SessionAgent, session: Session): Promise<SessionSnapshot> {
+export async function buildSnapshot(
+  agent: SessionAgent,
+  session: Session,
+  precomputedDetection?: TerminationDetectionResult,
+): Promise<SessionSnapshot> {
   // Spec 004: `turnStartedAt` is main-only bookkeeping (the renderer reads the derived `readout`
   // instead), so it is excluded from `SessionRuntimeView` rather than sent twice over IPC.
   // `subagents` (T024 live-finding fix) is different: it IS the renderer-facing shape
@@ -40,15 +45,21 @@ export async function buildSnapshot(agent: SessionAgent, session: Session): Prom
   const { turnStartedAt: _turnStartedAt, stoppedOnRequest, readout, subagents, ...runtimeFields } = agent.runtimeSnapshot;
   const runtime: SessionRuntimeView = runtimeFields;
   // Issue #510 slice 2 (PLAN.md row A0): only a stopped Session can be "terminated unexpectedly"
-  // -- a live one's own status already says otherwise, so no tail read is spent on it.
+  // -- a live one's own status already says otherwise, so no tail read is spent on it. Issue #509
+  // quality-gate fix: `attachSnapshot` (ipc/sessions.ts) already computes this very detection to
+  // decide `canAutoStart`/`canResumeSession` before calling here -- passing it through avoids a
+  // second 256 KiB read of the same file for the same call.
   if (runtime.status === 'stopped') {
     // Quality-gate fix (cycle 2, 2026-10-08): a requested stop is never read from the tail at
-    // all -- see `SessionRuntime.stoppedOnRequest`'s own doc comment. `resolveTermination`
-    // (cycle 5: shared, not copied here) also checks the persisted marker alongside it so a
-    // Session reattached fresh this run still honours an EARLIER life's requested stop, as long
-    // as the Conversation has not grown since -- see `Session.stoppedOnRequestConversation`'s
-    // own doc comment.
-    const detection = await resolveTermination(session, stoppedOnRequest);
+    // all -- see `SessionRuntime.stoppedOnRequest`'s own doc comment. Issue #509 quality-gate
+    // fix: `attachSnapshot` (ipc/sessions.ts) may already have computed this very detection to
+    // decide `canAutoStart`/`canResumeSession` before calling here -- passing it through avoids
+    // a second 256 KiB read of the same file for the same call. `resolveTermination` (cycle 5:
+    // shared, not copied here) is the fallback when nothing was precomputed; it also checks the
+    // persisted marker alongside `stoppedOnRequest` so a Session reattached fresh this run still
+    // honours an EARLIER life's requested stop, as long as the Conversation has not grown since
+    // -- see `Session.stoppedOnRequestConversation`'s own doc comment.
+    const detection = precomputedDetection ?? (await resolveTermination(session, stoppedOnRequest));
     runtime.terminatedUnexpectedly = detection.terminatedUnexpectedly;
     if (detection.pendingToolNames.length > 0) runtime.pendingToolNames = detection.pendingToolNames;
   }

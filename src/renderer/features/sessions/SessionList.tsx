@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -35,6 +35,8 @@ import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
 import { useWorktreeActions } from './useWorktreeActions'
+import { canResumeSession, resumeSession, stillEligibleAfterResume } from '@/features/chat/resume'
+import { describeStopReason } from '@/features/chat/ChatPane'
 
 function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
@@ -65,6 +67,13 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [resuming, setResuming] = useState(false)
+  const resumingRef = useRef(false)
+  const resumeButtonRef = useRef<HTMLButtonElement>(null)
+  // Issue #509 quality-gate fix: a successful resume flips `canResume` false on this row's
+  // next render (its own button then disappears) -- without this, focus that was on the
+  // button at click time would silently fall back to <body> (WCAG 2.1 AA focus-visibility).
+  const resumeFocusPendingRef = useRef(false)
   const { copyPath, reveal } = useWorktreeActions(session)
   const worktreeMissing = session.stopReason === 'worktree-missing'
   const rowRef = useRef<HTMLLIElement>(null)
@@ -112,6 +121,64 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   function startRenaming(): void {
     setDraftName(session.name)
     setRenaming(true)
+  }
+
+  // Issue #509 (PLAN.md row A2g): icon-only, row-level Resume -- recovers the agent and sends the
+  // default resume instruction as a real turn (`resumeSession`, shared with ChatPane's own Resume
+  // button in the stop banner; `sessions.resume` itself holds the server-side single-flight
+  // lock, so this ref only ever blocks this one button's own double click). aria-disabled, not
+  // `disabled`, so keyboard focus stays on the button through the call (matches the
+  // Quick-create button above).
+  const canResume = canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly, !!session.archivedAt)
+
+  // Quality-gate fix (cycle 2, 2026-10-08): only moves focus when it is actually stranded
+  // (<body>, null, or disconnected) -- previously this ran unconditionally the instant
+  // `canResume` flipped false, which could yank focus back to this row even if the user had
+  // since tabbed away (or clicked elsewhere) during the call, matching `ChatPane.tsx`'s own
+  // `maybeRestoreFocus` "stranded" test for its Recover/Retry buttons.
+  useEffect(() => {
+    if (canResume || !resumeFocusPendingRef.current) return
+    resumeFocusPendingRef.current = false
+    const active = document.activeElement
+    const stranded = !active || active === document.body || !active.isConnected
+    if (!stranded) return
+    if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+    else focusListContainer()
+  }, [canResume])
+
+  async function handleResume(): Promise<void> {
+    if (resumingRef.current) return
+    resumingRef.current = true
+    if (document.activeElement === resumeButtonRef.current) resumeFocusPendingRef.current = true
+    setResuming(true)
+    const result = await resumeSession(session.id)
+    resumingRef.current = false
+    setResuming(false)
+    // Quality-gate fix (cycle 5, 2026-10-08): `sessions.resume` can return `ok: true` with a
+    // STILL-stopped snapshot when the restart itself failed (e.g. start-failed) --
+    // `resumeSession.ts`'s own doc comment. Previously only `!result.ok` counted as a failure
+    // here, so this case announced nothing: the row's "Resuming X…" status text just went
+    // blank, `canResume` flipped false, the button disappeared, and focus returned to the open
+    // button with no indication anything had gone wrong (WCAG 4.1.3, 3.3.1). The banner's own
+    // `role="alert"` title change already announces this from the pane; the row had no
+    // equivalent.
+    const restartFailed = result.ok && result.value.runtime.status === 'stopped'
+    if (!result.ok || restartFailed) {
+      // Quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): only clear the pending
+      // flag when the Session is STILL resumable after this call -- a restart failure (ok:true,
+      // still stopped, now e.g. stopReason:'start-failed') flips `canResume` to false exactly
+      // like a genuine success does, so the effect above still needs to run and move focus onto
+      // the open button once the Resume button disappears. Clearing it unconditionally here (as
+      // cycle 5 did, back when a restart failure was not yet counted as this same kind of
+      // failure) left focus stranded on `<body>` instead.
+      const stillEligible = stillEligibleAfterResume(result, !!session.archivedAt)
+      if (stillEligible) resumeFocusPendingRef.current = false
+      notify(
+        result.ok
+          ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
+          : result.error
+      )
+    }
   }
 
   async function commitRename(): Promise<void> {
@@ -300,6 +367,38 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   {session.unread && <span className="sr-only">Unread</span>}
                 </button>
               </SessionDetailsCard>
+            )}
+            {/* Quality-gate fix (a11y, cycle 2, 2026-10-08): moved out of the Button -- a
+                `role="status"` element nested inside a `<button>` is presentational to ARIA (a
+                button's children never form part of the accessibility tree on their own), so it
+                was never exposed as a live region at all. Always mounted (never created
+                together with its own text, which a screen reader generally fails to announce),
+                a sibling of the button, not conditional on `canResume` so it survives past the
+                moment the button itself unmounts on a successful resume. */}
+            <span role="status" className="sr-only">
+              {resuming ? `Resuming ${session.name}…` : ''}
+            </span>
+            {canResume && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    ref={resumeButtonRef}
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Resume ${session.name}`}
+                    aria-disabled={resuming || undefined}
+                    className="aria-disabled:opacity-50"
+                    onClick={() => void handleResume()}
+                  >
+                    {resuming ? (
+                      <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" />
+                    ) : (
+                      <RotateCwIcon aria-hidden className="size-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Resume {session.name}</TooltipContent>
+              </Tooltip>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

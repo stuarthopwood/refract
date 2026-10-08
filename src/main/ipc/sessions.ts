@@ -16,8 +16,12 @@ import { diffStat } from '../git/diffStat';
 import { addWorktree, branchExists, deleteCheck, generateName, listBranches, recreateWorktree, removeWorktree } from '../git/worktrees';
 import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
+import { detectUnexpectedTermination } from '../omp/terminationDetection';
 import type { SessionManager } from '../SessionManager';
 import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util';
+import { attachSnapshotCore } from './attachSnapshot';
+import { resumeSessionCore } from './resumeSession';
+import type { SessionAgent } from '../omp/SessionAgent';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
  * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
@@ -126,27 +130,19 @@ export function registerSessions(manager: SessionManager): void {
     }
   });
 
-  /** `sessions.open` auto-starts a stopped Session only when nothing is wrong with the agent
-   * itself: never started this run, or stopped on request (`SessionAgent.onExit`'s requested
-   * branch uses `stopReason: 'not-started'` for both). `worktree-missing` also still auto-starts
-   * here (unchanged; T043 owns that state's dedicated Recreate/Archive/Delete actions, not this
-   * gate). `agent-exited` and `start-failed` must NOT auto-start (FR-034): the crashed/failed
-   * agent stays visibly stopped, with its `stopReason`/`stopDetail` (including the stderr tail),
-   * until the user explicitly asks `sessions.recover`. */
-  function canAutoStart(stopReason: SessionRuntimeView['stopReason']): boolean {
-    return stopReason === undefined || stopReason === 'not-started' || stopReason === 'worktree-missing';
-  }
-
   /** Shared by `sessions.open` and `sessions.recover`: both return the resulting snapshot, never
    * an error Result for a start failure -- `start()` already moves the runtime to `stopped` with
    * the specific reason (worktree-missing, start-failed with the stderr tail, ...), and that view
    * IS the documented contract ("or returns the stopped reason"). `forceStart` makes `recover`
-   * restart regardless of reason (including `agent-exited`); `open` only starts when
-   * `canAutoStart` says the Session was never wrong to begin with. */
+   * (and an explicit user send, see `SESSIONS_OPEN` below) restart regardless of reason (including
+   * `agent-exited`); a passive `open` only starts when `canAutoStart` says the Session was never
+   * wrong to begin with. The tail detection is computed at most once here and threaded into
+   * `buildSnapshot` (quality-gate fix: avoids a second 256 KiB read of the same file). */
   async function attachSnapshot(id: string, forceStart: boolean): Promise<Result<SessionSnapshot>> {
-    const session = manager.registry.getSession(id);
-    if (!session) return notFound(`Session not found: ${id}`);
-    const agent = manager.getOrCreateAgent(id);
+    // Quality-gate fix (cycle 3, 2026-10-08): the actual logic (the `stoppedOnRequest`
+    // short-circuit, the `canAutoStart` gate, threading `detection` into `buildSnapshot`) now
+    // lives in `attachSnapshotCore` (`attachSnapshot.ts`), injected with this manager's own real
+    // dependencies, so it is unit-testable against fakes -- same reasoning as `resumeSessionCore`.
     // Visibility is NOT set here. It is set solely by the explicit `sessions.setVisible` IPC.
     // Round 3 (code-reviewer, Low): App.tsx's own rendered-panes effect is the SOLE caller now,
     // and it fires AFTER this call's snapshot resolves (reacting to the resulting state change),
@@ -155,21 +151,23 @@ export function registerSessions(manager: SessionManager): void {
     // start) while the renderer's own visible-Session state did not flip until this whole IPC
     // round-trip returned: main and the renderer disagreed about which Session was visible for
     // the entire cold start (bug report point 5).
-    if (agent.runtimeSnapshot.status === 'stopped' && (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason))) {
-      await agent.start().catch(() => undefined);
-      // T062: `agent.start()` runs `syncFromState` against the registry before resolving
-      // (`lastModel`/`lastThinkingLevel`, `sessionDir`, ...), so the row the renderer already
-      // cached from a previous `sessions.list()` is now stale; tell it to re-fetch, the same way
-      // every other Session-row-affecting mutation in this file already does.
-      manager.notifyListChanged();
-    }
-    const refreshed = manager.registry.getSession(id) ?? session;
-    return { ok: true, value: await buildSnapshot(agent, refreshed) };
+    return attachSnapshotCore(id, forceStart, {
+      getSession: (sessionId) => manager.registry.getSession(sessionId),
+      getOrCreateAgent: (sessionId) => manager.getOrCreateAgent(sessionId),
+      notifyListChanged: () => manager.notifyListChanged(),
+      detectUnexpectedTermination,
+      buildSnapshot: (agent, session, detection) => buildSnapshot(agent as SessionAgent, session, detection),
+    });
   }
 
-  ipcMain.handle(IPC_REQUESTS.SESSIONS_OPEN, async (_event, id: unknown) => {
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_OPEN, async (_event, id: unknown, userAction: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_OPEN} expects a string id`);
-    return attachSnapshot(id, false);
+    // Quality-gate fix (#509): an explicit user action (typing a message and sending it to a
+    // not-yet-opened pane, MessageInput's own `notStarted` path) must still start the agent even
+    // for a Session `canAutoStart` would otherwise leave stopped -- that passive gate exists to
+    // stop a SILENT background auto-start, never to block the user's own direct request. Treated
+    // exactly like `recover`'s `forceStart`.
+    return attachSnapshot(id, userAction === true);
   });
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_ARCHIVE, async (_event, id: unknown) => {
@@ -268,6 +266,27 @@ export function registerSessions(manager: SessionManager): void {
   ipcMain.handle(IPC_REQUESTS.SESSIONS_RECOVER, async (_event, id: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_RECOVER} expects a string id`);
     return attachSnapshot(id, true);
+  });
+
+  // Issue #509 (PLAN.md row A2g) quality-gate fix: one in-main resume path, never two renderer
+  // call sites (the row button and the stop banner) each doing their own recover-then-send --
+  // `resumingIds` is a per-session server-side lock so a double click (one from each UI entry
+  // point, or two in a row before the busy state renders) can only ever send the instruction
+  // once. Re-checks `canResumeSession` here too, against a fresh tail read, rather than trusting
+  // whatever `SessionSummary` the renderer's click happened to be holding -- a second pane could
+  // have already recovered this exact Session in the meantime. Quality-gate fix (cycle 2,
+  // 2026-10-08): the actual logic lives in `resumeSessionCore` (`resumeSession.ts`), injected
+  // with this manager's own real dependencies, so it is unit-testable against fakes.
+  const resumingIds = new Set<string>();
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_RESUME, async (_event, id: unknown) => {
+    if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_RESUME} expects a string id`);
+    return resumeSessionCore(resumingIds, id, {
+      getSession: (sessionId) => manager.registry.getSession(sessionId),
+      getOrCreateAgent: (sessionId) => manager.getOrCreateAgent(sessionId),
+      notifyListChanged: () => manager.notifyListChanged(),
+      detectUnexpectedTermination,
+      buildSnapshot: (agent, session) => buildSnapshot(agent as SessionAgent, session),
+    });
   });
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_STOP_AGENT, async (_event, sessionId: unknown) => {
