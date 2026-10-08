@@ -30,7 +30,7 @@ There is no packaged installer yet. After `pnpm build`, launch the built app dir
 node_modules/electron/dist/electron.exe .
 ```
 
-The taskbar, Alt+Tab and notifications show the Refract logo, not Electron's atom icon (issue #494); if an older taskbar entry is still pinned from before this fix, unpin and re-pin it once to clear Windows' icon cache.
+The taskbar, Alt+Tab and notifications show the Refract logo, not Electron's atom icon (issue #494; for a notification, this is the toast's body icon only -- the toast header still reads "Electron" until a registered Start Menu shortcut gives Windows a display name to resolve, a known limitation out of this fix's scope); if an older taskbar entry is still pinned from before this fix, unpin and re-pin it once to clear Windows' icon cache.
 
 ## Where state lives
 

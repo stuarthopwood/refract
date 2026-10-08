@@ -12,7 +12,7 @@
 // this dev launch method does not have -- a known limitation the issue itself names as
 // unresolved for "fully-branded notifications" (out of this fix's scope; see the PR body).
 
-import { BrowserWindow, Notification, nativeImage } from 'electron';
+import { app, BrowserWindow, Notification, nativeImage } from 'electron';
 import { IPC_EVENTS } from '../shared/ipc';
 import type { SessionStatus } from '../shared/model';
 import type { SessionManager } from './SessionManager';
@@ -23,10 +23,11 @@ export function registerNotifications(
   iconPath: string
 ): void {
   const lastStatus = new Map<string, SessionStatus>();
-  // Computed once (not dev-gated: an empty/missing-file image is always safe per Electron's own
-  // nativeImage contract, and a packaged run would resolve a real `build/icon.ico` differently
-  // anyway once spec 006 lands its own packaged-icon path).
-  const icon = nativeImage.createFromPath(iconPath);
+  // Computed once, gated the same way index.ts's setIcon call is (same WINDOW_ICON_PATH): a
+  // packaged launch never pays for a createFromPath read of a path it already knows does not
+  // exist (spec 006 ships the packaged icon via electron-builder's `win.icon` instead, not this
+  // file's `iconPath`).
+  const icon = app.isPackaged ? undefined : nativeImage.createFromPath(iconPath);
 
   manager.onEvent((event) => {
     if (event.type !== 'status') return;
