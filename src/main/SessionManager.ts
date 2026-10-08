@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import type { ApprovalMode, PendingRequest, SessionReadout, SubagentSummary } from '../shared/model';
 import type { SessionStatusEvent, SessionSummary, SlashCommand, TranscriptOp } from '../shared/ipc';
 import { SessionAgent } from './omp/SessionAgent';
+import { resolveTermination } from './omp/stoppedOnRequestMarker';
 import type { RegistryStore } from './store/registry';
 import type { SettingsStore } from './store/settings';
 
@@ -23,6 +24,27 @@ export type ManagerEvent =
   | { type: 'subagents'; payload: { sessionId: string; subagents: SubagentSummary[] } }
   | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
   | { type: 'list-changed' };
+
+/** Issue #510 (quality gate 2026-10-08): caps how many Sessions' Conversation tails `summaries()`
+ * reads at once. Small, since a tail read is bounded (256 KiB max) and cheap on its own, but a
+ * registry with many stopped Sessions should not open dozens of file handles in one burst. */
+const DETECTION_CONCURRENCY = 4;
+
+/** Runs `fn` over `items` with at most `limit` concurrent calls in flight, preserving each
+ * result's original position regardless of completion order. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index]!);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
 
 export class SessionManager {
   private readonly agents = new Map<string, SessionAgent>();
@@ -136,24 +158,63 @@ export class SessionManager {
 
   /** `sessions.list()` row view: every registered Session, live or not (contracts/ipc.md). A
    * Session with no agent this run is checked for a missing worktree folder right here (T043),
-   * since there is no `SessionRuntime` yet to carry that reason. */
-  summaries(): SessionSummary[] {
-    return this.registry.snapshot().sessions.map((session) => {
+   * since there is no `SessionRuntime` yet to carry that reason. Issue #510 slice 2 (PLAN.md row
+   * A0): async now -- a `stopped` row (live or never-launched-this-run alike) also reads its
+   * Conversation's tail for `terminatedUnexpectedly`, skipped entirely for `worktree-missing` (no
+   * useful Conversation to read), an archived Session (not shown as an active row needing a
+   * Resume affordance; quality gate 2026-10-08), and every live non-`stopped` status. Reads run
+   * at most `DETECTION_CONCURRENCY` at a time -- `detectUnexpectedTermination` itself caches by
+   * `(file, size, mtimeMs)`, so an unrelated refresh (any OTHER Session's rename, archive, or
+   * status change also fires `session:list-changed`) is cheap, but a large registry's first-ever
+   * refresh still opens every stopped Session's file at once without this cap. */
+  async summaries(): Promise<SessionSummary[]> {
+    return mapWithConcurrency(this.registry.snapshot().sessions, DETECTION_CONCURRENCY, async (session) => {
       const runtime = this.agents.get(session.id)?.runtimeSnapshot;
       if (runtime) {
+        // Quality-gate fix (cycle 2, 2026-10-08): a requested stop (`stopAgent`, or any other
+        // Refract-initiated shutdown) is never read from the tail at all -- see
+        // `SessionRuntime.stoppedOnRequest`'s own doc comment. Without this, a tool call still
+        // outstanding when the stop fired (stdin-close, then a 10s wait, then `taskkill`) looks
+        // identical, from the file alone, to a genuine mid-call crash. Quality-gate fix (cycle 4,
+        // 2026-10-08): `runtime.stoppedOnRequest` is THIS life's own in-memory flag; `
+        // resolveTermination` also checks the persisted marker alongside it (cycle 5: shared,
+        // not copied here) so a Session reattached fresh this run (a new `SessionAgent`,
+        // `stoppedOnRequest` defaulting `false` until its own first exit) still honours an
+        // EARLIER life's requested stop, as long as the Conversation has not grown since.
+        const terminatedUnexpectedly =
+          runtime.status === 'stopped' && !session.archivedAt
+            ? (await resolveTermination(session, runtime.stoppedOnRequest)).terminatedUnexpectedly
+            : undefined;
         return {
           ...session,
           status: runtime.status,
           stopReason: runtime.stopReason,
+          terminatedUnexpectedly,
           unread: runtime.unread,
           launchedMode: runtime.launchedMode,
           pendingMode: runtime.pendingMode,
         };
       }
       const stopReason = existsSync(session.worktreePath) ? 'not-started' : 'worktree-missing';
+      // Quality-gate fix (cycle 4, 2026-10-08): no `SessionRuntime` at all means this Session has
+      // not been opened since the app (re)started -- exactly the case `Session.
+      // stoppedOnRequestConversation`'s own doc comment describes: the marker is the ONLY signal
+      // left that a stop here was requested, not a crash.
+      const terminatedUnexpectedly =
+        stopReason === 'not-started' && !session.archivedAt
+          ? (await resolveTermination(session, false)).terminatedUnexpectedly
+          : undefined;
       // Never actually launched this run: nothing is "currently in effect" to show as current,
       // so this falls back to the global Settings mode the renderer already uses pre-launch.
-      return { ...session, status: 'stopped', stopReason, unread: false, launchedMode: this.settings.get().approvalMode, pendingMode: null };
+      return {
+        ...session,
+        status: 'stopped',
+        stopReason,
+        terminatedUnexpectedly,
+        unread: false,
+        launchedMode: this.settings.get().approvalMode,
+        pendingMode: null,
+      };
     });
   }
 

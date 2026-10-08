@@ -53,6 +53,19 @@ export interface Session {
    * finished subagents resurfacing as "current". Absent (old registries, or no subagents this
    * turn) means empty scope -- no migration needed. */
   currentTurnSubagents?: string[];
+  /** Issue #510 quality-gate fix (cycle 4, 2026-10-08): the persisted sibling of in-memory
+   * `SessionRuntime.stoppedOnRequest`, surviving an app restart. Written by `SessionAgent.onExit`'s
+   * requested-stop branch (`stoppedOnRequestMarker.ts`'s `recordStoppedOnRequestMarker`): the
+   * Session's `currentConversation` path at that moment, and that file's exact byte size then.
+   * Cleared at the top of every `launch()` attempt (`clearStoppedOnRequestMarker`) -- a new life
+   * starting means whatever the PREVIOUS life's requested stop protected no longer applies.
+   * Honoured by `summaries()`/`buildSnapshot`/`attachSnapshot` (`isStoppedOnRequestMarkerValid`)
+   * ONLY while `stoppedOnRequestConversation` still equals the Session's current Conversation AND
+   * `stoppedOnRequestAtSize` still equals that file's real current size -- any growth means a
+   * later life ran and appended to it, so the tail is judged fresh, exactly as if no marker
+   * existed. Both absent/null: no marker was ever set, or a later life already cleared it. */
+  stoppedOnRequestConversation?: string | null;
+  stoppedOnRequestAtSize?: number | null;
 }
 /** The app-wide setting for how much the agent may do without asking. Reads are never prompted. */
 export type ApprovalMode = 'ask' | 'edit-freely' | 'auto';
@@ -103,6 +116,12 @@ export const OMP_APPROVAL_MODE: Record<ApprovalMode, string> = {
   auto: 'yolo',
 };
 
+/** Issue #510 slice 2 (PLAN.md row A0), fed to #509's Resume button: as direct as the word
+ * Stuart actually typed resuming his own crashed session ("resume"). No goal-mode variant yet --
+ * goal mode (#479) does not exist in this codebase; a `goal resume` default is #479's own job
+ * once that field exists on `Session`. */
+export const DEFAULT_RESUME_INSTRUCTION = 'resume';
+
 /** One record per running `omp` root process; the pid-and-start-time fallback for stale process reaping. */
 export interface ProcessRecord {
   pid: number;
@@ -134,6 +153,15 @@ export interface SessionRuntime {
   turnStartedAt: number | null; // spec 004: epoch ms; set on agent_start, cleared on session_settled/stop
   readout: SessionReadout; // spec 004: last assembled bundle; never persisted
   subagents: SubagentSummary[]; // spec 004: current turn's subagents; cleared when a new turn starts
+  /** Quality-gate fix (cycle 2, 2026-10-08): true from the moment a REQUESTED stop (`stopAgent`,
+   * or any other Refract-initiated shutdown) actually exits the process, cleared the instant a
+   * new process life starts (`launch()`). A requested stop is never "terminated unexpectedly" by
+   * definition, regardless of what the Conversation's tail happens to show -- a tool call still
+   * outstanding when the stdin-close-then-`taskkill` sequence fires looks identical, from the
+   * file alone, to a genuine mid-call crash. Every reader that would otherwise re-derive
+   * `terminatedUnexpectedly` from the tail (`SessionManager.summaries()`, `ipc/util.ts`'s
+   * `buildSnapshot`) must check this first and skip the tail read entirely when it is set. */
+  stoppedOnRequest: boolean;
 }
 
 /** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base
@@ -234,7 +262,13 @@ export type TranscriptItem =
       toolCallId: string;
       tool: string;
       target: string;
-      status: 'running' | 'done' | 'error';
+      /** `'interrupted'` (issue #510 slice 3, PLAN.md row A0): a call built from history that
+       * never received a result, in a Conversation whose tail `detectUnexpectedTermination`
+       * (terminationDetection.ts) confirms the writing process is actually gone -- same family as
+       * `'exited'` on a `subagent` item below (#489), just file-tail-derived instead of
+       * registry-derived, and never asserted for a Session that is genuinely still `working`
+       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. */
+      status: 'running' | 'done' | 'error' | 'interrupted';
       /** Absent when built from history (no reliable wall clock to derive it from), matching
        * the `thinking` item's `startedAt`. */
       startedAt?: number;

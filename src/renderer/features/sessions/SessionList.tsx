@@ -282,6 +282,16 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-medium">{session.name}</span>
                     <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
+                    {/* Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): mirrors ChatPane's
+                        `showTerminatedTitle` -- `worktree-missing`/`start-failed` have their own
+                        dedicated reason text and actions, so this row must not also claim the
+                        session "Terminated unexpectedly" for those two reasons. */}
+                    {session.status === 'stopped' &&
+                      session.terminatedUnexpectedly &&
+                      session.stopReason !== 'worktree-missing' &&
+                      session.stopReason !== 'start-failed' && (
+                        <span className="truncate text-xs text-destructive">Terminated unexpectedly</span>
+                      )}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
                   {session.unread && (

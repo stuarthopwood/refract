@@ -46,7 +46,32 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set({
       sessions: get().sessions.map((session) =>
         session.id === event.sessionId
-          ? { ...session, status: event.status, unread: event.unread, launchedMode: event.launchedMode, pendingMode: event.pendingMode }
+          ? {
+              ...session,
+              status: event.status,
+              // Quality-gate fix (2026-10-08): `stopReason` and `terminatedUnexpectedly` used to
+              // be dropped here, so the row's "Terminated unexpectedly" text (and `stopReason`
+              // itself) only ever updated on the next unrelated `sessions.list()` refresh, never
+              // on the live crash this event actually reports.
+              stopReason: event.stopReason,
+              // Quality-gate fix (cycle 2, 2026-10-08): an explicit value on the event is always
+              // authoritative. Otherwise, a still-`stopped` transition (for example
+              // `clearUnread()`'s own status re-emit, which carries no `terminatedUnexpectedly`
+              // at all) must keep whatever this row already had -- main's own main-process flag
+              // genuinely did not change just because an UNRELATED field did -- never silently
+              // wipe a real crash/Resume-eligible row back to `false` until the next unrelated
+              // `sessions.list()` refresh happens to correct it. A transition to a LIVE status
+              // does reset to `false`: a working/idle Session is definitely not "terminated".
+              terminatedUnexpectedly:
+                event.terminatedUnexpectedly !== undefined
+                  ? event.terminatedUnexpectedly
+                  : event.status === 'stopped'
+                    ? (session.terminatedUnexpectedly ?? false)
+                    : false,
+              unread: event.unread,
+              launchedMode: event.launchedMode,
+              pendingMode: event.pendingMode
+            }
           : session
       )
     }),

@@ -22,6 +22,7 @@ import { ToolGroupRow, SubagentRow } from './ToolRow'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
+import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type UserItem = Extract<TranscriptItem, { kind: 'user' }>
@@ -386,6 +387,30 @@ export function Transcript({ sessionId }: { sessionId: string }) {
 
   const turns = React.useMemo(() => splitIntoTurns(items), [items])
 
+  // Issue #510 slice 4 (PLAN.md row A0): "Load earlier" over the already-fully-fetched
+  // transcript (see windowTranscriptTurns.ts's own doc comment) -- reset whenever this instance
+  // is reused for a DIFFERENT Session (`ChatPane.tsx` swaps `sessionId` on the same `Transcript`
+  // without remounting it), so a long Session's earlier reveal never leaks into the next one
+  // shown in the same pane.
+  const [revealedEarlier, setRevealedEarlier] = React.useState(false)
+  // Quality-gate fix (cycle 2, 2026-10-08): announced once, in a polite live region that is
+  // ALWAYS mounted (never created together with its own text, which screen readers generally
+  // fail to announce) -- see the always-mounted `role="status"` span in the JSX below.
+  const [revealedAnnouncement, setRevealedAnnouncement] = React.useState('')
+  // Quality-gate fix (cycle 2, 2026-10-08): the "scroll stays put" anchor for `handleLoadEarlier`
+  // below -- `scrollHeight - scrollTop` recorded just before the reveal, restored in the layout
+  // effect right after the newly-revealed turns commit to the DOM (see that effect's own doc
+  // comment for why a raw `scrollTop` cannot be reused directly).
+  const loadEarlierAnchorRef = React.useRef<number | null>(null)
+  // Quality-gate fix (a11y, cycle 3, 2026-10-08): see `handleLoadEarlier`'s own doc comment --
+  // suppresses `MessageScrollerContent`'s default `role="log"` live announcements for the one
+  // reveal that would otherwise flood a screen reader with every newly-visible turn at once.
+  const [suppressLogAnnouncements, setSuppressLogAnnouncements] = React.useState(false)
+  const { visible: visibleTurns, hiddenCount } = React.useMemo(
+    () => windowTranscriptTurns(turns, revealedEarlier),
+    [turns, revealedEarlier]
+  )
+
   // Precomputes every rendered row's own top margin (docs/DESIGN.md "Transcript rhythm") and
   // every turn boundary's time-gap divider (docs/DESIGN.md "Time-gap divider") in one render pass.
   // `isFirstRow` tracks the very first rendered row across the whole transcript (no margin at
@@ -510,6 +535,22 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     // lie (showing "at end" for a detached Conversation, or vice versa) for that whole window.
     const targetMemory = useChatScrollStore.getState().bySession[sessionId]
     setIsAtEnd(targetMemory === undefined || targetMemory.atEnd)
+    // Quality-gate fix (cycle 2, 2026-10-08): "Load earlier"'s reveal is per Session AND per
+    // Conversation (this key already covers both -- see the #510 slice 4 High finding this
+    // fixes: the old plain `useEffect(() => setRevealedEarlier(false), [sessionId])` reset ran
+    // AFTER commit, so the very FIRST render of an incoming Session still used the OUTGOING
+    // Session's `revealedEarlier=true` and built every turn -- exactly the DOM spike the window
+    // exists to avoid -- and never reset at all on a same-Session Conversation switch. Resetting
+    // here, in the SAME render-phase block `isAtEnd`/`autoScrollSuppressed` already use, applies
+    // before this render's own JSX is built (React restarts the render when `revealedEarlier`
+    // genuinely changes), so `visibleTurns` above is already correctly windowed the first time
+    // the new key is ever rendered.
+    if (revealedEarlier) setRevealedEarlier(false)
+    if (revealedAnnouncement) setRevealedAnnouncement('')
+    // Quality-gate fix (HIGH, code review, cycle 5, 2026-10-08): a Session/Conversation switch
+    // arriving between "Load earlier"'s click and the frame that would have cleared this (see
+    // the dedicated effect below) must not leave the NEW Session's log permanently suppressed.
+    if (suppressLogAnnouncements) setSuppressLogAnnouncements(false)
   }
 
   // Continuously records this Session's scroll position while the viewport is visible, so
@@ -545,6 +586,64 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     setAutoScrollSuppressed(false)
     setIsAtEnd(true)
   }
+
+  // Quality-gate fix (HIGH, a11y + code review, cycle 2, 2026-10-08): "Load earlier" used to
+  // just flip `revealedEarlier` straight to `true`, which (1) silently jumped the view to the
+  // very first (oldest) turn the instant the button -- the thing that was focused -- unmounted
+  // and focus fell to `<body>`, and (2) announced nothing to a screen reader. Records the
+  // anchor distance from the end BEFORE the reveal; the layout effect below restores it and
+  // moves focus once the newly-revealed turns are actually in the DOM.
+  function handleLoadEarlier() {
+    const viewport = viewportRef.current
+    loadEarlierAnchorRef.current = viewport ? viewport.scrollHeight - viewport.scrollTop : null
+    setRevealedAnnouncement(loadEarlierAnnouncement(hiddenCount))
+    // Quality-gate fix (a11y, cycle 3, 2026-10-08): `MessageScrollerContent` renders
+    // `role="log"` by default (an implicit polite live region with `aria-relevant="additions"`),
+    // so revealing up to hundreds of hidden turns at once would otherwise queue the WHOLE
+    // revealed history as log-addition announcements, burying the one message that actually
+    // matters. Suppressed for this one reveal only; the layout effect below clears it again
+    // once the new turns have committed.
+    setSuppressLogAnnouncements(true)
+    setRevealedEarlier(true)
+  }
+
+  // Runs right after `handleLoadEarlier`'s reveal commits its newly-visible turns to the DOM
+  // (before paint, `useLayoutEffect`, so there is no visible jump): restores the exact same
+  // distance from the end the developer was at (`scrollHeight - scrollTop`, recorded before the
+  // reveal) -- a raw `scrollTop` would be meaningless once thousands of pixels of newly-revealed
+  // content are inserted ABOVE it, and the browser's own default scroll-anchoring is not reliable
+  // here (#459's same root cause: `content-visibility:auto` rows still promoting from their
+  // placeholder size). Then moves focus to the viewport itself (same target, same
+  // `preventScroll` rationale, as the "Scroll to end" button's own focus-restoration effect
+  // above): the clicked "Load earlier" button no longer exists once `hiddenCount` reaches zero,
+  // so without this, focus would fall to `<body>` (WCAG 2.4.3, 2.4.7).
+  React.useLayoutEffect(() => {
+    const anchor = loadEarlierAnchorRef.current
+    if (anchor === null) return
+    loadEarlierAnchorRef.current = null
+    const viewport = viewportRef.current
+    if (viewport) {
+      viewport.scrollTop = restoreScrollTop(viewport.scrollHeight, anchor)
+      viewport.focus({ preventScroll: true })
+    }
+  }, [visibleTurns])
+
+  // Quality-gate fix (HIGH, code review, cycle 5, 2026-10-08): pulled out of the `[visibleTurns]`
+  // effect above into its own effect keyed on `suppressLogAnnouncements` itself. The previous
+  // version's `requestAnimationFrame` lived inside the `[visibleTurns]` effect, so ANOTHER
+  // `visibleTurns` change arriving before that frame fired (any streamed `transcript:patch`
+  // during a working turn produces a new `turns`/`visibleTurns`) cancelled it on cleanup; the
+  // re-run then saw `anchor === null` (already consumed by the first run) and returned early,
+  // so nothing ever scheduled a replacement clear -- `suppressLogAnnouncements` stayed `true`,
+  // and the transcript's `role="log"` stayed `aria-live="off"`, for the rest of the Session.
+  // This effect re-arms every time `suppressLogAnnouncements` itself flips `true`, independent
+  // of how many more `visibleTurns` changes land in between, and its own cleanup always cancels
+  // the correct frame (including on unmount, e.g. closing this pane mid-reveal).
+  React.useEffect(() => {
+    if (!suppressLogAnnouncements) return
+    const frame = requestAnimationFrame(() => setSuppressLogAnnouncements(false))
+    return () => cancelAnimationFrame(frame)
+  }, [suppressLogAnnouncements])
 
   // Finding 1 (gate fixes 4, a11y): the button above goes `inert` (below) the instant `isAtEnd`
   // becomes true -- both from this handler's own click AND from a Session/Conversation landing
@@ -760,15 +859,32 @@ export function Transcript({ sessionId }: { sessionId: string }) {
           // bounds would be cut off entirely rather than just visually tight.
           className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         >
-          <MessageScrollerContent ref={contentRef} className="mx-auto w-full max-w-4xl px-4 py-4">
+          <MessageScrollerContent
+            ref={contentRef}
+            className="mx-auto w-full max-w-4xl px-4 py-4"
+            // Quality-gate fix (a11y, cycle 3, 2026-10-08): this renders `role="log"` by default
+            // (an implicit polite live region, `aria-relevant="additions"`) -- `off` for the one
+            // frame window `handleLoadEarlier`'s reveal needs, so revealing up to hundreds of
+            // hidden turns at once never queues the whole revealed history as log-addition
+            // announcements. `undefined` (the log's own default) the rest of the time, so
+            // ordinary streamed turns are still announced as they always were.
+            aria-live={suppressLogAnnouncements ? 'off' : undefined}
+          >
             {!hasConversationStarted && (
               <div className="px-2 py-8 text-center text-sm text-muted-foreground">
                 Ready. Type a message to get started.
               </div>
             )}
+            {hasConversationStarted && hiddenCount > 0 && (
+              <div className="px-2 pb-2">
+                <Button type="button" variant="ghost" size="sm" onClick={handleLoadEarlier}>
+                  Load {hiddenCount} earlier turn{hiddenCount === 1 ? '' : 's'}
+                </Button>
+              </div>
+            )}
             {hasConversationStarted &&
-              turns.map((turn, turnIndex) => {
-                const previousTurn = turnIndex > 0 ? turns[turnIndex - 1] : undefined
+              visibleTurns.map((turn, turnIndex) => {
+                const previousTurn = turnIndex > 0 ? visibleTurns[turnIndex - 1] : undefined
                 const showTimeGapDivider =
                   previousTurn?.userItem != null &&
                   previousTurn.userItem.at !== 0 &&
@@ -803,7 +919,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                     })}
                     <TurnTotalLine
                       turn={turn}
-                      isLastTurn={turnIndex === turns.length - 1}
+                      isLastTurn={turnIndex === visibleTurns.length - 1}
                       isTurnRunning={isTurnRunning}
                       receivedAt={receivedAt}
                     />
@@ -812,6 +928,15 @@ export function Transcript({ sessionId }: { sessionId: string }) {
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
+        {/* Quality-gate fix (a11y, cycle 2/3, 2026-10-08): a sibling of the viewport, OUTSIDE
+            `MessageScrollerContent`'s own `role="log"` -- nested inside the log, this status
+            text's own insertion was itself just one more log addition (announced twice: once as
+            a log addition, once as the status message). Always mounted (never created together
+            with its own text, which a screen reader generally fails to announce) -- empty until
+            `handleLoadEarlier` sets it. */}
+        <span role="status" aria-live="polite" className="sr-only">
+          {revealedAnnouncement}
+        </span>
         <Button
           ref={buttonRef}
           type="button"

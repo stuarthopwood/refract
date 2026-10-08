@@ -4,7 +4,7 @@
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
-import { Alert, AlertAction, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
@@ -33,6 +33,8 @@ type StopReason = SessionStatusEvent['stopReason']
 interface StopInfo {
   reason?: StopReason
   detail?: string
+  terminatedUnexpectedly?: boolean
+  pendingToolNames?: string[]
 }
 
 
@@ -169,7 +171,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     () =>
       window.refract.onSessionStatus((event) => {
         if (event.sessionId !== sessionIdRef.current) return
-        setStopInfo({ reason: event.stopReason, detail: event.stopDetail })
+        // Quality-gate fix (cycle 3, 2026-10-08): this used to replace the whole object,
+        // unconditionally dropping `terminatedUnexpectedly`/`pendingToolNames` -- a snapshot-
+        // derived flag (from `sessions.open`/`recover`/`startNew` above) was wiped the instant
+        // ANY later live status event arrived for this Session, even one carrying no
+        // information about either field (e.g. a readout-only re-emit), which also hid #585's
+        // Resume button and mismatched the row's own "Terminated unexpectedly" text against
+        // this pane's banner title. Same three-way rule `sessions-store.ts`'s `applyStatus`
+        // already uses: an explicit value on the event wins; a still-`stopped` event with none
+        // keeps whatever this pane already had; a LIVE status resets both to nothing, since a
+        // working/idle Session is definitely not "terminated" and has nothing pending.
+        setStopInfo((prev) => ({
+          reason: event.stopReason,
+          detail: event.stopDetail,
+          terminatedUnexpectedly:
+            event.terminatedUnexpectedly ?? (event.status === 'stopped' ? prev.terminatedUnexpectedly : false),
+          pendingToolNames: event.status === 'stopped' ? prev.pendingToolNames : undefined
+        }))
       }),
     []
   )
@@ -190,7 +208,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         const snapshot = await useSessionsStore.getState().open(sessionId)
         if (cancelled || !snapshot) return
         applySnapshot(sessionId, snapshot)
-        setStopInfo({ reason: snapshot.runtime.stopReason, detail: snapshot.runtime.stopDetail })
+        setStopInfo({
+          reason: snapshot.runtime.stopReason,
+          detail: snapshot.runtime.stopDetail,
+          terminatedUnexpectedly: snapshot.runtime.terminatedUnexpectedly,
+          pendingToolNames: snapshot.runtime.pendingToolNames
+        })
         // `commands:update` only pushes on the next `available_commands_update` frame from
         // OMP (SessionAgent.ts), which may not arrive again for a Session that was already
         // running before this pane (re)mounted -- e.g. a warm switch back, or a renderer
@@ -290,8 +313,25 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // session with no live runtime this run) while pristine, instead of the live-fetched value.
   const effectiveStopReason = isPristine ? session.stopReason : stopInfo.reason
   const effectiveStopDetail = isPristine ? undefined : stopInfo.detail
-  // `not-started` is idle-and-asleep, not an error (data-model.md); it gets no banner.
-  const showBanner = session.status === 'stopped' && !!effectiveStopReason && effectiveStopReason !== 'not-started'
+  // Issue #510 slice 2 (PLAN.md row A0): independent of `effectiveStopReason` -- this is what
+  // still flags a Session reopened after a Refract crash, which only ever carries `stopReason:
+  // 'not-started'` (no live `onExit` ever ran this run to set `agent-exited`).
+  const effectiveTerminatedUnexpectedly = isPristine ? !!session.terminatedUnexpectedly : !!stopInfo.terminatedUnexpectedly
+  const effectivePendingToolNames = isPristine ? undefined : stopInfo.pendingToolNames
+  // `not-started` is idle-and-asleep, not an error (data-model.md) UNLESS the Conversation tail
+  // shows it died mid-turn, in which case it still needs a banner (just no Recover action yet --
+  // #509 adds the Resume button for exactly this case).
+  const showBanner =
+    session.status === 'stopped' &&
+    ((!!effectiveStopReason && effectiveStopReason !== 'not-started') || effectiveTerminatedUnexpectedly)
+  // Quality-gate fix (a11y, Medium, 2026-10-08): `worktree-missing`/`start-failed` have their own
+  // dedicated actions below (Recreate/Archive/Delete, Retry/Start new) that have nothing to do
+  // with a Resume instruction, so the title must keep naming THAT real reason even when the tail
+  // also happens to read as terminated unexpectedly -- otherwise the banner says "Terminated
+  // unexpectedly" while offering only worktree-recovery actions, naming a problem those buttons
+  // do not fix.
+  const showTerminatedTitle =
+    effectiveTerminatedUnexpectedly && effectiveStopReason !== 'worktree-missing' && effectiveStopReason !== 'start-failed'
   // `key={sessionId}` below remounts MessageInput on every session switch, dropping its
   // textarea's focus. Reclaim it only when the switch happened while focus was already inside
   // this pane (e.g. a notification reopening the Session the user was typing in), never on
@@ -329,7 +369,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     }
     applySnapshot(recoveringFor, result.value)
     if (sessionIdRef.current === recoveringFor) {
-      setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+      setStopInfo({
+        reason: result.value.runtime.stopReason,
+        detail: result.value.runtime.stopDetail,
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        pendingToolNames: result.value.runtime.pendingToolNames
+      })
     }
     // The banner (and its focused Recover/Retry button) unmounts once the snapshot clears the
     // stop reason, dropping focus to <body>. Waits one frame for the fresh content (textarea or
@@ -390,7 +435,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     useChatScrollStore.getState().clear(startingFor)
     applySnapshot(startingFor, result.value)
     if (sessionIdRef.current === startingFor) {
-      setStopInfo({ reason: result.value.runtime.stopReason, detail: result.value.runtime.stopDetail })
+      setStopInfo({
+        reason: result.value.runtime.stopReason,
+        detail: result.value.runtime.stopDetail,
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        pendingToolNames: result.value.runtime.pendingToolNames
+      })
     }
     requestAnimationFrame(maybeRestoreFocus)
   }
@@ -484,7 +534,17 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         <div data-pane-banner className="shrink-0 px-4 pt-3">
           <Alert variant="destructive">
             <AlertTriangleIcon />
-            <AlertTitle>{describeStopReason(effectiveStopReason, effectiveStopDetail)}</AlertTitle>
+            <AlertTitle>
+              {showTerminatedTitle ? 'Terminated unexpectedly' : describeStopReason(effectiveStopReason, effectiveStopDetail)}
+            </AlertTitle>
+            {showTerminatedTitle && (
+              <AlertDescription>
+                Its Conversation ended mid-turn, not a clean stop.
+                {effectivePendingToolNames && effectivePendingToolNames.length > 0
+                  ? ` Still waiting on ${effectivePendingToolNames.join(', ')}.`
+                  : ''}
+              </AlertDescription>
+            )}
             {effectiveStopReason === 'agent-exited' && (
               <AlertAction>
                 <Button

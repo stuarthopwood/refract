@@ -1,8 +1,14 @@
 // Issue #480 quality-gate fix (test-reviewer, Medium, 2026-10-08): the rename persistence path
 // (`updateRepository`) had no test -- unknown id, the id override being ignored, and a round
-// trip through disk were all unverified. Scratch files are left in the OS temp folder (never
-// removed), the same deliberate choice `terminationDetection.test.ts` already makes under the
-// destructive-delete guard.
+// trip through disk were all unverified.
+// Issue #510 quality-gate fix (cycle 5, 2026-10-08): regression coverage for the
+// rollback-on-failed-write behaviour `RegistryStore.updateSession` gained in cycle 4 -- added
+// alongside the persisted stoppedOnRequest marker (`stoppedOnRequestMarker.ts`'s own
+// `recordStoppedOnRequestMarker`/`clearStoppedOnRequestMarker`, both of which call this), but
+// never itself had a test on this branch.
+// Scratch files from both suites are left in the OS temp folder (never removed), the same
+// deliberate choice `terminationDetection.test.ts` already makes under the destructive-delete
+// guard.
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -10,7 +16,7 @@ import path from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import { RegistryStore, RegistryError } from './registry';
 import { writeJsonFile } from './atomicJson';
-import type { Repository } from '../../shared/model';
+import type { Repository, Session } from '../../shared/model';
 
 // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium): the rollback-on-failed-write
 // tests below need a write that genuinely rejects -- `writeJsonFile` itself auto-creates its
@@ -34,8 +40,33 @@ function makeRepository(overrides: Partial<Repository> = {}): Repository {
   };
 }
 
+function makeSession(overrides: Partial<Session> = {}): Session {
+  return {
+    id: randomUUID(),
+    repositoryId: 'repo-1',
+    name: 'Test Session',
+    branch: 'swift-otter',
+    baseBranch: 'main',
+    worktreePath: 'C:/worktrees/swift-otter',
+    sessionDir: 'C:/sessions/swift-otter',
+    currentConversation: 'C:/sessions/swift-otter/conv.jsonl',
+    lastMessageCount: 10,
+    createdAt: new Date().toISOString(),
+    lastActivityAt: new Date().toISOString(),
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
 async function freshDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'refract-registry-test-'));
+}
+
+async function freshRegistry(): Promise<{ dir: string; registry: RegistryStore }> {
+  const dir = await freshDir();
+  const registry = await RegistryStore.open(dir);
+  await registry.addRepository({ id: 'repo-1', path: 'C:/repos/x', name: 'x', defaultBranch: 'main', addedAt: new Date().toISOString() });
+  return { dir, registry };
 }
 
 describe('RegistryStore.updateRepository', () => {
@@ -156,5 +187,89 @@ describe('RegistryStore.updateRepository', () => {
     expect(store.getRepository(repository.id)?.name).toBe('Same name');
     const reopened = await RegistryStore.open(dir);
     expect(reopened.getRepository(repository.id)?.name).toBe('Same name');
+  });
+});
+
+describe('RegistryStore.updateSession rollback on a failed write', () => {
+  it('restores the previous fields in memory and rejects with the real error', async () => {
+    const { registry } = await freshRegistry();
+    const session = makeSession({ stoppedOnRequestConversation: null, stoppedOnRequestAtSize: null });
+    await registry.addSession(session);
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(
+      registry.updateSession(session.id, { stoppedOnRequestConversation: session.currentConversation, stoppedOnRequestAtSize: 42 }),
+    ).rejects.toThrow('disk full');
+
+    const current = registry.getSession(session.id);
+    expect(current?.stoppedOnRequestConversation).toBeNull();
+    expect(current?.stoppedOnRequestAtSize).toBeNull();
+  });
+
+  it('does not clobber a second, already-persisted call for the same Session when a slower call fails late', async () => {
+    const { registry } = await freshRegistry();
+    const session = makeSession({ stoppedOnRequestConversation: null, stoppedOnRequestAtSize: null });
+    await registry.addSession(session);
+
+    let rejectSlow!: (err: Error) => void;
+    const slowWrite = new Promise<void>((_resolve, reject) => {
+      rejectSlow = reject;
+    });
+    vi.mocked(writeJsonFile).mockImplementationOnce(() => slowWrite);
+
+    const slowCall = registry.updateSession(session.id, { stoppedOnRequestConversation: 'C:/slow.jsonl', stoppedOnRequestAtSize: 1 });
+    // The slow call's own synchronous portion has already overwritten the in-memory entry with
+    // its own patch and is now awaiting `slowWrite` -- exactly the window the rollback's
+    // reference-equality check (not a field compare) has to survive.
+    await registry.updateSession(session.id, { stoppedOnRequestConversation: 'C:/fast.jsonl', stoppedOnRequestAtSize: 2 });
+    rejectSlow(new Error('disk full'));
+
+    await expect(slowCall).rejects.toThrow('disk full');
+    expect(registry.getSession(session.id)?.stoppedOnRequestConversation).toBe('C:/fast.jsonl');
+  });
+
+  it('a reopened store does not contain the failed patch', async () => {
+    const { dir, registry } = await freshRegistry();
+    const session = makeSession({ stoppedOnRequestConversation: null, stoppedOnRequestAtSize: null });
+    await registry.addSession(session);
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(
+      registry.updateSession(session.id, { stoppedOnRequestConversation: session.currentConversation, stoppedOnRequestAtSize: 42 }),
+    ).rejects.toThrow('disk full');
+
+    const reopened = await RegistryStore.open(dir);
+    const persisted = reopened.getSession(session.id);
+    expect(persisted?.stoppedOnRequestConversation).toBeNull();
+    expect(persisted?.stoppedOnRequestAtSize).toBeNull();
+  });
+
+  // Quality-gate fix (cycle 6, 2026-10-08, test-reviewer, Medium): the test above proves the
+  // disk-write side by reopening right after the failure, but `updateSession`'s own catch block
+  // already does its own best-effort retry write (restoring `current`), so that reopen alone
+  // could in principle pass even if a LATER, genuinely unrelated write were the only thing that
+  // ever actually reached disk. This drives a REAL subsequent write (a plain, unrelated rename)
+  // after the failed one and reopens again, proving the registry keeps working normally post-
+  // failure and that the later write's own result -- not some leftover from the failed one -- is
+  // what disk actually shows.
+  it('a real subsequent write still succeeds and persists correctly after an earlier write failed', async () => {
+    const { dir, registry } = await freshRegistry();
+    const session = makeSession({ stoppedOnRequestConversation: null, stoppedOnRequestAtSize: null });
+    await registry.addSession(session);
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(
+      registry.updateSession(session.id, { stoppedOnRequestConversation: session.currentConversation, stoppedOnRequestAtSize: 42 }),
+    ).rejects.toThrow('disk full');
+
+    const updated = await registry.updateSession(session.id, { name: 'Renamed after a failed write' } as Partial<Session>);
+    expect(updated.name).toBe('Renamed after a failed write');
+    expect(updated.stoppedOnRequestConversation).toBeNull();
+
+    const reopened = await RegistryStore.open(dir);
+    const persisted = reopened.getSession(session.id);
+    expect(persisted?.name).toBe('Renamed after a failed write');
+    expect(persisted?.stoppedOnRequestConversation).toBeNull();
+    expect(persisted?.stoppedOnRequestAtSize).toBeNull();
   });
 });

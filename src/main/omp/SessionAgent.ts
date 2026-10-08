@@ -20,12 +20,15 @@ import { bailIfStopRequested, exitedDuringStart, stopIfRunning } from './launchS
 import { PatchCoalescer } from './patchCoalescer';
 import { assertConversationFileExists, reattachRebaselineNotice, verifyReattach } from './reattachVerification';
 import { recoverFromFailedSwitch } from './switchRecovery';
+import { detectUnexpectedTermination } from './terminationDetection';
 import { waitForIdleStatus } from './statusWait';
+import { fetchAllMessages } from './fetchAllMessages';
+import { shouldApplyCrashExitVerdict } from './exitVerdictGuard';
+import { clearStoppedOnRequestMarker, recordStoppedOnRequestMarker } from './stoppedOnRequestMarker';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
   Frame,
-  GetMessagesResponseData,
   GetStateResponseData,
   ImageContent,
   PredictWordResponseData,
@@ -143,6 +146,19 @@ export class SessionAgent extends EventEmitter {
   private process: OmpProcess | undefined;
   private runtime: SessionRuntime;
   private commands: SlashCommand[] = [];
+  /** Quality-gate fix (cycle 3, 2026-10-08): bumped at the top of every `launch()` attempt.
+   * `onExit`'s crash branch captures this before its own `await`; if a NEWER life has since
+   * started by the time that resolves, this exit's "agent-exited" verdict is for a life nobody
+   * cares about any more and must never overwrite whatever the newer life has since recorded. */
+  private lifeEpoch = 0;
+  /** Quality-gate fix (cycle 5, 2026-10-08): the in-flight `recordStoppedOnRequestMarker`/
+   * `clearStoppedOnRequestMarker` write, if any -- `onExit`'s requested branch and `launch()`
+   * both used to fire these without awaiting them, so quitting the app (`shutdown()` -> `before-
+   * quit` -> `app.quit()`) could exit before a requested stop's marker ever reached disk, exactly
+   * the restart case cycle 4 was meant to protect. `shutdown()` now awaits this before returning,
+   * so `stopAll()` (and so `before-quit`) genuinely waits for it. Starts resolved so an agent
+   * that never recorded or cleared anything has nothing to wait on. */
+  private markerWrite: Promise<void> = Promise.resolve();
 
   private readonly patches = new PatchCoalescer((ops) => this.emit('patch', { sessionId: this.sessionId, ops }));
   /** True only while `restart()` is tearing down and respawning the process, so `onExit`'s
@@ -224,6 +240,7 @@ export class SessionAgent extends EventEmitter {
       turnStartedAt: null,
       readout: EMPTY_READOUT,
       subagents: [],
+      stoppedOnRequest: false,
     };
   }
 
@@ -300,6 +317,20 @@ export class SessionAgent extends EventEmitter {
    * `OmpProcess`, start it, reattach via `attachAndVerify`, reload history, and bring the runtime
    * to `idle`. `failurePrefix` distinguishes a fresh start's notice text from a restart's. */
   private async launch(session: Session, failurePrefix: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
+    // Quality-gate fix (cycle 2, 2026-10-08): a fresh launch attempt (success or failure) always
+    // ends the "the user just stopped this on purpose" window -- see `SessionRuntime.
+    // stoppedOnRequest`'s own doc comment.
+    this.runtime = { ...this.runtime, stoppedOnRequest: false };
+    // Quality-gate fix (cycle 3, 2026-10-08): a new life starting -- see `lifeEpoch`'s own doc
+    // comment.
+    this.lifeEpoch += 1;
+    // Quality-gate fix (cycle 4, 2026-10-08): the PERSISTED sibling of the in-memory reset above
+    // -- see `Session.stoppedOnRequestConversation`'s own doc comment for why an active clear
+    // here is still needed even though the marker's own size check is already passive.
+    // Quality-gate fix (cycle 5, 2026-10-08): stored on `markerWrite` (not `void`-discarded) so
+    // `shutdown()` can still wait for whichever marker write is currently in flight -- never
+    // throws, so there is nothing for a caller to catch.
+    this.markerWrite = clearStoppedOnRequestMarker(this.registry, this.sessionId);
     const approvalMode = this.settings.get().approvalMode;
     const proc = new OmpProcess({
       cwd: session.worktreePath,
@@ -308,7 +339,12 @@ export class SessionAgent extends EventEmitter {
       ompPath: this.ompPath,
     });
     proc.on('frame', (frame: Frame) => this.onFrame(frame));
-    proc.on('exit', (info: { code: number | null; requested: boolean }) => this.onExit(info));
+    // Quality-gate fix (cycle 3, 2026-10-08, Low): `onExit` is `async` (it awaits a tail read on
+    // the crash path); an unhandled rejection from it would otherwise surface as a process-level
+    // warning with no Session context.
+    proc.on('exit', (info: { code: number | null; requested: boolean }) => {
+      void this.onExit(info).catch((err) => console.error(`SessionAgent ${this.sessionId}: onExit threw`, err));
+    });
 
     try {
       await proc.start();
@@ -346,22 +382,31 @@ export class SessionAgent extends EventEmitter {
     let transcript: TranscriptItem[] = [];
     let messagesOk = false;
     try {
-      const messagesRes = await proc.request({ type: 'get_messages', id: '' });
-      if (messagesRes.success) {
+      // Issue #510 slice 4 (PLAN.md row A0): several bounded `get_messages_page` round trips
+      // instead of one unbounded `get_messages` -- see `fetchAllMessages.ts`'s own doc comment
+      // and docs/spike/FINDINGS.md item 47. `complete` mirrors the old single-call `success`.
+      const { messages, complete } = await fetchAllMessages(proc);
+      if (complete) {
         // Issue #489 (durable turn marker, 2026-10-07): re-fetched fresh here, not the `session`
         // parameter captured earlier in `doStart()`, so this always reflects the latest
         // `currentTurnSubagents` even on the rare chance a prior life of this SAME instance
         // wrote to it after that snapshot was taken.
+        // Issue #510 slice 3 (PLAN.md row A0): `session.currentConversation` is the SAME file
+        // this reattach just verified against -- if ITS tail shows the previous life ended mid
+        // tool-call, any row `fromHistory` would otherwise leave `running` forever is settled to
+        // `interrupted` instead (`settleInterruptedToolRows`).
+        const terminatedUnexpectedly = (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly;
         transcript = fromHistory(
-          (messagesRes.data as GetMessagesResponseData).messages,
+          messages,
           new Set(currentTurnKeys(this.registry.getSession(this.sessionId))),
+          terminatedUnexpectedly,
         );
         messagesOk = true;
       } else {
-        console.error(`SessionAgent ${this.sessionId}: get_messages failed`, messagesRes.error);
+        console.error(`SessionAgent ${this.sessionId}: fetchAllMessages did not complete`);
       }
     } catch (err) {
-      console.error(`SessionAgent ${this.sessionId}: get_messages threw`, err);
+      console.error(`SessionAgent ${this.sessionId}: fetchAllMessages threw`, err);
     }
     const exitedDuringStart1 = exitedDuringStart(this.process === proc, failurePrefix, (d) => this.recordStartFailure(d));
     if (exitedDuringStart1) return exitedDuringStart1;
@@ -474,6 +519,17 @@ export class SessionAgent extends EventEmitter {
       this.readoutTimer = undefined;
     }
     await stopIfRunning(this.process);
+    // Quality-gate fix (HIGH, cycle 5, 2026-10-08): `stopIfRunning` resolves once the process has
+    // actually exited, which is strictly AFTER `onExit`'s own synchronous body (including this
+    // assignment to `markerWrite`) already ran -- `OmpProcess`'s internal exit handler resolves
+    // its `exitWaiters` (what `stopIfRunning`/`proc.stop()` awaits) and emits `'exit'` (which
+    // synchronously invokes `SessionAgent.onExit`) in the same synchronous turn, so `markerWrite`
+    // is never stale here. Without this await, a requested stop's marker write could still be
+    // in flight when `stopAll()` (`before-quit`) resolves and the app quits, losing the exact
+    // guarantee cycle 4 added. Never rejects (`recordStoppedOnRequestMarker`/
+    // `clearStoppedOnRequestMarker` both already catch their own errors), the extra `.catch` is
+    // defence in depth only.
+    await this.markerWrite.catch(() => undefined);
   }
 
   /** `settings.setApprovalMode` (T031, FR-015): marks a live Session whose `launchedMode` differs
@@ -750,11 +806,15 @@ export class SessionAgent extends EventEmitter {
     }
 
     const state = stateRes.data as GetStateResponseData;
-    const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
+    // Issue #510 slice 4 (PLAN.md row A0): see `fetchAllMessages.ts`'s own doc comment and
+    // docs/spike/FINDINGS.md item 47.
+    const { messages, complete } = await fetchAllMessages(this.process);
     const currentTurnKeySet = new Set(currentTurnKeys(this.registry.getSession(this.sessionId)));
-    const transcript = messagesRes.success
-      ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet)
-      : [];
+    // Issue #510 slice 3 (PLAN.md row A0): `file` is the historical Conversation just switched
+    // to -- if ITS tail shows it was abandoned mid tool-call, that row is settled to
+    // `interrupted` rather than left spinning `running` forever once rendered as history.
+    const terminatedUnexpectedly = (await detectUnexpectedTermination(file)).terminatedUnexpectedly;
+    const transcript = complete ? fromHistory(messages, currentTurnKeySet, terminatedUnexpectedly) : [];
     // Gate fixes 2 finding 4: reconcile here too, same rule as `launch()` -- without it a
     // Conversation whose last turn crashed mid-subagent opens with a row stuck on 'running'
     // forever. A different Conversation has an entirely different subagent history, and nothing
@@ -909,7 +969,7 @@ export class SessionAgent extends EventEmitter {
     void this.onSessionSettled().then(() => this.maybeRestartForPendingMode());
   }
 
-  private onExit(info: { code: number | null; requested: boolean }): void {
+  private async onExit(info: { code: number | null; requested: boolean }): Promise<void> {
     this.process = undefined;
     this.finalizeLiveItems();
     if (this.restarting && info.requested) return; // restart() owns this transition; see its doc comment.
@@ -919,10 +979,63 @@ export class SessionAgent extends EventEmitter {
       this.scheduleReadoutUpdate();
     }
     if (info.requested) {
-      this.setStatus('stopped', { stopReason: 'not-started' });
-    } else {
-      this.setStatus('stopped', { stopReason: 'agent-exited', stopDetail: `exit code ${String(info.code)}` });
+      // Quality-gate fix (HIGH, cycle 6, 2026-10-08): `info.requested` only reflects
+      // `OmpProcess`'s own internal flag, set unconditionally by `OmpProcess.stop()` -- which
+      // `launch()`'s own failed-handshake/failed-attach cleanup also calls (both catch blocks
+      // above), for a process that was never asked to stop by the user at all. Without this
+      // check, a `launch()` failure was wrongly recorded as a deliberate stop: `stoppedOnRequest`
+      // set true, the persisted marker written at the Conversation's current size, and
+      // `terminatedUnexpectedly: false` emitted -- hiding the exact crash evidence `recordStart
+      // Failure` (called right after, by `launch()`'s own catch block) was about to report, and
+      // outliving even an app restart via the marker. `this.stopRequested` is set ONLY by
+      // `shutdown()`, never by `launch()`'s internal cleanup, so it is the correct signal for
+      // "the USER asked this Session to stop" that `info.requested` is not.
+      if (!this.stopRequested) return;
+      // A requested stop is never "unexpected" by definition, regardless of what the
+      // Conversation's own tail happens to show (quality gate 2026-10-08). Quality-gate fix
+      // (cycle 2): stored on `this.runtime` too (not just sent on this one live event), so
+      // every later reader that would otherwise re-derive this from the tail (`summaries()`,
+      // `buildSnapshot`) sees it as well -- see `SessionRuntime.stoppedOnRequest`'s own doc
+      // comment.
+      this.runtime = { ...this.runtime, stoppedOnRequest: true };
+      // Quality-gate fix (cycle 4, 2026-10-08): the PERSISTED sibling of the in-memory flag
+      // above -- see `Session.stoppedOnRequestConversation`'s own doc comment. Quality-gate fix
+      // (cycle 5, 2026-10-08): stored on `markerWrite` (not `void`-discarded) so `shutdown()`
+      // can wait for it (never throws, so there is nothing for a caller to catch); `epochAtExit`
+      // captured here, BEFORE the write's own internal `fs.stat` await, and re-checked after it
+      // (`stillCurrent`) closes the race with a `launch()` that starts a brand new life while
+      // this write is still in flight -- see `recordStoppedOnRequestMarker`'s own doc comment.
+      const epochAtExit = this.lifeEpoch;
+      this.markerWrite = recordStoppedOnRequestMarker(
+        this.registry,
+        this.sessionId,
+        this.registry.getSession(this.sessionId)?.currentConversation ?? null,
+        () => this.lifeEpoch === epochAtExit,
+      );
+      this.setStatus('stopped', { stopReason: 'not-started', terminatedUnexpectedly: false });
+      return;
     }
+    // Quality-gate fix (cycle 2): explicit, not just "already false by default" -- a crash is
+    // definitionally NOT a requested stop, so this life's own flag must never read stale `true`
+    // from however this Session got here.
+    this.runtime = { ...this.runtime, stoppedOnRequest: false };
+    // Quality-gate fix (cycle 3, 2026-10-08): captured BEFORE the tail-read await below, which a
+    // concurrent `launch()` attempt for the SAME exit can easily outrun (its own handshake/attach
+    // failure handling runs synchronously, no file read involved) -- without this guard, this
+    // branch used to unconditionally overwrite whatever `launch()`'s own `recordStartFailure`
+    // (or a `bailIfStopRequested` bail) had ALREADY recorded with the generic 'agent-exited',
+    // losing the specific reason (start-failed, its stderr detail, worktree-missing, not-started)
+    // and, through #585's `canResumeSession`, wrongly offering Resume instead of #449's own
+    // Retry/Start-new actions on a start failure.
+    const epochAtExit = this.lifeEpoch;
+    const currentConversation = this.registry.getSession(this.sessionId)?.currentConversation ?? null;
+    const terminatedUnexpectedly = (await detectUnexpectedTermination(currentConversation)).terminatedUnexpectedly;
+    if (!shouldApplyCrashExitVerdict(this.runtime.status, this.lifeEpoch, epochAtExit)) return;
+    this.setStatus('stopped', {
+      stopReason: 'agent-exited',
+      stopDetail: `exit code ${String(info.code)}`,
+      terminatedUnexpectedly,
+    });
   }
 
   /**
@@ -1094,7 +1207,10 @@ export class SessionAgent extends EventEmitter {
   /** T037: a Session that finishes (`working` -> `idle`) while it is not the visible Session, or
    * no Refract window is focused, becomes `unread`; cleared by `clearUnread()` when it becomes
    * visible. */
-  private setStatus(status: SessionStatus, extra?: { stopReason?: SessionRuntime['stopReason']; stopDetail?: string }): void {
+  private setStatus(
+    status: SessionStatus,
+    extra?: { stopReason?: SessionRuntime['stopReason']; stopDetail?: string; terminatedUnexpectedly?: boolean },
+  ): void {
     const becameUnread = this.runtime.status === 'working' && status === 'idle' && (!this.isVisible() || !this.isWindowFocused());
     this.runtime = {
       ...this.runtime,
@@ -1103,7 +1219,7 @@ export class SessionAgent extends EventEmitter {
       stopDetail: extra?.stopDetail,
       unread: becameUnread ? true : this.runtime.unread,
     };
-    this.emitStatus();
+    this.emitStatus(extra?.terminatedUnexpectedly);
   }
 
   /** Clears `unread` once this Session becomes the visible one (T037); a no-op if already clear. */
@@ -1113,12 +1229,19 @@ export class SessionAgent extends EventEmitter {
     this.emitStatus();
   }
 
-  private emitStatus(): void {
+  /** Issue #510 (quality gate 2026-10-08): `terminatedUnexpectedly` is passed through from the
+   * caller (only `setStatus`'s transition to `stopped` ever supplies it, computed live in
+   * `onExit`) rather than stored on `this.runtime` -- every other reader of the Session's
+   * termination state (`sessions.list`, `buildSnapshot`) re-derives it fresh from the
+   * Conversation file itself, so this event-only value never needs to be a lasting source of
+   * truth. */
+  private emitStatus(terminatedUnexpectedly?: boolean): void {
     const payload: SessionStatusEvent = {
       sessionId: this.sessionId,
       status: this.runtime.status,
       stopReason: this.runtime.stopReason,
       stopDetail: this.runtime.stopDetail,
+      terminatedUnexpectedly,
       unread: this.runtime.unread,
       launchedMode: this.runtime.launchedMode,
       pendingMode: this.runtime.pendingMode,

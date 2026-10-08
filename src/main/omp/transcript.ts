@@ -870,12 +870,50 @@ function settleStaleSubagentRows(items: TranscriptItem[], currentTurnKeys: Reado
   return changed ? next : items;
 }
 
+/** Issue #510 slice 3 (PLAN.md row A0, item 4): same family as `settleStaleSubagentRows` above --
+ * a `tool` item built from history can show `status: 'running'` forever because OMP's stored
+ * `.jsonl` just replays the tool_use acknowledgment with no result ever written. Unlike the
+ * subagent case, a 'running' tool item here is NOT automatically stale: a Session that is
+ * genuinely still `working` right now can legitimately have one in flight while `fromHistory`
+ * rebuilds its visible transcript (e.g. a Conversation switch away and back), so this only flips
+ * rows when the caller already knows (`detectUnexpectedTermination`, terminationDetection.ts,
+ * read against the SAME file these `messages` came from) that the writing process is actually
+ * gone -- the file-tail-derived analogue of #489's persisted `currentTurnSubagents` marker.
+ * Quality-gate fix (cycle 2, 2026-10-08): independent of the overall `terminatedUnexpectedly`
+ * verdict, any `running` row with a LATER `user` item after it is settled too -- a new user
+ * turn cannot follow an unanswered tool call within one healthy process life (same rule
+ * `terminationDetection.ts`'s own 'user' case now applies), so that specific row is definitely
+ * orphaned even when a hard kill with no exit record left the overall Conversation reading
+ * `clean` (superseded and resumed by a later, healthy life). */
+function settleInterruptedToolRows(items: TranscriptItem[], terminatedUnexpectedly: boolean): TranscriptItem[] {
+  let changed = false;
+  let sawLaterUser = false;
+  const next = new Array<TranscriptItem>(items.length);
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!;
+    if (item.kind === 'user') sawLaterUser = true;
+    if (item.kind === 'tool' && item.status === 'running' && (terminatedUnexpectedly || sawLaterUser)) {
+      changed = true;
+      next[i] = { ...item, status: 'interrupted' as const };
+    } else {
+      next[i] = item;
+    }
+  }
+  return changed ? next : items;
+}
+
 /** Builds the transcript for a stored session's history (from `get_messages`), per
  * contracts/omp-usage.md "Message parts". `currentTurnKeys` (issue #489, durable turn marker,
  * 2026-10-07) is `Session.currentTurnSubagents` as a Set -- the SAME `toolCallId:specIndex` keys
  * `SessionAgent.reconcileSubagentsOnAttach` scopes by, threaded through to
- * `settleStaleSubagentRows` so both agree on what "the current turn" means. */
-export function fromHistory(messages: OmpMessage[], currentTurnKeys: ReadonlySet<string>): TranscriptItem[] {
+ * `settleStaleSubagentRows` so both agree on what "the current turn" means. `terminatedUnexpectedly`
+ * (issue #510 slice 3, defaults `false` for every pre-existing caller) is threaded through to
+ * `settleInterruptedToolRows` the same way. */
+export function fromHistory(
+  messages: OmpMessage[],
+  currentTurnKeys: ReadonlySet<string>,
+  terminatedUnexpectedly = false,
+): TranscriptItem[] {
   let items: TranscriptItem[] = [];
   messages.forEach((message, index) => {
     const messageId = `h${index}`;
@@ -920,5 +958,5 @@ export function fromHistory(messages: OmpMessage[], currentTurnKeys: ReadonlySet
         return;
     }
   });
-  return settleStaleSubagentRows(items, currentTurnKeys);
+  return settleInterruptedToolRows(settleStaleSubagentRows(items, currentTurnKeys), terminatedUnexpectedly);
 }
