@@ -98,6 +98,18 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     // own `chat.send` would then fail against, having dropped its own `userAction: true` on the
     // floor entirely. Both keys still dedupe their own kind of call exactly as before.
     const key = `${id}:${userAction === true}`
+    // Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): a passive, in-flight open
+    // (no `userAction`) should join an already-in-flight FORCED open for the same session
+    // instead of starting a redundant second IPC round-trip -- the forced call's own result is
+    // always a safe answer for a passive caller too. The reverse must never happen: a forced
+    // open can resolve with a still-stopped snapshot a passive caller already decided not to
+    // auto-start against, which would silently drop the forced caller's own `userAction: true`
+    // intent (see the cycle-2 comment above this dedupe key was introduced for).
+    const forcedKey = `${id}:true`
+    if (key !== forcedKey) {
+      const inFlightForced = openPromises.get(forcedKey)
+      if (inFlightForced) return inFlightForced
+    }
     const existing = openPromises.get(key)
     if (existing) return existing
     set({ openingIds: new Set(get().openingIds).add(id) })
