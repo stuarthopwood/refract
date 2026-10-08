@@ -24,6 +24,7 @@ import { detectUnexpectedTermination } from './terminationDetection';
 import { waitForIdleStatus } from './statusWait';
 import { fetchAllMessages } from './fetchAllMessages';
 import { shouldApplyCrashExitVerdict } from './exitVerdictGuard';
+import { clearStoppedOnRequestMarker, recordStoppedOnRequestMarker } from './stoppedOnRequestMarker';
 import type {
   AvailableCommandsUpdateFrame,
   ExtensionUiRequestFrame,
@@ -315,6 +316,12 @@ export class SessionAgent extends EventEmitter {
     // Quality-gate fix (cycle 3, 2026-10-08): a new life starting -- see `lifeEpoch`'s own doc
     // comment.
     this.lifeEpoch += 1;
+    // Quality-gate fix (cycle 4, 2026-10-08): the PERSISTED sibling of the in-memory reset above
+    // -- see `Session.stoppedOnRequestConversation`'s own doc comment for why an active clear
+    // here is still needed even though the marker's own size check is already passive. Not
+    // awaited (never throws; matches this file's own established fire-and-forget convention for
+    // non-critical-path registry bookkeeping, e.g. `currentTurnSubagents` at `agent_start`).
+    void clearStoppedOnRequestMarker(this.registry, this.sessionId);
     const approvalMode = this.settings.get().approvalMode;
     const proc = new OmpProcess({
       cwd: session.worktreePath,
@@ -959,6 +966,11 @@ export class SessionAgent extends EventEmitter {
       // `buildSnapshot`) sees it as well -- see `SessionRuntime.stoppedOnRequest`'s own doc
       // comment.
       this.runtime = { ...this.runtime, stoppedOnRequest: true };
+      // Quality-gate fix (cycle 4, 2026-10-08): the PERSISTED sibling of the in-memory flag
+      // above -- see `Session.stoppedOnRequestConversation`'s own doc comment. Fire-and-forget
+      // (never throws; a failed write here must not block this exit handler), same convention as
+      // `launch()`'s own clear of this marker.
+      void recordStoppedOnRequestMarker(this.registry, this.sessionId, this.registry.getSession(this.sessionId)?.currentConversation ?? null);
       this.setStatus('stopped', { stopReason: 'not-started', terminatedUnexpectedly: false });
       return;
     }

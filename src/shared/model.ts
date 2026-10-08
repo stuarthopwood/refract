@@ -53,6 +53,19 @@ export interface Session {
    * finished subagents resurfacing as "current". Absent (old registries, or no subagents this
    * turn) means empty scope -- no migration needed. */
   currentTurnSubagents?: string[];
+  /** Issue #510 quality-gate fix (cycle 4, 2026-10-08): the persisted sibling of in-memory
+   * `SessionRuntime.stoppedOnRequest`, surviving an app restart. Written by `SessionAgent.onExit`'s
+   * requested-stop branch (`stoppedOnRequestMarker.ts`'s `recordStoppedOnRequestMarker`): the
+   * Session's `currentConversation` path at that moment, and that file's exact byte size then.
+   * Cleared at the top of every `launch()` attempt (`clearStoppedOnRequestMarker`) -- a new life
+   * starting means whatever the PREVIOUS life's requested stop protected no longer applies.
+   * Honoured by `summaries()`/`buildSnapshot`/`attachSnapshot` (`isStoppedOnRequestMarkerValid`)
+   * ONLY while `stoppedOnRequestConversation` still equals the Session's current Conversation AND
+   * `stoppedOnRequestAtSize` still equals that file's real current size -- any growth means a
+   * later life ran and appended to it, so the tail is judged fresh, exactly as if no marker
+   * existed. Both absent/null: no marker was ever set, or a later life already cleared it. */
+  stoppedOnRequestConversation?: string | null;
+  stoppedOnRequestAtSize?: number | null;
 }
 /** The app-wide setting for how much the agent may do without asking. Reads are never prompted. */
 export type ApprovalMode = 'ask' | 'edit-freely' | 'auto';

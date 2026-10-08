@@ -139,6 +139,13 @@ export class RegistryStore {
     }
   }
 
+  // Quality-gate fix (cycle 4, 2026-10-08): rolls back on a failed write, the same discipline
+  // `updateRepository` already uses -- memory must not keep a patch (for example the
+  // stoppedOnRequest marker, or `lastModel`/`currentTurnSubagents`) the disk copy never got, or
+  // the next unrelated write would silently persist it. Only restores `current` when the entry
+  // still shows exactly the patch THIS call just set -- never clobbers a second, concurrent call
+  // for the same Session that already completed and persisted while this one's write was still
+  // in flight.
   async updateSession(id: string, patch: Partial<Session>): Promise<Session> {
     const index = this.data.sessions.findIndex((s) => s.id === id)
     if (index === -1) throw new RegistryError('not-found', `Session not found: ${id}`)
@@ -155,7 +162,16 @@ export class RegistryStore {
     }
 
     this.data.sessions[index] = next
-    await writeJsonFile(this.file, this.data)
+    try {
+      await writeJsonFile(this.file, this.data)
+    } catch (err) {
+      const stillIndex = this.data.sessions.findIndex((s) => s.id === id)
+      if (stillIndex !== -1 && this.data.sessions[stillIndex] === next) {
+        this.data.sessions[stillIndex] = current
+      }
+      await writeJsonFile(this.file, this.data).catch(() => undefined)
+      throw err
+    }
     return next
   }
 

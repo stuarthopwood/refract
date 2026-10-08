@@ -114,3 +114,71 @@ describe('SessionManager.summaries stoppedOnRequest short-circuit', () => {
     expect(detectUnexpectedTermination).not.toHaveBeenCalled();
   });
 });
+
+// Quality-gate fix (cycle 4, 2026-10-08): the PERSISTED sibling of the in-memory
+// `stoppedOnRequest` flag above -- a restart simulation, since that is exactly the scenario the
+// in-memory flag cannot survive. No `injectAgent` call in these: an empty `agents` map is what a
+// genuinely fresh `SessionManager` (a real app restart) looks like before anything is opened.
+describe('SessionManager.summaries persisted stoppedOnRequest marker', () => {
+  it('honours a persisted marker when no SessionAgent exists this run at all (post-restart)', async () => {
+    vi.mocked(detectUnexpectedTermination).mockClear();
+    const conversation = path.join(os.tmpdir(), `refract-marker-test-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const { size } = await fs.stat(conversation);
+    const session = makeSession({ worktreePath: os.tmpdir(), currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: size });
+    const manager = await makeManager(session);
+
+    const rows = await manager.summaries();
+    expect(rows[0]?.terminatedUnexpectedly).toBe(false);
+    expect(detectUnexpectedTermination).not.toHaveBeenCalled();
+  });
+
+  it('ignores the marker once the Conversation has grown since the recorded size (a later life ran)', async () => {
+    vi.mocked(detectUnexpectedTermination).mockClear();
+    const conversation = path.join(os.tmpdir(), `refract-marker-test-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const { size: sizeAtStop } = await fs.stat(conversation);
+    await fs.appendFile(conversation, '{"type":"assistant"}\n'); // a later life appended more
+    const session = makeSession({ worktreePath: os.tmpdir(), currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: sizeAtStop });
+    const manager = await makeManager(session);
+
+    const rows = await manager.summaries();
+    expect(rows[0]?.terminatedUnexpectedly).toBe(true); // falls through to the mocked tail read
+    expect(detectUnexpectedTermination).toHaveBeenCalledWith(conversation);
+  });
+
+  it('ignores a marker recorded for a different Conversation than the Session\'s current one', async () => {
+    vi.mocked(detectUnexpectedTermination).mockClear();
+    const conversation = path.join(os.tmpdir(), `refract-marker-test-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const { size } = await fs.stat(conversation);
+    const session = makeSession({
+      worktreePath: os.tmpdir(),
+      currentConversation: conversation,
+      stoppedOnRequestConversation: path.join(os.tmpdir(), 'a-previous-conversation.jsonl'),
+      stoppedOnRequestAtSize: size,
+    });
+    const manager = await makeManager(session);
+
+    const rows = await manager.summaries();
+    expect(rows[0]?.terminatedUnexpectedly).toBe(true);
+    expect(detectUnexpectedTermination).toHaveBeenCalledWith(conversation);
+  });
+
+  it('ignores a corrupt marker (non-number size, e.g. from a hand-edited registry.json)', async () => {
+    vi.mocked(detectUnexpectedTermination).mockClear();
+    const conversation = path.join(os.tmpdir(), `refract-marker-test-${randomUUID()}.jsonl`);
+    await fs.writeFile(conversation, '{"type":"user"}\n');
+    const session = makeSession({
+      worktreePath: os.tmpdir(),
+      currentConversation: conversation,
+      stoppedOnRequestConversation: conversation,
+      stoppedOnRequestAtSize: 'not-a-number' as unknown as number,
+    });
+    const manager = await makeManager(session);
+
+    const rows = await manager.summaries();
+    expect(rows[0]?.terminatedUnexpectedly).toBe(true);
+    expect(detectUnexpectedTermination).toHaveBeenCalledWith(conversation);
+  });
+});

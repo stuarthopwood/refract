@@ -10,6 +10,7 @@ import type { ApprovalMode, PendingRequest, SessionReadout, SubagentSummary } fr
 import type { SessionStatusEvent, SessionSummary, SlashCommand, TranscriptOp } from '../shared/ipc';
 import { SessionAgent } from './omp/SessionAgent';
 import { detectUnexpectedTermination } from './omp/terminationDetection';
+import { isStoppedOnRequestMarkerValid } from './omp/stoppedOnRequestMarker';
 import type { RegistryStore } from './store/registry';
 import type { SettingsStore } from './store/settings';
 
@@ -175,10 +176,15 @@ export class SessionManager {
         // Refract-initiated shutdown) is never read from the tail at all -- see
         // `SessionRuntime.stoppedOnRequest`'s own doc comment. Without this, a tool call still
         // outstanding when the stop fired (stdin-close, then a 10s wait, then `taskkill`) looks
-        // identical, from the file alone, to a genuine mid-call crash.
+        // identical, from the file alone, to a genuine mid-call crash. Quality-gate fix (cycle 4,
+        // 2026-10-08): `runtime.stoppedOnRequest` is THIS life's own in-memory flag; the
+        // persisted marker (`isStoppedOnRequestMarkerValid`) is checked alongside it so a
+        // Session reattached fresh this run (a new `SessionAgent`, `stoppedOnRequest` defaulting
+        // `false` until its own first exit) still honours an EARLIER life's requested stop, as
+        // long as the Conversation has not grown since.
         const terminatedUnexpectedly =
           runtime.status === 'stopped' && !session.archivedAt
-            ? runtime.stoppedOnRequest
+            ? (runtime.stoppedOnRequest || (await isStoppedOnRequestMarkerValid(session)))
               ? false
               : (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
             : undefined;
@@ -193,9 +199,15 @@ export class SessionManager {
         };
       }
       const stopReason = existsSync(session.worktreePath) ? 'not-started' : 'worktree-missing';
+      // Quality-gate fix (cycle 4, 2026-10-08): no `SessionRuntime` at all means this Session has
+      // not been opened since the app (re)started -- exactly the case `Session.
+      // stoppedOnRequestConversation`'s own doc comment describes: the marker is the ONLY signal
+      // left that a stop here was requested, not a crash.
       const terminatedUnexpectedly =
         stopReason === 'not-started' && !session.archivedAt
-          ? (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
+          ? (await isStoppedOnRequestMarkerValid(session))
+            ? false
+            : (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
           : undefined;
       // Never actually launched this run: nothing is "currently in effect" to show as current,
       // so this falls back to the global Settings mode the renderer already uses pre-launch.
