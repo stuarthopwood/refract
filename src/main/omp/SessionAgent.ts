@@ -29,6 +29,7 @@ import type {
   GetStateResponseData,
   ImageContent,
   PredictWordResponseData,
+  QueueKind,
   QueueUpdateFrame,
   SwitchSessionResponseData,
   ToolExecutionEndFrame,
@@ -583,7 +584,7 @@ export class SessionAgent extends EventEmitter {
    * `'followUp'` made a steering chip's Remove always report `removed: false` (the message was
    * never in that queue), with no way to ever remove one. Hides the chip only when OMP reports
    * `removed: true`. */
-  async removeQueued(text: string, queue: 'followUp' | 'steering'): Promise<{ removed: boolean }> {
+  async removeQueued(text: string, queue: QueueKind): Promise<{ removed: boolean }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot remove a queued message, no live process`);
     }
@@ -640,8 +641,12 @@ export class SessionAgent extends EventEmitter {
     }
     const res = await this.process.request({ type: 'promote_queued_message', id: '', message: text });
     if (!res.success) {
+      // Gate fix (High, #591): an RPC-level failure here is NOT the legitimate "already
+      // delivered" case below -- it must surface as `!result.ok` so the renderer's `notify`
+      // path fires a visible toast, instead of being folded into `{ promoted: false }` (which
+      // the renderer reads as the message simply having left the queue already).
       this.appendNotice(`promote_queued_message failed: ${res.error ?? 'unknown error'}`, 'error');
-      return { promoted: false };
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: promote_queued_message failed: ${res.error ?? 'unknown error'}`);
     }
     const promoted = (res.data as { promoted?: boolean } | undefined)?.promoted === true;
     return { promoted };

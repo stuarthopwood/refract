@@ -48,8 +48,9 @@ function isChatAnswer(value: unknown): value is ChatAnswer {
  * same place the existing `sessionId`/argument-shape checks already do, additive to them, never
  * replacing their failure modes; the first failing entry's code is returned and nothing is sent.
  * `undefined` (no `images` argument at all) is valid and carries no images. Used by `CHAT_SEND`
- * only -- `CHAT_SEND_NOW` no longer accepts an `images` argument (High remediation: a resend's own
- * images are recorded and resent by `SessionAgent` itself, never supplied by the caller).
+ * only -- `CHAT_SEND_NOW` no longer accepts an `images` argument (High remediation: OMP's own
+ * `promote_queued_message` moves the queued message together with its own attachments, so a
+ * resend never needs images supplied by the caller).
  *
  * Critical/High remediation (code-reviewer): builds a FRESH `ImageContent` containing ONLY the
  * three validated fields, never `candidate as unknown as ImageContent`. The old cast forwarded the
