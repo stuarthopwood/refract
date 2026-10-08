@@ -838,7 +838,15 @@ export class SessionAgent extends EventEmitter {
    * own "`messageCount` must be > 0" check against a Conversation that never really existed. */
   private async syncFromState(state: GetStateResponseData): Promise<void> {
     const session = this.registry.getSession(this.sessionId);
-    if (!session) return;
+    // Issue #592 (Low): the session can vanish mid-call (deleted while this `await` was in
+    // flight) -- nothing to sync, but `scheduleReadoutUpdate` is still called for consistency
+    // with every other guard clause in this method; `computeReadout` already re-checks
+    // `registry.getSession` itself and no-ops the same way, so this is never more than a wasted
+    // timer tick.
+    if (!session) {
+      this.scheduleReadoutUpdate();
+      return;
+    }
     const patch: Partial<Session> = { lastActivityAt: new Date().toISOString() };
     if (session.sessionDir === null) {
       patch.sessionDir = path.dirname(state.sessionFile);
