@@ -42,7 +42,11 @@ export async function buildSnapshot(
   // still carries it as a seed -- dropping it here left the Subagent panel's list wiped back to
   // empty on every snapshot re-application (a Settings round-trip, a session switch away and
   // back), even while the chip's own `readout.subagentCount` correctly kept showing the count.
-  const { turnStartedAt: _turnStartedAt, stoppedOnRequest, readout, subagents, ...runtimeFields } = agent.runtimeSnapshot;
+  // Gate-fixes Medium finding (cycle 6): `startProgress` is excluded from the spread too -- no
+  // renderer code reads `snapshot.runtime.startProgress` any more (ChatPane derives it straight
+  // from the sessions store, which `sessions.list()` and the live `session:status` event both
+  // already feed), so `SessionRuntimeView` no longer declares the field at all.
+  const { turnStartedAt: _turnStartedAt, stoppedOnRequest, startProgress: _startProgress, readout, subagents, ...runtimeFields } = agent.runtimeSnapshot;
   const runtime: SessionRuntimeView = runtimeFields;
   // Issue #510 slice 2 (PLAN.md row A0): only a stopped Session can be "terminated unexpectedly"
   // -- a live one's own status already says otherwise, so no tail read is spent on it. Issue #509

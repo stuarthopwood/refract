@@ -15,6 +15,28 @@ import type { RpcCommand } from '../shared/frames';
 import type { Check, Readiness } from '../shared/ipc';
 
 const execFileAsync = promisify(execFile);
+// Gate-fixes Medium finding (issue #512): these scratch probes share the process-wide start
+// queue with real Sessions, so a slow Session start could otherwise hold the readiness screen
+// hostage for up to the new 180s Session default. Nothing shows a "Keep waiting"/"Cancel"
+// banner for a probe, so the shorter ceiling below (matching the pre-#512 60s cap) is strictly
+// better for these two callers than either the old silent 60s kill or the new 180s wait.
+// `PROBE_READY_CEILING_MS` alone only ever bounded the ready-wait phase, once spawned -- it did
+// nothing for a probe still stuck in the queue wait or the memory defer, which could each add
+// their own full span on top before the ready-wait ceiling even started ticking (gate-fixes
+// Medium finding, cycle 2: "the shorter probe ceilings don't fix the problem their comments
+// describe"). `startDeadlineMs` below is the real cap: queue wait + memory defer + ready wait,
+// combined, can never exceed it. Gate-fixes High finding (cycle 5): that combined deadline used
+// to run the memory defer inside it unconditionally too -- under low free memory the defer's
+// own up-to-60s wait routinely ate this deadline before the ready-wait phase even started, so
+// these probes always timed out and Refract stuck on the Readiness screen. Gate-fixes Medium
+// finding (cycle 6): the shared 2-slot start queue itself could ALSO starve a probe behind two
+// slow Session starts each holding a slot for up to 180s -- longer than this probe's own 60s
+// deadline, so it could be cancelled while still queued, never even reaching the phase its
+// `startDeadlineMs` is meant to bound. `deferForMemory: false` and `useStartQueue: false` below
+// skip the memory defer and the queue entirely for this short, read-only probe.
+const PROBE_READY_PROMPT_AFTER_MS = 30_000;
+const PROBE_READY_CEILING_MS = 60_000;
+const PROBE_START_DEADLINE_MS = PROBE_READY_CEILING_MS;
 
 // contracts/omp-usage.md's version rule: 18.4.x/18.5.x are specifically verified (FINDINGS
 // items 15 and 19 cover 18.4.4 and 18.4.5; item 29 covers 18.5.1, constitution Principle IV).
@@ -75,7 +97,7 @@ async function checkOmpSignedIn(): Promise<Check> {
   // --no-session: this probe never calls `open_session` or any other command requiring
   // persistence (just get_state / get_available_models / get_login_providers), so it never
   // needs a real session-store folder under ~/.omp/agent/sessions (issue #362).
-  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe', noSession: true });
+  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe', noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false, useStartQueue: false });
   // Tracks whether `proc.start()` actually completed, so `signedInFailureHint` below can reuse
   // this still-running probe process instead of spinning up a second scratch omp of its own
   // (GateCode008 MEDIUM "the sign-in failure hint spins up a second scratch omp") -- a probe

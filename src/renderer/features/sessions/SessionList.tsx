@@ -31,6 +31,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { SessionDetailsCard } from './SessionDetailsCard'
+import { describeStartProgress, describeStartProgressLabel } from './startProgressDisplay'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
@@ -129,7 +130,11 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   // lock, so this ref only ever blocks this one button's own double click). aria-disabled, not
   // `disabled`, so keyboard focus stays on the button through the call (matches the
   // Quick-create button above).
-  const canResume = canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly, !!session.archivedAt)
+  // Gate-fixes a11y Low finding (cycle 5): a Session mid-start after a Recover of an
+  // `agent-exited` Session kept this true, showing an enabled Resume button next to this row's
+  // own "Starting agent… N s" text -- ChatPane's banner already hides its own Resume for this
+  // same state (`showBanner` requires `!startProgress`); this row disagreed.
+  const canResume = !session.startProgress && canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly, !!session.archivedAt)
 
   // Quality-gate fix (cycle 2, 2026-10-08): only moves focus when it is actually stranded
   // (<body>, null, or disconnected) -- previously this ran unconditionally the instant
@@ -341,24 +346,55 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   data-choice-item
                   className="session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
-                  <StateIcon status={session.status} />
-                  <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+                  {/* Gate-fixes a11y Low finding (cycle 5): the row kept showing the 'stopped'
+                      icon and label while `session.startProgress` was set (the live-starting
+                      kind-based text further down is `sr-only`/`aria-hidden` only, no icon or
+                      visible label change), so the accessible name read "Stopped … Starting
+                      agent" -- two contradicting status words for the same row. */}
+                  {session.startProgress ? (
+                    <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
+                  ) : (
+                    <StateIcon status={session.status} />
+                  )}
+                  {/* Gate-fixes a11y Low finding (cycle 6): `describeStartProgressLabel` covers
+                      'memory-deferred' too (previously hand-coded as only 'queued' vs
+                      'Starting agent', silently misreporting "Starting agent" while the visible
+                      text below says "waiting for memory to free up"). */}
+                  <span className="sr-only">
+                    {session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : STATUS_LABEL[session.status]}
+                  </span>
                   {isSplitOpen && isVisible && (
                     <span className="sr-only">{isFocusedPane ? '(focused pane)' : '(shown, unfocused pane)'}</span>
                   )}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-medium">{session.name}</span>
                     <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
-                    {/* Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): mirrors ChatPane's
-                        `showTerminatedTitle` -- `worktree-missing`/`start-failed` have their own
-                        dedicated reason text and actions, so this row must not also claim the
-                        session "Terminated unexpectedly" for those two reasons. */}
-                    {session.status === 'stopped' &&
+                    {session.startProgress ? (
+                      // Issue #512 requirement 1: the Session row's own "Starting agent... N s"
+                      // (the chat pane's banner carries the Keep waiting/Cancel buttons; this row
+                      // just needs the live text, shown instead of the stale "Terminated
+                      // unexpectedly" note underneath while a fresh start is already under way).
+                      // Gate-fixes a11y finding: this span sits inside the row's open `<button>`,
+                      // so a ticking visible name would re-speak the whole row every second while
+                      // it has focus. `aria-hidden` keeps the tick visible-only -- the row's own
+                      // static accessible name (above) already covers the static status word, so
+                      // (gate-fixes a11y Low finding, cycle 6) this no longer repeats it in a
+                      // second `sr-only` span, which spoke the status twice for the same row.
+                      <span className="truncate text-xs text-muted-foreground" aria-hidden>
+                        {describeStartProgress(session.startProgress)}
+                      </span>
+                    ) : (
+                      // Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): mirrors ChatPane's
+                      // `showTerminatedTitle` -- `worktree-missing`/`start-failed` have their own
+                      // dedicated reason text and actions, so this row must not also claim the
+                      // session "Terminated unexpectedly" for those two reasons.
+                      session.status === 'stopped' &&
                       session.terminatedUnexpectedly &&
                       session.stopReason !== 'worktree-missing' &&
                       session.stopReason !== 'start-failed' && (
                         <span className="truncate text-xs text-destructive">Terminated unexpectedly</span>
-                      )}
+                      )
+                    )}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
                   {session.unread && (

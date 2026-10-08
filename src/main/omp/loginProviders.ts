@@ -4,6 +4,24 @@ import path from 'node:path';
 import type { RpcCommand } from '../../shared/frames';
 import { OmpProcess } from './OmpProcess';
 
+// Gate-fixes Medium finding (issue #512): this scratch probe shares the process-wide start
+// queue with real Sessions; nothing shows a Keep waiting/Cancel banner for it, so the shorter
+// ceiling below (matching the pre-#512 60s cap) is strictly better than either the old silent
+// 60s kill or the new 180s Session default blocking the accounts screen behind a slow start.
+// `PROBE_READY_CEILING_MS` alone only bounds the ready-wait phase once spawned; `startDeadlineMs`
+// below (readiness.ts's same fix, gate-fixes Medium finding cycle 2) bounds the queue wait, the
+// memory defer and the ready wait combined, so this probe can never block longer than that
+// regardless of which phase it is stuck in. Gate-fixes High finding (cycle 5): that combined
+// deadline used to run the memory defer inside it unconditionally too -- under low free memory
+// the defer's own up-to-60s wait routinely ate this deadline before the ready-wait phase even
+// started, so this probe always timed out. Gate-fixes Medium finding (cycle 6): the shared
+// 2-slot start queue itself could ALSO starve this probe behind two slow Session starts each
+// holding a slot for up to 180s, longer than this probe's own 60s deadline. `deferForMemory:
+// false` and `useStartQueue: false` below skip the memory defer and the queue entirely.
+const PROBE_READY_PROMPT_AFTER_MS = 30_000;
+const PROBE_READY_CEILING_MS = 60_000;
+const PROBE_START_DEADLINE_MS = PROBE_READY_CEILING_MS;
+
 export interface OmpLoginProvider {
  id: string;
  authenticated: boolean;
@@ -58,7 +76,7 @@ export async function requestLoginProviders(proc: OmpProcess): Promise<OmpLoginP
 export async function readOmpLoginProviders(sessionId: string): Promise<OmpLoginProvider[] | null> {
  try {
   const scratchDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'refract-omp-login-providers-'));
-  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId, noSession: true });
+  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId, noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false, useStartQueue: false });
   try {
    await proc.start();
    return await requestLoginProviders(proc);

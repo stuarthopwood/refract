@@ -231,12 +231,32 @@ export interface Registry {
 
 export type SessionStatus = 'idle' | 'working' | 'needs-you' | 'stopped';
 
+/** Issue #512 requirement 1: the staged ready-wait's default ceiling (fails outright if the
+ * `ready` frame has not arrived by then) -- shared between `OmpProcess.ts` (the real default,
+ * overridable per instance via `OmpProcessOptions.readyCeilingMs`) and `ChatPane.tsx` (the
+ * announcement-only "about N more minutes" estimate for "Keep waiting"). Gate-fixes Low finding
+ * (cycle 6): these used to be two separately-hand-kept constants with the same value; a change
+ * to one without the other would have silently drifted the announcement from the real ceiling.
+ */
+export const READY_CEILING_MS = 180_000;
+
+/** Issue #512 requirement 1: the staged ready-wait's live progress while a Session is starting,
+ * mirroring `OmpProcess`'s own `'start-progress'`/`'start-queued'`/`'start-memory-deferred'`
+ * events one-for-one. Absent once `start()` settles (success or failure) either way -- this is
+ * never a persisted Session state, only a transient overlay on top of `status`/`stopReason`. */
+export type SessionStartProgress =
+  | { kind: 'queued' }
+  | { kind: 'memory-deferred'; elapsedMs: number }
+  | { kind: 'waiting' | 'prompt' | 'extended'; elapsedMs: number };
+
 /** Held in memory: one per Session with a live or recently live agent. */
 export interface SessionRuntime {
   sessionId: string;
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   stopDetail?: string; // exit code, missing path, or setup message
+  /** Issue #512: set while a `start()`/`restart()` is in flight, cleared the instant it settles. */
+  startProgress?: SessionStartProgress;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null; // set while a mode change waits for idle
   unread: boolean;

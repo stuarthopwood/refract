@@ -9,8 +9,16 @@ import { IPC_EVENTS } from '../shared/ipc';
 import type { SessionManager } from './SessionManager';
 
 const SAMPLE_INTERVAL_MS = 5_000;
+// Issue #512 requirement 5's start-queue memory defer (`src/main/omp/OmpProcess.ts`) reuses
+// `isMemoryLow()` below rather than importing this threshold directly.
 const LOW_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
 const REPEAT_WHILE_LOW_MS = 60_000;
+
+/** Issue #512 requirement 5: a cheap synchronous check a start-queue gate can call before
+ * spawning an `omp` process, reusing the same threshold as the monitor above. */
+export function isMemoryLow(): boolean {
+  return os.freemem() < LOW_MEMORY_BYTES;
+}
 
 export function startMemoryMonitor(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   let lastLow: boolean | undefined;
