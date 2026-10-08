@@ -7,7 +7,11 @@ import type { ThemeId } from './themes';
 export interface Repository {
   id: string; // uuid
   path: string; // absolute path of the main checkout
-  name: string; // folder name, shown as the list group title
+  // Issue #480: display name, shown as the list group title. Set to `path.basename(path)` when
+  // the repository is added; renamable afterward (`repositories.rename`), same rule as the
+  // Session rename (FR-004): never touches the folder, worktrees, or branch names. An empty
+  // (after trimming) rename resets it back to the folder's own basename.
+  name: string;
   defaultBranch: string; // read from git when added; preselected as Base branch
   addedAt: string; // ISO 8601
 }

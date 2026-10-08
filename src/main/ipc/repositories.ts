@@ -14,6 +14,8 @@ import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
 import { REPOSITORY_HAS_SESSIONS_MESSAGE } from '../store/registry';
+import { MAX_REPOSITORY_NAME_LENGTH } from '../../shared/repositoryName';
+import { renameRepositoryCore } from './renameRepository';
 
 /** `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
  * checkout, falling back to the Windows account name when git has none configured; cached per
@@ -74,6 +76,28 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     } catch (err) {
       return mapStoreThrown(err);
     }
+  });
+
+  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_RENAME, async (_event, id: unknown, name: unknown) => {
+    if (typeof id !== 'string' || typeof name !== 'string') {
+      return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_RENAME} expects (id, name) strings`);
+    }
+    // Quality-gate fix (security-auditor, Low, 2026-10-08): rejected before `trim()` -- Electron's
+    // own IPC payload cap already bounds this, so this is defence in depth, not the real guard
+    // (that is `validateRepositoryName`'s own length check below, after trimming).
+    if (name.length > 4 * MAX_REPOSITORY_NAME_LENGTH) {
+      return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_RENAME} name too long`);
+    }
+    // Quality-gate fix (cycle 3, 2026-10-08): the rest of this handler's own logic (the
+    // validate -> resolve -> persist -> notify sequence) now lives in `renameRepositoryCore`
+    // (`renameRepository.ts`), injected with this manager's own real dependencies, so it is
+    // unit-testable against fakes -- same reasoning as `resumeSessionCore`/`attachSnapshotCore`.
+    return renameRepositoryCore(id, name, {
+      getRepository: (repositoryId) => manager.registry.getRepository(repositoryId),
+      basename: (repositoryPath) => path.basename(repositoryPath),
+      updateRepository: (repositoryId, patch) => manager.registry.updateRepository(repositoryId, patch),
+      notifyListChanged: () => manager.notifyListChanged(),
+    });
   });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOVE, async (_event, id: unknown) => {
