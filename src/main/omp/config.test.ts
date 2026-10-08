@@ -3,7 +3,16 @@
 // invocation, no child_process mocking needed, matching this repo's existing
 // `src/**/*.test.ts` vitest convention (node environment, see `vitest.config.ts`).
 import { describe, expect, it } from 'vitest';
-import { OmpConfigError, enqueueWrite, mergeModelRole, parseCatalogResponse, rawModelRolesRecord, stringEntriesOnly } from './config';
+import {
+  OmpConfigError,
+  assertValidSelector,
+  enqueueWrite,
+  envWithoutRoleOverrides,
+  mergeModelRole,
+  parseCatalogResponse,
+  rawModelRolesRecord,
+  stringEntriesOnly,
+} from './config';
 
 describe('rawModelRolesRecord', () => {
   it('returns an empty record for null', () => {
@@ -39,9 +48,14 @@ describe('rawModelRolesRecord', () => {
 });
 
 describe('stringEntriesOnly', () => {
-  it('keeps only string-valued entries', () => {
-    const record = { task: 'anthropic/claude-sonnet-4-5', weird: ['a', 'b'], nested: { x: 1 }, empty: '' };
-    expect(stringEntriesOnly(record)).toEqual({ task: 'anthropic/claude-sonnet-4-5', empty: '' });
+  it('keeps non-blank string-valued entries', () => {
+    const record = { task: 'anthropic/claude-sonnet-4-5', weird: ['a', 'b'], nested: { x: 1 } };
+    expect(stringEntriesOnly(record)).toEqual({ task: 'anthropic/claude-sonnet-4-5' });
+  });
+
+  it('drops a blank or whitespace-only string entry (quality-gate a11y fix: never shown as "Inherited")', () => {
+    const record = { task: 'anthropic/claude-sonnet-4-5', smol: '', slow: '   ' };
+    expect(stringEntriesOnly(record)).toEqual({ task: 'anthropic/claude-sonnet-4-5' });
   });
 
   it('returns an empty record when every entry is non-string', () => {
@@ -173,5 +187,144 @@ describe('enqueueWrite', () => {
 
     const after = enqueueWrite(async () => 'still works');
     await expect(after).resolves.toBe('still works');
+  });
+});
+
+describe('mergeModelRole does not mutate its input', () => {
+  it('setting a role leaves the original record object untouched', () => {
+    const current = { task: 'old/value' };
+    const snapshot = { ...current };
+    mergeModelRole(current, 'smol', 'new/value');
+    expect(current).toEqual(snapshot);
+  });
+
+  it('clearing a role leaves the original record object untouched', () => {
+    const current = { task: 'old/value', smol: 'other/value' };
+    const snapshot = { ...current };
+    mergeModelRole(current, 'task', null);
+    expect(current).toEqual(snapshot);
+  });
+});
+
+describe('rawModelRolesRecord / mergeModelRole with a __proto__-named key', () => {
+  it('treats "__proto__" as an ordinary own-enumerable string key, never polluting the prototype', () => {
+    const input = JSON.parse('{"__proto__": {"task": "x"}}') as unknown;
+    const raw = rawModelRolesRecord(input);
+    // JSON.parse never creates a real [[Prototype]] link for a "__proto__" key -- it lands as an
+    // ordinary own property -- so the spread in rawModelRolesRecord copies it as data, and the
+    // global Object.prototype is never touched.
+    expect(Object.prototype.hasOwnProperty.call(raw, '__proto__')).toBe(true);
+    expect(({} as Record<string, unknown>).task).toBeUndefined();
+    const merged = mergeModelRole(raw, 'task', 'anthropic/claude-sonnet-4-5');
+    expect(merged.task).toBe('anthropic/claude-sonnet-4-5');
+  });
+});
+
+describe('parseCatalogResponse keeps only the four fields this feature needs', () => {
+  it('drops every extra live field (kind, contextWindow, cost, ...)', () => {
+    const richRow = {
+      provider: 'github-copilot',
+      kind: 'chat',
+      id: 'claude-fable-5',
+      selector: 'github-copilot/claude-fable-5',
+      name: 'Claude Fable 5',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      reasoning: true,
+      thinking: ['low', 'medium', 'high', 'xhigh', 'max'],
+      input: ['text', 'image'],
+      cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 },
+      pricingStatus: 'fixed',
+    };
+    expect(parseCatalogResponse({ models: [richRow] })).toEqual([
+      { provider: 'github-copilot', id: 'claude-fable-5', selector: 'github-copilot/claude-fable-5', name: 'Claude Fable 5' },
+    ]);
+  });
+});
+
+describe('assertValidSelector', () => {
+  it('accepts an ordinary selector', () => {
+    expect(() => assertValidSelector('anthropic/claude-sonnet-4-5')).not.toThrow();
+  });
+
+  it('accepts a selector with a thinking suffix', () => {
+    expect(() => assertValidSelector('anthropic/claude-sonnet-4-5:high')).not.toThrow();
+  });
+
+  it('rejects an empty string', () => {
+    expect(() => assertValidSelector('')).toThrow(OmpConfigError);
+  });
+
+  it('rejects a whitespace-only string', () => {
+    expect(() => assertValidSelector('   ')).toThrow(OmpConfigError);
+  });
+
+  it('accepts exactly 512 characters', () => {
+    expect(() => assertValidSelector('a'.repeat(512))).not.toThrow();
+  });
+
+  it('rejects 513 characters', () => {
+    try {
+      assertValidSelector('a'.repeat(513));
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(OmpConfigError);
+      expect((err as OmpConfigError).code).toBe('invalid-value');
+    }
+  });
+
+  it('rejects a C0 control character', () => {
+    expect(() => assertValidSelector('abc\u0000def')).toThrow(OmpConfigError);
+  });
+
+  it('rejects a newline', () => {
+    expect(() => assertValidSelector('abc\ndef')).toThrow(OmpConfigError);
+  });
+
+  it('rejects DEL (U+007F)', () => {
+    expect(() => assertValidSelector('abc\u007fdef')).toThrow(OmpConfigError);
+  });
+
+  it('rejects a C1 control character (U+0080-U+009F)', () => {
+    expect(() => assertValidSelector('abc\u0085def')).toThrow(OmpConfigError);
+  });
+
+  it('rejects a zero-width space (U+200B)', () => {
+    expect(() => assertValidSelector('abc\u200bdef')).toThrow(OmpConfigError);
+  });
+
+  it('rejects a bidi override character (U+202E)', () => {
+    expect(() => assertValidSelector('abc\u202edef')).toThrow(OmpConfigError);
+  });
+
+  it('rejects a BOM (U+FEFF)', () => {
+    expect(() => assertValidSelector('abc\ufeffdef')).toThrow(OmpConfigError);
+  });
+});
+
+describe('envWithoutRoleOverrides', () => {
+  it('strips an exact-case match', () => {
+    const result = envWithoutRoleOverrides({ PI_SMOL_MODEL: 'x/y', OTHER: 'kept' });
+    expect(result).toEqual({ OTHER: 'kept' });
+  });
+
+  it('strips a differently-cased match (Windows env names are case-insensitive)', () => {
+    const result = envWithoutRoleOverrides({ Pi_Smol_Model: 'x/y', pi_config_files: 'a;b', OTHER: 'kept' });
+    expect(result).toEqual({ OTHER: 'kept' });
+  });
+
+  it('strips all four documented variables', () => {
+    const result = envWithoutRoleOverrides({
+      PI_SMOL_MODEL: '1',
+      PI_SLOW_MODEL: '2',
+      PI_PLAN_MODEL: '3',
+      PI_CONFIG_FILES: '4',
+      KEPT: '5',
+    });
+    expect(result).toEqual({ KEPT: '5' });
+  });
+
+  it('leaves an empty environment empty', () => {
+    expect(envWithoutRoleOverrides({})).toEqual({});
   });
 });

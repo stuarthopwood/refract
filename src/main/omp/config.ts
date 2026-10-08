@@ -4,22 +4,27 @@
 // live isolated-profile check, recorded in `docs/spike/FINDINGS.md`; 18.4.x/18.5.x are NOT
 // independently re-verified here -- labelled unverified on those pinned versions per constitution
 // Principle IV) -- so there is no cheaper single-role read or write. `omp config set modelRoles
-// '<json>' --json` always writes the GLOBAL config.yml, never a project override (`omp://
-// settings.md` "Where writes go": "Settings commands do not write arbitrary project keys"), which
-// answers issue #455's own "which scope does Refract write" open question directly from the CLI's
-// documented behaviour -- there is no project-scoped write path through this CLI surface at all.
+// '<json>' --json` always writes the GLOBAL config.yml, never a project override -- `omp://
+// settings.md`'s own Subcommands table states this for `config set` specifically ("Ordinary
+// persistent writes land in the global file"), and this is now also confirmed live even with
+// `modelRoleStorage: project` explicitly set (`docs/spike/model-roles-probe.mjs`, FINDINGS item
+// 48): the write still landed in the global file, and no project `.omp/config.yml` was created in
+// the scratch cwd. This answers issue #455's own "which scope does Refract write" open question.
 //
 // execFile only, no shell, an absolute resolved path (`resolveExecutable`, the same security
 // discipline as `git/git.ts`/`github/gh.ts`: never a bare name Windows would resolve against the
 // spawn's cwd before PATH), bounded stdout (`maxBuffer`), a fixed role-name/catalog-kind
 // vocabulary, and a length/control-character limit on the model selector text -- never arbitrary
 // caller text reaching the argv unchecked. Every `omp` invocation runs with its cwd pointed at a
-// dedicated, Refract-owned scratch directory under the OS temp root (created once, reused, never
-// deleted), not the bare shared temp root itself: `omp` loads a project config from `<cwd>/.omp/`
-// whenever that folder is non-empty, so running directly in a generic, widely-shared temp location
-// would let anything else that happens to drop a `.omp/config.yml` there inject settings into
-// every call this module makes (quality-gate remediation, security-auditor MEDIUM). This directory
-// is intentionally never programmatically removed (project convention: a delete target must be a
+// dedicated, Refract-owned scratch directory under the OS temp root (never the bare shared temp
+// root itself): `omp` loads a project config from `<cwd>/.omp/` whenever that folder is non-empty,
+// so running directly in a generic, widely-shared temp location would let anything else that
+// happens to drop a `.omp/config.yml` there inject settings into every call this module makes
+// (quality-gate remediation, security-auditor MEDIUM). The directory is verified empty of any
+// `.omp` entry on EVERY call, not just created once and trusted forever (quality-gate remediation,
+// gate cycle 2 MEDIUM): a stale cached "ready" promise could otherwise paper over the directory
+// having been deleted (Windows temp cleanup) or unexpectedly populated between calls. It is
+// intentionally never programmatically removed (project convention: a delete target must be a
 // literal path, never built from a reused/computed variable) -- it stays empty in normal operation
 // (nothing in this module or `omp` itself writes ordinary files into it for these commands), so
 // leaving it costs nothing.
@@ -65,33 +70,55 @@ interface OmpRawResult {
 }
 
 // A fixed, Refract-owned scratch directory (never the bare shared `os.tmpdir()` root itself --
-// see module header). Created lazily, once, and reused for every `omp` invocation this module
-// makes; never removed.
+// see module header).
 const CONFIG_SCRATCH_DIR = path.join(os.tmpdir(), 'refract-omp-config-scratch');
-let scratchDirReady: Promise<string> | undefined;
 
+/** Creates the scratch directory if missing and verifies it holds no `.omp` entry, on EVERY call
+ * (quality-gate remediation, gate cycle 2 MEDIUM: no longer a cached "created once" promise, so a
+ * directory deleted by Windows temp cleanup is transparently recreated, and the directory is
+ * never trusted blind -- if something has placed a `.omp` folder there since the last call, this
+ * throws instead of silently letting `omp` pick up a stray project layer from it). */
 async function ensureScratchDir(): Promise<string> {
-  if (!scratchDirReady) {
-    scratchDirReady = fsp.mkdir(CONFIG_SCRATCH_DIR, { recursive: true }).then(() => CONFIG_SCRATCH_DIR);
+  try {
+    await fsp.mkdir(CONFIG_SCRATCH_DIR, { recursive: true });
+  } catch {
+    throw new OmpConfigError('omp-failed', 'Could not prepare a working directory for omp.');
   }
-  return scratchDirReady;
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(CONFIG_SCRATCH_DIR);
+  } catch {
+    throw new OmpConfigError('omp-failed', 'Could not inspect the omp working directory.');
+  }
+  if (entries.includes('.omp')) {
+    throw new OmpConfigError('omp-failed', 'The omp working directory unexpectedly contains a project .omp folder.');
+  }
+  return CONFIG_SCRATCH_DIR;
 }
 
-// Quality-gate remediation (security-auditor MEDIUM): `omp config get` returns the EFFECTIVE
-// value, which can be sourced from a runtime override rather than anything actually persisted in
-// global config.yml (`omp://settings.md` "Environment overrides"). Reading the record to MERGE
-// before a write with these four stripped means `setModelRole` only ever folds the global/project/
-// overlay layers into the record it writes back -- never a transient `PI_*_MODEL` role override or
-// a `--config`-overlay-selected value -- so a Session launched with, say, `PI_SMOL_MODEL` set can
-// never get that value silently baked into the user's persisted global config by an unrelated role
-// edit. The PUBLIC `getModelRoles()` (used only for display) deliberately does NOT strip these: the
-// user should see the true effective value when just looking at what a role currently resolves to.
-const ROLE_OVERRIDE_ENV_VARS = ['PI_SMOL_MODEL', 'PI_SLOW_MODEL', 'PI_PLAN_MODEL', 'PI_CONFIG_FILES'] as const;
+// Quality-gate remediation (security-auditor MEDIUM, live-probed and confirmed unverified-but-
+// unobserved for `PI_SMOL_MODEL` specifically -- see FINDINGS item 48's "env override probe"):
+// `omp config get` was NOT observed to reflect a `PI_SMOL_MODEL` runtime override in its returned
+// value on omp 18.8.0 (the value stayed the persisted one with the override set). This stripping
+// is therefore defence in depth for an UNCONFIRMED risk, not a closure of an observed hole: if a
+// future `omp` version (or one of the other three variables, not independently tested) ever does
+// fold a runtime override into `config get`'s reported value, stripping these four here still
+// keeps `setModelRole`'s merge-before-write reading only the persisted global/project/overlay
+// layers. The PUBLIC `getModelRoles()` (used only for display) deliberately does NOT strip these.
+const ROLE_OVERRIDE_ENV_VARS = ['PI_SMOL_MODEL', 'PI_SLOW_MODEL', 'PI_PLAN_MODEL', 'PI_CONFIG_FILES'];
 
-function envWithoutRoleOverrides(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const key of ROLE_OVERRIDE_ENV_VARS) delete env[key];
-  return env;
+/** Exported for direct unit testing. Case-insensitive (quality-gate remediation, gate cycle 2 LOW:
+ * Windows environment variable names are case-insensitive, so a variable set as `Pi_Smol_Model`
+ * previously survived a case-sensitive `delete`). */
+export function envWithoutRoleOverrides(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const stripped = new Set(ROLE_OVERRIDE_ENV_VARS);
+  const result: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!stripped.has(key.toUpperCase())) {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 /** Runs `omp <args>` with no shell, cwd pointed at the shared scratch directory (see module
@@ -136,18 +163,21 @@ async function ompRaw(args: string[], envOverride?: NodeJS.ProcessEnv): Promise<
   });
 }
 
-/** Runs `omp <args>`, mapping a timeout or nonzero exit to `OmpConfigError`. Never logs or
- * attaches raw stderr beyond a short, bounded slice to the thrown error's own message (sent only
- * to the caller, which in this app's case is the renderer's own inline/Alert text, never a
- * persisted log) -- this is the one place a credential-adjacent CLI failure text could otherwise
- * leak further. */
+/** Runs `omp <args>`, mapping a timeout or nonzero exit to `OmpConfigError`. Never surfaces raw
+ * `omp` stderr to the renderer (quality-gate remediation, security-auditor/code-reviewer LOW: a
+ * YAML parse error can echo a local path or a config line) -- the fixed, caller-supplied
+ * `failureMessage` is what reaches the UI; the real stderr (trimmed to 500 characters) goes only
+ * to this process's own `console.warn`, never persisted or sent over IPC. */
 async function run(args: string[], failureMessage: string, envOverride?: NodeJS.ProcessEnv): Promise<OmpRawResult> {
   const result = await ompRaw(args, envOverride);
   if (result.timedOut) {
     throw new OmpConfigError('timeout', 'omp config timed out.');
   }
   if (result.code !== 0) {
-    throw new OmpConfigError('omp-failed', result.stderr.trim().slice(0, 500) || failureMessage);
+    if (result.stderr.trim().length > 0) {
+      console.warn('[refract] omp config call failed:', result.stderr.trim().slice(0, 500));
+    }
+    throw new OmpConfigError('omp-failed', failureMessage);
   }
   return result;
 }
@@ -185,10 +215,9 @@ export interface OmpConfigSetJson extends OmpConfigGetJson {
 /** Validates that `value` is a plain, non-array object (the shape `omp config get/set modelRoles`
  * always returns for a record-typed key) and returns a shallow copy, WITHOUT converting or
  * dropping any entry -- used to build the raw record `setModelRole` merges into and writes back,
- * so a non-string entry OMP itself may store (the docs describe role values as "primary selector
- * or ordered primary candidates", which could be an array) is never silently deleted by an
- * unrelated role edit (quality-gate remediation, code-reviewer/security-auditor MEDIUM). Exported
- * for direct unit testing (no CLI invocation needed). */
+ * so a non-string entry OMP itself may store is never silently deleted by an unrelated role edit
+ * (quality-gate remediation, code-reviewer/security-auditor MEDIUM). Exported for direct unit
+ * testing (no CLI invocation needed). */
 export function rawModelRolesRecord(value: unknown): Record<string, unknown> {
   if (value === null || value === undefined) return {};
   if (typeof value !== 'object' || Array.isArray(value)) {
@@ -198,24 +227,28 @@ export function rawModelRolesRecord(value: unknown): Record<string, unknown> {
 }
 
 /** Narrows a raw modelRoles record down to the string-only view the renderer actually understands
- * and can show in a picker -- entries the rest of this module does not know how to render (a
- * record is never UI-filtered away by this call, only hidden from display; `rawModelRolesRecord`
- * is still what gets merged and written). Exported for direct unit testing. */
+ * and can show in a picker. Blank (empty-after-trim) string entries are also dropped -- a
+ * hand-edited `modelRoles: { smol: "" }` would otherwise render as the "Inherited" placeholder
+ * option with no visible or accessible text, misrepresenting the stored value as unset when it is
+ * really an empty string (quality-gate remediation, accessibility-auditor LOW). Entries this
+ * module does not know how to render are never UI-filtered away from the RECORD it writes back --
+ * `rawModelRolesRecord` is still what gets merged and persisted. Exported for direct unit
+ * testing. */
 export function stringEntriesOnly(record: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, entry] of Object.entries(record)) {
-    if (typeof entry === 'string') result[key] = entry;
+    if (typeof entry === 'string' && entry.trim().length > 0) {
+      result[key] = entry;
+    }
   }
   return result;
 }
 
 /** Pure merge step for `setModelRole`: applies one role change (a selector string, or `null` to
  * clear) to a raw modelRoles record without touching any other key, including entries this module
- * does not itself understand. Returns the exact SAME object reference when clearing a role that
- * was already absent, so callers can detect a no-op merge and skip a needless `omp config set`
- * call entirely (quality-gate remediation, test-reviewer LOW: avoids ever writing a bare
- * `modelRoles: {}` into a fresh profile's config.yml for a clear that changes nothing). Exported
- * for direct unit testing. */
+ * does not itself understand, and without mutating `current`. Returns the exact SAME object
+ * reference when clearing a role that was already absent, so callers can detect a no-op merge and
+ * skip a needless `omp config set` call entirely. Exported for direct unit testing. */
 export function mergeModelRole(current: Record<string, unknown>, role: string, value: string | null): Record<string, unknown> {
   if (value === null) {
     if (!(role in current)) return current;
@@ -227,7 +260,7 @@ export function mergeModelRole(current: Record<string, unknown>, role: string, v
 }
 
 async function readModelRolesRaw(envOverride?: NodeJS.ProcessEnv): Promise<Record<string, unknown>> {
-  const result = await run(['config', 'get', 'modelRoles', '--json'], 'omp config get modelRoles failed.', envOverride);
+  const result = await run(['config', 'get', 'modelRoles', '--json'], 'Could not read model roles from omp.', envOverride);
   const parsed = parseJson<OmpConfigGetJson>(result.stdout);
   return rawModelRolesRecord(parsed.value);
 }
@@ -254,9 +287,8 @@ let writeChain: Promise<unknown> = Promise.resolve();
 /** Serialises every `setModelRole` call through one promise chain (see module header for why).
  * `writeChain` is always resettled to a void, never-rejecting promise after `task` finishes
  * (success or failure), so one failed write never permanently wedges every later call behind a
- * rejected chain link. Exported for direct unit testing of the serialisation guarantee itself
- * (quality-gate remediation, code-reviewer/security-auditor HIGH), independent of the real
- * `omp` CLI timing. */
+ * rejected chain link. Exported for direct unit testing of the serialisation guarantee itself,
+ * independent of the real `omp` CLI timing. */
 export function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
   const chained = writeChain.then(task, task);
   writeChain = chained.then(
@@ -266,26 +298,35 @@ export function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
   return chained;
 }
 
-function assertValidSelector(value: string): void {
+// Quality-gate remediation (code-reviewer/security-auditor LOW): widened past C0 controls and DEL
+// to also cover C1 controls (U+0080-U+009F), the line/paragraph separators (U+2028/U+2029), and
+// the bidi/zero-width/BOM range (U+200B-U+200F, U+202A-U+202E, U+2066-U+2069, U+FEFF) -- all of
+// these can still be written into the global YAML by a compromised renderer (the ordinary
+// catalog-only picker never produces them) and could render misleadingly elsewhere.
+// eslint-disable-next-line no-control-regex -- deliberately matching control/format characters.
+const SELECTOR_FORBIDDEN_CHARS_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/;
+
+/** Exported for direct unit testing. */
+export function assertValidSelector(value: string): void {
   if (value.trim().length === 0) {
     throw new OmpConfigError('invalid-value', 'Model selector cannot be blank.');
   }
   if (value.length > MAX_ROLE_VALUE_LENGTH) {
     throw new OmpConfigError('invalid-value', `Model selector is too long (max ${MAX_ROLE_VALUE_LENGTH} characters).`);
   }
-  // eslint-disable-next-line no-control-regex -- deliberately matching control characters, including newlines, that must never reach argv.
-  if (/[\u0000-\u001f\u007f]/.test(value)) {
-    throw new OmpConfigError('invalid-value', 'Model selector contains control characters.');
+  if (SELECTOR_FORBIDDEN_CHARS_RE.test(value)) {
+    throw new OmpConfigError('invalid-value', 'Model selector contains control or formatting characters.');
   }
 }
 
 /** Sets or clears one role. `value: null` clears the role (deletes the key from the record)
  * rather than writing a JSON `null`: a project `modelRoles` tombstone is a `settings.ts` API
  * concept (`setProjectModelRole`/`clearProjectModelRole`), not something this CLI surface exposes,
- * and `set` only ever writes the global layer regardless (see module header). Validates the
- * selector shape before ever entering the write queue; defensive-validates the role name too
- * (redundant with the IPC layer's own `isModelRoleId` check, matching this codebase's established
- * independent-second-layer convention, e.g. `SettingsStore`'s own shape checks). */
+ * and `set` only ever writes the global layer regardless (see module header -- now also confirmed
+ * live even with `modelRoleStorage: project` set, FINDINGS item 48). Validates the selector shape
+ * before ever entering the write queue; defensive-validates the role name too (redundant with the
+ * IPC layer's own `isModelRoleId` check, matching this codebase's established independent-second-
+ * layer convention). */
 export async function setModelRole(role: ModelRoleId, value: string | null): Promise<SetModelRoleResult> {
   if (!isModelRoleId(role)) {
     throw new OmpConfigError('invalid-value', `Unknown model role: ${String(role)}`);
@@ -297,23 +338,24 @@ export async function setModelRole(role: ModelRoleId, value: string | null): Pro
 }
 
 async function setModelRoleNow(role: ModelRoleId, value: string | null): Promise<SetModelRoleResult> {
-  const current = await readModelRolesRaw(envWithoutRoleOverrides());
+  const current = await readModelRolesRaw(envWithoutRoleOverrides(process.env));
   const next = mergeModelRole(current, role, value);
   if (next === current) {
     // Clearing an already-unset role: nothing changed, so skip the `omp config set` call
     // entirely (see `mergeModelRole`'s own comment).
     return { roles: stringEntriesOnly(current) };
   }
-  const result = await run(['config', 'set', 'modelRoles', JSON.stringify(next), '--json'], 'omp config set modelRoles failed.');
+  const result = await run(['config', 'set', 'modelRoles', JSON.stringify(next), '--json'], 'Could not save the model role to omp.');
   const parsed = parseJson<OmpConfigSetJson>(result.stdout);
-  // `omp config set --json` is documented to echo the written `value`; if it ever does not,
-  // re-read the record from `omp` itself rather than trusting the `next` this call already
-  // computed (a stale local guess could diverge from what `omp` server-side normalisation
-  // actually persisted) or returning `{}` (which would make the UI show every role as freshly
-  // unset right after a successful write).
-  const writtenRaw = parsed.value === undefined ? await readModelRolesRaw() : rawModelRolesRecord(parsed.value);
+  // Quality-gate remediation (code-reviewer LOW: "the write path and the load path show different
+  // values"): always re-read the TRUE effective record after a successful write (full
+  // environment, the same as `getModelRoles()`), rather than trusting `parsed.value`/`next` --
+  // this keeps what the UI shows right after a save consistent with what a later `load()` would
+  // show, and also covers `omp config set --json` ever omitting `value` entirely (never returns
+  // `{}` in that case).
+  const roles = await getModelRoles();
   return {
-    roles: stringEntriesOnly(writtenRaw),
+    roles,
     overriddenBy: typeof parsed.overriddenBy === 'string' ? parsed.overriddenBy : undefined,
   };
 }
@@ -359,7 +401,7 @@ export async function listCatalogModels(kind: CatalogKind): Promise<ModelCatalog
   if (!isCatalogKind(kind)) {
     throw new OmpConfigError('invalid-value', `Unknown catalog kind: ${String(kind)}`);
   }
-  const result = await run(['models', '--kind', kind, '--json'], 'omp models failed.');
+  const result = await run(['models', '--kind', kind, '--json'], 'Could not read the model catalog from omp.');
   const parsed = parseJson<unknown>(result.stdout);
   return parseCatalogResponse(parsed);
 }
