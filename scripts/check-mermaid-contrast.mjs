@@ -135,9 +135,9 @@ function oklabToLinearSrgb(L, a, b) {
   const m = m_ * m_ * m_
   const s = s_ * s_ * s_
   return [
-  +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-  -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-  -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
   ]
 }
 function oklchToLinearSrgb(L, C, Hdeg) {
@@ -174,14 +174,14 @@ for (const blockMatch of globalsCss.matchAll(/\.theme-([a-z0-9-]+)\s*\{([^}]*)\}
 const workDir = mkdtempSync(path.join(tmpdir(), 'pinion-mermaid-contrast-'))
 try {
   const mermaidEntry = pathToFileURL(
-  path.join(repoRoot, 'node_modules/mermaid/dist/mermaid.esm.min.mjs')
+    path.join(repoRoot, 'node_modules/mermaid/dist/mermaid.esm.min.mjs')
   ).href
 
   cpSync(path.join(__dirname, 'mermaid-contrast-measure.mjs'), path.join(workDir, 'mermaid-contrast-measure.mjs'))
 
   writeFileSync(
-  path.join(workDir, 'harness.html'),
-  `<!DOCTYPE html><html><body><script type="module">
+    path.join(workDir, 'harness.html'),
+    `<!DOCTYPE html><html><body><script type="module">
 import mermaid from '${mermaidEntry}'
 import { prepare, hideGlyphs, cleanup } from './mermaid-contrast-measure.mjs'
 window.__mermaid = mermaid
@@ -202,7 +202,7 @@ window.__ready = true
   const { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } = await import(pathToFileURL(mtsPath).href)
 
   const themeCSSByTheme = Object.fromEntries(
-  Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(themeId)])
+    Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(themeId)])
   )
 
   // Quality-gate remediation (round 6): `force-device-scale-factor=1` makes every CSS pixel this
@@ -392,20 +392,20 @@ app.whenReady().then(main)
   let failCount = 0
 
   for (const [themeId, diagrams] of Object.entries(results)) {
-  for (const [diagramType, result] of Object.entries(diagrams)) {
+    for (const [diagramType, result] of Object.entries(diagrams)) {
       if (!result.ok) {
-    rows.push({ themeId, diagramType, label: 'render', ratio: null, min: null, pass: false, note: result.error })
-    failCount++
-    continue
+        rows.push({ themeId, diagramType, label: 'render', ratio: null, min: null, pass: false, note: result.error })
+        failCount++
+        continue
       }
       for (const check of result.checks) {
-    rows.push({ themeId, diagramType, label: check.label, ratio: check.ratio, min: check.min, pass: check.pass, note: check.note })
-    if (!check.pass) failCount++
+        rows.push({ themeId, diagramType, label: check.label, ratio: check.ratio, min: check.min, pass: check.pass, note: check.note })
+        if (!check.pass) failCount++
       }
       const expected = MIN_CHECKS_PER_DIAGRAM[diagramType] ?? 1
       const actual = result.checks.length
       if (actual < expected) {
-    rows.push({
+        rows.push({
           themeId,
           diagramType,
           label: 'insufficient checks resolved',
@@ -413,10 +413,10 @@ app.whenReady().then(main)
           min: null,
           pass: false,
           note: `expected >=${expected}, resolved ${actual} -- a selector likely stopped matching Mermaid's rendered markup`
-    })
-    failCount++
+        })
+        failCount++
       }
-  }
+    }
   }
 
   // ---- print the table -------------------------------------------------------------------------
@@ -427,23 +427,23 @@ app.whenReady().then(main)
   console.log(row(header))
   console.log(row(widths.map((w) => '-'.repeat(w))))
   for (const r of rows) {
-  if (r.ratio === null) {
+    if (r.ratio === null) {
       console.log(row([r.themeId, r.diagramType, r.label, 'n/a', '-', 'FAIL']) + `  (${r.note})`)
       continue
-  }
-  console.log(row([r.themeId, r.diagramType, r.label, r.ratio.toFixed(2) + ':1', r.min, r.pass ? 'PASS' : 'FAIL']))
+    }
+    console.log(row([r.themeId, r.diagramType, r.label, r.ratio.toFixed(2) + ':1', r.min, r.pass ? 'PASS' : 'FAIL']))
   }
 
   console.log('')
   if (rows.length === 0) {
-  console.log('no mermaid colour checks resolved -- diagram rendering may have changed shape')
-  process.exitCode = 2
+    console.log('no mermaid colour checks resolved -- diagram rendering may have changed shape')
+    process.exitCode = 2
   } else if (failCount > 0) {
-  console.log(`${failCount} of ${rows.length} mermaid colour check(s) FAILED their contrast minimum`)
-  process.exitCode = 1
+    console.log(`${failCount} of ${rows.length} mermaid colour check(s) FAILED their contrast minimum`)
+    process.exitCode = 1
   } else {
-  console.log(`all ${rows.length} mermaid colour checks across ${Object.keys(results).length} theme(s) PASS`)
-  process.exitCode = 0
+    console.log(`all ${rows.length} mermaid colour checks across ${Object.keys(results).length} theme(s) PASS`)
+    process.exitCode = 0
   }
 } finally {
   rmSync(workDir, { recursive: true, force: true })
