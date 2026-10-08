@@ -673,12 +673,18 @@ export class SessionAgent extends EventEmitter {
   /** `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same
    * cwd, same Session; clears the transcript. No Conversation is current until the first message
    * of the new one is written (OMP creates the file lazily), so `currentConversation` is cleared
-   * to `null` here; `syncFromState` sets it to the new file at the next settle. */
+   * to `null` here; `syncFromState` leaves it `null` too (below, run immediately after
+   * `new_session` -- issue #577 -- since `messageCount` is still 0) until the first message is
+   * sent, at the next settle. */
   async startNewConversation(): Promise<void> {
     if (this.runtime.status !== 'idle' || !this.process) {
       throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot start a new Conversation while ${this.runtime.status}`);
     }
-    const res = await this.process.request({ type: 'new_session', id: '' });
+    // Issue #592: captured once, up front, so a concurrent `onExit` (which sets `this.process`
+    // to `undefined`) cannot pull the process out from under the later `get_state` call below --
+    // every request in this method goes through this same reference, never `this.process` again.
+    const proc = this.process;
+    const res = await proc.request({ type: 'new_session', id: '' });
     if (!res.success) {
       throw new Error(`SessionAgent ${this.sessionId}: new_session failed: ${res.error ?? 'unknown error'}`);
     }
@@ -687,8 +693,41 @@ export class SessionAgent extends EventEmitter {
     } catch (err) {
       console.error(`SessionAgent ${this.sessionId}: failed to clear currentConversation after new_session`, err);
     }
-    this.runtime = { ...this.runtime, transcript: [] };
+    // Issue #577: the Context/Todo/Subagents chips otherwise kept the OLD conversation's reading
+    // until the next turn settled -- nothing here ever re-ran `syncFromState` (the only place
+    // that writes `lastContextUsage`/`lastTodoPhases`), and `runtime.subagents` is normally
+    // cleared only by the next `agent_start`. Cleared first, unconditionally, so a `get_state`
+    // failure below can never leave a stale reading on screen instead of the new conversation's
+    // baseline (which `new_session` guarantees is a brand-new, empty history: no leftover
+    // `kind: 'subagent'` transcript rows to reconcile from, unlike `openConversation`'s switch to
+    // a DIFFERENT, possibly non-empty past Conversation).
+    this.lastContextUsage = undefined;
+    this.lastTodoPhases = undefined;
+    // Issue #592: shares `agent_start`'s own subagent-state reset via `resetTurnSubagentState`
+    // (see its doc comment) -- without it, the PRIOR conversation's subagent streams and
+    // selected-subagent id survive in memory and can still emit stale `subagent:patch` updates
+    // for a conversation that no longer exists.
+    this.resetTurnSubagentState('after new_session');
+    this.runtime = { ...this.runtime, transcript: [], subagents: [] };
+    this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
     this.emitPatchReset();
+    // Issue #592: `new_session` already succeeded above, so this method must resolve normally
+    // even if this refresh fails -- a `get_state` rejection (OmpProcess times out or the process
+    // exits mid-request) must not surface as an uncaught rejection reporting the whole call as
+    // failed. Matches `onSessionSettled`'s own try/catch around the same get_state+syncFromState
+    // pair.
+    try {
+      const stateRes = await proc.request({ type: 'get_state', id: '' });
+      if (stateRes.success) {
+        await this.syncFromState(stateRes.data as GetStateResponseData);
+      } else {
+        console.error(`SessionAgent ${this.sessionId}: get_state after new_session failed: ${stateRes.error ?? 'unknown error'}`);
+        this.scheduleReadoutUpdate();
+      }
+    } catch (err) {
+      console.error(`SessionAgent ${this.sessionId}: get_state after new_session threw`, err);
+      this.scheduleReadoutUpdate();
+    }
   }
 
   /** `conversations.open` (contracts/omp-usage.md "Open an earlier Conversation"): `cancelled`
@@ -799,7 +838,15 @@ export class SessionAgent extends EventEmitter {
    * own "`messageCount` must be > 0" check against a Conversation that never really existed. */
   private async syncFromState(state: GetStateResponseData): Promise<void> {
     const session = this.registry.getSession(this.sessionId);
-    if (!session) return;
+    // Issue #592 (Low): the session can vanish mid-call (deleted while this `await` was in
+    // flight) -- nothing to sync, but `scheduleReadoutUpdate` is still called for consistency
+    // with every other guard clause in this method; `computeReadout` already re-checks
+    // `registry.getSession` itself and no-ops the same way, so this is never more than a wasted
+    // timer tick.
+    if (!session) {
+      this.scheduleReadoutUpdate();
+      return;
+    }
     const patch: Partial<Session> = { lastActivityAt: new Date().toISOString() };
     if (session.sessionDir === null) {
       patch.sessionDir = path.dirname(state.sessionFile);
@@ -903,32 +950,12 @@ export class SessionAgent extends EventEmitter {
       case 'agent_start':
         this.turnSettleHandled = false;
         this.setStatus('working');
-        this.subagentStreams.clear();
-        // Spec 004 remediation (HIGH): the previous turn's selected-subagent id and any patches
-        // still coalescing for it are stale the instant a new turn starts -- the renderer's own
-        // panel does the matching reset of its selection/stream cache on this same signal
-        // (readout-store.ts's `applySubagents`), so main must stop forwarding/queuing for an id
-        // no later `tool_execution_update` will ever match again (ids are now per-toolCallId,
-        // never reused across turns) rather than just letting it quietly go dead.
-        this.visibleSubagentId = null;
-        this.subagentPatches.clear();
+        // Spec 004 remediation (HIGH) / Issue #489: shares `startNewConversation`'s
+        // subagent-state reset via `resetTurnSubagentState` -- see its doc comment for why each
+        // field (streams, selection, patches, and the persisted `currentTurnSubagents` twin) is
+        // cleared on every new turn, not just this one.
+        this.resetTurnSubagentState('on agent_start');
         this.runtime = { ...this.runtime, turnStartedAt: Date.now(), subagents: [] };
-        // Issue #489 (durable turn marker, 2026-10-07): `Session.currentTurnSubagents` is the
-        // persisted twin of `runtime.subagents` above -- cleared at the exact same trigger, so
-        // the two can never disagree about what counts as "this turn" regardless of whatever
-        // OMP's own run semantics turn out to be for a steer vs. a consumed `followUp` (a steer
-        // never reaches this case at all; a consumed `followUp` can only be promoted once the
-        // prior turn, including its subagents, already fully settled, so clearing here is always
-        // correct for it too). Skipped when already empty, so a turn with no subagents at all --
-        // the common case -- never costs a registry write.
-        {
-          const currentSession = this.registry.getSession(this.sessionId);
-          if (currentSession && currentTurnKeys(currentSession).length > 0) {
-            this.registry.updateSession(this.sessionId, { currentTurnSubagents: [] }).catch((err) => {
-              console.error(`SessionAgent ${this.sessionId}: failed to clear currentTurnSubagents on agent_start`, err);
-            });
-          }
-        }
         this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
         this.scheduleReadoutUpdate();
         return;
@@ -1133,6 +1160,41 @@ export class SessionAgent extends EventEmitter {
 
   private queuePatch(ops: TranscriptOp[]): void {
     this.patches.queue(ops);
+  }
+
+  /**
+   * Issue #592: the subagent-state clears shared by `agent_start` (every new turn) and
+   * `startNewConversation` (Issue #577: a reset with no turn of its own) -- both need the exact
+   * same four clears so the PRIOR turn/conversation's subagent state can never survive to be
+   * read, or forwarded to, the next one:
+   * - `subagentStreams`/`visibleSubagentId`/`subagentPatches` (Spec 004 remediation, HIGH): the
+   *   previous turn's selected-subagent id and any patches still coalescing for it are stale the
+   *   instant a new turn (or a brand-new Conversation) starts -- the renderer's own panel does
+   *   the matching reset of its selection/stream cache on this same signal (readout-store.ts's
+   *   `applySubagents`), so main must stop forwarding/queuing for an id no later
+   *   `tool_execution_update` will ever match again (ids are per-toolCallId, never reused)
+   *   rather than just letting it quietly go dead.
+   * - `Session.currentTurnSubagents` (Issue #489, durable turn marker, 2026-10-07): the
+   *   persisted twin of `runtime.subagents`, cleared at the exact same trigger so the two can
+   *   never disagree about what counts as "this turn". Skipped when already empty, so a turn
+   *   with no subagents at all -- the common case -- never costs a registry write.
+   *
+   * Does NOT touch `runtime.subagents` itself or emit the `'subagents'` event: those are part of
+   * each caller's own `runtime` reassignment (which also sets a sibling field -- `turnStartedAt`
+   * vs. `transcript` -- that differs per call site), and both callers already emit identically
+   * right after calling this. `reason` is folded into this method's own error log only, to tell
+   * the two call sites apart if the registry write ever fails.
+   */
+  private resetTurnSubagentState(reason: string): void {
+    this.subagentStreams.clear();
+    this.visibleSubagentId = null;
+    this.subagentPatches.clear();
+    const currentSession = this.registry.getSession(this.sessionId);
+    if (currentSession && currentTurnKeys(currentSession).length > 0) {
+      this.registry.updateSession(this.sessionId, { currentTurnSubagents: [] }).catch((err) => {
+        console.error(`SessionAgent ${this.sessionId}: failed to clear currentTurnSubagents ${reason}`, err);
+      });
+    }
   }
 
   // --- Spec 004: readout assembly ---------------------------------------------------------
