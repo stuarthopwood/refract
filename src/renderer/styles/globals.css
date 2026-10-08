@@ -41,13 +41,14 @@
   --color-ring: var(--ring);
   --color-active-indicator: var(--active-indicator);
   /* #550 (theme foundation, palette v2): PURELY ADDITIVE for Dark and Dark (high contrast) --
-   * every token below is new and unused by any component (components keep their current
-   * classes unchanged; #579 migrates them later). Neither preset's EXISTING tokens change
-   * value here; the "#452 retune" (tinted Dark surfaces) is separate, not-yet-built work.
-   * Obsidian is the one preset built out in full in this story, including a strong `--border`
-   * (unlike the mock's own soft literal) so every un-migrated `border-border` call site still
-   * reads correctly; its own soft/decorative aesthetic lives on the new `--divider` token
-   * instead, also unused for now. */
+   * every token below is new (components keep their current classes unchanged; #579 migrates
+   * most of them later, though #606 already migrated the panel separators ahead of that).
+   * Neither preset's EXISTING tokens change value here; the "#452 retune" (tinted Dark
+   * surfaces) is separate, not-yet-built work. Obsidian is the one preset built out in full
+   * in this story, including a strong `--border` (unlike the mock's own soft literal) so
+   * every un-migrated `border-border` call site still reads correctly; its own soft/decorative
+   * aesthetic lives on the new `--divider` token, used by the panel-separator call sites
+   * (resize handle line, PR list/detail divider, status-bar and composer top borders; #606). */
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
@@ -190,8 +191,10 @@
    * PURELY ADDITIVE from here down: every property above this comment is byte-identical to
    * `origin/main` -- nothing this preset already rendered changes value. The "#452 retune"
    * (tinted slate surfaces for Dark) is separate, not-yet-built work; this story does not ship
-   * it for Dark. Every token below is new and read by no component yet (#579 migrates call
-   * sites later), so none of it can regress anything live today.
+   * it for Dark. Every token below is new; most are still read by no component (#579
+   * migrates call sites later), except `--divider`, used ahead of that by #606's panel
+   * separators (resize handle line, PR list/detail divider, status-bar and composer top
+   * borders), so none of the rest can regress anything live today.
    *
    * Surface ladder: `--surface-1`/`--surface-2` alias the existing `--card`/`--popover` (both
    * 0.205 today -- this preset's ladder genuinely has only two distinct tiers, not three,
@@ -263,9 +266,10 @@
  * (`--border` via the universal `border-border` utility, `--muted`/`--accent`/`--secondary`/
  * `--sidebar-accent` via the shadcn "neutral highlight" classes, `--primary`, `--input`,
  * `--ring`) is tuned to meet the SAME floors those components already rely on in Dark/HC, not
- * the mock's own softer literals -- the mock's soft aesthetic lives entirely on the new,
- * unused `--divider` token instead. Registered in src/shared/themes.ts; #551 covers Nordic
- * Frost/Cyber Amber, not this issue. */
+ * the mock's own softer literals -- the mock's soft aesthetic lives entirely on the new
+ * `--divider` token, used by #606's panel separators (resize handle line, PR list/detail
+ * divider, status-bar and composer top borders). Registered in src/shared/themes.ts; #551
+ * covers Nordic Frost/Cyber Amber, not this issue. */
 .theme-obsidian {
   color-scheme: dark;
 
@@ -286,7 +290,7 @@
    * the mock-derived `#616D8A` cleared only 2.84:1 there).
    * `--border-strong` is a plain alias, so a future "control edge" migration reads this same
    * value. The mock's own soft literal (`#2E3342`, ~1.51:1) lives on the new `--divider` token
-   * below instead, unused by any component yet, matching Dark/HC's own split. */
+   * below instead, used by the panel separators (#606), matching Dark/HC's own split. */
   --border: #6F7C9D;
   --border-strong: var(--border);
   --divider: #2E3342;

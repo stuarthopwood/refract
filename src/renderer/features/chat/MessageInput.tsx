@@ -952,7 +952,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId].filter(Boolean).join(' ')
 
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t border-border px-4 py-3">
+    <div className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
       {chips.length > 0 && (
         <ul
           ref={chipListRef}

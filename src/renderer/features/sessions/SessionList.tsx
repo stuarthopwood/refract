@@ -752,7 +752,7 @@ export function SessionList() {
           `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
           before the double-click ever reaches the page's own JS, so a renderer-driven toggle was
           dead code and has been removed. */}
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         <img src={refractHero} alt="" aria-hidden className="size-5 shrink-0" />
         <span className="text-sm font-semibold">Refract</span>
       </div>

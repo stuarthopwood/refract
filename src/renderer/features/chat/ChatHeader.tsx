@@ -44,7 +44,7 @@ export function ChatHeader({
   if (!session) return null
 
   return (
-    <header className="drag-region flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+    <header className="drag-region flex h-10 shrink-0 items-center justify-between gap-3 px-4">
       <div className="flex min-w-0 items-center gap-2">
         <StateIcon status={session.status} />
         <span className="sr-only">{STATUS_LABEL[session.status]}</span>

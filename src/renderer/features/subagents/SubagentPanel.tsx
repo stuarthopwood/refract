@@ -52,7 +52,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
 
   return (
     <div id="subagent-panel" className="flex h-full flex-col overflow-hidden">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+      <div className="flex h-10 shrink-0 items-center gap-2 px-3">
         <span className="text-sm font-semibold">Subagents</span>
         <Button
           variant="ghost"

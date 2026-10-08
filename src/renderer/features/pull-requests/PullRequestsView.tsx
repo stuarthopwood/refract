@@ -54,7 +54,7 @@ export function PullRequestsView() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <div className="w-80 shrink-0 overflow-hidden border-r border-border">
+          <div className="w-80 shrink-0 overflow-hidden border-r border-divider">
             <PullRequestList repositoryId={repositoryId} />
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
