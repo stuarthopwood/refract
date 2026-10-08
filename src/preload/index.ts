@@ -24,7 +24,10 @@ import type {
 } from '../shared/ipc'
 import type { ImageContent } from '../shared/frames'
 import type {
+  CatalogKind,
   ConversationInfo,
+  ModelCatalogEntry,
+  ModelRoleId,
   PendingRequest,
   Repository,
   Session,
@@ -128,6 +131,13 @@ const refract: RefractApi = {
       request<Settings>(IPC_REQUESTS.SETTINGS_SET_READOUT_VISIBILITY, kind, visible),
     setSplit: (layout) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SPLIT, layout),
     setWatermarkEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, enabled)
+  },
+
+  modelRoles: {
+    list: () => request<Record<string, string>>(IPC_REQUESTS.MODEL_ROLES_LIST),
+    set: (role: ModelRoleId, value: string | null) =>
+      request<{ roles: Record<string, string>; overriddenBy?: string }>(IPC_REQUESTS.MODEL_ROLES_SET, role, value),
+    listCatalog: (kind: CatalogKind) => request<ModelCatalogEntry[]>(IPC_REQUESTS.MODEL_ROLES_LIST_CATALOG, kind)
   },
 
   window: {

@@ -5,6 +5,7 @@ import { useCommandsStore } from './commands-store'
 import { useHealthStore } from './health-store'
 import { useDraftStore } from './draft-store'
 import { useMemoryStore } from './memory-store'
+import { useModelRolesStore } from './model-roles-store'
 import { usePendingRequestsStore } from './pending-requests-store'
 import { EMPTY_QUEUE, useQueueStore } from './queue-store'
 import { useRepositoriesStore } from './repositories-store'
@@ -27,6 +28,7 @@ export { useCommandsStore }
 export { useHealthStore }
 export { useDraftStore }
 export { useMemoryStore }
+export { useModelRolesStore }
 export { usePendingRequestsStore }
 export { EMPTY_QUEUE, useQueueStore }
 export { useRepositoriesStore }
@@ -50,6 +52,7 @@ export interface RefractDevStores {
   health: typeof useHealthStore
   draft: typeof useDraftStore
   memory: typeof useMemoryStore
+  modelRoles: typeof useModelRolesStore
   pendingRequests: typeof usePendingRequestsStore
   queue: typeof useQueueStore
   repositories: typeof useRepositoriesStore
@@ -81,6 +84,7 @@ if (import.meta.env.DEV) {
     health: useHealthStore,
     draft: useDraftStore,
     memory: useMemoryStore,
+    modelRoles: useModelRolesStore,
     pendingRequests: usePendingRequestsStore,
     queue: useQueueStore,
     repositories: useRepositoriesStore,

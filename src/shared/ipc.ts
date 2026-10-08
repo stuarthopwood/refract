@@ -2,7 +2,24 @@
 // specs/001-core-session-workspace/contracts/ipc.md. Imported by main, preload, and
 // renderer; this is the only file that may cross that boundary (constitution V).
 
-import type { ApprovalMode, ConversationInfo, DiffStat, PendingRequest, ReadoutKind, Repository, Session, SessionReadout, SessionStatus, Settings, SplitLayout, SubagentSummary, TranscriptItem } from './model';
+import type {
+  ApprovalMode,
+  CatalogKind,
+  ConversationInfo,
+  DiffStat,
+  ModelCatalogEntry,
+  ModelRoleId,
+  PendingRequest,
+  ReadoutKind,
+  Repository,
+  Session,
+  SessionReadout,
+  SessionStatus,
+  Settings,
+  SplitLayout,
+  SubagentSummary,
+  TranscriptItem,
+} from './model';
 import type { ImageContent, QueueKind, SlashCommandDescriptor } from './frames';
 import type {
   ChangedFile,
@@ -310,6 +327,9 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   SETTINGS_SET_SPLIT: 'settings.setSplit',
   SETTINGS_SET_WATERMARK_ENABLED: 'settings.setWatermarkEnabled',
+  MODEL_ROLES_LIST: 'modelRoles.list',
+  MODEL_ROLES_SET: 'modelRoles.set',
+  MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -488,6 +508,27 @@ export interface RefractApi {
      * written value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
      * `setSplit`. Pushes `settings:changed`, no new event. */
     setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
+  };
+
+  /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI
+   * (`src/main/omp/config.ts`), never a file Refract edits itself -- `omp config set` always
+   * writes OMP's GLOBAL config.yml (`omp://settings.md` "Where writes go"), never a project
+   * override. */
+  modelRoles: {
+    /** `omp config get modelRoles --json`: the whole record as currently assigned (role ->
+     * selector); a role absent from the returned record is unset (inherits its documented
+     * fallback). Can fail with `'omp-probe-failed'` (omp missing, non-zero exit, or
+     * unparsable output) or `'timeout'`. */
+    list(): Promise<Result<Record<string, string>>>;
+    /** `omp config set modelRoles '<json>' --json`: merges `value` into the current record for
+     * `role` (`null` clears/unsets it) and writes the whole record back. `overriddenBy` (when
+     * present) names a higher layer -- an env var, `project`, `overlay`, or `runtime` -- that
+     * still supplies the effective value despite this write succeeding. */
+    set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string }>>;
+    /** `omp models --kind <kind> --json`: a read-only catalog listing used to populate a
+     * role's model picker (the RPC `get_available_models` surface carries no role field and
+     * lives behind Phase A files this feature does not touch). */
+    listCatalog(kind: CatalogKind): Promise<Result<ModelCatalogEntry[]>>;
   };
 
   window: {

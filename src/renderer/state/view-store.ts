@@ -8,7 +8,7 @@ import { create } from 'zustand'
 // remounted when `view` changes (App.tsx swaps the whole main area on it).
 
 export type MainView = 'chat' | 'pull-requests' | 'settings' | 'manage-sessions'
-export type SettingsSectionId = 'session-readout' | 'appearance'
+export type SettingsSectionId = 'session-readout' | 'appearance' | 'model-roles'
 
 export type ArchiveFilter = 'all' | 'active' | 'archived'
 export type SortKey = 'recent' | 'name' | 'repo' | 'status'
@@ -59,7 +59,8 @@ export const useViewStore = create<ViewState>((set) => ({
   openSettings: (section) =>
     set({
       view: 'settings',
-      settingsSection: section === 'session-readout' || section === 'appearance' ? section : DEFAULT_SETTINGS_SECTION
+      settingsSection:
+        section === 'session-readout' || section === 'appearance' || section === 'model-roles' ? section : DEFAULT_SETTINGS_SECTION
     }),
   openManageSessions: () => set({ view: 'manage-sessions' }),
   setManageSessionsFilters: (filters) => set({ manageSessionsFilters: filters })

@@ -89,6 +89,97 @@ export interface Settings {
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
 }
 
+/** OMP model-role ids (issue #455, `omp://models.md` "Role aliases and settings"): built-in chat
+ * roles plus model-kind roles. A role's VALUE is a plain model selector OMP itself resolves
+ * (`provider/modelId[:thinking]`, an `@role` alias, or a comma-separated list) -- Refract never
+ * parses or validates the selector text itself, only the role name, since OMP's own `omp config
+ * set modelRoles` already rejects a selector its schema does not accept. */
+export type ModelRoleId =
+  | 'default'
+  | 'smol'
+  | 'slow'
+  | 'vision'
+  | 'plan'
+  | 'commit'
+  | 'tiny'
+  | 'memory'
+  | 'task'
+  | 'advisor'
+  | 'image'
+  | 'web'
+  | 'speech'
+  | 'dictation'
+  | 'judge';
+
+/** Chat roles (`omp://models.md`): accept ordinary chat models (`tiny`/`memory` also accept
+ * `tiny`-catalog models, grouped under the same `chat` catalog kind here for a first picker cut). */
+export const CHAT_MODEL_ROLES: readonly ModelRoleId[] = ['default', 'smol', 'slow', 'vision', 'plan', 'commit', 'tiny', 'memory', 'task', 'advisor'];
+
+/** Model-kind roles (`omp://models.md`): each selects a different catalog kind's runner. */
+export const MODEL_KIND_ROLES: readonly ModelRoleId[] = ['image', 'web', 'speech', 'dictation', 'judge'];
+
+/** Defensive-validate-before-cast lookup (matching `ipc/settings.ts`'s existing `APPROVAL_MODES`/
+ * `READOUT_KINDS` `Record<K, true>` pattern) for a role name crossing the IPC boundary as
+ * `unknown`. */
+const MODEL_ROLE_IDS: Record<string, true> = {
+  default: true,
+  smol: true,
+  slow: true,
+  vision: true,
+  plan: true,
+  commit: true,
+  tiny: true,
+  memory: true,
+  task: true,
+  advisor: true,
+  image: true,
+  web: true,
+  speech: true,
+  dictation: true,
+  judge: true,
+};
+
+/** Type guard preserving narrowing at the IPC boundary (`ipc/modelRoles.ts`, preload, renderer
+ * store) -- this is the one allowed "tiny function" case: it is a type guard, not a rename. */
+export function isModelRoleId(value: unknown): value is ModelRoleId {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(MODEL_ROLE_IDS, value);
+}
+
+/** `omp models --kind <kind>` catalog groupings (`omp://models.md` "Catalog kinds are `chat`,
+ * `tiny`, `image`, `tts`, `stt`, `search`, and `judge`"). */
+export type CatalogKind = 'chat' | 'tiny' | 'image' | 'tts' | 'stt' | 'search' | 'judge';
+
+/** Which catalog kind each role's model picker queries (`omp://models.md` "Role aliases and
+ * settings": `web` selects search/grounded-chat runners, `speech` selects TTS, `dictation`
+ * selects STT, `judge` selects judgment runners; `image` selects image runners). */
+export const ROLE_CATALOG_KIND: Record<ModelRoleId, CatalogKind> = {
+  default: 'chat',
+  smol: 'chat',
+  slow: 'chat',
+  vision: 'chat',
+  plan: 'chat',
+  commit: 'chat',
+  tiny: 'chat',
+  memory: 'chat',
+  task: 'chat',
+  advisor: 'chat',
+  image: 'image',
+  web: 'search',
+  speech: 'tts',
+  dictation: 'stt',
+  judge: 'judge',
+};
+
+/** One `omp models --kind <kind> --json` row (fields this feature needs; the CLI returns more --
+ * `omp://models.md` "JSON includes provider, kind, id, selector, name, ..."). `selector` is the
+ * exact `provider/modelId` string usable as a `modelRoles` value. */
+export interface ModelCatalogEntry {
+  provider: string;
+  id: string;
+  selector: string;
+  name: string;
+}
+
 /** Spec 005 data-model.md: the app-wide split layout, persisted in `Settings.split`. Holds the
  * two Session ids shown (left pane first), the divider position, and which pane was focused;
  * there is no one-element form -- closing a pane simply sets `Settings.split` back to `null`. */
