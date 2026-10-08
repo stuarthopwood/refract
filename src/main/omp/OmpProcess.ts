@@ -644,7 +644,9 @@ export class OmpProcess extends EventEmitter {
     if (text[text.length - maxLength - 1] === '\n') return dropLoneLowSurrogate(sliced)
     const newlineIndex = sliced.indexOf('\n')
     // No newline in the slice at all, or the only one is the text's own trailing newline (no
-    // complete line fits): keep the raw fragment rather than discarding it to `''`.
+    // complete line fits): keep the raw fragment rather than discarding it to `''` (except for
+    // the single pathological case of a 1-character cap landing on a lone low surrogate, where
+    // `dropLoneLowSurrogate` below still has to drop it to avoid emitting a bare U+FFFD).
     if (newlineIndex === -1 || newlineIndex === sliced.length - 1) return dropLoneLowSurrogate(sliced)
     return sliced.slice(newlineIndex + 1)
   }

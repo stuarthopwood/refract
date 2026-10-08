@@ -67,19 +67,29 @@ export function describeStopReason(reason: StopReason, detail?: string): string 
 
 /** Gate-fixes a11y High finding (cycle 9): a focused element that the user can no longer
  * interact with -- missing, `<body>` (the UA's own fallback once nothing is explicitly
- * focused), disconnected from the document, OR disabled. Every one of this pane's
- * stranded-focus checks used to test only the first three, which missed a real case: a Cancel
- * that WINS during a mode-change `restart()` from `idle` sends two separate status events
- * (`startProgress` cleared first, while `status` is still `idle`; `stopped`/`start-failed`
- * moments later once `proc.stop()` finishes) -- the first moves focus onto the still-enabled
- * textarea, which the SECOND event then disables. Chromium does not auto-blur a focused element
- * when it becomes `disabled` (it stays `document.activeElement`, just inert), so a check that
- * only looked for `<body>`/disconnected saw a perfectly normal-looking, connected element and
- * left focus stuck on a control the user can no longer type into or tab away from. One shared
- * definition here instead of several independently-drifting copies of the same three-part test.
+ * focused), disconnected from the document, OR disabled AND inside this pane. Every one of
+ * this pane's stranded-focus checks used to test only the first three, which missed a real
+ * case: a Cancel that WINS during a mode-change `restart()` from `idle` sends two separate
+ * status events (`startProgress` cleared first, while `status` is still `idle`;
+ * `stopped`/`start-failed` moments later once `proc.stop()` finishes) -- the first moves focus
+ * onto the still-enabled textarea, which the SECOND event then disables. Chromium may not blur
+ * a focused element when it becomes `disabled` (it can remain `document.activeElement`, still
+ * inert, depending on the Chromium version), so a check that only looked for
+ * `<body>`/disconnected saw a perfectly normal-looking, connected element and left focus stuck
+ * on a control the user can no longer type into or tab away from.
+ *
+ * Gate-fixes a11y Medium finding (cycle 10): the `:disabled` clause must only count a disabled
+ * element as stranded when it is INSIDE this pane -- `root` is each call site's own
+ * `chatPaneRef.current`. Without that scope, a disabled control elsewhere in the window (a
+ * dialog's Save button, or the other split pane's own RequestCard Approve/Deny button while
+ * `disabled={busy}`) also counted as stranded, so this pane's banner resolving pulled focus out
+ * of that other control. The cycle-9 restart sequence above still works: the disabled textarea
+ * it exists to rescue focus from is always inside the pane whose own effect is running.
+ *
+ * One shared definition here instead of several independently-drifting copies of the same test.
  */
-function isFocusStranded(active: Element | null): boolean {
-  return !active || active === document.body || !active.isConnected || (active instanceof HTMLElement && active.matches(':disabled'))
+function isFocusStranded(active: Element | null, root: HTMLElement | null): boolean {
+  return !active || active === document.body || !active.isConnected || (active instanceof HTMLElement && active.matches(':disabled') && !!root?.contains(active))
 }
 
 interface ChatPaneProps {
@@ -452,7 +462,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (!pending.hadFocus) return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = isFocusStranded(active)
+      const stranded = isFocusStranded(active, chatPaneRef.current)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [showBanner, effectiveStopReason])
@@ -470,7 +480,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (!chatHadFocusRef.current) return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = isFocusStranded(active)
+      const stranded = isFocusStranded(active, chatPaneRef.current)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [showBanner, effectiveStopReason])
@@ -533,7 +543,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (cancelFocusPendingRef.current && session?.status === 'stopped') return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = isFocusStranded(active)
+      const stranded = isFocusStranded(active, chatPaneRef.current)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [startProgress?.kind, showBanner, session?.status])
@@ -555,7 +565,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (!pending.hadFocus) return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = isFocusStranded(active)
+      const stranded = isFocusStranded(active, chatPaneRef.current)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [session?.status])
@@ -639,7 +649,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const maybeRestoreFocus = () => {
       if (!hadFocus || sessionIdRef.current !== recoveringFor) return
       const active = document.activeElement
-      const stranded = isFocusStranded(active)
+      const stranded = isFocusStranded(active, chatPaneRef.current)
       if (!stranded && active !== focusedAtStart) return
       focusPaneContent(chatPaneRef.current)
     }
@@ -686,7 +696,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const maybeRestoreFocus = () => {
       if (!hadFocus || sessionIdRef.current !== resumingFor) return
       const active = document.activeElement
-      const stranded = isFocusStranded(active)
+      const stranded = isFocusStranded(active, chatPaneRef.current)
       if (!stranded && active !== focusedAtStart) return
       focusPaneContent(chatPaneRef.current)
     }
@@ -743,7 +753,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const maybeRestoreFocus = () => {
       if (!hadFocus || sessionIdRef.current !== startingFor) return
       const active = document.activeElement
-      const stranded = isFocusStranded(active)
+      const stranded = isFocusStranded(active, chatPaneRef.current)
       if (!stranded && active !== focusedAtStart) return
       const pressed = startNewButtonRef.current
       if (pressed && pressed.isConnected && !pressed.disabled) {
@@ -817,7 +827,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     requestAnimationFrame(() => {
       const active = document.activeElement
       const stillOnOriginal = active === focusedAtStart
-      const stuck = isFocusStranded(active)
+      const stuck = isFocusStranded(active, chatPaneRef.current)
       if (stillOnOriginal || stuck) {
         cancelButtonRef.current?.focus()
       }
