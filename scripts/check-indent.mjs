@@ -4,9 +4,9 @@
 // whole-file reformatting bug (confirmed root cause: `cfg://lsp`'s `formatOnWrite: true` driving
 // an LSP formatter with the wrong indent width -- see issue #387's own comments). A JSDoc block
 // continuation line (` * text` or a bare `*/` closing delimiter) is legitimately odd-indented by
-// convention and is excluded. Usage: node scripts/check-indent.mjs [rootDir] (default:
-// <repoRoot>/src). Exits 1 if any unallowed odd-indent line is found, 2 if no .ts/.tsx files were
-// scanned, 0 otherwise.
+// convention and is excluded. Usage: node scripts/check-indent.mjs [rootDir] (default: repo
+// root, excluding node_modules, out, dist and .git). Scans .ts/.tsx/.js/.mjs files. Exits 1 if
+// any unallowed odd-indent line is found, 2 if no matching files were scanned, 0 otherwise.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
-const root = path.resolve(process.cwd(), process.argv[2] ?? path.join(repoRoot, 'src'));
+const root = path.resolve(process.cwd(), process.argv[2] ?? repoRoot);
+const EXCLUDED_DIRS = new Set(['node_modules', 'out', 'dist', '.git']);
 
 // Files with known, pre-existing odd-indent damage (issue #387) not fixed by this guard's own
 // introducing change (PLAN.md row A3 named only 4 files; these 4 more were found by the same
@@ -38,8 +39,9 @@ function* walk(dir) {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (EXCLUDED_DIRS.has(entry.name)) continue;
       yield* walk(full);
-    } else if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx'))) {
+    } else if (entry.isFile() && /\.(ts|tsx|js|mjs)$/.test(entry.name)) {
       yield full;
     }
   }
@@ -87,7 +89,7 @@ for (const file of isDirectory(root) ? walk(root) : []) {
 }
 
 if (fileCount === 0) {
-  console.log(`no .ts/.tsx files found under ${root}`);
+  console.log(`no matching .ts/.tsx/.js/.mjs files found under ${root}`);
   process.exit(2);
 } else if (damagedFileCount > 0) {
   console.log(`${lineCount} odd-indent line${lineCount === 1 ? '' : 's'} across ${damagedFileCount} file${damagedFileCount === 1 ? '' : 's'} (${fileCount} scanned, ${ALLOWED_FILES.size} allow-listed)`);
