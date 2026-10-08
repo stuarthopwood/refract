@@ -870,12 +870,40 @@ function settleStaleSubagentRows(items: TranscriptItem[], currentTurnKeys: Reado
   return changed ? next : items;
 }
 
+/** Issue #510 slice 3 (PLAN.md row A0, item 4): same family as `settleStaleSubagentRows` above --
+ * a `tool` item built from history can show `status: 'running'` forever because OMP's stored
+ * `.jsonl` just replays the tool_use acknowledgment with no result ever written. Unlike the
+ * subagent case, a 'running' tool item here is NOT automatically stale: a Session that is
+ * genuinely still `working` right now can legitimately have one in flight while `fromHistory`
+ * rebuilds its visible transcript (e.g. a Conversation switch away and back), so this only flips
+ * rows when the caller already knows (`detectUnexpectedTermination`, terminationDetection.ts,
+ * read against the SAME file these `messages` came from) that the writing process is actually
+ * gone -- the file-tail-derived analogue of #489's persisted `currentTurnSubagents` marker. */
+function settleInterruptedToolRows(items: TranscriptItem[], terminatedUnexpectedly: boolean): TranscriptItem[] {
+  if (!terminatedUnexpectedly) return items;
+  let changed = false;
+  const next = items.map((item) => {
+    if (item.kind === 'tool' && item.status === 'running') {
+      changed = true;
+      return { ...item, status: 'interrupted' as const };
+    }
+    return item;
+  });
+  return changed ? next : items;
+}
+
 /** Builds the transcript for a stored session's history (from `get_messages`), per
  * contracts/omp-usage.md "Message parts". `currentTurnKeys` (issue #489, durable turn marker,
  * 2026-10-07) is `Session.currentTurnSubagents` as a Set -- the SAME `toolCallId:specIndex` keys
  * `SessionAgent.reconcileSubagentsOnAttach` scopes by, threaded through to
- * `settleStaleSubagentRows` so both agree on what "the current turn" means. */
-export function fromHistory(messages: OmpMessage[], currentTurnKeys: ReadonlySet<string>): TranscriptItem[] {
+ * `settleStaleSubagentRows` so both agree on what "the current turn" means. `terminatedUnexpectedly`
+ * (issue #510 slice 3, defaults `false` for every pre-existing caller) is threaded through to
+ * `settleInterruptedToolRows` the same way. */
+export function fromHistory(
+  messages: OmpMessage[],
+  currentTurnKeys: ReadonlySet<string>,
+  terminatedUnexpectedly = false,
+): TranscriptItem[] {
   let items: TranscriptItem[] = [];
   messages.forEach((message, index) => {
     const messageId = `h${index}`;
@@ -920,5 +948,5 @@ export function fromHistory(messages: OmpMessage[], currentTurnKeys: ReadonlySet
         return;
     }
   });
-  return settleStaleSubagentRows(items, currentTurnKeys);
+  return settleInterruptedToolRows(settleStaleSubagentRows(items, currentTurnKeys), terminatedUnexpectedly);
 }

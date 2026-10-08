@@ -20,6 +20,7 @@ import { bailIfStopRequested, exitedDuringStart, stopIfRunning } from './launchS
 import { PatchCoalescer } from './patchCoalescer';
 import { assertConversationFileExists, reattachRebaselineNotice, verifyReattach } from './reattachVerification';
 import { recoverFromFailedSwitch } from './switchRecovery';
+import { detectUnexpectedTermination } from './terminationDetection';
 import { waitForIdleStatus } from './statusWait';
 import type {
   AvailableCommandsUpdateFrame,
@@ -352,9 +353,15 @@ export class SessionAgent extends EventEmitter {
         // parameter captured earlier in `doStart()`, so this always reflects the latest
         // `currentTurnSubagents` even on the rare chance a prior life of this SAME instance
         // wrote to it after that snapshot was taken.
+        // Issue #510 slice 3 (PLAN.md row A0): `session.currentConversation` is the SAME file
+        // this reattach just verified against -- if ITS tail shows the previous life ended mid
+        // tool-call, any row `fromHistory` would otherwise leave `running` forever is settled to
+        // `interrupted` instead (`settleInterruptedToolRows`).
+        const terminatedUnexpectedly = (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly;
         transcript = fromHistory(
           (messagesRes.data as GetMessagesResponseData).messages,
           new Set(currentTurnKeys(this.registry.getSession(this.sessionId))),
+          terminatedUnexpectedly,
         );
         messagesOk = true;
       } else {
@@ -752,8 +759,12 @@ export class SessionAgent extends EventEmitter {
     const state = stateRes.data as GetStateResponseData;
     const messagesRes = await this.process.request({ type: 'get_messages', id: '' });
     const currentTurnKeySet = new Set(currentTurnKeys(this.registry.getSession(this.sessionId)));
+    // Issue #510 slice 3 (PLAN.md row A0): `file` is the historical Conversation just switched
+    // to -- if ITS tail shows it was abandoned mid tool-call, that row is settled to
+    // `interrupted` rather than left spinning `running` forever once rendered as history.
+    const terminatedUnexpectedly = (await detectUnexpectedTermination(file)).terminatedUnexpectedly;
     const transcript = messagesRes.success
-      ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet)
+      ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet, terminatedUnexpectedly)
       : [];
     // Gate fixes 2 finding 4: reconcile here too, same rule as `launch()` -- without it a
     // Conversation whose last turn crashed mid-subagent opens with a row stuck on 'running'

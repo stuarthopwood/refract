@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import type { ApprovalMode, PendingRequest, SessionReadout, SubagentSummary } from '../shared/model';
 import type { SessionStatusEvent, SessionSummary, SlashCommand, TranscriptOp } from '../shared/ipc';
 import { SessionAgent } from './omp/SessionAgent';
+import { detectUnexpectedTermination } from './omp/terminationDetection';
 import type { RegistryStore } from './store/registry';
 import type { SettingsStore } from './store/settings';
 
@@ -136,25 +137,47 @@ export class SessionManager {
 
   /** `sessions.list()` row view: every registered Session, live or not (contracts/ipc.md). A
    * Session with no agent this run is checked for a missing worktree folder right here (T043),
-   * since there is no `SessionRuntime` yet to carry that reason. */
-  summaries(): SessionSummary[] {
-    return this.registry.snapshot().sessions.map((session) => {
-      const runtime = this.agents.get(session.id)?.runtimeSnapshot;
-      if (runtime) {
+   * since there is no `SessionRuntime` yet to carry that reason. Issue #510 slice 2 (PLAN.md row
+   * A0): async now -- a `stopped` row (live or never-launched-this-run alike) also reads its
+   * Conversation's tail for `terminatedUnexpectedly`, skipped entirely for `worktree-missing`
+   * (no useful Conversation to read) and every live non-`stopped` status. */
+  async summaries(): Promise<SessionSummary[]> {
+    return Promise.all(
+      this.registry.snapshot().sessions.map(async (session) => {
+        const runtime = this.agents.get(session.id)?.runtimeSnapshot;
+        if (runtime) {
+          const terminatedUnexpectedly =
+            runtime.status === 'stopped'
+              ? (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
+              : undefined;
+          return {
+            ...session,
+            status: runtime.status,
+            stopReason: runtime.stopReason,
+            terminatedUnexpectedly,
+            unread: runtime.unread,
+            launchedMode: runtime.launchedMode,
+            pendingMode: runtime.pendingMode,
+          };
+        }
+        const stopReason = existsSync(session.worktreePath) ? 'not-started' : 'worktree-missing';
+        const terminatedUnexpectedly =
+          stopReason === 'not-started'
+            ? (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
+            : undefined;
+        // Never actually launched this run: nothing is "currently in effect" to show as current,
+        // so this falls back to the global Settings mode the renderer already uses pre-launch.
         return {
           ...session,
-          status: runtime.status,
-          stopReason: runtime.stopReason,
-          unread: runtime.unread,
-          launchedMode: runtime.launchedMode,
-          pendingMode: runtime.pendingMode,
+          status: 'stopped',
+          stopReason,
+          terminatedUnexpectedly,
+          unread: false,
+          launchedMode: this.settings.get().approvalMode,
+          pendingMode: null,
         };
-      }
-      const stopReason = existsSync(session.worktreePath) ? 'not-started' : 'worktree-missing';
-      // Never actually launched this run: nothing is "currently in effect" to show as current,
-      // so this falls back to the global Settings mode the renderer already uses pre-launch.
-      return { ...session, status: 'stopped', stopReason, unread: false, launchedMode: this.settings.get().approvalMode, pendingMode: null };
-    });
+      }),
+    );
   }
 
   /** `settings.setApprovalMode` (T031, FR-015): marks every live Session whose `launchedMode`

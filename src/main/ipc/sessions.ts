@@ -59,7 +59,7 @@ async function deleteSessionConversations(sessionDir: string): Promise<void> {
 }
 
 export function registerSessions(manager: SessionManager): void {
-  ipcMain.handle(IPC_REQUESTS.SESSIONS_LIST, async () => ({ ok: true, value: manager.summaries() }));
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_LIST, async () => ({ ok: true, value: await manager.summaries() }));
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_CREATE, async (_event, input: unknown) => {
     if (typeof input !== 'object' || input === null) {

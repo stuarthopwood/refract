@@ -3,6 +3,7 @@ import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
 import { ReattachFailedError, SessionNotIdleError } from '../omp/errors';
 import type { SessionAgent } from '../omp/SessionAgent';
+import { detectUnexpectedTermination } from '../omp/terminationDetection';
 import { GitError } from '../git/git';
 import { RegistryError } from '../store/registry';
 import { GhError } from '../github/gh';
@@ -38,6 +39,11 @@ export async function buildSnapshot(agent: SessionAgent, session: Session): Prom
   // back), even while the chip's own `readout.subagentCount` correctly kept showing the count.
   const { turnStartedAt: _turnStartedAt, readout, subagents, ...runtimeFields } = agent.runtimeSnapshot;
   const runtime: SessionRuntimeView = runtimeFields;
+  // Issue #510 slice 2 (PLAN.md row A0): only a stopped Session can be "terminated unexpectedly"
+  // -- a live one's own status already says otherwise, so no tail read is spent on it.
+  if (runtime.status === 'stopped') {
+    runtime.terminatedUnexpectedly = (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly;
+  }
   const conversations = await listConversations(session.sessionDir, session.currentConversation);
   return { runtime, conversations, readout, subagents };
 }

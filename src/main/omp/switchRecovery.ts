@@ -6,6 +6,7 @@
 // fails or there was no prior Conversation.
 import type { OmpProcess } from './OmpProcess';
 import { verifyReattach } from './reattachVerification';
+import { detectUnexpectedTermination } from './terminationDetection';
 import { currentTurnKeys, fromHistory } from './transcript';
 import type { GetMessagesResponseData, GetStateResponseData, SwitchSessionResponseData } from '../../shared/frames';
 import type { Session, TranscriptItem } from '../../shared/model';
@@ -43,8 +44,12 @@ export async function recoverFromFailedSwitch(
             // `currentTurnSubagents` set `reconcileSubagentsOnAttach` uses, read from the
             // `session` just fetched above (fresh, not a stale earlier snapshot).
             const currentTurnKeySet = new Set(currentTurnKeys(session));
+            // Issue #510 slice 3 (PLAN.md row A0): `previousConversation` is the file just
+            // switched back to -- its own tail decides whether a still-`running` tool row in the
+            // reloaded history is settled to `interrupted`.
+            const terminatedUnexpectedly = (await detectUnexpectedTermination(previousConversation)).terminatedUnexpectedly;
             const transcript = messagesRes.success
-              ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet)
+              ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet, terminatedUnexpectedly)
               : [];
             ctx.applyTranscript(transcript);
             return;

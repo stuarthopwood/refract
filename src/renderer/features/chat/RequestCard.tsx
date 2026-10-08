@@ -78,10 +78,15 @@ interface AskDetailsLike {
 /** The answer text for a resolved `ask` tool item (T073, FINDINGS item 22(a)-(c),
  * contracts/omp-usage.md "Chat line wire shapes"): a cancelled ask is `status: 'error'` with an
  * empty `details`, read as the literal word "Cancelled" rather than OMP's fixed error sentence;
- * free text prefers `details.customInput` (the only reliable source for it); multiple choice
- * prefers `details.selectedOptions`, falling back to the tool's own output text. */
+ * an unanswered ask (issue #510 slice 3) is `status: 'interrupted'`, read as "Question not
+ * answered"; free text prefers `details.customInput` (the only reliable source for it); multiple
+ * choice prefers `details.selectedOptions`, falling back to the tool's own output text. */
 function askAnswer(item: AskToolItem): string {
   if (item.status === 'error') return 'Cancelled'
+  // Issue #510 slice 3 (PLAN.md row A0 evidence): "an unanswered ask renders as 'question not
+  // answered'" -- the process died before the user's reply ever landed, so there is nothing an
+  // `output`/`details` fallback below could show instead.
+  if (item.status === 'interrupted') return 'Question not answered'
   const details = item.details && typeof item.details === 'object' ? (item.details as AskDetailsLike) : undefined
   if (details && typeof details.customInput === 'string') return details.customInput
   if (details && Array.isArray(details.selectedOptions)) {

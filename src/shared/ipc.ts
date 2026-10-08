@@ -102,6 +102,12 @@ export interface SessionSummary extends Session {
   /** T043: surfaces `worktree-missing`/`not-started` in the list row itself, so a missing
    * worktree shows a distinct badge without opening the Session. */
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
+  /** Issue #510 slice 2 (PLAN.md row A0): `true` only for a `stopped` Session whose Conversation
+   * file's tail (`detectUnexpectedTermination`, terminationDetection.ts) shows the writing
+   * process went away mid-turn, independent of `stopReason` -- this is what still flags a cold
+   * app restart after a crash, which only ever carries `stopReason: 'not-started'`. Always
+   * `false`/absent for a Session with no Conversation yet. */
+  terminatedUnexpectedly?: boolean;
   unread: boolean;
   /** The mode the Session's live process actually launched with (settings' current mode for one
    * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
@@ -122,6 +128,10 @@ export interface SessionRuntimeView {
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   stopDetail?: string;
+  /** Issue #510 slice 2 (PLAN.md row A0): see `SessionSummary.terminatedUnexpectedly`; computed
+   * the same way (`buildSnapshot`), carried here too so `sessions.open`/`sessions.recover`'s
+   * stop banner can show it without a second round-trip. */
+  terminatedUnexpectedly?: boolean;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
   unread: boolean;

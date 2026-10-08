@@ -103,6 +103,12 @@ export const OMP_APPROVAL_MODE: Record<ApprovalMode, string> = {
   auto: 'yolo',
 };
 
+/** Issue #510 slice 2 (PLAN.md row A0), fed to #509's Resume button: as direct as the word
+ * Stuart actually typed resuming his own crashed session ("resume"). No goal-mode variant yet --
+ * goal mode (#479) does not exist in this codebase; a `goal resume` default is #479's own job
+ * once that field exists on `Session`. */
+export const DEFAULT_RESUME_INSTRUCTION = 'resume';
+
 /** One record per running `omp` root process; the pid-and-start-time fallback for stale process reaping. */
 export interface ProcessRecord {
   pid: number;
@@ -234,7 +240,13 @@ export type TranscriptItem =
       toolCallId: string;
       tool: string;
       target: string;
-      status: 'running' | 'done' | 'error';
+      /** `'interrupted'` (issue #510 slice 3, PLAN.md row A0): a call built from history that
+       * never received a result, in a Conversation whose tail `detectUnexpectedTermination`
+       * (terminationDetection.ts) confirms the writing process is actually gone -- same family as
+       * `'exited'` on a `subagent` item below (#489), just file-tail-derived instead of
+       * registry-derived, and never asserted for a Session that is genuinely still `working`
+       * right now (see `transcript.ts`'s `settleInterruptedToolRows`). No permanent spinners. */
+      status: 'running' | 'done' | 'error' | 'interrupted';
       /** Absent when built from history (no reliable wall clock to derive it from), matching
        * the `thinking` item's `startedAt`. */
       startedAt?: number;

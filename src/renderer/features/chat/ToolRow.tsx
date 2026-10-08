@@ -16,7 +16,7 @@ function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
-type RowStatus = 'running' | 'done' | 'error' | 'exited'
+type RowStatus = 'running' | 'done' | 'error' | 'exited' | 'interrupted'
 
 // Language inference for a tool call's Arguments block (T083, FR-050): always `json`, except a
 // `bash` call's own `command` string, shown verbatim and highlighted as `bash` instead of being
@@ -47,15 +47,26 @@ function inferArgumentsBlock(item: ToolItem): { lang: string; code: string } {
 
 // A distinct icon shape per status (never colour alone, T080/WCAG 2.1 AA): spinner, check, cross,
 // unplug (`'exited'`, issue #489 gate finding 4 -- matches `SubagentPanel.tsx`'s own icon/wording
-// for the same state so the chat row and the panel row never disagree).
+// for the same state so the chat row and the panel row never disagree; `'interrupted'`, issue
+// #510 slice 3 -- the same family, a tool call left with no result because its Conversation's
+// tail shows the writing process is gone, reusing the unplug shape so neither reads as "done").
 function StatusIcon({ status }: { status: RowStatus }) {
-  const label = status === 'running' ? 'Running' : status === 'error' ? 'Failed' : status === 'exited' ? 'Agent exited' : 'Done'
+  const label =
+    status === 'running'
+      ? 'Running'
+      : status === 'error'
+        ? 'Failed'
+        : status === 'exited'
+          ? 'Agent exited'
+          : status === 'interrupted'
+            ? 'Interrupted'
+            : 'Done'
   return (
     <>
       {status === 'running' && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />}
       {status === 'error' && <XIcon className="size-3.5 shrink-0 text-destructive" />}
-      {status === 'exited' && <UnplugIcon className="size-3.5 shrink-0 text-muted-foreground" />}
-      {status !== 'running' && status !== 'error' && status !== 'exited' && <CheckIcon className="size-3.5 shrink-0 text-state-working" />}
+      {(status === 'exited' || status === 'interrupted') && <UnplugIcon className="size-3.5 shrink-0 text-muted-foreground" />}
+      {status === 'done' && <CheckIcon className="size-3.5 shrink-0 text-state-working" />}
       <span className="sr-only">{label}</span>
     </>
   )
@@ -184,7 +195,13 @@ interface ToolGroupRowProps {
 export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
-  const status: RowStatus = group.items.some((item) => item.status === 'running') ? 'running' : failedCount > 0 ? 'error' : 'done'
+  const status: RowStatus = group.items.some((item) => item.status === 'running')
+    ? 'running'
+    : failedCount > 0
+      ? 'error'
+      : group.items.some((item) => item.status === 'interrupted')
+        ? 'interrupted'
+        : 'done'
   const last = group.items[group.items.length - 1]!
   const othersCount = group.items.length - 1
   const label = solo ? last.tool : group.tool
