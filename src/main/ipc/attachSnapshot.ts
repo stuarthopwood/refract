@@ -10,7 +10,7 @@ import type { Session } from '../../shared/model';
 import type { TerminationDetectionResult } from '../omp/terminationDetection';
 import { canAutoStart } from './canAutoStart';
 import { notFound } from './util';
-import { isStoppedOnRequestMarkerValid } from '../omp/stoppedOnRequestMarker';
+import { resolveTermination } from '../omp/stoppedOnRequestMarker';
 
 /** The one piece of a real `SessionAgent` this needs -- narrowed so a test can supply a fake
  * without constructing a real process. */
@@ -46,15 +46,15 @@ export async function attachSnapshotCore(id: string, forceStart: boolean, deps: 
     // own doc comment. Without this, FR-038 broke for exactly the Session #510's own cycle 1 fix
     // was supposed to protect: a tool call still outstanding when the stop fired looks identical,
     // from the file alone, to a crash, so `canAutoStart` below would wrongly refuse to reattach a
-    // Session the user only ever stopped on purpose. Quality-gate fix (cycle 4, 2026-10-08):
-    // `agent.runtimeSnapshot.stoppedOnRequest` is THIS life's own in-memory flag, reset `false`
-    // for a Session not yet started this run -- the persisted marker is checked alongside it so
-    // reattaching fresh after an app restart still honours an EARLIER life's requested stop, as
-    // long as the Conversation has not grown since (see `Session.stoppedOnRequestConversation`'s
-    // own doc comment).
-    detection = (agent.runtimeSnapshot.stoppedOnRequest || (await isStoppedOnRequestMarkerValid(session)))
-      ? { terminatedUnexpectedly: false, reason: { kind: 'clean' }, pendingToolNames: [] }
-      : await deps.detectUnexpectedTermination(session.currentConversation);
+    // Session the user only ever stopped on purpose. `resolveTermination` (cycle 5: shared, not
+    // copied here) also checks the persisted marker alongside `agent.runtimeSnapshot.
+    // stoppedOnRequest` (THIS life's own in-memory flag, reset `false` for a Session not yet
+    // started this run) so reattaching fresh after an app restart still honours an EARLIER
+    // life's requested stop, as long as the Conversation has not grown since (see
+    // `Session.stoppedOnRequestConversation`'s own doc comment). `deps.detectUnexpectedTermination`
+    // is passed through explicitly (not `resolveTermination`'s own default) so this function's
+    // existing dependency-injection tests keep controlling it.
+    detection = await resolveTermination(session, agent.runtimeSnapshot.stoppedOnRequest, deps.detectUnexpectedTermination);
     if (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason, detection.terminatedUnexpectedly)) {
       await agent.start().catch(() => undefined);
       // T062: `agent.start()` runs `syncFromState` against the registry before resolving
