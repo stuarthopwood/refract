@@ -36,13 +36,14 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   dark: {
     id: 'dark',
     name: 'Dark',
-    // Matches `.theme-dark`'s own `--background` (globals.css), converted by hand the same way
-    // `titleBarOverlay.ts` already converts it for Electron's sRGB-only API. #550 (theme
-    // foundation, palette v2): retuned per #452 to the same rendered darkness as `#1a1a1a`,
-    // tinted with the Obsidian preset's own slate-blue hue rather than staying neutral grey.
-    swatch: '#181A21',
+    // Matches `.theme-dark`'s own `--background: oklch(0.145 0 0)` (globals.css), converted by
+    // hand the same way `titleBarOverlay.ts` already converts it for Electron's sRGB-only API.
+    // #550 (theme foundation, palette v2), remediated per quality-gate review (PR #596): this
+    // preset is purely additive now -- the #452 Dark retune this comment used to describe is
+    // separate, not-yet-built work, so this stays the original swatch/overlay, unchanged.
+    swatch: '#0a0a0a',
     syntaxTheme: 'github-dark',
-    titleBarOverlay: { color: '#181A21', symbolColor: '#F8FAFC' }
+    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
   },
   'dark-high-contrast': {
     id: 'dark-high-contrast',
@@ -56,7 +57,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   },
   // #550 (theme foundation, palette v2): a further dark preset, additive per the module comment
   // above -- the mock's own Obsidian canvas and palette, taken literally (`.theme-obsidian`,
-  // globals.css), one step darker/moodier than `dark`'s retuned canvas.
+  // globals.css), one step darker/moodier than `dark`'s own, unchanged canvas.
   obsidian: {
     id: 'obsidian',
     name: 'Obsidian',

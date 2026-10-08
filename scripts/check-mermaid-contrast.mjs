@@ -178,10 +178,15 @@ function resolveRawValue(name, rawProps, seen = new Set()) {
   seen.add(refName)
   return resolveRawValue(refName, rawProps, seen)
 }
-const realCardColors = {}
+// Quality-gate remediation (security review, LOW): `Object.create(null)` rather than `{}`,
+// matching check-theme-contrast.mjs's own sister resolver -- a theme block that writes
+// `var(--constructor)` (or another `Object.prototype` name) the block itself never defines
+// would otherwise return a function from a plain-object lookup, and `.match` on it throws
+// instead of the intended clear "cannot resolve --card" hard failure.
+const realCardColors = Object.create(null)
 for (const blockMatch of globalsCss.matchAll(/\.theme-([a-z0-9-]+)\s*\{([^}]*)\}/g)) {
   const themeId = blockMatch[1]
-  const rawProps = {}
+  const rawProps = Object.create(null)
   for (const propMatch of blockMatch[2].matchAll(/--([a-z0-9-]+):\s*([^;]+);/gi)) {
     rawProps[propMatch[1]] = propMatch[2].trim()
   }

@@ -443,7 +443,7 @@ export interface MermaidThemeVariables {
 // Quality-gate remediation (code review): `DARK_FAMILY` factors out the palette `dark` and
 // `obsidian` share -- the bright pie/cScale/git/fillType qualitative palettes and the task-text
 // roles are independent of either theme's own surface tones and were independently verified
-// (this file's own rounds 1-6, plus a fresh check against Obsidian's real `--card`/`--surface-2`
+// (this file's own rounds 1-6, plus a fresh check against Obsidian's real `--card`
 // for this remediation) to clear every floor against BOTH themes' real canvases, not a lazy
 // copy-paste that would silently drift. Obsidian's surface-tied fields (background, the
 // primary/secondary/tertiary/note roles) are NOT spread from here -- they're overridden below

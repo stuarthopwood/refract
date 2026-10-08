@@ -272,8 +272,8 @@
    * the 4.5:1 AA floor, so the fill is nudged to `#5A5EEE` (4.92:1 for white text, verified by
    * check-theme-contrast.mjs's `primary-foreground`/`primary` pair). `--accent-text` is the
    * separate, lighter indigo step for text/links (never the fill), retuned with margin so it
-   * clears 4.5:1 against `--background` (5.98:1), `--surface-1` (5.18:1) AND `--surface-2`/
-   * popover (4.63:1, the binding constraint -- quality-gate review found the earlier `#7A7DF3`
+   * clears 4.5:1 against `--background` (6.18:1), `--surface-1` (5.35:1) AND `--surface-2`/
+   * popover (4.78:1, the binding constraint -- quality-gate review found the earlier `#7A7DF3`
    * cleared only 4.24:1 there). */
   --accent-text: #8588F4;
   /* Severity roles (#550 item 2 + item 5): success/warning/info reuse the exact hues this
@@ -445,8 +445,8 @@
   --divider: var(--border);
   --border-strong: var(--border);
   /* `--accent-text`: a new token, reusing this preset's own existing `--active-indicator`/
-   * `--chart-1` hue (264, the brand indigo family) at the same lightness -- already 9.27:1
-   * against `--background` and 8.79:1 against `--card`/`--popover`, comfortably above the
+   * `--chart-1` hue (264, the brand indigo family) at the same lightness -- already 8.92:1
+   * against `--background` and 8.46:1 against `--card`/`--popover`, comfortably above the
    * ordinary 4.5:1 text floor (the enhanced 7:1 this preset's own design intent calls for is
    * also cleared, incidentally, but is not the floor this story enforces -- see above). */
   --accent-text: oklch(0.75 0.17 264);

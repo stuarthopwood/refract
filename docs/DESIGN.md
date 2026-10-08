@@ -35,7 +35,7 @@ Items marked **(default)** are my proposals that you have not reviewed yet.
 
 ## Look and feel
 
-- **Theme** (spec 007): dark only (Stuart, 2026-10-02: "I don't think I want a light mode"). Two built-in presets today, Dark and Dark (high contrast), picked from the Settings screen's Appearance section: every preset shown by name and swatch, the active one marked in text and colour, choosing a different entry repaints the whole app immediately while Settings is open, and only Save persists the choice -- Cancel, Esc, or leaving Settings reverts to whichever theme was active before. No OS light/dark follow, since there is nothing to follow between all-dark presets.
+- **Theme** (spec 007): dark only (Stuart, 2026-10-02: "I don't think I want a light mode"). Three built-in presets today, Dark, Dark (high contrast), and Obsidian (#550, theme foundation palette v2 -- the mock's own tinted-slate canvas, additive beside Dark; a soft decorative `--divider` token and a stronger `--border` control edge, per the #474 grill), picked from the Settings screen's Appearance section: every preset shown by name and swatch, the active one marked in text and colour, choosing a different entry repaints the whole app immediately while Settings is open, and only Save persists the choice -- Cancel, Esc, or leaving Settings reverts to whichever theme was active before. No OS light/dark follow, since there is nothing to follow between all-dark presets.
 - **Density**: medium. Neither terminal-tight nor roomy chat-app.
 - **Fonts**: two independent, user-customisable settings.
   - **UI font** for the app chrome.
@@ -132,7 +132,7 @@ Send and Stop each name their chord in a tooltip on hover and keyboard focus, as
 ## Settings in the first build
 
 - Approval mode (a pill above the message box, spec 001 T098; no longer on the status bar).
-- Theme: shipped (spec 007) -- Appearance section, Dark / Dark (high contrast) presets, live preview. UI font, code font (family, ligatures, size): wanted, not yet built; tracked as issue #4.
+- Theme: shipped (spec 007) -- Appearance section, Dark / Dark (high contrast) / Obsidian presets (#550), live preview. UI font, code font (family, ligatures, size): wanted, not yet built; tracked as issue #4.
 - Background watermark: shipped (spec 012) -- Appearance section, a switch below the theme picker with a live preview; on by default, applies immediately with no restart.
 
 ## Confirmed in implementation
