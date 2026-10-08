@@ -92,11 +92,17 @@ const CLEAN_RESULT: TerminationDetectionResult = { terminatedUnexpectedly: false
  * `terminatedUnexpectedly` (`SessionManager.summaries()` twice, `ipc/util.ts`'s `buildSnapshot`,
  * and #509's own `attachSnapshotCore`/`resumeSessionCore`) and had already drifted between them
  * (some synthesised their own `{ reason: { kind: 'clean' } }` result, others did not). One
- * shared implementation every call site now routes through instead. */
+ * shared implementation every call site now routes through instead. `detect` defaults to the
+ * real `detectUnexpectedTermination` for callers with nothing to inject (`summaries()`,
+ * `buildSnapshot`, both already covered by `vi.mock`-ing the module in their own tests);
+ * `attachSnapshotCore`/`resumeSessionCore` pass their own injected `deps.detectUnexpectedTermination`
+ * explicitly instead, so their existing dependency-injection tests keep controlling this exact
+ * call without this shared helper silently bypassing the fake and hitting the real module. */
 export async function resolveTermination(
   session: Pick<Session, 'currentConversation' | 'stoppedOnRequestConversation' | 'stoppedOnRequestAtSize'>,
   stoppedOnRequest: boolean,
+  detect: (file: string | null) => Promise<TerminationDetectionResult> = detectUnexpectedTermination,
 ): Promise<TerminationDetectionResult> {
   if (stoppedOnRequest || (await isStoppedOnRequestMarkerValid(session))) return CLEAN_RESULT;
-  return detectUnexpectedTermination(session.currentConversation);
+  return detect(session.currentConversation);
 }

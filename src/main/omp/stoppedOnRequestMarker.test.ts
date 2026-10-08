@@ -8,13 +8,14 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { RegistryStore } from '../store/registry';
 import type { Session } from '../../shared/model';
 import {
   clearStoppedOnRequestMarker,
   isStoppedOnRequestMarkerValid,
   recordStoppedOnRequestMarker,
+  resolveTermination,
 } from './stoppedOnRequestMarker';
 
 function makeSession(overrides: Partial<Session> = {}): Session {
@@ -192,5 +193,37 @@ describe('isStoppedOnRequestMarkerValid', () => {
     const conversation = path.join(os.tmpdir(), `refract-marker-gone-${randomUUID()}.jsonl`);
     const session = makeSession({ currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: 0 });
     expect(await isStoppedOnRequestMarkerValid(session)).toBe(false);
+  });
+});
+
+// Quality-gate fix (cycle 5, 2026-10-08, DRY): the shared "requested stop (flag or marker) ->
+// clean, else read the tail" rule every call site now routes through.
+describe('resolveTermination', () => {
+  it('returns clean without calling detect when stoppedOnRequest is true', async () => {
+    const detect = vi.fn(async () => ({ terminatedUnexpectedly: true, reason: { kind: 'unmatched-tool' as const }, pendingToolNames: ['bash'] }));
+    const session = makeSession({ currentConversation: 'C:/x.jsonl' });
+    const result = await resolveTermination(session, true, detect);
+    expect(result).toEqual({ terminatedUnexpectedly: false, reason: { kind: 'clean' }, pendingToolNames: [] });
+    expect(detect).not.toHaveBeenCalled();
+  });
+
+  it('returns clean without calling detect when the persisted marker is valid', async () => {
+    const conversation = await freshConversation();
+    const { size } = await fs.stat(conversation);
+    const detect = vi.fn(async () => ({ terminatedUnexpectedly: true, reason: { kind: 'unmatched-tool' as const }, pendingToolNames: ['bash'] }));
+    const session = makeSession({ currentConversation: conversation, stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: size });
+    const result = await resolveTermination(session, false, detect);
+    expect(result).toEqual({ terminatedUnexpectedly: false, reason: { kind: 'clean' }, pendingToolNames: [] });
+    expect(detect).not.toHaveBeenCalled();
+  });
+
+  it('calls the injected detect (not the real module) when neither the flag nor the marker apply', async () => {
+    const conversation = await freshConversation();
+    const CRASHED = { terminatedUnexpectedly: true, reason: { kind: 'unmatched-tool' as const }, pendingToolNames: ['bash'] };
+    const detect = vi.fn(async () => CRASHED);
+    const session = makeSession({ currentConversation: conversation });
+    const result = await resolveTermination(session, false, detect);
+    expect(result).toBe(CRASHED);
+    expect(detect).toHaveBeenCalledWith(conversation);
   });
 });
