@@ -20,7 +20,7 @@ const root = path.resolve(process.cwd(), process.argv[2] ?? path.join(repoRoot, 
 // introducing change (PLAN.md row A3 named only 4 files; these 4 more were found by the same
 // repo-wide scan but are out of that row's scope). Tracked here, not silently ignored, so this
 // guard still catches any NEW instance of the bug without re-litigating these on every run.
-// Follow-up: fix these and remove the entries.
+// Follow-up: fix these and remove the entries (tracked in #593).
 const ALLOWED_FILES = new Set([
   'src/shared/mermaidTheme.ts',
   'src/renderer/state/theme-store.ts',
