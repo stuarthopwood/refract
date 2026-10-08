@@ -16,6 +16,7 @@ import { diffStat } from '../git/diffStat';
 import { addWorktree, branchExists, deleteCheck, generateName, listBranches, recreateWorktree, removeWorktree } from '../git/worktrees';
 import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
+import { detectUnexpectedTermination } from '../omp/terminationDetection';
 import type { SessionManager } from '../SessionManager';
 import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util';
 
@@ -132,9 +133,15 @@ export function registerSessions(manager: SessionManager): void {
    * here (unchanged; T043 owns that state's dedicated Recreate/Archive/Delete actions, not this
    * gate). `agent-exited` and `start-failed` must NOT auto-start (FR-034): the crashed/failed
    * agent stays visibly stopped, with its `stopReason`/`stopDetail` (including the stderr tail),
-   * until the user explicitly asks `sessions.recover`. */
-  function canAutoStart(stopReason: SessionRuntimeView['stopReason']): boolean {
-    return stopReason === undefined || stopReason === 'not-started' || stopReason === 'worktree-missing';
+   * until the user explicitly asks `sessions.recover`. Issue #509 (PLAN.md row A2g) requirement 6
+   * ("normal resume stays as it is ... no automatic prompt") also excludes a `not-started`
+   * Session whose Conversation tail shows it died mid-turn (issue #510's `terminatedUnexpectedly`):
+   * without this, opening it would silently auto-start and lose the chance to Resume with the
+   * default instruction before the banner (and its Resume button) ever had a moment to show. */
+  function canAutoStart(stopReason: SessionRuntimeView['stopReason'], terminatedUnexpectedly: boolean): boolean {
+    if (stopReason === 'agent-exited' || stopReason === 'start-failed') return false;
+    if ((stopReason === undefined || stopReason === 'not-started') && terminatedUnexpectedly) return false;
+    return true;
   }
 
   /** Shared by `sessions.open` and `sessions.recover`: both return the resulting snapshot, never
@@ -155,13 +162,16 @@ export function registerSessions(manager: SessionManager): void {
     // start) while the renderer's own visible-Session state did not flip until this whole IPC
     // round-trip returned: main and the renderer disagreed about which Session was visible for
     // the entire cold start (bug report point 5).
-    if (agent.runtimeSnapshot.status === 'stopped' && (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason))) {
-      await agent.start().catch(() => undefined);
-      // T062: `agent.start()` runs `syncFromState` against the registry before resolving
-      // (`lastModel`/`lastThinkingLevel`, `sessionDir`, ...), so the row the renderer already
-      // cached from a previous `sessions.list()` is now stale; tell it to re-fetch, the same way
-      // every other Session-row-affecting mutation in this file already does.
-      manager.notifyListChanged();
+    if (agent.runtimeSnapshot.status === 'stopped') {
+      const terminatedUnexpectedly = (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly;
+      if (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason, terminatedUnexpectedly)) {
+        await agent.start().catch(() => undefined);
+        // T062: `agent.start()` runs `syncFromState` against the registry before resolving
+        // (`lastModel`/`lastThinkingLevel`, `sessionDir`, ...), so the row the renderer already
+        // cached from a previous `sessions.list()` is now stale; tell it to re-fetch, the same way
+        // every other Session-row-affecting mutation in this file already does.
+        manager.notifyListChanged();
+      }
     }
     const refreshed = manager.registry.getSession(id) ?? session;
     return { ok: true, value: await buildSnapshot(agent, refreshed) };

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -35,6 +35,7 @@ import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
 import { useWorktreeActions } from './useWorktreeActions'
+import { canResumeSession, resumeSession } from '@/features/chat/resume'
 
 function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
@@ -65,6 +66,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const { copyPath, reveal } = useWorktreeActions(session)
   const worktreeMissing = session.stopReason === 'worktree-missing'
   const rowRef = useRef<HTMLLIElement>(null)
@@ -112,6 +114,18 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   function startRenaming(): void {
     setDraftName(session.name)
     setRenaming(true)
+  }
+
+  // Issue #509 (PLAN.md row A2g): icon-only, row-level Resume -- recovers the agent and sends the
+  // default resume instruction as a real turn (`resumeSession`, shared with ChatPane's own Resume
+  // button in the stop banner). Idempotent: disabled for the duration of the call so a double
+  // click (or a click from both the row and an open ChatPane's banner at once) cannot send the
+  // instruction twice.
+  async function handleResume(): Promise<void> {
+    setResuming(true)
+    const result = await resumeSession(session.id)
+    setResuming(false)
+    if (!result.ok) notify(result.error)
   }
 
   async function commitRename(): Promise<void> {
@@ -300,6 +314,22 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   {session.unread && <span className="sr-only">Unread</span>}
                 </button>
               </SessionDetailsCard>
+            )}
+            {canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Resume ${session.name} after unexpected stop`}
+                    disabled={resuming}
+                    onClick={() => void handleResume()}
+                  >
+                    <RotateCwIcon aria-hidden className={cn('size-3.5', resuming && 'animate-spin')} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Resume after unexpected stop. Restarts the agent and sends a resume instruction.</TooltipContent>
+              </Tooltip>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

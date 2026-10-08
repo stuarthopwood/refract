@@ -23,6 +23,8 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import { DEFAULT_RESUME_INSTRUCTION } from '../../../shared/model'
+import { canResumeSession, resumeSession } from './resume'
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -121,6 +123,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   const [recoveringId, setRecoveringId] = useState<string | null>(null)
   const [startingNewId, setStartingNewId] = useState<string | null>(null)
+  const [resumingId, setResumingId] = useState<string | null>(null)
   // Quality-gate remediation (code-reviewer, round 2, High): removing `key={frontSessionId}`
   // from App.tsx's single-pane `ChatPane` (restoring reclaim-focus-on-switch, a separate fix
   // above) let this SAME instance swap `sessionId` in place instead of remounting, including in
@@ -306,6 +309,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
 
   const recovering = recoveringId === sessionId
   const startingNew = startingNewId === sessionId
+  const resuming = resumingId === sessionId
   // Spec 005 (research.md Decision 4): `stopInfo` stays `{}` for a pristine pane by design (its
   // snapshot-fetch effect is skipped) -- MessageInput's own notStarted/disabled logic needs an
   // EXPLICIT 'not-started' stopReason, not undefined, so derive it from the Session's own
@@ -379,6 +383,40 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // The banner (and its focused Recover/Retry button) unmounts once the snapshot clears the
     // stop reason, dropping focus to <body>. Waits one frame for the fresh content (textarea or
     // a still-stopped banner) to mount before reclaiming focus.
+    requestAnimationFrame(maybeRestoreFocus)
+  }
+
+  // Issue #509 (PLAN.md row A2g): recovers the agent AND sends the default resume instruction as
+  // a real turn (`resumeSession`, shared with the session-list row's own Resume button). Mirrors
+  // `handleRecover`'s focus-restore discipline exactly; the only difference is the shared helper
+  // also sends the turn, so a successful result still carries the post-recover snapshot (from
+  // before that turn settles) for `stopInfo`.
+  async function handleResume() {
+    const resumingFor = sessionId
+    const focusedAtStart = document.activeElement
+    const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
+    setResumingId(resumingFor)
+    const result = await resumeSession(resumingFor)
+    setResumingId(id => (id === resumingFor ? null : id))
+    const maybeRestoreFocus = () => {
+      if (!hadFocus || sessionIdRef.current !== resumingFor) return
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (!stranded && active !== focusedAtStart) return
+      focusPaneContent(chatPaneRef.current)
+    }
+    if (!result.ok) {
+      notify(result.error)
+      requestAnimationFrame(maybeRestoreFocus)
+      return
+    }
+    if (sessionIdRef.current === resumingFor) {
+      setStopInfo({
+        reason: result.value.runtime.stopReason,
+        detail: result.value.runtime.stopDetail,
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly
+      })
+    }
     requestAnimationFrame(maybeRestoreFocus)
   }
 
@@ -503,7 +541,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         role="status"
         className={cn(
           'flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground',
-          !isOpening && !recovering && !startingNew && 'sr-only'
+          !isOpening && !recovering && !startingNew && !resuming && 'sr-only'
         )}
       >
         {isOpening && (
@@ -517,13 +555,19 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
             its "Retrying…"/"Starting…" text announced to nobody -- a disabled element is pulled
             out of the accessibility tree. Mirrors that same busy text into this already-`role=
             "status"` region instead of adding a second live region. */}
-        {!isOpening && recovering && (
+        {!isOpening && resuming && (
+          <>
+            <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
+            Resuming…
+          </>
+        )}
+        {!isOpening && !resuming && recovering && (
           <>
             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
             Retrying…
           </>
         )}
-        {!isOpening && !recovering && startingNew && (
+        {!isOpening && !resuming && !recovering && startingNew && (
           <>
             <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-state-working" />
             Starting new conversation…
@@ -545,16 +589,28 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                   : ''}
               </AlertDescription>
             )}
-            {effectiveStopReason === 'agent-exited' && (
+            {canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly) && (
               <AlertAction>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={recovering || startingNew}
-                  onClick={() => void handleRecover()}
-                >
-                  {recovering ? 'Retrying…' : 'Recover'}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={recovering || startingNew || resuming}
+                    onClick={() => void handleResume()}
+                  >
+                    {resuming ? 'Resuming…' : 'Resume'}
+                  </Button>
+                  {effectiveStopReason === 'agent-exited' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={recovering || startingNew || resuming}
+                      onClick={() => void handleRecover()}
+                    >
+                      {recovering ? 'Retrying…' : 'Recover'}
+                    </Button>
+                  )}
+                </div>
               </AlertAction>
             )}
             {effectiveStopReason === 'start-failed' && (
