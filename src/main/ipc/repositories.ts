@@ -14,6 +14,7 @@ import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
 import { REPOSITORY_HAS_SESSIONS_MESSAGE } from '../store/registry';
+import { resolveRepositoryName, validateRepositoryName } from './repositoryName';
 
 /** `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
  * checkout, falling back to the Windows account name when git has none configured; cached per
@@ -71,6 +72,25 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       await manager.registry.addRepository(repository);
       manager.notifyListChanged();
       return { ok: true, value: repository };
+    } catch (err) {
+      return mapStoreThrown(err);
+    }
+  });
+
+  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_RENAME, async (_event, id: unknown, name: unknown) => {
+    if (typeof id !== 'string' || typeof name !== 'string') {
+      return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_RENAME} expects (id, name) strings`);
+    }
+    const repository = manager.registry.getRepository(id);
+    if (!repository) return notFound(`Repository not found: ${id}`);
+    const trimmed = name.trim();
+    const validationError = validateRepositoryName(trimmed);
+    if (validationError) return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_RENAME} ${validationError}`);
+    const nextName = resolveRepositoryName(trimmed, path.basename(repository.path));
+    try {
+      const updated = await manager.registry.updateRepository(id, { name: nextName });
+      manager.notifyListChanged();
+      return { ok: true, value: updated };
     } catch (err) {
       return mapStoreThrown(err);
     }

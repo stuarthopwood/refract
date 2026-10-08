@@ -47,6 +47,20 @@ export class RegistryStore {
     await writeJsonFile(this.file, this.data)
   }
 
+  /** Issue #480: display-name-only edit (and any future non-structural field). No uniqueness
+   * check on `name` -- two repositories may share a display name (the path distinguishes them in
+   * the header tooltip and details card). Never touches `path`, `defaultBranch`, or anything a
+   * Session points at. */
+  async updateRepository(id: string, patch: Partial<Repository>): Promise<Repository> {
+    const index = this.data.repositories.findIndex((r) => r.id === id)
+    if (index === -1) throw new RegistryError('not-found', `Repository not found: ${id}`)
+    const current = this.data.repositories[index]!
+    const next: Repository = { ...current, ...patch, id: current.id }
+    this.data.repositories[index] = next
+    await writeJsonFile(this.file, this.data)
+    return next
+  }
+
   async removeRepository(id: string): Promise<void> {
     if (!this.data.repositories.some((r) => r.id === id)) {
       throw new RegistryError('not-found', `Repository not found: ${id}`)

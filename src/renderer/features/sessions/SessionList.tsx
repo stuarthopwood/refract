@@ -346,6 +346,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
 
 function RepositoryGroup({ repository, sessions }: { repository: Repository; sessions: SessionSummary[] }) {
   const createSession = useSessionsStore((state) => state.create)
+  const renameRepository = useRepositoriesStore((state) => state.rename)
   // Per-repository in-flight guard: the ref blocks a second click before React re-renders (a
   // double-click), the state drives aria-disabled and the spinner. aria-disabled, not disabled,
   // so keyboard focus stays on the button.
@@ -353,6 +354,14 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   const [creating, setCreating] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
+  // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
+  // row's own rename (`SessionRow` above) -- the model the issue names to copy.
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState(repository.name)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const restoreFocusRef = useRef(false)
+  const renameRequestedRef = useRef(false)
 
   async function handleQuickCreate(): Promise<void> {
     if (creatingRef.current) return
@@ -367,16 +376,79 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
     }
   }
 
+  function startRenaming(): void {
+    setDraftName(repository.name)
+    setRenaming(true)
+  }
+
+  async function commitRename(): Promise<void> {
+    const name = draftName.trim()
+    setRenaming(false)
+    if (name !== repository.name) await renameRepository(repository.id, name)
+    else setDraftName(repository.name)
+  }
+
+  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    event.stopPropagation()
+    if (event.key === 'Enter') {
+      restoreFocusRef.current = true
+      void commitRename()
+    }
+    if (event.key === 'Escape') {
+      restoreFocusRef.current = true
+      setDraftName(repository.name)
+      setRenaming(false)
+    }
+  }
+
+  function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key === 'F2') {
+      event.preventDefault()
+      startRenaming()
+    }
+  }
+
+  useEffect(() => {
+    if (!renaming) return
+    const raf = requestAnimationFrame(() => renameInputRef.current?.focus())
+    return () => cancelAnimationFrame(raf)
+  }, [renaming])
+
+  useEffect(() => {
+    if (renaming) return
+    if (!restoreFocusRef.current) return
+    restoreFocusRef.current = false
+    triggerRef.current?.focus()
+  }, [renaming])
+
   const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   const archived = sessions.filter((session) => session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   return (
     <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
         <div className="group flex items-center gap-1 px-1">
-          <CollapsibleTrigger className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-            <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
-            <span className="truncate" title={repository.name}>{repository.name}</span>
-          </CollapsibleTrigger>
+          {renaming ? (
+            <input
+              ref={renameInputRef}
+              autoFocus
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+              onBlur={() => void commitRename()}
+              onKeyDown={handleNameKeyDown}
+              aria-label="Repository name"
+              className="min-w-0 flex-1 rounded border border-ring bg-transparent px-1.5 py-1 text-sm uppercase tracking-wide outline-none"
+            />
+          ) : (
+            <CollapsibleTrigger
+              ref={triggerRef}
+              onDoubleClick={startRenaming}
+              onKeyDown={handleTriggerKeyDown}
+              className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+              <span className="truncate" title={repository.name}>{repository.name}</span>
+            </CollapsibleTrigger>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -416,7 +488,22 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
                 <EllipsisVerticalIcon aria-hidden className="size-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent
+              onCloseAutoFocus={(event) => {
+                if (!renameRequestedRef.current) return
+                renameRequestedRef.current = false
+                event.preventDefault()
+              }}
+            >
+              <DropdownMenuItem
+                onSelect={() => {
+                  renameRequestedRef.current = true
+                  startRenaming()
+                }}
+              >
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
                 Remove repository…
               </DropdownMenuItem>
