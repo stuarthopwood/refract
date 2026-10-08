@@ -48,6 +48,14 @@ export interface ResumeSessionDeps {
 export async function resumeSessionCore(resumingIds: Set<string>, id: string, deps: ResumeSessionDeps): Promise<Result<SessionSnapshot>> {
   const session = deps.getSession(id);
   if (!session) return notFound(`Session not found: ${id}`);
+  // Quality-gate fix (cycle 5, 2026-10-08): refused before the tail read (never worth a 256 KiB
+  // file read for a Session Resume can never apply to) -- requirement 1 says "not for ...
+  // archived Sessions", but an archived Session whose agent crashed this run before being
+  // archived keeps `stopReason: 'agent-exited'` (archive's own `shutdown()` is a no-op with no
+  // live process), which this handler would otherwise accept and send a real turn into.
+  if (session.archivedAt) {
+    return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE['not-eligible'] } };
+  }
   const agent = deps.getOrCreateAgent(id);
   // Quality-gate fix (cycle 2, 2026-10-08): a requested stop is never eligible to resume (it is
   // never "terminated unexpectedly" by definition) -- see `SessionRuntime.stoppedOnRequest`'s
@@ -66,6 +74,7 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
     agent.runtimeSnapshot.status,
     agent.runtimeSnapshot.stopReason,
     detection.terminatedUnexpectedly,
+    !!session.archivedAt,
   );
   if (refusal) {
     return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE[refusal] } };

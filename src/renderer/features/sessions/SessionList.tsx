@@ -36,6 +36,7 @@ import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
 import { useWorktreeActions } from './useWorktreeActions'
 import { canResumeSession, resumeSession } from '@/features/chat/resume'
+import { describeStopReason } from '@/features/chat/ChatPane'
 
 function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
@@ -128,7 +129,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   // lock, so this ref only ever blocks this one button's own double click). aria-disabled, not
   // `disabled`, so keyboard focus stays on the button through the call (matches the
   // Quick-create button above).
-  const canResume = canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly)
+  const canResume = canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly, !!session.archivedAt)
 
   // Quality-gate fix (cycle 2, 2026-10-08): only moves focus when it is actually stranded
   // (<body>, null, or disconnected) -- previously this ran unconditionally the instant
@@ -153,14 +154,27 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     const result = await resumeSession(session.id)
     resumingRef.current = false
     setResuming(false)
-    if (!result.ok) {
+    // Quality-gate fix (cycle 5, 2026-10-08): `sessions.resume` can return `ok: true` with a
+    // STILL-stopped snapshot when the restart itself failed (e.g. start-failed) --
+    // `resumeSession.ts`'s own doc comment. Previously only `!result.ok` counted as a failure
+    // here, so this case announced nothing: the row's "Resuming X…" status text just went
+    // blank, `canResume` flipped false, the button disappeared, and focus returned to the open
+    // button with no indication anything had gone wrong (WCAG 4.1.3, 3.3.1). The banner's own
+    // `role="alert"` title change already announces this from the pane; the row had no
+    // equivalent.
+    const restartFailed = result.ok && result.value.runtime.status === 'stopped'
+    if (!result.ok || restartFailed) {
       // Quality-gate fix (cycle 2, 2026-10-08): a failed resume usually leaves `canResume` still
       // true (the Session is still eligible), so the effect above would never fire and clear
       // this itself -- left set, a LATER unrelated `canResume` transition (a resume from the
       // OTHER entry point, or the Session later settling for any other reason) would wrongly
       // yank focus back to this row even though this call's own failure never earned that.
       resumeFocusPendingRef.current = false
-      notify(result.error)
+      notify(
+        result.ok
+          ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
+          : result.error
+      )
     }
   }
 

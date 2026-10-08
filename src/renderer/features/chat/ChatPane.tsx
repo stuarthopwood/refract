@@ -365,6 +365,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // also sends the turn, so a successful result still carries the post-recover snapshot (from
   // before that turn settles) for `stopInfo`.
   async function handleResume() {
+    // Quality-gate fix (cycle 5, 2026-10-08): the button below now uses `aria-disabled` (not
+    // `disabled`, matching the session-list row's own Resume button) so it stays focusable
+    // during the call -- this guard is what actually stops a second concurrent invocation now
+    // that the DOM no longer does.
+    if (recovering || startingNew || resuming) return
     const resumingFor = sessionId
     const focusedAtStart = document.activeElement
     const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
@@ -567,7 +572,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                   : ''}
               </AlertDescription>
             )}
-            {canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly) && (
+            {canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly, !!session.archivedAt) && (
               // Quality-gate fix (2026-10-08): normal flow (`col-start-2 mt-2`, matching the
               // start-failed/worktree-missing banners below), not `AlertAction` -- `AlertAction`
               // is `absolute top-2 right-2` (alert.tsx), which covered the terminated-unexpectedly
@@ -590,7 +595,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={recovering || startingNew || resuming}
+                  aria-disabled={recovering || startingNew || resuming || undefined}
+                  className="aria-disabled:opacity-50"
                   onClick={() => void handleResume()}
                 >
                   {resuming ? 'Resuming…' : 'Resume'}

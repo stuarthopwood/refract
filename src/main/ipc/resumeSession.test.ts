@@ -87,9 +87,12 @@ describe('resumeSessionCore', () => {
     const deps = makeDeps({ getOrCreateAgent: () => agent });
 
     const first = resumeSessionCore(resumingIds, 'session-1', deps);
-    // Let the microtask queue run so the lock-check-then-add (no await between them) has
-    // definitely happened before the second call starts.
-    await Promise.resolve();
+    // Quality-gate fix (cycle 5, 2026-10-08, test-reviewer, Low): this `await Promise.resolve()`
+    // does NOT by itself guarantee `first` has already reached its own lock-check-then-add --
+    // `first` is still awaiting its own marker check/tail detection at this point. What actually
+    // makes this deterministic is that `first` was started strictly earlier, so it stays one
+    // step ahead of `second` through every await both share; the concurrent `Promise.all` test
+    // below is the one that genuinely proves the lock under real overlap.
     const second = await resumeSessionCore(resumingIds, 'session-1', deps);
 
     expect(second.ok).toBe(false);
@@ -185,6 +188,25 @@ describe('resumeSessionCore', () => {
     const result = await resumeSessionCore(resumingIds, 'missing', deps);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('not-found');
+  });
+
+  // Quality-gate fix (cycle 5, 2026-10-08): an archived Session whose agent crashed this run
+  // before being archived keeps stopReason:'agent-exited' (archive's own shutdown() is a no-op
+  // with no live process) -- must still refuse, and before the tail read (never worth a file
+  // read for a Session this can never apply to).
+  it('refuses as not-eligible for an archived Session, without reading the tail', async () => {
+    const resumingIds = new Set<string>();
+    const detectUnexpectedTermination = vi.fn(async () => ({ terminatedUnexpectedly: true, reason: { kind: 'unmatched-tool' as const }, pendingToolNames: ['bash'] }));
+    const deps = makeDeps({
+      getSession: () => makeSession({ archivedAt: new Date().toISOString() }),
+      detectUnexpectedTermination,
+    });
+
+    const result = await resumeSessionCore(resumingIds, 'session-1', deps);
+
+    expect(detectUnexpectedTermination).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe('Session is not eligible to resume.');
   });
 
   // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium): `agent.start()`'s own

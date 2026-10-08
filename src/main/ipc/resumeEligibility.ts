@@ -21,9 +21,10 @@ export function checkResumeEligible(
   status: SessionStatus,
   stopReason: SessionRuntimeView['stopReason'],
   terminatedUnexpectedly: boolean,
+  archived: boolean,
 ): ResumeRefusalCode | null {
   if (resumingIds.has(id)) return 'already-resuming';
   if (status !== 'stopped') return 'not-stopped';
-  if (!canResumeSession(status, stopReason, terminatedUnexpectedly)) return 'not-eligible';
+  if (!canResumeSession(status, stopReason, terminatedUnexpectedly, archived)) return 'not-eligible';
   return null;
 }

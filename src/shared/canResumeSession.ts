@@ -8,7 +8,10 @@
 // persisted (file-tail) `terminatedUnexpectedly` signal from #510 for a Session that died
 // mid-turn in an earlier run. Never for `worktree-missing` (its own dedicated Recreate/Archive/
 // Delete actions) or `start-failed` (explicitly out of scope until #449 is fully landed, not just
-// in `verify`).
+// in `verify`). Quality-gate fix (cycle 5, 2026-10-08): requirement 1 also says "not for ...
+// archived Sessions" -- an archived Session whose agent crashed this run before being archived
+// keeps `stopReason: 'agent-exited'` (archive's own `shutdown()` is a no-op with no live
+// process), which this function would otherwise show Resume for in the Archived list.
 import type { SessionStatus } from './model';
 import type { SessionRuntimeView } from './ipc';
 
@@ -16,8 +19,10 @@ export function canResumeSession(
   status: SessionStatus,
   stopReason: SessionRuntimeView['stopReason'],
   terminatedUnexpectedly: boolean | undefined,
+  archived: boolean,
 ): boolean {
   if (status !== 'stopped') return false;
+  if (archived) return false;
   if (stopReason === 'worktree-missing' || stopReason === 'start-failed') return false;
   return stopReason === 'agent-exited' || !!terminatedUnexpectedly;
 }
