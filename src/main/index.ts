@@ -3,7 +3,7 @@
 // never falls into that search order even indirectly (security fix, independent review).
 process.env['NoDefaultCurrentDirectoryInExePath'] = '1'
 
-import { app, BrowserWindow, Menu, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, session, shell } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -139,6 +139,12 @@ function currentTitleBarOverlay(): { color: string; symbolColor: string; height:
   return { ...THEMES[themeId].titleBarOverlay, height: TITLE_BAR_OVERLAY_HEIGHT }
 }
 
+// Issue #494: the on-disk icon Refract ships for an unpackaged run (`build/icon.ico`,
+// resolved relative to `out/main`). Dev-only -- see the `icon:`/`setIcon` comments below for why
+// -- and shared with `registerNotifications` (notifications.ts) so a notification's own icon
+// matches the window's.
+const WINDOW_ICON_PATH = join(__dirname, '../../build/icon.ico')
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -153,13 +159,14 @@ function createWindow(): void {
     // afterward by `theme.preview`/`theme.set`'s own `applyTitleBarOverlay` calls).
     titleBarStyle: 'hidden',
     titleBarOverlay: currentTitleBarOverlay(),
-    // The dev-time window icon: `build/icon.ico` resolves relative to `out/main`, so this path
-    // only exists when running unpackaged. Once spec 006's T006 adds electron-builder, it will
-    // embed this same build/icon.ico in the packaged exe's own resource instead, wired through
-    // electron-builder's config at packaging time, not through this `icon:` option. build/icon.ico
-    // already carries a bitmap per size, so Windows picks the right one for the taskbar/Alt-tab/
-    // title bar without re-scaling one image.
-    icon: join(__dirname, '../../build/icon.ico'),
+    // `WINDOW_ICON_PATH` (`build/icon.ico`, resolved relative to `out/main`) only exists on an
+    // unpackaged run: a packaged build never ships `build/` (spec 006 `electron-builder.yml`'s
+    // `files: out/**/*`), so this option is a no-op there -- the packaged exe's own icon resource,
+    // rcedit'd in by electron-builder's `win.icon` at packaging time (spec 006 T006), is what
+    // Windows actually shows for a packaged run, not this option. Safe either way: an Electron API
+    // that takes an image file path (this included) uses an empty, transparent image when the
+    // path does not resolve, so a missing `build/` here never throws, it just does nothing.
+    icon: WINDOW_ICON_PATH,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -168,6 +175,23 @@ function createWindow(): void {
     }
   })
   mainWindow = window
+
+  // Issue #494 (bug fix): setting the icon again here, explicitly, after the window exists,
+  // matches the issue's own fix direction ("test both together, since either alone may not be
+  // enough") -- in the unpackaged launch method (`pnpm build` then `electron.exe .`, confirmed
+  // live) Windows was resolving the taskbar/Alt-Tab/notification icon from the running
+  // `electron.exe`'s own resource, because `app.setAppUserModelId` (called below, before
+  // `createWindow()` runs here -- see the call site near the bottom of this file) used to pin
+  // the window's *identity* to that same executable; the constructor's `icon:` option above did
+  // not override that. Like that option, this only ever affects an unpackaged run: a packaged
+  // build's icon comes from the exe's own resource (spec 006), so `setIcon` here is a no-op
+  // there regardless -- guarded explicitly ([INFERENCE]: not observed in an actual packaged
+  // build, since spec 006 has not landed on `main` yet) so a packaged launch never pays for a
+  // `createFromPath` read of a file it already knows does not exist.
+  if (!app.isPackaged) {
+    const windowIcon = nativeImage.createFromPath(WINDOW_ICON_PATH)
+    if (!windowIcon.isEmpty()) window.setIcon(windowIcon)
+  }
 
   window.on('ready-to-show', () => {
     window.show()
@@ -272,15 +296,20 @@ if (!gotLock) {
     Menu.setApplicationMenu(appMenu)
 
     registerIpc(manager, getWindow, appMenu)
-    registerNotifications(manager, getWindow)
+    registerNotifications(manager, getWindow, WINDOW_ICON_PATH)
     startMemoryMonitor(manager, getWindow)
 
-    if (isDev) {
-      // Windows would otherwise group the dev binary under Electron's own shared
-      // AppUserModelID; pin it to the running executable so taskbar grouping and
-      // notifications are Refract's own, not electron.exe's.
-      app.setAppUserModelId(process.execPath)
-    }
+    // Issue #494 (bug fix, matching spec 006 T012's already-landed choice on `spec-006-impl`:
+    // unconditional, same `appId` as `electron-builder.yml` will use once packaged) -- the
+    // previous `process.execPath` pin (dev only) made Windows resolve the taskbar/Alt-Tab/
+    // notification icon from the *identity* (the running `electron.exe`, whose own resource is
+    // the Electron atom) rather than this window's own icon, even though `createWindow()` sets
+    // one. A fixed, Refract-specific id is resolved independently of which executable is
+    // currently running it, and unconditional (not `isDev`-gated) means a future packaged run
+    // keeps the exact same identity a dev run already established, so notifications, taskbar
+    // grouping and Apps & Features stay one identity across every upgrade, matching T012's intent
+    // even though packaging itself (spec 006) has not landed on `main` yet.
+    app.setAppUserModelId('com.stuarthopwood.refract')
 
     createWindow()
 
