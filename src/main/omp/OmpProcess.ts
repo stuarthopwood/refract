@@ -628,13 +628,24 @@ export class OmpProcess extends EventEmitter {
   private capTailLines(text: string, maxLength: number): string {
     if (text.length <= maxLength) return text
     const sliced = text.slice(-maxLength)
+    // Gate-fixes Low finding (cycle 9, raised independently by security/code/verification
+    // reviews): `.slice(-maxLength)` can land between the two halves of a UTF-16 surrogate pair
+    // (astral characters -- most emoji -- are two code units), leaving a lone low surrogate as
+    // the first character of a kept fragment; decoded alone that renders as U+FFFD. Dropped
+    // from both fragment-return paths below, which is where the cut can actually land; the
+    // line-after-newline path never needs this -- it always starts right after a literal ASCII
+    // `\n`, which can never be half of a surrogate pair.
+    const dropLoneLowSurrogate = (fragment: string): string => {
+      const code = fragment.charCodeAt(0)
+      return code >= 0xdc00 && code <= 0xdfff ? fragment.slice(1) : fragment
+    }
     // The cut landed exactly at the start of a line (the character just before it is a
     // newline): nothing partial was cut off, so the whole slice is already complete lines.
-    if (text[text.length - maxLength - 1] === '\n') return sliced
+    if (text[text.length - maxLength - 1] === '\n') return dropLoneLowSurrogate(sliced)
     const newlineIndex = sliced.indexOf('\n')
     // No newline in the slice at all, or the only one is the text's own trailing newline (no
     // complete line fits): keep the raw fragment rather than discarding it to `''`.
-    if (newlineIndex === -1 || newlineIndex === sliced.length - 1) return sliced
+    if (newlineIndex === -1 || newlineIndex === sliced.length - 1) return dropLoneLowSurrogate(sliced)
     return sliced.slice(newlineIndex + 1)
   }
 

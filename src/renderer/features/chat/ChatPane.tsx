@@ -65,6 +65,23 @@ export function describeStopReason(reason: StopReason, detail?: string): string 
   }
 }
 
+/** Gate-fixes a11y High finding (cycle 9): a focused element that the user can no longer
+ * interact with -- missing, `<body>` (the UA's own fallback once nothing is explicitly
+ * focused), disconnected from the document, OR disabled. Every one of this pane's
+ * stranded-focus checks used to test only the first three, which missed a real case: a Cancel
+ * that WINS during a mode-change `restart()` from `idle` sends two separate status events
+ * (`startProgress` cleared first, while `status` is still `idle`; `stopped`/`start-failed`
+ * moments later once `proc.stop()` finishes) -- the first moves focus onto the still-enabled
+ * textarea, which the SECOND event then disables. Chromium does not auto-blur a focused element
+ * when it becomes `disabled` (it stays `document.activeElement`, just inert), so a check that
+ * only looked for `<body>`/disconnected saw a perfectly normal-looking, connected element and
+ * left focus stuck on a control the user can no longer type into or tab away from. One shared
+ * definition here instead of several independently-drifting copies of the same three-part test.
+ */
+function isFocusStranded(active: Element | null): boolean {
+  return !active || active === document.body || !active.isConnected || (active instanceof HTMLElement && active.matches(':disabled'))
+}
+
 interface ChatPaneProps {
   sessionId: string
   /** Index into `useSplitStore`'s `paneSessionIds` (0 or 1); meaningless when a split is not
@@ -435,7 +452,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (!pending.hadFocus) return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
+      const stranded = isFocusStranded(active)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [showBanner, effectiveStopReason])
@@ -453,7 +470,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (!chatHadFocusRef.current) return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
+      const stranded = isFocusStranded(active)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [showBanner, effectiveStopReason])
@@ -499,18 +516,24 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // interactive-to-none transition fires on the FIRST one. Clearing or consuming the pending
     // record here (as cycle 2 did) left focus on whatever this effect restored to instead (the
     // textarea, briefly, before it goes disabled again), and the later `showBanner` effect then
-    // found nothing left to act on. Gate-fixes a11y Medium finding (cycle 8): only defers this
-    // way while `session?.status === 'stopped'` -- that two-event sequence (and the `showBanner`
-    // effect that owns it) only ever happens for a Session ending `stopped`. A mode-change
-    // `restart()` runs from `idle` and stays `idle` the whole time (`onExit` returns early when
-    // `restarting`), so a Cancel that loses the race to `ready` there NEVER reaches `showBanner`
-    // at all -- deferring to it unconditionally left focus stranded on `<body>` for the rest of
-    // the Session. In the non-stopped case this effect's own stranded-focus check below runs
-    // instead, same as if no Cancel had been pending.
+    // found nothing left to act on. Gate-fixes a11y Medium finding (cycle 8, corrected cycle 9):
+    // only defers this way while `session?.status === 'stopped'`. For a Session that was already
+    // `stopped` before this start began (every plain, non-restart start), status stays `stopped`
+    // throughout both events, so this always defers to the `showBanner` effect, exactly as
+    // before. For a mode-change `restart()` (running from `idle`), status stays `idle` through
+    // EVENT 1 (`startProgress` cleared) and only becomes `stopped` at EVENT 2
+    // (`stopped`/`start-failed`, once `proc.stop()` finishes) -- a winning Cancel on a restart
+    // DOES reach `stopped`/`start-failed` via `doRestart` -> `launch` -> `recordStartFailure`,
+    // the same as any other failed start; it is not exempt. At EVENT 1 (status still `idle`) the
+    // guard does not defer, so this effect's OWN stranded-focus check below runs instead and
+    // moves focus onto the still-enabled textarea; at EVENT 2 the `showBanner` effect then takes
+    // over and (via `isFocusStranded` now also treating a disabled element as stranded, gate-
+    // fixes a11y High finding cycle 9) rescues focus from that same textarea once it becomes
+    // disabled, onto the Retry/Recover button.
     if (cancelFocusPendingRef.current && session?.status === 'stopped') return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
+      const stranded = isFocusStranded(active)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [startProgress?.kind, showBanner, session?.status])
@@ -532,7 +555,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     if (!pending.hadFocus) return
     requestAnimationFrame(() => {
       const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
+      const stranded = isFocusStranded(active)
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [session?.status])
@@ -616,7 +639,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const maybeRestoreFocus = () => {
       if (!hadFocus || sessionIdRef.current !== recoveringFor) return
       const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
+      const stranded = isFocusStranded(active)
       if (!stranded && active !== focusedAtStart) return
       focusPaneContent(chatPaneRef.current)
     }
@@ -663,7 +686,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const maybeRestoreFocus = () => {
       if (!hadFocus || sessionIdRef.current !== resumingFor) return
       const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
+      const stranded = isFocusStranded(active)
       if (!stranded && active !== focusedAtStart) return
       focusPaneContent(chatPaneRef.current)
     }
@@ -720,7 +743,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const maybeRestoreFocus = () => {
       if (!hadFocus || sessionIdRef.current !== startingFor) return
       const active = document.activeElement
-      const stranded = !active || active === document.body || !active.isConnected
+      const stranded = isFocusStranded(active)
       if (!stranded && active !== focusedAtStart) return
       const pressed = startNewButtonRef.current
       if (pressed && pressed.isConnected && !pressed.disabled) {
@@ -794,7 +817,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     requestAnimationFrame(() => {
       const active = document.activeElement
       const stillOnOriginal = active === focusedAtStart
-      const stuck = !active || active === document.body || !active.isConnected
+      const stuck = isFocusStranded(active)
       if (stillOnOriginal || stuck) {
         cancelButtonRef.current?.focus()
       }
