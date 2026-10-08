@@ -3,7 +3,7 @@
 // never falls into that search order even indirectly (security fix, independent review).
 process.env['NoDefaultCurrentDirectoryInExePath'] = '1'
 
-import { app, BrowserWindow, Menu, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, session, shell } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -169,6 +169,16 @@ function createWindow(): void {
   })
   mainWindow = window
 
+  // Issue #494 (bug fix): the `icon:` constructor option above is the one that matters for a
+  // packaged build (electron-builder rewrites the exe's own resource at packaging time, spec
+  // 006 T006), but in this unpackaged launch method (`pnpm build` then `electron.exe .`,
+  // confirmed live) Windows was still resolving the taskbar/Alt-Tab/notification icon from the
+  // running `electron.exe`'s own resource instead, because `app.setAppUserModelId` above used to
+  // pin the window's *identity* to that same executable. Setting the icon explicitly here too,
+  // after the window exists, matches the issue's own fix direction ("test both together, since
+  // either alone may not be enough") and costs nothing when it is already correct.
+  window.setIcon(nativeImage.createFromPath(join(__dirname, '../../build/icon.ico')))
+
   window.on('ready-to-show', () => {
     window.show()
   })
@@ -275,12 +285,17 @@ if (!gotLock) {
     registerNotifications(manager, getWindow)
     startMemoryMonitor(manager, getWindow)
 
-    if (isDev) {
-      // Windows would otherwise group the dev binary under Electron's own shared
-      // AppUserModelID; pin it to the running executable so taskbar grouping and
-      // notifications are Refract's own, not electron.exe's.
-      app.setAppUserModelId(process.execPath)
-    }
+    // Issue #494 (bug fix, matching spec 006 T012's already-landed choice on `spec-006-impl`:
+    // unconditional, same `appId` as `electron-builder.yml` will use once packaged) -- the
+    // previous `process.execPath` pin (dev only) made Windows resolve the taskbar/Alt-Tab/
+    // notification icon from the *identity* (the running `electron.exe`, whose own resource is
+    // the Electron atom) rather than this window's own icon, even though `createWindow()` sets
+    // one. A fixed, Refract-specific id is resolved independently of which executable is
+    // currently running it, and unconditional (not `isDev`-gated) means a future packaged run
+    // keeps the exact same identity a dev run already established, so notifications, taskbar
+    // grouping and Apps & Features stay one identity across every upgrade, matching T012's intent
+    // even though packaging itself (spec 006) has not landed on `main` yet.
+    app.setAppUserModelId('com.stuarthopwood.refract')
 
     createWindow()
 

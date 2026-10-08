@@ -30,6 +30,8 @@ There is no packaged installer yet. After `pnpm build`, launch the built app dir
 node_modules/electron/dist/electron.exe .
 ```
 
+The taskbar, Alt+Tab and notifications show the Refract logo, not Electron's atom icon (issue #494); if an older taskbar entry is still pinned from before this fix, unpin and re-pin it once to clear Windows' icon cache.
+
 ## Where state lives
 
 Refract keeps no state in the repo. Everything is under Electron's `userData` directory, which `src/main/index.ts` pins to `%APPDATA%/pinion` (the folder keeps the app's former name, Pinion, so state from before the rename carries over). `pnpm dev` and built runs share it; starting Electron with `--user-data-dir=<dir>` overrides the pin, which gives an isolated instance with its own single-instance lock:
