@@ -85,13 +85,28 @@ interface QueuedChip {
   // Issue #540: carried through from `queue_update` so Send now/Remove act on the chip's real
   // queue instead of a hard-coded one -- a steering chip was previously matched against
   // `followUp` only, so it could never be removed and the issue's reported "several clicks"
-  // symptom was, for a steering chip, actually "never works at all".
+  // symptom was, for a steering chip, actually "never works at all". Gate fix (Medium, #591
+  // cycle 2): a `pending` chip's `queue` now flips to `'steering'` the instant its own
+  // reservation is `confirmed` (see `Reservation` below) rather than waiting for a real
+  // `queue_update` -- OMP has already moved the message server-side the moment `sendNow`
+  // resolves `promoted: true`, so Remove on it must target `'steering'` immediately, not the
+  // stale `'followUp'` it was dispatched from.
   queue: QueueKind
-  // Issue #540 (High gate fix, #591): true for a follow-up chip whose Send now has already been
-  // dispatched but not yet confirmed by OMP's own `queue_update` -- rendered exactly like a real
-  // steering chip (no Send now button), but `queue` stays `'followUp'` so Remove still targets
-  // the chip's REAL backend queue rather than the optimistic display state.
+  // Issue #540 (High gate fix, #591): true for a follow-up chip with an active reservation (see
+  // `Reservation` below) -- rendered exactly like a real steering chip (no Send now button) in
+  // its ORIGINAL follow-up list position, never appended after the real steering chips.
   pending: boolean
+}
+
+// Issue #540 (High gate fix, #591 cycle 2): one reservation per CHIP, keyed by that chip's own
+// stable `key` -- replaces the old per-TEXT occurrence count, which stranded a duplicate-text
+// follow-up whenever the shared count/snapshot bookkeeping went stale while idle (see the
+// cleanup effect below). `confirmed` is set the moment `sendNow` itself resolves
+// `promoted: true` (ahead of the real `queue_update`), driving the chip's own `queue` field
+// (Medium gate fix above) independently of when the reservation is actually released.
+interface Reservation {
+  text: string
+  confirmed: boolean
 }
 
 interface MessageInputProps {
@@ -116,17 +131,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const modelLabel = formatModelLabel(modelSession ?? {})
   const thinkingLabel = formatThinkingLevelLabel(modelSession ?? {})
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
-  // Issue #540: `optimisticPromotions` holds, per follow-up TEXT, how many of its occurrences
-  // have already been sent via "Send now" but not yet confirmed by OMP's own `queue_update` --
-  // tracked as an occurrence COUNT rather than a flat list of strings (High gate fix, #591): two
-  // queued messages with identical text used to be indistinguishable, so sending one hid BOTH
-  // from the follow-up list, and the cleanup effect below could never tell them apart either,
-  // permanently stranding the second one. `inFlightChips` single-flights Send now/Remove per
+  // Issue #540: `optimisticPromotions` holds one `Reservation` per CHIP, keyed by that chip's
+  // own stable `key` (High gate fix, #591 cycle 2) -- replaces the old per-TEXT occurrence count,
+  // which stranded a duplicate-text follow-up whenever the count/snapshot bookkeeping went stale
+  // while idle (see the cleanup effect below). `inFlightChips` single-flights Send now/Remove per
   // chip (Medium gate fix, #591: keyed by the chip's own stable identity, not its text, so a
   // Remove in flight on one chip never shows a busy "Sending..."/"Removing..." state on an
   // unrelated chip that merely shares the same text), recording WHICH action is in flight so each
   // button only ever announces its own operation.
-  const [optimisticPromotions, setOptimisticPromotions] = useState<Map<string, number>>(new Map())
+  const [optimisticPromotions, setOptimisticPromotions] = useState<ReadonlyMap<string, Reservation>>(new Map())
   const [inFlightChips, setInFlightChips] = useState<ReadonlyMap<string, 'send' | 'remove'>>(new Map())
   // Issue #540 (Medium gate fix, #591): stable per-occurrence chip identity, persisted across
   // renders -- see the `chips` memo below for the full assignment rule. Keying chips by which
@@ -136,41 +149,57 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const chipIdPoolRef = useRef<Map<string, string[]>>(new Map())
   const chipIdSeqRef = useRef(0)
   // Tracks, per text, how many occurrences had already landed in `steering` the last time this
-  // ran -- lets the cleanup effect below release exactly one optimistic reservation per NEWLY
-  // confirmed promotion, never more, so a second still-pending duplicate is never swept away
-  // alongside the one that actually resolved.
+  // ran -- lets the cleanup effect below release exactly one reservation per NEWLY confirmed
+  // promotion for that text, never more, so a second still-pending duplicate is never swept away
+  // alongside the one that actually resolved. Updated unconditionally in the effect BODY below
+  // on every run (High gate fix, #591 cycle 2) -- the previous version gated this update behind
+  // an early return inside the `setOptimisticPromotions` updater (`if (prev.size === 0) return
+  // prev`), so the snapshot went stale whenever there were no reservations in flight, and a
+  // LATER reservation's delta math then came out wrong against that stale baseline.
   const lastSteeringCountRef = useRef<Map<string, number>>(new Map())
-  // Garbage-collects an optimistic reservation once the real queue confirms it one way or another
-  // (promoted into `steering`, or the follow-up occurrence left the queue by any other route --
-  // removed, delivered, etc.) -- occurrence-counted (High gate fix, #591) rather than a flat
-  // `includes` check, so hiding one "continue" never also hides a second queued "continue".
+  // Garbage-collects a reservation once the real queue confirms it one way or another (promoted
+  // into `steering`, or the follow-up occurrence left the queue by any other route -- removed,
+  // delivered, etc.). Reservations sharing the same text are released in first-reserved-first-
+  // released (Map insertion) order, matching OMP's own FIFO "first matching follow-up" promote
+  // semantics (FINDINGS item 46) -- so when two duplicates are both reserved, the one clicked
+  // first is the one attributed to the first newly confirmed `steering` slot, never the other.
+  // The `setOptimisticPromotions` updater itself stays pure (no ref mutation inside it): React
+  // StrictMode double-invokes state updaters in dev, so mutating `lastSteeringCountRef` in there
+  // (as the previous version did) could silently double-apply the snapshot (prior Low finding).
   useEffect(() => {
+    const steeringCounts = new Map<string, number>()
+    for (const t of steering) steeringCounts.set(t, (steeringCounts.get(t) ?? 0) + 1)
+    const followUpCounts = new Map<string, number>()
+    for (const t of followUp) followUpCounts.set(t, (followUpCounts.get(t) ?? 0) + 1)
+
     setOptimisticPromotions((prev) => {
       if (prev.size === 0) return prev
-      const steeringCounts = new Map<string, number>()
-      for (const t of steering) steeringCounts.set(t, (steeringCounts.get(t) ?? 0) + 1)
-      let changed = false
-      const next = new Map(prev)
-      for (const [text, count] of prev) {
+      const keysByText = new Map<string, string[]>()
+      for (const [key, reservation] of prev) {
+        const keys = keysByText.get(reservation.text)
+        if (keys) keys.push(key)
+        else keysByText.set(reservation.text, [key])
+      }
+      const toRelease = new Set<string>()
+      for (const [text, keys] of keysByText) {
         const currentSteeringCount = steeringCounts.get(text) ?? 0
         const lastSteeringCount = lastSteeringCountRef.current.get(text) ?? 0
         const newlyConfirmed = Math.max(0, currentSteeringCount - lastSteeringCount)
-        const currentFollowUpCount = followUp.filter((t) => t === text).length
-        const overReserved = Math.max(0, count - currentFollowUpCount)
-        const release = Math.min(count, newlyConfirmed + overReserved)
-        if (release > 0) {
-          changed = true
-          const remaining = count - release
-          if (remaining <= 0) next.delete(text)
-          else next.set(text, remaining)
-        }
+        const currentFollowUpCount = followUpCounts.get(text) ?? 0
+        const overReserved = Math.max(0, keys.length - currentFollowUpCount)
+        const release = Math.min(keys.length, newlyConfirmed + overReserved)
+        for (let i = 0; i < release; i++) toRelease.add(keys[i]!)
       }
-      const allTexts = new Set<string>([...lastSteeringCountRef.current.keys(), ...steeringCounts.keys()])
-      const snapshot = new Map<string, number>()
-      for (const t of allTexts) snapshot.set(t, steeringCounts.get(t) ?? 0)
-      lastSteeringCountRef.current = snapshot
-      return changed ? next : prev
+      if (toRelease.size === 0) return prev
+      const next = new Map(prev)
+      for (const key of toRelease) next.delete(key)
+      return next
     })
+
+    const allTexts = new Set<string>([...lastSteeringCountRef.current.keys(), ...steeringCounts.keys()])
+    const snapshot = new Map<string, number>()
+    for (const t of allTexts) snapshot.set(t, steeringCounts.get(t) ?? 0)
+    lastSteeringCountRef.current = snapshot
   }, [followUp, steering])
   const commands = useCommandsStore((s) => s.bySession[sessionId] ?? EMPTY_COMMANDS)
   // Spec 010: draft text lives in draft-store.ts, keyed by sessionId, instead of local useState,
@@ -301,16 +330,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // point at a row that no longer exists.
   const clampedSlashActiveIndex = slashMatches.length > 0 ? Math.min(slashActiveIndex, slashMatches.length - 1) : 0
 
-  // Issue #540 (High + Medium gate fixes, #591): one pass that (a) counts real follow-up/steering
-  // occurrences per text, (b) reconciles each text's stable id pool to match the real alive count
-  // (growing from the back for a newly queued duplicate, shrinking from the front -- oldest first,
-  // matching OMP's own FIFO "first matching follow-up" semantics -- when one leaves for any
-  // reason), then (c) splits each pool front-to-back as [already-steering][still-pending-
-  // optimistic][remaining displayed follow-up]. Because a pending reservation always hands its id
-  // off to the matching newly confirmed steering slot in that same front segment, an id assigned
-  // while a chip is mid-flight is the SAME id it keeps once OMP's `queue_update` actually confirms
-  // the promotion -- the chip's `key` below never changes across that transition, fixing the lost-
-  // focus bug, and a duplicate-text occurrence that was never touched keeps its own id throughout.
+  // Issue #540 (High + Medium gate fixes, #591, redesigned #591 cycle 2): one pass that (a)
+  // counts real follow-up/steering occurrences per text, (b) reconciles each text's stable id
+  // pool to match the real alive count (growing from the back for a newly queued duplicate,
+  // shrinking from the front -- oldest first, matching OMP's own FIFO "first matching follow-up"
+  // semantics -- when one leaves for any reason), then (c) for each occurrence looks up its own
+  // reservation by the SAME id the occurrence would otherwise get, directly -- never via a
+  // separate per-text pending COUNT. A follow-up occurrence with an active reservation renders
+  // inline, in its ORIGINAL follow-up position (High gate fix, #591 cycle 2: previously every
+  // pending chip was pulled out and appended after all steering chips, shifting the whole row),
+  // with `pending: true` and `queue` reflecting whether its own reservation is `confirmed` yet
+  // (Medium gate fix). Because ids are never reordered within a text's pool (only grown at the
+  // back or shrunk from the front), the same id a reservation was made against keeps meaning the
+  // same occurrence right up until OMP's own `queue_update` moves it into the steering segment --
+  // the chip's `key` below never changes across that transition, fixing the lost-focus bug.
   const chips = useMemo<QueuedChip[]>(() => {
     const followUpByText = new Map<string, number>()
     for (const t of followUp) followUpByText.set(t, (followUpByText.get(t) ?? 0) + 1)
@@ -319,11 +352,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const allTexts = new Set<string>([...followUpByText.keys(), ...steeringByText.keys()])
 
     const pool = chipIdPoolRef.current
-    const splits = new Map<string, { steeringIds: string[]; pendingIds: string[]; remainingFollowUpIds: string[] }>()
+    const idsByText = new Map<string, string[]>()
     for (const text of allTexts) {
       const followUpCount = followUpByText.get(text) ?? 0
       const steeringCount = steeringByText.get(text) ?? 0
-      const pendingCount = Math.min(optimisticPromotions.get(text) ?? 0, followUpCount)
       const aliveCount = followUpCount + steeringCount
       let ids = pool.get(text) ?? []
       if (ids.length < aliveCount) {
@@ -333,11 +365,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         ids = ids.slice(ids.length - aliveCount)
       }
       pool.set(text, ids)
-      splits.set(text, {
-        steeringIds: ids.slice(0, steeringCount),
-        pendingIds: ids.slice(steeringCount, steeringCount + pendingCount),
-        remainingFollowUpIds: ids.slice(steeringCount + pendingCount)
-      })
+      idsByText.set(text, ids)
     }
     for (const text of pool.keys()) {
       if (!allTexts.has(text)) pool.delete(text)
@@ -346,23 +374,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     const result: QueuedChip[] = []
     const followUpSeen = new Map<string, number>()
     for (const text of followUp) {
-      const split = splits.get(text)!
+      const ids = idsByText.get(text)!
+      const steeringCount = steeringByText.get(text) ?? 0
       const seen = followUpSeen.get(text) ?? 0
       followUpSeen.set(text, seen + 1)
-      if (seen < split.pendingIds.length) continue // hidden: shown as a pending chip below instead
-      result.push({ key: split.remainingFollowUpIds[seen - split.pendingIds.length]!, text, queue: 'followUp', pending: false })
+      const key = ids[steeringCount + seen]!
+      const reservation = optimisticPromotions.get(key)
+      result.push({ key, text, queue: reservation?.confirmed ? 'steering' : 'followUp', pending: reservation != null })
     }
     const steeringSeen = new Map<string, number>()
     for (const text of steering) {
-      const split = splits.get(text)!
+      const ids = idsByText.get(text)!
       const seen = steeringSeen.get(text) ?? 0
       steeringSeen.set(text, seen + 1)
-      result.push({ key: split.steeringIds[seen]!, text, queue: 'steering', pending: false })
-    }
-    for (const [text, split] of splits) {
-      for (const key of split.pendingIds) {
-        result.push({ key, text, queue: 'followUp', pending: true })
-      }
+      result.push({ key: ids[seen]!, text, queue: 'steering', pending: false })
     }
     return result
   }, [followUp, steering, optimisticPromotions])
@@ -743,6 +768,32 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     })
   }
 
+  // Issue #540 (High gate fix, #591 cycle 2): guards every POST-AWAIT focus restore below (WCAG
+  // 3.2.2) -- true only when the user hasn't deliberately moved focus elsewhere while the RPC was
+  // in flight: focus is still on `<body>` (the pre-fix default, or a transient gap), `null`,
+  // disconnected from the document (the focused element's own row was just removed), or still
+  // somewhere inside the queued-chips list (on this chip, or a sibling the user tabbed to). A
+  // focus already moved to the composer textarea or anywhere outside the chip list is left alone.
+  function shouldRestoreFocus(): boolean {
+    const active = document.activeElement
+    if (active == null || active === document.body || !active.isConnected) return true
+    return chipListRef.current?.contains(active) ?? false
+  }
+
+  // Issue #540 (redesigned #591 cycle 2): releases a reservation by its own KEY -- an idempotent
+  // no-op when the key isn't (or is no longer) reserved, which structurally fixes the separate
+  // "released twice" bug the old per-text count map was prone to. Called from the click handlers
+  // below on failure, and from `handleRemoveQueued` once a chip is confirmed gone; the cleanup
+  // effect above is the third release path, for the success case this function doesn't cover.
+  function releaseReservation(chipKey: string) {
+    setOptimisticPromotions((prev) => {
+      if (!prev.has(chipKey)) return prev
+      const next = new Map(prev)
+      next.delete(chipKey)
+      return next
+    })
+  }
+
   // Issue #540: single-flight per chip (Medium gate fix, #591: keyed by the chip's own stable
   // identity, not its text, so two chips sharing the same text never share a busy state) -- the
   // button already disables while `inFlightChips` has this key (see the chip render below), but
@@ -759,31 +810,40 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     })
     if (!result.ok) {
       notify(result.error)
-      focusChipOrFallback(chip.key)
+      if (shouldRestoreFocus()) focusChipOrFallback(chip.key)
       return
     }
     if (!result.value.removed) {
       // Gate fix (Medium, #591): a steering chip is already being delivered -- Remove silently
-      // doing nothing left the user with no idea why nothing happened.
-      const message = 'This message is already being delivered and can no longer be removed.'
-      announceAttachment(message)
-      toast(message)
-      focusChipOrFallback(chip.key)
+      // doing nothing left the user with no idea why nothing happened. Gate fix (#591 cycle 2):
+      // `toast.warning` carries the design system's severity icon (docs/design/components.md
+      // "Toasts and notices" on `origin/docs/design-system-474`); the sr-only announcement is
+      // dropped here since the toast is itself a live region, so a screen reader no longer hears
+      // the same sentence twice.
+      toast.warning('This message is already being delivered and can no longer be removed.')
+      if (shouldRestoreFocus()) focusChipOrFallback(chip.key)
       return
     }
+    // Issue #540 (redesigned #591 cycle 2): releases this chip's reservation, if any -- a no-op
+    // for an ordinary chip that was never reserved. Without this, removing a just-confirmed
+    // pending chip (Medium gate fix in `handleSendNow` below) would leave a harmless but
+    // permanent orphan reservation once its id ages out of the per-text pool.
+    releaseReservation(chip.key)
     // Optional a11y remediation (#591): a successful Remove previously had no announcement at all.
     announceAttachment('Queued message removed.')
-    textareaRef.current?.focus()
+    if (shouldRestoreFocus()) textareaRef.current?.focus()
   }
 
   async function handleSendNow(chip: QueuedChip) {
     if (inFlightChips.has(chip.key)) return
     setInFlightChips((prev) => new Map(prev).set(chip.key, 'send'))
-    // Issue #540: shows the chip as already-steering the instant the request goes out (see the
-    // `chips` memo above), corrected the moment the real `queue_update` lands.
+    // Issue #540 (redesigned #591 cycle 2): reserves by the chip's own stable KEY, not its text
+    // (see the `Reservation` type and the cleanup effect above) -- shows the chip as already-
+    // steering the instant the request goes out (see the `chips` memo above), corrected the
+    // moment the real `queue_update` lands.
     setOptimisticPromotions((prev) => {
       const next = new Map(prev)
-      next.set(chip.text, (next.get(chip.text) ?? 0) + 1)
+      next.set(chip.key, { text: chip.text, confirmed: false })
       return next
     })
     // Gate fix (Medium a11y, #591): the busy "Sending..." button text can never actually render --
@@ -791,6 +851,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // button with plain text -- so this is the only live announcement of the in-flight state
     // before the completion message below replaces it.
     announceAttachment('Sending now…')
+    // Gate fix (High a11y, #591 cycle 2): moves focus to this SAME chip's Remove button right
+    // away, before the `await` below -- previously focus fell to `<body>` for the whole RPC,
+    // since the optimistic reservation set above swaps the focused "Send now" button for inert
+    // text in this same render. The post-settle calls further down are kept for the case where
+    // the chip's identity still needs a second nudge after confirmation.
+    focusChipOrFallback(chip.key)
     // `chat.sendNow` takes no `images` argument: OMP's `promote_queued_message` moves the queued
     // message (attachments included) rather than reprocessing it, so this call site must never
     // touch, forward, or clear the composer's own current pending images.
@@ -800,26 +866,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       next.delete(chip.key)
       return next
     })
-    function releaseOptimisticReservation() {
-      setOptimisticPromotions((prev) => {
-        const current = prev.get(chip.text) ?? 0
-        if (current <= 1) {
-          const next = new Map(prev)
-          next.delete(chip.text)
-          return next
-        }
-        const next = new Map(prev)
-        next.set(chip.text, current - 1)
-        return next
-      })
-    }
     if (!result.ok) {
       // Gate fix (High, #591): an RPC-level failure (as opposed to the legitimate "already
       // delivered" case below) now throws in `SessionAgent.sendNow`, so it surfaces here and
       // `notify` already shows a visible toast -- no separate copy needed at this call site.
-      releaseOptimisticReservation()
+      releaseReservation(chip.key)
       notify(result.error)
-      focusChipOrFallback(chip.key)
+      // Gate fix (#591 cycle 2): clears the sr-only live region's stale "Sending now…" text --
+      // without this, a screen reader user who checks the live region later still hears the
+      // in-flight announcement even though the action has already finished (unsuccessfully).
+      announceAttachment('')
+      if (shouldRestoreFocus()) focusChipOrFallback(chip.key)
       return
     }
     if (!result.value.promoted) {
@@ -827,15 +884,28 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // already delivered) -- not an RPC-level error, but silence (sr-only announcement alone)
       // is exactly the no-visible-feedback bug this gate fix corrects (High, #591). The message
       // was NOT lost -- it may already have been sent -- so "could not be sent" would be wrong.
-      releaseOptimisticReservation()
-      const message = 'This message is no longer queued; it may already have been sent.'
-      announceAttachment(message)
-      toast(message)
-      focusChipOrFallback(chip.key)
+      // Gate fix (#591 cycle 2): `toast.info` carries the severity icon, and the separate
+      // sr-only announcement is dropped (the toast's own live region already speaks it once).
+      releaseReservation(chip.key)
+      toast.info('This message is no longer queued; it may already have been sent.')
+      if (shouldRestoreFocus()) focusChipOrFallback(chip.key)
       return
     }
+    // Issue #540 (Medium gate fix, #591 cycle 2): marks this reservation `confirmed` instead of
+    // releasing it -- OMP has already moved the message server-side, so the chip's `queue` (see
+    // the `chips` memo above) flips to `'steering'` immediately, and a Remove click in the window
+    // before the real `queue_update` arrives targets the correct queue instead of the stale
+    // `'followUp'` it was dispatched from. The cleanup effect above releases the reservation once
+    // that `queue_update` actually lands.
+    setOptimisticPromotions((prev) => {
+      const existing = prev.get(chip.key)
+      if (!existing) return prev
+      const next = new Map(prev)
+      next.set(chip.key, { ...existing, confirmed: true })
+      return next
+    })
     announceAttachment('Message moved to send at the next step.')
-    focusChipOrFallback(chip.key)
+    if (shouldRestoreFocus()) focusChipOrFallback(chip.key)
   }
 
   /** Accessibility remediation (High): announces a chip's own silent removal (`pruneDanglingChips`

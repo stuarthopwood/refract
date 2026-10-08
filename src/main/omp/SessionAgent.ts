@@ -583,7 +583,10 @@ export class SessionAgent extends EventEmitter {
    * `remove_queued_message` only matches within the exact queue given, so the old hard-coded
    * `'followUp'` made a steering chip's Remove always report `removed: false` (the message was
    * never in that queue), with no way to ever remove one. Hides the chip only when OMP reports
-   * `removed: true`. */
+   * `removed: true`. Gate fix (Medium, #591 cycle 2): an RPC-level failure now throws (mirroring
+   * `sendNow`'s own High fix) instead of being folded into `{ removed: false }`, which the
+   * renderer otherwise read as the untruthful "already being delivered" notice regardless of the
+   * real cause. */
   async removeQueued(text: string, queue: QueueKind): Promise<{ removed: boolean }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot remove a queued message, no live process`);
@@ -591,9 +594,9 @@ export class SessionAgent extends EventEmitter {
     const res = await this.process.request({ type: 'remove_queued_message', id: '', message: text, queue });
     if (!res.success) {
       this.appendNotice(`remove_queued_message failed: ${res.error ?? 'unknown error'}`, 'error');
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: remove_queued_message failed: ${res.error ?? 'unknown error'}`);
     }
-    const removed = res.success && (res.data as { removed?: boolean } | undefined)?.removed === true;
-    return { removed };
+    return { removed: (res.data as { removed?: boolean } | undefined)?.removed === true };
   }
 
   /** `chat.predictWord` (T103, FR-058): ghost-text composer completion. Issues `predict_word`
