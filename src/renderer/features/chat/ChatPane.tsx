@@ -250,7 +250,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // catch block) -- never on a bare undefined -> defined check, which used to misannounce the
     // next unrelated start in this pane (e.g. a mode-change restart) once an earlier attempt had
     // reached 'prompt'/'extended' and later succeeded.
-    if (session && startProgress && previousKind === undefined) {
+    // Gate-fixes a11y Medium finding (cycle 7): `previousKind === undefined` also fires on a
+    // plain Session SWITCH into a Session already mid-start (keying by `sessionId` makes a
+    // switch always read as "no previous kind" for the incoming Session) -- a genuinely FRESH
+    // start's first-ever progress event is always 'waiting'/'queued'/'memory-deferred' (the
+    // `prompt`/`extended` stages only exist after `READY_PROMPT_AFTER_MS` has already elapsed
+    // since spawn), so seeing 'prompt'/'extended' here unambiguously means a switch onto an
+    // ALREADY-waiting Session, not one that "just began". Announcing "Starting agent for X" in
+    // that case silently dropped the Keep waiting/Cancel announcement the third branch below
+    // exists to give, so screen-reader users switching into an already-prompting Session were
+    // never told those controls were on screen.
+    if (session && startProgress?.kind === 'prompt' && !showBanner && previousKind === undefined) {
+      announceStart(
+        `${session.name} is still starting after ${Math.round(startProgress.elapsedMs / 1000)} seconds. Keep waiting or cancel.`
+      )
+    } else if (session && startProgress?.kind === 'extended' && previousKind === undefined) {
+      announceStart(`${session.name} is still starting. Cancel to stop waiting.`)
+    } else if (session && startProgress && previousKind === undefined) {
       // Gate-fixes a11y Low finding (cycle 5): the existing `role="status"` region already says
       // "Starting the agent…"/"Retrying…"/"Starting new conversation…"/"Resuming…" for these
       // same cases (below, keyed on `isOpening`/`recovering`/`startingNew`/`resuming`); this
@@ -491,9 +507,23 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // clear inline -- `cancelStart()` resolved ok but did nothing because the start had already
   // succeeded -- is still cleared, just separately and only once the Session actually leaves
   // 'stopped' (a successful start): nothing will ever land on a start-failed banner after that,
-  // so any pending cancel record left over is unreachable and must not move focus later.
+  // so any pending cancel record left over is unreachable. Gate-fixes a11y Medium finding
+  // (cycle 7): used to only null the record, leaving focus wherever it already was (often
+  // nowhere, since the Cancel button this record was captured for had already unmounted) --
+  // Cancel losing this race to a successful `ready` left keyboard/screen-reader users stranded
+  // on `<body>` for the rest of the Session. Runs the same stranded-focus rAF check the other
+  // focus-restore effects above use instead of a bare clear.
   useEffect(() => {
-    if (session?.status !== 'stopped') cancelFocusPendingRef.current = null
+    if (session?.status === 'stopped') return
+    const pending = cancelFocusPendingRef.current
+    if (!pending) return
+    cancelFocusPendingRef.current = null
+    if (!pending.hadFocus) return
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      const stranded = !active || active === document.body || !active.isConnected
+      if (stranded) focusPaneContent(chatPaneRef.current)
+    })
   }, [session?.status])
 
   if (!session) {
@@ -1013,23 +1043,32 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
                 aria-expanded={detailsOpen}
                 aria-controls={detailsId}
                 onClick={() => setDetailsOpen((open) => !open)}
-                className="text-xs font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="inline-flex min-h-11 items-center px-1 text-xs font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {/* Gate-fixes a11y Low finding (cycle 6): a constant label -- `aria-expanded`
                     already carries the toggle state; flipping the label TOO had a screen reader
-                    announce the state twice ("Hide details, expanded"). */}
+                    announce the state twice ("Hide details, expanded"). Gate-fixes a11y Medium
+                    finding (cycle 7): `min-h-11`/padding so the tap target meets WCAG 2.5.5 --
+                    this was previously just the ~16px-tall inline text. */}
                 Details
               </button>
-              {detailsOpen && (
-                <pre
-                  id={detailsId}
-                  tabIndex={0}
-                  aria-label="Start failure details"
-                  className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                >
-                  {startFailureDetails}
-                </pre>
-              )}
+              {/* Gate-fixes a11y Low finding (cycle 7): always rendered (never conditionally
+                  mounted/unmounted) with `hidden` toggling visibility instead -- `aria-controls`
+                  pointing at an id only present in the DOM while expanded is a dangling
+                  reference some assistive technology and validators report. Gate-fixes a11y
+                  Medium finding (cycle 7): `aria-label` is prohibited on a bare `<pre>`, which
+                  maps to the ARIA `generic` role (ARIA 1.2 forbids naming `generic` elements) --
+                  `role="region"` makes the name valid. */}
+              <pre
+                id={detailsId}
+                hidden={!detailsOpen}
+                role="region"
+                tabIndex={0}
+                aria-label="Start failure details"
+                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+              >
+                {startFailureDetails}
+              </pre>
             </div>
           )}
         </div>

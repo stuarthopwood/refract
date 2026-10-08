@@ -359,6 +359,15 @@ export class OmpProcess extends EventEmitter {
                     throw new Error(`negotiate_protocol failed: ${res.error ? redactSecrets(res.error) : 'unknown error'}`)
                   }
                 }
+                // Gate-fixes Low finding (cycle 7): `cleanup()` above already tore down
+                // `readyWait`/the frame and exit listeners, so a `cancelStart()` landing during
+                // this `await` (protocol negotiation) had nothing left to act on and this would
+                // resolve anyway, going `idle` despite the cancel. Re-checked just before
+                // resolving.
+                if (this.startCancelled) {
+                  reject(await this.buildStartFailure('start cancelled'))
+                  return
+                }
                 resolve()
               } catch (err) {
                 reject(err instanceof Error ? err : new Error(String(err)))
@@ -596,11 +605,22 @@ export class OmpProcess extends EventEmitter {
   // empty result) when nothing recognisable is found at all -- a crash that prints a bare stack
   // trace with none of these words must not silently lose its whole diagnostic.
   private filterWarnErrorLines(text: string): string {
-    const warnOrError = /"level"\s*:\s*"(?:warn|error)"|(?:warn(?:ing)?|error|errors?\b|fatal|panic|exception|cannot|failed|ENOENT|EACCES|EPERM|timed out)/i
+    const warnOrError = /"level"\s*:\s*"(?:warn|error)"|(?:warn(?:ing)?|error|fatal|panic|exception|cannot|failed|ENOENT|EACCES|EPERM|timed out)/i
     const lines = text.split('\n')
     const filtered = lines.filter((line) => warnOrError.test(line))
     if (filtered.length > 0) return filtered.join('\n')
     return lines.slice(-20).join('\n')
+  }
+
+  /** Gate-fixes Low finding (cycle 7): a plain `.slice(-maxLength)` can land mid-line, showing
+   * a truncated first-line fragment in the message -- the same mid-line-cut problem
+   * `ompLogTail.ts`'s `readTail` already guards against for its own raw file read. Drops that
+   * leading partial line too, whenever the slice actually shortened the text. */
+  private capTailLines(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text
+    const sliced = text.slice(-maxLength)
+    const newlineIndex = sliced.indexOf('\n')
+    return newlineIndex === -1 ? '' : sliced.slice(newlineIndex + 1)
   }
 
   private async buildStartFailure(reason: string, ErrorClass: new (message: string) => Error = Error): Promise<Error> {
@@ -615,7 +635,12 @@ export class OmpProcess extends EventEmitter {
     const homedir = os.homedir()
     const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const homedirSegments = homedir.split(/[\\/]/).filter(Boolean)
-    const homedirRe = homedirSegments.length ? new RegExp(homedirSegments.map(escapeRegex).join('(?:\\\\{1,2}|/)'), 'gi') : undefined
+    // Gate-fixes Low finding (cycle 7): a trailing `(?![A-Za-z0-9._-])` boundary -- without it,
+    // a home of `C:\Users\stu` matched the START of `C:\Users\stuart\...` too, masking it as
+    // the wrong (and partial) `~art\...`.
+    const homedirRe = homedirSegments.length
+      ? new RegExp(`${homedirSegments.map(escapeRegex).join('(?:\\\\{1,2}|/)')}(?![A-Za-z0-9._-])`, 'gi')
+      : undefined
     const redactHome = (text: string): string => (homedirRe ? text.replace(homedirRe, '~') : text)
     // Gate-fixes security Low finding (cycle 6): `reason` (e.g. a spawn error's full omp path,
     // "process failed to spawn: ...") used to skip both this masking and `redactSecrets` below,
@@ -635,7 +660,7 @@ export class OmpProcess extends EventEmitter {
     // the PEM pattern sees the real `-----END-----` marker and only ever consumes its own block.
     const stderrForRedaction = this.stderrTruncated ? this.stderrTail.replace(/^[^\n]*\n?/, '') : this.stderrTail
     const stderrRedacted = redactSecrets(redactHome(stderrForRedaction))
-    const tail = this.filterWarnErrorLines(stderrRedacted).slice(-STDERR_FAILURE_TAIL_BYTES)
+    const tail = this.capTailLines(this.filterWarnErrorLines(stderrRedacted), STDERR_FAILURE_TAIL_BYTES)
     const hint = this.lastSpawnError?.code === 'ENOENT' ? ' (omp not found on PATH; set ompPath)' : ''
     const stderrPart = tail ? `\n--- stderr warnings/errors ---\n${tail}` : ''
     const pid = this.child?.pid
@@ -652,7 +677,7 @@ export class OmpProcess extends EventEmitter {
         ? await tailOmpLogForPid(pid, OMP_LOG_READ_WINDOW_BYTES, spawnedAtMs).catch(() => undefined)
         : undefined
     const ompLogRedacted = ompLogTailRaw !== undefined ? redactSecrets(redactHome(ompLogTailRaw)) : undefined
-    const ompLogTail = ompLogRedacted !== undefined ? this.filterWarnErrorLines(ompLogRedacted).slice(-OMP_LOG_TAIL_BYTES) : undefined
+    const ompLogTail = ompLogRedacted !== undefined ? this.capTailLines(this.filterWarnErrorLines(ompLogRedacted), OMP_LOG_TAIL_BYTES) : undefined
     const ompLogPart = ompLogTail ? `\n--- omp log warnings/errors (pid ${pid}) ---\n${ompLogTail}` : ''
     // Gate-fixes Medium finding (cycle 5): a slow/failed start under low memory otherwise gives
     // no hint that memory pressure was ever a factor -- neither tail necessarily mentions it.

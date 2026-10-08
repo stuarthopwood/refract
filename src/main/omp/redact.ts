@@ -54,6 +54,13 @@ const PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   { pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g, replace: '[redacted]' },
   { pattern: /\b(?:glpat-|npm_|hf_)[A-Za-z0-9_-]{16,}/g, replace: '[redacted]' },
   { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, replace: '[redacted private key]' },
+  // Gate-fixes security Low finding (cycle 7): a 64 KiB read window (or the stderr sliding
+  // window) can start PARTWAY through a private-key block, after its BEGIN marker already
+  // scrolled out -- the pattern above needs BEGIN to fire at all, so the remaining base64 body
+  // plus the END marker passed through unredacted. Runs AFTER the BEGIN pattern (so a properly
+  // terminated block is never double-matched): any leftover END marker with no BEGIN before it
+  // redacts everything up to and including it.
+  { pattern: /^[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, replace: '[redacted private key]' },
   // One key-name pattern covering api_key/apikey/x-api-key/x-goog-api-key/token (and
   // underscore-prefixed access_token/refresh_token/id_token/auth_token, and their camelCase
   // equivalents: accessToken, sessionToken, apiToken, githubToken, bearerToken, ...)/password/

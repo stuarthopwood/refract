@@ -1,7 +1,11 @@
 // Process-wide start concurrency gate (issue #512 requirement 5: "start agents one or two at a
-// time"). Every `OmpProcess.start()` acquires a slot before spawning, regardless of which
-// Session or caller constructed it (`SessionAgent.ts`, `readiness.ts`, `loginProviders.ts`), so
-// the limit holds across the whole app without any caller needing to know about it.
+// time"). Every Session `OmpProcess.start()` (`SessionAgent.ts`) acquires a slot before
+// spawning, so the limit holds across every Session without any caller needing to know about
+// it. Gate-fixes Medium finding (cycle 7): the readiness/login-provider probes (`readiness.ts`,
+// `loginProviders.ts`) now opt OUT via `OmpProcessOptions.useStartQueue: false` instead -- on a
+// busy machine two slow Session starts could each hold one of the queue's two slots for up to
+// 180s, longer than either probe's own 60s deadline, starving a probe behind them while it was
+// still queued.
 
 const MAX_CONCURRENT_STARTS = 2
 
