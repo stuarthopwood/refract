@@ -74,16 +74,37 @@ const THEME_BLOCK_RE = /\.theme-([a-z0-9-]+)\s*\{([^}]*)\}/g
 const PROP_RE = /--([a-z0-9-]+):\s*([^;]+);/gi
 const OKLCH_RE = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%)?\s*\)$/i
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+// #550 (three-layer tokens): a component token may now read `var(--some-role)` instead of a
+// literal colour (layer 3 defaulting to layer 2 -- `--card: var(--surface-1)`, `--state-working:
+// var(--severity-success)`, and so on). This resolves one named reference at a time, recursing
+// through however many `var()` hops a theme uses, with a `seen` set guarding against a cycle
+// (two tokens pointing at each other) so a malformed theme fails fast instead of looping forever.
+const VAR_RE = /^var\(\s*--([a-z0-9-]+)\s*\)$/i
+
+function resolveRawValue(name, rawProps, seen = new Set()) {
+  const raw = rawProps[name]
+  if (raw === undefined) return undefined
+  const varMatch = raw.match(VAR_RE)
+  if (!varMatch) return raw
+  const refName = varMatch[1]
+  if (seen.has(refName)) return undefined
+  seen.add(refName)
+  return resolveRawValue(refName, rawProps, seen)
+}
 
 const themes = {}
 
 for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   const themeId = blockMatch[1]
   const body = blockMatch[2]
-  const props = {}
+  const rawProps = {}
   for (const propMatch of body.matchAll(PROP_RE)) {
-    const name = propMatch[1]
-    const rawValue = propMatch[2].trim()
+    rawProps[propMatch[1]] = propMatch[2].trim()
+  }
+  const props = {}
+  for (const name of Object.keys(rawProps)) {
+    const rawValue = resolveRawValue(name, rawProps)
+    if (rawValue === undefined) continue
     const oklchMatch = rawValue.match(OKLCH_RE)
     const hexMatch = rawValue.match(HEX_RE)
     if (oklchMatch) {
@@ -148,7 +169,9 @@ function resolvedLinear(propEntry, backdropEntry) {
 
 // ---- FR-007/FR-008 token pairs actually rendered by this codebase ----------------------------
 // `min: 4.5` = WCAG AA body/UI text; `min: 3` = WCAG AA large text and non-text UI components
-// (focus rings, borders, scrollbar thumbs, status icons used without accompanying text).
+// (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
+// text). `--border` itself is NOT a control edge any more (#550: it is the soft decorative
+// divider token) -- its pairs live in DIVIDER_PAIRS below, not here.
 
 const PAIRS = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
@@ -164,7 +187,6 @@ const PAIRS = [
   { fg: 'state-needs-you-foreground', bg: 'state-needs-you', min: 4.5 },
   { fg: 'state-stopped-foreground', bg: 'state-stopped', min: 4.5 },
   { fg: 'ring', bg: 'background', min: 3 },
-  { fg: 'border', bg: 'background', min: 3 },
   { fg: 'scrollbar-thumb', bg: 'background', min: 3 },
   { fg: 'active-indicator', bg: 'background', min: 3 },
   { fg: 'destructive', bg: 'background', min: 3 },
@@ -174,14 +196,44 @@ const PAIRS = [
   { fg: 'state-stopped', bg: 'background', min: 3 },
   // Quality-gate remediation (round 2): these real component-boundary pairs were missing and
   // measure as genuine failures -- `--input` (the border of every Input/Textarea/Select/
-  // outline-Toggle/outline-Button, including the Appearance section's own Cancel button) and
-  // `--border` against the other surfaces it's actually drawn on top of (`--card`/`--popover`
-  // panels, `--muted` fills), not just `--background`.
+  // outline-Toggle/outline-Button, including the Appearance section's own Cancel button).
   { fg: 'input', bg: 'background', min: 3 },
-  { fg: 'border', bg: 'card', min: 3 },
-  { fg: 'border', bg: 'popover', min: 3 },
-  { fg: 'border', bg: 'muted', min: 3 },
+  // #550 (theme foundation, palette v2): the control-edge token (`--border-strong`, >=3:1
+  // against both canvas and the card surface -- #550's own divider-versus-control-edge rule) and
+  // the new semantic roles the contrast script must learn or it would silently pass a theme that
+  // never defines them (the 'token missing' path below still fires if any of these are absent).
+  { fg: 'border-strong', bg: 'background', min: 3 },
+  { fg: 'border-strong', bg: 'card', min: 3 },
+  { fg: 'accent-text', bg: 'background', min: 4.5 },
+  { fg: 'accent-text', bg: 'card', min: 4.5 },
+  { fg: 'severity-success', bg: 'background', min: 3 },
+  { fg: 'severity-success', bg: 'card', min: 3 },
+  { fg: 'severity-warning', bg: 'background', min: 3 },
+  { fg: 'severity-warning', bg: 'card', min: 3 },
+  { fg: 'severity-error', bg: 'background', min: 3 },
+  { fg: 'severity-error', bg: 'card', min: 3 },
+  { fg: 'severity-info', bg: 'background', min: 3 },
+  { fg: 'severity-info', bg: 'card', min: 3 },
 ]
+
+// #550: the OTHER edge class -- soft decorative dividers (panes, rows, headers, sections). Not
+// required by WCAG 1.4.11 because they never identify a control, so these carry no contrast
+// floor in an ordinary preset (checked -- so a theme missing the token still fails below -- but
+// not held to any ratio). Dark (high contrast) is the one exception: its own design decision
+// switches soft dividers off, raising every edge including these to the same 4.5:1 text floor as
+// everything else in that preset (foundations-tokens-theming.md "High contrast preset"). A theme
+// is treated as that preset generically by its id containing "high-contrast", the same
+// not-hardcoded-to-today's-two spirit as THEME_BLOCK_RE above, so a future stricter preset gets
+// the same treatment for free.
+const DIVIDER_PAIRS = [
+  { fg: 'border', bg: 'background' },
+  { fg: 'border', bg: 'card' },
+  { fg: 'border', bg: 'popover' },
+  { fg: 'border', bg: 'muted' },
+  { fg: 'border', bg: 'sidebar' },
+]
+const DIVIDER_MIN_HIGH_CONTRAST = 4.5
+const isHighContrastTheme = (themeId) => themeId.includes('high-contrast')
 
 // ---- run every pair against every parsed theme ------------------------------------------------
 
@@ -194,7 +246,9 @@ for (const [themeId, props] of Object.entries(themes)) {
     const fgEntry = props[fg]
     const bgEntry = props[bg]
     if (!fgEntry || !bgEntry) {
-      rows.push({ themeId, fg, bg, min, ratio: null, pass: null, note: 'token missing' })
+      checkedCount++
+      failCount++
+      rows.push({ themeId, fg, bg, min, ratio: null, pass: false, note: 'token missing' })
       continue
     }
     const fgLinear = resolvedLinear(fgEntry, bgEntry)
@@ -212,6 +266,41 @@ for (const [themeId, props] of Object.entries(themes)) {
       pass,
       fgHex: linearToHex(fgLinear),
       bgHex: linearToHex(bgLinear),
+    })
+  }
+}
+
+// #550: decorative-divider pairs -- exempt from any floor in an ordinary preset (still fails if
+// the token is missing outright, same as every other pair above), enforced at the high-contrast
+// text floor when `isHighContrastTheme` says this preset switched soft dividers off.
+for (const [themeId, props] of Object.entries(themes)) {
+  const highContrast = isHighContrastTheme(themeId)
+  for (const { fg, bg } of DIVIDER_PAIRS) {
+    const fgEntry = props[fg]
+    const bgEntry = props[bg]
+    const min = highContrast ? DIVIDER_MIN_HIGH_CONTRAST : null
+    if (!fgEntry || !bgEntry) {
+      checkedCount++
+      failCount++
+      rows.push({ themeId, fg, bg, min: min ?? 'soft', ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const fgLinear = resolvedLinear(fgEntry, bgEntry)
+    const bgLinear = resolvedLinear(bgEntry, bgEntry)
+    const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear))
+    const pass = min === null ? true : ratio >= min
+    checkedCount++
+    if (!pass) failCount++
+    rows.push({
+      themeId,
+      fg,
+      bg,
+      min: min ?? 'soft',
+      ratio,
+      pass,
+      fgHex: linearToHex(fgLinear),
+      bgHex: linearToHex(bgLinear),
+      note: min === null ? 'decorative divider, no floor' : undefined,
     })
   }
 }
@@ -365,7 +454,8 @@ for (const r of rows) {
     continue
   }
   const result = r.pass ? 'PASS' : 'FAIL'
-  console.log(row([r.themeId, pairLabel, r.ratio.toFixed(2) + ':1', r.min, result]) + `  (${r.fgHex} on ${r.bgHex})`)
+  const suffix = r.note ? `  (${r.fgHex} on ${r.bgHex}, ${r.note})` : `  (${r.fgHex} on ${r.bgHex})`
+  console.log(row([r.themeId, pairLabel, r.ratio.toFixed(2) + ':1', r.min, result]) + suffix)
 }
 
 console.log('')

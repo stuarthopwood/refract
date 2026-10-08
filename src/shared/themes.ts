@@ -10,7 +10,7 @@
 /** Additive: a further dark preset adds a key here, never removes `dark` or
  * `dark-high-contrast` (research.md decision 1). No `mode` field anywhere in this module --
  * every built-in theme is dark-toned, so there is nothing left to distinguish by mode. */
-export type ThemeId = 'dark' | 'dark-high-contrast'
+export type ThemeId = 'dark' | 'dark-high-contrast' | 'obsidian'
 
 export interface ThemeDefinition {
   id: ThemeId
@@ -36,21 +36,33 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   dark: {
     id: 'dark',
     name: 'Dark',
-    // Matches `.theme-dark`'s own `--background: oklch(0.145 0 0)` (globals.css), converted by
-    // hand the same way `titleBarOverlay.ts` already converts it for Electron's sRGB-only API.
-    swatch: '#0a0a0a',
+    // Matches `.theme-dark`'s own `--background` (globals.css), converted by hand the same way
+    // `titleBarOverlay.ts` already converts it for Electron's sRGB-only API. #550 (theme
+    // foundation, palette v2): retuned per #452 to the same rendered darkness as `#1a1a1a`,
+    // tinted with the Obsidian preset's own slate-blue hue rather than staying neutral grey.
+    swatch: '#181A21',
     syntaxTheme: 'github-dark',
-    titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
+    titleBarOverlay: { color: '#181A21', symbolColor: '#F8FAFC' }
   },
   'dark-high-contrast': {
     id: 'dark-high-contrast',
     name: 'Dark (high contrast)',
-    // Matches `.theme-dark-high-contrast`'s own `--background: oklch(0 0 0)` (pure black,
-    // globals.css) -- a deliberately starker background than `dark`'s, maximising the margin
-    // above the WCAG AA contrast floors every built-in theme must clear.
+    // Matches `.theme-dark-high-contrast`'s own `--background` (pure black, globals.css) -- a
+    // deliberately starker background than `dark`'s, maximising the margin above the WCAG AA
+    // contrast floors every built-in theme must clear.
     swatch: '#000000',
     syntaxTheme: 'github-dark-high-contrast',
     titleBarOverlay: { color: '#000000', symbolColor: '#ffffff' }
+  },
+  // #550 (theme foundation, palette v2): a further dark preset, additive per the module comment
+  // above -- the mock's own Obsidian canvas and palette, taken literally (`.theme-obsidian`,
+  // globals.css), one step darker/moodier than `dark`'s retuned canvas.
+  obsidian: {
+    id: 'obsidian',
+    name: 'Obsidian',
+    swatch: '#0F1014',
+    syntaxTheme: 'github-dark',
+    titleBarOverlay: { color: '#0F1014', symbolColor: '#F8FAFC' }
   }
 }
 
