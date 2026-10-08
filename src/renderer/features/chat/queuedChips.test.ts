@@ -21,6 +21,11 @@ function runSequence(steps: readonly QueueSnapshot[]): DerivedChip[][] {
 }
 
 describe('deriveQueuedChips', () => {
+  // Medium (code-reviewer/test-reviewer, #598): every assertion below pins the exact
+  // `{key, text, queue}` identity of each chip, not just set membership or counts -- a
+  // regression that swapped which occurrence gets which key would have passed every one of
+  // this file's previous assertions, which defeated the whole point of testing identity
+  // stability.
   test('click the second of [A, A]: distinct keys preserved across the real promotion', () => {
     const steps = runSequence([
       { followUp: ['A', 'A'], steering: [] },
@@ -28,18 +33,18 @@ describe('deriveQueuedChips', () => {
     ])
     const before = steps[0]!
     const after = steps[1]!
-    expect(before).toHaveLength(2)
-    const beforeKeys = before.map((c) => c.key)
-    expect(new Set(beforeKeys).size).toBe(2) // distinct keys
-    expect(before.every((c) => c.queue === 'followUp')).toBe(true)
-
-    expect(after).toHaveLength(2)
-    const afterKeys = after.map((c) => c.key)
-    expect(new Set(afterKeys).size).toBe(2) // still distinct
-    // No new key appears out of nowhere, none silently vanishes.
-    expect(new Set(afterKeys)).toEqual(new Set(beforeKeys))
-    const afterByQueue = Object.fromEntries(after.map((c) => [c.queue, c.key]))
-    expect(Object.keys(afterByQueue).sort()).toEqual(['followUp', 'steering'])
+    const [k0, k1] = before.map((c) => c.key)
+    expect(before).toEqual([
+      { key: k0, text: 'A', queue: 'followUp' },
+      { key: k1, text: 'A', queue: 'followUp' }
+    ])
+    // OMP's `promote_queued_message` promotes by TEXT, FIFO (FINDINGS item 46): the FIRST
+    // occurrence queued (k0) is always the one a real promotion resolves against, regardless of
+    // which visual occurrence the user actually clicked.
+    expect(after).toEqual([
+      { key: k1, text: 'A', queue: 'followUp' },
+      { key: k0, text: 'A', queue: 'steering' }
+    ])
   })
 
   test('[A, A, A] with occurrence 0 then occurrence 2 clicked: key continuity throughout', () => {
@@ -51,24 +56,25 @@ describe('deriveQueuedChips', () => {
     const s0 = steps[0]!
     const s1 = steps[1]!
     const s2 = steps[2]!
+    const [k0, k1, k2] = s0.map((c) => c.key)
 
-    expect(s0).toHaveLength(3)
-    const keys0 = s0.map((c) => c.key)
-    expect(new Set(keys0).size).toBe(3)
-
-    expect(s1).toHaveLength(3)
-    const keys1 = s1.map((c) => c.key)
-    expect(new Set(keys1).size).toBe(3)
-    expect(new Set(keys1)).toEqual(new Set(keys0)) // no orphan, no duplicate
-    expect(s1.filter((c) => c.queue === 'steering')).toHaveLength(1)
-    expect(s1.filter((c) => c.queue === 'followUp')).toHaveLength(2)
-
-    expect(s2).toHaveLength(3)
-    const keys2 = s2.map((c) => c.key)
-    expect(new Set(keys2).size).toBe(3)
-    expect(new Set(keys2)).toEqual(new Set(keys0))
-    expect(s2.filter((c) => c.queue === 'steering')).toHaveLength(2)
-    expect(s2.filter((c) => c.queue === 'followUp')).toHaveLength(1)
+    expect(s0).toEqual([
+      { key: k0, text: 'A', queue: 'followUp' },
+      { key: k1, text: 'A', queue: 'followUp' },
+      { key: k2, text: 'A', queue: 'followUp' }
+    ])
+    // FIFO: the oldest surviving follow-up (k0) is the one promoted first.
+    expect(s1).toEqual([
+      { key: k1, text: 'A', queue: 'followUp' },
+      { key: k2, text: 'A', queue: 'followUp' },
+      { key: k0, text: 'A', queue: 'steering' }
+    ])
+    // A second promotion then takes the next-oldest surviving follow-up (k1).
+    expect(s2).toEqual([
+      { key: k2, text: 'A', queue: 'followUp' },
+      { key: k0, text: 'A', queue: 'steering' },
+      { key: k1, text: 'A', queue: 'steering' }
+    ])
   })
 
   test('derivation from a (followUp, steering) pair reflecting an already-happened promotion is stable regardless of prior call history', () => {
@@ -76,19 +82,22 @@ describe('deriveQueuedChips', () => {
     // `inFlightChips` state, never this function's business. Calling it fresh (no prior calls)
     // against a snapshot that already reflects a promotion must derive the same shape (one
     // follow-up occurrence plus one steering occurrence, since this snapshot has one of each)
-    // as reaching that snapshot via an intermediate step would.
+    // as reaching that snapshot via an intermediate step would -- each path is internally
+    // consistent even though the two paths don't assign the SAME literal keys to each other.
     const direct = deriveQueuedChips(['A'], ['A'], EMPTY_CHIP_POOL).chips
+    expect(direct).toEqual([
+      { key: 'chip-0', text: 'A', queue: 'followUp' },
+      { key: 'chip-1', text: 'A', queue: 'steering' }
+    ])
     const steps = runSequence([
       { followUp: ['A', 'A'], steering: [] },
       { followUp: ['A'], steering: ['A'] }
     ])
     const viaIntermediate = steps[1]!
-    expect(direct).toHaveLength(2)
-    expect(viaIntermediate).toHaveLength(2)
-    expect(direct.map((c) => c.queue).sort()).toEqual(['followUp', 'steering'])
-    expect(viaIntermediate.map((c) => c.queue).sort()).toEqual(['followUp', 'steering'])
-    expect(direct.every((c) => c.text === 'A')).toBe(true)
-    expect(viaIntermediate.every((c) => c.text === 'A')).toBe(true)
+    expect(viaIntermediate).toEqual([
+      { key: 'chip-1', text: 'A', queue: 'followUp' },
+      { key: 'chip-0', text: 'A', queue: 'steering' }
+    ])
   })
 
   test('delivery while idle: a steering entry disappearing retires its key without touching an unrelated follow-up', () => {
@@ -98,14 +107,10 @@ describe('deriveQueuedChips', () => {
     ])
     const before = steps[0]!
     const after = steps[1]!
-    expect(before).toHaveLength(2)
     const followUpKeyBefore = before.find((c) => c.text === 'B')!.key
     const steeringKeyBefore = before.find((c) => c.text === 'A')!.key
 
-    expect(after).toHaveLength(1)
-    expect(after[0]!.text).toBe('B')
-    expect(after[0]!.queue).toBe('followUp')
-    expect(after[0]!.key).toBe(followUpKeyBefore) // unaffected by the unrelated delivery
+    expect(after).toEqual([{ key: followUpKeyBefore, text: 'B', queue: 'followUp' }])
     expect(after[0]!.key).not.toBe(steeringKeyBefore) // the retired key is gone, not reused yet
   })
 
@@ -122,22 +127,53 @@ describe('deriveQueuedChips', () => {
     const s2 = steps[2]!
     const s3 = steps[3]!
     const s4 = steps[4]!
+    const deliveredKey = s0[0]!.key
 
-    expect(s0).toHaveLength(1)
-    expect(s1).toHaveLength(1)
-    expect(s1[0]!.queue).toBe('steering')
-    expect(s2).toHaveLength(0) // fully delivered, no stale leftover chip
+    expect(s0).toEqual([{ key: deliveredKey, text: 'A', queue: 'followUp' }])
+    expect(s1).toEqual([{ key: deliveredKey, text: 'A', queue: 'steering' }])
+    expect(s2).toEqual([]) // fully delivered, no stale leftover chip
 
-    expect(s3).toHaveLength(2)
-    const keys3 = s3.map((c) => c.key)
-    expect(new Set(keys3).size).toBe(2)
-    expect(s3.every((c) => c.queue === 'followUp')).toBe(true)
+    const [k3a, k3b] = s3.map((c) => c.key)
+    expect(s3).toEqual([
+      { key: k3a, text: 'A', queue: 'followUp' },
+      { key: k3b, text: 'A', queue: 'followUp' }
+    ])
+    // The fully-delivered A's old key must never resurface on this later, unrelated pair.
+    expect(s3.map((c) => c.key)).not.toContain(deliveredKey)
 
-    expect(s4).toHaveLength(2)
-    const keys4 = s4.map((c) => c.key)
-    expect(new Set(keys4).size).toBe(2)
-    expect(new Set(keys4)).toEqual(new Set(keys3)) // no leak from the earlier, unrelated A
-    expect(s4.filter((c) => c.queue === 'steering')).toHaveLength(1)
-    expect(s4.filter((c) => c.queue === 'followUp')).toHaveLength(1)
+    expect(s4).toEqual([
+      { key: k3b, text: 'A', queue: 'followUp' },
+      { key: k3a, text: 'A', queue: 'steering' }
+    ])
+  })
+
+  // Medium (code-reviewer, #598): regression coverage for the id-pool bug this PR fixes --
+  // shrinking a single combined per-text pool "from the front" retired the STEERING
+  // occurrence's id whenever a FOLLOW-UP occurrence of the same text was the one removed
+  // (steering always sat at the front of the old combined pool), remounting the wrong chip.
+  // With ids tracked per text AND per queue segment, a follow-up removal must only ever retire
+  // a follow-up id -- the steering occurrence's key is untouched.
+  test('MEDIUM-1 regression: removing a follow-up occurrence leaves a same-text steering occurrence\'s key unchanged', () => {
+    const before = deriveQueuedChips(['A'], ['A'], EMPTY_CHIP_POOL)
+    const steeringKeyBefore = before.chips.find((c) => c.queue === 'steering')!.key
+
+    const after = deriveQueuedChips([], ['A'], before.nextPool).chips
+    expect(after).toEqual([{ key: steeringKeyBefore, text: 'A', queue: 'steering' }])
+  })
+
+  test('MEDIUM-1 symmetric growth: a new follow-up A queued alongside an existing (followUp, steering) pair preserves both original keys and appends a fresh third', () => {
+    const before = deriveQueuedChips(['A'], ['A'], EMPTY_CHIP_POOL)
+    const followUpKeyBefore = before.chips.find((c) => c.queue === 'followUp')!.key
+    const steeringKeyBefore = before.chips.find((c) => c.queue === 'steering')!.key
+
+    const after = deriveQueuedChips(['A', 'A'], ['A'], before.nextPool).chips
+    expect(after).toHaveLength(3)
+    const freshKey = after.find((c) => c.queue === 'followUp' && c.key !== followUpKeyBefore)!.key
+    expect(new Set([followUpKeyBefore, steeringKeyBefore, freshKey]).size).toBe(3) // all distinct
+    expect(after).toEqual([
+      { key: followUpKeyBefore, text: 'A', queue: 'followUp' },
+      { key: freshKey, text: 'A', queue: 'followUp' },
+      { key: steeringKeyBefore, text: 'A', queue: 'steering' }
+    ])
   })
 })

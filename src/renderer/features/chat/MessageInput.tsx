@@ -265,11 +265,28 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // position come ONLY from the real `followUp`/`steering` arrays -- `deriveQueuedChips`
   // (queuedChips.ts) is a pure function the component merely feeds its own persisted id pool
   // through via `chipPoolRef`.
-  const chips = useMemo<DerivedChip[]>(() => {
-    const { chips: derived, nextPool } = deriveQueuedChips(followUp, steering, chipPoolRef.current)
-    chipPoolRef.current = nextPool
-    return derived
+  //
+  // Medium (code-reviewer, #598): the pool commit used to happen as a `chipPoolRef.current =`
+  // write inside this `useMemo`, i.e. during render. React 19 can discard a render before it
+  // commits (an interrupted concurrent render), and a discarded render had already mutated the
+  // ref with ids derived from inputs that never actually committed -- the next REAL commit then
+  // derived from that phantom state. `chips` below is now read-only during render (it always
+  // reads the last-COMMITTED pool off the ref, never writes it); the actual commit is deferred
+  // to the `useLayoutEffect` right after it, which only ever runs for a render that committed.
+  // `deriveQueuedChips` is pure and cheap (small arrays), so recomputing it there is fine.
+  const chips = useMemo<DerivedChip[]>(
+    () => deriveQueuedChips(followUp, steering, chipPoolRef.current).chips,
+    [followUp, steering]
+  )
+  useLayoutEffect(() => {
+    chipPoolRef.current = deriveQueuedChips(followUp, steering, chipPoolRef.current).nextPool
   }, [followUp, steering])
+
+  // Tracks the previous commit's `chips` (Issue #540/#598 High): when the tracked chip's key
+  // disappears from the real arrays entirely (the server delivered it, e.g. a steering chip was
+  // sent at the next turn), this is the only way to know which chip used to sit next to it, so
+  // focus can move to the nearest SURVIVING chip instead of being left stranded on `<body>`.
+  const previousChipsRef = useRef<DerivedChip[]>([])
 
   // Issue #540 (#591 cycle 3, High finding): a real `queue_update` moving which array
   // (`followUp` vs `steering`) a duplicate-text chip renders from reorders its `<li>` via
@@ -277,17 +294,38 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // Chromium blurs a focused element when its node is moved like that, even though the user
   // didn't click anywhere. Runs synchronously (layout phase, not an ordinary effect) so focus
   // never visibly rests on `<body>` for a frame: only acts when focus is actually stranded
-  // (null/`<body>`/disconnected) AND the previously-focused chip's own key still exists in the
-  // new `chips` array -- a genuinely removed chip (Remove succeeded) is left alone here;
-  // `handleRemoveQueued` below sends focus to the composer textarea for that case instead.
+  // (null/`<body>`/disconnected).
+  //
+  // Gate fix (High, #598): if the tracked chip's own key still exists, this restores focus to
+  // IT, same as before. If it does NOT (the server delivered it, or the chip list is now
+  // entirely empty and the `<ul>` itself unmounts) -- as opposed to a genuine Remove succeeding,
+  // which `handleRemoveQueued` below already sends focus to the composer textarea for -- focus
+  // moves to the nearest surviving chip (the one that now occupies the removed chip's old
+  // position, falling back to the one before it), or to the textarea if no chips remain at all.
+  // `focusedChipRef` is cleared in every one of these "key is gone" outcomes, since none of them
+  // leave a chip tracked as focused anymore.
   useLayoutEffect(() => {
+    const previousChips = previousChipsRef.current
+    previousChipsRef.current = chips
     const tracked = focusedChipRef.current
     if (!tracked) return
     const active = document.activeElement
     const stranded = active == null || active === document.body || !active.isConnected
     if (!stranded) return
-    if (!chips.some((chip) => chip.key === tracked.key)) return
-    const row = chipListRef.current?.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(tracked.key)}"]`)
+    if (chips.some((chip) => chip.key === tracked.key)) {
+      const row = chipListRef.current?.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(tracked.key)}"]`)
+      row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]')?.focus()
+      return
+    }
+    focusedChipRef.current = null
+    if (chips.length === 0) {
+      textareaRef.current?.focus()
+      return
+    }
+    const previousIndex = previousChips.findIndex((chip) => chip.key === tracked.key)
+    const nearest =
+      previousIndex === -1 ? chips[0]! : (chips[previousIndex] ?? chips[previousIndex - 1] ?? chips[0]!)
+    const row = chipListRef.current?.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(nearest.key)}"]`)
     row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]')?.focus()
   }, [chips])
 
@@ -297,6 +335,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // `relatedTarget`) -- when a focused node is yanked out from under the user by a reorder, the
   // browser blurs with `relatedTarget: null`, and clearing in that case would defeat the whole
   // mechanism.
+  //
+  // Gate fix (High, #598): a null `relatedTarget` does NOT only mean "a chip's DOM node moved"
+  // -- it also happens whenever the user clicks something that can't take focus (empty sidebar
+  // space, the header, non-interactive transcript text), which sends focus to `<body>` too. Two
+  // layers now handle the two different null-`relatedTarget` causes:
+  //
+  // 1. A capture-phase `pointerdown` listener on `document` (below) clears the tracked chip the
+  //    moment a genuine click-away is detected, synchronously, before this blur handler even
+  //    runs -- a real DOM-move-caused blur never fires a pointerdown at all, so this can't
+  //    misfire on that case.
+  // 2. For a blur-without-a-prior-pointerdown (e.g. Tab-ing away, or a non-pointer-triggered
+  //    blur) this handler defers the decision to a `requestAnimationFrame`: a genuine DOM move
+  //    has already been repaired SYNCHRONOUSLY by the layout effect above (which runs before
+  //    paint and before any rAF callback), so by the time this rAF runs, a real move will
+  //    already have refocused something else -- only a still-unresolved, genuine click-away
+  //    still has `activeElement === body` at that point.
   function handleChipListFocus(event: ReactFocusEvent<HTMLUListElement>) {
     const target = event.target as HTMLElement
     const row = target.closest<HTMLElement>('[data-chip-key]')
@@ -305,8 +359,28 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (key && (action === 'send' || action === 'remove')) focusedChipRef.current = { key, action }
   }
   function handleChipListBlur(event: ReactFocusEvent<HTMLUListElement>) {
-    if (event.relatedTarget) focusedChipRef.current = null
+    if (event.relatedTarget) {
+      focusedChipRef.current = null
+      return
+    }
+    const el = event.target as HTMLElement
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body && el.isConnected) focusedChipRef.current = null
+    })
   }
+
+  // Gate fix (High, #598), layer 1 of 2 above: clears the tracked chip the instant a genuine
+  // click-away is detected, before React's own blur event (and this component's `onBlur`
+  // handler) even fires -- `capture: true` so this sees the pointerdown before anything inside
+  // the chip list can stop its propagation.
+  useEffect(() => {
+    function onDocumentPointerDown(event: PointerEvent) {
+      if (chipListRef.current?.contains(event.target as Node)) return
+      focusedChipRef.current = null
+    }
+    document.addEventListener('pointerdown', onDocumentPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  }, [])
 
   // The active row resets whenever the typed query changes, so a stale index from a longer list
   // never survives into a shorter, filtered one.
@@ -751,14 +825,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       toast.info('This message is no longer queued; it may already have been sent.')
       return
     }
-    // Issue #540 (#591 cycle 3): on success, do nothing else -- the real `queue_update` frame
-    // moves this text from `followUp` to `steering` whenever OMP sends it, which may arrive
-    // before or after this promise resolves; both orderings are fine and need no special-
-    // casing, since the UI never tries to predict or pre-empt that move. OMP's
-    // `promote_queued_message` promotes by TEXT, FIFO (FINDINGS item 46), not by which visual
-    // occurrence was clicked, so if two occurrences shared this text, which stable chip-key
-    // ends up labeled `steering` is a harmless, natural consequence of `queuedChips.ts`'s own
-    // front-to-back id allocation -- never something this handler tries to track or correct.
+    // Issue #540 (#591 cycle 3): aside from the announcement below, do nothing else -- the
+    // real `queue_update` frame moves this text from `followUp` to `steering` whenever OMP
+    // sends it, which may arrive before or after this promise resolves; both orderings are fine
+    // and need no special-casing, since the UI never tries to predict or pre-empt that move.
+    // OMP's `promote_queued_message` promotes by TEXT, FIFO (FINDINGS item 46), not by which
+    // visual occurrence was clicked, so if two occurrences shared this text, which stable
+    // chip-key ends up labeled `steering` is a harmless, natural consequence of
+    // `queuedChips.ts`'s own front-to-back id allocation -- never something this handler tries
+    // to track or correct.
+    // Medium (a11y, #598): the live region otherwise keeps showing "Sending now…" forever --
+    // the only two paths that cleared/replaced it were the two failure branches above. This
+    // phrasing describes the MESSAGE TEXT's outcome, not a specific chip, so it stays accurate
+    // regardless of which exact duplicate-text occurrence OMP's FIFO semantics actually promoted.
+    announceAttachment('Message will be sent at the next step.')
   }
 
   /** Accessibility remediation (High): announces a chip's own silent removal (`pruneDanglingChips`
@@ -860,7 +940,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             const removeLabel = removeBusy ? `Removing queued message: ${chip.text}` : `Remove queued message: ${chip.text}`
             return (
               <li key={chip.key} data-chip-key={chip.key}>
-                <Badge variant="secondary" className="max-w-full gap-1.5 py-1 pr-1">
+                <Badge
+                  variant="secondary"
+                  className="h-auto max-w-full gap-1.5 overflow-visible py-0.5 pr-0.5"
+                >
                   <span className="max-w-64 truncate" title={chip.text}>
                     {chip.text}
                   </span>
