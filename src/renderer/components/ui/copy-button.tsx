@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useClearedAnnouncement } from "@/lib/use-cleared-announcement"
 import { sanitiseForClipboard } from "@/lib/clipboard-sanitise"
+import { copyDecision, clipboardRejectionToResult } from "@/lib/clipboard-copy-decision"
 import { notify } from "@/state"
 import type { Result } from "../../../shared/ipc"
 
@@ -62,18 +63,22 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
     // The button always sits beside, never inside, the scrollable/selectable region it copies
     // from, but stopPropagation keeps a click here purely this control's own action regardless.
     event.stopPropagation()
-    const text = sanitiseForClipboard(getText())
-    // Quality-gate remediation (Medium, cycle 2): a block composed entirely of characters the
-    // sanitiser strips (vanishingly rare, but possible for agent-authored content) must not
-    // silently empty the user's clipboard or announce a success that didn't happen -- but a
-    // click still needs a response (cycle 3: a bare silent return gave keyboard/screen-reader
-    // users no feedback at all, WCAG 4.1.3).
-    if (text === "") {
+    const decision = copyDecision(sanitiseForClipboard(getText()))
+    if (decision.kind === "nothing") {
+      // Quality-gate remediation (cycle 4): clear any stale "Copied" visual state and polite
+      // announcement a previous click left behind before announcing this one -- otherwise a
+      // rapid second click landing on "nothing to copy" right after a real success could leave
+      // the check icon showing, or a screen reader could still be mid-way through "Code copied"
+      // when "Nothing to copy" interrupts it with no visible state change to match.
+      window.clearTimeout(resetRef.current)
+      setCopied(false)
+      announcePolite("")
       announceAssertive("Nothing to copy")
+      notify({ code: "clipboard-failed", message: "Nothing to copy" })
       return
     }
     try {
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(decision.text)
     } catch {
       // The sandboxed renderer denies every Clipboard API permission
       // (`session.setPermissionRequestHandler`, src/main/index.ts), so this falls back to main's
@@ -83,18 +88,28 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
       // rejection was unhandled and the click produced no toast and no announcement at all.
       let result: Result<void>
       try {
-        result = await window.refract.clipboard.writeText(text)
+        result = await window.refract.clipboard.writeText(decision.text)
       } catch (err) {
-        result = { ok: false, error: { code: "clipboard-failed", message: err instanceof Error ? err.message : String(err) } }
+        result = clipboardRejectionToResult(err)
       }
       if (!mountedRef.current) return
       if (!result.ok) {
+        // Quality-gate remediation (cycle 4): same stale-state clear as the "nothing to copy"
+        // branch above, for the same reason -- a failure right after a previous success must not
+        // leave the check icon or the old "Copied" announcement behind.
+        window.clearTimeout(resetRef.current)
+        setCopied(false)
+        announcePolite("")
         notify(result.error)
         announceAssertive("Could not copy")
         return
       }
     }
     if (!mountedRef.current) return
+    // Quality-gate remediation (cycle 4): clears any stale assertive announcement from a
+    // previous failed click, so two screen-reader messages never overlap on a retry that
+    // then succeeds.
+    announceAssertive("")
     setCopied(true)
     announcePolite(announcement)
     window.clearTimeout(resetRef.current)

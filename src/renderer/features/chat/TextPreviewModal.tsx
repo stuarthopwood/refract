@@ -52,8 +52,8 @@ export function TextPreviewModal({ chip, trigger, restoreFocusTo }: TextPreviewM
         <DialogHeader>
           {/* `pr-8` clears the dialog's own absolute top-right Close button (icon-sm, `top-2
            * right-2`) so it never overlaps this row's own trailing Copy button (#524). Always
-           * visible, not hover-revealed like the inline code-surface Copy buttons: this dialog is
-           * already a focused, fully-open layer, not a row sitting in a scrollable list. */}
+           * visible, like every other Copy button (#524 acceptance criterion: "visible without
+           * hover"). */}
           <div className="flex items-center justify-between gap-2 pr-8">
             <DialogTitle>Pasted text ({chip.text.length} characters)</DialogTitle>
             <CopyButton getText={() => chip.text} label="Copy pasted text" announcement="Pasted text copied" />

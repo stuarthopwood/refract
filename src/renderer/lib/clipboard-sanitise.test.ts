@@ -1,6 +1,7 @@
-// Quality-gate remediation (cycles 2-3, PR #597): regression coverage for the clipboard
-// sanitiser (security review rounds 1-3 -- pastejacking via C0/C1 controls, Trojan Source bidi
-// overrides, deprecated format controls, Unicode tag-character ASCII smuggling).
+// Quality-gate remediation (cycles 2-4, PR #597): regression coverage for the clipboard
+// sanitiser (security review rounds 1-4 -- pastejacking via C0/C1 controls, Trojan Source bidi
+// overrides, deprecated format controls, Unicode tag-character ASCII smuggling, and the
+// surrogate-splice bypass of the tag-character strip).
 import { describe, it, expect } from 'vitest';
 import { sanitiseForClipboard } from './clipboard-sanitise';
 
@@ -76,6 +77,63 @@ describe('sanitiseForClipboard', () => {
     expect(sanitiseForClipboard(scotland)).toBe(scotland);
   });
 
+  it('keeps the England and Wales subdivision-flag tag sequences', () => {
+    const england = '\u{1F3F4}\u{E0065}\u{E006E}\u{E0067}\u{E006C}\u{E0061}\u{E006E}\u{E0064}\u{E007F}';
+    expect(sanitiseForClipboard(england)).toBe(england);
+    const wales = '\u{1F3F4}\u{E0077}\u{E006C}\u{E0073}\u{E007F}';
+    expect(sanitiseForClipboard(wales)).toBe(wales);
+  });
+
+  it('strips an unterminated tag sequence (no cancel tag) down to the bare flag base', () => {
+    const noCancel = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}';
+    expect(sanitiseForClipboard(noCancel)).toBe('\u{1F3F4}');
+  });
+
+  it('strips an unterminated tag sequence but keeps trailing real text', () => {
+    const noCancel = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}x';
+    expect(sanitiseForClipboard(noCancel)).toBe('\u{1F3F4}x');
+  });
+
+  it('strips 8 lowercase tag letters plus a cancel tag (over the 7-tag flag limit) down to the bare flag', () => {
+    const eightTags = '\u{1F3F4}\u{E0061}\u{E0062}\u{E0063}\u{E0064}\u{E0065}\u{E0066}\u{E0067}\u{E0068}\u{E007F}';
+    expect(sanitiseForClipboard(eightTags)).toBe('\u{1F3F4}');
+  });
+
+  it('strips uppercase tag letters plus a cancel tag down to the bare flag (only lowercase ASCII tags are a real subdivision code)', () => {
+    const upperTags = '\u{1F3F4}\u{E0047}\u{E0042}\u{E0053}\u{E0043}\u{E0054}\u{E007F}';
+    expect(sanitiseForClipboard(upperTags)).toBe('\u{1F3F4}');
+  });
+
+  it('strips a tag sequence on a non-flag emoji base down to the bare base', () => {
+    const nonFlagBase = '\u{1F600}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}';
+    expect(sanitiseForClipboard(nonFlagBase)).toBe('\u{1F600}');
+  });
+
+  it('strips a tag character between plain text, keeping the text', () => {
+    expect(sanitiseForClipboard('a\u{E0001}\u{E007F}b')).toBe('ab');
+  });
+
+  it('keeps a valid flag sequence but strips extra trailing tag characters', () => {
+    const scotland = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}';
+    const withExtra = scotland + '\u{E0041}\u{E0042}';
+    expect(sanitiseForClipboard(withExtra)).toBe(scotland);
+  });
+
+  it('strips a tag character spliced between two unpaired surrogates (surrogate-splice bypass, cycle 4)', () => {
+    // A lone high surrogate, then the valid tag character U+E0001 (itself the pair
+    // \uDB40\uDC01), then a lone low surrogate. Stripping only the well-formed middle pair
+    // would leave the two lone surrogates adjacent, and \uDB40 + \uDC69 together form a NEW
+    // valid surrogate pair, U+E0069 -- another tag character the single regex pass never
+    // re-scans for. The fix strips every unpaired surrogate in the same pass, so nothing survives.
+    const splice = '\uDB40' + '\u{E0001}' + '\uDC69';
+    expect(sanitiseForClipboard(splice)).toBe('');
+  });
+
+  it('strips a nested nested-pair splice payload (two high surrogates, a tag character, two low surrogates)', () => {
+    const nested = '\uDB40\uDB40' + '\u{E0001}' + '\uDC69\uDC69';
+    expect(sanitiseForClipboard(nested)).toBe('');
+  });
+
   it('keeps LRM/RLM marks used by legitimate bidi text', () => {
     expect(sanitiseForClipboard('a\u200Eb\u200Fc')).toBe('a\u200Eb\u200Fc');
   });
@@ -93,6 +151,11 @@ describe('sanitiseForClipboard', () => {
   it('keeps emoji ZWJ sequences, variation selectors, skin-tone modifiers and regional-indicator flags', () => {
     const s = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} \u2764\uFE0F \u{1F44D}\u{1F3FD} \u{1F1EC}\u{1F1E7}';
     expect(sanitiseForClipboard(s)).toBe(s);
+  });
+
+  it('keeps a plain astral (surrogate-pair) emoji intact', () => {
+    const grinning = '\u{1F600}';
+    expect(sanitiseForClipboard(grinning)).toBe(grinning);
   });
 
   it('keeps Arabic text intact', () => {
