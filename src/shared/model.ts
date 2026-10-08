@@ -91,9 +91,12 @@ export interface Settings {
 
 /** OMP model-role ids (issue #455, `omp://models.md` "Role aliases and settings"): built-in chat
  * roles plus model-kind roles. A role's VALUE is a plain model selector OMP itself resolves
- * (`provider/modelId[:thinking]`, an `@role` alias, or a comma-separated list) -- Refract never
- * parses or validates the selector text itself, only the role name, since OMP's own `omp config
- * set modelRoles` already rejects a selector its schema does not accept. */
+ * (`provider/modelId[:thinking]`, an `@role` alias, or a comma-separated list) -- Refract
+ * validates only length and control/formatting characters (`assertValidSelector`,
+ * `src/main/omp/config.ts`), never that the selector resolves to a real model: live-probed
+ * (`docs/spike/model-roles-probe.mjs`, FINDINGS item 48) that `omp config set modelRoles`
+ * itself accepts any string value with no model-resolution validation at set time -- the
+ * renderer's catalog-only picker (never free text) is the real safeguard, not the CLI. */
 export type ModelRoleId =
   | 'default'
   | 'smol'

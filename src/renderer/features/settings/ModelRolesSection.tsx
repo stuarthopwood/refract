@@ -2,21 +2,30 @@
 // own global config.yml) without hand-editing YAML. Reads/writes go through `omp config`
 // (`src/main/omp/config.ts`), never a file edit Refract does itself (constitution Principle I:
 // OMP owns its own config) -- `omp config set modelRoles` always writes the GLOBAL config (never
-// a project override; `omp://settings.md` "Where writes go"), which answers the issue's own
-// "which scope" open question directly from the CLI's documented behaviour. The model picker per
-// role is populated from `omp models --kind <kind> --json` (a read-only catalog listing,
-// independent of any live RPC session) rather than the RPC `get_available_models` surface the
-// issue originally suggested: FINDINGS item 21 found that surface carries no role field at all,
-// and the RPC session itself lives in Phase A files (`OmpProcess.ts`/`SessionAgent.ts`) this story
-// does not touch -- the catalog listing is the one role-aware, non-Phase-A source available.
+// a project override; confirmed live even with `modelRoleStorage: project` set, FINDINGS item 48/
+// `docs/spike/model-roles-probe.mjs`), which answers the issue's own "which scope" open question
+// directly. The model picker per role is populated from `omp models --kind <kind> --json` (a
+// read-only catalog listing, independent of any live RPC session) rather than the RPC
+// `get_available_models` surface the issue originally suggested: FINDINGS item 21 found that
+// surface carries no role field at all, and the RPC session itself lives in Phase A files
+// (`OmpProcess.ts`/`SessionAgent.ts`) this story does not touch -- the catalog listing is the one
+// role-aware, non-Phase-A source available.
 //
-// Known, explicitly reduced scope (not a silent gap): a role value with a `:thinking` suffix
-// (e.g. `anthropic/claude-sonnet-4-5:high`) never matches a catalog `selector` verbatim, so it
-// renders as its own "unknown current value" option, and picking a fresh model from the catalog
-// drops any existing suffix. Splitting a value into selector+suffix and re-attaching the suffix
-// (or adding a separate thinking-level picker) is left for a follow-up; this PR keeps the raw
-// current value visible and editable (never silently replaced) rather than hiding the gap.
-import { useEffect, useRef } from 'react'
+// Thinking-suffix handling: a role value may carry a trailing `:level` (e.g.
+// `anthropic/claude-sonnet-4-5:high` -- confirmed the live default on this machine's real
+// profile, every chat role carries one). Picking a fresh catalog selector (always suffix-free)
+// now carries over the role's EXISTING suffix rather than silently dropping it
+// (`splitThinkingSuffix`, quality-gate remediation, test-reviewer MEDIUM).
+//
+// Catalog status (loading/error/Retry) is rendered ONCE per distinct catalog kind actually used
+// in a group, not once per role (quality-gate remediation, code-reviewer/accessibility-auditor
+// MEDIUM: ten chat roles all share the `chat` kind, so the old per-role rendering produced ten
+// duplicate ids and ten redundant "Try again" buttons). A catalog retry keeps the existing error
+// and its button mounted throughout (`aria-disabled` plus "Retrying…" while in flight, per
+// `renderCatalogStatus`'s own `retryingKinds` state) rather than replacing it with a bare loading
+// line, so focus is never lost to an unmounting element.
+import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -24,7 +33,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useModelRolesStore } from '@/state'
 import { CHAT_MODEL_ROLES, MODEL_KIND_ROLES, ROLE_CATALOG_KIND } from '../../../shared/model'
-import type { ModelRoleId } from '../../../shared/model'
+import type { CatalogKind, ModelRoleId } from '../../../shared/model'
+import { applyThinkingSuffixCarryOver } from './modelRoleSuffix'
 
 interface RoleDescriptor {
   role: ModelRoleId
@@ -73,6 +83,7 @@ export function ModelRolesSection() {
   const loadError = useModelRolesStore((state) => state.loadError)
   const pendingRoles = useModelRolesStore((state) => state.pendingRoles)
   const saveErrors = useModelRolesStore((state) => state.saveErrors)
+  const overrideNotes = useModelRolesStore((state) => state.overrideNotes)
   const catalogs = useModelRolesStore((state) => state.catalogs)
   const catalogErrors = useModelRolesStore((state) => state.catalogErrors)
   const load = useModelRolesStore((state) => state.load)
@@ -81,6 +92,8 @@ export function ModelRolesSection() {
   const headingRef = useRef<HTMLHeadingElement>(null)
   const retryLoadRef = useRef<HTMLButtonElement>(null)
   const wasLoadErrorRef = useRef(false)
+  const [retryingLoad, setRetryingLoad] = useState(false)
+  const [retryingKinds, setRetryingKinds] = useState<ReadonlySet<CatalogKind>>(new Set())
   // Quality-gate remediation (accessibility-auditor HIGH): saving/saved/failed was previously
   // announced nowhere -- the spinner was `aria-hidden` and a failure went only to an
   // auto-dismissing toast. Two regions, matching this app's existing `ManageAccountsDialog`/
@@ -103,18 +116,19 @@ export function ModelRolesSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Quality-gate remediation (accessibility-auditor MEDIUM, matching `OmpProvidersSection.tsx`'s
-  // own retry-focus pattern): move focus onto the Retry button the moment a load failure first
-  // appears, so a keyboard/screen-reader user lands straight on the one useful action.
+  // Quality-gate remediation (code-reviewer MEDIUM): focus the Retry button the moment a load
+  // failure first appears (unchanged), AND focus the section heading when a retry SUCCEEDS (the
+  // button that had focus just unmounted along with the whole Alert).
   useEffect(() => {
     if (loadError && !wasLoadErrorRef.current) {
       retryLoadRef.current?.focus()
+    } else if (!loadError && wasLoadErrorRef.current) {
+      headingRef.current?.focus()
     }
     wasLoadErrorRef.current = loadError !== null
   }, [loadError])
 
-  async function handleRoleChange(role: ModelRoleId, label: string, rawValue: string): Promise<void> {
-    const value = rawValue === INHERITED_VALUE ? null : rawValue
+  async function handleRoleChange(role: ModelRoleId, label: string, value: string | null): Promise<void> {
     const result = await setRole(role, value)
     if (result.ok) {
       announcePolite(value === null ? `${label} cleared` : `${label} saved`)
@@ -123,25 +137,91 @@ export function ModelRolesSection() {
     }
   }
 
+  async function handleRetryLoad(): Promise<void> {
+    setRetryingLoad(true)
+    await load()
+    setRetryingLoad(false)
+    const state = useModelRolesStore.getState()
+    if (state.loadError) {
+      announceAssertive('Could not read model roles')
+      retryLoadRef.current?.focus()
+    } else {
+      announcePolite('Model roles loaded')
+    }
+  }
+
+  async function handleCatalogRetry(kind: CatalogKind): Promise<void> {
+    setRetryingKinds((prev) => new Set(prev).add(kind))
+    await loadCatalog(kind, true)
+    setRetryingKinds((prev) => {
+      const next = new Set(prev)
+      next.delete(kind)
+      return next
+    })
+    const state = useModelRolesStore.getState()
+    if (state.catalogErrors[kind]) {
+      announceAssertive(`Could not load models: ${state.catalogErrors[kind]}`)
+    } else {
+      announcePolite('Models loaded')
+    }
+  }
+
+  /** Renders the loading/error status for ONE catalog kind, ONCE -- callers must only call this
+   * for the first role of each kind within a group (see `renderGroup`'s own `seenKinds`import
+   * tracking). */
+  function renderCatalogStatus(kind: CatalogKind) {
+    const catalog = catalogs[kind]
+    const catalogError = catalogErrors[kind]
+    const isRetrying = retryingKinds.has(kind)
+    const catalogLoading = catalog === undefined && !catalogError && !isRetrying
+    const catalogErrorId = `model-role-catalog-error-${kind}`
+
+    if (catalogLoading) {
+      return (
+        <p key={kind} className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
+          <Loader2Icon aria-hidden className="size-3 shrink-0 animate-spin" />
+          Loading models…
+        </p>
+      )
+    }
+    if (catalogError) {
+      return (
+        <p key={kind} id={catalogErrorId} className="mb-2 flex items-center gap-2 text-xs text-destructive">
+          <span className="flex items-center gap-1">
+            <OctagonXIcon aria-hidden className="size-3 shrink-0" />
+            Could not load models: {catalogError}
+          </span>
+          <Button variant="outline" size="xs" aria-disabled={isRetrying || undefined} onClick={() => void handleCatalogRetry(kind)}>
+            {isRetrying ? 'Retrying…' : 'Retry'}
+          </Button>
+        </p>
+      )
+    }
+    return null
+  }
+
   function renderRole(descriptor: RoleDescriptor) {
     const { role, label, description } = descriptor
     const currentValue = roles[role]
     const kind = ROLE_CATALOG_KIND[role]
     const catalog = catalogs[kind]
     const catalogError = catalogErrors[kind]
-    const catalogLoading = catalog === undefined && !catalogError
     const isPending = pendingRoles.has(role)
     const saveError = saveErrors[role]
+    const overrideNote = overrideNotes[role]
     const selectId = `model-role-${role}`
     const descriptionId = `${selectId}-description`
     const saveErrorId = `${selectId}-save-error`
+    const overrideNoteId = `${selectId}-override-note`
     const catalogErrorId = `model-role-catalog-error-${kind}`
-    const describedBy = [descriptionId, saveError ? saveErrorId : null, catalogError ? catalogErrorId : null].filter(Boolean).join(' ')
+    const describedBy = [descriptionId, saveError ? saveErrorId : null, overrideNote ? overrideNoteId : null, catalogError ? catalogErrorId : null]
+      .filter(Boolean)
+      .join(' ')
 
     // The catalog may not list a role's current selector verbatim (a comma-list, an `@alias`, or
     // a selector from a provider the catalog fetch temporarily missed, or one carrying a
-    // `:thinking` suffix -- see the module header) -- render it as its own option so the picker
-    // never silently shows the wrong thing for a value it does not recognise.
+    // `:thinking` suffix) -- render it as its own option so the picker never silently shows the
+    // wrong thing for a value it does not recognise.
     const knownSelectors = new Set((catalog ?? []).map((entry) => entry.selector))
     const hasUnknownCurrent = currentValue !== undefined && !knownSelectors.has(currentValue)
     const inheritedLabel = ROLE_FALLBACK_LABEL[role] ? `Inherited (${ROLE_FALLBACK_LABEL[role]})` : 'Inherited'
@@ -166,13 +246,14 @@ export function ModelRolesSection() {
             )}
             <Select
               value={currentValue ?? INHERITED_VALUE}
-              onValueChange={(value) => {
-                // Quality-gate remediation (accessibility-auditor HIGH): the trigger stays a real,
-                // focusable, non-`disabled` element while a save is pending (see below) so Radix
-                // can still return focus to it when the popup closes -- ignoring a change while
-                // pending here, rather than disabling the control, is what keeps that focus
-                // return working.
+              onValueChange={(pickedValue) => {
+                // Quality-gate remediation (accessibility-auditor HIGH): the trigger stays a
+                // real, focusable, non-`disabled` element while a save is pending (see below) so
+                // Radix can still return focus to it when the popup closes -- ignoring a change
+                // while pending here, rather than disabling the control, is what keeps that
+                // focus return working.
                 if (isPending) return
+                const value = pickedValue === INHERITED_VALUE ? null : applyThinkingSuffixCarryOver(pickedValue, currentValue)
                 void handleRoleChange(role, label, value)
               }}
             >
@@ -198,29 +279,35 @@ export function ModelRolesSection() {
           </div>
         </div>
         {saveError && (
-          <p id={saveErrorId} role="status" className="mt-1 flex items-center gap-1 text-xs text-destructive">
+          <p id={saveErrorId} className="mt-1 flex items-center gap-1 text-xs text-destructive">
             <OctagonXIcon aria-hidden className="size-3 shrink-0" />
             Could not save: {saveError}
           </p>
         )}
-        {catalogLoading && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-            <Loader2Icon aria-hidden className="size-3 shrink-0 animate-spin" />
-            Loading models…
-          </p>
-        )}
-        {catalogError && (
-          <p id={catalogErrorId} className="mt-1 flex items-center gap-2 text-xs text-destructive">
-            <span className="flex items-center gap-1">
-              <OctagonXIcon aria-hidden className="size-3 shrink-0" />
-              Could not load models: {catalogError}
-            </span>
-            <Button variant="outline" size="xs" onClick={() => void loadCatalog(kind, true)}>
-              Try again
-            </Button>
+        {!saveError && overrideNote && (
+          <p id={overrideNoteId} className="mt-1 text-xs text-muted-foreground">
+            Saved, but {overrideNote} still controls the effective model for this role.
           </p>
         )}
       </div>
+    )
+  }
+
+  function renderGroup(descriptors: RoleDescriptor[]) {
+    const seenKinds = new Set<CatalogKind>()
+    const statusBlocks: ReactNode[] = []
+    for (const descriptor of descriptors) {
+      const kind = ROLE_CATALOG_KIND[descriptor.role]
+      if (seenKinds.has(kind)) continue
+      seenKinds.add(kind)
+      const status = renderCatalogStatus(kind)
+      if (status) statusBlocks.push(status)
+    }
+    return (
+      <>
+        {statusBlocks}
+        <div className="flex flex-col divide-y divide-border">{descriptors.map(renderRole)}</div>
+      </>
     )
   }
 
@@ -248,9 +335,9 @@ export function ModelRolesSection() {
           <OctagonXIcon aria-hidden />
           <AlertTitle>Could not read model roles</AlertTitle>
           <AlertDescription>{loadError}</AlertDescription>
-          <div className="mt-2">
-            <Button ref={retryLoadRef} variant="outline" size="sm" onClick={() => void load()}>
-              Retry
+          <div className="col-start-2 mt-2">
+            <Button ref={retryLoadRef} variant="outline" size="sm" aria-disabled={retryingLoad || undefined} onClick={() => void handleRetryLoad()}>
+              {retryingLoad ? 'Retrying…' : 'Retry'}
             </Button>
           </div>
         </Alert>
@@ -259,14 +346,14 @@ export function ModelRolesSection() {
           <h3 id="model-roles-chat-heading" className="mb-1 text-sm font-semibold">
             Chat roles
           </h3>
-          <div role="group" aria-labelledby="model-roles-chat-heading" className="mb-6 flex flex-col divide-y divide-border">
-            {CHAT_ROLE_DESCRIPTORS.map(renderRole)}
+          <div role="group" aria-labelledby="model-roles-chat-heading" className="mb-6">
+            {renderGroup(CHAT_ROLE_DESCRIPTORS)}
           </div>
           <h3 id="model-roles-kind-heading" className="mb-1 text-sm font-semibold">
             Model-kind roles
           </h3>
-          <div role="group" aria-labelledby="model-roles-kind-heading" className="flex flex-col divide-y divide-border">
-            {KIND_ROLE_DESCRIPTORS.map(renderRole)}
+          <div role="group" aria-labelledby="model-roles-kind-heading">
+            {renderGroup(KIND_ROLE_DESCRIPTORS)}
           </div>
         </>
       )}

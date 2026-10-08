@@ -1,4 +1,3 @@
-import { toast } from 'sonner'
 import { create } from 'zustand'
 import type { CatalogKind, ModelCatalogEntry, ModelRoleId } from '../../shared/model'
 
@@ -9,21 +8,22 @@ import type { CatalogKind, ModelCatalogEntry, ModelRoleId } from '../../shared/m
 // Quality-gate remediation (accessibility-auditor HIGH): a failed `setRole` used to go only to
 // a `toast.error` (auto-dismissing, untied to the field). `saveErrors` now holds a per-role
 // message instead, so the section can render it inline (`aria-describedby`/`aria-invalid`) and
-// announce it itself -- this store no longer calls `notify()` at all.
+// announce it itself -- this store no longer calls `notify()` at all. `overrideNotes` is the
+// same idea for the 'overriddenBy' caveat (accessibility-auditor LOW): inline per role, not an
+// auto-dismissing `toast.info`.
 interface ModelRolesState {
   roles: Record<string, string>
   loaded: boolean
   loadError: string | null
   pendingRoles: ReadonlySet<ModelRoleId>
   saveErrors: Partial<Record<ModelRoleId, string>>
+  overrideNotes: Partial<Record<ModelRoleId, string>>
   catalogs: Partial<Record<CatalogKind, ModelCatalogEntry[]>>
   catalogErrors: Partial<Record<CatalogKind, string>>
   load(): Promise<void>
-  /** Resolves once the write settles; throws nothing -- check `saveErrors[role]` afterwards to
-   * decide what to announce (the section component owns announcing, this store only tracks
-   * state). Returns whether the write succeeded, so a caller never has to re-read the store
-   * synchronously right after an `await` (a second `setRole` for the same role could already
-   * have started by then). */
+  /** Resolves once the write settles; throws nothing -- check the returned outcome (and/or
+   * `saveErrors[role]`) to decide what to announce (the section component owns announcing, this
+   * store only tracks state). */
   setRole(role: ModelRoleId, value: string | null): Promise<{ ok: true } | { ok: false; message: string }>
   loadCatalog(kind: CatalogKind, force?: boolean): Promise<void>
 }
@@ -34,10 +34,15 @@ export const useModelRolesStore = create<ModelRolesState>((set, get) => ({
   loadError: null,
   pendingRoles: new Set(),
   saveErrors: {},
+  overrideNotes: {},
   catalogs: {},
   catalogErrors: {},
 
   load: async () => {
+    // Quality-gate remediation (code-reviewer MEDIUM): reset to the loading state up front,
+    // so a Retry after a failure actually shows 'Loading model roles…' again instead of leaving
+    // the stale error on screen for the whole request.
+    set({ loaded: false, loadError: null })
     const result = await window.refract.modelRoles.list()
     if (result.ok) {
       // Quality-gate remediation (test-reviewer LOW): never clobber `roles` with this read if a
@@ -60,12 +65,10 @@ export const useModelRolesStore = create<ModelRolesState>((set, get) => ({
     if (result.ok) {
       const errors = { ...get().saveErrors }
       delete errors[role]
-      set({ roles: result.value.roles, pendingRoles: next, saveErrors: errors })
-      if (result.value.overriddenBy) {
-        // Not an error (the write itself succeeded) -- `toast.info` matches this app's existing
-        // "succeeded, but here's a caveat" pattern (MessageInput.tsx's queued-message notice).
-        toast.info(`Saved, but ${result.value.overriddenBy} still controls the effective model for this role.`)
-      }
+      const notes = { ...get().overrideNotes }
+      if (result.value.overriddenBy) notes[role] = result.value.overriddenBy
+      else delete notes[role]
+      set({ roles: result.value.roles, pendingRoles: next, saveErrors: errors, overrideNotes: notes })
       return { ok: true }
     }
     set({ pendingRoles: next, saveErrors: { ...get().saveErrors, [role]: result.error.message } })
@@ -74,17 +77,16 @@ export const useModelRolesStore = create<ModelRolesState>((set, get) => ({
 
   loadCatalog: async (kind, force = false) => {
     if (!force && (get().catalogs[kind] || get().catalogErrors[kind])) return
-    // Quality-gate remediation (code-reviewer MEDIUM): clear a cached error up front so a
-    // forced retry (and any later remount) shows the "Loading models…" state instead of the
-    // stale failure for the whole time the new request is in flight.
-    if (get().catalogErrors[kind]) {
-      const errors = { ...get().catalogErrors }
-      delete errors[kind]
-      set({ catalogErrors: errors })
-    }
+    // Quality-gate remediation (accessibility-auditor MEDIUM): do NOT clear a cached error up
+    // front on a forced retry -- the section keeps the existing error (and its Retry button)
+    // mounted and marks it 'Retrying…' itself, so this call never causes an unmount that would
+    // drop keyboard/screen-reader focus mid-retry. Only the final outcome below ever changes
+    // catalogErrors/catalogs.
     const result = await window.refract.modelRoles.listCatalog(kind)
     if (result.ok) {
-      set({ catalogs: { ...get().catalogs, [kind]: result.value } })
+      const errors = { ...get().catalogErrors }
+      delete errors[kind]
+      set({ catalogs: { ...get().catalogs, [kind]: result.value }, catalogErrors: errors })
     } else {
       set({ catalogErrors: { ...get().catalogErrors, [kind]: result.error.message } })
     }

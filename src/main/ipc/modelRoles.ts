@@ -16,7 +16,7 @@ import { OmpConfigError, getModelRoles, listCatalogModels, setModelRole } from '
  * nonzero exit, unparsable output) -- reusing the existing vocabulary `ipc/accounts.ts` already
  * established for an `omp` CLI/RPC call that failed, rather than adding new `IpcErrorCode`
  * members for the same shape of failure. */
-function toIpcError(err: unknown): { code: 'omp-probe-failed' | 'timeout' | 'invalid-argument'; message: string } {
+export function toIpcError(err: unknown): { code: 'omp-probe-failed' | 'timeout' | 'invalid-argument'; message: string } {
   if (err instanceof OmpConfigError) {
     if (err.code === 'timeout') return { code: 'timeout', message: err.message };
     if (err.code === 'invalid-value') return { code: 'invalid-argument', message: err.message };

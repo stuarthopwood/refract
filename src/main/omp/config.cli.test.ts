@@ -14,6 +14,16 @@ vi.mock('node:child_process', () => ({
 vi.mock('../process/executables', () => ({
   resolveExecutable: vi.fn(async () => 'C:/fake/omp.exe'),
 }));
+// Quality-gate remediation: the scratch-directory mkdir/readdir calls are real `node:fs/promises`
+// I/O in production, but mocking them here removes any dependency on real filesystem timing --
+// these tests were flaky under a full, heavily parallel test-suite run (many worker threads
+// contending for CPU) when left real, even though they passed reliably in isolation.
+vi.mock('node:fs', () => ({
+  promises: {
+    mkdir: vi.fn(async () => undefined),
+    readdir: vi.fn(async () => [] as string[]),
+  },
+}));
 
 // Imported AFTER the mocks above are registered (vitest hoists `vi.mock` calls, so this import
 // always sees the mocked modules).
