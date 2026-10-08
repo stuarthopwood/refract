@@ -8,7 +8,8 @@ import type { OmpProcess } from './OmpProcess';
 import { verifyReattach } from './reattachVerification';
 import { detectUnexpectedTermination } from './terminationDetection';
 import { currentTurnKeys, fromHistory } from './transcript';
-import type { GetMessagesResponseData, GetStateResponseData, SwitchSessionResponseData } from '../../shared/frames';
+import { fetchAllMessages } from './fetchAllMessages';
+import type { GetStateResponseData, SwitchSessionResponseData } from '../../shared/frames';
 import type { Session, TranscriptItem } from '../../shared/model';
 
 export interface SwitchRecoveryContext {
@@ -39,7 +40,6 @@ export async function recoverFromFailedSwitch(
           const session = ctx.requireSession();
           const backFailure = verifyReattach(session, backStateRes.data as GetStateResponseData);
           if (!backFailure) {
-            const messagesRes = await process.request({ type: 'get_messages', id: '' });
             // Issue #489 (durable turn marker, 2026-10-07): scopes by the SAME persisted
             // `currentTurnSubagents` set `reconcileSubagentsOnAttach` uses, read from the
             // `session` just fetched above (fresh, not a stale earlier snapshot).
@@ -48,9 +48,12 @@ export async function recoverFromFailedSwitch(
             // switched back to -- its own tail decides whether a still-`running` tool row in the
             // reloaded history is settled to `interrupted`.
             const terminatedUnexpectedly = (await detectUnexpectedTermination(previousConversation)).terminatedUnexpectedly;
-            const transcript = messagesRes.success
-              ? fromHistory((messagesRes.data as GetMessagesResponseData).messages, currentTurnKeySet, terminatedUnexpectedly)
-              : [];
+            // Quality-gate fix (cycle 5, 2026-10-08): slice 4 (PLAN.md row A0) replaced the
+            // monolithic `get_messages` with paged `get_messages_page` round trips in `launch()`
+            // and `openConversation()`, but missed this recovery path, which still sent the
+            // single unbounded call the slice exists to avoid.
+            const { messages, complete } = await fetchAllMessages(process);
+            const transcript = complete ? fromHistory(messages, currentTurnKeySet, terminatedUnexpectedly) : [];
             ctx.applyTranscript(transcript);
             return;
           }

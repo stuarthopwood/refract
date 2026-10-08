@@ -547,6 +547,10 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     // the new key is ever rendered.
     if (revealedEarlier) setRevealedEarlier(false)
     if (revealedAnnouncement) setRevealedAnnouncement('')
+    // Quality-gate fix (HIGH, code review, cycle 5, 2026-10-08): a Session/Conversation switch
+    // arriving between "Load earlier"'s click and the frame that would have cleared this (see
+    // the dedicated effect below) must not leave the NEW Session's log permanently suppressed.
+    if (suppressLogAnnouncements) setSuppressLogAnnouncements(false)
   }
 
   // Continuously records this Session's scroll position while the viewport is visible, so
@@ -622,13 +626,24 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       viewport.scrollTop = restoreScrollTop(viewport.scrollHeight, anchor)
       viewport.focus({ preventScroll: true })
     }
-    // Quality-gate fix (a11y, cycle 3): re-enables the log's own live announcements only once
-    // the revealed turns have actually committed and the scroll/focus restore above has run --
-    // one frame later, so the log's own additions-announcement machinery (which reacts to the
-    // committed DOM, not this render) never sees them as "new" in the first place.
+  }, [visibleTurns])
+
+  // Quality-gate fix (HIGH, code review, cycle 5, 2026-10-08): pulled out of the `[visibleTurns]`
+  // effect above into its own effect keyed on `suppressLogAnnouncements` itself. The previous
+  // version's `requestAnimationFrame` lived inside the `[visibleTurns]` effect, so ANOTHER
+  // `visibleTurns` change arriving before that frame fired (any streamed `transcript:patch`
+  // during a working turn produces a new `turns`/`visibleTurns`) cancelled it on cleanup; the
+  // re-run then saw `anchor === null` (already consumed by the first run) and returned early,
+  // so nothing ever scheduled a replacement clear -- `suppressLogAnnouncements` stayed `true`,
+  // and the transcript's `role="log"` stayed `aria-live="off"`, for the rest of the Session.
+  // This effect re-arms every time `suppressLogAnnouncements` itself flips `true`, independent
+  // of how many more `visibleTurns` changes land in between, and its own cleanup always cancels
+  // the correct frame (including on unmount, e.g. closing this pane mid-reveal).
+  React.useEffect(() => {
+    if (!suppressLogAnnouncements) return
     const frame = requestAnimationFrame(() => setSuppressLogAnnouncements(false))
     return () => cancelAnimationFrame(frame)
-  }, [visibleTurns])
+  }, [suppressLogAnnouncements])
 
   // Finding 1 (gate fixes 4, a11y): the button above goes `inert` (below) the instant `isAtEnd`
   // becomes true -- both from this handler's own click AND from a Session/Conversation landing

@@ -3,8 +3,7 @@ import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
 import { ReattachFailedError, SessionNotIdleError } from '../omp/errors';
 import type { SessionAgent } from '../omp/SessionAgent';
-import { detectUnexpectedTermination } from '../omp/terminationDetection';
-import { isStoppedOnRequestMarkerValid } from '../omp/stoppedOnRequestMarker';
+import { resolveTermination } from '../omp/stoppedOnRequestMarker';
 import { GitError } from '../git/git';
 import { RegistryError } from '../store/registry';
 import { GhError } from '../github/gh';
@@ -44,18 +43,14 @@ export async function buildSnapshot(agent: SessionAgent, session: Session): Prom
   // -- a live one's own status already says otherwise, so no tail read is spent on it.
   if (runtime.status === 'stopped') {
     // Quality-gate fix (cycle 2, 2026-10-08): a requested stop is never read from the tail at
-    // all -- see `SessionRuntime.stoppedOnRequest`'s own doc comment. Quality-gate fix (cycle 4,
-    // 2026-10-08): `stoppedOnRequest` is THIS life's own in-memory flag; the persisted marker is
-    // checked alongside it so a Session reattached fresh this run still honours an EARLIER
-    // life's requested stop, as long as the Conversation has not grown since -- see
-    // `Session.stoppedOnRequestConversation`'s own doc comment.
-    if (stoppedOnRequest || (await isStoppedOnRequestMarkerValid(session))) {
-      runtime.terminatedUnexpectedly = false;
-    } else {
-      const detection = await detectUnexpectedTermination(session.currentConversation);
-      runtime.terminatedUnexpectedly = detection.terminatedUnexpectedly;
-      if (detection.pendingToolNames.length > 0) runtime.pendingToolNames = detection.pendingToolNames;
-    }
+    // all -- see `SessionRuntime.stoppedOnRequest`'s own doc comment. `resolveTermination`
+    // (cycle 5: shared, not copied here) also checks the persisted marker alongside it so a
+    // Session reattached fresh this run still honours an EARLIER life's requested stop, as long
+    // as the Conversation has not grown since -- see `Session.stoppedOnRequestConversation`'s
+    // own doc comment.
+    const detection = await resolveTermination(session, stoppedOnRequest);
+    runtime.terminatedUnexpectedly = detection.terminatedUnexpectedly;
+    if (detection.pendingToolNames.length > 0) runtime.pendingToolNames = detection.pendingToolNames;
   }
   const conversations = await listConversations(session.sessionDir, session.currentConversation);
   return { runtime, conversations, readout, subagents };

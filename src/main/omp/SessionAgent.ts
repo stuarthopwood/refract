@@ -151,6 +151,14 @@ export class SessionAgent extends EventEmitter {
    * started by the time that resolves, this exit's "agent-exited" verdict is for a life nobody
    * cares about any more and must never overwrite whatever the newer life has since recorded. */
   private lifeEpoch = 0;
+  /** Quality-gate fix (cycle 5, 2026-10-08): the in-flight `recordStoppedOnRequestMarker`/
+   * `clearStoppedOnRequestMarker` write, if any -- `onExit`'s requested branch and `launch()`
+   * both used to fire these without awaiting them, so quitting the app (`shutdown()` -> `before-
+   * quit` -> `app.quit()`) could exit before a requested stop's marker ever reached disk, exactly
+   * the restart case cycle 4 was meant to protect. `shutdown()` now awaits this before returning,
+   * so `stopAll()` (and so `before-quit`) genuinely waits for it. Starts resolved so an agent
+   * that never recorded or cleared anything has nothing to wait on. */
+  private markerWrite: Promise<void> = Promise.resolve();
 
   private readonly patches = new PatchCoalescer((ops) => this.emit('patch', { sessionId: this.sessionId, ops }));
   /** True only while `restart()` is tearing down and respawning the process, so `onExit`'s
@@ -318,10 +326,11 @@ export class SessionAgent extends EventEmitter {
     this.lifeEpoch += 1;
     // Quality-gate fix (cycle 4, 2026-10-08): the PERSISTED sibling of the in-memory reset above
     // -- see `Session.stoppedOnRequestConversation`'s own doc comment for why an active clear
-    // here is still needed even though the marker's own size check is already passive. Not
-    // awaited (never throws; matches this file's own established fire-and-forget convention for
-    // non-critical-path registry bookkeeping, e.g. `currentTurnSubagents` at `agent_start`).
-    void clearStoppedOnRequestMarker(this.registry, this.sessionId);
+    // here is still needed even though the marker's own size check is already passive.
+    // Quality-gate fix (cycle 5, 2026-10-08): stored on `markerWrite` (not `void`-discarded) so
+    // `shutdown()` can still wait for whichever marker write is currently in flight -- never
+    // throws, so there is nothing for a caller to catch.
+    this.markerWrite = clearStoppedOnRequestMarker(this.registry, this.sessionId);
     const approvalMode = this.settings.get().approvalMode;
     const proc = new OmpProcess({
       cwd: session.worktreePath,
@@ -510,6 +519,17 @@ export class SessionAgent extends EventEmitter {
       this.readoutTimer = undefined;
     }
     await stopIfRunning(this.process);
+    // Quality-gate fix (HIGH, cycle 5, 2026-10-08): `stopIfRunning` resolves once the process has
+    // actually exited, which is strictly AFTER `onExit`'s own synchronous body (including this
+    // assignment to `markerWrite`) already ran -- `OmpProcess`'s internal exit handler resolves
+    // its `exitWaiters` (what `stopIfRunning`/`proc.stop()` awaits) and emits `'exit'` (which
+    // synchronously invokes `SessionAgent.onExit`) in the same synchronous turn, so `markerWrite`
+    // is never stale here. Without this await, a requested stop's marker write could still be
+    // in flight when `stopAll()` (`before-quit`) resolves and the app quits, losing the exact
+    // guarantee cycle 4 added. Never rejects (`recordStoppedOnRequestMarker`/
+    // `clearStoppedOnRequestMarker` both already catch their own errors), the extra `.catch` is
+    // defence in depth only.
+    await this.markerWrite.catch(() => undefined);
   }
 
   /** `settings.setApprovalMode` (T031, FR-015): marks a live Session whose `launchedMode` differs
@@ -967,10 +987,19 @@ export class SessionAgent extends EventEmitter {
       // comment.
       this.runtime = { ...this.runtime, stoppedOnRequest: true };
       // Quality-gate fix (cycle 4, 2026-10-08): the PERSISTED sibling of the in-memory flag
-      // above -- see `Session.stoppedOnRequestConversation`'s own doc comment. Fire-and-forget
-      // (never throws; a failed write here must not block this exit handler), same convention as
-      // `launch()`'s own clear of this marker.
-      void recordStoppedOnRequestMarker(this.registry, this.sessionId, this.registry.getSession(this.sessionId)?.currentConversation ?? null);
+      // above -- see `Session.stoppedOnRequestConversation`'s own doc comment. Quality-gate fix
+      // (cycle 5, 2026-10-08): stored on `markerWrite` (not `void`-discarded) so `shutdown()`
+      // can wait for it (never throws, so there is nothing for a caller to catch); `epochAtExit`
+      // captured here, BEFORE the write's own internal `fs.stat` await, and re-checked after it
+      // (`stillCurrent`) closes the race with a `launch()` that starts a brand new life while
+      // this write is still in flight -- see `recordStoppedOnRequestMarker`'s own doc comment.
+      const epochAtExit = this.lifeEpoch;
+      this.markerWrite = recordStoppedOnRequestMarker(
+        this.registry,
+        this.sessionId,
+        this.registry.getSession(this.sessionId)?.currentConversation ?? null,
+        () => this.lifeEpoch === epochAtExit,
+      );
       this.setStatus('stopped', { stopReason: 'not-started', terminatedUnexpectedly: false });
       return;
     }

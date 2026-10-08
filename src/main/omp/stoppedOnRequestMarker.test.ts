@@ -84,6 +84,33 @@ describe('recordStoppedOnRequestMarker', () => {
     await expect(recordStoppedOnRequestMarker(registry, session.id, missing)).resolves.toBeUndefined();
     expect(registry.getSession(session.id)?.stoppedOnRequestConversation).toBeUndefined();
   });
+
+  // Quality-gate fix (cycle 5, 2026-10-08): closes the race with `launch()`'s `clear` -- a new
+  // life starting while this call's own `fs.stat` is still in flight must stop this call from
+  // re-arming the marker for that new life once the stat resolves.
+  it('skips the write entirely when stillCurrent() reports false after the stat resolves', async () => {
+    const { dir, registry } = await freshRegistry();
+    const conversation = await freshConversation();
+    const session = makeSession({ currentConversation: conversation });
+    await registry.addSession(session);
+
+    await recordStoppedOnRequestMarker(registry, session.id, conversation, () => false);
+
+    expect(registry.getSession(session.id)?.stoppedOnRequestConversation).toBeUndefined();
+    const reopened = await RegistryStore.open(dir);
+    expect(reopened.getSession(session.id)?.stoppedOnRequestConversation).toBeUndefined();
+  });
+
+  it('still writes when stillCurrent() reports true (the default for every real caller today)', async () => {
+    const { registry } = await freshRegistry();
+    const conversation = await freshConversation();
+    const session = makeSession({ currentConversation: conversation });
+    await registry.addSession(session);
+
+    await recordStoppedOnRequestMarker(registry, session.id, conversation, () => true);
+
+    expect(registry.getSession(session.id)?.stoppedOnRequestConversation).toBe(conversation);
+  });
 });
 
 describe('clearStoppedOnRequestMarker', () => {

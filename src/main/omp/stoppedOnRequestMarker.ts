@@ -10,6 +10,8 @@
 import { promises as fs } from 'node:fs';
 import type { Session } from '../../shared/model';
 import type { RegistryStore } from '../store/registry';
+import { detectUnexpectedTermination } from './terminationDetection';
+import type { TerminationDetectionResult } from './terminationDetection';
 
 /** Writes the marker for `session`'s CURRENT Conversation at the moment of a requested stop
  * (`SessionAgent.onExit`'s requested branch). Stats the file for its exact size rather than
@@ -18,8 +20,23 @@ import type { RegistryStore } from '../store/registry';
  * missing/unreadable Conversation (the agent stopped before its first turn) sets no marker: there
  * is nothing to protect a later read from in that case, an absent file already reads clean.
  * Never throws -- a failed write here must not crash the exit handler it runs from; the Session
- * simply falls back to judging the tail fresh next time, same as if this had never run. */
-export async function recordStoppedOnRequestMarker(registry: RegistryStore, sessionId: string, conversation: string | null): Promise<void> {
+ * simply falls back to judging the tail fresh next time, same as if this had never run.
+ *
+ * Quality-gate fix (cycle 5, 2026-10-08): `stillCurrent`, checked AFTER the `fs.stat` await and
+ * BEFORE `updateSession`, closes a race with `launch()`'s own `clearStoppedOnRequestMarker`: a
+ * requested stop followed quickly by a new life starting (a user send that auto-starts, a
+ * recover, Stop-then-Start) can run clear-then-record in that order if this call's own `stat`
+ * is still in flight when the new `launch()` fires its clear -- without the check, this call
+ * would then re-arm the marker for the NEW life after the clear meant to protect it, and a crash
+ * in that new life before it writes anything (the exact case the active clear exists for) would
+ * be masked as a mere requested stop. Defaults to always-current for callers that have no
+ * narrower life concept to check (there are none today; every real caller is `SessionAgent`). */
+export async function recordStoppedOnRequestMarker(
+  registry: RegistryStore,
+  sessionId: string,
+  conversation: string | null,
+  stillCurrent: () => boolean = () => true,
+): Promise<void> {
   if (!conversation) return;
   let size: number;
   try {
@@ -27,6 +44,7 @@ export async function recordStoppedOnRequestMarker(registry: RegistryStore, sess
   } catch {
     return;
   }
+  if (!stillCurrent()) return;
   await registry
     .updateSession(sessionId, { stoppedOnRequestConversation: conversation, stoppedOnRequestAtSize: size })
     .catch((err) => console.error(`stoppedOnRequestMarker: failed to record marker for ${sessionId}`, err));
@@ -65,4 +83,20 @@ export async function isStoppedOnRequestMarkerValid(
   } catch {
     return false;
   }
+}
+
+const CLEAN_RESULT: TerminationDetectionResult = { terminatedUnexpectedly: false, reason: { kind: 'clean' }, pendingToolNames: [] };
+
+/** Quality-gate fix (cycle 5, 2026-10-08, DRY): the "requested stop (in-memory flag or a valid
+ * persisted marker) -> clean, else read the tail" rule was copied at every call site that needs
+ * `terminatedUnexpectedly` (`SessionManager.summaries()` twice, `ipc/util.ts`'s `buildSnapshot`,
+ * and #509's own `attachSnapshotCore`/`resumeSessionCore`) and had already drifted between them
+ * (some synthesised their own `{ reason: { kind: 'clean' } }` result, others did not). One
+ * shared implementation every call site now routes through instead. */
+export async function resolveTermination(
+  session: Pick<Session, 'currentConversation' | 'stoppedOnRequestConversation' | 'stoppedOnRequestAtSize'>,
+  stoppedOnRequest: boolean,
+): Promise<TerminationDetectionResult> {
+  if (stoppedOnRequest || (await isStoppedOnRequestMarkerValid(session))) return CLEAN_RESULT;
+  return detectUnexpectedTermination(session.currentConversation);
 }
