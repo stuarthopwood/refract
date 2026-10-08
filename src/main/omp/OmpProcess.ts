@@ -20,12 +20,12 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import os from 'node:os'
-import { type ApprovalMode, OMP_APPROVAL_MODE } from '../../shared/model'
+import { type ApprovalMode, OMP_APPROVAL_MODE, READY_CEILING_MS } from '../../shared/model'
 import type { Frame, ReadyFrame, ResponseFrame, RpcChunkFrame, RpcCommand } from '../../shared/frames'
 import { tailOmpLogForPid } from './ompLogTail'
 import { redactSecrets } from './redact'
 import { ReadyWaitController, type ReadyWaitStage } from './readyWait'
-import { acquireStartSlot, startsInFlight } from './startQueue'
+import { acquireStartSlot, markSpawned, spawnedInFlight, unmarkSpawned } from './startQueue'
 import { isMemoryLow } from '../memory'
 import { recordProcess, removeProcessRecord } from '../process/pidRecords'
 import { resolveExecutable, taskkillPath } from '../process/executables'
@@ -33,11 +33,12 @@ import { resolveExecutable, taskkillPath } from '../process/executables'
 // Issue #512: a single fixed 60s cutoff killed a slow-but-healthy start with no progress
 // and no reason shown. READY_PROMPT_AFTER_MS is now only the point at which the caller
 // should offer "Keep waiting"/"Cancel" (see ReadyWaitController); the wait keeps going
-// regardless, up to READY_CEILING_MS, where it fails outright. Both are overridable per
-// `OmpProcessOptions`, per caller (the readiness/login-provider probes pass shorter values;
-// no production Settings surface wires either one yet).
+// regardless, up to `READY_CEILING_MS` (imported from `shared/model.ts` -- gate-fixes Low
+// finding, cycle 6: ChatPane.tsx's own announcement-only estimate used to hand-keep a SEPARATE
+// constant of the same value, with no link between the two), where it fails outright. Both are
+// overridable per `OmpProcessOptions`, per caller (the readiness/login-provider probes pass
+// shorter values; no production Settings surface wires either one yet).
 const READY_PROMPT_AFTER_MS = 60_000
-const READY_CEILING_MS = 180_000
 // Issue #512 requirement 5: how long a start will defer while memory.ts's isMemoryLow()
 // says the machine is under pressure, before giving up and spawning anyway (never defers
 // forever: that would just be a quieter version of the #512 bug it fixes).
@@ -49,6 +50,11 @@ const STDERR_TAIL_BYTES = 4 * 1024
 const STDERR_FAILURE_TAIL_BYTES = 2 * 1024
 // Issue #512 requirement 2: the tail of that pid's own `~/.omp/logs` file, appended to a
 // start failure alongside the stderr tail (OMP logs to its own file, not stderr).
+// Gate-fixes Medium finding (cycle 6): OMP's debug JSON lines run only a few hundred bytes
+// each, so reading just `OMP_LOG_TAIL_BYTES` worth of RAW log before filtering to warn/error
+// lines routinely held only 8-15 lines total, pushing the real warning/error out. Reads this
+// much larger window first; `buildStartFailure` caps the FILTERED result at `OMP_LOG_TAIL_BYTES`.
+const OMP_LOG_READ_WINDOW_BYTES = 64 * 1024
 const OMP_LOG_TAIL_BYTES = 4 * 1024
 // FINDINGS C22b: v1 frames are capped at maxFrameBytes; a reassembled rpc_chunk sequence
 // above this ceiling is treated as corrupt rather than buffered without bound.
@@ -94,6 +100,17 @@ export interface OmpProcessOptions {
    * someone else's slow Session start is never worth it). Defaults to `true` (unset) for real
    * Session starts. */
   deferForMemory?: boolean
+  /** Gate-fixes Medium finding (cycle 6): the readiness/login-provider probes' `startDeadlineMs`
+   * bounds the queue wait, the memory defer, AND the ready wait combined -- but on a busy
+   * machine where two slow Session starts each hold one of the process-wide queue's two slots
+   * for up to 180s, a probe queued behind them could have its entire deadline expire while it
+   * never even got a slot, well before the ready-wait phase it is actually meant to measure ever
+   * began. Same reasoning as `deferForMemory: false` just one phase earlier: these probes are
+   * short-lived, read-only checks that must never be starved behind someone else's slow Session
+   * start. `false`: skip `acquireStartSlot()` entirely and spawn immediately, outside the
+   * process-wide concurrency limit. Defaults to `true` (unset) for real Session starts, which
+   * must still respect the limit. */
+  useStartQueue?: boolean
 }
 
 interface PendingRequestEntry {
@@ -140,6 +157,11 @@ export class OmpProcess extends EventEmitter {
   // Issue #512 gate-fixes security finding: the pid's own spawn time, so `buildStartFailure`'s
   // omp log tail lookup never attributes an older, pid-reused process's log to this one.
   private spawnedAtMs: number | undefined
+  // Gate-fixes Medium finding (cycle 6): tracks whether THIS instance called `markSpawned()`,
+  // so the matching `unmarkSpawned()` in the slot-release `finally` runs exactly once per start
+  // attempt that actually spawned -- never for one that failed before spawning (never marked)
+  // or was already unmarked by an earlier path.
+  private hasMarkedSpawned = false
   // Gate-fixes security Low finding (cycle 2): true once `onStderrData`'s own sliding window has
   // ever dropped bytes, so `buildStartFailure` knows `stderrTail`'s first line may be a truncated
   // fragment of a credential with no recognisable prefix left for `redactSecrets` to match, and
@@ -191,13 +213,17 @@ export class OmpProcess extends EventEmitter {
       // is now abortable (`startAbort.signal`), so a cancelStart()/shutdown() that arrives while
       // still queued takes effect immediately instead of waiting out another Session's start.
       let releaseStartSlot: () => void
-      try {
-        releaseStartSlot = await acquireStartSlot({
-          onQueued: () => this.emit('start-queued'),
-          signal: startAbort.signal,
-        })
-      } catch {
-        throw await this.buildStartFailure('start cancelled')
+      if (this.opts.useStartQueue === false) {
+        releaseStartSlot = () => {}
+      } else {
+        try {
+          releaseStartSlot = await acquireStartSlot({
+            onQueued: () => this.emit('start-queued'),
+            signal: startAbort.signal,
+          })
+        } catch {
+          throw await this.buildStartFailure('start cancelled')
+        }
       }
 
       try {
@@ -238,6 +264,11 @@ export class OmpProcess extends EventEmitter {
           cwd: this.opts.cwd,
           windowsHide: true,
         })
+        // Gate-fixes Medium finding (cycle 6): marks the instant a process actually spawns --
+        // see `spawnedInFlight()`'s own doc comment for why this is a narrower, more accurate
+        // signal than merely holding a queue slot.
+        markSpawned()
+        this.hasMarkedSpawned = true
         this.child = child
 
         child.on('error', (err: NodeJS.ErrnoException) => {
@@ -345,6 +376,10 @@ export class OmpProcess extends EventEmitter {
           if (this.startCancelled) readyWait.cancel()
         })
       } finally {
+        if (this.hasMarkedSpawned) {
+          this.hasMarkedSpawned = false
+          unmarkSpawned()
+        }
         releaseStartSlot()
       }
     } finally {
@@ -376,19 +411,24 @@ export class OmpProcess extends EventEmitter {
    * under pressure, emitting `'start-memory-deferred'` so a caller can show "Waiting for
    * memory to free up...". Gives up after MEMORY_DEFER_CEILING_MS and lets the start proceed
    * regardless: a start that is merely slow is still better than one that never happens.
-   * Gate-fixes Medium finding (cycle 5): only defers when `startsInFlight()` shows another
-   * start currently holds a slot -- a solo start under low memory (the common case: the queue
-   * already limits concurrency to `MAX_CONCURRENT_STARTS`) has nothing to wait behind, so
-   * imposing up to 60s on every ordinary start under low memory was pure cost with no benefit.
+   * Gate-fixes Medium finding (cycle 6): only defers while `spawnedInFlight()` shows another
+   * start has actually SPAWNED a process (not merely holding a queue slot, which cycle 5's
+   * `startsInFlight()` counted -- two starts granted slots together under low memory then saw
+   * each other's slot-hold as a reason to wait, with neither ever spawning to relieve the
+   * pressure either was waiting for) -- re-checked every poll, not just once before the loop,
+   * so this start also stops waiting the moment the other one it was behind spawns or gives up,
+   * not only when it happened to already be alone from the very start. A solo start under low
+   * memory (the common case: the queue already limits concurrency to `MAX_CONCURRENT_STARTS`)
+   * has nothing to wait behind, so imposing up to 60s on every ordinary start under low memory
+   * was pure cost with no benefit.
    * Gate-fixes High finding (cycle 5): skipped entirely when `deferForMemory: false` (the
    * readiness/login-provider probes), which must never pay this cost against their own short
    * `startDeadlineMs`. */
   private async deferStartIfMemoryLow(): Promise<void> {
     if (this.opts.deferForMemory === false) return
-    if (startsInFlight() <= 1) return
     const startedAt = Date.now()
     const signal = this.startAbortController?.signal
-    while (isMemoryLow() && !this.startCancelled && Date.now() - startedAt < MEMORY_DEFER_CEILING_MS) {
+    while (isMemoryLow() && spawnedInFlight() >= 1 && !this.startCancelled && Date.now() - startedAt < MEMORY_DEFER_CEILING_MS) {
       this.emit('start-memory-deferred', { elapsedMs: Date.now() - startedAt })
       await this.abortableSleep(MEMORY_DEFER_POLL_MS, signal)
     }
@@ -548,36 +588,54 @@ export class OmpProcess extends EventEmitter {
   // collapsible "Details" text -- `reason`/`hint` below are always exactly one line, and every
   // part appended after them always starts with its own `\n`, so that split just falls out of
   // this format with no separate title field needed.
+  // Gate-fixes Medium finding (cycle 6): the old `/\b(warn|error)\b/i` missed `warning`/
+  // `WARNING:` (no boundary after `warn`), `TypeError`/`SyntaxError`/`ReferenceError` (no
+  // boundary before `Error`), `errors`, `ENOENT`, `fatal`, `panic`, `cannot find module`, and
+  // OMP's own JSON `"level":"warn"`/`"level":"error"` lines. Widened, with no leading `\b` so a
+  // ...Error suffix still matches. Falls back to the last 20 unfiltered lines (rather than an
+  // empty result) when nothing recognisable is found at all -- a crash that prints a bare stack
+  // trace with none of these words must not silently lose its whole diagnostic.
   private filterWarnErrorLines(text: string): string {
-    const warnOrError = /\b(warn|error)\b/i
-    return text
-      .split('\n')
-      .filter((line) => warnOrError.test(line))
-      .join('\n')
+    const warnOrError = /"level"\s*:\s*"(?:warn|error)"|(?:warn(?:ing)?|error|errors?\b|fatal|panic|exception|cannot|failed|ENOENT|EACCES|EPERM|timed out)/i
+    const lines = text.split('\n')
+    const filtered = lines.filter((line) => warnOrError.test(line))
+    if (filtered.length > 0) return filtered.join('\n')
+    return lines.slice(-20).join('\n')
   }
 
   private async buildStartFailure(reason: string, ErrorClass: new (message: string) => Error = Error): Promise<Error> {
-    // Gate-fixes Medium finding (cycle 5): a caller staring at "ready frame not seen within
-    // 180s" has no idea WHY -- the last warnings/errors in that run's own output are far more
-    // useful than an arbitrary last-N-KB byte window that is mostly routine noise. Filters to
-    // warn/error lines BEFORE redacting/slicing, so `STDERR_FAILURE_TAIL_BYTES` below now bounds
-    // the filtered result, not the raw tail.
-    // Gate-fixes security Medium finding (cycle 5): replaces this machine's home directory with
-    // `~` in both tails before redaction -- `redactSecrets` targets credentials, not the local
-    // username a stderr/log line incidentally embeds in a path.
+    // Gate-fixes security Medium finding (cycle 5, widened cycle 6): replaces this machine's
+    // home directory with `~` in both tails (and `reason`) before redaction -- `redactSecrets`
+    // targets credentials, not the local username a stderr/log line incidentally embeds in a
+    // path. OMP's own log is JSON, so Windows paths there carry doubled backslashes
+    // (`"filePath":"C:\\\\Users\\\\stuart\\\\..."`), and forward-slash forms (`C:/Users/...`)
+    // also turn up; matching only the literal `os.homedir()` string (single backslashes) missed
+    // both. Built per path segment instead, joined by a separator that matches one or two
+    // backslashes or a forward slash, case-insensitively.
     const homedir = os.homedir()
-    // Case-insensitive and regex-escaped: Windows path casing in a log line (`C:\Users\Stuart`)
-    // does not always match `os.homedir()`'s own casing (`C:\Users\stuart`) exactly.
-    const homedirRe = homedir ? new RegExp(homedir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi') : undefined
+    const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const homedirSegments = homedir.split(/[\\/]/).filter(Boolean)
+    const homedirRe = homedirSegments.length ? new RegExp(homedirSegments.map(escapeRegex).join('(?:\\\\{1,2}|/)'), 'gi') : undefined
     const redactHome = (text: string): string => (homedirRe ? text.replace(homedirRe, '~') : text)
+    // Gate-fixes security Low finding (cycle 6): `reason` (e.g. a spawn error's full omp path,
+    // "process failed to spawn: ...") used to skip both this masking and `redactSecrets` below,
+    // even though it becomes the banner's own title -- the first thing shown and copied.
+    const redactedReason = redactSecrets(redactHome(reason))
     // Gate-fixes Medium/Low findings (cycle 2): redact BEFORE the final slice, not after -- a
     // cut landing between "Bearer " and its token used to leave the token exposed with no
     // prefix left for the pattern to match. Also drop a truncated tail's own leading partial
     // line first (`stderrTruncated`, set by `onStderrData`'s sliding window): that fragment can
     // carry a credential's tail end with no recognisable prefix of its own.
+    // Gate-fixes security Low finding (cycle 6): redacts BEFORE filtering to warn/error lines
+    // now (previously the other way round) -- a multi-line PEM private-key block's own `-----
+    // BEGIN-----`/`-----END-----` markers often land on DIFFERENT lines than the "error:"/
+    // "warn:" wording that keeps a line through the filter, so filtering first could drop the
+    // `-----END-----` line before redaction ever saw it, leaving the unterminated-block pattern
+    // to swallow every line after it. Redacting the whole (still multi-line) text first means
+    // the PEM pattern sees the real `-----END-----` marker and only ever consumes its own block.
     const stderrForRedaction = this.stderrTruncated ? this.stderrTail.replace(/^[^\n]*\n?/, '') : this.stderrTail
-    const stderrFiltered = this.filterWarnErrorLines(redactHome(stderrForRedaction))
-    const tail = redactSecrets(stderrFiltered).slice(-STDERR_FAILURE_TAIL_BYTES)
+    const stderrRedacted = redactSecrets(redactHome(stderrForRedaction))
+    const tail = this.filterWarnErrorLines(stderrRedacted).slice(-STDERR_FAILURE_TAIL_BYTES)
     const hint = this.lastSpawnError?.code === 'ENOENT' ? ' (omp not found on PATH; set ompPath)' : ''
     const stderrPart = tail ? `\n--- stderr warnings/errors ---\n${tail}` : ''
     const pid = this.child?.pid
@@ -585,17 +643,21 @@ export class OmpProcess extends EventEmitter {
     // Issue #512 requirement 2: OMP logs to its own per-process file, not stderr, so the
     // stderr tail alone rarely explains a slow or failed start; read that pid's own log tail.
     // `spawnedAtMs` guards against a reused pid's older log being misattributed to this start.
+    // Gate-fixes Medium finding (cycle 6): reads a much larger raw window than the old 4 KiB --
+    // OMP's debug JSON lines run a few hundred bytes each, so 4 KiB of raw log often held only
+    // 8-15 lines, routinely pushing the real warning/error out before the filter ever saw it.
+    // The final message is still capped at `OMP_LOG_TAIL_BYTES` below, AFTER filtering.
     const ompLogTailRaw =
       typeof pid === 'number' && spawnedAtMs !== undefined
-        ? await tailOmpLogForPid(pid, OMP_LOG_TAIL_BYTES, spawnedAtMs).catch(() => undefined)
+        ? await tailOmpLogForPid(pid, OMP_LOG_READ_WINDOW_BYTES, spawnedAtMs).catch(() => undefined)
         : undefined
-    const ompLogFiltered = ompLogTailRaw !== undefined ? this.filterWarnErrorLines(redactHome(ompLogTailRaw)) : undefined
-    const ompLogTail = ompLogFiltered !== undefined ? redactSecrets(ompLogFiltered) : undefined
+    const ompLogRedacted = ompLogTailRaw !== undefined ? redactSecrets(redactHome(ompLogTailRaw)) : undefined
+    const ompLogTail = ompLogRedacted !== undefined ? this.filterWarnErrorLines(ompLogRedacted).slice(-OMP_LOG_TAIL_BYTES) : undefined
     const ompLogPart = ompLogTail ? `\n--- omp log warnings/errors (pid ${pid}) ---\n${ompLogTail}` : ''
     // Gate-fixes Medium finding (cycle 5): a slow/failed start under low memory otherwise gives
     // no hint that memory pressure was ever a factor -- neither tail necessarily mentions it.
     const memoryPart = `\n--- memory ---\n${Math.round(os.freemem() / (1024 * 1024))} MB free of ${Math.round(os.totalmem() / (1024 * 1024))} MB total`
-    return new ErrorClass(`OmpProcess: ${reason}${hint}${stderrPart}${ompLogPart}${memoryPart}`)
+    return new ErrorClass(`OmpProcess: ${redactedReason}${hint}${stderrPart}${ompLogPart}${memoryPart}`)
   }
 
   private onStdoutData(chunk: Buffer): void {

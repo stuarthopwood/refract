@@ -177,6 +177,16 @@ export class SessionAgent extends EventEmitter {
   private startPromise: Promise<void> | undefined;
   private restartPromise: Promise<void> | undefined;
   private stopRequested = false;
+  // Gate-fixes High finding (cycle 6): distinct from `stopRequested` -- a plain Cancel
+  // (`cancelStart()`, the ready-wait banner's own button) is not a Session stop, but it used to
+  // be silently lost during the gap between a ceiling failure's `startingProcess = undefined`
+  // (launch()'s catch block) and that same failure's retry decision: `startingProcess` is
+  // already gone by the time the button renders for the `{ kind: 'queued' }` retry placeholder,
+  // so `cancelStart()` had nothing left to call `cancelStart()` on, and a whole new 180s wait
+  // started anyway. Checked by `launch()`'s own retry decision instead; reset at the top of
+  // every fresh `start()`/`startWith()`/`restart()` so a stale cancel never blocks a LATER,
+  // unrelated attempt.
+  private startCancelRequested = false;
   /** Guards the settle sequence (`settleTurnPendingRequests`/`setStatus('idle')`/
    * `onSessionSettled`) against running twice for one turn end: OMP can deliver both
    * `prompt_result.sessionSettled:true` and a separate `session_settled` frame for the same
@@ -277,7 +287,10 @@ export class SessionAgent extends EventEmitter {
   async start(): Promise<void> {
     if (this.startPromise) return this.startPromise;
     if (this.process) throw new Error(`SessionAgent ${this.sessionId}: already started`);
-    if (this.runtime.status === 'stopped') this.stopRequested = false;
+    if (this.runtime.status === 'stopped') {
+      this.stopRequested = false;
+      this.startCancelRequested = false;
+    }
     this.startPromise = this.doStart().finally(() => {
       this.startPromise = undefined;
       this.maybeRestartForPendingMode();
@@ -297,6 +310,7 @@ export class SessionAgent extends EventEmitter {
       throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot start while not idle`);
     }
     this.stopRequested = false;
+    this.startCancelRequested = false;
     this.startPromise = prepare()
       .then(() => this.doStart())
       .finally(() => {
@@ -403,9 +417,13 @@ export class SessionAgent extends EventEmitter {
       // regex: gate-fixes Medium finding, a reworded message can no longer silently turn this
       // off) -- the busy machine that caused it may already have eased a moment later. Never
       // retries a second time (`allowRetry` only ever passed `false` below), a cancel or a real
-      // spawn/exit error, or once `shutdown()`/`stop()` has asked this Session to stop (gate-
-      // fixes High finding: a stop request must never spawn a brand-new `omp` process).
-      const willRetry = allowRetry && !this.stopRequested && err instanceof ReadyCeilingError;
+      // spawn/exit error, once `shutdown()`/`stop()` has asked this Session to stop (gate-fixes
+      // High finding: a stop request must never spawn a brand-new `omp` process), or once the
+      // user's own Cancel click has been seen (gate-fixes High finding, cycle 6:
+      // `startCancelRequested`, set by `cancelStart()` even when `startingProcess` is already
+      // gone -- see that method's own doc comment -- otherwise a Cancel landing in exactly this
+      // gap used to be silently lost and a whole new 180s wait started anyway).
+      const willRetry = allowRetry && !this.stopRequested && !this.startCancelRequested && err instanceof ReadyCeilingError;
       // Gate-fixes Medium finding (cycle 4): a retry used to clear startProgress to undefined
       // first, which (on a Recover/Retry-launched start, where the OLD stopReason from a
       // previous failure is still set) let `showBanner` flip true for the whole gap between
@@ -417,6 +435,18 @@ export class SessionAgent extends EventEmitter {
       // A failed handshake (ready timeout, negotiate failure, spawn error) must never leave a
       // child behind: `this.process` was never set, so nothing else will ever stop it.
       await proc.stop();
+      // Gate-fixes Medium finding (cycle 6): `stopRequested` was only checked ONCE, above,
+      // before this very `proc.stop()` call -- which can itself take up to `STOP_GRACE_MS` (10s)
+      // plus a `taskkill` on a stalled child. A `shutdown()`/archive/delete arriving during that
+      // window used to fall through to `recordStartFailure` below regardless, still ending as
+      // `stopReason:'start-failed'` instead of `'not-started'` (same FR-038/ipc.md contract the
+      // check above exists for). Re-checked here, after the await, before any retry or failure
+      // bookkeeping.
+      if (this.stopRequested) {
+        this.setStartProgress(undefined);
+        this.setStatus('stopped', { stopReason: 'not-started' });
+        return { ok: false, error: err };
+      }
       if (willRetry) {
         return this.launch(session, failurePrefix, false);
       }
@@ -577,8 +607,14 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** Issue #512's "Cancel" button: fails an in-flight start immediately instead of waiting out
-   * the ceiling. A no-op if this Session is not currently starting. */
+   * the ceiling. A no-op if this Session is not currently starting. Gate-fixes High finding
+   * (cycle 6): `startCancelRequested` is set unconditionally, even though `startingProcess` may
+   * already be gone (the gap between a ceiling failure clearing it and `launch()`'s own retry
+   * decision, during which the renderer still shows this Cancel button for the `{kind:'queued'}`
+   * retry placeholder) -- `launch()` checks the flag itself so a click landing in that gap still
+   * takes effect instead of being silently lost. */
   cancelStart(): void {
+    this.startCancelRequested = true;
     this.startingProcess?.cancelStart();
   }
 
@@ -649,7 +685,10 @@ export class SessionAgent extends EventEmitter {
    */
   async restart(reason: string): Promise<void> {
     if (this.restartPromise) return this.restartPromise;
-    if (this.runtime.status === 'stopped') this.stopRequested = false;
+    if (this.runtime.status === 'stopped') {
+      this.stopRequested = false;
+      this.startCancelRequested = false;
+    }
     this.restartPromise = this.doRestart(reason).finally(() => {
       this.restartPromise = undefined;
       this.maybeRestartForPendingMode();

@@ -54,9 +54,6 @@ const PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   { pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g, replace: '[redacted]' },
   { pattern: /\b(?:glpat-|npm_|hf_)[A-Za-z0-9_-]{16,}/g, replace: '[redacted]' },
   { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, replace: '[redacted private key]' },
-  // Gate-fixes security Medium finding (cycle 5): email addresses -- the omp log tail is far
-  // more likely than stderr to carry a provider account email from an auth line.
-  { pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, replace: '[email]' },
   // One key-name pattern covering api_key/apikey/x-api-key/x-goog-api-key/token (and
   // underscore-prefixed access_token/refresh_token/id_token/auth_token, and their camelCase
   // equivalents: accessToken, sessionToken, apiToken, githubToken, bearerToken, ...)/password/
@@ -75,9 +72,12 @@ const PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   // newlines (so an unterminated value in a multi-line tail only swallows its own line, not
   // every line after it), and its closing quote is optional (so a value with no terminator at
   // all -- a truncated line -- still redacts instead of passing through untouched).
+  // Gate-fixes security Low finding (cycle 6): bare `auth` is preceded by `(?<![A-Za-z])` --
+  // without it, under the shared `/i` flag, it matched the "auth" substring inside "OAuth:",
+  // redacting an ordinary "OAuth: failed to refresh" diagnostic line's own text.
   {
     pattern:
-      /((?:access|refresh|id|auth)?_?[Tt]oken|x-(?:api|goog-api)-key|api[_-]?key|apikey|password|passwd|pwd|secret|client_secret|credentials?|auth)(\\?['"]?\s*[:=]\s*)(\\?"(?:[^"\\\n]|\\.)*\\?"?|'[^'\n]*'?|[^\s&"',}]+)/gi,
+      /((?:access|refresh|id|auth)?_?[Tt]oken|x-(?:api|goog-api)-key|api[_-]?key|apikey|password|passwd|pwd|secret|client_secret|credentials?|(?<![A-Za-z])auth)(\\?['"]?\s*[:=]\s*)(\\?"(?:[^"\\\n]|\\.)*\\?"?|'[^'\n]*'?|[^\s&"',}]+)/gi,
     replace: '$1$2[redacted]',
   },
   // Azure SAS `sig` query parameter, scoped to the query-string shape (`?sig=`/`&sig=`) rather
@@ -113,6 +113,16 @@ const PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
     pattern: /\b([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/]*@(?=[^\s/@]*(?:[/:?#\s]|$))/gi,
     replace: '$1[redacted]@',
   },
+  // Gate-fixes security Medium finding (cycle 5, moved + bounded cycle 6): email addresses --
+  // the omp log tail is far more likely than stderr to carry a provider account email from an
+  // auth line. Moved to LAST: this used to run before the URL-userinfo pattern above and could
+  // match `<rest-of-password>@host.tld` inside a URL login first, consuming the `@` the URL
+  // pattern needed and leaving everything up to that point -- including most of the password --
+  // unredacted (`redis://:Abc#def@cache.example.com` -> `redis://:Abc#[email]`). Character
+  // classes bounded (local part, each domain label, and the TLD) against the same unbounded-
+  // repetition cost flagged on long dotted/`a.`-repeated input; the other patterns here are
+  // already bounded or linear.
+  { pattern: /\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}\b/g, replace: '[email]' },
 ]
 
 /** Pure text transform: runs every pattern over `text` and returns the redacted result. Never

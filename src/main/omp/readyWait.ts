@@ -1,8 +1,8 @@
 // Pure staged-wait state machine for omp's start-up ready handshake (issue #512: a fixed
 // 60s cutoff kills a slow-but-healthy omp start on a busy machine with no progress shown and
 // no reason given). This module has no knowledge of child processes, IPC, or the DOM: it only
-// tracks elapsed time against two thresholds and exposes stage/outcome events, so it can be
-// driven by OmpProcess.ts and unit-tested with fake timers in isolation.
+// tracks elapsed time against two thresholds and exposes stage/outcome events, driven by
+// OmpProcess.ts.
 //
 // Stages (requirement 1, "Starting agent… N s" / Keep waiting / Cancel):
 //   'waiting'  - before the prompt threshold; no user action offered yet.

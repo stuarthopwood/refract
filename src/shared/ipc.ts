@@ -157,10 +157,6 @@ export interface SessionRuntimeView {
    * 2026-10-08: the stop banner names the interrupted tool instead of leaving the detected
    * detail computed-but-unused). Absent/empty when there was none to name. */
   pendingToolNames?: string[];
-  /** Issue #512: see `SessionSummary.startProgress`; carried here too so the chat pane's own
-   * direct `onSessionStatus` subscription is not the only path to it (the open/recover snapshot
-   * itself can race a start already in flight -- e.g. opening a Session mid-queue). */
-  startProgress?: SessionStartProgress;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
   unread: boolean;

@@ -31,7 +31,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
 import { SessionDetailsCard } from './SessionDetailsCard'
-import { describeStartProgress } from './startProgressDisplay'
+import { describeStartProgress, describeStartProgressLabel } from './startProgressDisplay'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
@@ -356,7 +356,13 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   ) : (
                     <StateIcon status={session.status} />
                   )}
-                  <span className="sr-only">{session.startProgress ? 'Starting' : STATUS_LABEL[session.status]}</span>
+                  {/* Gate-fixes a11y Low finding (cycle 6): `describeStartProgressLabel` covers
+                      'memory-deferred' too (previously hand-coded as only 'queued' vs
+                      'Starting agent', silently misreporting "Starting agent" while the visible
+                      text below says "waiting for memory to free up"). */}
+                  <span className="sr-only">
+                    {session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : STATUS_LABEL[session.status]}
+                  </span>
                   {isSplitOpen && isVisible && (
                     <span className="sr-only">{isFocusedPane ? '(focused pane)' : '(shown, unfocused pane)'}</span>
                   )}
@@ -370,13 +376,12 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                       // unexpectedly" note underneath while a fresh start is already under way).
                       // Gate-fixes a11y finding: this span sits inside the row's open `<button>`,
                       // so a ticking visible name would re-speak the whole row every second while
-                      // it has focus. `aria-hidden` keeps the tick visible-only; the `sr-only`
-                      // sibling gives the button a static accessible name instead.
-                      <span className="truncate text-xs text-muted-foreground">
-                        <span aria-hidden>{describeStartProgress(session.startProgress)}</span>
-                        <span className="sr-only">
-                          {session.startProgress.kind === 'queued' ? 'Waiting to start' : 'Starting agent'}
-                        </span>
+                      // it has focus. `aria-hidden` keeps the tick visible-only -- the row's own
+                      // static accessible name (above) already covers the static status word, so
+                      // (gate-fixes a11y Low finding, cycle 6) this no longer repeats it in a
+                      // second `sr-only` span, which spoke the status twice for the same row.
+                      <span className="truncate text-xs text-muted-foreground" aria-hidden>
+                        {describeStartProgress(session.startProgress)}
                       </span>
                     ) : (
                       // Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): mirrors ChatPane's

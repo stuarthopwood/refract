@@ -14,7 +14,10 @@ import { OmpProcess } from './OmpProcess';
 // regardless of which phase it is stuck in. Gate-fixes High finding (cycle 5): that combined
 // deadline used to run the memory defer inside it unconditionally too -- under low free memory
 // the defer's own up-to-60s wait routinely ate this deadline before the ready-wait phase even
-// started, so this probe always timed out; `deferForMemory: false` below skips that defer.
+// started, so this probe always timed out. Gate-fixes Medium finding (cycle 6): the shared
+// 2-slot start queue itself could ALSO starve this probe behind two slow Session starts each
+// holding a slot for up to 180s, longer than this probe's own 60s deadline. `deferForMemory:
+// false` and `useStartQueue: false` below skip the memory defer and the queue entirely.
 const PROBE_READY_PROMPT_AFTER_MS = 30_000;
 const PROBE_READY_CEILING_MS = 60_000;
 const PROBE_START_DEADLINE_MS = PROBE_READY_CEILING_MS;
@@ -73,7 +76,7 @@ export async function requestLoginProviders(proc: OmpProcess): Promise<OmpLoginP
 export async function readOmpLoginProviders(sessionId: string): Promise<OmpLoginProvider[] | null> {
  try {
   const scratchDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'refract-omp-login-providers-'));
-  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId, noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false });
+  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId, noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false, useStartQueue: false });
   try {
    await proc.start();
    return await requestLoginProviders(proc);

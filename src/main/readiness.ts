@@ -28,8 +28,12 @@ const execFileAsync = promisify(execFile);
 // combined, can never exceed it. Gate-fixes High finding (cycle 5): that combined deadline used
 // to run the memory defer inside it unconditionally too -- under low free memory the defer's
 // own up-to-60s wait routinely ate this deadline before the ready-wait phase even started, so
-// these probes always timed out and Refract stuck on the Readiness screen. `deferForMemory:
-// false` below skips that defer for this short, read-only probe entirely.
+// these probes always timed out and Refract stuck on the Readiness screen. Gate-fixes Medium
+// finding (cycle 6): the shared 2-slot start queue itself could ALSO starve a probe behind two
+// slow Session starts each holding a slot for up to 180s -- longer than this probe's own 60s
+// deadline, so it could be cancelled while still queued, never even reaching the phase its
+// `startDeadlineMs` is meant to bound. `deferForMemory: false` and `useStartQueue: false` below
+// skip the memory defer and the queue entirely for this short, read-only probe.
 const PROBE_READY_PROMPT_AFTER_MS = 30_000;
 const PROBE_READY_CEILING_MS = 60_000;
 const PROBE_START_DEADLINE_MS = PROBE_READY_CEILING_MS;
@@ -93,7 +97,7 @@ async function checkOmpSignedIn(): Promise<Check> {
   // --no-session: this probe never calls `open_session` or any other command requiring
   // persistence (just get_state / get_available_models / get_login_providers), so it never
   // needs a real session-store folder under ~/.omp/agent/sessions (issue #362).
-  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe', noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false });
+  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe', noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false, useStartQueue: false });
   // Tracks whether `proc.start()` actually completed, so `signedInFailureHint` below can reuse
   // this still-running probe process instead of spinning up a second scratch omp of its own
   // (GateCode008 MEDIUM "the sign-in failure hint spins up a second scratch omp") -- a probe

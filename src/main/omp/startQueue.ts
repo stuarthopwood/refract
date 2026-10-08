@@ -26,13 +26,36 @@ function releaseWaitersIfRoom(): void {
   }
 }
 
-/** Issue #512 Medium finding (cycle 5): lets `OmpProcess.deferStartIfMemoryLow()` skip its
- * memory defer entirely when no other start currently holds a slot -- a solo start under low
- * memory has nothing else to wait behind; the queue slot itself is already the backpressure
- * mechanism, and deferring anyway is what made the readiness/login-providers probes (and every
- * ordinary Session start) pay a fixed cost under low memory even with a slot free. */
-export function startsInFlight(): number {
-  return state.inFlight
+// Gate-fixes Medium finding (cycle 6): `startsInFlight()` (cycle 5) counted every start
+// holding a queue slot, including one still deferring for memory itself -- two starts granted
+// slots together under low memory each saw the OTHER's mere slot-hold as "another start is in
+// flight" and both deferred the full `MEMORY_DEFER_CEILING_MS`, even though neither was actually
+// spawning (consuming the memory the defer exists to wait out). Replaced with a narrower count
+// of starts that have ACTUALLY spawned a child process -- the only kind of "in flight" that is
+// really consuming memory and worth deferring behind.
+let spawnedCount = 0
+
+/** Call once, immediately after `spawn()` returns successfully. Paired with `unmarkSpawned()`. */
+export function markSpawned(): void {
+  spawnedCount += 1
+}
+
+/** Call exactly once per `markSpawned()` call, when that start's slot is released (success or
+ * failure) -- idempotent in the sense that it never goes negative, but callers should still only
+ * call it once per matching `markSpawned()`. */
+export function unmarkSpawned(): void {
+  spawnedCount = Math.max(0, spawnedCount - 1)
+}
+
+/** Lets `OmpProcess.deferStartIfMemoryLow()` skip (or stop) its memory defer once no OTHER start
+ * has actually spawned a process -- a solo start under low memory (or one left alone once every
+ * other start has either spawned past its own defer or given up) has nothing left to wait
+ * behind; the queue slot itself is already the backpressure mechanism. Re-checked every defer
+ * poll (not just once before the loop), so this start stops waiting the moment the other one it
+ * was behind actually spawns or gives up -- not only when it happened to already be past that
+ * point when the loop started. */
+export function spawnedInFlight(): number {
+  return spawnedCount
 }
 
 export interface AcquireStartSlotOptions {

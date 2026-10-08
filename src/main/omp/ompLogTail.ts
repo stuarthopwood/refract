@@ -41,10 +41,18 @@ async function statMtimeMs(filePath: string): Promise<number | undefined> {
 async function readTail(filePath: string, maxBytes: number): Promise<string | undefined> {
   let handle: Awaited<ReturnType<typeof open>> | undefined
   try {
-    const info = await lstat(filePath)
-    if (!info.isFile()) return undefined
+    const lstatInfo = await lstat(filePath)
+    if (!lstatInfo.isFile()) return undefined
     handle = await open(filePath, 'r')
-    const { size } = await handle.stat()
+    const stat = await handle.stat()
+    // Gate-fixes security Low finding (cycle 6): `open()` follows symlinks, so a symlink
+    // swapped in between the `lstat()` above and this `open()` (a TOCTOU race -- defence in
+    // depth only, exploiting it already needs the user's own write access to `~/.omp/logs`)
+    // would otherwise still be read. Re-checks `isFile()` on the OPEN HANDLE's own stat, and
+    // that `dev`/`ino` match the earlier `lstat` result, so a race lands here instead of
+    // silently reading whatever the swapped-in symlink now points at.
+    if (!stat.isFile() || stat.dev !== lstatInfo.dev || stat.ino !== lstatInfo.ino) return undefined
+    const { size } = stat
     const length = Math.min(maxBytes, size)
     const position = Math.max(0, size - maxBytes)
     const buffer = Buffer.alloc(length)
