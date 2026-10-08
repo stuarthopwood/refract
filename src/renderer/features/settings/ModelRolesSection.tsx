@@ -183,6 +183,10 @@ export function ModelRolesSection() {
     // flight starts an overlapping `omp config get` call.
     if (retryingLoad) return
     setRetryingLoad(true)
+    // Quality-gate remediation (accessibility-auditor LOW, gate cycle 5, optional): the button's
+    // own accessible name changing to "Retrying…" is not reliably re-announced by a screen reader
+    // on an element that already has focus, so say it explicitly too.
+    announcePolite('Retrying model roles')
     await load({ keepError: true })
     setRetryingLoad(false)
     const state = useModelRolesStore.getState()
@@ -196,11 +200,15 @@ export function ModelRolesSection() {
 
   async function handleCatalogRetry(kind: CatalogKind): Promise<void> {
     if (retryingKinds.has(kind)) return
+    const kindLabel = CATALOG_KIND_LABEL[kind]
     // Recorded before the retry starts: this is the only reliable way to know whether the Retry
     // button (about to unmount on success) is what currently holds focus, so success can decide
     // whether to move focus on somewhere, or leave an already-elsewhere focus alone.
     const hadFocus = document.activeElement?.id === `model-role-catalog-retry-${kind}`
     setRetryingKinds((prev) => new Set(prev).add(kind))
+    // Quality-gate remediation (accessibility-auditor LOW, gate cycle 5, optional): see the
+    // matching comment in `handleRetryLoad` above.
+    announcePolite(`Retrying ${kindLabel} models`)
     await loadCatalog(kind, true)
     setRetryingKinds((prev) => {
       const next = new Set(prev)
@@ -208,14 +216,15 @@ export function ModelRolesSection() {
       return next
     })
     const state = useModelRolesStore.getState()
-    const kindLabel = CATALOG_KIND_LABEL[kind]
     if (state.catalogErrors[kind]) {
       announceAssertive(`Could not load ${kindLabel} models: ${state.catalogErrors[kind]}`)
     } else {
       // Quality-gate remediation (accessibility-auditor LOW): names the kind, matching the
       // failure announcement above, instead of a generic "Models loaded" that gave no context
       // when several catalog kinds could be in flight or have just failed elsewhere on the page.
-      announcePolite(`${kindLabel} models loaded`)
+      // Sentence case (gate cycle 5 LOW, a11y: this previously started with a lowercase kind
+      // name, inconsistent with every other announcement in this section).
+      announcePolite(`Loaded ${kindLabel} models`)
       if (hadFocus) {
         const targetId = firstRoleIdForKind(kind)
         const target = (targetId ? document.getElementById(targetId) : null) ?? headingRef.current

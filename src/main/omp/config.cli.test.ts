@@ -9,10 +9,16 @@
 // test-suite run (many worker threads contending for CPU) when left real, even though they passed
 // reliably in isolation. `access` always rejects by default, so `ensureScratchDir` takes the
 // "create a fresh one" branch on every call in every test here, regardless of what an earlier
-// test's `cachedScratchDir` module state left behind -- deliberately, so each test's own
-// `mkdtemp` mock is always exercised rather than silently skipped by a stale cache hit.
+// test's `cachedScratchDir` module state left behind. The global `afterEach` below ALSO calls
+// `cleanupModelRolesScratchDir()` for real (gate cycle 5 MEDIUM, test-reviewer: without this, the
+// "reuses the cached scratch directory" test only failed because an earlier test happened to run
+// first and leave the module's cache populated -- a run-order dependency, not a real assertion),
+// so every test starts with `config.ts`'s own module state genuinely reset, not merely masked by
+// the default-rejecting `access` mock.
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { promises as fsp } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const execFileMock = vi.fn();
 vi.mock('node:child_process', () => ({
@@ -31,7 +37,7 @@ vi.mock('node:fs', () => ({
 
 // Imported AFTER the mocks above are registered (vitest hoists `vi.mock` calls, so this import
 // always sees the mocked modules).
-const { setModelRole, listCatalogModels, OmpConfigError } = await import('./config');
+const { setModelRole, listCatalogModels, cleanupModelRolesScratchDir, OmpConfigError } = await import('./config');
 
 interface CapturedCall {
   file: string;
@@ -65,12 +71,19 @@ beforeEach(() => {
   vi.mocked(fsp.rmdir).mockReset().mockResolvedValue(undefined);
 });
 
+// Gate cycle 5 MEDIUM (test-reviewer): resets `config.ts`'s own module-level scratch-directory
+// cache after EVERY test, so no test's result depends on execution order. Uses the mocked
+// `fsp.rmdir` above, so this never touches the real filesystem.
+afterEach(async () => {
+  await cleanupModelRolesScratchDir();
+});
+
 /** Polls (no fixed sleep) until `predicate` is true or a bounded number of real event-loop turns
  * elapse. Uses `setImmediate`, never `setTimeout`/`setInterval` -- a sibling test file in this
  * project uses fake timers, which fake the latter but not the former, so this helper keeps
  * working whichever timer mode is active, and still yields real macrotask turns so pending real
- * I/O (the scratch-directory `mkdir`/`readdir` awaits inside `ompRaw`) gets a chance to settle
- * between checks. */
+ * I/O (the mocked scratch-directory `access`/`mkdtemp` promises inside `ompRaw`) gets a chance to
+ * settle between checks. */
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let i = 0; i < 2000; i++) {
     if (predicate()) return;
@@ -196,23 +209,118 @@ describe('ensureScratchDir (gate cycle 4 redesign: fsp.mkdtemp, no emptiness che
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
-  it('reuses the cached scratch directory via access() when it still exists, without calling mkdtemp again', async () => {
-    // First call: the default beforeEach mock has `access` reject, so this populates config.ts's
-    // own module-level `cachedScratchDir` via a fresh `mkdtemp`.
+  it('omp actually runs with cwd set to the exact mkdtemp-returned directory, then reuses it via access()', async () => {
+    // Gate cycle 5 HIGH (test-reviewer): the earlier tests proved `mkdtemp` gets CALLED, never
+    // that its result is what `omp` actually runs in -- a regression to `cwd: process.cwd()` or
+    // `cwd: os.tmpdir()` would have passed every test in this file until now, while `omp` would
+    // then load whatever project `.omp/` happens to sit in that folder (the whole point of the
+    // gate-cycle-4 redesign). Manually confirmed RED: temporarily changing `config.ts`'s
+    // `execFile` call to `cwd: process.cwd()` fails this test's first `toBe` assertion below
+    // (`process.cwd()` !== the mkdtemp path), then GREEN again after reverting -- see the PR body
+    // for the exact before/after output.
+    const expectedPrefix = path.join(os.tmpdir(), 'refract-omp-config-');
     const first = listCatalogModels('chat');
     await waitFor(() => calls.length === 1);
+    expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledWith(expectedPrefix);
+    expect(nth(0).options.cwd).toBe(`${expectedPrefix}test123`);
     nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
     await first;
     expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(1);
 
     // Second call: simulate the directory still existing (`access` resolves) -- `ensureScratchDir`
-    // must reuse the cached path and never call `mkdtemp` again.
+    // must reuse the cached path (`omp` still runs with that SAME cwd) and never call `mkdtemp`
+    // again.
     vi.mocked(fsp.access).mockReset().mockResolvedValue(undefined);
     const second = listCatalogModels('chat');
     await waitFor(() => calls.length === 2);
+    expect(nth(1).options.cwd).toBe(`${expectedPrefix}test123`);
     expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(1);
     nth(1).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
     await second;
+  });
+
+  it('access() rejecting on a cached directory triggers a FRESH mkdtemp call, and omp runs with the NEW path', async () => {
+    vi.mocked(fsp.mkdtemp)
+      .mockReset()
+      .mockResolvedValueOnce('C:\\fake\\scratch-one')
+      .mockResolvedValueOnce('C:\\fake\\scratch-two');
+
+    const first = listCatalogModels('chat');
+    await waitFor(() => calls.length === 1);
+    expect(nth(0).options.cwd).toBe('C:\\fake\\scratch-one');
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await first;
+
+    // The directory has gone missing from under us (e.g. Windows temp cleanup) -- `access`
+    // rejects, same as the beforeEach default, made explicit here for the test's own clarity.
+    vi.mocked(fsp.access).mockReset().mockRejectedValue(new Error('ENOENT'));
+    const second = listCatalogModels('chat');
+    await waitFor(() => calls.length === 2);
+    expect(nth(1).options.cwd).toBe('C:\\fake\\scratch-two');
+    expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(2);
+    nth(1).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await second;
+  });
+
+  it('two concurrent FIRST calls share the same in-flight mkdtemp, so omp runs with the SAME cwd for both', async () => {
+    // Gate cycle 5 MEDIUM (code-reviewer/security-auditor/test-reviewer): the section's own mount
+    // effect fires `load()` plus one `loadCatalog(kind)` per distinct catalog kind at the same
+    // moment -- up to 8 concurrent calls, each reaching `ensureScratchDir` before any earlier one
+    // has resolved its own `mkdtemp`. Before this fix, every one of them saw `cachedScratchDir`
+    // and `scratchDirPromise` both still `null` and started its OWN `mkdtemp`, leaking up to 7
+    // orphaned empty directories per Settings-screen open.
+    const first = listCatalogModels('chat');
+    const second = listCatalogModels('image');
+    await waitFor(() => calls.length === 2);
+    expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(1);
+    expect(nth(0).options.cwd).toBe(nth(1).options.cwd);
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    nth(1).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await first;
+    await second;
+  });
+});
+
+describe('cleanupModelRolesScratchDir', () => {
+  it('does nothing when nothing was ever created this session', async () => {
+    await cleanupModelRolesScratchDir();
+    expect(vi.mocked(fsp.rmdir)).not.toHaveBeenCalled();
+  });
+
+  it('removes the exact cached path with a single argument (non-recursive) after one call', async () => {
+    const promise = listCatalogModels('chat');
+    await waitFor(() => calls.length === 1);
+    const cwd = nth(0).options.cwd;
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await promise;
+
+    await cleanupModelRolesScratchDir();
+    expect(vi.mocked(fsp.rmdir)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fsp.rmdir)).toHaveBeenCalledWith(cwd);
+    // Non-recursive: exactly one argument, never an `{ recursive: true, ... }` options object.
+    expect(vi.mocked(fsp.rmdir).mock.calls[0]?.length).toBe(1);
+  });
+
+  it('a second cleanup call is a no-op: rmdir is never called again', async () => {
+    const promise = listCatalogModels('chat');
+    await waitFor(() => calls.length === 1);
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await promise;
+
+    await cleanupModelRolesScratchDir();
+    expect(vi.mocked(fsp.rmdir)).toHaveBeenCalledTimes(1);
+    await cleanupModelRolesScratchDir();
+    expect(vi.mocked(fsp.rmdir)).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows an rmdir rejection instead of throwing', async () => {
+    const promise = listCatalogModels('chat');
+    await waitFor(() => calls.length === 1);
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await promise;
+
+    vi.mocked(fsp.rmdir).mockRejectedValueOnce(new Error('ENOTEMPTY'));
+    await expect(cleanupModelRolesScratchDir()).resolves.toBeUndefined();
   });
 });
 

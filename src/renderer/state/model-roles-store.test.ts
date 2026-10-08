@@ -241,4 +241,37 @@ describe('useModelRolesStore.loadCatalog', () => {
     await second;
     expect(listCatalog).toHaveBeenCalledTimes(1);
   });
+
+  it('concurrent calls for DIFFERENT kinds each fetch independently -- the in-flight tracking is per kind, not a single shared slot', async () => {
+    // Gate cycle 5 MEDIUM (test-reviewer): the realistic implementation mistake this guards
+    // against is a single in-flight slot instead of a `Map` keyed by kind -- the section's own
+    // mount effect fires one `loadCatalog(kind, true)`-equivalent call per distinct catalog kind
+    // (up to 7) at the same moment, and a single shared slot would hand every kind the FIRST
+    // kind's promise, silently leaving the other six catalogs never loaded with no test failing.
+    let resolveChat!: (value: unknown) => void;
+    const chatPromise = new Promise((resolve) => {
+      resolveChat = resolve;
+    });
+    let resolveImage!: (value: unknown) => void;
+    const imagePromise = new Promise((resolve) => {
+      resolveImage = resolve;
+    });
+    const listCatalog = vi.fn((kind: string) => (kind === 'chat' ? chatPromise : imagePromise));
+    stubRefract({ listCatalog });
+
+    const chatCall = useModelRolesStore.getState().loadCatalog('chat', true);
+    const imageCall = useModelRolesStore.getState().loadCatalog('image', true);
+    expect(chatCall).not.toBe(imageCall);
+
+    resolveChat({ ok: true, value: [{ provider: 'p', id: 'chat-model', selector: 'p/chat-model', name: 'Chat Model' }] });
+    resolveImage({ ok: true, value: [{ provider: 'p', id: 'image-model', selector: 'p/image-model', name: 'Image Model' }] });
+    await chatCall;
+    await imageCall;
+
+    expect(listCatalog).toHaveBeenCalledTimes(2);
+    expect(listCatalog).toHaveBeenCalledWith('chat');
+    expect(listCatalog).toHaveBeenCalledWith('image');
+    expect(useModelRolesStore.getState().catalogs.chat).toEqual([{ provider: 'p', id: 'chat-model', selector: 'p/chat-model', name: 'Chat Model' }]);
+    expect(useModelRolesStore.getState().catalogs.image).toEqual([{ provider: 'p', id: 'image-model', selector: 'p/image-model', name: 'Image Model' }]);
+  });
 });

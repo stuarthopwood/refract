@@ -143,6 +143,12 @@ async function main() {
   // Catalog row shape (chat kind), on the isolated (credential-less) profile.
   results.catalogIsolated = await run(ompPath, scratchCwd, ['models', '--kind', 'chat', '--json']);
 
+  // Gate cycle 5 LOW (security-auditor/code-reviewer): the earlier `scratchCwdEmptyAfterFourSetCalls`
+  // check ran before this `omp models` call -- production makes up to 7 of these per Settings
+  // open, in the SAME shared `scratchCwd`, so this second check is the one that actually covers
+  // `cleanupModelRolesScratchDir`'s non-recursive-rmdir assumption for the most frequent call.
+  results.scratchCwdEmptyAfterAllCalls = await scratchDirIsEmpty(scratchCwd);
+
   results.realConfigAfter = await hashFile(REAL_CONFIG);
   results.realConfigUnchanged = JSON.stringify(results.realConfigBefore) === JSON.stringify(results.realConfigAfter);
 

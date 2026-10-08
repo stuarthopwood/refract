@@ -523,16 +523,18 @@ export interface RefractApi {
     /** `omp config set modelRoles '<json>' --json`: merges `value` into the current record for
      * `role` (`null` clears/unsets it) and writes the whole record back. `overriddenBy` (when
      * present) names a higher layer -- an env var, `overlay`, or `runtime` -- that still supplies
-     * the effective value despite this write succeeding. NEVER `project`: every `omp` call this
-     * feature makes runs with its cwd pointed at an `fsp.mkdtemp`-randomised scratch directory
-     * this module creates itself (`main/omp/config.ts`), so nothing else is ever told that path
-     * before `omp` uses it and no foreign content can exist there to load as a project layer --
-     * confirmed live, FINDINGS item 48 (quality-gate remediation, gate cycle 3 MEDIUM: this
-     * comment used to list `project` as possible, which would have meant a repository's own
-     * `.omp` config can silently override what the user just picked here with no visible cue;
-     * gate cycle 4: the scratch directory itself moved from a fixed, predictable path to the
-     * `mkdtemp` design above, which also closes the narrow same-process TOCTOU the fixed path
-     * carried between its own emptiness check and the `omp` spawn). */
+     * the effective value despite this write succeeding. NEVER `project` IN PRACTICE: every `omp`
+     * call this feature makes runs with its cwd pointed at an `fsp.mkdtemp`-randomised scratch
+     * directory this module creates itself (`main/omp/config.ts`), unpredictably named and empty
+     * at the moment it is created, so nothing else is ever told that path in order to plant a
+     * project layer there -- confirmed live, FINDINGS item 48 (quality-gate remediation, gate
+     * cycle 3 MEDIUM: this comment used to list `project` as possible, which would have meant a
+     * repository's own `.omp` config can silently override what the user just picked here with no
+     * visible cue; gate cycle 5 LOW, security-auditor: reworded from an absolute "no foreign
+     * content can ever exist" claim -- any same-user process COULD in principle list the OS temp
+     * root, find this directory by its fixed name prefix, and plant something there between calls
+     * within the same session, same as it could already edit the real global `config.yml`
+     * directly; this crosses no privilege boundary and is accepted, not claimed impossible). */
     set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string }>>;
     /** `omp models --kind <kind> --json`: a read-only catalog listing used to populate a
      * role's model picker (the RPC `get_available_models` surface carries no role field and

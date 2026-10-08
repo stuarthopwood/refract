@@ -21,18 +21,28 @@
 // .omp/` whenever that folder is non-empty, so a FIXED, predictable scratch path (the gate cycle
 // 2/3 design) could in principle have something written into it between an emptiness check and
 // the `omp` spawn (a TOCTOU gap), and any single stray entry there permanently broke every model-
-// role call with no actionable recovery. `mkdtemp` closes both at once: it creates an
-// OS-randomised, guaranteed-empty directory in one atomic call, so there is nothing to check (no
-// foreign content can ever have been written into a path nothing else has ever been told), and a
-// missing directory (first call, or deleted by Windows temp cleanup) is simply recreated. ONE such
-// directory is created lazily on first use and reused for the rest of this process's life (not a
-// fresh one per call -- cheap enough to keep, and ordinary per-call reuse the same way the old
-// fixed directory was reused); `cleanupModelRolesScratchDir` (called from `index.ts`'s own
-// `before-quit`, the same lifecycle hook `SessionManager.stopAll()` uses) removes it with the
-// EXACT literal path `mkdtemp` returned, never a reconstructed or wildcard path, best-effort and
-// never blocking quit. Leaving it on disk if cleanup is skipped (a forced kill, a crash) costs
-// nothing: the OS-randomised name cannot be pre-seeded or discovered by anything that was not
-// handed it directly, and `os.tmpdir()`'s own cleanup eventually reclaims it regardless.
+// role call with no actionable recovery. `mkdtemp` closes both at once: it creates a directory
+// with an unpredictable name, empty AT CREATION, in one atomic call -- quality-gate remediation,
+// gate cycle 5 LOW, security-auditor: this is NOT a claim that foreign content can never later
+// exist there, only that nothing else was ever told the path at the moment it was created; any
+// same-user process COULD in principle discover it afterward by listing the OS temp root and
+// plant something, but that crosses no privilege boundary a same-user process does not already
+// have (it could edit the real global `config.yml` directly) -- and a missing directory (first
+// call, or deleted by Windows temp cleanup) is simply recreated. ONE such directory is created
+// lazily on first use and reused for the rest of this process's life (quality-gate remediation,
+// gate cycle 5 MEDIUM, code-reviewer/security-auditor/test-reviewer: the in-flight CREATION
+// itself is now memoised too, not just the resolved path -- several concurrent first calls, e.g.
+// the Settings mount effect's `load()` plus one `loadCatalog` per catalog kind firing together,
+// used to each see no cached directory yet and each start their OWN `mkdtemp`, leaving every
+// extra one an orphaned, never-cleaned-up empty directory; now every concurrent caller joins the
+// SAME in-flight `mkdtemp` call). `cleanupModelRolesScratchDir` (called from `index.ts`'s own
+// `before-quit`, the same lifecycle hook `SessionManager.stopAll()` uses, and a no-op after its
+// first call whether or not that call actually removed anything -- an `omp` process still running
+// at quit, or a Windows shutdown/logoff that never fires `before-quit` at all, can both leave the
+// directory behind) awaits any creation still in flight, then removes the resolved path -- the
+// EXACT literal path `mkdtemp` returned, never a reconstructed or wildcard path -- best-effort and
+// never blocking quit. Leaving it on disk if cleanup is skipped costs nothing beyond a few bytes
+// of unpredictably-named temp-folder litter: `os.tmpdir()`'s own cleanup eventually reclaims it.
 //
 // `setModelRole`'s read-merge-write is serialised through a module-level promise chain
 // (`enqueueWrite`) so two near-simultaneous role edits from THIS process never race each other
@@ -81,6 +91,12 @@ const SCRATCH_DIR_PREFIX = 'refract-omp-config-';
 // if a later call finds it has been removed out from under us.
 let cachedScratchDir: string | null = null;
 
+// Memoises the IN-FLIGHT `mkdtemp` call itself, not just its eventual result (quality-gate
+// remediation, gate cycle 5 MEDIUM -- see module header: concurrent first calls used to each
+// start their own `mkdtemp` before any of them had resolved). A second caller that arrives while
+// one is already creating the directory joins that SAME promise instead of starting another.
+let scratchDirPromise: Promise<string> | null = null;
+
 /** Creates (lazily, once per process) an `fsp.mkdtemp`-randomised scratch directory and reuses it
  * for every later call, recreating it transparently if it has gone missing (quality-gate
  * remediation, gate cycle 4 MEDIUM+LOW -- see module header for why `mkdtemp` replaced the fixed
@@ -95,31 +111,56 @@ async function ensureScratchDir(): Promise<string> {
       cachedScratchDir = null; // removed from under us (e.g. Windows temp cleanup); recreate below.
     }
   }
+  if (scratchDirPromise) return scratchDirPromise;
+  const creating = (async () => {
+    let dir: string;
+    try {
+      dir = await fsp.mkdtemp(path.join(os.tmpdir(), SCRATCH_DIR_PREFIX));
+    } catch {
+      throw new OmpConfigError('omp-failed', 'Could not prepare a working directory for omp.');
+    }
+    cachedScratchDir = dir;
+    return dir;
+  })();
+  scratchDirPromise = creating;
   try {
-    cachedScratchDir = await fsp.mkdtemp(path.join(os.tmpdir(), SCRATCH_DIR_PREFIX));
-  } catch {
-    throw new OmpConfigError('omp-failed', 'Could not prepare a working directory for omp.');
+    return await creating;
+  } finally {
+    // Only clear the slot if it is still OUR OWN in-flight promise -- a later caller that already
+    // started a fresh `creating` (after this one settled) must never have its own slot cleared by
+    // this one finishing late.
+    if (scratchDirPromise === creating) scratchDirPromise = null;
   }
-  return cachedScratchDir;
 }
 
-/** Best-effort removal of the cached scratch directory, called once from `index.ts`'s own
- * `before-quit` handler (never blocking quit -- a failure here is not worth delaying the app
- * over). Always the EXACT literal path `mkdtemp` returned and cached above, never a reconstructed
- * or wildcard path (project convention: a delete target must never be built from a guessed or
- * computed value). Uses the plain, non-recursive removal -- nothing in this module or `omp`
- * itself ever writes ordinary files into this directory (module header), so it is always empty at
- * this point in normal operation; the plain call throws (caught and ignored below) rather than
- * silently removing anything unexpected if that assumption is ever wrong. A no-op if nothing was
- * ever created this session. */
+/** Best-effort removal of the scratch directory, called once from `index.ts`'s own `before-quit`
+ * handler (never blocking quit -- a failure here is not worth delaying the app over). Awaits any
+ * creation still in flight first (quality-gate remediation, gate cycle 5 MEDIUM), so a quit that
+ * lands mid-creation still cleans up the directory that call is about to finish making, rather
+ * than orphaning it. Always the EXACT literal path `mkdtemp` returned and cached, never a
+ * reconstructed or wildcard path (project convention: a delete target must never be built from a
+ * guessed or computed value). Uses the plain, non-recursive removal -- nothing in this module or
+ * `omp` itself ever writes ordinary files into this directory (module header), so it is always
+ * empty at this point in normal operation; the plain call throws (caught and ignored below) rather
+ * than silently removing anything unexpected if that assumption is ever wrong. A no-op if nothing
+ * was ever created this session, and a no-op after its first call whether or not that call
+ * actually removed anything (quality-gate remediation, gate cycle 5 LOW, code-reviewer/
+ * security-auditor: the slot is cleared before the removal attempt either way). */
 export async function cleanupModelRolesScratchDir(): Promise<void> {
+  if (scratchDirPromise) {
+    try {
+      await scratchDirPromise;
+    } catch {
+      return; // mkdtemp never actually succeeded; nothing exists to remove.
+    }
+  }
   const target = cachedScratchDir;
   if (!target) return;
   cachedScratchDir = null;
   try {
     await fsp.rmdir(target);
   } catch {
-    // Best-effort; the OS-randomised name costs nothing left behind (module header).
+    // Best-effort; the unpredictable name costs nothing left behind (module header).
   }
 }
 
