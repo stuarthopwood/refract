@@ -21,7 +21,13 @@ export function validateRepositoryName(trimmed: string): string | undefined {
   // (U+202A-202E, U+2066-2069) and zero-width/format characters (U+200B-200F, U+FEFF) that could
   // otherwise spoof the displayed name (it renders in the header, aria-labels, and dialog titles);
   // U+2028/U+2029 (line/paragraph separator) are outside both categories and listed explicitly.
-  if (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(trimmed)) {
+  // Quality-gate fix (cycle 2, 2026-10-08): U+200C (ZWNJ) and U+200D (ZWJ) are excluded from
+  // that -- both are also `\p{Cf}`, but they are not spoofing/invisible-text characters, they
+  // are REQUIRED for legitimate text: emoji ZWJ sequences (e.g. family or profession emoji) and
+  // joining letters in Persian, Arabic and several Indic scripts. Stripped before the test, not
+  // added as a second alternation, since JS regex character classes cannot express "this set
+  // minus these two code points" directly.
+  if (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(trimmed.replace(/[\u200C\u200D]/g, ''))) {
     return 'name must not contain control characters';
   }
   return undefined;

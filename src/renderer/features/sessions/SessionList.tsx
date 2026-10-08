@@ -29,7 +29,7 @@ import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
-import { MAX_REPOSITORY_NAME_LENGTH } from '../../../shared/repositoryName'
+import { validateRepositoryName } from '../../../shared/repositoryName'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
@@ -400,6 +400,16 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
       setRenaming(false)
       return
     }
+    // Quality-gate fix (cycle 2, 2026-10-08): validates client-side first, with the exact same
+    // shared, code-point-aware rule the server enforces -- shows an over-long or disallowed
+    // name's error immediately, with no round trip, and is the ONLY length cap now that the
+    // input's own `maxLength` (UTF-16-unit-counted, wrongly capped emoji at 30 instead of 60) is
+    // gone.
+    const clientError = validateRepositoryName(name)
+    if (clientError) {
+      setRenameError(clientError)
+      return
+    }
     const error = await renameRepository(repository.id, name)
     if (error) {
       setRenameError(error)
@@ -455,7 +465,6 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
                 ref={renameInputRef}
                 autoFocus
                 value={draftName}
-                maxLength={MAX_REPOSITORY_NAME_LENGTH}
                 onChange={(event) => {
                   setDraftName(event.target.value)
                   setRenameError(null)

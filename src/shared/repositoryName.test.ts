@@ -38,6 +38,20 @@ describe('validateRepositoryName', () => {
     expect(validateRepositoryName('bad\u200Bname')).toMatch(/control characters/);
   });
 
+  // Quality-gate fix (cycle 2, 2026-10-08): U+200C/U+200D are `\p{Cf}` too, but excluded from
+  // rejection -- both are required for legitimate text, not spoofing.
+  it('accepts a zero-width joiner (emoji ZWJ sequence, e.g. a family emoji)', () => {
+    expect(validateRepositoryName('\u{1F468}\u200D\u{1F469}\u200D\u{1F467}')).toBeUndefined();
+  });
+
+  it('accepts a zero-width non-joiner (Persian/Indic script joining)', () => {
+    expect(validateRepositoryName('\u0646\u200C\u0647')).toBeUndefined();
+  });
+
+  it('still rejects a genuine control character sitting next to a zero-width joiner', () => {
+    expect(validateRepositoryName('bad\u200D\u0007name')).toMatch(/control characters/);
+  });
+
   // Quality-gate fix (test-reviewer, Medium, 2026-10-08): counted in code points, not UTF-16 code
   // units -- a plain `.length` cap let through only 30 emoji (each a surrogate pair) before
   // rejecting, half the visible length of an ASCII name.

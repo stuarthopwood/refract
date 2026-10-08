@@ -91,7 +91,11 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     if (!repository) return notFound(`Repository not found: ${id}`);
     const trimmed = name.trim();
     const validationError = validateRepositoryName(trimmed);
-    if (validationError) return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_RENAME} ${validationError}`);
+    // Quality-gate fix (cycle 2, 2026-10-08): no channel-name prefix here, unlike the two
+    // developer-facing checks above -- this exact string is shown inline in the rename field's
+    // own `role="alert"` text (SessionList.tsx), never a toast, so a user must never see
+    // "repositories.rename name too long (max 60 characters)".
+    if (validationError) return invalidArgument(validationError);
     const nextName = resolveRepositoryName(trimmed, path.basename(repository.path));
     try {
       const updated = await manager.registry.updateRepository(id, { name: nextName });
