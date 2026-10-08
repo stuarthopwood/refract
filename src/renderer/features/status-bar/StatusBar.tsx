@@ -26,7 +26,7 @@ export function StatusBar() {
   const liveSessions = sessions.filter((session) => session.status !== 'stopped')
 
   return (
-    <footer className="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-border bg-card px-3 text-xs text-muted-foreground">
+    <footer className="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-divider bg-card px-3 text-xs text-muted-foreground">
       <div className="flex items-center gap-2">
         {warning && (
           <Popover open={memoryOpen} onOpenChange={setMemoryOpen}>

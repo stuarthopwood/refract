@@ -523,7 +523,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       <div
         role="status"
         className={cn(
-          'flex shrink-0 items-center gap-1.5 border-b border-border px-4 py-2 text-xs text-muted-foreground',
+          'flex shrink-0 items-center gap-1.5 border-b border-divider px-4 py-2 text-xs text-muted-foreground',
           !isOpening && !recovering && !startingNew && !resuming && 'sr-only'
         )}
       >

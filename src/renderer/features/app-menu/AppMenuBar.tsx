@@ -150,7 +150,7 @@ export function AppMenuBar() {
       ref={barRef}
       role="menubar"
       aria-label="App menu"
-      className="no-drag-region fixed left-0 top-0 z-50 flex h-10 items-center gap-1 border-b border-border bg-card px-2 text-sm text-card-foreground shadow-md"
+      className="no-drag-region fixed left-0 top-0 z-50 flex h-10 items-center gap-1 border-b border-divider bg-card px-2 text-sm text-card-foreground shadow-md"
       style={{ width: 'env(titlebar-area-width, 100vw)' }}
     >
       {MENUS.map((menu, index) => (
