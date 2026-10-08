@@ -29,7 +29,7 @@ export function PullRequestsView() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-divider px-3 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <h2 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
           Pull requests
         </h2>

@@ -189,7 +189,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 border-b border-divider p-3">
+      <div className="shrink-0 border-b border-border p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 ref={headingRef} tabIndex={-1} className="truncate text-base font-semibold outline-none">
@@ -291,7 +291,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
             <Markdown id={`pr-${detail.number}-description`} text={detail.description || '_No description._'} />
           </div>
           <Timeline repositoryId={repositoryId} number={number} entries={detail.timeline} onChanged={() => void load()} />
-          <div className="border-t border-divider p-3">
+          <div className="border-t border-border p-3">
             <Textarea
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}

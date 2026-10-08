@@ -56,7 +56,7 @@ export function ManageSessionsToolbar({
   }
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-divider p-3">
+    <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border p-3">
       <div className="relative w-64">
         <SearchIcon aria-hidden className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
