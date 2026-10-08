@@ -29,7 +29,7 @@
 // plant something, but that crosses no privilege boundary a same-user process does not already
 // have (it could edit the real global `config.yml` directly) -- and a missing directory (first
 // call, or deleted by Windows temp cleanup) is simply recreated. ONE such directory is created
-// lazily on first use and reused for the rest of this process's life (quality-gate remediation,
+// lazily on first use and reused until it goes missing or is cleaned up (quality-gate remediation,
 // gate cycle 5 MEDIUM, code-reviewer/security-auditor/test-reviewer: the in-flight CREATION
 // itself is now memoised too, not just the resolved path -- several concurrent first calls, e.g.
 // the Settings mount effect's `load()` plus one `loadCatalog` per catalog kind firing together,
@@ -102,7 +102,7 @@ let cachedScratchDir: string | null = null;
 // one is already creating the directory joins that SAME promise instead of starting another.
 let scratchDirPromise: Promise<string> | null = null;
 
-/** Creates (lazily, once per process) an `fsp.mkdtemp`-randomised scratch directory and reuses it
+/** Creates (lazily, once, then reused) an `fsp.mkdtemp`-randomised scratch directory and reuses it
  * for every later call, recreating it transparently if it has gone missing (quality-gate
  * remediation, gate cycle 4 MEDIUM+LOW -- see module header for why `mkdtemp` replaced the fixed
  * directory + emptiness-check design). A genuinely failing `mkdtemp` (disk full, no permission to
