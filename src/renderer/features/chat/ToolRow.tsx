@@ -112,7 +112,7 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
             Wrote {writeCodeLines.length} {writeCodeLines.length === 1 ? 'line' : 'lines'} to {item.write.path}
           </div>
           <div className="max-h-64 overflow-auto rounded-lg">
-            <CodeBlock code={visibleWriteCode} lang={writeBlock?.lang ?? null} />
+            <CodeBlock code={visibleWriteCode} lang={writeBlock?.lang ?? null} copyText={writeBlock?.code ?? ''} />
           </div>
           {writeTruncated && (
             <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAllWrite(true)}>
@@ -136,7 +136,7 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">Output</div>
           <div className="max-h-64 overflow-auto rounded-lg">
-            <CodeBlock code={visibleOutputCode} lang={outputBlock.lang} />
+            <CodeBlock code={visibleOutputCode} lang={outputBlock.lang} copyText={outputBlock.code} />
           </div>
           {truncated && (
             <Button variant="ghost" size="sm" className="mt-1" onClick={() => setShowAllOutput(true)}>

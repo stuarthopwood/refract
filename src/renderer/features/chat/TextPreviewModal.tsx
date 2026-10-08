@@ -1,5 +1,6 @@
-import type { ReactNode, RefObject } from 'react'
+import { useRef, type ReactNode, type RefObject } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { CopyButton } from '@/components/ui/copy-button'
 import type { PendingTextChip } from './attachments'
 
 export interface TextPreviewModalProps {
@@ -21,11 +22,24 @@ export interface TextPreviewModalProps {
  * pattern as every other dialog in the app) returns focus there on Esc or an outside click,
  * unless `restoreFocusTo` overrides that target (see its own doc comment above). */
 export function TextPreviewModal({ chip, trigger, restoreFocusTo }: TextPreviewModalProps) {
+  // Quality-gate remediation (Medium): the Copy button now sits before the dialog's own Close
+  // button in DOM order, so Radix Dialog's default initial-focus search (first tabbable element)
+  // would otherwise land on Copy -- and Radix's Tooltip opens on any non-pointer-down focus, so
+  // "Copy pasted text" would pop up on every open, including a mouse open. `onOpenAutoFocus`
+  // below redirects initial focus to the read-only text region instead (the same pattern
+  // `CodeBlock`'s own scrollable region uses), which also gives the 60vh scroll area a real
+  // keyboard stop it previously lacked.
+  const textRegionRef = useRef<HTMLPreElement>(null)
+
   return (
     <Dialog>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent
         className="sm:max-w-xl"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          textRegionRef.current?.focus()
+        }}
         onCloseAutoFocus={
           restoreFocusTo
             ? (event) => {
@@ -36,9 +50,22 @@ export function TextPreviewModal({ chip, trigger, restoreFocusTo }: TextPreviewM
         }
       >
         <DialogHeader>
-          <DialogTitle>Pasted text ({chip.text.length} characters)</DialogTitle>
+          {/* `pr-8` clears the dialog's own absolute top-right Close button (icon-sm, `top-2
+           * right-2`) so it never overlaps this row's own trailing Copy button (#524). Always
+           * visible, like every other Copy button (#524 acceptance criterion: "visible without
+           * hover"). */}
+          <div className="flex items-center justify-between gap-2 pr-8">
+            <DialogTitle>Pasted text ({chip.text.length} characters)</DialogTitle>
+            <CopyButton getText={() => chip.text} label="Copy pasted text" announcement="Pasted text copied" />
+          </div>
         </DialogHeader>
-        <pre className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted p-3 text-xs break-words whitespace-pre-wrap">
+        <pre
+          ref={textRegionRef}
+          tabIndex={0}
+          role="region"
+          aria-label="Pasted text"
+          className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted p-3 text-xs break-words whitespace-pre-wrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        >
           {chip.text}
         </pre>
       </DialogContent>

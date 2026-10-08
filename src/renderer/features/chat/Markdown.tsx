@@ -11,6 +11,7 @@ import { safeUrl } from '@/lib/safe-url'
 import { THEMES } from '../../../shared/themes'
 import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
 import { useActiveThemeId } from '@/state'
+import { CopyButton } from '@/components/ui/copy-button'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -63,16 +64,40 @@ function getHighlighter(): Promise<Highlighter> {
 // dark-only theme (docs/DESIGN.md "Look and feel": "dark only, Stuart ... I don't think I want a
 // light mode"); same `bg-muted`/`text-muted-foreground` pairing as `DiffView`'s own path header --
 // unverified for a future light theme.
-function CodeBlockHeader({ label }: { label: string }) {
-  return <div className="truncate border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">{label}</div>
+// `copyText` is the full, untruncated value the Copy button puts on the clipboard -- distinct
+// from `label` (the language shown) so a caller whose visible body is capped (ToolRow.tsx's
+// "Show all" truncation) can still copy the complete original text (#524, PLAN.md "Code
+// snippets" row). The button is always rendered (never hover/focus-only, quality-gate round 2:
+// issue #524's own "visible without hover" acceptance criterion), `-my-1` so the 24px icon-xs
+// target doesn't grow this header past its original ~24px row height, and hidden entirely when
+// `copyText` is empty (an untagged empty fence, or a tool call with no output) so Copy never
+// silently clears the user's clipboard. The accessible name/tooltip includes the same language
+// label shown in the header ("Copy code, typescript"), per the issue's intended behaviour, so
+// multiple blocks in one transcript are distinguishable in a screen reader's button list.
+function CodeBlockHeader({ label, copyText }: { label: string; copyText: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
+      <span className="truncate">{label}</span>
+      {copyText !== '' && (
+        <CopyButton
+          getText={() => copyText}
+          label={`Copy code, ${label}`}
+          announcement="Code copied"
+          className="-my-1 text-muted-foreground focus-visible:ring-inset"
+        />
+      )}
+    </div>
+  )
 }
 
 // The one shared code-block renderer (T083, FR-049/FR-050), exported for `ToolRow.tsx`'s
-// Arguments/Output blocks. Always full width (FR-049, no copy button per FR-050/FR-042).
+// Arguments/Output blocks. Always full width (FR-049). Every block's header carries a Copy
+// button (#524), reversing this component's earlier "no copy button per FR-050/FR-042" rule.
 export function CodeBlock({
   code,
   lang,
   wrap = false,
+  copyText,
 }: {
   code: string
   lang: string | null
@@ -84,6 +109,10 @@ export function CodeBlock({
   // behavior: `lang === null` also covers ASCII diagrams, tables, and any non-JSON tool output, none
   // of which should wrap.
   wrap?: boolean
+  // The text the Copy button puts on the clipboard, when it differs from the visible `code`
+  // (#524): `ToolRow.tsx` passes the full Output/write value here while `code` itself is capped
+  // to the visible "Show all" slice. Defaults to `code` for every other caller.
+  copyText?: string
 }) {
   const activeThemeId = useActiveThemeId()
   const [html, setHtml] = React.useState<string | null>(null)
@@ -134,7 +163,7 @@ export function CodeBlock({
     // per the constitution's markdown/sanitisation rule.
     return (
       <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
-        <CodeBlockHeader label={label} />
+        <CodeBlockHeader label={label} copyText={copyText ?? code} />
         <div
           tabIndex={0}
           role="region"
@@ -147,7 +176,7 @@ export function CodeBlock({
   }
   return (
     <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
-      <CodeBlockHeader label={label} />
+      <CodeBlockHeader label={label} copyText={copyText ?? code} />
       <pre tabIndex={0} role="region" aria-label={regionLabel} className={cn(wrap && lang === null ? wrapClassName : scrollableClassName, 'bg-card p-3')}>
         <code>{code}</code>
       </pre>
