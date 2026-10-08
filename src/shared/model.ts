@@ -149,6 +149,16 @@ export function isModelRoleId(value: unknown): value is ModelRoleId {
  * `tiny`, `image`, `tts`, `stt`, `search`, and `judge`"). */
 export type CatalogKind = 'chat' | 'tiny' | 'image' | 'tts' | 'stt' | 'search' | 'judge';
 
+const CATALOG_KINDS: Record<string, true> = { chat: true, tiny: true, image: true, tts: true, stt: true, search: true, judge: true };
+
+/** Defensive-validate-before-cast lookup (matching `isModelRoleId`'s own `Record<string, true>`
+ * pattern), shared by `main/omp/config.ts` and `main/ipc/modelRoles.ts` so the seven-entry
+ * catalog-kind vocabulary is declared in exactly one place (quality-gate remediation,
+ * code-reviewer LOW: these two used to keep their own hand-copied `CATALOG_KINDS` literal). */
+export function isCatalogKind(value: unknown): value is CatalogKind {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(CATALOG_KINDS, value);
+}
+
 /** Which catalog kind each role's model picker queries (`omp://models.md` "Role aliases and
  * settings": `web` selects search/grounded-chat runners, `speech` selects TTS, `dictation`
  * selects STT, `judge` selects judgment runners; `image` selects image runners). */

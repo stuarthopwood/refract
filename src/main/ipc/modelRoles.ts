@@ -5,20 +5,22 @@
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { Result } from '../../shared/ipc';
-import { isModelRoleId } from '../../shared/model';
-import type { CatalogKind, ModelCatalogEntry, ModelRoleId } from '../../shared/model';
+import { isCatalogKind, isModelRoleId } from '../../shared/model';
+import type { ModelCatalogEntry } from '../../shared/model';
 import { OmpConfigError, getModelRoles, listCatalogModels, setModelRole } from '../omp/config';
 
-const CATALOG_KINDS: Record<string, true> = { chat: true, tiny: true, image: true, tts: true, stt: true, search: true, judge: true };
-
-/** Maps an `OmpConfigError` (or any other thrown value) to one of the two `IpcErrorCode`s this
- * surface uses: `'timeout'` for a genuine CLI timeout, `'omp-probe-failed'` for everything else
- * (missing binary, nonzero exit, unparsable output) -- reusing the existing vocabulary
- * `ipc/accounts.ts` already established for an `omp` CLI/RPC call that failed, rather than adding
- * new `IpcErrorCode` members for the same shape of failure. */
-function toIpcError(err: unknown): { code: 'omp-probe-failed' | 'timeout'; message: string } {
+/** Maps an `OmpConfigError` (or any other thrown value) to an `IpcErrorCode`: `'timeout'` for a
+ * genuine CLI timeout, `'invalid-argument'` for a caller-supplied bad value (`config.ts`'s own
+ * `'invalid-value'` code -- a blank/too-long/control-character selector, or an unknown role or
+ * catalog kind reaching this far), `'omp-probe-failed'` for everything else (missing binary,
+ * nonzero exit, unparsable output) -- reusing the existing vocabulary `ipc/accounts.ts` already
+ * established for an `omp` CLI/RPC call that failed, rather than adding new `IpcErrorCode`
+ * members for the same shape of failure. */
+function toIpcError(err: unknown): { code: 'omp-probe-failed' | 'timeout' | 'invalid-argument'; message: string } {
   if (err instanceof OmpConfigError) {
-    return { code: err.code === 'timeout' ? 'timeout' : 'omp-probe-failed', message: err.message };
+    if (err.code === 'timeout') return { code: 'timeout', message: err.message };
+    if (err.code === 'invalid-value') return { code: 'invalid-argument', message: err.message };
+    return { code: 'omp-probe-failed', message: err.message };
   }
   return { code: 'omp-probe-failed', message: err instanceof Error ? err.message : String(err) };
 }
@@ -42,7 +44,8 @@ export function registerModelRoles(): void {
         return { ok: false, error: { code: 'invalid-argument', message: `${IPC_REQUESTS.MODEL_ROLES_SET} expects a string value or null` } };
       }
       try {
-        const written = await setModelRole(role as ModelRoleId, value);
+        // `role` is already narrowed to `ModelRoleId` by the `isModelRoleId` guard above -- no cast needed.
+        const written = await setModelRole(role, value);
         return { ok: true, value: written };
       } catch (err) {
         return { ok: false, error: toIpcError(err) };
@@ -51,11 +54,12 @@ export function registerModelRoles(): void {
   );
 
   ipcMain.handle(IPC_REQUESTS.MODEL_ROLES_LIST_CATALOG, async (_event, kind: unknown): Promise<Result<ModelCatalogEntry[]>> => {
-    if (typeof kind !== 'string' || !Object.prototype.hasOwnProperty.call(CATALOG_KINDS, kind)) {
+    if (!isCatalogKind(kind)) {
       return { ok: false, error: { code: 'invalid-argument', message: `${IPC_REQUESTS.MODEL_ROLES_LIST_CATALOG} expects a known catalog kind` } };
     }
     try {
-      return { ok: true, value: await listCatalogModels(kind as CatalogKind) };
+      // `kind` is already narrowed to `CatalogKind` by the `isCatalogKind` guard above -- no cast needed.
+      return { ok: true, value: await listCatalogModels(kind) };
     } catch (err) {
       return { ok: false, error: toIpcError(err) };
     }
