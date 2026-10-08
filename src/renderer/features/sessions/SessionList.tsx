@@ -283,7 +283,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                     <span className="truncate font-medium">{session.name}</span>
                     <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
                     {session.status === 'stopped' && session.terminatedUnexpectedly && (
-                      <span className="truncate text-xs text-state-needs-you">Terminated unexpectedly</span>
+                      <span className="truncate text-xs text-destructive">Terminated unexpectedly</span>
                     )}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>

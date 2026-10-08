@@ -195,11 +195,15 @@ interface ToolGroupRowProps {
 export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
+  // Issue #510 slice 3 quality-gate fix (a11y, Low): a multi-call group's own summary names
+  // failed calls but silently dropped interrupted ones, so a sighted user could not tell which
+  // (or how many) calls were cut off without expanding the group.
+  const interruptedCount = group.items.filter((item) => item.status === 'interrupted').length
   const status: RowStatus = group.items.some((item) => item.status === 'running')
     ? 'running'
     : failedCount > 0
       ? 'error'
-      : group.items.some((item) => item.status === 'interrupted')
+      : interruptedCount > 0
         ? 'interrupted'
         : 'done'
   const last = group.items[group.items.length - 1]!
@@ -207,7 +211,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const label = solo ? last.tool : group.tool
   const summary = solo
     ? last.target
-    : `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}${failedCount > 0 ? `, ${failedCount} failed` : ''}`
+    : `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}${failedCount > 0 ? `, ${failedCount} failed` : ''}${interruptedCount > 0 ? `, ${interruptedCount} interrupted` : ''}`
   const meta = solo && last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
 
   return (

@@ -46,7 +46,22 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     set({
       sessions: get().sessions.map((session) =>
         session.id === event.sessionId
-          ? { ...session, status: event.status, unread: event.unread, launchedMode: event.launchedMode, pendingMode: event.pendingMode }
+          ? {
+              ...session,
+              status: event.status,
+              // Quality-gate fix (2026-10-08): `stopReason` and `terminatedUnexpectedly` used to
+              // be dropped here, so the row's "Terminated unexpectedly" text (and `stopReason`
+              // itself) only ever updated on the next unrelated `sessions.list()` refresh, never
+              // on the live crash this event actually reports. `terminatedUnexpectedly` always
+              // overwrites (never falls back to a stale prior value): `undefined` on the event
+              // means main is explicitly saying "not applicable to this transition", read as
+              // `false`, same as a session row that was never flagged.
+              stopReason: event.stopReason,
+              terminatedUnexpectedly: event.terminatedUnexpectedly ?? false,
+              unread: event.unread,
+              launchedMode: event.launchedMode,
+              pendingMode: event.pendingMode
+            }
           : session
       )
     }),

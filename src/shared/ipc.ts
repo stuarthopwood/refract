@@ -132,6 +132,10 @@ export interface SessionRuntimeView {
    * the same way (`buildSnapshot`), carried here too so `sessions.open`/`sessions.recover`'s
    * stop banner can show it without a second round-trip. */
   terminatedUnexpectedly?: boolean;
+  /** Tool names left without a result when `terminatedUnexpectedly` is true (quality gate
+   * 2026-10-08: the stop banner names the interrupted tool instead of leaving the detected
+   * detail computed-but-unused). Absent/empty when there was none to name. */
+  pendingToolNames?: string[];
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
   unread: boolean;
@@ -179,6 +183,12 @@ export interface SessionStatusEvent {
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   stopDetail?: string;
+  /** Issue #510 (quality gate 2026-10-08): set only on a live transition to `stopped`, so the
+   * session-list row's "Terminated unexpectedly" text is never stale until the next unrelated
+   * `sessions.list()` refresh. `undefined` for every other transition (working/idle/needs-you, or
+   * a stop this value genuinely does not apply to); the renderer treats that as `false`, never as
+   * "keep whatever the row already showed". */
+  terminatedUnexpectedly?: boolean;
   unread: boolean;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;

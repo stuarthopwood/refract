@@ -25,6 +25,27 @@ export type ManagerEvent =
   | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
   | { type: 'list-changed' };
 
+/** Issue #510 (quality gate 2026-10-08): caps how many Sessions' Conversation tails `summaries()`
+ * reads at once. Small, since a tail read is bounded (256 KiB max) and cheap on its own, but a
+ * registry with many stopped Sessions should not open dozens of file handles in one burst. */
+const DETECTION_CONCURRENCY = 4;
+
+/** Runs `fn` over `items` with at most `limit` concurrent calls in flight, preserving each
+ * result's original position regardless of completion order. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index]!);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 export class SessionManager {
   private readonly agents = new Map<string, SessionAgent>();
   private readonly listeners: Array<(event: ManagerEvent) => void> = [];
@@ -139,45 +160,48 @@ export class SessionManager {
    * Session with no agent this run is checked for a missing worktree folder right here (T043),
    * since there is no `SessionRuntime` yet to carry that reason. Issue #510 slice 2 (PLAN.md row
    * A0): async now -- a `stopped` row (live or never-launched-this-run alike) also reads its
-   * Conversation's tail for `terminatedUnexpectedly`, skipped entirely for `worktree-missing`
-   * (no useful Conversation to read) and every live non-`stopped` status. */
+   * Conversation's tail for `terminatedUnexpectedly`, skipped entirely for `worktree-missing` (no
+   * useful Conversation to read), an archived Session (not shown as an active row needing a
+   * Resume affordance; quality gate 2026-10-08), and every live non-`stopped` status. Reads run
+   * at most `DETECTION_CONCURRENCY` at a time -- `detectUnexpectedTermination` itself caches by
+   * `(file, size, mtimeMs)`, so an unrelated refresh (any OTHER Session's rename, archive, or
+   * status change also fires `session:list-changed`) is cheap, but a large registry's first-ever
+   * refresh still opens every stopped Session's file at once without this cap. */
   async summaries(): Promise<SessionSummary[]> {
-    return Promise.all(
-      this.registry.snapshot().sessions.map(async (session) => {
-        const runtime = this.agents.get(session.id)?.runtimeSnapshot;
-        if (runtime) {
-          const terminatedUnexpectedly =
-            runtime.status === 'stopped'
-              ? (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
-              : undefined;
-          return {
-            ...session,
-            status: runtime.status,
-            stopReason: runtime.stopReason,
-            terminatedUnexpectedly,
-            unread: runtime.unread,
-            launchedMode: runtime.launchedMode,
-            pendingMode: runtime.pendingMode,
-          };
-        }
-        const stopReason = existsSync(session.worktreePath) ? 'not-started' : 'worktree-missing';
+    return mapWithConcurrency(this.registry.snapshot().sessions, DETECTION_CONCURRENCY, async (session) => {
+      const runtime = this.agents.get(session.id)?.runtimeSnapshot;
+      if (runtime) {
         const terminatedUnexpectedly =
-          stopReason === 'not-started'
+          runtime.status === 'stopped' && !session.archivedAt
             ? (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
             : undefined;
-        // Never actually launched this run: nothing is "currently in effect" to show as current,
-        // so this falls back to the global Settings mode the renderer already uses pre-launch.
         return {
           ...session,
-          status: 'stopped',
-          stopReason,
+          status: runtime.status,
+          stopReason: runtime.stopReason,
           terminatedUnexpectedly,
-          unread: false,
-          launchedMode: this.settings.get().approvalMode,
-          pendingMode: null,
+          unread: runtime.unread,
+          launchedMode: runtime.launchedMode,
+          pendingMode: runtime.pendingMode,
         };
-      }),
-    );
+      }
+      const stopReason = existsSync(session.worktreePath) ? 'not-started' : 'worktree-missing';
+      const terminatedUnexpectedly =
+        stopReason === 'not-started' && !session.archivedAt
+          ? (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
+          : undefined;
+      // Never actually launched this run: nothing is "currently in effect" to show as current,
+      // so this falls back to the global Settings mode the renderer already uses pre-launch.
+      return {
+        ...session,
+        status: 'stopped',
+        stopReason,
+        terminatedUnexpectedly,
+        unread: false,
+        launchedMode: this.settings.get().approvalMode,
+        pendingMode: null,
+      };
+    });
   }
 
   /** `settings.setApprovalMode` (T031, FR-015): marks every live Session whose `launchedMode`

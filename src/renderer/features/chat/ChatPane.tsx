@@ -23,7 +23,6 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
-import { DEFAULT_RESUME_INSTRUCTION } from '../../../shared/model'
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -35,6 +34,7 @@ interface StopInfo {
   reason?: StopReason
   detail?: string
   terminatedUnexpectedly?: boolean
+  pendingToolNames?: string[]
 }
 
 
@@ -195,7 +195,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         setStopInfo({
           reason: snapshot.runtime.stopReason,
           detail: snapshot.runtime.stopDetail,
-          terminatedUnexpectedly: snapshot.runtime.terminatedUnexpectedly
+          terminatedUnexpectedly: snapshot.runtime.terminatedUnexpectedly,
+          pendingToolNames: snapshot.runtime.pendingToolNames
         })
         // `commands:update` only pushes on the next `available_commands_update` frame from
         // OMP (SessionAgent.ts), which may not arrive again for a Session that was already
@@ -300,12 +301,21 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // still flags a Session reopened after a Refract crash, which only ever carries `stopReason:
   // 'not-started'` (no live `onExit` ever ran this run to set `agent-exited`).
   const effectiveTerminatedUnexpectedly = isPristine ? !!session.terminatedUnexpectedly : !!stopInfo.terminatedUnexpectedly
+  const effectivePendingToolNames = isPristine ? undefined : stopInfo.pendingToolNames
   // `not-started` is idle-and-asleep, not an error (data-model.md) UNLESS the Conversation tail
   // shows it died mid-turn, in which case it still needs a banner (just no Recover action yet --
   // #509 adds the Resume button for exactly this case).
   const showBanner =
     session.status === 'stopped' &&
     ((!!effectiveStopReason && effectiveStopReason !== 'not-started') || effectiveTerminatedUnexpectedly)
+  // Quality-gate fix (a11y, Medium, 2026-10-08): `worktree-missing`/`start-failed` have their own
+  // dedicated actions below (Recreate/Archive/Delete, Retry/Start new) that have nothing to do
+  // with a Resume instruction, so the title must keep naming THAT real reason even when the tail
+  // also happens to read as terminated unexpectedly -- otherwise the banner says "Terminated
+  // unexpectedly" while offering only worktree-recovery actions, naming a problem those buttons
+  // do not fix.
+  const showTerminatedTitle =
+    effectiveTerminatedUnexpectedly && effectiveStopReason !== 'worktree-missing' && effectiveStopReason !== 'start-failed'
   // `key={sessionId}` below remounts MessageInput on every session switch, dropping its
   // textarea's focus. Reclaim it only when the switch happened while focus was already inside
   // this pane (e.g. a notification reopening the Session the user was typing in), never on
@@ -346,7 +356,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       setStopInfo({
         reason: result.value.runtime.stopReason,
         detail: result.value.runtime.stopDetail,
-        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        pendingToolNames: result.value.runtime.pendingToolNames
       })
     }
     // The banner (and its focused Recover/Retry button) unmounts once the snapshot clears the
@@ -411,7 +422,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       setStopInfo({
         reason: result.value.runtime.stopReason,
         detail: result.value.runtime.stopDetail,
-        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        pendingToolNames: result.value.runtime.pendingToolNames
       })
     }
     requestAnimationFrame(maybeRestoreFocus)
@@ -507,13 +519,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           <Alert variant="destructive">
             <AlertTriangleIcon />
             <AlertTitle>
-              {effectiveTerminatedUnexpectedly
-                ? 'Terminated unexpectedly'
-                : describeStopReason(effectiveStopReason, effectiveStopDetail)}
+              {showTerminatedTitle ? 'Terminated unexpectedly' : describeStopReason(effectiveStopReason, effectiveStopDetail)}
             </AlertTitle>
-            {effectiveTerminatedUnexpectedly && (
+            {showTerminatedTitle && (
               <AlertDescription>
-                Its Conversation ended mid-turn, not a clean stop. Resume instruction ready: &quot;{DEFAULT_RESUME_INSTRUCTION}&quot;.
+                Its Conversation ended mid-turn, not a clean stop.
+                {effectivePendingToolNames && effectivePendingToolNames.length > 0
+                  ? ` Still waiting on ${effectivePendingToolNames.join(', ')}.`
+                  : ''}
               </AlertDescription>
             )}
             {effectiveStopReason === 'agent-exited' && (

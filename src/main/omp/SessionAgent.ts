@@ -920,7 +920,7 @@ export class SessionAgent extends EventEmitter {
     void this.onSessionSettled().then(() => this.maybeRestartForPendingMode());
   }
 
-  private onExit(info: { code: number | null; requested: boolean }): void {
+  private async onExit(info: { code: number | null; requested: boolean }): Promise<void> {
     this.process = undefined;
     this.finalizeLiveItems();
     if (this.restarting && info.requested) return; // restart() owns this transition; see its doc comment.
@@ -930,10 +930,18 @@ export class SessionAgent extends EventEmitter {
       this.scheduleReadoutUpdate();
     }
     if (info.requested) {
-      this.setStatus('stopped', { stopReason: 'not-started' });
-    } else {
-      this.setStatus('stopped', { stopReason: 'agent-exited', stopDetail: `exit code ${String(info.code)}` });
+      // A requested stop is never "unexpected" by definition, regardless of what the
+      // Conversation's own tail happens to show (quality gate 2026-10-08).
+      this.setStatus('stopped', { stopReason: 'not-started', terminatedUnexpectedly: false });
+      return;
     }
+    const currentConversation = this.registry.getSession(this.sessionId)?.currentConversation ?? null;
+    const terminatedUnexpectedly = (await detectUnexpectedTermination(currentConversation)).terminatedUnexpectedly;
+    this.setStatus('stopped', {
+      stopReason: 'agent-exited',
+      stopDetail: `exit code ${String(info.code)}`,
+      terminatedUnexpectedly,
+    });
   }
 
   /**
@@ -1105,7 +1113,10 @@ export class SessionAgent extends EventEmitter {
   /** T037: a Session that finishes (`working` -> `idle`) while it is not the visible Session, or
    * no Refract window is focused, becomes `unread`; cleared by `clearUnread()` when it becomes
    * visible. */
-  private setStatus(status: SessionStatus, extra?: { stopReason?: SessionRuntime['stopReason']; stopDetail?: string }): void {
+  private setStatus(
+    status: SessionStatus,
+    extra?: { stopReason?: SessionRuntime['stopReason']; stopDetail?: string; terminatedUnexpectedly?: boolean },
+  ): void {
     const becameUnread = this.runtime.status === 'working' && status === 'idle' && (!this.isVisible() || !this.isWindowFocused());
     this.runtime = {
       ...this.runtime,
@@ -1114,7 +1125,7 @@ export class SessionAgent extends EventEmitter {
       stopDetail: extra?.stopDetail,
       unread: becameUnread ? true : this.runtime.unread,
     };
-    this.emitStatus();
+    this.emitStatus(extra?.terminatedUnexpectedly);
   }
 
   /** Clears `unread` once this Session becomes the visible one (T037); a no-op if already clear. */
@@ -1124,12 +1135,19 @@ export class SessionAgent extends EventEmitter {
     this.emitStatus();
   }
 
-  private emitStatus(): void {
+  /** Issue #510 (quality gate 2026-10-08): `terminatedUnexpectedly` is passed through from the
+   * caller (only `setStatus`'s transition to `stopped` ever supplies it, computed live in
+   * `onExit`) rather than stored on `this.runtime` -- every other reader of the Session's
+   * termination state (`sessions.list`, `buildSnapshot`) re-derives it fresh from the
+   * Conversation file itself, so this event-only value never needs to be a lasting source of
+   * truth. */
+  private emitStatus(terminatedUnexpectedly?: boolean): void {
     const payload: SessionStatusEvent = {
       sessionId: this.sessionId,
       status: this.runtime.status,
       stopReason: this.runtime.stopReason,
       stopDetail: this.runtime.stopDetail,
+      terminatedUnexpectedly,
       unread: this.runtime.unread,
       launchedMode: this.runtime.launchedMode,
       pendingMode: this.runtime.pendingMode,

@@ -42,7 +42,9 @@ export async function buildSnapshot(agent: SessionAgent, session: Session): Prom
   // Issue #510 slice 2 (PLAN.md row A0): only a stopped Session can be "terminated unexpectedly"
   // -- a live one's own status already says otherwise, so no tail read is spent on it.
   if (runtime.status === 'stopped') {
-    runtime.terminatedUnexpectedly = (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly;
+    const detection = await detectUnexpectedTermination(session.currentConversation);
+    runtime.terminatedUnexpectedly = detection.terminatedUnexpectedly;
+    if (detection.pendingToolNames.length > 0) runtime.pendingToolNames = detection.pendingToolNames;
   }
   const conversations = await listConversations(session.sessionDir, session.currentConversation);
   return { runtime, conversations, readout, subagents };
