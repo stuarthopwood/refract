@@ -47,6 +47,36 @@ describe('useModelRolesStore.load', () => {
     expect(useModelRolesStore.getState().roles).toEqual({ smol: 'openai/gpt-4.1-mini' });
     expect(useModelRolesStore.getState().loaded).toBe(true);
   });
+
+  it('keepError:true leaves loaded/loadError cached while the retry is in flight, then clears loadError on success', async () => {
+    useModelRolesStore.setState({ loaded: true, loadError: 'first failure' });
+    let resolveRetry!: (value: unknown) => void;
+    const retryPromise = new Promise((resolve) => {
+      resolveRetry = resolve;
+    });
+    stubRefract({ list: vi.fn(() => retryPromise) });
+
+    const loadPromise = useModelRolesStore.getState().load({ keepError: true });
+    // Quality-gate remediation (gate cycle 3 HIGH): a retry must not reset to the loading state
+    // up front -- the section keeps the failed-load Alert and its Retry button mounted while
+    // this is in flight, the same way `loadCatalog`'s own forced retry already behaves.
+    expect(useModelRolesStore.getState().loaded).toBe(true);
+    expect(useModelRolesStore.getState().loadError).toBe('first failure');
+
+    resolveRetry({ ok: true, value: { task: 'anthropic/claude-sonnet-4-5' } });
+    await loadPromise;
+    expect(useModelRolesStore.getState().loadError).toBeNull();
+    expect(useModelRolesStore.getState().loaded).toBe(true);
+    expect(useModelRolesStore.getState().roles).toEqual({ task: 'anthropic/claude-sonnet-4-5' });
+  });
+
+  it('a failing keepError:true retry keeps loaded true and replaces loadError with the new message', async () => {
+    useModelRolesStore.setState({ loaded: true, loadError: 'first failure' });
+    stubRefract({ list: vi.fn(async () => ({ ok: false, error: { code: 'omp-probe-failed', message: 'second failure' } })) });
+    await useModelRolesStore.getState().load({ keepError: true });
+    expect(useModelRolesStore.getState().loaded).toBe(true);
+    expect(useModelRolesStore.getState().loadError).toBe('second failure');
+  });
 });
 
 describe('useModelRolesStore.setRole', () => {

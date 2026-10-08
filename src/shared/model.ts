@@ -121,50 +121,29 @@ export const CHAT_MODEL_ROLES: readonly ModelRoleId[] = ['default', 'smol', 'slo
 /** Model-kind roles (`omp://models.md`): each selects a different catalog kind's runner. */
 export const MODEL_KIND_ROLES: readonly ModelRoleId[] = ['image', 'web', 'speech', 'dictation', 'judge'];
 
-/** Defensive-validate-before-cast lookup (matching `ipc/settings.ts`'s existing `APPROVAL_MODES`/
- * `READOUT_KINDS` `Record<K, true>` pattern) for a role name crossing the IPC boundary as
- * `unknown`. */
-const MODEL_ROLE_IDS: Record<string, true> = {
-  default: true,
-  smol: true,
-  slow: true,
-  vision: true,
-  plan: true,
-  commit: true,
-  tiny: true,
-  memory: true,
-  task: true,
-  advisor: true,
-  image: true,
-  web: true,
-  speech: true,
-  dictation: true,
-  judge: true,
-};
-
-/** Type guard preserving narrowing at the IPC boundary (`ipc/modelRoles.ts`, preload, renderer
- * store) -- this is the one allowed "tiny function" case: it is a type guard, not a rename. */
-export function isModelRoleId(value: unknown): value is ModelRoleId {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(MODEL_ROLE_IDS, value);
-}
-
 /** `omp models --kind <kind>` catalog groupings (`omp://models.md` "Catalog kinds are `chat`,
  * `tiny`, `image`, `tts`, `stt`, `search`, and `judge`"). */
 export type CatalogKind = 'chat' | 'tiny' | 'image' | 'tts' | 'stt' | 'search' | 'judge';
 
 const CATALOG_KINDS: Record<string, true> = { chat: true, tiny: true, image: true, tts: true, stt: true, search: true, judge: true };
 
-/** Defensive-validate-before-cast lookup (matching `isModelRoleId`'s own `Record<string, true>`
- * pattern), shared by `main/omp/config.ts` and `main/ipc/modelRoles.ts` so the seven-entry
- * catalog-kind vocabulary is declared in exactly one place (quality-gate remediation,
- * code-reviewer LOW: these two used to keep their own hand-copied `CATALOG_KINDS` literal). */
+/** Defensive-validate-before-cast lookup (matching `ipc/settings.ts`'s existing `APPROVAL_MODES`/
+ * `READOUT_KINDS` `Record<K, true>` pattern), shared by `main/omp/config.ts` and
+ * `main/ipc/modelRoles.ts` so the seven-entry catalog-kind vocabulary is declared in exactly one
+ * place (quality-gate remediation, code-reviewer LOW: these two used to keep their own
+ * hand-copied `CATALOG_KINDS` literal). */
 export function isCatalogKind(value: unknown): value is CatalogKind {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(CATALOG_KINDS, value);
 }
 
 /** Which catalog kind each role's model picker queries (`omp://models.md` "Role aliases and
  * settings": `web` selects search/grounded-chat runners, `speech` selects TTS, `dictation`
- * selects STT, `judge` selects judgment runners; `image` selects image runners). */
+ * selects STT, `judge` selects judgment runners; `image` selects image runners). `tiny` and
+ * `memory` deliberately query `chat` rather than the `tiny` catalog kind (quality-gate
+ * remediation, code-reviewer LOW: `tiny` has no role mapped to it, so tiny-only catalog models
+ * are never offered in their pickers) -- their documented fallback chain (`tiny` -> `smol`,
+ * `memory` -> `tiny` -> `smol`) bottoms out at ordinary chat models, so the chat catalog is what
+ * their picker should actually offer. */
 export const ROLE_CATALOG_KIND: Record<ModelRoleId, CatalogKind> = {
   default: 'chat',
   smol: 'chat',
@@ -182,6 +161,16 @@ export const ROLE_CATALOG_KIND: Record<ModelRoleId, CatalogKind> = {
   dictation: 'stt',
   judge: 'judge',
 };
+
+/** Type guard preserving narrowing at the IPC boundary (`ipc/modelRoles.ts`, preload, renderer
+ * store) -- this is the one allowed "tiny function" case: it is a type guard, not a rename.
+ * Reuses `ROLE_CATALOG_KIND` (already a `Record<ModelRoleId, CatalogKind>` covering every role)
+ * instead of keeping a second, hand-copied `Record<string, true>` in sync by hand (quality-gate
+ * remediation, code-reviewer LOW: a role added to the `ModelRoleId` union but not to that second
+ * literal would have been silently rejected at the IPC boundary with no compile error). */
+export function isModelRoleId(value: unknown): value is ModelRoleId {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(ROLE_CATALOG_KIND, value);
+}
 
 /** One `omp models --kind <kind> --json` row (fields this feature needs; the CLI returns more --
  * `omp://models.md` "JSON includes provider, kind, id, selector, name, ..."). `selector` is the

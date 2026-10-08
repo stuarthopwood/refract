@@ -20,10 +20,20 @@
 // Catalog status (loading/error/Retry) is rendered ONCE per distinct catalog kind actually used
 // in a group, not once per role (quality-gate remediation, code-reviewer/accessibility-auditor
 // MEDIUM: ten chat roles all share the `chat` kind, so the old per-role rendering produced ten
-// duplicate ids and ten redundant "Try again" buttons). A catalog retry keeps the existing error
-// and its button mounted throughout (`aria-disabled` plus "Retrying…" while in flight, per
-// `renderCatalogStatus`'s own `retryingKinds` state) rather than replacing it with a bare loading
-// line, so focus is never lost to an unmounting element.
+// duplicate ids and ten redundant "Try again" buttons). Both the catalog retry and the
+// whole-section load retry keep the existing error and its button mounted throughout
+// (`aria-disabled` plus "Retrying…" while in flight) rather than replacing it with a bare loading
+// line -- the whole-section retry does this by calling `load({ keepError: true })` (quality-gate
+// remediation, gate cycle 3 HIGH: the store used to reset to the loading state up front on EVERY
+// call, which unmounted the Alert the instant a retry started and made its in-flight state
+// unreachable; see `model-roles-store.ts`'s own `load` comment). `aria-disabled` alone does not
+// stop activation, so both retry handlers also guard against a second click starting an
+// overlapping request (accessibility-auditor/security-auditor MEDIUM/LOW). When a catalog retry
+// SUCCEEDS, focus moves to the first role trigger of that kind -- or the heading if none is found
+// -- rather than being left on the Retry button that just unmounted (accessibility-auditor
+// MEDIUM); the whole-section retry's success case already moves focus to the heading via the
+// `loadError` effect below. Catalog error text names which kind failed, since the model-kind
+// roles group can show several of these blocks at once (accessibility-auditor LOW).
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
@@ -64,6 +74,17 @@ const KIND_ROLE_DESCRIPTORS: RoleDescriptor[] = [
   { role: 'dictation', label: 'Dictation', description: 'Speech to text.' },
   { role: 'judge', label: 'Judge', description: 'Judgment and evaluation requests.' }
 ]
+
+// Quality-gate remediation (accessibility-auditor MEDIUM): when a catalog retry succeeds, focus
+// moves to the first role trigger that actually queries the kind which just finished loading,
+// rather than being left on the now-unmounted Retry button (or silently falling through to
+// `<body>`).
+const ALL_ROLE_DESCRIPTORS: RoleDescriptor[] = [...CHAT_ROLE_DESCRIPTORS, ...KIND_ROLE_DESCRIPTORS]
+
+function firstRoleIdForKind(kind: CatalogKind): string | undefined {
+  const descriptor = ALL_ROLE_DESCRIPTORS.find((entry) => ROLE_CATALOG_KIND[entry.role] === kind)
+  return descriptor ? `model-role-${descriptor.role}` : undefined
+}
 
 // Documented fallback chains (`omp://models.md`): shown next to "Inherited" so the sentinel says
 // what it actually resolves to, not just that it is unset.
@@ -138,8 +159,12 @@ export function ModelRolesSection() {
   }
 
   async function handleRetryLoad(): Promise<void> {
+    // `aria-disabled` does not stop activation on its own (accessibility-auditor/security-auditor
+    // MEDIUM/LOW): without this guard, a second click/Enter while the first retry is still in
+    // flight starts an overlapping `omp config get` call.
+    if (retryingLoad) return
     setRetryingLoad(true)
-    await load()
+    await load({ keepError: true })
     setRetryingLoad(false)
     const state = useModelRolesStore.getState()
     if (state.loadError) {
@@ -151,6 +176,11 @@ export function ModelRolesSection() {
   }
 
   async function handleCatalogRetry(kind: CatalogKind): Promise<void> {
+    if (retryingKinds.has(kind)) return
+    // Recorded before the retry starts: this is the only reliable way to know whether the Retry
+    // button (about to unmount on success) is what currently holds focus, so success can decide
+    // whether to move focus on somewhere, or leave an already-elsewhere focus alone.
+    const hadFocus = document.activeElement?.id === `model-role-catalog-retry-${kind}`
     setRetryingKinds((prev) => new Set(prev).add(kind))
     await loadCatalog(kind, true)
     setRetryingKinds((prev) => {
@@ -160,9 +190,14 @@ export function ModelRolesSection() {
     })
     const state = useModelRolesStore.getState()
     if (state.catalogErrors[kind]) {
-      announceAssertive(`Could not load models: ${state.catalogErrors[kind]}`)
+      announceAssertive(`Could not load ${kind} models: ${state.catalogErrors[kind]}`)
     } else {
       announcePolite('Models loaded')
+      if (hadFocus) {
+        const targetId = firstRoleIdForKind(kind)
+        const target = (targetId ? document.getElementById(targetId) : null) ?? headingRef.current
+        target?.focus()
+      }
     }
   }
 
@@ -189,9 +224,16 @@ export function ModelRolesSection() {
         <p key={kind} id={catalogErrorId} className="mb-2 flex items-center gap-2 text-xs text-destructive">
           <span className="flex items-center gap-1">
             <OctagonXIcon aria-hidden className="size-3 shrink-0" />
-            Could not load models: {catalogError}
+            Could not load {kind} models: {catalogError}
           </span>
-          <Button variant="outline" size="xs" aria-disabled={isRetrying || undefined} onClick={() => void handleCatalogRetry(kind)}>
+          <Button
+            id={`model-role-catalog-retry-${kind}`}
+            variant="outline"
+            size="xs"
+            aria-disabled={isRetrying || undefined}
+            aria-label={`Retry loading ${kind} models`}
+            onClick={() => void handleCatalogRetry(kind)}
+          >
             {isRetrying ? 'Retrying…' : 'Retry'}
           </Button>
         </p>
@@ -252,7 +294,14 @@ export function ModelRolesSection() {
                 // Radix can still return focus to it when the popup closes -- ignoring a change
                 // while pending here, rather than disabling the control, is what keeps that
                 // focus return working.
-                if (isPending) return
+                if (isPending) {
+                  // Quality-gate remediation (code-reviewer/accessibility-auditor LOW): a pick
+                  // made while a save for this role is still pending used to be silently
+                  // dropped -- the combobox still opens (it stays non-`disabled`, see above), so
+                  // say so instead of leaving a screen-reader user with no feedback at all.
+                  announcePolite(`${label} is still saving`)
+                  return
+                }
                 const value = pickedValue === INHERITED_VALUE ? null : applyThinkingSuffixCarryOver(pickedValue, currentValue)
                 void handleRoleChange(role, label, value)
               }}
@@ -317,7 +366,9 @@ export function ModelRolesSection() {
         Model roles
       </h2>
       <p className="mb-4 text-sm text-muted-foreground">
-        Choose which model OMP uses for each role. Changes save immediately to OMP's global configuration and apply to new sessions.
+        Choose which model OMP uses for each role. Changes save immediately to OMP's global
+        configuration and apply to new sessions, unless a repository's own .omp config overrides a
+        role.
       </p>
       <div aria-live="polite" className="sr-only">
         {polite}

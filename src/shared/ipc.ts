@@ -522,8 +522,13 @@ export interface RefractApi {
     list(): Promise<Result<Record<string, string>>>;
     /** `omp config set modelRoles '<json>' --json`: merges `value` into the current record for
      * `role` (`null` clears/unsets it) and writes the whole record back. `overriddenBy` (when
-     * present) names a higher layer -- an env var, `project`, `overlay`, or `runtime` -- that
-     * still supplies the effective value despite this write succeeding. */
+     * present) names a higher layer -- an env var, `overlay`, or `runtime` -- that still supplies
+     * the effective value despite this write succeeding. NEVER `project`: every `omp` call this
+     * feature makes runs with its cwd pointed at a dedicated, always-empty scratch directory
+     * (`main/omp/config.ts`), so `omp` never loads a project config layer in the first place --
+     * confirmed live, FINDINGS item 48 (quality-gate remediation, gate cycle 3 MEDIUM: this
+     * comment used to list `project` as possible, which would have meant a repository's own
+     * `.omp` config can silently override what the user just picked here with no visible cue). */
     set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string }>>;
     /** `omp models --kind <kind> --json`: a read-only catalog listing used to populate a
      * role's model picker (the RPC `get_available_models` surface carries no role field and

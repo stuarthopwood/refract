@@ -20,7 +20,15 @@ interface ModelRolesState {
   overrideNotes: Partial<Record<ModelRoleId, string>>
   catalogs: Partial<Record<CatalogKind, ModelCatalogEntry[]>>
   catalogErrors: Partial<Record<CatalogKind, string>>
-  load(): Promise<void>
+  /** `opts.keepError`: used by a retry after a failure -- leaves `loaded`/`loadError` exactly as
+   * they are until the result arrives (mirrors `loadCatalog`'s own forced-retry behaviour),
+   * instead of flipping back to the loading state up front. That is what keeps the failed-load
+   * Alert and its Retry button mounted throughout a retry (quality-gate remediation, gate cycle 3
+   * HIGH: the previous unconditional reset unmounted the Alert the instant a retry started, so
+   * the "Retrying…" label and `aria-disabled` state could never actually be seen, and the
+   * section's own "retry succeeded" focus effect fired at the START of every retry instead of
+   * only on a real success). */
+  load(opts?: { keepError?: boolean }): Promise<void>
   /** Resolves once the write settles; throws nothing -- check the returned outcome (and/or
    * `saveErrors[role]`) to decide what to announce (the section component owns announcing, this
    * store only tracks state). */
@@ -38,11 +46,12 @@ export const useModelRolesStore = create<ModelRolesState>((set, get) => ({
   catalogs: {},
   catalogErrors: {},
 
-  load: async () => {
-    // Quality-gate remediation (code-reviewer MEDIUM): reset to the loading state up front,
-    // so a Retry after a failure actually shows 'Loading model roles…' again instead of leaving
-    // the stale error on screen for the whole request.
-    set({ loaded: false, loadError: null })
+  load: async (opts) => {
+    if (!opts?.keepError) {
+      // The very first call (component mount): nothing cached is worth keeping, so this is the
+      // loading-state reset `loadCatalog` has no equivalent of.
+      set({ loaded: false, loadError: null })
+    }
     const result = await window.refract.modelRoles.list()
     if (result.ok) {
       // Quality-gate remediation (test-reviewer LOW): never clobber `roles` with this read if a

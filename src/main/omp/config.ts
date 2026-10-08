@@ -20,8 +20,11 @@
 // root itself): `omp` loads a project config from `<cwd>/.omp/` whenever that folder is non-empty,
 // so running directly in a generic, widely-shared temp location would let anything else that
 // happens to drop a `.omp/config.yml` there inject settings into every call this module makes
-// (quality-gate remediation, security-auditor MEDIUM). The directory is verified empty of any
-// `.omp` entry on EVERY call, not just created once and trusted forever (quality-gate remediation,
+// (quality-gate remediation, security-auditor MEDIUM). The directory is verified completely
+// EMPTY on EVERY call (not just free of a `.omp` entry -- `omp` documents other discovery
+// providers, e.g. Claude/Codex/Gemini/Cursor/OpenCode, that could also contribute a project-level
+// settings file from the same working directory; quality-gate remediation, gate cycle 3 LOW,
+// security-auditor), not just created once and trusted forever (quality-gate remediation,
 // gate cycle 2 MEDIUM): a stale cached "ready" promise could otherwise paper over the directory
 // having been deleted (Windows temp cleanup) or unexpectedly populated between calls. It is
 // intentionally never programmatically removed (project convention: a delete target must be a
@@ -73,11 +76,16 @@ interface OmpRawResult {
 // see module header).
 const CONFIG_SCRATCH_DIR = path.join(os.tmpdir(), 'refract-omp-config-scratch');
 
-/** Creates the scratch directory if missing and verifies it holds no `.omp` entry, on EVERY call
+/** Creates the scratch directory if missing and verifies it is completely EMPTY, on EVERY call
  * (quality-gate remediation, gate cycle 2 MEDIUM: no longer a cached "created once" promise, so a
  * directory deleted by Windows temp cleanup is transparently recreated, and the directory is
- * never trusted blind -- if something has placed a `.omp` folder there since the last call, this
- * throws instead of silently letting `omp` pick up a stray project layer from it). */
+ * never trusted blind -- if anything has been placed there since the last call, this throws
+ * instead of silently letting `omp` pick up a stray project layer from it). Rejects ANY entry,
+ * not only a `.omp` folder (quality-gate remediation, gate cycle 3 LOW, security-auditor: `omp`'s
+ * own settings docs say other discovery providers -- Claude, Codex, Gemini, Cursor, OpenCode --
+ * can also contribute project-level settings from their own folders in the working directory;
+ * requiring the directory to be empty closes all of those at once, not just the one name this
+ * module happened to know about). */
 async function ensureScratchDir(): Promise<string> {
   try {
     await fsp.mkdir(CONFIG_SCRATCH_DIR, { recursive: true });
@@ -90,8 +98,8 @@ async function ensureScratchDir(): Promise<string> {
   } catch {
     throw new OmpConfigError('omp-failed', 'Could not inspect the omp working directory.');
   }
-  if (entries.includes('.omp')) {
-    throw new OmpConfigError('omp-failed', 'The omp working directory unexpectedly contains a project .omp folder.');
+  if (entries.length > 0) {
+    throw new OmpConfigError('omp-failed', 'The omp working directory unexpectedly contains files.');
   }
   return CONFIG_SCRATCH_DIR;
 }
@@ -103,8 +111,14 @@ async function ensureScratchDir(): Promise<string> {
 // is therefore defence in depth for an UNCONFIRMED risk, not a closure of an observed hole: if a
 // future `omp` version (or one of the other three variables, not independently tested) ever does
 // fold a runtime override into `config get`'s reported value, stripping these four here still
-// keeps `setModelRole`'s merge-before-write reading only the persisted global/project/overlay
-// layers. The PUBLIC `getModelRoles()` (used only for display) deliberately does NOT strip these.
+// keeps `setModelRole`'s merge-before-write reading only the persisted GLOBAL layer (quality-gate
+// remediation, gate cycle 3 LOW: this used to say "global/project/overlay layers", which was
+// wrong twice over -- stripping `PI_CONFIG_FILES` removes the overlay layer from what the read
+// sees, and `ensureScratchDir`'s always-empty cwd means no project layer is ever present for this
+// module to read in the first place). `setModelRoleNow`'s own `config set` call is stripped the
+// same way (previously only the read was, an asymmetry with no real-world effect given the above,
+// but worth closing). The PUBLIC `getModelRoles()` (used only for display) deliberately does NOT
+// strip these.
 const ROLE_OVERRIDE_ENV_VARS = ['PI_SMOL_MODEL', 'PI_SLOW_MODEL', 'PI_PLAN_MODEL', 'PI_CONFIG_FILES'];
 
 /** Exported for direct unit testing. Case-insensitive (quality-gate remediation, gate cycle 2 LOW:
@@ -345,7 +359,11 @@ async function setModelRoleNow(role: ModelRoleId, value: string | null): Promise
     // entirely (see `mergeModelRole`'s own comment).
     return { roles: stringEntriesOnly(current) };
   }
-  const result = await run(['config', 'set', 'modelRoles', JSON.stringify(next), '--json'], 'Could not save the model role to omp.');
+  const result = await run(
+    ['config', 'set', 'modelRoles', JSON.stringify(next), '--json'],
+    'Could not save the model role to omp.',
+    envWithoutRoleOverrides(process.env)
+  );
   const parsed = parseJson<OmpConfigSetJson>(result.stdout);
   // Quality-gate remediation (code-reviewer LOW: "the write path and the load path show different
   // values"): always re-read the TRUE effective record after a successful write (full
