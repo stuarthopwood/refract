@@ -84,4 +84,21 @@ describe('resolveRepositoryName', () => {
   it('resets to the folder basename when the trimmed name is empty', () => {
     expect(resolveRepositoryName('', 'pinion')).toBe('pinion');
   });
+
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, regression): a name made of ONLY
+  // U+200C/U+200D is invisible -- `validateRepositoryName` accepts it (both are exempted from
+  // the control-character rejection to allow legitimate joining use), so without this, the
+  // stored name silently went blank instead of resetting to the basename like any other
+  // all-whitespace input.
+  it('resets to the folder basename when the trimmed name is a bare zero-width joiner', () => {
+    expect(resolveRepositoryName('\u200D', 'pinion')).toBe('pinion');
+  });
+
+  it('resets to the folder basename when the trimmed name is only zero-width joiners/non-joiners', () => {
+    expect(resolveRepositoryName('\u200C\u200D\u200D', 'pinion')).toBe('pinion');
+  });
+
+  it('keeps a name where a zero-width joiner sits between real characters (an emoji ZWJ sequence)', () => {
+    expect(resolveRepositoryName('\u{1F468}\u200D\u{1F469}', 'pinion')).toBe('\u{1F468}\u200D\u{1F469}');
+  });
 });

@@ -35,7 +35,17 @@ export function validateRepositoryName(trimmed: string): string | undefined {
 
 /** Point 4: clearing the field and committing resets the display name back to the folder's own
  * basename. `basename` is passed in (`path.basename(repository.path)`) rather than computed here,
- * so this stays a pure string function with no `node:path` dependency. */
+ * so this stays a pure string function with no `node:path` dependency.
+ *
+ * Quality-gate fix (cycle 3, 2026-10-08): U+200C/U+200D (ZWNJ/ZWJ) are invisible on their own --
+ * exempted above from the control-character rejection because they are REQUIRED to join
+ * legitimate text (emoji sequences, Persian/Indic scripts), but a name made of ONLY these
+ * (pasted, or typed by mistake, e.g. a bare ZWJ) is exactly as blank as an all-whitespace one to
+ * anyone who ever reads the stored name back, and must reset to the basename the same way, not
+ * silently store an invisible name. A name where a joiner sits between real characters (the
+ * legitimate case) is unaffected: `visible` only goes empty when EVERY code point is one of
+ * these two. */
 export function resolveRepositoryName(trimmed: string, basename: string): string {
-  return trimmed || basename;
+  const visible = trimmed.replace(/[\u200C\u200D]/g, '');
+  return visible ? trimmed : basename;
 }

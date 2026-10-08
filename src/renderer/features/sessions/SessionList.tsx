@@ -407,11 +407,21 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
     // gone.
     const clientError = validateRepositoryName(name)
     if (clientError) {
+      // Quality-gate fix (cycle 3, 2026-10-08): the field stays mounted on an error (this
+      // function's own doc comment above), so the restore-focus effect (keyed on `renaming`)
+      // never fires here to clear this itself -- left set, a LATER successful blur-commit (the
+      // user clicks elsewhere, `onBlur` re-commits with the same now-valid text) would still
+      // yank focus back to the trigger, overriding wherever the user's click had just taken it.
+      restoreFocusRef.current = false
       setRenameError(clientError)
       return
     }
     const error = await renameRepository(repository.id, name)
     if (error) {
+      // Quality-gate fix (cycle 3, 2026-10-08): same reasoning as the client-validation branch
+      // above -- a server-side rejection (for example a race with another rename) must not leave
+      // this armed for a later unrelated success to consume.
+      restoreFocusRef.current = false
       setRenameError(error)
       return
     }

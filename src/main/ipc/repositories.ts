@@ -14,7 +14,8 @@ import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
 import { REPOSITORY_HAS_SESSIONS_MESSAGE } from '../store/registry';
-import { MAX_REPOSITORY_NAME_LENGTH, resolveRepositoryName, validateRepositoryName } from '../../shared/repositoryName';
+import { MAX_REPOSITORY_NAME_LENGTH } from '../../shared/repositoryName';
+import { renameRepositoryCore } from './renameRepository';
 
 /** `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
  * checkout, falling back to the Windows account name when git has none configured; cached per
@@ -87,23 +88,16 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     if (name.length > 4 * MAX_REPOSITORY_NAME_LENGTH) {
       return invalidArgument(`${IPC_REQUESTS.REPOSITORIES_RENAME} name too long`);
     }
-    const repository = manager.registry.getRepository(id);
-    if (!repository) return notFound(`Repository not found: ${id}`);
-    const trimmed = name.trim();
-    const validationError = validateRepositoryName(trimmed);
-    // Quality-gate fix (cycle 2, 2026-10-08): no channel-name prefix here, unlike the two
-    // developer-facing checks above -- this exact string is shown inline in the rename field's
-    // own `role="alert"` text (SessionList.tsx), never a toast, so a user must never see
-    // "repositories.rename name too long (max 60 characters)".
-    if (validationError) return invalidArgument(validationError);
-    const nextName = resolveRepositoryName(trimmed, path.basename(repository.path));
-    try {
-      const updated = await manager.registry.updateRepository(id, { name: nextName });
-      manager.notifyListChanged();
-      return { ok: true, value: updated };
-    } catch (err) {
-      return mapStoreThrown(err);
-    }
+    // Quality-gate fix (cycle 3, 2026-10-08): the rest of this handler's own logic (the
+    // validate -> resolve -> persist -> notify sequence) now lives in `renameRepositoryCore`
+    // (`renameRepository.ts`), injected with this manager's own real dependencies, so it is
+    // unit-testable against fakes -- same reasoning as `resumeSessionCore`/`attachSnapshotCore`.
+    return renameRepositoryCore(id, name, {
+      getRepository: (repositoryId) => manager.registry.getRepository(repositoryId),
+      basename: (repositoryPath) => path.basename(repositoryPath),
+      updateRepository: (repositoryId, patch) => manager.registry.updateRepository(repositoryId, patch),
+      notifyListChanged: () => manager.notifyListChanged(),
+    });
   });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOVE, async (_event, id: unknown) => {

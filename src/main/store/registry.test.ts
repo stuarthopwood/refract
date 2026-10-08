@@ -7,9 +7,21 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { RegistryStore, RegistryError } from './registry';
+import { writeJsonFile } from './atomicJson';
 import type { Repository } from '../../shared/model';
+
+// Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium): the rollback-on-failed-write
+// tests below need a write that genuinely rejects -- `writeJsonFile` itself auto-creates its
+// own containing directory (`fs.mkdir(..., { recursive: true })`), so deleting the temp dir out
+// from under it would NOT force a failure, it would just get silently recreated. Spied, not a
+// full module replacement: every other test in this file still exercises the real atomic
+// write/rename/reopen round trip.
+vi.mock('./atomicJson', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./atomicJson')>();
+  return { ...actual, writeJsonFile: vi.fn(actual.writeJsonFile) };
+});
 
 function makeRepository(overrides: Partial<Repository> = {}): Repository {
   return {
@@ -72,5 +84,48 @@ describe('RegistryStore.updateRepository', () => {
     expect(updated.name).toBe('Renamed');
     expect(updated.path).toBe(repository.path);
     expect(updated.defaultBranch).toBe(repository.defaultBranch);
+  });
+
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium): the rollback-on-failed-write
+  // branch (memory must not keep a name the disk copy never got) had no test.
+  it('rolls back the in-memory name when the write fails, rejecting with the real error', async () => {
+    const dir = await freshDir();
+    const repository = makeRepository();
+    const store = await RegistryStore.open(dir);
+    await store.addRepository(repository);
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(store.updateRepository(repository.id, { name: 'Should not stick' })).rejects.toThrow('disk full');
+    expect(store.getRepository(repository.id)?.name).toBe(repository.name);
+  });
+
+  // Quality-gate fix (cycle 3, 2026-10-08, security-auditor, Low): the rollback must only ever
+  // restore the name from BEFORE THIS call's own write -- never clobber a second call that
+  // started while this one's write was still in flight, synchronously overwrote the same entry
+  // with its OWN next value, and then itself completed and persisted successfully before this
+  // (slower) call's write rejects and its rollback runs.
+  it('does not clobber a second call that already won the race, when this one is slower and fails', async () => {
+    const dir = await freshDir();
+    const repository = makeRepository();
+    const store = await RegistryStore.open(dir);
+    await store.addRepository(repository);
+
+    let rejectSlow!: (err: Error) => void;
+    const slowWrite = new Promise<void>((_resolve, reject) => {
+      rejectSlow = reject;
+    });
+    // Only THIS first call's write is swapped out -- the second call below falls through to the
+    // mock's own default implementation (the real `writeJsonFile`, wired in by `vi.mock` above).
+    vi.mocked(writeJsonFile).mockImplementationOnce(() => slowWrite);
+
+    const slowCall = store.updateRepository(repository.id, { name: 'Slow, fails' });
+    // Synchronously-run portion of `slowCall` above has already overwritten the in-memory entry
+    // with 'Slow, fails' and is now awaiting `slowWrite` -- exactly the window the old,
+    // unconditional rollback was vulnerable in.
+    await store.updateRepository(repository.id, { name: 'Fast, wins' });
+    rejectSlow(new Error('disk full'));
+
+    await expect(slowCall).rejects.toThrow('disk full');
+    expect(store.getRepository(repository.id)?.name).toBe('Fast, wins');
   });
 });

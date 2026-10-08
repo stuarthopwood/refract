@@ -69,8 +69,15 @@ export class RegistryStore {
     try {
       await writeJsonFile(this.file, this.data)
     } catch (err) {
+      // Quality-gate fix (cycle 3, 2026-10-08, security-auditor, Low): only restores `current`
+      // when the entry still shows exactly the name THIS call just set -- without that check, a
+      // second rename for the same repository that completed (and persisted) while this failed
+      // write's own `await` was still in flight would get silently clobbered back to the state
+      // from BEFORE either call, not just this one's own attempted change undone.
       const stillIndex = this.data.repositories.findIndex((r) => r.id === id)
-      if (stillIndex !== -1) this.data.repositories[stillIndex] = current
+      if (stillIndex !== -1 && this.data.repositories[stillIndex]?.name === next.name) {
+        this.data.repositories[stillIndex] = current
+      }
       await writeJsonFile(this.file, this.data).catch(() => undefined)
       throw err
     }
