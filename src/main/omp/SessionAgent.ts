@@ -357,12 +357,13 @@ export class SessionAgent extends EventEmitter {
     // Issue #512 requirement 1: relays OmpProcess's staged ready-wait onto `runtime.startProgress`
     // so the Session row and chat pane can show "Starting agent... N s" live. 'ceiling' is not a
     // `SessionStartProgress` kind: the wait rejects moments later anyway, so there is nothing
-    // useful to show beyond clearing back to no progress.
+    // useful to show -- but gate-fixes Medium finding (cycle 5): this used to clear startProgress
+    // here immediately, opening a gap before the catch block's own retry/failure decision (which
+    // now runs an async log read first) settles the final value, during which a stale previous-
+    // failure banner could flash and steal focus. Leave startProgress untouched; the catch block
+    // below is the single place that decides it.
     proc.on('start-progress', (stage: ReadyWaitStage) => {
-      if (stage.kind === 'ceiling') {
-        this.setStartProgress(undefined);
-        return;
-      }
+      if (stage.kind === 'ceiling') return;
       this.setStartProgress({ kind: stage.kind, elapsedMs: stage.elapsedMs });
     });
     proc.on('start-queued', () => this.setStartProgress({ kind: 'queued' }));
@@ -383,6 +384,19 @@ export class SessionAgent extends EventEmitter {
       await proc.start();
     } catch (err) {
       this.startingProcess = undefined;
+      // Gate-fixes High finding (cycle 5): a stop request (shutdown()/archive/delete) arriving
+      // mid-start used to fall through to `recordStartFailure` below (via `willRetry` being
+      // false), ending the Session as stopReason:'start-failed' -- contradicting FR-038 (a
+      // requested stop must leave 'stopped'/'not-started' so it can auto-start again later),
+      // contracts/ipc.md's documented `stopAgent` outcome, and the `stoppedOnRequest` marker
+      // `shutdown()` already recorded. A requested stop is resolved here, before any retry or
+      // failure bookkeeping runs.
+      if (this.stopRequested) {
+        this.setStartProgress(undefined);
+        await proc.stop();
+        this.setStatus('stopped', { stopReason: 'not-started' });
+        return { ok: false, error: err };
+      }
       const message = err instanceof Error ? err.message : String(err);
       // Issue #512 requirement 3: one automatic retry when the failure looks like load -- the
       // ceiling was reached with nobody cancelling (a typed `ReadyCeilingError`, not a message
@@ -1278,9 +1292,6 @@ export class SessionAgent extends EventEmitter {
     this.upsertTranscriptItem({ kind: 'notice', id: `notice-${this.runtime.transcript.length}-${Date.now()}`, level, text });
   }
 
-  /** T037: a Session that finishes (`working` -> `idle`) while it is not the visible Session, or
-   * no Refract window is focused, becomes `unread`; cleared by `clearUnread()` when it becomes
-   * visible. */
   /** Issue #512: updates `runtime.startProgress` and re-emits `status` (the same event the
    * Session row and chat pane already subscribe to for `stopReason`/`stopDetail`), so no new
    * IPC channel is needed for this to reach the renderer live. */
@@ -1289,6 +1300,9 @@ export class SessionAgent extends EventEmitter {
     this.emitStatus();
   }
 
+  /** T037: a Session that finishes (`working` -> `idle`) while it is not the visible Session, or
+   * no Refract window is focused, becomes `unread`; cleared by `clearUnread()` when it becomes
+   * visible. */
   private setStatus(
     status: SessionStatus,
     extra?: { stopReason?: SessionRuntime['stopReason']; stopDetail?: string; terminatedUnexpectedly?: boolean },

@@ -301,9 +301,7 @@ export function registerSessions(manager: SessionManager): void {
   // button click racing the wait's own resolution must never surface an error toast. An unknown
   // sessionId is still `notFound`, same as every sibling handler below.
   ipcMain.handle(IPC_REQUESTS.SESSIONS_KEEP_WAITING_FOR_START, async (_event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string') {
-      return invalidArgument(`${IPC_REQUESTS.SESSIONS_KEEP_WAITING_FOR_START} expects a string sessionId`);
-    }
+    if (typeof sessionId !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_KEEP_WAITING_FOR_START} expects a string sessionId`);
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     // getAgent (not getOrCreateAgent): nothing to act on for a Session with no agent this run
     // (it cannot possibly be mid-start), so there is no reason to construct one just to no-op.

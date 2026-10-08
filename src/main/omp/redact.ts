@@ -6,7 +6,7 @@
 // Gate-fixes security Medium finding (cycle 2): the first pass missed several common shapes --
 // hyphenated provider keys (sk-ant-/sk-proj-), the newer GitHub token prefixes and fine-grained
 // PATs, JSON-quoted `"key":"value"` pairs, underscore-prefixed OAuth token names, password/
-// secret fields, and URL userinfo. Widened; see redact.test.ts for one case per shape.
+// secret fields, and URL userinfo.
 //
 // Gate-fixes security Medium finding (cycle 3): the JSON-quoted case above only handled a
 // top-level `"key":"value"` pair, not one escaped a level deeper (`error=\"{\"api_key\":...}\"`,
@@ -46,14 +46,30 @@ const PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   // Bare JWT: three dot-separated base64url segments, each starting `eyJ` (a base64'd `{"`).
   // Redacted whole: unlike the key=value forms below, there is no key name worth preserving.
   { pattern: /\beyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, replace: '[redacted]' },
+  // Gate-fixes security Medium finding (cycle 5): AWS access key IDs, bare Google/Gemini API
+  // keys (omp has a Google provider), Slack tokens, GitLab/npm/Hugging Face tokens, and PEM
+  // private-key blocks all passed through unredacted.
+  { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replace: '[redacted]' },
+  { pattern: /\bAIza[0-9A-Za-z_-]{35}/g, replace: '[redacted]' },
+  { pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g, replace: '[redacted]' },
+  { pattern: /\b(?:glpat-|npm_|hf_)[A-Za-z0-9_-]{16,}/g, replace: '[redacted]' },
+  { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, replace: '[redacted private key]' },
+  // Gate-fixes security Medium finding (cycle 5): email addresses -- the omp log tail is far
+  // more likely than stderr to carry a provider account email from an auth line.
+  { pattern: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, replace: '[email]' },
   // One key-name pattern covering api_key/apikey/x-api-key/x-goog-api-key/token (and
   // underscore-prefixed access_token/refresh_token/id_token/auth_token, and their camelCase
   // equivalents: accessToken, sessionToken, apiToken, githubToken, bearerToken, ...)/password/
-  // passwd/secret/client_secret (and camelCase: clientSecret, secretAccessKey, dbPassword,
-  // userPassword, ...). No lookbehind here (cycle 2 behaviour, restored) -- `key` alone is
-  // handled by its own pattern below, where the "monkey" false-positive actually lives. The
-  // separator and value groups both tolerate an optional leading backslash and an optional
-  // leading quote (double OR single, for `'Authorization': 'Basic xyz'`-style JS-object
+  // passwd/pwd/secret/client_secret/credential(s)/auth (and camelCase: clientSecret,
+  // secretAccessKey, dbPassword, userPassword, ...). No lookbehind here (cycle 2 behaviour,
+  // restored) -- `key` alone is handled by its own pattern below, where the "monkey" false-
+  // positive actually lives. Gate-fixes security Medium finding (cycle 5): added pwd/
+  // credential(s)/auth -- ODBC-style connection strings (`Pwd=`) and Azure blob URLs
+  // (`credentials=`) both turn up in MCP/embedding error lines; bare `sig` (the Azure SAS query
+  // parameter) is deliberately NOT added here -- it is a substring of ordinary words
+  // (`design`, `signature`, `assign`), so it has its own query-string-scoped pattern below
+  // instead. The separator and value groups both tolerate an optional leading backslash and an
+  // optional leading quote (double OR single, for `'Authorization': 'Basic xyz'`-style JS-object
   // quoting); the value group treats `\"` as an escaped character inside the value rather than
   // a terminator (so an escaped closing quote doesn't leak the rest of the value), excludes
   // newlines (so an unterminated value in a multi-line tail only swallows its own line, not
@@ -61,9 +77,13 @@ const PATTERNS: Array<{ pattern: RegExp; replace: string }> = [
   // all -- a truncated line -- still redacts instead of passing through untouched).
   {
     pattern:
-      /((?:access|refresh|id|auth)?_?[Tt]oken|x-(?:api|goog-api)-key|api[_-]?key|apikey|password|passwd|secret|client_secret)(\\?['"]?\s*[:=]\s*)(\\?"(?:[^"\\\n]|\\.)*\\?"?|'[^'\n]*'?|[^\s&"',}]+)/gi,
+      /((?:access|refresh|id|auth)?_?[Tt]oken|x-(?:api|goog-api)-key|api[_-]?key|apikey|password|passwd|pwd|secret|client_secret|credentials?|auth)(\\?['"]?\s*[:=]\s*)(\\?"(?:[^"\\\n]|\\.)*\\?"?|'[^'\n]*'?|[^\s&"',}]+)/gi,
     replace: '$1$2[redacted]',
   },
+  // Azure SAS `sig` query parameter, scoped to the query-string shape (`?sig=`/`&sig=`) rather
+  // than a bare key-name alternative: "sig" is a substring of ordinary words (design, signature,
+  // assign), which the main key-name pattern above would otherwise false-positive on.
+  { pattern: /([?&]sig=)[^&\s]+/gi, replace: '$1[redacted]' },
   // `key` alone, split out from the group above: a single case-insensitive alternative cannot
   // tell "monkey" (lowercase `key` as the tail of an ordinary word -- must NOT redact) apart
   // from "secretKey"/"privateKey" (camelCase `Key` right after a lowercase/digit boundary --

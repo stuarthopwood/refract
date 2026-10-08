@@ -130,7 +130,11 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   // lock, so this ref only ever blocks this one button's own double click). aria-disabled, not
   // `disabled`, so keyboard focus stays on the button through the call (matches the
   // Quick-create button above).
-  const canResume = canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly, !!session.archivedAt)
+  // Gate-fixes a11y Low finding (cycle 5): a Session mid-start after a Recover of an
+  // `agent-exited` Session kept this true, showing an enabled Resume button next to this row's
+  // own "Starting agent… N s" text -- ChatPane's banner already hides its own Resume for this
+  // same state (`showBanner` requires `!startProgress`); this row disagreed.
+  const canResume = !session.startProgress && canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly, !!session.archivedAt)
 
   // Quality-gate fix (cycle 2, 2026-10-08): only moves focus when it is actually stranded
   // (<body>, null, or disconnected) -- previously this ran unconditionally the instant
@@ -342,8 +346,17 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   data-choice-item
                   className="session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
-                  <StateIcon status={session.status} />
-                  <span className="sr-only">{STATUS_LABEL[session.status]}</span>
+                  {/* Gate-fixes a11y Low finding (cycle 5): the row kept showing the 'stopped'
+                      icon and label while `session.startProgress` was set (the live-starting
+                      kind-based text further down is `sr-only`/`aria-hidden` only, no icon or
+                      visible label change), so the accessible name read "Stopped … Starting
+                      agent" -- two contradicting status words for the same row. */}
+                  {session.startProgress ? (
+                    <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
+                  ) : (
+                    <StateIcon status={session.status} />
+                  )}
+                  <span className="sr-only">{session.startProgress ? 'Starting' : STATUS_LABEL[session.status]}</span>
                   {isSplitOpen && isVisible && (
                     <span className="sr-only">{isFocusedPane ? '(focused pane)' : '(shown, unfocused pane)'}</span>
                   )}

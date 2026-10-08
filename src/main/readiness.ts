@@ -25,7 +25,11 @@ const execFileAsync = promisify(execFile);
 // their own full span on top before the ready-wait ceiling even started ticking (gate-fixes
 // Medium finding, cycle 2: "the shorter probe ceilings don't fix the problem their comments
 // describe"). `startDeadlineMs` below is the real cap: queue wait + memory defer + ready wait,
-// combined, can never exceed it.
+// combined, can never exceed it. Gate-fixes High finding (cycle 5): that combined deadline used
+// to run the memory defer inside it unconditionally too -- under low free memory the defer's
+// own up-to-60s wait routinely ate this deadline before the ready-wait phase even started, so
+// these probes always timed out and Refract stuck on the Readiness screen. `deferForMemory:
+// false` below skips that defer for this short, read-only probe entirely.
 const PROBE_READY_PROMPT_AFTER_MS = 30_000;
 const PROBE_READY_CEILING_MS = 60_000;
 const PROBE_START_DEADLINE_MS = PROBE_READY_CEILING_MS;
@@ -89,7 +93,7 @@ async function checkOmpSignedIn(): Promise<Check> {
   // --no-session: this probe never calls `open_session` or any other command requiring
   // persistence (just get_state / get_available_models / get_login_providers), so it never
   // needs a real session-store folder under ~/.omp/agent/sessions (issue #362).
-  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe', noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS });
+  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId: 'readiness-probe', noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false });
   // Tracks whether `proc.start()` actually completed, so `signedInFailureHint` below can reuse
   // this still-running probe process instead of spinning up a second scratch omp of its own
   // (GateCode008 MEDIUM "the sign-in failure hint spins up a second scratch omp") -- a probe

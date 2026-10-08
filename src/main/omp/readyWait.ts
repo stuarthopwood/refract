@@ -40,14 +40,13 @@ export interface ReadyWaitOptions {
   /** Elapsed time at which the wait fails outright if nobody cancelled first. Issue #512
    * default: 180_000 ("ceiling around 180s"). */
   ceilingMs: number
-  /** How often the stage re-emits with an updated `elapsedMs` so the UI's "N s" counter can
-   * tick without a per-second re-render driven by the caller. Default 1_000. */
-  tickMs?: number
 }
 
 type Listener<T> = (value: T) => void
 
-const DEFAULT_TICK_MS = 1_000
+// How often the stage re-emits with an updated `elapsedMs` so the UI's "N s" counter can tick
+// without a per-second re-render driven by the caller.
+const TICK_MS = 1_000
 
 /** Drives one staged wait. Call `start()` once; call `ready()`, `cancel()`, or let the
  * ceiling timer fire to reach a terminal outcome. `keepWaiting()` only has an effect while
@@ -56,9 +55,7 @@ const DEFAULT_TICK_MS = 1_000
 export class ReadyWaitController {
   private readonly promptAfterMs: number
   private readonly ceilingMs: number
-  private readonly tickMs: number
   private readonly startedAt: number
-  private readonly now: () => number
   private readonly stageListeners = new Set<Listener<ReadyWaitStage>>()
   private readonly outcomeListeners = new Set<Listener<ReadyWaitOutcome>>()
   private stageKind: ReadyWaitStageKind = 'waiting'
@@ -68,7 +65,7 @@ export class ReadyWaitController {
   private finished = false
   private started = false
 
-  constructor(options: ReadyWaitOptions, now: () => number = Date.now) {
+  constructor(options: ReadyWaitOptions) {
     if (!(options.promptAfterMs > 0) || !(options.ceilingMs > options.promptAfterMs)) {
       throw new Error(
         `ReadyWaitController: invalid thresholds (promptAfterMs=${options.promptAfterMs}, ceilingMs=${options.ceilingMs}); ceilingMs must exceed promptAfterMs`,
@@ -76,13 +73,11 @@ export class ReadyWaitController {
     }
     this.promptAfterMs = options.promptAfterMs
     this.ceilingMs = options.ceilingMs
-    this.tickMs = options.tickMs ?? DEFAULT_TICK_MS
-    this.now = now
-    this.startedAt = this.now()
+    this.startedAt = Date.now()
   }
 
   private elapsed(): number {
-    return this.now() - this.startedAt
+    return Date.now() - this.startedAt
   }
 
   onStage(listener: Listener<ReadyWaitStage>): () => void {
@@ -118,7 +113,7 @@ export class ReadyWaitController {
     this.tickTimer = setInterval(() => {
       if (this.finished) return
       this.emitStage()
-    }, this.tickMs)
+    }, TICK_MS)
   }
 
   /** "Keep waiting": dismisses the prompt without affecting the ceiling. No-op outside the

@@ -11,7 +11,10 @@ import { OmpProcess } from './OmpProcess';
 // `PROBE_READY_CEILING_MS` alone only bounds the ready-wait phase once spawned; `startDeadlineMs`
 // below (readiness.ts's same fix, gate-fixes Medium finding cycle 2) bounds the queue wait, the
 // memory defer and the ready wait combined, so this probe can never block longer than that
-// regardless of which phase it is stuck in.
+// regardless of which phase it is stuck in. Gate-fixes High finding (cycle 5): that combined
+// deadline used to run the memory defer inside it unconditionally too -- under low free memory
+// the defer's own up-to-60s wait routinely ate this deadline before the ready-wait phase even
+// started, so this probe always timed out; `deferForMemory: false` below skips that defer.
 const PROBE_READY_PROMPT_AFTER_MS = 30_000;
 const PROBE_READY_CEILING_MS = 60_000;
 const PROBE_START_DEADLINE_MS = PROBE_READY_CEILING_MS;
@@ -70,7 +73,7 @@ export async function requestLoginProviders(proc: OmpProcess): Promise<OmpLoginP
 export async function readOmpLoginProviders(sessionId: string): Promise<OmpLoginProvider[] | null> {
  try {
   const scratchDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'refract-omp-login-providers-'));
-  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId, noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS });
+  const proc = new OmpProcess({ cwd: scratchDir, approvalMode: 'ask', sessionId, noSession: true, readyPromptAfterMs: PROBE_READY_PROMPT_AFTER_MS, readyCeilingMs: PROBE_READY_CEILING_MS, startDeadlineMs: PROBE_START_DEADLINE_MS, deferForMemory: false });
   try {
    await proc.start();
    return await requestLoginProviders(proc);

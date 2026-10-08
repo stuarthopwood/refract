@@ -3,7 +3,7 @@
 // Session or caller constructed it (`SessionAgent.ts`, `readiness.ts`, `loginProviders.ts`), so
 // the limit holds across the whole app without any caller needing to know about it.
 
-const DEFAULT_MAX_CONCURRENT_STARTS = 2
+const MAX_CONCURRENT_STARTS = 2
 
 interface StartQueueState {
   maxConcurrent: number
@@ -15,7 +15,7 @@ function createState(maxConcurrent: number): StartQueueState {
   return { maxConcurrent, inFlight: 0, waiters: [] }
 }
 
-let state = createState(DEFAULT_MAX_CONCURRENT_STARTS)
+let state = createState(MAX_CONCURRENT_STARTS)
 
 function releaseWaitersIfRoom(): void {
   while (state.inFlight < state.maxConcurrent && state.waiters.length > 0) {
@@ -26,17 +26,13 @@ function releaseWaitersIfRoom(): void {
   }
 }
 
-/** Overrides the concurrency limit (test seam today; no production caller wires it from
- * Settings yet). Throws on anything that is not a positive integer: `0`, a negative number, or
- * `NaN` would otherwise silently deadlock every future `omp` start, including the readiness and
- * login-providers probes, which share this same queue. Any waiter the new limit now has room for
- * is granted immediately. */
-export function setMaxConcurrentStarts(maxConcurrent: number): void {
-  if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1) {
-    throw new RangeError(`setMaxConcurrentStarts: expected a positive integer, got ${maxConcurrent}`)
-  }
-  state.maxConcurrent = maxConcurrent
-  releaseWaitersIfRoom()
+/** Issue #512 Medium finding (cycle 5): lets `OmpProcess.deferStartIfMemoryLow()` skip its
+ * memory defer entirely when no other start currently holds a slot -- a solo start under low
+ * memory has nothing else to wait behind; the queue slot itself is already the backpressure
+ * mechanism, and deferring anyway is what made the readiness/login-providers probes (and every
+ * ordinary Session start) pay a fixed cost under low memory even with a slot free. */
+export function startsInFlight(): number {
+  return state.inFlight
 }
 
 export interface AcquireStartSlotOptions {
@@ -117,9 +113,4 @@ export function acquireStartSlot(options: AcquireStartSlotOptions = {}): Promise
 function release(): void {
   state.inFlight = Math.max(0, state.inFlight - 1)
   releaseWaitersIfRoom()
-}
-
-/** Test-only reset so suites don't leak state between runs; never called in production. */
-export function resetStartQueueForTests(maxConcurrent: number = DEFAULT_MAX_CONCURRENT_STARTS): void {
-  state = createState(maxConcurrent)
 }

@@ -10,71 +10,66 @@
 // used to be read into memory just to keep the last few KiB (also wrong for a multi-megabyte
 // log, read right when memory may already be low); `readTail` now reads only the bytes it needs.
 //
-// Filesystem access is injected (`OmpLogTailDeps`) so this is unit-testable without touching a
-// real `~/.omp/logs` directory; `defaultOmpLogTailDeps()` builds the production deps from
-// `node:fs/promises` and `os.homedir()`.
+// Gate-fixes security Low finding (cycle 5): `lstat` (not `stat`) and an explicit `isFile()`
+// check, in both the mtime lookup and the read -- `stat`/`open` alone follow symlinks, so a
+// symlink named `omp.x.<pid>.log` planted in `~/.omp/logs` would otherwise let this read and
+// display the tail of any file the user can read (defence in depth only: planting it already
+// requires the user's own privileges).
 
-import { open, readdir, stat } from 'node:fs/promises'
+import { lstat, open, readdir } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-export interface OmpLogTailDeps {
-  /** Absolute path to the directory containing one log file per omp process. */
-  logsDir: string
-  /** Lists file names (not full paths) directly inside `logsDir`. */
-  listLogFiles: (logsDir: string) => Promise<string[]>
-  /** The file's last-modified time (epoch ms), or `undefined` if it cannot be stat'd. */
-  statMtimeMs: (filePath: string) => Promise<number | undefined>
-  /** Reads at most the last `maxBytes` bytes of the file (from `size - maxBytes`, or the whole
-   * file if it is smaller), decoded as UTF-8 with a non-fatal decoder so a multi-byte character
-   * split by the cut is replaced rather than throwing. `undefined` on any read error. */
-  readTail: (filePath: string, maxBytes: number) => Promise<string | undefined>
+const LOGS_DIR = path.join(os.homedir(), '.omp', 'logs')
+
+/** The file's last-modified time (epoch ms), or `undefined` if it cannot be stat'd, is a
+ * symlink, or is not a regular file. */
+async function statMtimeMs(filePath: string): Promise<number | undefined> {
+  try {
+    const info = await lstat(filePath)
+    if (!info.isFile()) return undefined
+    return info.mtimeMs
+  } catch {
+    return undefined
+  }
 }
 
-export function defaultOmpLogTailDeps(): OmpLogTailDeps {
-  return {
-    logsDir: path.join(os.homedir(), '.omp', 'logs'),
-    listLogFiles: (logsDir) => readdir(logsDir),
-    statMtimeMs: async (filePath) => {
-      try {
-        const info = await stat(filePath)
-        return info.mtimeMs
-      } catch {
-        return undefined
-      }
-    },
-    readTail: async (filePath, maxBytes) => {
-      let handle: Awaited<ReturnType<typeof open>> | undefined
-      try {
-        handle = await open(filePath, 'r')
-        const { size } = await handle.stat()
-        const length = Math.min(maxBytes, size)
-        const position = Math.max(0, size - maxBytes)
-        const buffer = Buffer.alloc(length)
-        // Gate-fixes security Low finding: `bytesRead` can be less than `length` on a short
-        // read; decoding the whole (possibly zero-filled) buffer would otherwise turn the
-        // unread remainder into NUL characters in the diagnostic.
-        const { bytesRead } = await handle.read(buffer, 0, length, position)
-        const decoded = new TextDecoder('utf-8', { fatal: false }).decode(buffer.subarray(0, bytesRead))
-        // Gate-fixes security Low finding: `position > 0` means this cut the file mid-line, so
-        // the first line here is a truncated fragment that may carry a credential's tail end
-        // with no recognisable prefix left for `redactSecrets` to match. Dropped before the
-        // caller ever redacts this text. Gate-fixes security/test Medium finding (cycle 3): a
-        // truncated tail with NO newline at all (e.g. one very long single-line JSON log record)
-        // used to return the whole fragment unchanged -- the entire tail is then the partial
-        // line this rule exists to drop, so it returns empty instead of ever reaching
-        // `redactSecrets` with no prefix left to match.
-        if (position > 0) {
-          const newlineIndex = decoded.indexOf('\n')
-          return newlineIndex === -1 ? '' : decoded.slice(newlineIndex + 1)
-        }
-        return decoded
-      } catch {
-        return undefined
-      } finally {
-        await handle?.close().catch(() => undefined)
-      }
-    },
+/** Reads at most the last `maxBytes` bytes of the file (from `size - maxBytes`, or the whole
+ * file if it is smaller), decoded as UTF-8 with a non-fatal decoder so a multi-byte character
+ * split by the cut is replaced rather than throwing. `undefined` on any read error, a symlink,
+ * or anything that is not a regular file. */
+async function readTail(filePath: string, maxBytes: number): Promise<string | undefined> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    const info = await lstat(filePath)
+    if (!info.isFile()) return undefined
+    handle = await open(filePath, 'r')
+    const { size } = await handle.stat()
+    const length = Math.min(maxBytes, size)
+    const position = Math.max(0, size - maxBytes)
+    const buffer = Buffer.alloc(length)
+    // Gate-fixes security Low finding: `bytesRead` can be less than `length` on a short
+    // read; decoding the whole (possibly zero-filled) buffer would otherwise turn the
+    // unread remainder into NUL characters in the diagnostic.
+    const { bytesRead } = await handle.read(buffer, 0, length, position)
+    const decoded = new TextDecoder('utf-8', { fatal: false }).decode(buffer.subarray(0, bytesRead))
+    // Gate-fixes security Low finding: `position > 0` means this cut the file mid-line, so
+    // the first line here is a truncated fragment that may carry a credential's tail end
+    // with no recognisable prefix left for `redactSecrets` to match. Dropped before the
+    // caller ever redacts this text. Gate-fixes security/test Medium finding (cycle 3): a
+    // truncated tail with NO newline at all (e.g. one very long single-line JSON log record)
+    // used to return the whole fragment unchanged -- the entire tail is then the partial
+    // line this rule exists to drop, so it returns empty instead of ever reaching
+    // `redactSecrets` with no prefix left to match.
+    if (position > 0) {
+      const newlineIndex = decoded.indexOf('\n')
+      return newlineIndex === -1 ? '' : decoded.slice(newlineIndex + 1)
+    }
+    return decoded
+  } catch {
+    return undefined
+  } finally {
+    await handle?.close().catch(() => undefined)
   }
 }
 
@@ -84,15 +79,10 @@ export function defaultOmpLogTailDeps(): OmpLogTailDeps {
  * already has a ready-wait failure to report, with or without a log tail attached). A file
  * matches when its name is `omp.<anything>.<pid>.log` (e.g. `omp.2026-10-07.36860.log`); when
  * more than one matches and is new enough, the one with the greatest mtime wins. */
-export async function tailOmpLogForPid(
-  pid: number,
-  maxBytes: number,
-  spawnedAtMs: number,
-  deps: OmpLogTailDeps = defaultOmpLogTailDeps(),
-): Promise<string | undefined> {
+export async function tailOmpLogForPid(pid: number, maxBytes: number, spawnedAtMs: number): Promise<string | undefined> {
   let fileNames: string[]
   try {
-    fileNames = await deps.listLogFiles(deps.logsDir)
+    fileNames = await readdir(LOGS_DIR)
   } catch {
     return undefined
   }
@@ -102,11 +92,11 @@ export async function tailOmpLogForPid(
 
   let newest: { name: string; mtimeMs: number } | undefined
   for (const name of candidates) {
-    const mtimeMs = await deps.statMtimeMs(path.join(deps.logsDir, name))
+    const mtimeMs = await statMtimeMs(path.join(LOGS_DIR, name))
     if (mtimeMs === undefined || mtimeMs < spawnedAtMs) continue
     if (!newest || mtimeMs > newest.mtimeMs) newest = { name, mtimeMs }
   }
   if (!newest) return undefined
 
-  return deps.readTail(path.join(deps.logsDir, newest.name), maxBytes)
+  return readTail(path.join(LOGS_DIR, newest.name), maxBytes)
 }

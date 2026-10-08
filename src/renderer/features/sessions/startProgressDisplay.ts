@@ -1,7 +1,6 @@
 // Issue #512 requirement 1: "Starting agent… N s" text for the staged ready-wait, shared by
 // `SessionList.tsx` (the row) and `ChatPane.tsx` (the banner) so neither file has to import the
-// other (same reasoning as `sessionDisplay.tsx`'s own split, which this deliberately does not
-// extend: that file carries pre-existing odd indentation tracked separately, issue #387/row A3).
+// other (same reasoning as `sessionDisplay.tsx`'s own split).
 
 import type { SessionStartProgress } from '../../../shared/model'
 

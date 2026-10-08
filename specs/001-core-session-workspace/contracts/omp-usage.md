@@ -15,7 +15,7 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo>
 
 ## Start-up sequence per Session
 
-1. Wait for the `ready` frame (timeout 60 s, then `stopped`/`start-failed`).
+1. Issue #512: queues for a process-wide start slot (at most 2 concurrent `omp` starts; `startQueue.ts`), defers briefly under low system memory if another start currently holds a slot (`memory.ts`'s threshold, `OmpProcess.ts`'s `deferStartIfMemoryLow`), then waits for the `ready` frame. 60 s in with no `ready` frame, the UI may offer "Keep waiting"/"Cancel" (`ReadyWaitController`'s `'prompt'` stage); the wait itself keeps going regardless until a 180 s ceiling, where it fails outright (`stopped`/`start-failed`, stderr/omp-log tails and free/total memory kept for the setup message) unless a user cancel arrived first. A ceiling failure (not a cancel) retries exactly once automatically before giving up. The readiness and login-providers probes use shorter overridable thresholds and skip the memory defer entirely (`deferForMemory: false`), bounded by an overall deadline across every phase so a slow Session start elsewhere can never hold them hostage.
 2. Send `negotiate_protocol` `{protocolVersion: 2}` if `ready.supportedProtocolVersions` includes 2. From then on, reassemble `rpc_chunk` frames (validate `chunkId`, `index`, `count`, `byteLength`; strict UTF-8; reject interleaving; 64 MiB ceiling). Refract implements its own decoder because OMP's `RpcFrameDecoder` is raw `.ts` and needs Bun (FINDINGS C22b).
 3. If the Session has a current Conversation, `switch_session` with its `sessionPath` (never `--resume`, FINDINGS item 17), then `get_state` and verify per data-model.md ("Reattach verification"). Record `sessionFile`, `messageCount`, and (first time) `sessionDir = dirname(sessionFile)`. Only record `currentConversation` and `lastMessageCount` once `messageCount > 0` (`get_state` returns a `sessionFile` before the first message is written).
 4. `get_messages` to build the transcript from history (the response can exceed 1 MiB; v2 framing carries it).
@@ -179,7 +179,7 @@ itself.
 
 | Failure | Handling |
 |---|---|
-| `ready` not seen in 60 s | `stopped`, `start-failed`, keep stderr tail for the setup message |
+| `ready` not seen by the 180 s ceiling (issue #512) | `stopped`, `start-failed` (one automatic retry first, unless cancelled); stderr/omp-log tails (filtered to warnings/errors) and free/total memory kept for the setup message |
 | Unparseable stdout line | Log it and continue (never crash the reader) |
 | Chunk validation error | Fail the current request, log, keep the process |
 | `success:false` response | Add an error `notice` naming the command; do not change status |

@@ -19,12 +19,13 @@
 
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import os from 'node:os'
 import { type ApprovalMode, OMP_APPROVAL_MODE } from '../../shared/model'
 import type { Frame, ReadyFrame, ResponseFrame, RpcChunkFrame, RpcCommand } from '../../shared/frames'
 import { tailOmpLogForPid } from './ompLogTail'
 import { redactSecrets } from './redact'
 import { ReadyWaitController, type ReadyWaitStage } from './readyWait'
-import { acquireStartSlot } from './startQueue'
+import { acquireStartSlot, startsInFlight } from './startQueue'
 import { isMemoryLow } from '../memory'
 import { recordProcess, removeProcessRecord } from '../process/pidRecords'
 import { resolveExecutable, taskkillPath } from '../process/executables'
@@ -33,7 +34,8 @@ import { resolveExecutable, taskkillPath } from '../process/executables'
 // and no reason shown. READY_PROMPT_AFTER_MS is now only the point at which the caller
 // should offer "Keep waiting"/"Cancel" (see ReadyWaitController); the wait keeps going
 // regardless, up to READY_CEILING_MS, where it fails outright. Both are overridable per
-// `OmpProcessOptions` (Settings-configurable, requirement 1).
+// `OmpProcessOptions`, per caller (the readiness/login-provider probes pass shorter values;
+// no production Settings surface wires either one yet).
 const READY_PROMPT_AFTER_MS = 60_000
 const READY_CEILING_MS = 180_000
 // Issue #512 requirement 5: how long a start will defer while memory.ts's isMemoryLow()
@@ -68,9 +70,11 @@ export interface OmpProcessOptions {
    * `~/.omp/agent/sessions` (omp-usage.md's `--no-session` flag; issue #362). Only safe for
    * callers that never issue `open_session` or any other command requiring persistence. */
   noSession?: boolean
-  /** Overrides READY_PROMPT_AFTER_MS (issue #512 requirement 1, Settings-configurable). */
+  /** Overrides READY_PROMPT_AFTER_MS (issue #512 requirement 1), per caller -- no production
+   * Settings surface wires this. */
   readyPromptAfterMs?: number
-  /** Overrides READY_CEILING_MS (issue #512 requirement 1, Settings-configurable). */
+  /** Overrides READY_CEILING_MS (issue #512 requirement 1), per caller -- no production
+   * Settings surface wires this. */
   readyCeilingMs?: number
   /** Gate-fixes Medium finding (cycle 2): an overall ceiling across the queue wait, the
    * memory defer AND the ready wait combined, not just the ready wait's own ceiling above --
@@ -81,6 +85,15 @@ export interface OmpProcessOptions {
    * phase-specific ceilings above apply (real Session starts: the ceiling screen shows "Keep
    * waiting"/"Cancel", so an invisible overall cutoff would be actively wrong for them). */
   startDeadlineMs?: number
+  /** Gate-fixes High finding (cycle 5): the readiness/login-provider sign-in probes pass
+   * `startDeadlineMs` to bound their *whole* wait, but `deferStartIfMemoryLow()` used to run
+   * inside that same bound unconditionally -- under low memory its own up-to-60s wait routinely
+   * ate the probe's entire deadline before the ready-wait even started, so the probe always
+   * timed out and Refract stuck on the Readiness screen. `false`: skip the memory defer for
+   * this `start()` entirely (the probes are short-lived, read-only checks; deferring them for
+   * someone else's slow Session start is never worth it). Defaults to `true` (unset) for real
+   * Session starts. */
+  deferForMemory?: boolean
 }
 
 interface PendingRequestEntry {
@@ -309,7 +322,10 @@ export class OmpProcess extends EventEmitter {
                 if (ready.supportedProtocolVersions.includes(2)) {
                   const res = await this.request({ type: 'negotiate_protocol', id: '', protocolVersion: 2 })
                   if (!res.success) {
-                    throw new Error(`negotiate_protocol failed: ${res.error ?? 'unknown error'}`)
+                    // Gate-fixes security Low finding (cycle 5): `res.error` comes straight from
+                    // omp's own RPC response, the same untrusted-content surface `buildStartFailure`
+                    // already redacts before it ever reaches a stopDetail/notify string.
+                    throw new Error(`negotiate_protocol failed: ${res.error ? redactSecrets(res.error) : 'unknown error'}`)
                   }
                 }
                 resolve()
@@ -359,8 +375,17 @@ export class OmpProcess extends EventEmitter {
   /** Issue #512 requirement 5: waits while `isMemoryLow()` (memory.ts) says the machine is
    * under pressure, emitting `'start-memory-deferred'` so a caller can show "Waiting for
    * memory to free up...". Gives up after MEMORY_DEFER_CEILING_MS and lets the start proceed
-   * regardless: a start that is merely slow is still better than one that never happens. */
+   * regardless: a start that is merely slow is still better than one that never happens.
+   * Gate-fixes Medium finding (cycle 5): only defers when `startsInFlight()` shows another
+   * start currently holds a slot -- a solo start under low memory (the common case: the queue
+   * already limits concurrency to `MAX_CONCURRENT_STARTS`) has nothing to wait behind, so
+   * imposing up to 60s on every ordinary start under low memory was pure cost with no benefit.
+   * Gate-fixes High finding (cycle 5): skipped entirely when `deferForMemory: false` (the
+   * readiness/login-provider probes), which must never pay this cost against their own short
+   * `startDeadlineMs`. */
   private async deferStartIfMemoryLow(): Promise<void> {
+    if (this.opts.deferForMemory === false) return
+    if (startsInFlight() <= 1) return
     const startedAt = Date.now()
     const signal = this.startAbortController?.signal
     while (isMemoryLow() && !this.startCancelled && Date.now() - startedAt < MEMORY_DEFER_CEILING_MS) {
@@ -518,16 +543,43 @@ export class OmpProcess extends EventEmitter {
     }
   }
 
+  // Issue #512 requirement 2: the renderer (ChatPane.tsx) treats the FIRST LINE of a start
+  // failure's `stopDetail` as the short banner title and everything after the first `\n` as
+  // collapsible "Details" text -- `reason`/`hint` below are always exactly one line, and every
+  // part appended after them always starts with its own `\n`, so that split just falls out of
+  // this format with no separate title field needed.
+  private filterWarnErrorLines(text: string): string {
+    const warnOrError = /\b(warn|error)\b/i
+    return text
+      .split('\n')
+      .filter((line) => warnOrError.test(line))
+      .join('\n')
+  }
+
   private async buildStartFailure(reason: string, ErrorClass: new (message: string) => Error = Error): Promise<Error> {
+    // Gate-fixes Medium finding (cycle 5): a caller staring at "ready frame not seen within
+    // 180s" has no idea WHY -- the last warnings/errors in that run's own output are far more
+    // useful than an arbitrary last-N-KB byte window that is mostly routine noise. Filters to
+    // warn/error lines BEFORE redacting/slicing, so `STDERR_FAILURE_TAIL_BYTES` below now bounds
+    // the filtered result, not the raw tail.
+    // Gate-fixes security Medium finding (cycle 5): replaces this machine's home directory with
+    // `~` in both tails before redaction -- `redactSecrets` targets credentials, not the local
+    // username a stderr/log line incidentally embeds in a path.
+    const homedir = os.homedir()
+    // Case-insensitive and regex-escaped: Windows path casing in a log line (`C:\Users\Stuart`)
+    // does not always match `os.homedir()`'s own casing (`C:\Users\stuart`) exactly.
+    const homedirRe = homedir ? new RegExp(homedir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi') : undefined
+    const redactHome = (text: string): string => (homedirRe ? text.replace(homedirRe, '~') : text)
     // Gate-fixes Medium/Low findings (cycle 2): redact BEFORE the final slice, not after -- a
     // cut landing between "Bearer " and its token used to leave the token exposed with no
     // prefix left for the pattern to match. Also drop a truncated tail's own leading partial
     // line first (`stderrTruncated`, set by `onStderrData`'s sliding window): that fragment can
     // carry a credential's tail end with no recognisable prefix of its own.
     const stderrForRedaction = this.stderrTruncated ? this.stderrTail.replace(/^[^\n]*\n?/, '') : this.stderrTail
-    const tail = redactSecrets(stderrForRedaction).slice(-STDERR_FAILURE_TAIL_BYTES)
+    const stderrFiltered = this.filterWarnErrorLines(redactHome(stderrForRedaction))
+    const tail = redactSecrets(stderrFiltered).slice(-STDERR_FAILURE_TAIL_BYTES)
     const hint = this.lastSpawnError?.code === 'ENOENT' ? ' (omp not found on PATH; set ompPath)' : ''
-    const stderrPart = tail ? `\n--- stderr tail ---\n${tail}` : ''
+    const stderrPart = tail ? `\n--- stderr warnings/errors ---\n${tail}` : ''
     const pid = this.child?.pid
     const spawnedAtMs = this.spawnedAtMs
     // Issue #512 requirement 2: OMP logs to its own per-process file, not stderr, so the
@@ -537,9 +589,13 @@ export class OmpProcess extends EventEmitter {
       typeof pid === 'number' && spawnedAtMs !== undefined
         ? await tailOmpLogForPid(pid, OMP_LOG_TAIL_BYTES, spawnedAtMs).catch(() => undefined)
         : undefined
-    const ompLogTail = ompLogTailRaw !== undefined ? redactSecrets(ompLogTailRaw) : undefined
-    const ompLogPart = ompLogTail ? `\n--- omp log tail (pid ${pid}) ---\n${ompLogTail}` : ''
-    return new ErrorClass(`OmpProcess: ${reason}${hint}${stderrPart}${ompLogPart}`)
+    const ompLogFiltered = ompLogTailRaw !== undefined ? this.filterWarnErrorLines(redactHome(ompLogTailRaw)) : undefined
+    const ompLogTail = ompLogFiltered !== undefined ? redactSecrets(ompLogFiltered) : undefined
+    const ompLogPart = ompLogTail ? `\n--- omp log warnings/errors (pid ${pid}) ---\n${ompLogTail}` : ''
+    // Gate-fixes Medium finding (cycle 5): a slow/failed start under low memory otherwise gives
+    // no hint that memory pressure was ever a factor -- neither tail necessarily mentions it.
+    const memoryPart = `\n--- memory ---\n${Math.round(os.freemem() / (1024 * 1024))} MB free of ${Math.round(os.totalmem() / (1024 * 1024))} MB total`
+    return new ErrorClass(`OmpProcess: ${reason}${hint}${stderrPart}${ompLogPart}${memoryPart}`)
   }
 
   private onStdoutData(chunk: Buffer): void {
