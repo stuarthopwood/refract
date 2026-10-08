@@ -2,7 +2,7 @@
 // "Non-IPC: shared theme data"): imported directly by main, preload, and renderer -- the
 // existing shared-module pattern (plan.md "Source code"), never served over IPC (research.md
 // decision 3). The actual colour VALUES stay as CSS custom properties in
-// `src/renderer/styles/globals.css`, one class per theme (`.theme-dark`,
+// `src/renderer/styles/globals.css`, one class per theme (`.theme-<id>`, e.g. `.theme-dark`,
 // `.theme-dark-high-contrast`); this file only carries the small, reasoned metadata every
 // process needs: the picker's name/swatch, which Shiki theme a code block uses, and the
 // title-bar overlay colour main applies.
@@ -38,9 +38,6 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     name: 'Dark',
     // Matches `.theme-dark`'s own `--background: oklch(0.145 0 0)` (globals.css), converted by
     // hand the same way `titleBarOverlay.ts` already converts it for Electron's sRGB-only API.
-    // #550 (theme foundation, palette v2), remediated per quality-gate review (PR #596): this
-    // preset is purely additive now -- the #452 Dark retune this comment used to describe is
-    // separate, not-yet-built work, so this stays the original swatch/overlay, unchanged.
     swatch: '#0a0a0a',
     syntaxTheme: 'github-dark',
     titleBarOverlay: { color: '#0a0a0a', symbolColor: '#fafafa' }
@@ -57,7 +54,9 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   },
   // #550 (theme foundation, palette v2): a further dark preset, additive per the module comment
   // above -- the mock's own Obsidian canvas and palette, taken literally (`.theme-obsidian`,
-  // globals.css), one step darker/moodier than `dark`'s own, unchanged canvas.
+  // globals.css): a blue-tinted slate canvas, very slightly lighter than `dark`'s near-black
+  // (`#0a0a0a`), not darker -- `#0F1014`'s relative luminance (~0.0052) is marginally above
+  // `#0a0a0a`'s (~0.0030).
   obsidian: {
     id: 'obsidian',
     name: 'Obsidian',

@@ -80,6 +80,40 @@ const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // through however many `var()` hops a theme uses, with a `seen` set guarding against a cycle
 // (two tokens pointing at each other) so a malformed theme fails fast instead of looping forever.
 const VAR_RE = /^var\(\s*--([a-z0-9-]+)\s*\)$/i
+// #550 item 2 (tinted severity backgrounds): a `-bg` token is written as `color-mix(in oklab,
+// var(--x) Y%, transparent)` -- a translucent variant of an existing opaque severity token,
+// expressed as a mix rather than a second literal so each theme's own hue carries through
+// automatically. Resolves `--x` through the same `var()` chain as `resolveRawValue` above, then
+// through this same colour parser, and scales ITS alpha by `Y%` -- correct because every colour
+// this mixes with `transparent` today is itself fully opaque (alpha 1), so alpha multiplication,
+// not blending, is the exact operation `color-mix(..., transparent)` performs.
+const COLOR_MIX_TRANSPARENT_RE = /^color-mix\(\s*in\s+[\w-]+\s*,\s*var\(\s*--([a-z0-9-]+)\s*\)\s+([\d.]+)%\s*,\s*transparent\s*\)$/i
+
+function parseColorLiteral(rawValue, rawProps) {
+  const oklchMatch = rawValue.match(OKLCH_RE)
+  if (oklchMatch) {
+    const [, L, C, H, alphaPct] = oklchMatch
+    return {
+      raw: rawValue,
+      alpha: alphaPct !== undefined ? Number(alphaPct) / 100 : 1,
+      linear: oklchToLinearSrgb(Number(L), Number(C), Number(H)),
+    }
+  }
+  const hexMatch = rawValue.match(HEX_RE)
+  if (hexMatch) {
+    return { raw: rawValue, alpha: 1, linear: hexToLinearSrgb(rawValue) }
+  }
+  const mixMatch = rawValue.match(COLOR_MIX_TRANSPARENT_RE)
+  if (mixMatch) {
+    const [, refName, pct] = mixMatch
+    const resolvedRef = resolveRawValue(refName, rawProps)
+    if (resolvedRef === undefined) return undefined
+    const base = parseColorLiteral(resolvedRef, rawProps)
+    if (base === undefined) return undefined
+    return { raw: rawValue, alpha: base.alpha * (Number(pct) / 100), linear: base.linear }
+  }
+  return undefined
+}
 
 function resolveRawValue(name, rawProps, seen = new Set()) {
   const raw = rawProps[name]
@@ -92,12 +126,18 @@ function resolveRawValue(name, rawProps, seen = new Set()) {
   return resolveRawValue(refName, rawProps, seen)
 }
 
-// Quality-gate remediation (security review, LOW): `Object.create(null)` rather than `{}` for
-// every one of these token maps -- a theme block that writes `var(--constructor)` (or another
-// `Object.prototype` name) which the block itself never defines would otherwise return a
-// function from a plain-object lookup, and `.match` on it throws instead of reporting "token
-// missing". Dev-only tool reading a trusted repo file, so this is robustness, not an exploit.
+// `Object.create(null)` rather than `{}` for every one of these token maps: a theme block that
+// writes `var(--constructor)` (or another `Object.prototype` name) which the block itself never
+// defines would otherwise return a function from a plain-object lookup, and `.match` on it
+// throws instead of reporting "token missing". Dev-only tool reading a trusted repo file, so
+// this is robustness, not an exploit.
 const themes = Object.create(null)
+// Captured alongside `themes`: whether a preset's own `--sidebar-border` is written as the
+// LITERAL text `var(--divider)` -- an unresolved-text check, not a resolved-value comparison,
+// because `.theme-dark-high-contrast` happens to set `--sidebar-border`/`--divider`/`--border`
+// to the SAME coincidental value independently (all three equal `oklch(0.6 0 0)` there without
+// one aliasing another), which a resolved-value comparison would misreport as an alias.
+const sidebarBorderAliasesDivider = Object.create(null)
 
 for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   const themeId = blockMatch[1]
@@ -106,54 +146,60 @@ for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   for (const propMatch of body.matchAll(PROP_RE)) {
     rawProps[propMatch[1]] = propMatch[2].trim()
   }
+  sidebarBorderAliasesDivider[themeId] = rawProps['sidebar-border'] === 'var(--divider)'
   const props = Object.create(null)
   for (const name of Object.keys(rawProps)) {
     const rawValue = resolveRawValue(name, rawProps)
     if (rawValue === undefined) continue
-    const oklchMatch = rawValue.match(OKLCH_RE)
-    const hexMatch = rawValue.match(HEX_RE)
-    if (oklchMatch) {
-      const [, L, C, H, alphaPct] = oklchMatch
-      props[name] = {
-        raw: rawValue,
-        alpha: alphaPct !== undefined ? Number(alphaPct) / 100 : 1,
-        linear: oklchToLinearSrgb(Number(L), Number(C), Number(H)),
-      }
-    } else if (hexMatch) {
-      props[name] = { raw: rawValue, alpha: 1, linear: hexToLinearSrgb(rawValue) }
-    }
+    const parsed = parseColorLiteral(rawValue, rawProps)
+    if (parsed) props[name] = parsed
     // Non-colour values (`transparent`, bare keywords) are intentionally left unparsed -- no
     // pair below references them as a colour operand.
   }
   themes[themeId] = props
 }
 
-// Quality-gate remediation (MEDIUM, two independent re-reviewers): a theme registered in
-// src/shared/themes.ts's `ThemeId` union with no matching `.theme-<id>` block above previously
-// just never appeared in `themes` -- the two loops below only ever iterate `Object.entries
-// (themes)`, so a deleted or renamed CSS block would silently vanish from the table and the
-// run would still print "all N pairs across (one fewer) themes PASS" and exit 0. Parse the
-// `ThemeId` union directly (the same source `src/main`/the renderer import for real) and fail
-// loudly for any id it declares that this file never defined a block for.
+// A theme registered in `src/shared/themes.ts`'s `ThemeId` union with no matching `.theme-<id>`
+// block above would otherwise just never appear in `themes` -- the two loops below only ever
+// iterate `Object.entries(themes)`, so a deleted or renamed CSS block would silently vanish
+// from the table and the run would still print "all N pairs across (one fewer) themes PASS" and
+// exit 0. Parse the `ThemeId` union directly (the same source `src/main`/the renderer import
+// for real) and fail loudly for any id it declares that this file never defined a block for.
+// The union may wrap onto several lines (no trailing `;` -- TypeScript ASI), so this matches up
+// to the next blank line, the next `export`, or an explicit `;`, whichever comes first; if
+// nothing matches, or no ids come out, that is itself a hard failure (exit 2), not a silent
+// `declaredThemeIds = []` that would quietly turn off both this check and the one below it.
 const themesTsPath = path.join(repoRoot, 'src/shared/themes.ts')
 const themesTs = readFileSync(themesTsPath, 'utf-8')
-const THEME_ID_UNION_RE = /export type ThemeId = ([^\n]+)/
+const THEME_ID_UNION_RE = /export type ThemeId\s*=\s*([\s\S]+?)(?:\r?\n\s*\r?\n|\r?\nexport|;)/
 const themeIdUnionMatch = themesTs.match(THEME_ID_UNION_RE)
 const declaredThemeIds = themeIdUnionMatch
   ? [...themeIdUnionMatch[1].matchAll(/'([a-z0-9-]+)'/g)].map((m) => m[1])
   : []
+if (declaredThemeIds.length === 0) {
+  console.error(`could not parse ThemeId union in ${path.relative(repoRoot, themesTsPath)}`)
+  process.exit(2)
+}
 const missingThemeBlocks = declaredThemeIds.filter((id) => !(id in themes))
 
-// Quality-gate remediation (MEDIUM, test-reviewer re-review): the exact bug that caused this
-// PR's first two gate failures -- `themes.ts`'s `swatch`/`titleBarOverlay.color` silently
-// drifting from the theme's own `.theme-<id>` `--background` -- was only ever caught by a
-// human re-reading two files side by side; nothing in this script checked it. Parse every
-// entry's `id`, `swatch`, and `titleBarOverlay.color` out of the same `themesTs` source text
-// already read above (non-greedy, so each entry's own fields, not a later entry's).
-const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'[\s\S]*?swatch:\s*'(#[0-9a-fA-F]{3,8})'[\s\S]*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
+// The exact bug that caused this PR's first two gate failures -- `themes.ts`'s `swatch`/
+// `titleBarOverlay.color` silently drifting from the theme's own `.theme-<id>` `--background`
+// -- was only ever caught by a human re-reading two files side by side; nothing in this script
+// checked it. Parse every entry's `id`, `swatch`, and `titleBarOverlay.color` out of the same
+// `themesTs` source text already read above. The tempered `(?:(?!id:)[\s\S])*?` gaps (not a
+// plain `[\s\S]*?`) stop each entry's own match at the next `id:`, so a theme entry missing its
+// `swatch` or `titleBarOverlay` cannot silently read the NEXT entry's values instead -- it just
+// fails to match, which the count check below turns into a hard failure.
+const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'(?:(?!id:)[\s\S])*?swatch:\s*'(#[0-9a-fA-F]{3,8})'(?:(?!id:)[\s\S])*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
 const themeMetadata = Object.create(null)
 for (const m of themesTs.matchAll(THEME_METADATA_RE)) {
   themeMetadata[m[1]] = { swatch: m[2].toLowerCase(), titleBarOverlayColor: m[3].toLowerCase() }
+}
+if (Object.keys(themeMetadata).length !== declaredThemeIds.length) {
+  console.error(
+    `parsed ${Object.keys(themeMetadata).length} theme metadata entries out of ${declaredThemeIds.length} declared ThemeId(s) in ${path.relative(repoRoot, themesTsPath)} -- THEME_METADATA_RE failed to match at least one entry`,
+  )
+  process.exit(2)
 }
 
 // Spec 012 (brand watermark, research.md decision 13): `--watermark-opacity` is
@@ -203,8 +249,8 @@ function resolvedLinear(propEntry, backdropEntry) {
 // ---- FR-007/FR-008 token pairs actually rendered by this codebase ----------------------------
 // `min: 4.5` = WCAG AA body/UI text; `min: 3` = WCAG AA large text and non-text UI components
 // (focus rings, control-edge borders, scrollbar thumbs, status icons used without accompanying
-// text). `--divider` is NOT a control edge (#550, remediated per quality-gate review: it is the
-// soft decorative edge, read by no component yet) -- its pairs live in DIVIDER_PAIRS below, not
+// text). `--divider` is NOT a control edge (#550: it is the soft decorative edge, read by no
+// component yet except where it IS a real rendered fill -- see DIVIDER_PAIRS's own comment
 // here. `--border` IS a control edge in every theme in this remediated cut (Dark/HC keep
 // rendering every un-migrated `border-border` call site with it, unchanged; Obsidian's own
 // `--border` is tuned to the same floor) -- checked here, same as `--border-strong`, its alias.
@@ -230,9 +276,9 @@ const PAIRS = [
   { fg: 'state-idle', bg: 'background', min: 3 },
   { fg: 'state-needs-you', bg: 'background', min: 3 },
   { fg: 'state-stopped', bg: 'background', min: 3 },
-  // Quality-gate remediation (round 2): these real component-boundary pairs were missing and
-  // measure as genuine failures -- `--input` (the border of every Input/Textarea/Select/
-  // outline-Toggle/outline-Button, including the Appearance section's own Cancel button).
+  // These real component-boundary pairs were missing and measure as genuine failures --
+  // `--input` (the border of every Input/Textarea/Select/outline-Toggle/outline-Button,
+  // including the Appearance section's own Cancel button).
   { fg: 'input', bg: 'background', min: 3 },
   // #550 (theme foundation, palette v2): the control-edge tokens (`--border`, the one every
   // un-migrated component actually renders with, and `--border-strong`, its forward-looking
@@ -268,15 +314,12 @@ const PAIRS = [
   { fg: 'severity-info', bg: 'background', min: 3 },
   { fg: 'severity-info', bg: 'card', min: 3 },
   { fg: 'severity-info', bg: 'popover', min: 3 },
-  // Quality-gate remediation: `muted-foreground` and `destructive` are rendered as actual BODY
-  // TEXT (code-block/diff-path headers, inactive tab labels, notice text, dropdown-menu
-  // destructive items, alert descriptions), not just against the page `--background` the two
-  // pre-existing pairs above already covered -- against `--muted`/`--accent` (the shadcn
-  // "neutral highlight" hover/selected fills text sits on) and `--card`/`--popover`
-  // (dialog/menu surfaces) respectively. Both were genuine quality-gate HIGH findings against
-  // an earlier, retuned draft of Dark; this remediated cut reverted Dark/HC (so these pass at
-  // their original, already-correct values again) and retuned Obsidian specifically to pass
-  // them too.
+  // `muted-foreground` and `destructive` are rendered as actual BODY TEXT (code-block/diff-path
+  // headers, inactive tab labels, notice text, dropdown-menu destructive items, alert
+  // descriptions), not just against the page `--background` the two pre-existing pairs above
+  // already covered -- against `--muted`/`--accent` (the shadcn "neutral highlight"
+  // hover/selected fills text sits on) and `--card`/`--popover` (dialog/menu surfaces)
+  // respectively.
   { fg: 'muted-foreground', bg: 'muted', min: 4.5 },
   { fg: 'muted-foreground', bg: 'accent', min: 4.5 },
   { fg: 'muted-foreground', bg: 'card', min: 4.5 },
@@ -284,21 +327,26 @@ const PAIRS = [
   { fg: 'muted-foreground', bg: 'surface-hover', min: 4.5 },
   { fg: 'destructive', bg: 'card', min: 4.5 },
   { fg: 'destructive', bg: 'popover', min: 4.5 },
-  // Quality-gate remediation: `--input`/`--ring`, the control-edge tokens every dialog footer's
-  // outline Cancel button and every focus ring actually render, checked only against
-  // `--background` before -- dialogs and menus sit on `--popover`/`--muted`, not the page.
+  // `--input`/`--ring`, the control-edge tokens every dialog footer's outline Cancel button and
+  // every focus ring actually render, checked only against `--background` before -- dialogs
+  // and menus sit on `--popover`/`--muted`, not the page.
   { fg: 'input', bg: 'popover', min: 3 },
   { fg: 'input', bg: 'muted', min: 3 },
   { fg: 'ring', bg: 'popover', min: 3 },
   { fg: 'ring', bg: 'muted', min: 3 },
 ]
 
-// #550 (remediated per quality-gate review): the OTHER edge class -- soft decorative dividers
-// (panes, rows, headers, sections), now named `--divider` (never `--border`, which stays a
-// real control edge everywhere in this cut -- see PAIRS above). Not required by WCAG 1.4.11
-// because a decorative divider never identifies a control, so this carries no contrast floor in
-// any theme (checked for presence only -- a theme missing the token still fails below). The
-// design doc's own stricter high-contrast treatment ("soft dividers switched off, every edge
+// The OTHER edge class -- soft decorative dividers (panes, rows, headers, sections), now named
+// `--divider` (never `--border`, which stays a real control edge everywhere in this cut -- see
+// PAIRS above). Not required by WCAG 1.4.11 because a decorative divider never identifies a
+// control, so this carries no contrast floor in any theme (checked for presence only -- a
+// theme missing the token still fails below) EXCEPT where a preset's own `--sidebar-border`
+// aliases `--divider` (Obsidian does; Dark/HC keep their own, unrelated, pre-existing
+// `--sidebar-border` value, untouched by this story) -- that alias IS a real rendered fill
+// (`hover:bg-sidebar-border` in SessionList.tsx/ProfileItem.tsx with `--muted-foreground`
+// text/icon on top), so it gets a real floor from a dedicated check below DIVIDER_PAIRS's own
+// loop, scoped dynamically to whichever preset(s) actually make that choice.
+// The design doc's own stricter high-contrast treatment ("soft dividers switched off, every edge
 // reaches 4.5:1 text / 7:1") is real but NOT delivered in this story for Dark (high contrast):
 // doing so would mean raising that preset's existing, live `--input`/`--ring`/`--muted`/
 // `--accent` values, which this remediated cut's whole point is to avoid changing. Deferred to
@@ -410,9 +458,9 @@ for (const [themeId, props] of Object.entries(themes)) {
   }
 }
 
-// #550 (remediated per quality-gate review): decorative-divider pairs -- exempt from any floor
-// in every theme (deferred, see DIVIDER_PAIRS's own comment above), still failing if the token
-// is missing outright, same as every other pair above.
+// Decorative-divider pairs -- exempt from any floor in every theme (deferred, see
+// DIVIDER_PAIRS's own comment above), still failing if the token is missing outright, same as
+// every other pair above.
 for (const [themeId, props] of Object.entries(themes)) {
   for (const { fg, bg } of DIVIDER_PAIRS) {
     const fgEntry = props[fg]
@@ -438,6 +486,146 @@ for (const [themeId, props] of Object.entries(themes)) {
       bgHex: linearToHex(bgLinear),
       note: 'decorative divider, no floor (deferred, see #552)',
     })
+  }
+}
+
+// Where a preset's own `--sidebar-border` is written as the literal text `var(--divider)`
+// (`sidebarBorderAliasesDivider`, captured above from the UNRESOLVED source text -- Obsidian
+// does; `.theme-dark`/`.theme-dark-high-contrast` do NOT, their own `--sidebar-border` is a
+// pre-existing, unrelated value, untouched by this story, even though `.theme-dark-high-
+// contrast`'s happens to equal `--border`/`--divider`'s value by coincidence, not by alias) --
+// that alias IS a real rendered fill (`hover:bg-sidebar-border` in
+// SessionList.tsx/ProfileItem.tsx), so it gets a real 4.5:1 floor against `--muted-foreground`,
+// the text/icon colour rendered on top.
+for (const [themeId, props] of Object.entries(themes)) {
+  if (!sidebarBorderAliasesDivider[themeId]) continue
+  const sidebarBorder = props['sidebar-border']
+  if (!sidebarBorder) continue
+  const mutedForeground = props['muted-foreground']
+  checkedCount++
+  if (!mutedForeground) {
+    failCount++
+    rows.push({ themeId, fg: 'muted-foreground', bg: 'sidebar-border', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+    continue
+  }
+  const fgLinear = resolvedLinear(mutedForeground, sidebarBorder)
+  const bgLinear = resolvedLinear(sidebarBorder, sidebarBorder)
+  const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear))
+  const pass = ratio >= 4.5
+  if (!pass) failCount++
+  rows.push({
+    themeId,
+    fg: 'muted-foreground',
+    bg: 'sidebar-border',
+    min: 4.5,
+    ratio,
+    pass,
+    fgHex: linearToHex(fgLinear),
+    bgHex: linearToHex(bgLinear),
+  })
+}
+
+// #550 item 3 (surface ladder): design intent is "background, then surface 1, 2, 3, each a step
+// lighter" -- nothing checked that ordering, so a future edit could make a surface darker than
+// the one before it (or collapse two into the same value, which Dark/HC already do on purpose
+// today -- `--surface-1` equals `--surface-2`, see `.theme-dark`'s own comment) without this
+// script noticing. Fails if luminance strictly DECREASES anywhere along the ladder; equal
+// adjacent steps are allowed.
+const SURFACE_LADDER = ['background', 'surface-1', 'surface-2', 'surface-3']
+for (const [themeId, props] of Object.entries(themes)) {
+  let prevName, prevLum
+  for (const name of SURFACE_LADDER) {
+    const entry = props[name]
+    checkedCount++
+    if (!entry) {
+      failCount++
+      rows.push({ themeId, fg: name, bg: '(surface ladder)', min: 'order', ratio: null, pass: false, note: 'token missing' })
+      prevName = undefined
+      continue
+    }
+    const linear = resolvedLinear(entry, entry)
+    const lum = relativeLuminance(linear)
+    if (prevName !== undefined) {
+      const pass = lum >= prevLum - 1e-9
+      if (!pass) failCount++
+      rows.push({
+        themeId,
+        fg: name,
+        bg: prevName,
+        min: 'order',
+        ratio: contrastRatio(lum, prevLum),
+        pass,
+        fgHex: linearToHex(linear),
+        bgHex: linearToHex(resolvedLinear(props[prevName], props[prevName])),
+        note: pass ? undefined : `'--${name}' is darker than '--${prevName}' -- the surface ladder must not get darker`,
+      })
+    }
+    prevName = name
+    prevLum = lum
+  }
+}
+
+// #550 item 2 (tinted severity backgrounds): each `--severity-{success,warning,error,info}-bg`
+// is a translucent tint of its opaque severity colour (globals.css's own comment records the
+// chosen alpha and why). Checked the way the design is actually used -- a severity banner's own
+// coloured text directly on its own tint, AND plain `--foreground` on that same tint (the more
+// common case: a neutral-text notice with a coloured tint background) -- composited over BOTH
+// `--background` and `--card` (dialogs/menus sit on the latter), since the tint's OWN alpha
+// means its final rendered colour depends on what real surface it sits on.
+const SEVERITIES = ['success', 'warning', 'error', 'info']
+const SEVERITY_BACKDROPS = ['background', 'card']
+for (const [themeId, props] of Object.entries(themes)) {
+  const foreground = props['foreground']
+  for (const severity of SEVERITIES) {
+    const severityEntry = props[`severity-${severity}`]
+    const tintEntry = props[`severity-${severity}-bg`]
+    for (const backdropName of SEVERITY_BACKDROPS) {
+      const backdropEntry = props[backdropName]
+      checkedCount++
+      if (!severityEntry || !tintEntry || !backdropEntry || !foreground) {
+        failCount++
+        rows.push({
+          themeId,
+          fg: `severity-${severity}`,
+          bg: `severity-${severity}-bg on ${backdropName}`,
+          min: 4.5,
+          ratio: null,
+          pass: false,
+          note: 'token missing',
+        })
+        continue
+      }
+      const tintLinear = resolvedLinear(tintEntry, backdropEntry)
+      const tintLum = relativeLuminance(tintLinear)
+      const tintBackdropEntry = { raw: `severity-${severity}-bg on ${backdropName}`, alpha: 1, linear: tintLinear }
+      const severityOnTintRatio = contrastRatio(relativeLuminance(resolvedLinear(severityEntry, tintBackdropEntry)), tintLum)
+      const severityPass = severityOnTintRatio >= 4.5
+      if (!severityPass) failCount++
+      rows.push({
+        themeId,
+        fg: `severity-${severity}`,
+        bg: `severity-${severity}-bg on ${backdropName}`,
+        min: 4.5,
+        ratio: severityOnTintRatio,
+        pass: severityPass,
+        fgHex: linearToHex(severityEntry.linear),
+        bgHex: linearToHex(tintLinear),
+      })
+      checkedCount++
+      const fgOnTintRatio = contrastRatio(relativeLuminance(resolvedLinear(foreground, tintBackdropEntry)), tintLum)
+      const fgPass = fgOnTintRatio >= 4.5
+      if (!fgPass) failCount++
+      rows.push({
+        themeId,
+        fg: 'foreground',
+        bg: `severity-${severity}-bg on ${backdropName}`,
+        min: 4.5,
+        ratio: fgOnTintRatio,
+        pass: fgPass,
+        fgHex: linearToHex(foreground.linear),
+        bgHex: linearToHex(tintLinear),
+      })
+    }
   }
 }
 

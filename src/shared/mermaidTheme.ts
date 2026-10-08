@@ -629,6 +629,23 @@ export const MERMAID_THEME_VARIABLES: Record<ThemeId, MermaidThemeVariables> = {
   taskTextOutsideColor: '#F8FAFC',
   taskTextClickableColor: '#F8FAFC',
   taskTextColor: '#F8FAFC',
+  // `.theme-dark-high-contrast`'s own entry below overrides these same two keys to its own
+  // muted-foreground rather than leaving DARK_FAMILY's neutral `#b5b5b5` grey; matching that
+  // pattern here too, to this preset's own `--muted-foreground` (`#94A3B8`, same value as
+  // `lineColor` above), rather than a neutral grey unrelated to its own palette.
+  pieOuterStrokeColor: '#94A3B8',
+  cScaleInv0: '#94A3B8',
+  cScaleInv1: '#94A3B8',
+  cScaleInv2: '#94A3B8',
+  cScaleInv3: '#94A3B8',
+  cScaleInv4: '#94A3B8',
+  cScaleInv5: '#94A3B8',
+  cScaleInv6: '#94A3B8',
+  cScaleInv7: '#94A3B8',
+  cScaleInv8: '#94A3B8',
+  cScaleInv9: '#94A3B8',
+  cScaleInv10: '#94A3B8',
+  cScaleInv11: '#94A3B8',
  },
  'dark-high-contrast': {
   // `.theme-dark-high-contrast`'s own CSS custom properties (globals.css): `--background:
