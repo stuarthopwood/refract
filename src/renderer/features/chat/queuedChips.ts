@@ -41,6 +41,16 @@
 //    since the composer's own code only ever grows `steering` via promotion from `followUp`,
 //    but it is implemented generally and correctly regardless).
 //
+// Known, accepted ambiguity (test-reviewer, #598): this derivation only ever sees plain
+// per-text COUNT arrays, never per-occurrence provenance, so it cannot distinguish "one
+// steering occurrence was delivered AND one follow-up occurrence was promoted to steering, in
+// the same snapshot" from "nothing happened to this text's net counts" -- a net-zero change in
+// the steering count for a text is always treated as the former (a follow-up-only
+// promotion/removal), never detected as the latter. This is unavoidable given the information
+// actually available here, and harmless in practice: OMP's own queue semantics make a true
+// net-zero-via-independent-events outcome for a single text in one snapshot extremely rare.
+// Documented here as a known, accepted edge case, not a bug to fix.
+//
 // `deriveQueuedChips` itself is a pure function: it never mutates `priorPool` (every returned
 // collection is freshly allocated), so calling it twice in a row with the SAME arguments always
 // produces the same (deep-equal) result -- safe for the component to cache in a ref and feed

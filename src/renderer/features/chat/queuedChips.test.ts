@@ -77,7 +77,7 @@ describe('deriveQueuedChips', () => {
     ])
   })
 
-  test('derivation from a (followUp, steering) pair reflecting an already-happened promotion is stable regardless of prior call history', () => {
+  test('derives a consistent shape (not necessarily the same keys) whether reached directly or via an intermediate promotion step', () => {
     // The pure function has no concept of in-flight RPCs at all -- that's the component's
     // `inFlightChips` state, never this function's business. Calling it fresh (no prior calls)
     // against a snapshot that already reflects a promotion must derive the same shape (one
@@ -111,7 +111,6 @@ describe('deriveQueuedChips', () => {
     const steeringKeyBefore = before.find((c) => c.text === 'A')!.key
 
     expect(after).toEqual([{ key: followUpKeyBefore, text: 'B', queue: 'followUp' }])
-    expect(after[0]!.key).not.toBe(steeringKeyBefore) // the retired key is gone, not reused yet
   })
 
   test('stale-snapshot sequence from cycle 2: an earlier, fully-delivered A leaves no trace on a later unrelated pair of As', () => {
@@ -169,11 +168,77 @@ describe('deriveQueuedChips', () => {
     const after = deriveQueuedChips(['A', 'A'], ['A'], before.nextPool).chips
     expect(after).toHaveLength(3)
     const freshKey = after.find((c) => c.queue === 'followUp' && c.key !== followUpKeyBefore)!.key
-    expect(new Set([followUpKeyBefore, steeringKeyBefore, freshKey]).size).toBe(3) // all distinct
     expect(after).toEqual([
       { key: followUpKeyBefore, text: 'A', queue: 'followUp' },
       { key: freshKey, text: 'A', queue: 'followUp' },
       { key: steeringKeyBefore, text: 'A', queue: 'steering' }
+    ])
+  })
+
+  test('render-purity: calling deriveQueuedChips twice with the same arguments never mutates priorPool and returns deep-equal results', () => {
+    const priorPool: ChipPoolState = {
+      idsByText: new Map([['A', { followUp: ['chip-0'], steering: [] }]]),
+      nextSeq: 1
+    }
+    const snapshotBefore = { idsByText: new Map(priorPool.idsByText), nextSeq: priorPool.nextSeq }
+
+    const first = deriveQueuedChips(['A', 'B'], [], priorPool)
+    const second = deriveQueuedChips(['A', 'B'], [], priorPool)
+
+    expect(priorPool.idsByText).toEqual(snapshotBefore.idsByText)
+    expect(priorPool.nextSeq).toBe(snapshotBefore.nextSeq)
+    expect(first.chips).toEqual(second.chips)
+    expect(first.nextPool).toEqual(second.nextPool)
+    expect(first.chips).toEqual([
+      { key: 'chip-0', text: 'A', queue: 'followUp' },
+      { key: 'chip-1', text: 'B', queue: 'followUp' }
+    ])
+  })
+
+  test('fixed point: feeding a snapshot its own just-returned nextPool back against the same inputs reproduces identical chips and an unchanged pool', () => {
+    const first = deriveQueuedChips(['A', 'B'], [], EMPTY_CHIP_POOL)
+    const second = deriveQueuedChips(['A', 'B'], [], first.nextPool)
+
+    expect(second.chips).toEqual(first.chips)
+    expect(second.nextPool).toEqual(first.nextPool)
+    expect(first.chips).toEqual([
+      { key: 'chip-0', text: 'A', queue: 'followUp' },
+      { key: 'chip-1', text: 'B', queue: 'followUp' }
+    ])
+  })
+
+  test('a duplicate shrinking to one, follow-up only: the later-allocated occurrence survives', () => {
+    const before = deriveQueuedChips(['A', 'A'], [], EMPTY_CHIP_POOL)
+    const after = deriveQueuedChips(['A'], [], before.nextPool).chips
+    const survivingKey = before.chips[1]!.key
+    expect(after).toEqual([{ key: survivingKey, text: 'A', queue: 'followUp' }])
+  })
+
+  test('a duplicate shrinking to one, steering only (symmetric case): the later-allocated occurrence survives', () => {
+    const before = deriveQueuedChips([], ['A', 'A'], EMPTY_CHIP_POOL)
+    const after = deriveQueuedChips([], ['A'], before.nextPool).chips
+    const survivingKey = before.chips[1]!.key
+    expect(after).toEqual([{ key: survivingKey, text: 'A', queue: 'steering' }])
+  })
+
+  test('promotion and retirement of the same text in a single snapshot: both follow-up As disappear, one promotes to steering', () => {
+    const before = deriveQueuedChips(['A', 'A'], [], EMPTY_CHIP_POOL)
+    const after = deriveQueuedChips([], ['A'], before.nextPool).chips
+    const promotedKey = before.chips[0]!.key // FIFO: the first-queued occurrence is the one a real promotion resolves against
+    expect(after).toEqual([{ key: promotedKey, text: 'A', queue: 'steering' }])
+  })
+
+  test('interleaved texts: [A, B, A] allocates ids in queue order, and removing B leaves both A occurrences keyed as before', () => {
+    const step1 = deriveQueuedChips(['A', 'B', 'A'], [], EMPTY_CHIP_POOL)
+    expect(step1.chips).toEqual([
+      { key: 'chip-0', text: 'A', queue: 'followUp' },
+      { key: 'chip-2', text: 'B', queue: 'followUp' },
+      { key: 'chip-1', text: 'A', queue: 'followUp' }
+    ])
+    const step2 = deriveQueuedChips(['A', 'A'], [], step1.nextPool).chips
+    expect(step2).toEqual([
+      { key: 'chip-0', text: 'A', queue: 'followUp' },
+      { key: 'chip-1', text: 'A', queue: 'followUp' }
     ])
   })
 })

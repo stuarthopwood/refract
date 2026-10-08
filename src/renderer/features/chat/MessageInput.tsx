@@ -83,9 +83,6 @@ function isGhostTextEligible(text: string, cursor: number): boolean {
   return true
 }
 
-// Issue #540 (#591 cycle 3, full architectural replacement): `QueuedChip` was replaced by
-// `DerivedChip` (queuedChips.ts) -- see that module for the full design rationale.
-
 interface MessageInputProps {
   sessionId: string
   stopReason?: StopReason
@@ -116,19 +113,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // chip never shows a busy state on an unrelated chip that merely shares the same text),
   // recording WHICH action is in flight so each button only ever announces its own operation.
   const [inFlightChips, setInFlightChips] = useState<ReadonlyMap<string, 'send' | 'remove'>>(new Map())
-  // Stable per-occurrence chip id pool (queuedChips.ts), persisted across renders so React's
-  // keyed reconciliation never remounts a chip's DOM node just because the same text moved
-  // between `followUp` and `steering` -- only a real add/remove of an occurrence changes which
-  // ids exist. `deriveQueuedChips` is pure (it never mutates `priorPool`), so reassigning this
-  // ref to its freshly-returned `nextPool` is the one safe place a render may write to a ref:
-  // repeating the same computation against the same inputs always yields the same result (see
-  // queuedChips.ts), so this stays correct even under React StrictMode's dev-only
-  // double-invoked renders.
+  // Last-committed per-occurrence chip id pool (queuedChips.ts): read during render by the
+  // `chips` memo below, and written only in the layout effect after commit -- never during
+  // render itself -- so a discarded or interrupted render (including React StrictMode's
+  // dev-only double-invoked renders) can never advance it.
   const chipPoolRef = useRef<ChipPoolState>(EMPTY_CHIP_POOL)
   // Issue #540 (#591 cycle 3): tracks which chip (by stable key) and which action button
   // (`send`/`remove`) currently holds focus, read off each button's own `data-chip-key`/
   // `data-chip-action` attributes by the `<ul>`'s delegated focus handlers below -- lets the
-  // layout effect below restore focus to the SAME occurrence's Remove button after OMP's real
+  // layout effect below restore focus to the SAME occurrence's originally-focused action button
+  // (falling back to Remove if that control no longer exists on the chip) after OMP's real
   // `queue_update` reorders the list (React moves, rather than remounts, a same-keyed `<li>`
   // via `insertBefore`, which Chromium blurs to `<body>`).
   const focusedChipRef = useRef<{ key: string; action: 'send' | 'remove' } | null>(null)
@@ -147,13 +141,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // reach a screen-reader user, who only ever hears the textarea's own plain-text value. Separate
   // live region from the slash-menu one below so an attachment event is never swallowed by (or
   // swallows) an unrelated "No matching commands" announcement.
-  const [attachmentAnnouncement, setAttachmentAnnouncement] = useState<string | null>(null)
-  // A repeated identical announcement (e.g. pasting the same image twice) would otherwise never
-  // re-render the live region, since React bails out on an unchanged string -- clear first so the
-  // next microtask's set is always a real DOM mutation, even when the text itself repeats.
+  const [attachmentAnnouncement, setAttachmentAnnouncement] = useState<{ seq: number; message: string } | null>(
+    null
+  )
+  const announceSeqRef = useRef(0)
+  // Medium fix (a11y, #598): a repeated identical announcement (e.g. pasting the same image
+  // twice, or two Removes in a row that both announce "Queued message removed.") must still
+  // re-render the live region even though the message text is unchanged. The previous
+  // `null`-then-value "clear and reset" dance relied on the clear actually committing as its
+  // own render before the real value landed -- which React 18/19's automatic batching does not
+  // guarantee outside a discrete event (e.g. after an `await`, as `handleRemoveQueued` calls
+  // this): both updates can land in the SAME commit, in which case the DOM's text node never
+  // changes at all and the announcement is silently swallowed. A monotonically-increasing
+  // sequence number, keyed onto the rendered node's identity below, forces a genuinely new node
+  // every call, independent of whether the message text repeats.
   const announceAttachment = useCallback((message: string) => {
-    setAttachmentAnnouncement(null)
-    queueMicrotask(() => setAttachmentAnnouncement(message))
+    announceSeqRef.current += 1
+    setAttachmentAnnouncement({ seq: announceSeqRef.current, message })
   }, [])
   const attachmentsStatusId = `${sessionId}-attachments-status`
   const attachmentsSummaryId = `${sessionId}-attachments-summary`
@@ -296,14 +300,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // never visibly rests on `<body>` for a frame: only acts when focus is actually stranded
   // (null/`<body>`/disconnected).
   //
-  // Gate fix (High, #598): if the tracked chip's own key still exists, this restores focus to
-  // IT, same as before. If it does NOT (the server delivered it, or the chip list is now
-  // entirely empty and the `<ul>` itself unmounts) -- as opposed to a genuine Remove succeeding,
-  // which `handleRemoveQueued` below already sends focus to the composer textarea for -- focus
-  // moves to the nearest surviving chip (the one that now occupies the removed chip's old
-  // position, falling back to the one before it), or to the textarea if no chips remain at all.
-  // `focusedChipRef` is cleared in every one of these "key is gone" outcomes, since none of them
-  // leave a chip tracked as focused anymore.
+  // Gate fix (Medium, #598): this is now the SOLE focus-restoration mechanism for the chip
+  // list -- it handles a user-initiated Remove and a server-driven delivery/removal uniformly,
+  // since `handleRemoveQueued` below no longer does any focus management of its own. Two
+  // competing mechanisms here used to race (whichever of the RPC result or the server's own
+  // `queue_update` frame arrived first would decide where focus landed); there is now exactly
+  // one path, regardless of which event fired the update.
+  //
+  // If the tracked chip's own key still exists, this restores focus to it, preferring the SAME
+  // action button the user originally focused (falling back to Remove if that control no
+  // longer exists on the chip, e.g. a promoted follow-up losing its Send now button). If the
+  // key is gone (the server delivered/removed it, or a user Remove just succeeded) focus moves
+  // to the nearest surviving chip's Remove button -- always Remove here, since this is a
+  // DIFFERENT chip than the one originally focused, which may not even have a Send now button
+  // -- (the one that now occupies the removed chip's old position, falling back to the one
+  // before it), or to the textarea if no chips remain at all. `focusedChipRef` is cleared in
+  // every one of these "key is gone" outcomes, since none of them leave a chip tracked as
+  // focused anymore.
   useLayoutEffect(() => {
     const previousChips = previousChipsRef.current
     previousChipsRef.current = chips
@@ -314,7 +327,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     if (!stranded) return
     if (chips.some((chip) => chip.key === tracked.key)) {
       const row = chipListRef.current?.querySelector<HTMLElement>(`[data-chip-key="${CSS.escape(tracked.key)}"]`)
-      row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]')?.focus()
+      const target =
+        tracked.action === 'send'
+          ? (row?.querySelector<HTMLButtonElement>('button[data-chip-action="send"]') ??
+            row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]'))
+          : row?.querySelector<HTMLButtonElement>('button[data-chip-action="remove"]')
+      target?.focus()
       return
     }
     focusedChipRef.current = null
@@ -351,6 +369,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   //    paint and before any rAF callback), so by the time this rAF runs, a real move will
   //    already have refocused something else -- only a still-unresolved, genuine click-away
   //    still has `activeElement === body` at that point.
+  // Low fix (#598): holds the latest scheduled blur-decision rAF id so it can be cancelled on
+  // unmount (e.g. a fast Session switch) -- an in-flight callback firing after unmount would
+  // still touch `focusedChipRef`, a harmless but pointless stale write.
+  const pendingBlurRafRef = useRef<number | null>(null)
   function handleChipListFocus(event: ReactFocusEvent<HTMLUListElement>) {
     const target = event.target as HTMLElement
     const row = target.closest<HTMLElement>('[data-chip-key]')
@@ -364,7 +386,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     const el = event.target as HTMLElement
-    requestAnimationFrame(() => {
+    pendingBlurRafRef.current = requestAnimationFrame(() => {
+      pendingBlurRafRef.current = null
       if (document.activeElement === document.body && el.isConnected) focusedChipRef.current = null
     })
   }
@@ -380,6 +403,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     document.addEventListener('pointerdown', onDocumentPointerDown, true)
     return () => document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  }, [])
+
+  // Low fix (#598): cancels an in-flight blur-decision rAF on unmount, so it can never fire its
+  // callback (touching `focusedChipRef`) after the component is gone.
+  useEffect(() => {
+    return () => {
+      if (pendingBlurRafRef.current !== null) cancelAnimationFrame(pendingBlurRafRef.current)
+    }
   }, [])
 
   // The active row resets whenever the typed query changes, so a stale index from a longer list
@@ -748,12 +779,6 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // focused button) from firing a duplicate request.
   async function handleRemoveQueued(chip: DerivedChip) {
     if (inFlightChips.has(chip.key)) return
-    // Captured before the request, not read fresh after it: the exact element the user was
-    // focused on when THIS action started -- never a broader "is focus somewhere in the chip
-    // list" check. A prior cycle's reviewer found the broader check lets focus get stolen back
-    // from a DIFFERENT chip the user has since tabbed to, re-triggering an action on the wrong
-    // message (mirrors ChatPane.tsx's own post-await focus-restore guard).
-    const focusedAtStart = document.activeElement
     setInFlightChips((prev) => new Map(prev).set(chip.key, 'remove'))
     const result = await window.refract.chat.removeQueued(sessionId, chip.text, chip.queue)
     setInFlightChips((prev) => {
@@ -777,13 +802,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
     // Optional a11y remediation (#591): a successful Remove previously had no announcement at all.
     announceAttachment('Queued message removed.')
-    // The chip itself is now gone from the real `followUp`/`steering` arrays -- the layout
-    // effect above intentionally won't claim it (its key no longer exists in `chips`), so this
-    // is the one remaining place that sends focus somewhere useful: back to the composer,
-    // guarded by the exact captured element (WCAG 3.2.2), never a broader containment check.
-    const active = document.activeElement
-    const stranded = active == null || active === document.body || !active.isConnected
-    if (stranded || active === focusedAtStart) textareaRef.current?.focus()
+    // Gate fix (Medium, #598): a successful Remove no longer does any focus management of its
+    // own -- the chip's key is now gone from the real `followUp`/`steering` arrays, and the
+    // shared layout effect above is the SOLE mechanism that restores focus for every "key is
+    // gone" outcome, uniformly, whether the key disappeared via this user-initiated Remove or a
+    // server-driven delivery/removal: it moves focus to the nearest surviving chip's Remove
+    // button, or to the composer textarea once no chips remain. Two competing focus mechanisms
+    // used to race here (whichever of this RPC's result or the server's own `queue_update`
+    // frame arrived first would "win"), landing focus unpredictably; there is now exactly one
+    // path.
   }
 
   async function handleSendNow(chip: DerivedChip) {
@@ -1013,7 +1040,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           silently dropped (`announceChipRemoval`, `handlePaste`) -- separate from the slash-menu
           status above so the two never step on each other. */}
       <div id={attachmentsStatusId} role="status" aria-live="polite" className="sr-only">
-        {attachmentAnnouncement ?? ''}
+        <span key={attachmentAnnouncement?.seq ?? 0}>{attachmentAnnouncement?.message ?? ''}</span>
       </div>
       <span id={attachmentsSummaryId} className="sr-only">
         {pendingAttachmentsCount > 0
