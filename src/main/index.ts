@@ -139,6 +139,12 @@ function currentTitleBarOverlay(): { color: string; symbolColor: string; height:
   return { ...THEMES[themeId].titleBarOverlay, height: TITLE_BAR_OVERLAY_HEIGHT }
 }
 
+// Issue #494: the on-disk icon Refract ships for an unpackaged run (`build/icon.ico`,
+// resolved relative to `out/main`). Dev-only -- see the `icon:`/`setIcon` comments below for why
+// -- and shared with `registerNotifications` (notifications.ts) so a notification's own icon
+// matches the window's.
+const WINDOW_ICON_PATH = join(__dirname, '../../build/icon.ico')
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -153,13 +159,14 @@ function createWindow(): void {
     // afterward by `theme.preview`/`theme.set`'s own `applyTitleBarOverlay` calls).
     titleBarStyle: 'hidden',
     titleBarOverlay: currentTitleBarOverlay(),
-    // The dev-time window icon: `build/icon.ico` resolves relative to `out/main`, so this path
-    // only exists when running unpackaged. Once spec 006's T006 adds electron-builder, it will
-    // embed this same build/icon.ico in the packaged exe's own resource instead, wired through
-    // electron-builder's config at packaging time, not through this `icon:` option. build/icon.ico
-    // already carries a bitmap per size, so Windows picks the right one for the taskbar/Alt-tab/
-    // title bar without re-scaling one image.
-    icon: join(__dirname, '../../build/icon.ico'),
+    // `WINDOW_ICON_PATH` (`build/icon.ico`, resolved relative to `out/main`) only exists on an
+    // unpackaged run: a packaged build never ships `build/` (spec 006 `electron-builder.yml`'s
+    // `files: out/**/*`), so this option is a no-op there -- the packaged exe's own icon resource,
+    // rcedit'd in by electron-builder's `win.icon` at packaging time (spec 006 T006), is what
+    // Windows actually shows for a packaged run, not this option. Safe either way: an Electron API
+    // that takes an image file path (this included) uses an empty, transparent image when the
+    // path does not resolve, so a missing `build/` here never throws, it just does nothing.
+    icon: WINDOW_ICON_PATH,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -169,15 +176,22 @@ function createWindow(): void {
   })
   mainWindow = window
 
-  // Issue #494 (bug fix): the `icon:` constructor option above is the one that matters for a
-  // packaged build (electron-builder rewrites the exe's own resource at packaging time, spec
-  // 006 T006), but in this unpackaged launch method (`pnpm build` then `electron.exe .`,
-  // confirmed live) Windows was still resolving the taskbar/Alt-Tab/notification icon from the
-  // running `electron.exe`'s own resource instead, because `app.setAppUserModelId` above used to
-  // pin the window's *identity* to that same executable. Setting the icon explicitly here too,
-  // after the window exists, matches the issue's own fix direction ("test both together, since
-  // either alone may not be enough") and costs nothing when it is already correct.
-  window.setIcon(nativeImage.createFromPath(join(__dirname, '../../build/icon.ico')))
+  // Issue #494 (bug fix): setting the icon again here, explicitly, after the window exists,
+  // matches the issue's own fix direction ("test both together, since either alone may not be
+  // enough") -- in the unpackaged launch method (`pnpm build` then `electron.exe .`, confirmed
+  // live) Windows was resolving the taskbar/Alt-Tab/notification icon from the running
+  // `electron.exe`'s own resource, because `app.setAppUserModelId` (called below, before
+  // `createWindow()` runs here -- see the call site near the bottom of this file) used to pin
+  // the window's *identity* to that same executable; the constructor's `icon:` option above did
+  // not override that. Like that option, this only ever affects an unpackaged run: a packaged
+  // build's icon comes from the exe's own resource (spec 006), so `setIcon` here is a no-op
+  // there regardless -- guarded explicitly ([INFERENCE]: not observed in an actual packaged
+  // build, since spec 006 has not landed on `main` yet) so a packaged launch never pays for a
+  // `createFromPath` read of a file it already knows does not exist.
+  if (!app.isPackaged) {
+    const windowIcon = nativeImage.createFromPath(WINDOW_ICON_PATH)
+    if (!windowIcon.isEmpty()) window.setIcon(windowIcon)
+  }
 
   window.on('ready-to-show', () => {
     window.show()
@@ -282,7 +296,7 @@ if (!gotLock) {
     Menu.setApplicationMenu(appMenu)
 
     registerIpc(manager, getWindow, appMenu)
-    registerNotifications(manager, getWindow)
+    registerNotifications(manager, getWindow, WINDOW_ICON_PATH)
     startMemoryMonitor(manager, getWindow)
 
     // Issue #494 (bug fix, matching spec 006 T012's already-landed choice on `spec-006-impl`:
