@@ -9,7 +9,7 @@ export function buildUnifiedDiff(path: string, oldText: string, newText: string)
   // Security remediation (Low, PR #597): a crafted file path with embedded CR/LF could
   // otherwise inject extra header lines into the diff text this function returns, which is
   // both parsed for display (DiffView.tsx) and put on the clipboard verbatim by its Copy button.
-  const safePath = path.replace(/[\u000D\u000A]/g, '')
+  const safePath = path.replace(/[\r\n]/g, '')
   const isAdd = oldText === ''
   const oldName = isAdd ? '/dev/null' : `a/${safePath}`
   const newName = `b/${safePath}`

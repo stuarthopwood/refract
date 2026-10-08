@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useClearedAnnouncement } from "@/lib/use-cleared-announcement"
 import { sanitiseForClipboard } from "@/lib/clipboard-sanitise"
 import { notify } from "@/state"
+import type { Result } from "../../../shared/ipc"
 
 // Shared icon-only Copy control (#524): every code surface -- markdown fences, mermaid source,
 // tool Arguments/Output, write previews, subagent Prompt/Result, approval details (all via
@@ -64,15 +65,28 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
     const text = sanitiseForClipboard(getText())
     // Quality-gate remediation (Medium, cycle 2): a block composed entirely of characters the
     // sanitiser strips (vanishingly rare, but possible for agent-authored content) must not
-    // silently empty the user's clipboard or announce a success that didn't happen.
-    if (text === "") return
+    // silently empty the user's clipboard or announce a success that didn't happen -- but a
+    // click still needs a response (cycle 3: a bare silent return gave keyboard/screen-reader
+    // users no feedback at all, WCAG 4.1.3).
+    if (text === "") {
+      announceAssertive("Nothing to copy")
+      return
+    }
     try {
       await navigator.clipboard.writeText(text)
     } catch {
       // The sandboxed renderer denies every Clipboard API permission
       // (`session.setPermissionRequestHandler`, src/main/index.ts), so this falls back to main's
       // own allowlisted channel -- the same try/catch order as `useWorktreeActions.ts`'s `copyPath`.
-      const result = await window.refract.clipboard.writeText(text)
+      // Quality-gate remediation (cycle 3): the IPC call itself can reject (not just resolve
+      // `{ok: false}`), e.g. if the channel is gone or main throws synchronously; unguarded, that
+      // rejection was unhandled and the click produced no toast and no announcement at all.
+      let result: Result<void>
+      try {
+        result = await window.refract.clipboard.writeText(text)
+      } catch (err) {
+        result = { ok: false, error: { code: "clipboard-failed", message: err instanceof Error ? err.message : String(err) } }
+      }
       if (!mountedRef.current) return
       if (!result.ok) {
         notify(result.error)
