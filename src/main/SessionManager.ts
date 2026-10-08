@@ -171,9 +171,16 @@ export class SessionManager {
     return mapWithConcurrency(this.registry.snapshot().sessions, DETECTION_CONCURRENCY, async (session) => {
       const runtime = this.agents.get(session.id)?.runtimeSnapshot;
       if (runtime) {
+        // Quality-gate fix (cycle 2, 2026-10-08): a requested stop (`stopAgent`, or any other
+        // Refract-initiated shutdown) is never read from the tail at all -- see
+        // `SessionRuntime.stoppedOnRequest`'s own doc comment. Without this, a tool call still
+        // outstanding when the stop fired (stdin-close, then a 10s wait, then `taskkill`) looks
+        // identical, from the file alone, to a genuine mid-call crash.
         const terminatedUnexpectedly =
           runtime.status === 'stopped' && !session.archivedAt
-            ? (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
+            ? runtime.stoppedOnRequest
+              ? false
+              : (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly
             : undefined;
         return {
           ...session,

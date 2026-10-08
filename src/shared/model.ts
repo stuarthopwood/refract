@@ -140,6 +140,15 @@ export interface SessionRuntime {
   turnStartedAt: number | null; // spec 004: epoch ms; set on agent_start, cleared on session_settled/stop
   readout: SessionReadout; // spec 004: last assembled bundle; never persisted
   subagents: SubagentSummary[]; // spec 004: current turn's subagents; cleared when a new turn starts
+  /** Quality-gate fix (cycle 2, 2026-10-08): true from the moment a REQUESTED stop (`stopAgent`,
+   * or any other Refract-initiated shutdown) actually exits the process, cleared the instant a
+   * new process life starts (`launch()`). A requested stop is never "terminated unexpectedly" by
+   * definition, regardless of what the Conversation's tail happens to show -- a tool call still
+   * outstanding when the stdin-close-then-`taskkill` sequence fires looks identical, from the
+   * file alone, to a genuine mid-call crash. Every reader that would otherwise re-derive
+   * `terminatedUnexpectedly` from the tail (`SessionManager.summaries()`, `ipc/util.ts`'s
+   * `buildSnapshot`) must check this first and skip the tail read entirely when it is set. */
+  stoppedOnRequest: boolean;
 }
 
 /** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base

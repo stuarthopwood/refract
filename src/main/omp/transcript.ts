@@ -878,17 +878,27 @@ function settleStaleSubagentRows(items: TranscriptItem[], currentTurnKeys: Reado
  * rebuilds its visible transcript (e.g. a Conversation switch away and back), so this only flips
  * rows when the caller already knows (`detectUnexpectedTermination`, terminationDetection.ts,
  * read against the SAME file these `messages` came from) that the writing process is actually
- * gone -- the file-tail-derived analogue of #489's persisted `currentTurnSubagents` marker. */
+ * gone -- the file-tail-derived analogue of #489's persisted `currentTurnSubagents` marker.
+ * Quality-gate fix (cycle 2, 2026-10-08): independent of the overall `terminatedUnexpectedly`
+ * verdict, any `running` row with a LATER `user` item after it is settled too -- a new user
+ * turn cannot follow an unanswered tool call within one healthy process life (same rule
+ * `terminationDetection.ts`'s own 'user' case now applies), so that specific row is definitely
+ * orphaned even when a hard kill with no exit record left the overall Conversation reading
+ * `clean` (superseded and resumed by a later, healthy life). */
 function settleInterruptedToolRows(items: TranscriptItem[], terminatedUnexpectedly: boolean): TranscriptItem[] {
-  if (!terminatedUnexpectedly) return items;
   let changed = false;
-  const next = items.map((item) => {
-    if (item.kind === 'tool' && item.status === 'running') {
+  let sawLaterUser = false;
+  const next = new Array<TranscriptItem>(items.length);
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!;
+    if (item.kind === 'user') sawLaterUser = true;
+    if (item.kind === 'tool' && item.status === 'running' && (terminatedUnexpectedly || sawLaterUser)) {
       changed = true;
-      return { ...item, status: 'interrupted' as const };
+      next[i] = { ...item, status: 'interrupted' as const };
+    } else {
+      next[i] = item;
     }
-    return item;
-  });
+  }
   return changed ? next : items;
 }
 

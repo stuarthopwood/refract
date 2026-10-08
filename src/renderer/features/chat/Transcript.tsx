@@ -393,7 +393,15 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // without remounting it), so a long Session's earlier reveal never leaks into the next one
   // shown in the same pane.
   const [revealedEarlier, setRevealedEarlier] = React.useState(false)
-  React.useEffect(() => setRevealedEarlier(false), [sessionId])
+  // Quality-gate fix (cycle 2, 2026-10-08): announced once, in a polite live region that is
+  // ALWAYS mounted (never created together with its own text, which screen readers generally
+  // fail to announce) -- see the always-mounted `role="status"` span in the JSX below.
+  const [revealedAnnouncement, setRevealedAnnouncement] = React.useState('')
+  // Quality-gate fix (cycle 2, 2026-10-08): the "scroll stays put" anchor for `handleLoadEarlier`
+  // below -- `scrollHeight - scrollTop` recorded just before the reveal, restored in the layout
+  // effect right after the newly-revealed turns commit to the DOM (see that effect's own doc
+  // comment for why a raw `scrollTop` cannot be reused directly).
+  const loadEarlierAnchorRef = React.useRef<number | null>(null)
   const { visible: visibleTurns, hiddenCount } = React.useMemo(
     () => windowTranscriptTurns(turns, revealedEarlier),
     [turns, revealedEarlier]
@@ -523,6 +531,18 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     // lie (showing "at end" for a detached Conversation, or vice versa) for that whole window.
     const targetMemory = useChatScrollStore.getState().bySession[sessionId]
     setIsAtEnd(targetMemory === undefined || targetMemory.atEnd)
+    // Quality-gate fix (cycle 2, 2026-10-08): "Load earlier"'s reveal is per Session AND per
+    // Conversation (this key already covers both -- see the #510 slice 4 High finding this
+    // fixes: the old plain `useEffect(() => setRevealedEarlier(false), [sessionId])` reset ran
+    // AFTER commit, so the very FIRST render of an incoming Session still used the OUTGOING
+    // Session's `revealedEarlier=true` and built every turn -- exactly the DOM spike the window
+    // exists to avoid -- and never reset at all on a same-Session Conversation switch. Resetting
+    // here, in the SAME render-phase block `isAtEnd`/`autoScrollSuppressed` already use, applies
+    // before this render's own JSX is built (React restarts the render when `revealedEarlier`
+    // genuinely changes), so `visibleTurns` above is already correctly windowed the first time
+    // the new key is ever rendered.
+    if (revealedEarlier) setRevealedEarlier(false)
+    if (revealedAnnouncement) setRevealedAnnouncement('')
   }
 
   // Continuously records this Session's scroll position while the viewport is visible, so
@@ -558,6 +578,39 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     setAutoScrollSuppressed(false)
     setIsAtEnd(true)
   }
+
+  // Quality-gate fix (HIGH, a11y + code review, cycle 2, 2026-10-08): "Load earlier" used to
+  // just flip `revealedEarlier` straight to `true`, which (1) silently jumped the view to the
+  // very first (oldest) turn the instant the button -- the thing that was focused -- unmounted
+  // and focus fell to `<body>`, and (2) announced nothing to a screen reader. Records the
+  // anchor distance from the end BEFORE the reveal; the layout effect below restores it and
+  // moves focus once the newly-revealed turns are actually in the DOM.
+  function handleLoadEarlier() {
+    const viewport = viewportRef.current
+    loadEarlierAnchorRef.current = viewport ? viewport.scrollHeight - viewport.scrollTop : null
+    setRevealedAnnouncement(`Loaded ${hiddenCount} earlier turn${hiddenCount === 1 ? '' : 's'}.`)
+    setRevealedEarlier(true)
+  }
+
+  // Runs right after `handleLoadEarlier`'s reveal commits its newly-visible turns to the DOM
+  // (before paint, `useLayoutEffect`, so there is no visible jump): restores the exact same
+  // distance from the end the developer was at (`scrollHeight - scrollTop`, recorded before the
+  // reveal) -- a raw `scrollTop` would be meaningless once thousands of pixels of newly-revealed
+  // content are inserted ABOVE it, and the browser's own default scroll-anchoring is not reliable
+  // here (#459's same root cause: `content-visibility:auto` rows still promoting from their
+  // placeholder size). Then moves focus to the viewport itself (same target, same
+  // `preventScroll` rationale, as the "Scroll to end" button's own focus-restoration effect
+  // above): the clicked "Load earlier" button no longer exists once `hiddenCount` reaches zero,
+  // so without this, focus would fall to `<body>` (WCAG 2.4.3, 2.4.7).
+  React.useLayoutEffect(() => {
+    const anchor = loadEarlierAnchorRef.current
+    if (anchor === null) return
+    loadEarlierAnchorRef.current = null
+    const viewport = viewportRef.current
+    if (!viewport) return
+    viewport.scrollTop = viewport.scrollHeight - anchor
+    viewport.focus({ preventScroll: true })
+  }, [visibleTurns])
 
   // Finding 1 (gate fixes 4, a11y): the button above goes `inert` (below) the instant `isAtEnd`
   // becomes true -- both from this handler's own click AND from a Session/Conversation landing
@@ -779,10 +832,16 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                 Ready. Type a message to get started.
               </div>
             )}
+            {/* Quality-gate fix (a11y, cycle 2): always mounted (never created together with
+                its own text, which a screen reader generally fails to announce) -- empty until
+                `handleLoadEarlier` sets it. */}
+            <span role="status" aria-live="polite" className="sr-only">
+              {revealedAnnouncement}
+            </span>
             {hasConversationStarted && hiddenCount > 0 && (
               <div className="px-2 pb-2">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setRevealedEarlier(true)}>
-                  Load earlier ({hiddenCount} more)
+                <Button type="button" variant="ghost" size="sm" onClick={handleLoadEarlier}>
+                  Load {hiddenCount} earlier turn{hiddenCount === 1 ? '' : 's'}
                 </Button>
               </div>
             )}

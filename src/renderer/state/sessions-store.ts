@@ -52,12 +52,22 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
               // Quality-gate fix (2026-10-08): `stopReason` and `terminatedUnexpectedly` used to
               // be dropped here, so the row's "Terminated unexpectedly" text (and `stopReason`
               // itself) only ever updated on the next unrelated `sessions.list()` refresh, never
-              // on the live crash this event actually reports. `terminatedUnexpectedly` always
-              // overwrites (never falls back to a stale prior value): `undefined` on the event
-              // means main is explicitly saying "not applicable to this transition", read as
-              // `false`, same as a session row that was never flagged.
+              // on the live crash this event actually reports.
               stopReason: event.stopReason,
-              terminatedUnexpectedly: event.terminatedUnexpectedly ?? false,
+              // Quality-gate fix (cycle 2, 2026-10-08): an explicit value on the event is always
+              // authoritative. Otherwise, a still-`stopped` transition (for example
+              // `clearUnread()`'s own status re-emit, which carries no `terminatedUnexpectedly`
+              // at all) must keep whatever this row already had -- main's own main-process flag
+              // genuinely did not change just because an UNRELATED field did -- never silently
+              // wipe a real crash/Resume-eligible row back to `false` until the next unrelated
+              // `sessions.list()` refresh happens to correct it. A transition to a LIVE status
+              // does reset to `false`: a working/idle Session is definitely not "terminated".
+              terminatedUnexpectedly:
+                event.terminatedUnexpectedly !== undefined
+                  ? event.terminatedUnexpectedly
+                  : event.status === 'stopped'
+                    ? (session.terminatedUnexpectedly ?? false)
+                    : false,
               unread: event.unread,
               launchedMode: event.launchedMode,
               pendingMode: event.pendingMode

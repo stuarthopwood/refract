@@ -193,4 +193,35 @@ describe('detectUnexpectedTermination', () => {
     const result = await detectUnexpectedTermination(file);
     expect(result).toEqual(CLEAN);
   });
+
+  // Quality-gate fix (cycle 2, 2026-10-08): a hard kill (crash, taskkill) writes no `session_exit`
+  // at all, so only the 'user' case's own `outstandingToolCalls.clear()` can tell that life's
+  // orphaned call apart from a later, healthy one -- without it, `call-1` stayed unmatched
+  // forever, even after `call-2` completed cleanly in a resumed life.
+  it('judges a hard-killed life (no exit record) on its own once a later user message starts a new one', async () => {
+    const file = await writeScratch(
+      assistantToolCall('call-1', 'bash') + userMessage() + assistantToolCall('call-2', 'bash') + toolResult('call-2')
+    );
+    const result = await detectUnexpectedTermination(file);
+    expect(result).toEqual(CLEAN);
+  });
+
+  it('caches by (file, size, mtimeMs): a later append is detected, not served stale', async () => {
+    const file = await writeScratch(assistantToolCall('call-1', 'bash') + toolResult('call-1'));
+    const first = await detectUnexpectedTermination(file);
+    expect(first).toEqual(CLEAN);
+    await fs.appendFile(file, assistantToolCall('call-2', 'bash'), 'utf8');
+    const second = await detectUnexpectedTermination(file);
+    expect(second.terminatedUnexpectedly).toBe(true);
+    expect(second.pendingToolNames).toEqual(['bash']);
+  });
+
+  it('caches by (file, size, mtimeMs): a deleted file reports clean and evicts the entry', async () => {
+    const file = await writeScratch(assistantToolCall('call-1', 'bash'));
+    const first = await detectUnexpectedTermination(file);
+    expect(first.terminatedUnexpectedly).toBe(true);
+    await fs.unlink(file);
+    const second = await detectUnexpectedTermination(file);
+    expect(second).toEqual(CLEAN);
+  });
 });

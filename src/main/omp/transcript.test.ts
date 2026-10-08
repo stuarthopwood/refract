@@ -33,4 +33,23 @@ describe('fromHistory terminatedUnexpectedly gating', () => {
     const toolItem = items.find((item) => item.kind === 'tool');
     expect(toolItem?.status).toBe('done');
   });
+
+  // Quality-gate fix (cycle 2, 2026-10-08): a hard-killed life's own orphaned call must settle
+  // even when the OVERALL verdict is `false` (that life was superseded and resumed cleanly,
+  // matching `terminationDetection.ts`'s own 'user' case fix) -- the per-row "later user item"
+  // rule catches it independently of the overall flag.
+  it('settles an EARLIER orphaned call to "interrupted" when a later user message starts a new life, even though terminatedUnexpectedly is false overall', () => {
+    const messages: OmpMessage[] = [
+      { role: 'user', content: [{ type: 'text', text: 'first' }] },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'call-1', name: 'bash', arguments: {} }] },
+      { role: 'user', content: [{ type: 'text', text: 'second' }] },
+      { role: 'assistant', content: [{ type: 'toolCall', id: 'call-2', name: 'bash', arguments: {} }] },
+      { role: 'toolResult', toolCallId: 'call-2', toolName: 'bash', content: [{ type: 'text', text: 'ok' }] },
+    ];
+    const items = fromHistory(messages, new Set(), false);
+    const toolItems = items.filter((item) => item.kind === 'tool');
+    expect(toolItems).toHaveLength(2);
+    expect(toolItems[0]?.status).toBe('interrupted');
+    expect(toolItems[1]?.status).toBe('done');
+  });
 });

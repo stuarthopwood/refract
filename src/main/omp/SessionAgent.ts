@@ -225,6 +225,7 @@ export class SessionAgent extends EventEmitter {
       turnStartedAt: null,
       readout: EMPTY_READOUT,
       subagents: [],
+      stoppedOnRequest: false,
     };
   }
 
@@ -301,6 +302,10 @@ export class SessionAgent extends EventEmitter {
    * `OmpProcess`, start it, reattach via `attachAndVerify`, reload history, and bring the runtime
    * to `idle`. `failurePrefix` distinguishes a fresh start's notice text from a restart's. */
   private async launch(session: Session, failurePrefix: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
+    // Quality-gate fix (cycle 2, 2026-10-08): a fresh launch attempt (success or failure) always
+    // ends the "the user just stopped this on purpose" window -- see `SessionRuntime.
+    // stoppedOnRequest`'s own doc comment.
+    this.runtime = { ...this.runtime, stoppedOnRequest: false };
     const approvalMode = this.settings.get().approvalMode;
     const proc = new OmpProcess({
       cwd: session.worktreePath,
@@ -934,10 +939,19 @@ export class SessionAgent extends EventEmitter {
     }
     if (info.requested) {
       // A requested stop is never "unexpected" by definition, regardless of what the
-      // Conversation's own tail happens to show (quality gate 2026-10-08).
+      // Conversation's own tail happens to show (quality gate 2026-10-08). Quality-gate fix
+      // (cycle 2): stored on `this.runtime` too (not just sent on this one live event), so
+      // every later reader that would otherwise re-derive this from the tail (`summaries()`,
+      // `buildSnapshot`) sees it as well -- see `SessionRuntime.stoppedOnRequest`'s own doc
+      // comment.
+      this.runtime = { ...this.runtime, stoppedOnRequest: true };
       this.setStatus('stopped', { stopReason: 'not-started', terminatedUnexpectedly: false });
       return;
     }
+    // Quality-gate fix (cycle 2): explicit, not just "already false by default" -- a crash is
+    // definitionally NOT a requested stop, so this life's own flag must never read stale `true`
+    // from however this Session got here.
+    this.runtime = { ...this.runtime, stoppedOnRequest: false };
     const currentConversation = this.registry.getSession(this.sessionId)?.currentConversation ?? null;
     const terminatedUnexpectedly = (await detectUnexpectedTermination(currentConversation)).terminatedUnexpectedly;
     this.setStatus('stopped', {

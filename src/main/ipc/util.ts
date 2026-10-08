@@ -37,14 +37,20 @@ export async function buildSnapshot(agent: SessionAgent, session: Session): Prom
   // still carries it as a seed -- dropping it here left the Subagent panel's list wiped back to
   // empty on every snapshot re-application (a Settings round-trip, a session switch away and
   // back), even while the chip's own `readout.subagentCount` correctly kept showing the count.
-  const { turnStartedAt: _turnStartedAt, readout, subagents, ...runtimeFields } = agent.runtimeSnapshot;
+  const { turnStartedAt: _turnStartedAt, stoppedOnRequest, readout, subagents, ...runtimeFields } = agent.runtimeSnapshot;
   const runtime: SessionRuntimeView = runtimeFields;
   // Issue #510 slice 2 (PLAN.md row A0): only a stopped Session can be "terminated unexpectedly"
   // -- a live one's own status already says otherwise, so no tail read is spent on it.
   if (runtime.status === 'stopped') {
-    const detection = await detectUnexpectedTermination(session.currentConversation);
-    runtime.terminatedUnexpectedly = detection.terminatedUnexpectedly;
-    if (detection.pendingToolNames.length > 0) runtime.pendingToolNames = detection.pendingToolNames;
+    // Quality-gate fix (cycle 2, 2026-10-08): a requested stop is never read from the tail at
+    // all -- see `SessionRuntime.stoppedOnRequest`'s own doc comment.
+    if (stoppedOnRequest) {
+      runtime.terminatedUnexpectedly = false;
+    } else {
+      const detection = await detectUnexpectedTermination(session.currentConversation);
+      runtime.terminatedUnexpectedly = detection.terminatedUnexpectedly;
+      if (detection.pendingToolNames.length > 0) runtime.pendingToolNames = detection.pendingToolNames;
+    }
   }
   const conversations = await listConversations(session.sessionDir, session.currentConversation);
   return { runtime, conversations, readout, subagents };

@@ -213,7 +213,16 @@ async function computeDetection(file: string): Promise<TerminationDetectionResul
         outstandingToolCalls.delete(parsed.toolCallId);
         break;
       case 'user':
+        // Quality-gate fix (cycle 2, 2026-10-08): a new user prompt cannot follow an unanswered
+        // tool call within one healthy process life -- if OMP accepted it, that life's own
+        // in-flight call must have already resolved (or been abandoned by a hard kill with no
+        // exit record, whose orphaned row `settleInterruptedToolRows` below now settles on its
+        // own, independent of this overall verdict). Without this, a hard-killed life (no
+        // `session_exit` to separate it) with an unmatched call, later resumed and completed
+        // cleanly, still read as `unmatched-tool` forever -- until that old call finally scrolled
+        // out of the 256 KiB window.
         exitRecord = undefined;
+        outstandingToolCalls.clear();
         break;
       case 'other':
         break;
