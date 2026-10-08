@@ -191,6 +191,10 @@ export function ModelRolesSection() {
     setRetryingLoad(false)
     const state = useModelRolesStore.getState()
     if (state.loadError) {
+      // Clears the "Retrying model roles" polite announcement first (gate cycle 6, a11y optional):
+      // without this, a screen reader that has not yet read it out could announce the stale
+      // in-progress status AFTER the definitive assertive failure message finishes.
+      announcePolite('')
       announceAssertive('Could not read model roles')
       retryLoadRef.current?.focus()
     } else {
@@ -217,6 +221,9 @@ export function ModelRolesSection() {
     })
     const state = useModelRolesStore.getState()
     if (state.catalogErrors[kind]) {
+      // Clears the "Retrying ... models" polite announcement first (gate cycle 6, a11y optional):
+      // see the matching comment in `handleRetryLoad` above.
+      announcePolite('')
       announceAssertive(`Could not load ${kindLabel} models: ${state.catalogErrors[kind]}`)
     } else {
       // Quality-gate remediation (accessibility-auditor LOW): names the kind, matching the
@@ -234,7 +241,7 @@ export function ModelRolesSection() {
   }
 
   /** Renders the loading/error status for ONE catalog kind, ONCE -- callers must only call this
-   * for the first role of each kind within a group (see `renderGroup`'s own `seenKinds`import
+   * for the first role of each kind within a group (see `renderGroup`'s own `seenKinds`
    * tracking). */
   function renderCatalogStatus(kind: CatalogKind) {
     const catalog = catalogs[kind]

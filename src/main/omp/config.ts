@@ -36,13 +36,18 @@
 // used to each see no cached directory yet and each start their OWN `mkdtemp`, leaving every
 // extra one an orphaned, never-cleaned-up empty directory; now every concurrent caller joins the
 // SAME in-flight `mkdtemp` call). `cleanupModelRolesScratchDir` (called from `index.ts`'s own
-// `before-quit`, the same lifecycle hook `SessionManager.stopAll()` uses, and a no-op after its
-// first call whether or not that call actually removed anything -- an `omp` process still running
-// at quit, or a Windows shutdown/logoff that never fires `before-quit` at all, can both leave the
-// directory behind) awaits any creation still in flight, then removes the resolved path -- the
-// EXACT literal path `mkdtemp` returned, never a reconstructed or wildcard path -- best-effort and
-// never blocking quit. Leaving it on disk if cleanup is skipped costs nothing beyond a few bytes
-// of unpredictably-named temp-folder litter: `os.tmpdir()`'s own cleanup eventually reclaims it.
+// `before-quit`, the same lifecycle hook `SessionManager.stopAll()` uses, on EVERY pass -- each
+// call removes whatever directory is cached AT THAT MOMENT and does nothing if none is cached
+// (quality-gate remediation, gate cycle 6 LOW, code-reviewer/security-auditor: previously
+// described as "a no-op after its first call", which did not account for a model-roles IPC call
+// still reaching `ensureScratchDir` between two `before-quit` passes and creating a fresh
+// directory -- that one is simply caught by cleanup's own re-entrant second pass instead) awaits
+// any creation still in flight, then removes the resolved path -- the EXACT literal path
+// `mkdtemp` returned, never a reconstructed or wildcard path -- best-effort and never blocking
+// quit. An `omp` process still running at quit, or a Windows shutdown/logoff that never fires
+// `before-quit` at all, can both still leave a directory behind regardless. Leaving one on disk
+// costs nothing beyond a few bytes of unpredictably-named temp-folder litter: `os.tmpdir()`'s own
+// cleanup eventually reclaims it.
 //
 // `setModelRole`'s read-merge-write is serialised through a module-level promise chain
 // (`enqueueWrite`) so two near-simultaneous role edits from THIS process never race each other
@@ -101,16 +106,29 @@ let scratchDirPromise: Promise<string> | null = null;
  * for every later call, recreating it transparently if it has gone missing (quality-gate
  * remediation, gate cycle 4 MEDIUM+LOW -- see module header for why `mkdtemp` replaced the fixed
  * directory + emptiness-check design). A genuinely failing `mkdtemp` (disk full, no permission to
- * write under the OS temp root) maps to a clear, actionable `OmpConfigError`. */
+ * write under the OS temp root) maps to a clear, actionable `OmpConfigError`. A call that arrives
+ * after `cleanupModelRolesScratchDir` has already run (e.g. a model-roles IPC call still in
+ * flight during the app's `before-quit` -> `stopAll` window) simply creates a fresh directory,
+ * which nothing removes until a LATER `cleanupModelRolesScratchDir` pass runs (quality-gate
+ * remediation, gate cycle 6 LOW, code-reviewer/security-auditor: documented here rather than
+ * guarded, since Refract is already shutting down and the OS-randomised name costs nothing left
+ * behind either way -- see module header). */
 async function ensureScratchDir(): Promise<string> {
-  if (cachedScratchDir) {
+  // Snapshotted up front (quality-gate remediation, gate cycle 6 LOW, code-reviewer/
+  // security-auditor): a second caller overlapping this one's own `access` rejection could have
+  // ALREADY recreated the directory by the time this `catch` runs. Comparing against the snapshot
+  // -- not re-reading `cachedScratchDir` -- means this call only ever clears a slot it knows is
+  // still the one it checked, never a newer, already-good directory a concurrent caller just made.
+  const checked = cachedScratchDir;
+  if (checked) {
     try {
-      await fsp.access(cachedScratchDir);
-      return cachedScratchDir;
+      await fsp.access(checked);
+      return checked;
     } catch {
-      cachedScratchDir = null; // removed from under us (e.g. Windows temp cleanup); recreate below.
+      if (cachedScratchDir === checked) cachedScratchDir = null; // still ours; recreate below.
     }
   }
+  if (cachedScratchDir) return cachedScratchDir; // a concurrent caller already recreated it.
   if (scratchDirPromise) return scratchDirPromise;
   const creating = (async () => {
     let dir: string;
@@ -133,8 +151,9 @@ async function ensureScratchDir(): Promise<string> {
   }
 }
 
-/** Best-effort removal of the scratch directory, called once from `index.ts`'s own `before-quit`
- * handler (never blocking quit -- a failure here is not worth delaying the app over). Awaits any
+/** Best-effort removal of the scratch directory, called from `index.ts`'s own `before-quit`
+ * handler on EVERY pass (never blocking quit -- a failure here is not worth delaying the app
+ * over; `before-quit` fires again re-entrantly, per that handler's own comment). Awaits any
  * creation still in flight first (quality-gate remediation, gate cycle 5 MEDIUM), so a quit that
  * lands mid-creation still cleans up the directory that call is about to finish making, rather
  * than orphaning it. Always the EXACT literal path `mkdtemp` returned and cached, never a
@@ -142,10 +161,12 @@ async function ensureScratchDir(): Promise<string> {
  * guessed or computed value). Uses the plain, non-recursive removal -- nothing in this module or
  * `omp` itself ever writes ordinary files into this directory (module header), so it is always
  * empty at this point in normal operation; the plain call throws (caught and ignored below) rather
- * than silently removing anything unexpected if that assumption is ever wrong. A no-op if nothing
- * was ever created this session, and a no-op after its first call whether or not that call
- * actually removed anything (quality-gate remediation, gate cycle 5 LOW, code-reviewer/
- * security-auditor: the slot is cleared before the removal attempt either way). */
+ * than silently removing anything unexpected if that assumption is ever wrong. Each call removes
+ * whatever `mkdtemp` folder is cached AT THAT MOMENT, and does nothing if none is cached -- NOT a
+ * one-shot "no-op after the first call" (quality-gate remediation, gate cycle 6 LOW, code-
+ * reviewer/security-auditor: that was this docblock's own previous, inaccurate wording; a model-
+ * roles IPC call that reaches `ensureScratchDir` between two `before-quit` passes creates a fresh
+ * directory, which THIS function's own re-entrant second call then correctly removes). */
 export async function cleanupModelRolesScratchDir(): Promise<void> {
   if (scratchDirPromise) {
     try {

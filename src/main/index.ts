@@ -331,9 +331,13 @@ if (!gotLock) {
   let quitInFlight = false
   app.on('before-quit', (event) => {
     // Best-effort, never blocking quit (issue #455 gate cycle 4 MEDIUM): removes the model-roles
-    // scratch directory this session created, if any. Fires on every `before-quit` pass,
-    // including the re-entrant one `app.quit()` below triggers, but `cleanupModelRolesScratchDir`
-    // is itself a no-op after its first successful call.
+    // scratch directory this session created, if any. Fires on EVERY `before-quit` pass,
+    // including the re-entrant one `app.quit()` below triggers -- each call removes whatever
+    // directory `cleanupModelRolesScratchDir` finds cached at that moment and does nothing if
+    // none is cached (quality-gate remediation, gate cycle 6 LOW, security-auditor: previously
+    // worded as "a no-op after its first successful call", which did not cover a model-roles IPC
+    // call reaching `ensureScratchDir` between two passes and creating a fresh directory -- the
+    // re-entrant second pass here is exactly what catches that one).
     void cleanupModelRolesScratchDir()
     if (quitInFlight || !manager) return
     quitInFlight = true

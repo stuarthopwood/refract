@@ -269,15 +269,49 @@ describe('ensureScratchDir (gate cycle 4 redesign: fsp.mkdtemp, no emptiness che
     // has resolved its own `mkdtemp`. Before this fix, every one of them saw `cachedScratchDir`
     // and `scratchDirPromise` both still `null` and started its OWN `mkdtemp`, leaking up to 7
     // orphaned empty directories per Settings-screen open.
+    //
+    // Gate cycle 6 LOW (test-reviewer): `mkdtemp` returning the SAME fixed string on every call
+    // (the `beforeEach` default) meant `nth(0).options.cwd === nth(1).options.cwd` would also
+    // pass if the mutant called `mkdtemp` TWICE -- only `toHaveBeenCalledTimes(1)` actually
+    // guarded that. Two distinct fake paths make the cwd equality itself a real assertion: if
+    // `mkdtemp` were (wrongly) called twice, the second call would get the SECOND fake path, and
+    // the two cwds would differ.
+    vi.mocked(fsp.mkdtemp)
+      .mockReset()
+      .mockResolvedValueOnce('C:\\fake\\concurrent-one')
+      .mockResolvedValueOnce('C:\\fake\\concurrent-two');
+
     const first = listCatalogModels('chat');
     const second = listCatalogModels('image');
     await waitFor(() => calls.length === 2);
     expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(1);
-    expect(nth(0).options.cwd).toBe(nth(1).options.cwd);
+    expect(nth(0).options.cwd).toBe('C:\\fake\\concurrent-one');
+    expect(nth(1).options.cwd).toBe('C:\\fake\\concurrent-one');
     nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
     nth(1).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
     await first;
     await second;
+  });
+
+  it('a failed mkdtemp clears scratchDirPromise, so the very next call retries and can succeed', async () => {
+    // Gate cycle 6 MEDIUM (test-reviewer, Main item 1(b)): the `finally` block that clears
+    // `scratchDirPromise` runs on BOTH the success and failure path of `creating` -- nothing in
+    // the existing failure test proved the slot is actually free again afterward, rather than
+    // permanently stuck rejected.
+    vi.mocked(fsp.mkdtemp)
+      .mockReset()
+      .mockRejectedValueOnce(new Error('ENOSPC: no space left on device'))
+      .mockResolvedValueOnce('C:\\fake\\retry-succeeds');
+
+    await expect(listCatalogModels('chat')).rejects.toMatchObject({ code: 'omp-failed' });
+    expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(1);
+
+    const promise = listCatalogModels('chat');
+    await waitFor(() => calls.length === 1);
+    expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(2);
+    expect(nth(0).options.cwd).toBe('C:\\fake\\retry-succeeds');
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await promise;
   });
 });
 
@@ -321,6 +355,68 @@ describe('cleanupModelRolesScratchDir', () => {
 
     vi.mocked(fsp.rmdir).mockRejectedValueOnce(new Error('ENOTEMPTY'));
     await expect(cleanupModelRolesScratchDir()).resolves.toBeUndefined();
+  });
+
+  it('awaits an in-flight creation before removing it, rather than finding nothing cached yet and giving up', async () => {
+    // Gate cycle 6 MEDIUM (code-reviewer/test-reviewer, Main item 1(a)): the two headline
+    // behaviours of the gate-cycle-5 memoisation -- cleanup waiting for a creation already in
+    // flight, then removing what it made -- had no test. Manually confirmed RED: deleting the
+    // `if (scratchDirPromise) { try { await scratchDirPromise; } ... }` block in
+    // `cleanupModelRolesScratchDir` makes this test fail (`cachedScratchDir` is still `null` when
+    // cleanup's own early-return check runs, so `rmdir` is never called); reverting makes it pass
+    // again. See the PR body for the exact before/after output.
+    let resolveDir!: (value: string) => void;
+    vi.mocked(fsp.mkdtemp)
+      .mockReset()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveDir = resolve;
+        })
+      );
+
+    const promise = listCatalogModels('chat');
+    await waitFor(() => vi.mocked(fsp.mkdtemp).mock.calls.length === 1);
+
+    const cleaning = cleanupModelRolesScratchDir();
+    // `mkdtemp` has not resolved yet -- `rmdir` must not have been called, even after a real
+    // macrotask turn (not just a microtask) to give a wrongly-impatient cleanup every chance to.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(vi.mocked(fsp.rmdir)).not.toHaveBeenCalled();
+
+    resolveDir('C:\\fake\\in-flight');
+    await cleaning;
+    expect(vi.mocked(fsp.rmdir)).toHaveBeenCalledWith('C:\\fake\\in-flight');
+
+    // Let the still-pending `execFile` call for the underlying `listCatalogModels` settle too,
+    // so nothing leaks into a later test.
+    await waitFor(() => calls.length === 1);
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await promise;
+  });
+
+  it('a creation that fails while cleanup is waiting on it resolves cleanly, without ever calling rmdir', async () => {
+    // Sibling case to the test above (Main item 1(a)): the `catch { return; }` branch in
+    // `cleanupModelRolesScratchDir`'s own in-flight await.
+    let rejectDir!: (err: Error) => void;
+    vi.mocked(fsp.mkdtemp)
+      .mockReset()
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectDir = reject;
+        })
+      );
+
+    // The underlying call will reject too (the same `mkdtemp` failure, wrapped as `OmpConfigError`
+    // by `ensureScratchDir`) -- caught here so it never becomes an unhandled rejection.
+    const promise = listCatalogModels('chat').catch(() => undefined);
+    await waitFor(() => vi.mocked(fsp.mkdtemp).mock.calls.length === 1);
+
+    const cleaning = cleanupModelRolesScratchDir();
+    rejectDir(new Error('ENOSPC: no space left on device'));
+    await expect(cleaning).resolves.toBeUndefined();
+    expect(vi.mocked(fsp.rmdir)).not.toHaveBeenCalled();
+
+    await promise;
   });
 });
 
