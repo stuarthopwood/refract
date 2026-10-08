@@ -441,7 +441,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       let snapshot
       try {
         setStarting(true)
-        snapshot = await useSessionsStore.getState().open(sessionId)
+        // userAction true: bypass canAutoStart like recover/restore -- a typed send is the
+        // one genuine explicit user request through this path (quality-gate fix, issue #509).
+        snapshot = await useSessionsStore.getState().open(sessionId, true)
       } finally {
         setStarting(false)
       }

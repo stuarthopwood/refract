@@ -12,7 +12,11 @@ interface SessionsState {
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
   refresh(): Promise<void>
-  open(id: string): Promise<SessionSnapshot | null>
+  /** `userAction` true bypasses `canAutoStart` exactly like `recover`/`restore` already do --
+   * for the one case that is a genuine explicit user request through this path: MessageInput's
+   * typed-send to a not-yet-started Session (quality-gate fix, issue #509). Omitted (the pane's
+   * own mount-time open) keeps the existing allow-list check. */
+  open(id: string, userAction?: boolean): Promise<SessionSnapshot | null>
   create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
   /** Post-build review fix (Phase7PostBuild/code-reviewer, Medium): resolves `result.ok` so a
@@ -86,13 +90,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       notify(result.error)
     }
   },
-  open: (id) => {
+  open: (id, userAction) => {
     const existing = openPromises.get(id)
     if (existing) return existing
     set({ openingIds: new Set(get().openingIds).add(id) })
     const promise = (async () => {
       try {
-        const result = await window.refract.sessions.open(id)
+        const result = await window.refract.sessions.open(id, userAction)
         if (!result.ok) {
           notify(result.error)
           return null

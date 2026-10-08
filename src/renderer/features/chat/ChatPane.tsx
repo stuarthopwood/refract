@@ -4,7 +4,7 @@
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
-import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
@@ -23,8 +23,8 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
-import { DEFAULT_RESUME_INSTRUCTION } from '../../../shared/model'
 import { canResumeSession, resumeSession } from './resume'
+import { applySnapshot } from './applySnapshot'
 import { BrandWatermark } from './BrandWatermark'
 import { ChatHeader } from './ChatHeader'
 import { MessageInput } from './MessageInput'
@@ -37,33 +37,6 @@ interface StopInfo {
   detail?: string
   terminatedUnexpectedly?: boolean
   pendingToolNames?: string[]
-}
-
-
-/** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
- * contracts/ipc.md) out to the transcript, queue, and pending-request stores for that Session.
- * Shared by ChatPane, ConversationSwitcher, and MessageInput's "not-started" open-then-send path. */
-export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): void {
-  useTranscriptStore.getState().reset(sessionId, snapshot.runtime.transcript)
-  useQueueStore.getState().apply(sessionId, snapshot.runtime.queue.followUp, snapshot.runtime.queue.steering)
-  usePendingRequestsStore.getState().setForSession(sessionId, snapshot.runtime.pending)
-  // Spec 004: the chip row's initial bundle, including the current turn's subagents as of this
-  // snapshot (T024 live-finding fix: seeding `[]` here unconditionally wiped the Subagent panel's
-  // list back to empty on every re-application of a snapshot -- a Settings round-trip or a
-  // session switch away and back both remount ChatPane and so re-run this -- even though the
-  // finished turn's subagents were still live in `SessionAgent.runtime.subagents` and its own
-  // `readout.subagentCount` kept showing the real count the whole time); live updates still fold
-  // on top via `subagents:update`.
-  useReadoutStore.getState().reset(sessionId, snapshot.readout, snapshot.subagents)
-  // Spec 004 FR-020: a Session switch leaves no stale subagent panel open for a different
-  // Session's turn. Medium remediation (code-reviewer): only actually reset when this snapshot
-  // is for a DIFFERENT Session than the panel was last open for -- a Settings round-trip (or any
-  // other remount that re-applies a snapshot for the Session already visible, e.g. ChatPane
-  // remounting on return from Settings) must never drop a panel the user deliberately opened for
-  // a turn still in progress just because `sessions.open` ran again for the same Session.
-  if (useSubagentPanelStore.getState().sessionId !== sessionId) {
-    useSubagentPanelStore.getState().reset()
-  }
 }
 
 /** `SessionSummary` (the sessions-store list row) carries `status` but not `stopReason`/
@@ -590,28 +563,34 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
               </AlertDescription>
             )}
             {canResumeSession(session.status, effectiveStopReason, effectiveTerminatedUnexpectedly) && (
-              <AlertAction>
-                <div className="flex gap-2">
+              // Quality-gate fix (2026-10-08): normal flow (`col-start-2 mt-2`, matching the
+              // start-failed/worktree-missing banners below), not `AlertAction` -- `AlertAction`
+              // is `absolute top-2 right-2` (alert.tsx), which covered the terminated-unexpectedly
+              // description text instead of flowing after it. Recover (when shown) comes FIRST in
+              // DOM order: `focusPaneContent`'s generic banner-button query (lib/focus.ts) always
+              // focuses the first enabled `[data-pane-banner]` button, and Recover is the safe,
+              // non-money-spending one -- Resume sends a real turn and must never be where focus
+              // lands by accident.
+              <div className="col-start-2 mt-2 flex gap-2">
+                {effectiveStopReason === 'agent-exited' && (
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={recovering || startingNew || resuming}
-                    onClick={() => void handleResume()}
+                    onClick={() => void handleRecover()}
                   >
-                    {resuming ? 'Resuming…' : 'Resume'}
+                    {recovering ? 'Retrying…' : 'Recover'}
                   </Button>
-                  {effectiveStopReason === 'agent-exited' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={recovering || startingNew || resuming}
-                      onClick={() => void handleRecover()}
-                    >
-                      {recovering ? 'Retrying…' : 'Recover'}
-                    </Button>
-                  )}
-                </div>
-              </AlertAction>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={recovering || startingNew || resuming}
+                  onClick={() => void handleResume()}
+                >
+                  {resuming ? 'Resuming…' : 'Resume'}
+                </Button>
+              </div>
             )}
             {effectiveStopReason === 'start-failed' && (
               <div className="col-start-2 mt-2 flex gap-2">

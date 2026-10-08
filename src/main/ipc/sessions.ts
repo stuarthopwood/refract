@@ -19,6 +19,10 @@ import { listConversations } from '../conversations';
 import { detectUnexpectedTermination } from '../omp/terminationDetection';
 import type { SessionManager } from '../SessionManager';
 import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util';
+import { canAutoStart } from './canAutoStart';
+import { checkResumeEligible } from './resumeEligibility';
+import type { ResumeRefusalCode } from './resumeEligibility';
+import { DEFAULT_RESUME_INSTRUCTION } from '../../shared/model';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
  * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
@@ -127,29 +131,14 @@ export function registerSessions(manager: SessionManager): void {
     }
   });
 
-  /** `sessions.open` auto-starts a stopped Session only when nothing is wrong with the agent
-   * itself: never started this run, or stopped on request (`SessionAgent.onExit`'s requested
-   * branch uses `stopReason: 'not-started'` for both). `worktree-missing` also still auto-starts
-   * here (unchanged; T043 owns that state's dedicated Recreate/Archive/Delete actions, not this
-   * gate). `agent-exited` and `start-failed` must NOT auto-start (FR-034): the crashed/failed
-   * agent stays visibly stopped, with its `stopReason`/`stopDetail` (including the stderr tail),
-   * until the user explicitly asks `sessions.recover`. Issue #509 (PLAN.md row A2g) requirement 6
-   * ("normal resume stays as it is ... no automatic prompt") also excludes a `not-started`
-   * Session whose Conversation tail shows it died mid-turn (issue #510's `terminatedUnexpectedly`):
-   * without this, opening it would silently auto-start and lose the chance to Resume with the
-   * default instruction before the banner (and its Resume button) ever had a moment to show. */
-  function canAutoStart(stopReason: SessionRuntimeView['stopReason'], terminatedUnexpectedly: boolean): boolean {
-    if (stopReason === 'agent-exited' || stopReason === 'start-failed') return false;
-    if ((stopReason === undefined || stopReason === 'not-started') && terminatedUnexpectedly) return false;
-    return true;
-  }
-
   /** Shared by `sessions.open` and `sessions.recover`: both return the resulting snapshot, never
    * an error Result for a start failure -- `start()` already moves the runtime to `stopped` with
    * the specific reason (worktree-missing, start-failed with the stderr tail, ...), and that view
    * IS the documented contract ("or returns the stopped reason"). `forceStart` makes `recover`
-   * restart regardless of reason (including `agent-exited`); `open` only starts when
-   * `canAutoStart` says the Session was never wrong to begin with. */
+   * (and an explicit user send, see `SESSIONS_OPEN` below) restart regardless of reason (including
+   * `agent-exited`); a passive `open` only starts when `canAutoStart` says the Session was never
+   * wrong to begin with. The tail detection is computed at most once here and threaded into
+   * `buildSnapshot` (quality-gate fix: avoids a second 256 KiB read of the same file). */
   async function attachSnapshot(id: string, forceStart: boolean): Promise<Result<SessionSnapshot>> {
     const session = manager.registry.getSession(id);
     if (!session) return notFound(`Session not found: ${id}`);
@@ -162,9 +151,10 @@ export function registerSessions(manager: SessionManager): void {
     // start) while the renderer's own visible-Session state did not flip until this whole IPC
     // round-trip returned: main and the renderer disagreed about which Session was visible for
     // the entire cold start (bug report point 5).
+    let detection: Awaited<ReturnType<typeof detectUnexpectedTermination>> | undefined;
     if (agent.runtimeSnapshot.status === 'stopped') {
-      const terminatedUnexpectedly = (await detectUnexpectedTermination(session.currentConversation)).terminatedUnexpectedly;
-      if (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason, terminatedUnexpectedly)) {
+      detection = await detectUnexpectedTermination(session.currentConversation);
+      if (forceStart || canAutoStart(agent.runtimeSnapshot.stopReason, detection.terminatedUnexpectedly)) {
         await agent.start().catch(() => undefined);
         // T062: `agent.start()` runs `syncFromState` against the registry before resolving
         // (`lastModel`/`lastThinkingLevel`, `sessionDir`, ...), so the row the renderer already
@@ -174,12 +164,17 @@ export function registerSessions(manager: SessionManager): void {
       }
     }
     const refreshed = manager.registry.getSession(id) ?? session;
-    return { ok: true, value: await buildSnapshot(agent, refreshed) };
+    return { ok: true, value: await buildSnapshot(agent, refreshed, detection) };
   }
 
-  ipcMain.handle(IPC_REQUESTS.SESSIONS_OPEN, async (_event, id: unknown) => {
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_OPEN, async (_event, id: unknown, userAction: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_OPEN} expects a string id`);
-    return attachSnapshot(id, false);
+    // Quality-gate fix (#509): an explicit user action (typing a message and sending it to a
+    // not-yet-opened pane, MessageInput's own `notStarted` path) must still start the agent even
+    // for a Session `canAutoStart` would otherwise leave stopped -- that passive gate exists to
+    // stop a SILENT background auto-start, never to block the user's own direct request. Treated
+    // exactly like `recover`'s `forceStart`.
+    return attachSnapshot(id, userAction === true);
   });
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_ARCHIVE, async (_event, id: unknown) => {
@@ -278,6 +273,57 @@ export function registerSessions(manager: SessionManager): void {
   ipcMain.handle(IPC_REQUESTS.SESSIONS_RECOVER, async (_event, id: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_RECOVER} expects a string id`);
     return attachSnapshot(id, true);
+  });
+
+  // Issue #509 (PLAN.md row A2g) quality-gate fix: one in-main resume path, never two renderer
+  // call sites (the row button and the stop banner) each doing their own recover-then-send --
+  // `resumingIds` is a per-session server-side lock so a double click (one from each UI entry
+  // point, or two in a row before the busy state renders) can only ever send the instruction
+  // once. Re-checks `canResumeSession` here too, against a fresh tail read, rather than trusting
+  // whatever `SessionSummary` the renderer's click happened to be holding -- a second pane could
+  // have already recovered this exact Session in the meantime.
+  const resumingIds = new Set<string>();
+  const RESUME_REFUSAL_MESSAGE: Record<ResumeRefusalCode, string> = {
+    'already-resuming': 'A resume for this Session is already in progress.',
+    'not-stopped': 'Session is not stopped.',
+    'not-eligible': 'Session is not eligible to resume.',
+  };
+  ipcMain.handle(IPC_REQUESTS.SESSIONS_RESUME, async (_event, id: unknown) => {
+    if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_RESUME} expects a string id`);
+    const session = manager.registry.getSession(id);
+    if (!session) return notFound(`Session not found: ${id}`);
+    const agent = manager.getOrCreateAgent(id);
+    const detection = await detectUnexpectedTermination(session.currentConversation);
+    const refusal = checkResumeEligible(
+      resumingIds,
+      id,
+      agent.runtimeSnapshot.status,
+      agent.runtimeSnapshot.stopReason,
+      detection.terminatedUnexpectedly,
+    );
+    if (refusal) {
+      return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE[refusal] } };
+    }
+    resumingIds.add(id);
+    try {
+      await agent.start().catch(() => undefined);
+      manager.notifyListChanged();
+      const refreshed = manager.registry.getSession(id) ?? session;
+      const snapshot = await buildSnapshot(agent, refreshed);
+      if (snapshot.runtime.status === 'stopped') {
+        // The restart itself failed (e.g. start-failed): never send the instruction into a
+        // Session that did not actually come back.
+        return { ok: true, value: snapshot };
+      }
+      try {
+        await agent.send(DEFAULT_RESUME_INSTRUCTION, []);
+      } catch (err) {
+        return { ok: false, error: { code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) } };
+      }
+      return { ok: true, value: snapshot };
+    } finally {
+      resumingIds.delete(id);
+    }
   });
 
   ipcMain.handle(IPC_REQUESTS.SESSIONS_STOP_AGENT, async (_event, sessionId: unknown) => {

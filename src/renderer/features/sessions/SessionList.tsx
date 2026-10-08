@@ -67,6 +67,12 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [resuming, setResuming] = useState(false)
+  const resumingRef = useRef(false)
+  const resumeButtonRef = useRef<HTMLButtonElement>(null)
+  // Issue #509 quality-gate fix: a successful resume flips `canResume` false on this row's
+  // next render (its own button then disappears) -- without this, focus that was on the
+  // button at click time would silently fall back to <body> (WCAG 2.1 AA focus-visibility).
+  const resumeFocusPendingRef = useRef(false)
   const { copyPath, reveal } = useWorktreeActions(session)
   const worktreeMissing = session.stopReason === 'worktree-missing'
   const rowRef = useRef<HTMLLIElement>(null)
@@ -118,12 +124,26 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
 
   // Issue #509 (PLAN.md row A2g): icon-only, row-level Resume -- recovers the agent and sends the
   // default resume instruction as a real turn (`resumeSession`, shared with ChatPane's own Resume
-  // button in the stop banner). Idempotent: disabled for the duration of the call so a double
-  // click (or a click from both the row and an open ChatPane's banner at once) cannot send the
-  // instruction twice.
+  // button in the stop banner; `sessions.resume` itself holds the server-side single-flight
+  // lock, so this ref only ever blocks this one button's own double click). aria-disabled, not
+  // `disabled`, so keyboard focus stays on the button through the call (matches the
+  // Quick-create button above).
+  const canResume = canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly)
+
+  useEffect(() => {
+    if (canResume || !resumeFocusPendingRef.current) return
+    resumeFocusPendingRef.current = false
+    if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+    else focusListContainer()
+  }, [canResume])
+
   async function handleResume(): Promise<void> {
+    if (resumingRef.current) return
+    resumingRef.current = true
+    if (document.activeElement === resumeButtonRef.current) resumeFocusPendingRef.current = true
     setResuming(true)
     const result = await resumeSession(session.id)
+    resumingRef.current = false
     setResuming(false)
     if (!result.ok) notify(result.error)
   }
@@ -315,20 +335,29 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                 </button>
               </SessionDetailsCard>
             )}
-            {canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly) && (
+            {canResume && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
+                    ref={resumeButtonRef}
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Resume ${session.name} after unexpected stop`}
-                    disabled={resuming}
+                    aria-label={`Resume ${session.name}`}
+                    aria-disabled={resuming || undefined}
+                    className="aria-disabled:opacity-50"
                     onClick={() => void handleResume()}
                   >
-                    <RotateCwIcon aria-hidden className={cn('size-3.5', resuming && 'animate-spin')} />
+                    {resuming ? (
+                      <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" />
+                    ) : (
+                      <RotateCwIcon aria-hidden className="size-3.5" />
+                    )}
+                    {resuming && (
+                      <span role="status" className="sr-only">Resuming {session.name}…</span>
+                    )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Resume after unexpected stop. Restarts the agent and sends a resume instruction.</TooltipContent>
+                <TooltipContent>Resume {session.name}</TooltipContent>
               </Tooltip>
             )}
             <DropdownMenu>
