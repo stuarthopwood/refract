@@ -612,15 +612,30 @@ export class OmpProcess extends EventEmitter {
     return lines.slice(-20).join('\n')
   }
 
-  /** Gate-fixes Low finding (cycle 7): a plain `.slice(-maxLength)` can land mid-line, showing
-   * a truncated first-line fragment in the message -- the same mid-line-cut problem
-   * `ompLogTail.ts`'s `readTail` already guards against for its own raw file read. Drops that
-   * leading partial line too, whenever the slice actually shortened the text. */
+  /** Gate-fixes Low finding (cycle 7, fixed properly cycle 8): a plain `.slice(-maxLength)` can
+   * land mid-line, showing a truncated first-line fragment in the message -- the same mid-line-
+   * cut problem `ompLogTail.ts`'s `readTail` already guards against for its own raw file read.
+   * Drops that leading partial line too, whenever the slice actually shortened the text.
+   * Gate-fixes Medium finding (cycle 8): the first cut at this used to return `''` whenever the
+   * sliced window held no newline at all (the newest filtered line alone longer than the cap,
+   * e.g. a one-line JSON error body) -- the whole stderr/omp-log section then vanished instead
+   * of showing anything, which `filterWarnErrorLines`'s own "never silently lose the whole
+   * diagnostic" rule exists to prevent. It also dropped a COMPLETE trailing line when the cut
+   * happened to land exactly on a line boundary (the fallback kept the text's own trailing
+   * `\n`, so the one newline found was the very last character, and slicing past it produced
+   * `''` again even though the whole line before it fit inside the cap). Redaction already runs
+   * before this cap, so returning a raw fragment here is safe. */
   private capTailLines(text: string, maxLength: number): string {
     if (text.length <= maxLength) return text
     const sliced = text.slice(-maxLength)
+    // The cut landed exactly at the start of a line (the character just before it is a
+    // newline): nothing partial was cut off, so the whole slice is already complete lines.
+    if (text[text.length - maxLength - 1] === '\n') return sliced
     const newlineIndex = sliced.indexOf('\n')
-    return newlineIndex === -1 ? '' : sliced.slice(newlineIndex + 1)
+    // No newline in the slice at all, or the only one is the text's own trailing newline (no
+    // complete line fits): keep the raw fragment rather than discarding it to `''`.
+    if (newlineIndex === -1 || newlineIndex === sliced.length - 1) return sliced
+    return sliced.slice(newlineIndex + 1)
   }
 
   private async buildStartFailure(reason: string, ErrorClass: new (message: string) => Error = Error): Promise<Error> {

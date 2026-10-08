@@ -272,10 +272,14 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       // same cases (below, keyed on `isOpening`/`recovering`/`startingNew`/`resuming`); this
       // polite region used to duplicate it for the exact same moment.
       if (!isOpening && recoveringId !== sessionId && startingNewId !== sessionId && resumingId !== sessionId) {
-        // Gate-fixes a11y Low finding (cycle 6): a start that begins already 'queued' (a slot
-        // was not free) used to announce "Starting agent for X" while the row/banner's own
-        // visible text said "Waiting to start…" -- the spoken and visible status disagreed.
-        announceStart(startProgress.kind === 'queued' ? `Waiting to start ${session.name}` : `Starting agent for ${session.name}`)
+        // Gate-fixes a11y Low finding (cycle 6, generalised cycle 8): a start that begins
+        // already 'queued'/'memory-deferred' (a slot was not free, or memory was low) used to
+        // announce "Starting agent for X" while the row/banner's own visible text disagreed
+        // ("Waiting to start…"/"waiting for memory to free up") -- a hand-written queued/else
+        // ternary here was itself a second, drifting copy of exactly the kind-to-text mapping
+        // `describeStartProgressLabel` exists to be the one source of (ChatPane's own banner
+        // title and SessionList's row already use it). Reused directly instead.
+        announceStart(`${describeStartProgressLabel(startProgress.kind)}: ${session.name}`)
       }
     } else if (session && (previousKind === 'prompt' || previousKind === 'extended') && startProgress?.kind === 'queued') {
       announceStart(`Retrying start for ${session.name}`)
@@ -495,14 +499,21 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // interactive-to-none transition fires on the FIRST one. Clearing or consuming the pending
     // record here (as cycle 2 did) left focus on whatever this effect restored to instead (the
     // textarea, briefly, before it goes disabled again), and the later `showBanner` effect then
-    // found nothing left to act on.
-    if (cancelFocusPendingRef.current) return
+    // found nothing left to act on. Gate-fixes a11y Medium finding (cycle 8): only defers this
+    // way while `session?.status === 'stopped'` -- that two-event sequence (and the `showBanner`
+    // effect that owns it) only ever happens for a Session ending `stopped`. A mode-change
+    // `restart()` runs from `idle` and stays `idle` the whole time (`onExit` returns early when
+    // `restarting`), so a Cancel that loses the race to `ready` there NEVER reaches `showBanner`
+    // at all -- deferring to it unconditionally left focus stranded on `<body>` for the rest of
+    // the Session. In the non-stopped case this effect's own stranded-focus check below runs
+    // instead, same as if no Cancel had been pending.
+    if (cancelFocusPendingRef.current && session?.status === 'stopped') return
     requestAnimationFrame(() => {
       const active = document.activeElement
       const stranded = !active || active === document.body || !active.isConnected
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
-  }, [startProgress?.kind, showBanner])
+  }, [startProgress?.kind, showBanner, session?.status])
   // Gate-fixes a11y High finding (cycle 3): the one genuinely stale case the effect above used to
   // clear inline -- `cancelStart()` resolved ok but did nothing because the start had already
   // succeeded -- is still cleared, just separately and only once the Session actually leaves
