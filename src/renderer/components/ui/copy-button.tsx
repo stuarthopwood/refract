@@ -4,6 +4,7 @@ import { cn } from "cn"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useClearedAnnouncement } from "@/lib/use-cleared-announcement"
+import { sanitiseForClipboard } from "@/lib/clipboard-sanitise"
 import { notify } from "@/state"
 
 // Shared icon-only Copy control (#524): every code surface -- markdown fences, mermaid source,
@@ -15,17 +16,6 @@ import { notify } from "@/state"
 // criterion -- "Visible without hover (keyboard and touch users must see it)" -- overrides the
 // #474 icon-only bundle's general allowance for a hover/keyboard-focus reveal.
 const COPIED_RESET_MS = 1500
-
-// Strips C0 control characters (except tab/newline/CR, which are legitimate code-text bytes)
-// and DEL from the copied value before it reaches the clipboard (security review, PR #597):
-// agent-written tool output and fence content are attacker-influenceable (prompt injection, a
-// malicious repo's command output), and an invisible escape sequence or bracketed-paste
-// terminator copied verbatim could break out of a terminal's bracketed paste on later use
-// ("pastejacking"). The visible transcript text is unaffected; only the clipboard write is
-// sanitised.
-function sanitiseForClipboard(text: string): string {
-  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-}
 
 export interface CopyButtonProps {
   /** Computed lazily on click so a caller never has to keep a second "full" copy of large or
@@ -46,14 +36,21 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
   const [polite, announcePolite] = useClearedAnnouncement()
   const [assertive, announceAssertive] = useClearedAnnouncement()
   const resetRef = React.useRef<number | undefined>(undefined)
-  // Quality-gate remediation (Medium): a block can unmount mid-copy (a tool row collapses, a
-  // streaming Mermaid fence swaps to its rendered image) while the clipboard write is still
-  // pending; without this guard `setCopied`/`announcePolite` would run on an unmounted
+  // Quality-gate remediation (High, cycle 2): a block can unmount mid-copy (a tool row
+  // collapses, a streaming Mermaid fence swaps to its rendered image) while the clipboard write
+  // is still pending; without this guard `setCopied`/`announcePolite` would run on an unmounted
   // component and the reset timer below would never be cleared. Mirrors
-  // `OmpProvidersSection.tsx`'s own `mountedRef` guard for the same shape of async handler.
+  // `OmpProvidersSection.tsx`'s own `mountedRef` guard for the same shape of async handler --
+  // including its `mountedRef.current = true` at the top of the effect: `<StrictMode>`
+  // (main.tsx) mounts, unmounts and remounts every component once in development, and without
+  // resetting the flag back to `true` on that remount, the cleanup's `false` is never undone,
+  // silently skipping every post-await "Copied", announcement and failure toast in `pnpm dev`
+  // for the rest of the component's life (cycle 2 finding: production builds were unaffected,
+  // which is why the round-1 live verification never caught it).
   const mountedRef = React.useRef(true)
 
   React.useEffect(() => {
+    mountedRef.current = true
     return () => {
       mountedRef.current = false
       window.clearTimeout(resetRef.current)
@@ -65,6 +62,10 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
     // from, but stopPropagation keeps a click here purely this control's own action regardless.
     event.stopPropagation()
     const text = sanitiseForClipboard(getText())
+    // Quality-gate remediation (Medium, cycle 2): a block composed entirely of characters the
+    // sanitiser strips (vanishingly rare, but possible for agent-authored content) must not
+    // silently empty the user's clipboard or announce a success that didn't happen.
+    if (text === "") return
     try {
       await navigator.clipboard.writeText(text)
     } catch {

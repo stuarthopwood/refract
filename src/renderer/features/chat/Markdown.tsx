@@ -83,7 +83,7 @@ function CodeBlockHeader({ label, copyText }: { label: string; copyText: string 
           getText={() => copyText}
           label={`Copy code, ${label}`}
           announcement="Code copied"
-          className="-my-1 text-muted-foreground"
+          className="-my-1 text-muted-foreground focus-visible:ring-inset"
         />
       )}
     </div>

@@ -50,7 +50,7 @@ export function DiffView({ path, oldText, newText }: DiffViewProps) {
             getText={() => patch}
             label="Copy diff"
             announcement="Diff copied"
-            className="-my-1 text-muted-foreground"
+            className="-my-1 text-muted-foreground focus-visible:ring-inset"
           />
         )}
       </div>
@@ -103,7 +103,7 @@ ${patch}`
             getText={() => wrapped}
             label="Copy diff"
             announcement="Diff copied"
-            className="-my-1 text-muted-foreground"
+            className="-my-1 text-muted-foreground focus-visible:ring-inset"
           />
         )}
       </div>
