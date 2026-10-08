@@ -16,21 +16,23 @@
 // spawn's cwd before PATH), bounded stdout (`maxBuffer`), a fixed role-name/catalog-kind
 // vocabulary, and a length/control-character limit on the model selector text -- never arbitrary
 // caller text reaching the argv unchecked. Every `omp` invocation runs with its cwd pointed at a
-// dedicated, Refract-owned scratch directory under the OS temp root (never the bare shared temp
-// root itself): `omp` loads a project config from `<cwd>/.omp/` whenever that folder is non-empty,
-// so running directly in a generic, widely-shared temp location would let anything else that
-// happens to drop a `.omp/config.yml` there inject settings into every call this module makes
-// (quality-gate remediation, security-auditor MEDIUM). The directory is verified completely
-// EMPTY on EVERY call (not just free of a `.omp` entry -- `omp` documents other discovery
-// providers, e.g. Claude/Codex/Gemini/Cursor/OpenCode, that could also contribute a project-level
-// settings file from the same working directory; quality-gate remediation, gate cycle 3 LOW,
-// security-auditor), not just created once and trusted forever (quality-gate remediation,
-// gate cycle 2 MEDIUM): a stale cached "ready" promise could otherwise paper over the directory
-// having been deleted (Windows temp cleanup) or unexpectedly populated between calls. It is
-// intentionally never programmatically removed (project convention: a delete target must be a
-// literal path, never built from a reused/computed variable) -- it stays empty in normal operation
-// (nothing in this module or `omp` itself writes ordinary files into it for these commands), so
-// leaving it costs nothing.
+// scratch directory this module creates itself with `fsp.mkdtemp` (quality-gate remediation, gate
+// cycle 4 MEDIUM+LOW, code-reviewer/security-auditor): `omp` loads a project config from `<cwd>/
+// .omp/` whenever that folder is non-empty, so a FIXED, predictable scratch path (the gate cycle
+// 2/3 design) could in principle have something written into it between an emptiness check and
+// the `omp` spawn (a TOCTOU gap), and any single stray entry there permanently broke every model-
+// role call with no actionable recovery. `mkdtemp` closes both at once: it creates an
+// OS-randomised, guaranteed-empty directory in one atomic call, so there is nothing to check (no
+// foreign content can ever have been written into a path nothing else has ever been told), and a
+// missing directory (first call, or deleted by Windows temp cleanup) is simply recreated. ONE such
+// directory is created lazily on first use and reused for the rest of this process's life (not a
+// fresh one per call -- cheap enough to keep, and ordinary per-call reuse the same way the old
+// fixed directory was reused); `cleanupModelRolesScratchDir` (called from `index.ts`'s own
+// `before-quit`, the same lifecycle hook `SessionManager.stopAll()` uses) removes it with the
+// EXACT literal path `mkdtemp` returned, never a reconstructed or wildcard path, best-effort and
+// never blocking quit. Leaving it on disk if cleanup is skipped (a forced kill, a crash) costs
+// nothing: the OS-randomised name cannot be pre-seeded or discovered by anything that was not
+// handed it directly, and `os.tmpdir()`'s own cleanup eventually reclaims it regardless.
 //
 // `setModelRole`'s read-merge-write is serialised through a module-level promise chain
 // (`enqueueWrite`) so two near-simultaneous role edits from THIS process never race each other
@@ -72,36 +74,53 @@ interface OmpRawResult {
   timedOut: boolean;
 }
 
-// A fixed, Refract-owned scratch directory (never the bare shared `os.tmpdir()` root itself --
-// see module header).
-const CONFIG_SCRATCH_DIR = path.join(os.tmpdir(), 'refract-omp-config-scratch');
+// `fsp.mkdtemp` prefix (never the bare shared `os.tmpdir()` root itself -- see module header).
+const SCRATCH_DIR_PREFIX = 'refract-omp-config-';
 
-/** Creates the scratch directory if missing and verifies it is completely EMPTY, on EVERY call
- * (quality-gate remediation, gate cycle 2 MEDIUM: no longer a cached "created once" promise, so a
- * directory deleted by Windows temp cleanup is transparently recreated, and the directory is
- * never trusted blind -- if anything has been placed there since the last call, this throws
- * instead of silently letting `omp` pick up a stray project layer from it). Rejects ANY entry,
- * not only a `.omp` folder (quality-gate remediation, gate cycle 3 LOW, security-auditor: `omp`'s
- * own settings docs say other discovery providers -- Claude, Codex, Gemini, Cursor, OpenCode --
- * can also contribute project-level settings from their own folders in the working directory;
- * requiring the directory to be empty closes all of those at once, not just the one name this
- * module happened to know about). */
+// Cached for this process's lifetime; `null` until the first call needs it, and reset to `null`
+// if a later call finds it has been removed out from under us.
+let cachedScratchDir: string | null = null;
+
+/** Creates (lazily, once per process) an `fsp.mkdtemp`-randomised scratch directory and reuses it
+ * for every later call, recreating it transparently if it has gone missing (quality-gate
+ * remediation, gate cycle 4 MEDIUM+LOW -- see module header for why `mkdtemp` replaced the fixed
+ * directory + emptiness-check design). A genuinely failing `mkdtemp` (disk full, no permission to
+ * write under the OS temp root) maps to a clear, actionable `OmpConfigError`. */
 async function ensureScratchDir(): Promise<string> {
+  if (cachedScratchDir) {
+    try {
+      await fsp.access(cachedScratchDir);
+      return cachedScratchDir;
+    } catch {
+      cachedScratchDir = null; // removed from under us (e.g. Windows temp cleanup); recreate below.
+    }
+  }
   try {
-    await fsp.mkdir(CONFIG_SCRATCH_DIR, { recursive: true });
+    cachedScratchDir = await fsp.mkdtemp(path.join(os.tmpdir(), SCRATCH_DIR_PREFIX));
   } catch {
     throw new OmpConfigError('omp-failed', 'Could not prepare a working directory for omp.');
   }
-  let entries: string[];
+  return cachedScratchDir;
+}
+
+/** Best-effort removal of the cached scratch directory, called once from `index.ts`'s own
+ * `before-quit` handler (never blocking quit -- a failure here is not worth delaying the app
+ * over). Always the EXACT literal path `mkdtemp` returned and cached above, never a reconstructed
+ * or wildcard path (project convention: a delete target must never be built from a guessed or
+ * computed value). Uses the plain, non-recursive removal -- nothing in this module or `omp`
+ * itself ever writes ordinary files into this directory (module header), so it is always empty at
+ * this point in normal operation; the plain call throws (caught and ignored below) rather than
+ * silently removing anything unexpected if that assumption is ever wrong. A no-op if nothing was
+ * ever created this session. */
+export async function cleanupModelRolesScratchDir(): Promise<void> {
+  const target = cachedScratchDir;
+  if (!target) return;
+  cachedScratchDir = null;
   try {
-    entries = await fsp.readdir(CONFIG_SCRATCH_DIR);
+    await fsp.rmdir(target);
   } catch {
-    throw new OmpConfigError('omp-failed', 'Could not inspect the omp working directory.');
+    // Best-effort; the OS-randomised name costs nothing left behind (module header).
   }
-  if (entries.length > 0) {
-    throw new OmpConfigError('omp-failed', 'The omp working directory unexpectedly contains files.');
-  }
-  return CONFIG_SCRATCH_DIR;
 }
 
 // Quality-gate remediation (security-auditor MEDIUM, live-probed and confirmed unverified-but-

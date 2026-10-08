@@ -32,8 +32,14 @@
 // SUCCEEDS, focus moves to the first role trigger of that kind -- or the heading if none is found
 // -- rather than being left on the Retry button that just unmounted (accessibility-auditor
 // MEDIUM); the whole-section retry's success case already moves focus to the heading via the
-// `loadError` effect below. Catalog error text names which kind failed, since the model-kind
-// roles group can show several of these blocks at once (accessibility-auditor LOW).
+// `loadError` effect below. Catalog error text and the Retry button's `aria-label` both name
+// which kind failed, using a human label (`CATALOG_KIND_LABEL`, accessibility-auditor LOW: raw
+// `CatalogKind` ids like "tts"/"stt" are spelled out letter by letter by a screen reader and
+// don't match the nearby role labels) -- the model-kind roles group can show several of these
+// blocks at once. The Retry button's `aria-label` also follows the in-flight state
+// (accessibility-auditor MEDIUM, gate cycle 4: a fixed label never exposed "Retrying…" to
+// anything but sighted users, since an `aria-label` replaces the element's own text content as
+// its accessible name).
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
@@ -84,6 +90,19 @@ const ALL_ROLE_DESCRIPTORS: RoleDescriptor[] = [...CHAT_ROLE_DESCRIPTORS, ...KIN
 function firstRoleIdForKind(kind: CatalogKind): string | undefined {
   const descriptor = ALL_ROLE_DESCRIPTORS.find((entry) => ROLE_CATALOG_KIND[entry.role] === kind)
   return descriptor ? `model-role-${descriptor.role}` : undefined
+}
+
+// Human-readable catalog-kind names for error text and labels (accessibility-auditor LOW, gate
+// cycle 4): the raw `CatalogKind` ids ("tts", "stt") are spelled letter by letter by a screen
+// reader and don't match the role labels shown next to them (Speech, Dictation, Web).
+const CATALOG_KIND_LABEL: Record<CatalogKind, string> = {
+  chat: 'chat',
+  tiny: 'tiny',
+  image: 'image',
+  tts: 'text-to-speech',
+  stt: 'speech-to-text',
+  search: 'web search',
+  judge: 'judge'
 }
 
 // Documented fallback chains (`omp://models.md`): shown next to "Inherited" so the sentinel says
@@ -189,10 +208,14 @@ export function ModelRolesSection() {
       return next
     })
     const state = useModelRolesStore.getState()
+    const kindLabel = CATALOG_KIND_LABEL[kind]
     if (state.catalogErrors[kind]) {
-      announceAssertive(`Could not load ${kind} models: ${state.catalogErrors[kind]}`)
+      announceAssertive(`Could not load ${kindLabel} models: ${state.catalogErrors[kind]}`)
     } else {
-      announcePolite('Models loaded')
+      // Quality-gate remediation (accessibility-auditor LOW): names the kind, matching the
+      // failure announcement above, instead of a generic "Models loaded" that gave no context
+      // when several catalog kinds could be in flight or have just failed elsewhere on the page.
+      announcePolite(`${kindLabel} models loaded`)
       if (hadFocus) {
         const targetId = firstRoleIdForKind(kind)
         const target = (targetId ? document.getElementById(targetId) : null) ?? headingRef.current
@@ -220,18 +243,22 @@ export function ModelRolesSection() {
       )
     }
     if (catalogError) {
+      const kindLabel = CATALOG_KIND_LABEL[kind]
       return (
         <p key={kind} id={catalogErrorId} className="mb-2 flex items-center gap-2 text-xs text-destructive">
           <span className="flex items-center gap-1">
             <OctagonXIcon aria-hidden className="size-3 shrink-0" />
-            Could not load {kind} models: {catalogError}
+            Could not load {kindLabel} models: {catalogError}
           </span>
           <Button
             id={`model-role-catalog-retry-${kind}`}
             variant="outline"
             size="xs"
             aria-disabled={isRetrying || undefined}
-            aria-label={`Retry loading ${kind} models`}
+            // Quality-gate remediation (accessibility-auditor MEDIUM): the accessible name now
+            // follows the in-flight state the same way the visible text does -- a fixed label
+            // never exposed "Retrying…" to anything but sighted users.
+            aria-label={isRetrying ? `Retrying ${kindLabel} models` : `Retry loading ${kindLabel} models`}
             onClick={() => void handleCatalogRetry(kind)}
           >
             {isRetrying ? 'Retrying…' : 'Retry'}

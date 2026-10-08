@@ -524,11 +524,15 @@ export interface RefractApi {
      * `role` (`null` clears/unsets it) and writes the whole record back. `overriddenBy` (when
      * present) names a higher layer -- an env var, `overlay`, or `runtime` -- that still supplies
      * the effective value despite this write succeeding. NEVER `project`: every `omp` call this
-     * feature makes runs with its cwd pointed at a dedicated, always-empty scratch directory
-     * (`main/omp/config.ts`), so `omp` never loads a project config layer in the first place --
+     * feature makes runs with its cwd pointed at an `fsp.mkdtemp`-randomised scratch directory
+     * this module creates itself (`main/omp/config.ts`), so nothing else is ever told that path
+     * before `omp` uses it and no foreign content can exist there to load as a project layer --
      * confirmed live, FINDINGS item 48 (quality-gate remediation, gate cycle 3 MEDIUM: this
      * comment used to list `project` as possible, which would have meant a repository's own
-     * `.omp` config can silently override what the user just picked here with no visible cue). */
+     * `.omp` config can silently override what the user just picked here with no visible cue;
+     * gate cycle 4: the scratch directory itself moved from a fixed, predictable path to the
+     * `mkdtemp` design above, which also closes the narrow same-process TOCTOU the fixed path
+     * carried between its own emptiness check and the `omp` spawn). */
     set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string }>>;
     /** `omp models --kind <kind> --json`: a read-only catalog listing used to populate a
      * role's model picker (the RPC `get_available_models` surface carries no role field and

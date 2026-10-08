@@ -2,10 +2,17 @@
 // inside the queued task... mock execFile and resolveExecutable, slow first set, assert the
 // second get is issued only after the first set callback runs, and that the second payload has
 // both keys"). Mocks `node:child_process`'s `execFile` and `../process/executables`'
-// `resolveExecutable` so these tests never spawn a real `omp` process; everything else
-// (`node:fs/promises`'s `mkdir`/`readdir` for the scratch directory) runs for real against the OS
-// temp directory, the same lightweight, idempotent calls the live code always makes.
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+// `resolveExecutable` so these tests never spawn a real `omp` process; `node:fs/promises`'
+// `access`/`mkdtemp`/`rmdir` (the scratch-directory calls, gate cycle 4 redesign -- see
+// `config.ts`'s own module header) are mocked too, so these tests never depend on real filesystem
+// timing or the real OS temp directory -- these were flaky under a full, heavily parallel
+// test-suite run (many worker threads contending for CPU) when left real, even though they passed
+// reliably in isolation. `access` always rejects by default, so `ensureScratchDir` takes the
+// "create a fresh one" branch on every call in every test here, regardless of what an earlier
+// test's `cachedScratchDir` module state left behind -- deliberately, so each test's own
+// `mkdtemp` mock is always exercised rather than silently skipped by a stale cache hit.
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { promises as fsp } from 'node:fs';
 
 const execFileMock = vi.fn();
 vi.mock('node:child_process', () => ({
@@ -14,14 +21,11 @@ vi.mock('node:child_process', () => ({
 vi.mock('../process/executables', () => ({
   resolveExecutable: vi.fn(async () => 'C:/fake/omp.exe'),
 }));
-// Quality-gate remediation: the scratch-directory mkdir/readdir calls are real `node:fs/promises`
-// I/O in production, but mocking them here removes any dependency on real filesystem timing --
-// these tests were flaky under a full, heavily parallel test-suite run (many worker threads
-// contending for CPU) when left real, even though they passed reliably in isolation.
 vi.mock('node:fs', () => ({
   promises: {
-    mkdir: vi.fn(async () => undefined),
-    readdir: vi.fn(async () => [] as string[]),
+    access: vi.fn(),
+    mkdtemp: vi.fn(),
+    rmdir: vi.fn(),
   },
 }));
 
@@ -56,6 +60,9 @@ beforeEach(() => {
       });
     }
   );
+  vi.mocked(fsp.access).mockReset().mockRejectedValue(new Error('ENOENT'));
+  vi.mocked(fsp.mkdtemp).mockReset().mockImplementation(async (prefix: string) => `${prefix}test123`);
+  vi.mocked(fsp.rmdir).mockReset().mockResolvedValue(undefined);
 });
 
 /** Polls (no fixed sleep) until `predicate` is true or a bounded number of real event-loop turns
@@ -176,5 +183,68 @@ describe('ompRaw error-code mapping (via listCatalogModels, a simpler single-cal
   it('rejects an invalid catalog kind before ever calling execFile', async () => {
     await expect(listCatalogModels('not-a-real-kind' as never)).rejects.toMatchObject({ code: 'invalid-value' });
     expect(execFileMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensureScratchDir (gate cycle 4 redesign: fsp.mkdtemp, no emptiness check)', () => {
+  it('a failing mkdtemp maps to a clear omp-failed error and never calls execFile', async () => {
+    vi.mocked(fsp.mkdtemp).mockRejectedValueOnce(new Error('ENOSPC: no space left on device'));
+    await expect(listCatalogModels('chat')).rejects.toMatchObject({
+      code: 'omp-failed',
+      message: 'Could not prepare a working directory for omp.',
+    });
+    expect(execFileMock).not.toHaveBeenCalled();
+  });
+
+  it('reuses the cached scratch directory via access() when it still exists, without calling mkdtemp again', async () => {
+    // First call: the default beforeEach mock has `access` reject, so this populates config.ts's
+    // own module-level `cachedScratchDir` via a fresh `mkdtemp`.
+    const first = listCatalogModels('chat');
+    await waitFor(() => calls.length === 1);
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await first;
+    expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(1);
+
+    // Second call: simulate the directory still existing (`access` resolves) -- `ensureScratchDir`
+    // must reuse the cached path and never call `mkdtemp` again.
+    vi.mocked(fsp.access).mockReset().mockResolvedValue(undefined);
+    const second = listCatalogModels('chat');
+    await waitFor(() => calls.length === 2);
+    expect(vi.mocked(fsp.mkdtemp)).toHaveBeenCalledTimes(1);
+    nth(1).resolve({ error: null, stdout: JSON.stringify({ models: [] }) });
+    await second;
+  });
+});
+
+describe('setModelRole strips role-override env vars from its own config set call, not only the merge-read', () => {
+  const originalPiSmolModel = process.env['PI_SMOL_MODEL'];
+
+  afterEach(() => {
+    if (originalPiSmolModel === undefined) delete process.env['PI_SMOL_MODEL'];
+    else process.env['PI_SMOL_MODEL'] = originalPiSmolModel;
+  });
+
+  it('neither the merge-read nor the config set call carries PI_SMOL_MODEL; the post-write re-read does', async () => {
+    process.env['PI_SMOL_MODEL'] = 'probe/override-xyz';
+    const promise = setModelRole('task', 'anthropic/claude-sonnet-4-5');
+
+    await waitFor(() => calls.length === 1);
+    expect(argvOf(nth(0))).toEqual(['config', 'get', 'modelRoles', '--json']);
+    expect(nth(0).options.env['PI_SMOL_MODEL']).toBeUndefined();
+    nth(0).resolve({ error: null, stdout: JSON.stringify({ key: 'modelRoles', value: {}, type: 'record' }) });
+
+    await waitFor(() => calls.length === 2);
+    expect(argvOf(nth(1))[1]).toBe('set');
+    expect(nth(1).options.env['PI_SMOL_MODEL']).toBeUndefined();
+    nth(1).resolve({ error: null, stdout: JSON.stringify({ key: 'modelRoles', value: { task: 'anthropic/claude-sonnet-4-5' } }) });
+
+    // `getModelRoles()`'s own re-read is the TRUE effective value and deliberately does NOT strip
+    // (config.ts's own module comment): it should carry the override through untouched.
+    await waitFor(() => calls.length === 3);
+    expect(argvOf(nth(2))).toEqual(['config', 'get', 'modelRoles', '--json']);
+    expect(nth(2).options.env['PI_SMOL_MODEL']).toBe('probe/override-xyz');
+    nth(2).resolve({ error: null, stdout: JSON.stringify({ key: 'modelRoles', value: { task: 'anthropic/claude-sonnet-4-5' }, type: 'record' }) });
+
+    await promise;
   });
 });

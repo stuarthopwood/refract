@@ -70,12 +70,76 @@ describe('useModelRolesStore.load', () => {
     expect(useModelRolesStore.getState().roles).toEqual({ task: 'anthropic/claude-sonnet-4-5' });
   });
 
-  it('a failing keepError:true retry keeps loaded true and replaces loadError with the new message', async () => {
+  it('a failing keepError:true retry keeps loaded/loadError cached in flight, then replaces loadError with the new message', async () => {
     useModelRolesStore.setState({ loaded: true, loadError: 'first failure' });
-    stubRefract({ list: vi.fn(async () => ({ ok: false, error: { code: 'omp-probe-failed', message: 'second failure' } })) });
-    await useModelRolesStore.getState().load({ keepError: true });
+    let resolveRetry!: (value: unknown) => void;
+    const retryPromise = new Promise((resolve) => {
+      resolveRetry = resolve;
+    });
+    stubRefract({ list: vi.fn(() => retryPromise) });
+
+    const loadPromise = useModelRolesStore.getState().load({ keepError: true });
+    // Test-reviewer LOW: this test previously asserted only the FINAL state, which is identical
+    // whether or not `keepError` actually did anything -- checking the state WHILE the retry is
+    // still in flight is what proves `keepError` is the reason the old message survives.
+    expect(useModelRolesStore.getState().loaded).toBe(true);
+    expect(useModelRolesStore.getState().loadError).toBe('first failure');
+
+    resolveRetry({ ok: false, error: { code: 'omp-probe-failed', message: 'second failure' } });
+    await loadPromise;
     expect(useModelRolesStore.getState().loaded).toBe(true);
     expect(useModelRolesStore.getState().loadError).toBe('second failure');
+  });
+
+  it('load() WITHOUT keepError resets to the loading state while in flight, discarding a stale error', async () => {
+    useModelRolesStore.setState({ loaded: true, loadError: 'x' });
+    let resolveFirst!: (value: unknown) => void;
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    stubRefract({ list: vi.fn(() => firstPromise) });
+
+    const loadPromise = useModelRolesStore.getState().load();
+    // Test-reviewer LOW: pins the default (no `keepError`) reset itself, which nothing else in
+    // this file directly asserted -- deleting the reset in the store would still pass every
+    // other test here.
+    expect(useModelRolesStore.getState().loaded).toBe(false);
+    expect(useModelRolesStore.getState().loadError).toBeNull();
+
+    resolveFirst({ ok: true, value: {} });
+    await loadPromise;
+  });
+
+  it('a successful keepError:true retry clears a stale loadError even while a setRole write is still pending', async () => {
+    // Code-reviewer MEDIUM (gate cycle 4): the pending-write branch used to set only
+    // `{ loaded: true }`, so a stale `loadError` from an earlier failure survived a retry that
+    // actually succeeded, and the section kept showing "Could not read model roles" forever.
+    useModelRolesStore.setState({ loaded: true, loadError: 'x', pendingRoles: new Set(['task']) });
+    stubRefract({ list: vi.fn(async () => ({ ok: true, value: { task: 'should-not-apply-either' } })) });
+    await useModelRolesStore.getState().load({ keepError: true });
+    expect(useModelRolesStore.getState().loadError).toBeNull();
+    expect(useModelRolesStore.getState().loaded).toBe(true);
+    // The pending-write guard (separately tested above) still applies: roles themselves are
+    // untouched by this read while the write is in flight.
+    expect(useModelRolesStore.getState().roles).toEqual({});
+  });
+
+  it('returns the same in-flight promise to a second call made before the first resolves, and only calls list() once', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    const list = vi.fn(() => firstPromise);
+    stubRefract({ list });
+
+    const first = useModelRolesStore.getState().load();
+    const second = useModelRolesStore.getState().load();
+    expect(first).toBe(second);
+
+    resolveFirst({ ok: true, value: {} });
+    await first;
+    await second;
+    expect(list).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -158,5 +222,23 @@ describe('useModelRolesStore.loadCatalog', () => {
     expect(useModelRolesStore.getState().catalogErrors.chat).toBeUndefined();
     expect(useModelRolesStore.getState().catalogs.chat).toEqual([]);
     expect(listCatalog).toHaveBeenCalledTimes(2);
+  });
+
+  it('a second force:true call for the SAME kind, made before the first resolves, joins the first in-flight promise', async () => {
+    let resolveFirst!: (value: unknown) => void;
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    const listCatalog = vi.fn(() => firstPromise);
+    stubRefract({ listCatalog });
+
+    const first = useModelRolesStore.getState().loadCatalog('chat', true);
+    const second = useModelRolesStore.getState().loadCatalog('chat', true);
+    expect(first).toBe(second);
+
+    resolveFirst({ ok: true, value: [] });
+    await first;
+    await second;
+    expect(listCatalog).toHaveBeenCalledTimes(1);
   });
 });

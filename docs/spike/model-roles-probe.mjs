@@ -4,7 +4,9 @@
 // row shape", "correct the env-stripping premise", "probe modelRoleStorage: project"; gate cycle
 // 3 LOW, security-auditor: resolve `omp` to an absolute path instead of a bare name, and give
 // every call its own dedicated empty scratch cwd instead of inheriting whichever folder this
-// script happens to be invoked from).
+// script happens to be invoked from; gate cycle 4 MEDIUM, code-reviewer: confirm `config set`
+// never writes an ordinary file into that cwd, now that production's `ensureScratchDir` no
+// longer checks this itself -- see `main/omp/config.ts`'s own module header for the redesign).
 //
 // Run: `node docs/spike/model-roles-probe.mjs` (requires `omp` on PATH). Uses a FIXED, literal
 // profile name (never computed from Date.now()/random -- this project's own delete-target rule)
@@ -63,6 +65,14 @@ async function hashFile(file) {
   }
 }
 
+// Quality-gate remediation (gate cycle 4 MEDIUM, code-reviewer): confirms `config set` never
+// writes an ordinary file into its own cwd, the assumption the production code's
+// `cleanupModelRolesScratchDir` (a plain, non-recursive `fsp.rmdir`) relies on.
+async function scratchDirIsEmpty(dir) {
+  const entries = await fs.readdir(dir);
+  return entries.length === 0;
+}
+
 async function main() {
   const results = {};
   const ompPath = await resolveOmpPath();
@@ -91,6 +101,13 @@ async function main() {
 
   results.rejectNonsenseSelector = await run(ompPath, scratchCwd, ['config', 'set', 'modelRoles', '{"smol":"not-a-real-model-xyz"}', '--json']);
   results.getAfterReject = await run(ompPath, scratchCwd, ['config', 'get', 'modelRoles', '--json']);
+
+  // Gate cycle 4 MEDIUM (code-reviewer): proves `config set` leaves nothing behind in its own
+  // cwd, confirmed AFTER all four `config set` calls above have run (not just once) -- the
+  // production `ensureScratchDir` no longer checks this itself (the module header on
+  // `main/omp/config.ts` explains why an `fsp.mkdtemp`-randomised directory needs no check), so
+  // this script is now the only place that evidence against the real CLI is recorded.
+  results.scratchCwdEmptyAfterFourSetCalls = await scratchDirIsEmpty(scratchCwd);
 
   // modelRoleStorage: project probe -- does `omp config set modelRoles` honour it, or always
   // write global regardless (as `omp://settings.md`'s own Subcommands table states for `config
