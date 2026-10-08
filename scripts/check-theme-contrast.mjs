@@ -144,6 +144,18 @@ const declaredThemeIds = themeIdUnionMatch
   : []
 const missingThemeBlocks = declaredThemeIds.filter((id) => !(id in themes))
 
+// Quality-gate remediation (MEDIUM, test-reviewer re-review): the exact bug that caused this
+// PR's first two gate failures -- `themes.ts`'s `swatch`/`titleBarOverlay.color` silently
+// drifting from the theme's own `.theme-<id>` `--background` -- was only ever caught by a
+// human re-reading two files side by side; nothing in this script checked it. Parse every
+// entry's `id`, `swatch`, and `titleBarOverlay.color` out of the same `themesTs` source text
+// already read above (non-greedy, so each entry's own fields, not a later entry's).
+const THEME_METADATA_RE = /id:\s*'([a-z0-9-]+)'[\s\S]*?swatch:\s*'(#[0-9a-fA-F]{3,8})'[\s\S]*?titleBarOverlay:\s*\{\s*color:\s*'(#[0-9a-fA-F]{3,8})'/g
+const themeMetadata = Object.create(null)
+for (const m of themesTs.matchAll(THEME_METADATA_RE)) {
+  themeMetadata[m[1]] = { swatch: m[2].toLowerCase(), titleBarOverlayColor: m[3].toLowerCase() }
+}
+
 // Spec 012 (brand watermark, research.md decision 13): `--watermark-opacity` is
 // theme-independent, declared once in `:root`, not inside any `.theme-<id>` block above.
 const ROOT_BLOCK_RE = /:root\s*\{([^}]*)\}/
@@ -318,6 +330,55 @@ for (const id of missingThemeBlocks) {
     pass: false,
     note: `'${id}' is declared in src/shared/themes.ts's ThemeId union but has no .theme-${id} block in globals.css`,
   })
+}
+
+for (const id of declaredThemeIds) {
+  if (!(id in themes)) continue // already reported as a missing block above
+  checkedCount++
+  const meta = themeMetadata[id]
+  if (!meta) {
+    failCount++
+    rows.push({
+      themeId: id,
+      fg: 'themes.ts swatch/titleBarOverlay',
+      bg: `.theme-${id} --background`,
+      min: 'n/a',
+      ratio: null,
+      pass: false,
+      note: `could not parse 'swatch'/'titleBarOverlay.color' for '${id}' out of src/shared/themes.ts`,
+    })
+    continue
+  }
+  const bg = themes[id].background
+  if (!bg) {
+    failCount++
+    rows.push({
+      themeId: id,
+      fg: 'themes.ts swatch/titleBarOverlay',
+      bg: `.theme-${id} --background`,
+      min: 'n/a',
+      ratio: null,
+      pass: false,
+      note: `'${id}' has no --background token in globals.css to compare against`,
+    })
+    continue
+  }
+  const actualBgHex = linearToHex(bg.linear)
+  const mismatches = []
+  if (meta.swatch !== actualBgHex) mismatches.push(`swatch '${meta.swatch}' != --background '${actualBgHex}'`)
+  if (meta.titleBarOverlayColor !== actualBgHex) mismatches.push(`titleBarOverlay.color '${meta.titleBarOverlayColor}' != --background '${actualBgHex}'`)
+  if (mismatches.length > 0) {
+    failCount++
+    rows.push({
+      themeId: id,
+      fg: 'themes.ts swatch/titleBarOverlay',
+      bg: `.theme-${id} --background`,
+      min: 'n/a',
+      ratio: null,
+      pass: false,
+      note: mismatches.join('; '),
+    })
+  }
 }
 
 for (const [themeId, props] of Object.entries(themes)) {
