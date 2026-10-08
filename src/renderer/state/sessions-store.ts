@@ -91,7 +91,14 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     }
   },
   open: (id, userAction) => {
-    const existing = openPromises.get(id)
+    // Quality-gate fix (cycle 2, 2026-10-08): keyed by `id:userAction`, not just `id` -- a
+    // passive, in-flight mount-time open (no `userAction`) must never be silently joined by a
+    // concurrent EXPLICIT one (MessageInput's typed-send, `userAction: true`): the passive call
+    // may resolve with a still-stopped snapshot (`canAutoStart` said no) that the forced caller's
+    // own `chat.send` would then fail against, having dropped its own `userAction: true` on the
+    // floor entirely. Both keys still dedupe their own kind of call exactly as before.
+    const key = `${id}:${userAction === true}`
+    const existing = openPromises.get(key)
     if (existing) return existing
     set({ openingIds: new Set(get().openingIds).add(id) })
     const promise = (async () => {
@@ -106,10 +113,10 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
         const openingIds = new Set(get().openingIds)
         openingIds.delete(id)
         set({ openingIds })
-        openPromises.delete(id)
+        openPromises.delete(key)
       }
     })()
-    openPromises.set(id, promise)
+    openPromises.set(key, promise)
     return promise
   },
   // The one create path for every entry point (the header's one-click + and the Base branch

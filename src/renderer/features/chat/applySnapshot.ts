@@ -11,11 +11,10 @@ import {
 } from '@/state'
 import type { SessionSnapshot } from '../../../shared/ipc'
 
-/** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`sessions.resume`/
- * `conversations.*`, contracts/ipc.md) out to the transcript, queue, and pending-request stores
- * for that Session. */
-export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): void {
-  useTranscriptStore.getState().reset(sessionId, snapshot.runtime.transcript)
+function applySnapshotParts(sessionId: string, snapshot: SessionSnapshot, options: { transcript: boolean }): void {
+  if (options.transcript) {
+    useTranscriptStore.getState().reset(sessionId, snapshot.runtime.transcript)
+  }
   useQueueStore.getState().apply(sessionId, snapshot.runtime.queue.followUp, snapshot.runtime.queue.steering)
   usePendingRequestsStore.getState().setForSession(sessionId, snapshot.runtime.pending)
   // Spec 004: the chip row's initial bundle, including the current turn's subagents as of this
@@ -35,4 +34,22 @@ export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): voi
   if (useSubagentPanelStore.getState().sessionId !== sessionId) {
     useSubagentPanelStore.getState().reset()
   }
+}
+
+/** Fans a `SessionSnapshot` (returned by `sessions.open`/`sessions.recover`/`conversations.*`,
+ * contracts/ipc.md) out to the transcript, queue, and pending-request stores for that Session. */
+export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): void {
+  applySnapshotParts(sessionId, snapshot, { transcript: true })
+}
+
+/** Quality-gate fix (cycle 2, 2026-10-08): `sessions.resume` (`resume.ts`) builds its returned
+ * snapshot BEFORE sending the default resume instruction, then sends it -- by the time this IPC
+ * round trip resolves, that send's own live `transcript:patch` events may already have streamed
+ * in and been applied to the transcript store (the same "flash back to the pre-send transcript"
+ * race `MessageInput.tsx`'s own not-started-send path already works around). `agent.start()`
+ * already flushed one full transcript reset earlier in that same call, before the send, so
+ * nothing here needs a second one -- only queue/pending/readout/subagents, never the transcript
+ * a second time with now-stale content. */
+export function applySnapshotExceptTranscript(sessionId: string, snapshot: SessionSnapshot): void {
+  applySnapshotParts(sessionId, snapshot, { transcript: false })
 }

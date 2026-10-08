@@ -387,7 +387,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       setStopInfo({
         reason: result.value.runtime.stopReason,
         detail: result.value.runtime.stopDetail,
-        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly
+        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+        // Quality-gate fix (cycle 2, 2026-10-08): dropped here, unlike handleRecover/
+        // handleStartNewConversation's own identical setStopInfo calls -- the banner's
+        // "Still waiting on <tools>" description line went blank specifically after a Resume
+        // whose restart itself failed (still-pending tools genuinely exist on that snapshot).
+        pendingToolNames: result.value.runtime.pendingToolNames
       })
     }
     requestAnimationFrame(maybeRestoreFocus)

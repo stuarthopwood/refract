@@ -130,9 +130,17 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   // Quick-create button above).
   const canResume = canResumeSession(session.status, session.stopReason, session.terminatedUnexpectedly)
 
+  // Quality-gate fix (cycle 2, 2026-10-08): only moves focus when it is actually stranded
+  // (<body>, null, or disconnected) -- previously this ran unconditionally the instant
+  // `canResume` flipped false, which could yank focus back to this row even if the user had
+  // since tabbed away (or clicked elsewhere) during the call, matching `ChatPane.tsx`'s own
+  // `maybeRestoreFocus` "stranded" test for its Recover/Retry buttons.
   useEffect(() => {
     if (canResume || !resumeFocusPendingRef.current) return
     resumeFocusPendingRef.current = false
+    const active = document.activeElement
+    const stranded = !active || active === document.body || !active.isConnected
+    if (!stranded) return
     if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
     else focusListContainer()
   }, [canResume])
@@ -145,7 +153,15 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     const result = await resumeSession(session.id)
     resumingRef.current = false
     setResuming(false)
-    if (!result.ok) notify(result.error)
+    if (!result.ok) {
+      // Quality-gate fix (cycle 2, 2026-10-08): a failed resume usually leaves `canResume` still
+      // true (the Session is still eligible), so the effect above would never fire and clear
+      // this itself -- left set, a LATER unrelated `canResume` transition (a resume from the
+      // OTHER entry point, or the Session later settling for any other reason) would wrongly
+      // yank focus back to this row even though this call's own failure never earned that.
+      resumeFocusPendingRef.current = false
+      notify(result.error)
+    }
   }
 
   async function commitRename(): Promise<void> {
@@ -335,6 +351,16 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                 </button>
               </SessionDetailsCard>
             )}
+            {/* Quality-gate fix (a11y, cycle 2, 2026-10-08): moved out of the Button -- a
+                `role="status"` element nested inside a `<button>` is presentational to ARIA (a
+                button's children never form part of the accessibility tree on their own), so it
+                was never exposed as a live region at all. Always mounted (never created
+                together with its own text, which a screen reader generally fails to announce),
+                a sibling of the button, not conditional on `canResume` so it survives past the
+                moment the button itself unmounts on a successful resume. */}
+            <span role="status" className="sr-only">
+              {resuming ? `Resuming ${session.name}…` : ''}
+            </span>
             {canResume && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -351,9 +377,6 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                       <LoaderCircleIcon aria-hidden className="size-3.5 animate-spin" />
                     ) : (
                       <RotateCwIcon aria-hidden className="size-3.5" />
-                    )}
-                    {resuming && (
-                      <span role="status" className="sr-only">Resuming {session.name}…</span>
                     )}
                   </Button>
                 </TooltipTrigger>
