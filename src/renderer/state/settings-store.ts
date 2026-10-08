@@ -9,7 +9,7 @@ interface SettingsState {
   setApprovalMode(mode: ApprovalMode): Promise<void>
   setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<void>
   setWatermarkEnabled(enabled: boolean): Promise<void>
-  setTranscriptDisplay(display: TranscriptDisplaySettings): Promise<void>
+  setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -51,8 +51,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       notify(result.error)
     }
   },
-  setTranscriptDisplay: async (display) => {
-    const result = await window.refract.settings.setTranscriptDisplay(display)
+  setTranscriptDisplay: async (field, visible) => {
+    const result = await window.refract.settings.setTranscriptDisplay(field, visible)
     if (result.ok) {
       set({ settings: result.value })
     } else {

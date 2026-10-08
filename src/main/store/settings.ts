@@ -199,14 +199,17 @@ export class SettingsStore {
     return this.persistWhole(next)
   }
 
-  /** `settings.setTranscriptDisplay(display)` (issue #457): persists the whole row via
-   * `persistWhole`, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
-   * `setSplit`/`setWatermarkEnabled` above (returns this call's own written value, never a
-   * possibly-superseded shared read). No raw/lazy-correction tracking needed (unlike `theme`/
-   * `watermarkEnabled`): this is a plain immediate-apply toggle pair, the same migration shape
-   * as `sessionReadout`/`split` above, not a Save/Cancel-previewed field. */
-  async setTranscriptDisplay(display: TranscriptDisplaySettings): Promise<Settings> {
-    const next = { ...this.data, transcriptDisplay: display }
+  /** `settings.setTranscriptDisplay(field, visible)` (issue #457, quality-gate remediation
+   * HIGH: the original whole-object write let a quick second toggle (sent with the stale
+   * render-time value of the first field) silently revert it mid-flight). Merges ONE field
+   * into `this.data.transcriptDisplay` and persists the whole row via `persistWhole`, the same
+   * per-field pattern `setReadoutVisibility` already uses for its own record-shaped setting,
+   * and the same race-safety pattern as every setter above (returns this call's own written
+   * value, never a possibly-superseded shared read). No raw/lazy-correction tracking needed
+   * (unlike `theme`/`watermarkEnabled`): this is a plain immediate-apply toggle pair, the same
+   * migration shape as `sessionReadout`/`split` above, not a Save/Cancel-previewed field. */
+  async setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<Settings> {
+    const next = { ...this.data, transcriptDisplay: { ...this.data.transcriptDisplay, [field]: visible } }
     return this.persistWhole(next)
   }
 }

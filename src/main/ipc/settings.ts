@@ -10,7 +10,7 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { Result } from '../../shared/ipc';
-import type { ApprovalMode, ReadoutKind, Settings, SplitLayout, TranscriptDisplaySettings } from '../../shared/model';
+import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model';
 import type { SessionManager } from '../SessionManager';
 import { broadcastSettingsChanged } from './broadcast';
 
@@ -129,31 +129,25 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
 
   // Issue #457: two independent view-filter switches (Show thinking output / Show tool
   // calls), the same immediate-apply + basic-shape-validation pattern as
-  // `SETTINGS_SET_WATERMARK_ENABLED` above, applied to both fields of the small
-  // `TranscriptDisplaySettings` object at once.
-  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, async (_event, display: unknown): Promise<Result<Settings>> => {
-    if (display === null || typeof display !== 'object' || Array.isArray(display)) {
+  // `SETTINGS_SET_WATERMARK_ENABLED` above. Quality-gate remediation (HIGH): takes ONE field
+  // at a time (not the whole `TranscriptDisplaySettings` object) and merges it in
+  // `SettingsStore.setTranscriptDisplay`, the same per-field pattern `SETTINGS_SET_READOUT_
+  // VISIBILITY` already uses -- a whole-object payload let a quick second toggle (built from
+  // the renderer's stale pre-write value of the first field) silently revert it.
+  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, async (_event, field: unknown, visible: unknown): Promise<Result<Settings>> => {
+    if (field !== 'thinking' && field !== 'toolCalls') {
       return {
         ok: false,
-        error: {
-          code: 'invalid-argument',
-          message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects { thinking: boolean, toolCalls: boolean }`,
-        },
+        error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects field 'thinking' | 'toolCalls'` },
       };
     }
-    // Destructure-then-validate, the same shape `SETTINGS_SET_SPLIT` above already uses for
-    // an object payload crossing the IPC boundary as `unknown`.
-    const { thinking, toolCalls } = display as Partial<TranscriptDisplaySettings>;
-    if (typeof thinking !== 'boolean' || typeof toolCalls !== 'boolean') {
+    if (typeof visible !== 'boolean') {
       return {
         ok: false,
-        error: {
-          code: 'invalid-argument',
-          message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects { thinking: boolean, toolCalls: boolean }`,
-        },
+        error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects a boolean visible` },
       };
     }
-    const value = await manager.settings.setTranscriptDisplay({ thinking, toolCalls });
+    const value = await manager.settings.setTranscriptDisplay(field, visible);
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });

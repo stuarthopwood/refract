@@ -528,12 +528,15 @@ export interface RefractApi {
      * written value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
      * `setSplit`. Pushes `settings:changed`, no new event. */
     setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
-    /** Issue #457: persists the whole `Settings` row and returns this call's own written
-     * value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
-     * `setSplit`/`setWatermarkEnabled`. Pushes `settings:changed`, no new event. Hiding is a
-     * renderer-side view filter only -- hidden items stay in the persisted Conversation.
+    /** Issue #457, quality-gate remediation (HIGH): takes ONE field at a time (not the whole
+     * `TranscriptDisplaySettings` object -- a quick second toggle sent with the renderer's
+     * stale pre-write value of the first field could otherwise revert it), merged in main
+     * against the persisted row, the same per-field pattern `setReadoutVisibility` already
+     * uses. Returns this call's own written value, the same race-safety pattern as every other
+     * setter here. Pushes `settings:changed`, no new event. Hiding is a renderer-side view
+     * filter only -- hidden items stay in the persisted Conversation.
      */
-    setTranscriptDisplay(display: TranscriptDisplaySettings): Promise<Result<Settings>>;
+    setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<Result<Settings>>;
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI
