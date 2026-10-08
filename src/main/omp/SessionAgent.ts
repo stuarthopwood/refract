@@ -680,7 +680,11 @@ export class SessionAgent extends EventEmitter {
     if (this.runtime.status !== 'idle' || !this.process) {
       throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot start a new Conversation while ${this.runtime.status}`);
     }
-    const res = await this.process.request({ type: 'new_session', id: '' });
+    // Issue #592: captured once, up front, so a concurrent `onExit` (which sets `this.process`
+    // to `undefined`) cannot pull the process out from under the later `get_state` call below --
+    // every request in this method goes through this same reference, never `this.process` again.
+    const proc = this.process;
+    const res = await proc.request({ type: 'new_session', id: '' });
     if (!res.success) {
       throw new Error(`SessionAgent ${this.sessionId}: new_session failed: ${res.error ?? 'unknown error'}`);
     }
@@ -699,14 +703,38 @@ export class SessionAgent extends EventEmitter {
     // a DIFFERENT, possibly non-empty past Conversation).
     this.lastContextUsage = undefined;
     this.lastTodoPhases = undefined;
+    // Issue #592: mirrors `agent_start`'s own subagent-state reset (below) -- without these, the
+    // PRIOR conversation's subagent streams and selected-subagent id survive in memory and can
+    // still emit stale `subagent:patch` updates for a conversation that no longer exists.
+    this.subagentStreams.clear();
+    this.visibleSubagentId = null;
+    this.subagentPatches.clear();
     this.runtime = { ...this.runtime, transcript: [], subagents: [] };
+    {
+      const currentSession = this.registry.getSession(this.sessionId);
+      if (currentSession && currentTurnKeys(currentSession).length > 0) {
+        this.registry.updateSession(this.sessionId, { currentTurnSubagents: [] }).catch((err) => {
+          console.error(`SessionAgent ${this.sessionId}: failed to clear currentTurnSubagents after new_session`, err);
+        });
+      }
+    }
     this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
     this.emitPatchReset();
-    const stateRes = await this.process.request({ type: 'get_state', id: '' });
-    if (stateRes.success) {
-      await this.syncFromState(stateRes.data as GetStateResponseData);
-    } else {
-      console.error(`SessionAgent ${this.sessionId}: get_state after new_session failed: ${stateRes.error ?? 'unknown error'}`);
+    // Issue #592: `new_session` already succeeded above, so this method must resolve normally
+    // even if this refresh fails -- a `get_state` rejection (OmpProcess times out or the process
+    // exits mid-request) must not surface as an uncaught rejection reporting the whole call as
+    // failed. Matches `onSessionSettled`'s own try/catch around the same get_state+syncFromState
+    // pair.
+    try {
+      const stateRes = await proc.request({ type: 'get_state', id: '' });
+      if (stateRes.success) {
+        await this.syncFromState(stateRes.data as GetStateResponseData);
+      } else {
+        console.error(`SessionAgent ${this.sessionId}: get_state after new_session failed: ${stateRes.error ?? 'unknown error'}`);
+        this.scheduleReadoutUpdate();
+      }
+    } catch (err) {
+      console.error(`SessionAgent ${this.sessionId}: get_state after new_session threw`, err);
       this.scheduleReadoutUpdate();
     }
   }
