@@ -248,6 +248,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_LIST: 'repositories.list',
   REPOSITORIES_ADD: 'repositories.add',
   REPOSITORIES_REMOVE: 'repositories.remove',
+  REPOSITORIES_RENAME: 'repositories.rename',
   REPOSITORIES_BRANCHES: 'repositories.branches',
   REPOSITORIES_PICK_FOLDER: 'repositories.pickFolder',
   REPOSITORIES_USER_NAME: 'repositories.userName',
@@ -350,6 +351,9 @@ export interface RefractApi {
     list(): Promise<Result<Repository[]>>;
     add(path: string): Promise<Result<Repository>>;
     remove(id: string): Promise<Result<void>>;
+    /** Issue #480: display-name only -- never touches the folder, worktrees, or branches. An
+     * empty (after trimming) `name` resets to the folder's own basename. */
+    rename(id: string, name: string): Promise<Result<Repository>>;
     branches(id: string): Promise<Result<BranchEntry[]>>;
     pickFolder(): Promise<Result<string | null>>;
     /** `git config user.name` in the repository's own checkout, falling back to the Windows

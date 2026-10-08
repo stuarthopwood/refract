@@ -29,6 +29,7 @@ import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
+import { validateRepositoryName } from '../../../shared/repositoryName'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
@@ -346,6 +347,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
 
 function RepositoryGroup({ repository, sessions }: { repository: Repository; sessions: SessionSummary[] }) {
   const createSession = useSessionsStore((state) => state.create)
+  const renameRepository = useRepositoriesStore((state) => state.rename)
   // Per-repository in-flight guard: the ref blocks a second click before React re-renders (a
   // double-click), the state drives aria-disabled and the spinner. aria-disabled, not disabled,
   // so keyboard focus stays on the button.
@@ -353,6 +355,19 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   const [creating, setCreating] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
+  // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
+  // row's own rename (`SessionRow` above) -- the model the issue names to copy.
+  const [renaming, setRenaming] = useState(false)
+  const [draftName, setDraftName] = useState(repository.name)
+  // Quality-gate fix (a11y, Medium, 2026-10-08): a failed rename keeps the field open (never
+  // `setRenaming(false)` before the IPC call resolves) and shows this inline, tied to the input
+  // via `aria-describedby`, instead of only a toast that drops the user's typed draft.
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const restoreFocusRef = useRef(false)
+  const renameRequestedRef = useRef(false)
+  const renameErrorId = `repository-rename-error-${repository.id}`
 
   async function handleQuickCreate(): Promise<void> {
     if (creatingRef.current) return
@@ -367,16 +382,127 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
     }
   }
 
+  function startRenaming(): void {
+    setDraftName(repository.name)
+    setRenameError(null)
+    setRenaming(true)
+  }
+
+  // Quality-gate fix (a11y, Medium, 2026-10-08): stays open on failure -- `setRenaming(false)`
+  // only runs on an unchanged name or a successful rename, never before the IPC call settles --
+  // so a rejected name (too long, a control character) keeps the field mounted with the user's
+  // own typed text still in it and the error shown next to it, instead of a toast and a lost
+  // draft.
+  async function commitRename(): Promise<void> {
+    const name = draftName.trim()
+    if (name === repository.name) {
+      setRenameError(null)
+      setRenaming(false)
+      return
+    }
+    // Quality-gate fix (cycle 2, 2026-10-08): validates client-side first, with the exact same
+    // shared, code-point-aware rule the server enforces -- shows an over-long or disallowed
+    // name's error immediately, with no round trip, and is the ONLY length cap now that the
+    // input's own `maxLength` (UTF-16-unit-counted, wrongly capped emoji at 30 instead of 60) is
+    // gone.
+    const clientError = validateRepositoryName(name)
+    if (clientError) {
+      // Quality-gate fix (cycle 3, 2026-10-08): the field stays mounted on an error (this
+      // function's own doc comment above), so the restore-focus effect (keyed on `renaming`)
+      // never fires here to clear this itself -- left set, a LATER successful blur-commit (the
+      // user clicks elsewhere, `onBlur` re-commits with the same now-valid text) would still
+      // yank focus back to the trigger, overriding wherever the user's click had just taken it.
+      restoreFocusRef.current = false
+      setRenameError(clientError)
+      return
+    }
+    const error = await renameRepository(repository.id, name)
+    if (error) {
+      // Quality-gate fix (cycle 3, 2026-10-08): same reasoning as the client-validation branch
+      // above -- a server-side rejection (for example a race with another rename) must not leave
+      // this armed for a later unrelated success to consume.
+      restoreFocusRef.current = false
+      setRenameError(error)
+      return
+    }
+    setRenameError(null)
+    setRenaming(false)
+  }
+
+  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    event.stopPropagation()
+    if (event.key === 'Enter') {
+      restoreFocusRef.current = true
+      void commitRename()
+    }
+    if (event.key === 'Escape') {
+      restoreFocusRef.current = true
+      setRenameError(null)
+      setDraftName(repository.name)
+      setRenaming(false)
+    }
+  }
+
+  function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key === 'F2') {
+      event.preventDefault()
+      startRenaming()
+    }
+  }
+
+  useEffect(() => {
+    if (!renaming) return
+    const raf = requestAnimationFrame(() => renameInputRef.current?.focus())
+    return () => cancelAnimationFrame(raf)
+  }, [renaming])
+
+  useEffect(() => {
+    if (renaming) return
+    if (!restoreFocusRef.current) return
+    restoreFocusRef.current = false
+    triggerRef.current?.focus()
+  }, [renaming])
+
   const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   const archived = sessions.filter((session) => session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   return (
     <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
         <div className="group flex items-center gap-1 px-1">
-          <CollapsibleTrigger className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-            <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
-            <span className="truncate" title={repository.name}>{repository.name}</span>
-          </CollapsibleTrigger>
+          {renaming ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <input
+                ref={renameInputRef}
+                autoFocus
+                value={draftName}
+                onChange={(event) => {
+                  setDraftName(event.target.value)
+                  setRenameError(null)
+                }}
+                onBlur={() => void commitRename()}
+                onKeyDown={handleNameKeyDown}
+                aria-label="Repository name"
+                aria-invalid={renameError ? true : undefined}
+                aria-describedby={renameError ? renameErrorId : undefined}
+                className="min-w-0 flex-1 rounded border border-border bg-transparent px-1.5 py-1 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              />
+              {renameError && (
+                <p id={renameErrorId} role="alert" className="px-1.5 text-xs text-destructive">
+                  {renameError}
+                </p>
+              )}
+            </div>
+          ) : (
+            <CollapsibleTrigger
+              ref={triggerRef}
+              onDoubleClick={startRenaming}
+              onKeyDown={handleTriggerKeyDown}
+              className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+              <span className="truncate" title={repository.path}>{repository.name}</span>
+            </CollapsibleTrigger>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -416,7 +542,22 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
                 <EllipsisVerticalIcon aria-hidden className="size-3.5" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent
+              onCloseAutoFocus={(event) => {
+                if (!renameRequestedRef.current) return
+                renameRequestedRef.current = false
+                event.preventDefault()
+              }}
+            >
+              <DropdownMenuItem
+                onSelect={() => {
+                  renameRequestedRef.current = true
+                  startRenaming()
+                }}
+              >
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
                 Remove repository…
               </DropdownMenuItem>

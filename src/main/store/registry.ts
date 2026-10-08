@@ -47,6 +47,46 @@ export class RegistryStore {
     await writeJsonFile(this.file, this.data)
   }
 
+  /** Issue #480: display-name-only edit. No uniqueness check on `name` -- two repositories may
+   * share a display name (the path distinguishes them in the header tooltip and details card).
+   * Quality-gate fix (code-reviewer/security-auditor, Low, 2026-10-08): narrowed from
+   * `Partial<Repository>` to `Pick<Repository, 'name'>` -- the wider type let a future caller
+   * slip in `path` or `defaultBranch` despite this comment's own "never touches path" claim;
+   * nothing else ever calls this for any other field, so the type itself is the guard now.
+   * Rolls back on a failed write, the same discipline `removeRepository` below already uses:
+   * memory must not keep a name the disk copy never got, or the next unrelated write would
+   * silently persist it. */
+  async updateRepository(id: string, patch: Pick<Repository, 'name'>): Promise<Repository> {
+    const index = this.data.repositories.findIndex((r) => r.id === id)
+    if (index === -1) throw new RegistryError('not-found', `Repository not found: ${id}`)
+    const current = this.data.repositories[index]!
+    // Only `name` is ever copied from `patch` (never a `{ ...patch }` spread): the narrowed
+    // `Pick<Repository, 'name'>` parameter type is a compile-time guard against a future caller
+    // passing `path`/`defaultBranch`, but a cast or an `as unknown as` could still defeat it --
+    // this makes the restriction real at runtime too, not just in the type checker.
+    const next: Repository = { ...current, name: patch.name }
+    this.data.repositories[index] = next
+    try {
+      await writeJsonFile(this.file, this.data)
+    } catch (err) {
+      // Quality-gate fix (cycle 5, 2026-10-08, test-reviewer, Medium): compares by IDENTITY
+      // (`=== next`), not by value -- a value compare (the cycle-3 fix: `?.name === next.name`)
+      // still had a gap: two concurrent renames to the SAME name, where the first's write fails
+      // late. The first's rollback would match the second's entry by name (since both set the
+      // identical string) and put back the name from BEFORE EITHER call, even though the second
+      // call already reported success and the renderer is already showing its own new name --
+      // the store and the renderer would silently disagree. Reference equality has no such gap:
+      // only THIS call's own `next` object can ever match, regardless of what string it holds.
+      const stillIndex = this.data.repositories.findIndex((r) => r.id === id)
+      if (stillIndex !== -1 && this.data.repositories[stillIndex] === next) {
+        this.data.repositories[stillIndex] = current
+      }
+      await writeJsonFile(this.file, this.data).catch(() => undefined)
+      throw err
+    }
+    return next
+  }
+
   async removeRepository(id: string): Promise<void> {
     if (!this.data.repositories.some((r) => r.id === id)) {
       throw new RegistryError('not-found', `Repository not found: ${id}`)
