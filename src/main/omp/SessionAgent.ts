@@ -673,7 +673,9 @@ export class SessionAgent extends EventEmitter {
   /** `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same
    * cwd, same Session; clears the transcript. No Conversation is current until the first message
    * of the new one is written (OMP creates the file lazily), so `currentConversation` is cleared
-   * to `null` here; `syncFromState` sets it to the new file at the next settle. */
+   * to `null` here; `syncFromState` leaves it `null` too (below, run immediately after
+   * `new_session` -- issue #577 -- since `messageCount` is still 0) until the first message is
+   * sent, at the next settle. */
   async startNewConversation(): Promise<void> {
     if (this.runtime.status !== 'idle' || !this.process) {
       throw new SessionNotIdleError(`SessionAgent ${this.sessionId}: cannot start a new Conversation while ${this.runtime.status}`);
@@ -687,8 +689,26 @@ export class SessionAgent extends EventEmitter {
     } catch (err) {
       console.error(`SessionAgent ${this.sessionId}: failed to clear currentConversation after new_session`, err);
     }
-    this.runtime = { ...this.runtime, transcript: [] };
+    // Issue #577: the Context/Todo/Subagents chips otherwise kept the OLD conversation's reading
+    // until the next turn settled -- nothing here ever re-ran `syncFromState` (the only place
+    // that writes `lastContextUsage`/`lastTodoPhases`), and `runtime.subagents` is normally
+    // cleared only by the next `agent_start`. Cleared first, unconditionally, so a `get_state`
+    // failure below can never leave a stale reading on screen instead of the new conversation's
+    // baseline (which `new_session` guarantees is a brand-new, empty history: no leftover
+    // `kind: 'subagent'` transcript rows to reconcile from, unlike `openConversation`'s switch to
+    // a DIFFERENT, possibly non-empty past Conversation).
+    this.lastContextUsage = undefined;
+    this.lastTodoPhases = undefined;
+    this.runtime = { ...this.runtime, transcript: [], subagents: [] };
+    this.emit('subagents', { sessionId: this.sessionId, subagents: this.runtime.subagents });
     this.emitPatchReset();
+    const stateRes = await this.process.request({ type: 'get_state', id: '' });
+    if (stateRes.success) {
+      await this.syncFromState(stateRes.data as GetStateResponseData);
+    } else {
+      console.error(`SessionAgent ${this.sessionId}: get_state after new_session failed: ${stateRes.error ?? 'unknown error'}`);
+      this.scheduleReadoutUpdate();
+    }
   }
 
   /** `conversations.open` (contracts/omp-usage.md "Open an earlier Conversation"): `cancelled`
