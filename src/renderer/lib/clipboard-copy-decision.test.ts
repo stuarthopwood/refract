@@ -12,6 +12,14 @@ describe('copyDecision', () => {
   it('decides there is nothing to copy when the sanitised text is empty', () => {
     expect(copyDecision('')).toEqual({ kind: 'nothing' });
   });
+
+  it('copies sanitised text verbatim, including leading indentation and a trailing newline', () => {
+    expect(copyDecision('  a\n')).toEqual({ kind: 'copy', text: '  a\n' });
+  });
+
+  it('treats whitespace-only sanitised text as copyable (not "nothing")', () => {
+    expect(copyDecision(' ')).toEqual({ kind: 'copy', text: ' ' });
+  });
 });
 
 describe('clipboardRejectionToResult', () => {

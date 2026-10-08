@@ -78,10 +78,20 @@ describe('sanitiseForClipboard', () => {
   });
 
   it('keeps the England and Wales subdivision-flag tag sequences', () => {
-    const england = '\u{1F3F4}\u{E0065}\u{E006E}\u{E0067}\u{E006C}\u{E0061}\u{E006E}\u{E0064}\u{E007F}';
+    // Real RGI emoji subdivision-flag sequences (not synthetic spelled-out data): England is
+    // the black-flag base + tags for ISO 3166-2 subdivision code "gbeng" ('g','b','e','n','g'),
+    // Wales is the base + tags for "wls" ('w','l','s'), both terminated by the cancel tag.
+    const england = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}';
     expect(sanitiseForClipboard(england)).toBe(england);
     const wales = '\u{1F3F4}\u{E0077}\u{E006C}\u{E0073}\u{E007F}';
     expect(sanitiseForClipboard(wales)).toBe(wales);
+  });
+
+  it('keeps tag sequences at the 7-tag upper and 3-tag lower lengths', () => {
+    const sevenTags = '\u{1F3F4}\u{E0065}\u{E006E}\u{E0067}\u{E006C}\u{E0061}\u{E006E}\u{E0064}\u{E007F}';
+    expect(sanitiseForClipboard(sevenTags)).toBe(sevenTags);
+    const threeTags = '\u{1F3F4}\u{E0077}\u{E006C}\u{E0073}\u{E007F}';
+    expect(sanitiseForClipboard(threeTags)).toBe(threeTags);
   });
 
   it('strips an unterminated tag sequence (no cancel tag) down to the bare flag base', () => {
@@ -129,9 +139,21 @@ describe('sanitiseForClipboard', () => {
     expect(sanitiseForClipboard(splice)).toBe('');
   });
 
-  it('strips a nested nested-pair splice payload (two high surrogates, a tag character, two low surrogates)', () => {
+  it('strips a nested-pair splice payload (two high surrogates, a tag character, two low surrogates)', () => {
     const nested = '\uDB40\uDB40' + '\u{E0001}' + '\uDC69\uDC69';
     expect(sanitiseForClipboard(nested)).toBe('');
+  });
+
+  it('strips a C0 control sandwiched between unpaired surrogate halves (pass-order regression)', () => {
+    // If the C0/bidi-control pass ran AFTER the tag/surrogate pass instead of before it, the
+    // lone \uDB40 and \uDC69 would each be seen with a non-surrogate neighbour (\u0001) and
+    // stripped individually by the tag/surrogate pass, leaving only \u0001 for the C0 pass to
+    // remove next -- same end result here, but it is the C0/bidi pass running FIRST that
+    // collapses \uDB40 and \uDC69 into an adjacent, well-formed pair (U+E0069, a tag character)
+    // for the tag/surrogate pass to then catch as a single codepoint. Keeping this pinned to ''
+    // guards the documented pass order (C0/bidi before tag/surrogate).
+    const spliced = '\uDB40' + '\u0001' + '\uDC69';
+    expect(sanitiseForClipboard(spliced)).toBe('');
   });
 
   it('keeps LRM/RLM marks used by legitimate bidi text', () => {

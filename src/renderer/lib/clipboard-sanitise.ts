@@ -55,6 +55,15 @@
 // homoglyph/identifier-spoofing class (CVE-2021-42694), not the Trojan Source/ASCII-smuggling
 // classes this sanitiser targets, and stripping them would change real program semantics and
 // Mongolian/Phags-pa/Hangul text.
+//
+// Also accepted (cycle 5, known channel, not a regression): the kept flag sequence itself still
+// lets 1-7 lowercase ASCII letters/digits ride behind a visible black-flag base U+1F3F4 -- a
+// small, fixed-shape payload (at most 7 characters, only `[a-z0-9]`, always announced by a flag
+// emoji) rather than the arbitrary-length, silent payload the bare tag-character strip above
+// closes off. Narrowing this further, e.g. validating the tag payload against the real RGI
+// subdivision-flag code list (`gbeng`, `gbwls`, `gbsct`, ...) instead of any `[a-z0-9]{1,7}` run,
+// is a documented follow-up, not done this round -- this comment and the kept-flag tests above
+// are the record of that choice.
 export function sanitiseForClipboard(text: string): string {
   return text
     .replace(/\r(?!\n)/g, "\n")

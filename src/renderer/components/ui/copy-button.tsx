@@ -66,15 +66,17 @@ export function CopyButton({ getText, label, announcement, className }: CopyButt
     const decision = copyDecision(sanitiseForClipboard(getText()))
     if (decision.kind === "nothing") {
       // Quality-gate remediation (cycle 4): clear any stale "Copied" visual state and polite
-      // announcement a previous click left behind before announcing this one -- otherwise a
-      // rapid second click landing on "nothing to copy" right after a real success could leave
-      // the check icon showing, or a screen reader could still be mid-way through "Code copied"
-      // when "Nothing to copy" interrupts it with no visible state change to match.
+      // announcement a previous click left behind before this one -- otherwise a rapid second
+      // click landing on "nothing to copy" right after a real success could leave the check
+      // icon showing, or a screen reader could still be mid-way through "Code copied" when the
+      // toast below interrupts it with no visible state change to match.
+      // Quality-gate remediation (cycle 5): the assertive live-region announcement here used to
+      // duplicate the toast below -- both spoke "Nothing to copy" back to back. The toast
+      // (`notify`, sonner) is itself a polite live region, so it alone is enough.
       window.clearTimeout(resetRef.current)
       setCopied(false)
       announcePolite("")
-      announceAssertive("Nothing to copy")
-      notify({ code: "clipboard-failed", message: "Nothing to copy" })
+      notify({ code: "clipboard-failed", message: "Nothing to copy: this block only contains hidden characters" })
       return
     }
     try {
