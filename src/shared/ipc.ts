@@ -19,6 +19,7 @@ import type {
   Settings,
   SplitLayout,
   SubagentSummary,
+  TranscriptDisplaySettings,
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SlashCommandDescriptor } from './frames';
@@ -339,6 +340,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   SETTINGS_SET_SPLIT: 'settings.setSplit',
   SETTINGS_SET_WATERMARK_ENABLED: 'settings.setWatermarkEnabled',
+  SETTINGS_SET_TRANSCRIPT_DISPLAY: 'settings.setTranscriptDisplay',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -526,6 +528,12 @@ export interface RefractApi {
      * written value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
      * `setSplit`. Pushes `settings:changed`, no new event. */
     setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
+    /** Issue #457: persists the whole `Settings` row and returns this call's own written
+     * value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
+     * `setSplit`/`setWatermarkEnabled`. Pushes `settings:changed`, no new event. Hiding is a
+     * renderer-side view filter only -- hidden items stay in the persisted Conversation.
+     */
+    setTranscriptDisplay(display: TranscriptDisplaySettings): Promise<Result<Settings>>;
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI

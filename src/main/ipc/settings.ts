@@ -10,7 +10,7 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { Result } from '../../shared/ipc';
-import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model';
+import type { ApprovalMode, ReadoutKind, Settings, SplitLayout, TranscriptDisplaySettings } from '../../shared/model';
 import type { SessionManager } from '../SessionManager';
 import { broadcastSettingsChanged } from './broadcast';
 
@@ -123,6 +123,37 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
       };
     }
     const value = await manager.settings.setWatermarkEnabled(enabled);
+    broadcastSettingsChanged(value, getWindow);
+    return { ok: true, value };
+  });
+
+  // Issue #457: two independent view-filter switches (Show thinking output / Show tool
+  // calls), the same immediate-apply + basic-shape-validation pattern as
+  // `SETTINGS_SET_WATERMARK_ENABLED` above, applied to both fields of the small
+  // `TranscriptDisplaySettings` object at once.
+  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, async (_event, display: unknown): Promise<Result<Settings>> => {
+    if (display === null || typeof display !== 'object' || Array.isArray(display)) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-argument',
+          message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects { thinking: boolean, toolCalls: boolean }`,
+        },
+      };
+    }
+    // Destructure-then-validate, the same shape `SETTINGS_SET_SPLIT` above already uses for
+    // an object payload crossing the IPC boundary as `unknown`.
+    const { thinking, toolCalls } = display as Partial<TranscriptDisplaySettings>;
+    if (typeof thinking !== 'boolean' || typeof toolCalls !== 'boolean') {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid-argument',
+          message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects { thinking: boolean, toolCalls: boolean }`,
+        },
+      };
+    }
+    const value = await manager.settings.setTranscriptDisplay({ thinking, toolCalls });
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });

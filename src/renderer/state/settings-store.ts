@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import { DEFAULT_SESSION_READOUT } from '../../shared/model'
-import type { ApprovalMode, ReadoutKind, Settings } from '../../shared/model'
+import { DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
+import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
 import { notify } from './notify'
 
 interface SettingsState {
@@ -9,11 +9,20 @@ interface SettingsState {
   setApprovalMode(mode: ApprovalMode): Promise<void>
   setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<void>
   setWatermarkEnabled(enabled: boolean): Promise<void>
+  setTranscriptDisplay(display: TranscriptDisplaySettings): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
 // readout chips show.
-export const DEFAULT_SETTINGS: Settings = { version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark', watermarkEnabled: true }
+export const DEFAULT_SETTINGS: Settings = {
+  version: 1,
+  approvalMode: 'ask',
+  sessionReadout: DEFAULT_SESSION_READOUT,
+  split: null,
+  theme: 'dark',
+  watermarkEnabled: true,
+  transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY
+}
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   settings: DEFAULT_SETTINGS,
@@ -36,6 +45,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setWatermarkEnabled: async (enabled) => {
     const result = await window.refract.settings.setWatermarkEnabled(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setTranscriptDisplay: async (display) => {
+    const result = await window.refract.settings.setTranscriptDisplay(display)
     if (result.ok) {
       set({ settings: result.value })
     } else {

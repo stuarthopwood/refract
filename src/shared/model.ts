@@ -87,7 +87,25 @@ export interface Settings {
   split: SplitLayout | null; // spec 005: null = single pane, no split open
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
+  transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
 }
+
+/** Issue #457: two independent view filters for the chat transcript, applied in the renderer
+ * (never main's `HIDDEN_TOOLS` path -- that path removes a tool call from the transcript
+ * entirely, before it ever reaches the renderer, which would also hide the always-visible
+ * exceptions this issue requires: approvals, answered/pending `ask` questions, and failed tool
+ * calls). Hiding is a view filter only: hidden items stay in the persisted Conversation, so
+ * turning a toggle back on restores them with no reload. This story (#455/#457 settings lane)
+ * only adds the persisted setting and its Settings-screen switches; applying the filter inside
+ * the transcript renderer (`Transcript.tsx`/`ToolRow.tsx`) is Phase A territory this story does
+ * not touch -- see this story's PR body. */
+export interface TranscriptDisplaySettings {
+  thinking: boolean;
+  toolCalls: boolean;
+}
+
+/** Defaults (issue #457): both on, so nothing changes until the user opts out. */
+export const DEFAULT_TRANSCRIPT_DISPLAY: TranscriptDisplaySettings = { thinking: true, toolCalls: true };
 
 /** OMP model-role ids (issue #455, `omp://models.md` "Role aliases and settings"): built-in chat
  * roles plus model-kind roles. A role's VALUE is a plain model selector OMP itself resolves

@@ -2,8 +2,8 @@
 
 import path from 'node:path'
 import { readJsonFile, writeJsonFile } from './atomicJson'
-import { DEFAULT_SESSION_READOUT } from '../../shared/model'
-import type { ApprovalMode, ReadoutKind, Settings, SplitLayout } from '../../shared/model'
+import { DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
+import type { ApprovalMode, ReadoutKind, Settings, SplitLayout, TranscriptDisplaySettings } from '../../shared/model'
 import { isThemeId } from '../../shared/themes'
 import type { ThemeId } from '../../shared/themes'
 
@@ -43,7 +43,7 @@ export class SettingsStore {
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark', watermarkEnabled: true }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark', watermarkEnabled: true, transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY }))
     // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
     // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
     // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
@@ -93,6 +93,18 @@ export class SettingsStore {
     const rawWatermarkEnabled = typeof data.watermarkEnabled === 'boolean' ? data.watermarkEnabled : undefined
     if (typeof data.watermarkEnabled !== 'boolean') {
       data.watermarkEnabled = true
+    }
+    // Issue #457 data-model: an existing settings.json written before this issue has no
+    // `transcriptDisplay` key at all (or an invalid/corrupt shape) -- the same field-level
+    // migration pattern `sessionReadout`/`split` above already use (lazy in-memory correction,
+    // no raw-tracking dance since this is a plain immediate-apply toggle pair, not a
+    // Save/Cancel-previewed field like `theme`/`watermarkEnabled`).
+    if (
+      !data.transcriptDisplay ||
+      typeof data.transcriptDisplay.thinking !== 'boolean' ||
+      typeof data.transcriptDisplay.toolCalls !== 'boolean'
+    ) {
+      data.transcriptDisplay = DEFAULT_TRANSCRIPT_DISPLAY
     }
     return new SettingsStore(file, data, rawTheme, rawWatermarkEnabled)
   }
@@ -184,6 +196,17 @@ export class SettingsStore {
   async setWatermarkEnabled(enabled: boolean): Promise<Settings> {
     this.rawWatermarkEnabled = enabled
     const next = { ...this.data, watermarkEnabled: enabled }
+    return this.persistWhole(next)
+  }
+
+  /** `settings.setTranscriptDisplay(display)` (issue #457): persists the whole row via
+   * `persistWhole`, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
+   * `setSplit`/`setWatermarkEnabled` above (returns this call's own written value, never a
+   * possibly-superseded shared read). No raw/lazy-correction tracking needed (unlike `theme`/
+   * `watermarkEnabled`): this is a plain immediate-apply toggle pair, the same migration shape
+   * as `sessionReadout`/`split` above, not a Save/Cancel-previewed field. */
+  async setTranscriptDisplay(display: TranscriptDisplaySettings): Promise<Settings> {
+    const next = { ...this.data, transcriptDisplay: display }
     return this.persistWhole(next)
   }
 }
