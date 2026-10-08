@@ -13,7 +13,7 @@
 // keeps `stopReason: 'agent-exited'` (archive's own `shutdown()` is a no-op with no live
 // process), which this function would otherwise show Resume for in the Archived list.
 import type { SessionStatus } from './model';
-import type { SessionRuntimeView } from './ipc';
+import type { Result, SessionRuntimeView, SessionSnapshot } from './ipc';
 
 export function canResumeSession(
   status: SessionStatus,
@@ -25,4 +25,19 @@ export function canResumeSession(
   if (archived) return false;
   if (stopReason === 'worktree-missing' || stopReason === 'start-failed') return false;
   return stopReason === 'agent-exited' || !!terminatedUnexpectedly;
+}
+
+// Issue #509 quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): a Resume button's
+// own pending-focus flag (SessionList.tsx's `resumeFocusPendingRef`) must only be cleared when
+// the Session is STILL resumable after the call -- a restart failure (`result.ok === true`, the
+// returned snapshot's own `runtime.status` still `'stopped'`, now e.g. `stopReason:
+// 'start-failed'`) flips this same `canResumeSession` check to false exactly like a genuine
+// success does, so the row's stranded-focus effect still needs to fire and move focus onto the
+// open button once the Resume button disappears. Clearing the flag unconditionally on ANY
+// failure (the behaviour before this fix) left focus stuck on `<body>` for that case. A hard
+// failure (`result.ok === false`) never changes the Session's own resumability, so it always
+// reports eligible (clear).
+export function stillEligibleAfterResume(result: Result<SessionSnapshot>, archived: boolean): boolean {
+  if (!result.ok) return true;
+  return canResumeSession(result.value.runtime.status, result.value.runtime.stopReason, result.value.runtime.terminatedUnexpectedly, archived);
 }

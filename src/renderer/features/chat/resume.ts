@@ -6,7 +6,7 @@
 import type { Result, SessionSnapshot } from '../../../shared/ipc';
 import { applySnapshot, applySnapshotExceptTranscript } from './applySnapshot';
 
-export { canResumeSession } from '../../../shared/canResumeSession';
+export { canResumeSession, stillEligibleAfterResume } from '../../../shared/canResumeSession';
 
 /** FR-034 (spec 001): a resume instruction is a real turn -- it can cost money and change files
  * -- so it is only ever sent from an explicit click (this function), never automatically.

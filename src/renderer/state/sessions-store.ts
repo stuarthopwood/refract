@@ -101,10 +101,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     // Quality-gate fix (cycle 6, 2026-10-08, code-reviewer, Low): a passive, in-flight open
     // (no `userAction`) should join an already-in-flight FORCED open for the same session
     // instead of starting a redundant second IPC round-trip -- the forced call's own result is
-    // always a safe answer for a passive caller too. The reverse must never happen: a forced
-    // open can resolve with a still-stopped snapshot a passive caller already decided not to
-    // auto-start against, which would silently drop the forced caller's own `userAction: true`
-    // intent (see the cycle-2 comment above this dedupe key was introduced for).
+    // always a safe answer for a passive caller too.
+    //
+    // Quality-gate fix (cycle 7, 2026-10-08, code-reviewer, Low): reworded -- the reverse must
+    // never happen: a forced open must never join a passive one, whose result may be a
+    // still-stopped snapshot (the passive caller's own `canAutoStart` check said no) that would
+    // silently drop the forced caller's own `userAction: true` intent, exactly the hazard the
+    // cycle-2 comment above this dedupe key was introduced to avoid.
     const forcedKey = `${id}:true`
     if (key !== forcedKey) {
       const inFlightForced = openPromises.get(forcedKey)

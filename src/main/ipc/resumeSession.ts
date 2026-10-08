@@ -68,13 +68,23 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
   // `deps.detectUnexpectedTermination` is passed through explicitly (not `resolveTermination`'s
   // own default) so this function's existing dependency-injection tests keep controlling it.
   const detection = await resolveTermination(session, agent.runtimeSnapshot.stoppedOnRequest, deps.detectUnexpectedTermination);
+  // Quality-gate fix (cycle 7, 2026-10-08, security-auditor, Medium): `session` above was read
+  // BEFORE the `await` just above -- `RegistryStore.updateSession` (registry.ts) replaces the
+  // array entry with a brand-new object rather than mutating in place, so a Session archived by
+  // a concurrent SESSIONS_ARCHIVE call DURING that await is invisible to the stale `session`
+  // reference. Re-read fresh right here, before the eligibility check, and use `fresh` (never
+  // the stale `session`) for both the archived flag and every subsequent read below.
+  const fresh = deps.getSession(id);
+  if (!fresh || fresh.archivedAt) {
+    return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE['not-eligible'] } };
+  }
   const refusal = checkResumeEligible(
     resumingIds,
     id,
     agent.runtimeSnapshot.status,
     agent.runtimeSnapshot.stopReason,
     detection.terminatedUnexpectedly,
-    !!session.archivedAt,
+    !!fresh.archivedAt,
   );
   if (refusal) {
     return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE[refusal] } };
@@ -83,7 +93,7 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
   try {
     await agent.start().catch(() => undefined);
     deps.notifyListChanged();
-    const refreshed = deps.getSession(id) ?? session;
+    const refreshed = deps.getSession(id) ?? fresh;
     const snapshot = await deps.buildSnapshot(agent, refreshed);
     if (snapshot.runtime.status === 'stopped') {
       // The restart itself failed (e.g. start-failed): never send the instruction into a
@@ -95,7 +105,15 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
     } catch (err) {
       return { ok: false, error: { code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) } };
     }
-    return { ok: true, value: snapshot };
+    // Quality-gate fix (cycle 7, 2026-10-08, code-reviewer, Medium): `snapshot` above was built
+    // BEFORE `agent.send` -- returning it here would let the renderer's
+    // `applySnapshotExceptTranscript` stomp the live stores with that stale pre-send state,
+    // dropping any `pending:add`/`queue_update`/`readout:update` live event that arrived during
+    // the send window even though main still holds it (e.g. an approval request the user would
+    // then never see, constitution II: every request must be answered). Build a FRESH snapshot
+    // after `send` resolves so the returned value reflects whatever actually landed meanwhile.
+    const postSend = deps.getSession(id) ?? refreshed;
+    return { ok: true, value: await deps.buildSnapshot(agent, postSend) };
   } finally {
     resumingIds.delete(id);
   }

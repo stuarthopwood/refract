@@ -241,6 +241,60 @@ describe('resumeSessionCore', () => {
     await expect(resumeSessionCore(resumingIds, 'session-1', deps)).rejects.toThrow('ENOENT: no such file');
     expect(resumingIds.has('session-1')).toBe(false);
   });
+
+  // Quality-gate fix (cycle 7, 2026-10-08, security-auditor, Medium): `session` was read once,
+  // before the tail-read await -- `RegistryStore.updateSession` replaces the array entry with a
+  // brand-new object rather than mutating in place, so a Session archived by a concurrent
+  // SESSIONS_ARCHIVE call DURING that await was invisible to the stale reference, letting a
+  // just-archived Session get a new omp process and a real resume turn.
+  it('refuses a resume when the Session is archived by a concurrent call during the tail read', async () => {
+    const resumingIds = new Set<string>();
+    const { agent, start } = makeAgent();
+    let archivedDuringTailRead = false;
+    const deps = makeDeps({
+      getOrCreateAgent: () => agent,
+      getSession: () => makeSession({ archivedAt: archivedDuringTailRead ? new Date().toISOString() : null }),
+      detectUnexpectedTermination: async () => {
+        // Simulates SESSIONS_ARCHIVE landing while this call's own tail read is still in flight.
+        archivedDuringTailRead = true;
+        return { terminatedUnexpectedly: true, reason: { kind: 'exit-record' as const, reason: 'sighup' }, pendingToolNames: [] };
+      },
+    });
+
+    const result = await resumeSessionCore(resumingIds, 'session-1', deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe('Session is not eligible to resume.');
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  // Quality-gate fix (cycle 7, 2026-10-08, code-reviewer, Medium): the snapshot returned used to
+  // be built BEFORE `agent.send`, so the renderer's `applySnapshotExceptTranscript` could stomp
+  // a pending:add/queue_update/readout:update live event that arrived during the send window.
+  it('returns the snapshot built AFTER agent.send resolves, not the pre-send one', async () => {
+    const resumingIds = new Set<string>();
+    const { agent } = makeAgent();
+    let buildCount = 0;
+    const deps = makeDeps({
+      getOrCreateAgent: () => agent,
+      buildSnapshot: async () => {
+        buildCount += 1;
+        const snapshot = makeSnapshot('idle');
+        // The second build call stands in for a pending:add (an approval request) that arrived
+        // during the agent.send window -- only visible in a snapshot built AFTER send.
+        if (buildCount === 2) {
+          snapshot.runtime.pending = [{ kind: 'approval', requestId: 'req-1', tool: 'bash', target: 'rm -rf', details: [] }];
+        }
+        return snapshot;
+      },
+    });
+
+    const result = await resumeSessionCore(resumingIds, 'session-1', deps);
+
+    expect(result.ok).toBe(true);
+    expect(buildCount).toBe(2);
+    if (result.ok) expect(result.value.runtime.pending).toEqual([{ kind: 'approval', requestId: 'req-1', tool: 'bash', target: 'rm -rf', details: [] }]);
+  });
 });
 
 // Quality-gate fix (cycle 4, 2026-10-08): `agent.runtimeSnapshot.stoppedOnRequest` is reset

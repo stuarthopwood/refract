@@ -35,7 +35,7 @@ import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
 import { buildSessionRowActions } from './sessionActions'
 import type { SessionRowAction } from './sessionActions'
 import { useWorktreeActions } from './useWorktreeActions'
-import { canResumeSession, resumeSession } from '@/features/chat/resume'
+import { canResumeSession, resumeSession, stillEligibleAfterResume } from '@/features/chat/resume'
 import { describeStopReason } from '@/features/chat/ChatPane'
 
 function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
@@ -164,12 +164,15 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     // equivalent.
     const restartFailed = result.ok && result.value.runtime.status === 'stopped'
     if (!result.ok || restartFailed) {
-      // Quality-gate fix (cycle 2, 2026-10-08): a failed resume usually leaves `canResume` still
-      // true (the Session is still eligible), so the effect above would never fire and clear
-      // this itself -- left set, a LATER unrelated `canResume` transition (a resume from the
-      // OTHER entry point, or the Session later settling for any other reason) would wrongly
-      // yank focus back to this row even though this call's own failure never earned that.
-      resumeFocusPendingRef.current = false
+      // Quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): only clear the pending
+      // flag when the Session is STILL resumable after this call -- a restart failure (ok:true,
+      // still stopped, now e.g. stopReason:'start-failed') flips `canResume` to false exactly
+      // like a genuine success does, so the effect above still needs to run and move focus onto
+      // the open button once the Resume button disappears. Clearing it unconditionally here (as
+      // cycle 5 did, back when a restart failure was not yet counted as this same kind of
+      // failure) left focus stranded on `<body>` instead.
+      const stillEligible = stillEligibleAfterResume(result, !!session.archivedAt)
+      if (stillEligible) resumeFocusPendingRef.current = false
       notify(
         result.ok
           ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
