@@ -242,27 +242,66 @@ export async function removeWorktree(
 }
 
 /** Parses `git worktree list --porcelain` output into each entry's own path (the `worktree `
- * line), normalised for comparison (constitution V / issue #599: compared case-insensitively on
- * Windows via `normalizeGitPath`). */
+ * line), trimmed but otherwise raw -- `canonicalPath` below does all normalisation, realpath
+ * resolution and case-folding, so both sides of the comparison go through exactly one path. */
 function parsePorcelainWorktreePaths(stdout: string): string[] {
   const paths: string[] = []
   for (const line of stdout.split('\n')) {
     if (line.startsWith('worktree ')) {
-      paths.push(normalizeGitPath(line.slice('worktree '.length).trim()))
+      paths.push(line.slice('worktree '.length).trim())
     }
   }
   return paths
+}
+
+/** Case-folds only on platforms with a case-insensitive filesystem (quality-gate fix, Low,
+ * Sec review): folding unconditionally would let `Repo` and `repo` compare equal as "the same
+ * path" on a case-sensitive filesystem (Linux), loosening every containment check below. Used
+ * at every comparison point in this file (`canonicalPath`, the root-containment checks, the
+ * `gitdir:` admin-area check), so every caller stays in lockstep. */
+function comparablePath(p: string): string {
+  const normalized = normalizeGitPath(p)
+  return process.platform === 'win32' || process.platform === 'darwin' ? normalized.toLowerCase() : normalized
+}
+
+/** Resolves `p` to its canonical, comparable form (quality-gate fix, High, all three
+ * reviewers): git records each worktree's REALPATH in `git worktree list --porcelain`, not its
+ * lexical path, so a repository or worktrees folder reached through a junction, symlink, subst
+ * drive, or 8.3 short name must be realpath'd on both sides before comparing -- otherwise a
+ * perfectly healthy, registered worktree is misclassified as an orphan and refused with "delete
+ * it yourself", regressing exactly the #599 bug this fix closes (reproduced and fixed per the
+ * quality gate: `addWorktree` through a junctioned worktrees folder, then Delete). Falls back
+ * progressively so an already-gone path still resolves to something comparable: realpath of
+ * `p` itself; then realpath of its parent plus the original basename (the long-supported
+ * "registered but folder already gone" case, where the parent directory still exists); then a
+ * plain lexical resolve. */
+async function canonicalPath(p: string): Promise<string> {
+  const resolved = path.resolve(p)
+  try {
+    return comparablePath(await fs.realpath(resolved))
+  } catch (err) {
+    if (!isEnoent(err)) throw err
+  }
+  try {
+    const realDir = await fs.realpath(path.dirname(resolved))
+    return comparablePath(path.join(realDir, path.basename(resolved)))
+  } catch (err) {
+    if (!isEnoent(err)) throw err
+  }
+  return comparablePath(resolved)
 }
 
 /** Issue #599: decides by what git actually says, never `fs.stat` -- a worktree folder can
  * still exist on disk (an ordinary-looking directory) while git has already lost track of it
  * (a crash mid-removal, a manual `git worktree prune`, hand cleanup), and `git worktree remove`
  * only understands the registered case, exiting 128 "is not a working tree" on the other with
- * no retry path. Compares resolved, case-insensitive (Windows) paths, never raw strings. */
+ * no retry path. Compares canonical (realpath'd, platform-folded) paths, never raw strings --
+ * see `canonicalPath` above. */
 async function isWorktreeRegistered(repo: string, worktreePath: string): Promise<boolean> {
   const stdout = await git(repo, ['worktree', 'list', '--porcelain'])
-  const target = normalizeGitPath(path.resolve(worktreePath)).toLowerCase()
-  return parsePorcelainWorktreePaths(stdout).some((candidate) => candidate.toLowerCase() === target)
+  const target = await canonicalPath(worktreePath)
+  const candidates = await Promise.all(parsePorcelainWorktreePaths(stdout).map(canonicalPath))
+  return candidates.includes(target)
 }
 
 /** The common `.git` directory for `repo` (resolved to an absolute path): its `worktrees`
@@ -275,92 +314,201 @@ async function gitCommonDir(repo: string): Promise<string> {
   return normalizeGitPath(path.isAbsolute(raw) ? raw : path.resolve(repo, raw))
 }
 
-function orphanRefusalMessage(worktreePath: string): string {
-  return `This folder is not a worktree and is not empty: ${worktreePath}. Delete it yourself, then retry`
+/** Quality-gate fix (A11y, Low): one reused "is not a worktree and is not empty" message was
+ * wrong or unclear for every reason except the literal non-empty-folder case (a file, a link,
+ * or a foreign `.git` all got the same "not empty" wording). Every message names what Refract
+ * did (nothing) and the next concrete step. */
+type OrphanRefusalReason = 'not-empty' | 'not-a-directory' | 'invalid-git-entry' | 'foreign-gitdir'
+function orphanRefusalMessage(worktreePath: string, reason: OrphanRefusalReason): string {
+  switch (reason) {
+    case 'not-empty':
+      return `Refract did not delete anything. The worktree folder ${worktreePath} still contains files git no longer tracks. Move or delete them yourself, then choose Delete again.`
+    case 'not-a-directory':
+      return `Refract did not delete anything. ${worktreePath} is a link or a file, not a worktree folder. Remove it yourself, then choose Delete again.`
+    case 'invalid-git-entry':
+      return `Refract did not delete anything. ${worktreePath} contains a .git entry Refract does not recognise. Remove it yourself, then choose Delete again.`
+    case 'foreign-gitdir':
+      return `Refract did not delete anything. ${worktreePath} contains a .git file that belongs to a different repository. Remove it yourself, then choose Delete again.`
+  }
+}
+
+function isLockLikeError(err: unknown): err is NodeJS.ErrnoException {
+  if (typeof err !== 'object' || err === null || !('code' in err)) return false
+  const code = (err as NodeJS.ErrnoException).code
+  return code === 'EBUSY' || code === 'EPERM' || code === 'EACCES'
+}
+
+/** Quality-gate fix (A11y, Low): wraps a raw Node fs error (EBUSY/EPERM/EACCES -- a Windows
+ * file lock, or a terminal/editor open in the folder) in a plain-language `GitError`; any other
+ * error (a genuine bug, an unexpected code) is rethrown unchanged rather than hidden. */
+function wrapFsError(err: unknown, worktreePath: string): never {
+  if (isLockLikeError(err)) {
+    throw new GitError(
+      'worktree-failed',
+      `Refract could not remove ${worktreePath} because another program is using it. Close any terminal or editor open in that folder, then choose Delete again.`
+    )
+  }
+  throw err
+}
+
+/** Quality-gate fix (Sec, Medium): shared by both the registered and orphan removal paths, so
+ * a corrupted or hand-edited registry entry naming a path outside this repository's own
+ * worktrees can never reach `git worktree remove --force` either -- before this fix only the
+ * orphan path checked containment at all. Falls back to a lexical resolve when realpath fails
+ * (the "registered but folder already gone" state, where the path cannot be walked on disk);
+ * `worktreePath` is always `worktreesRoot(repo)/<name>` under normal operation, so the fallback
+ * still correctly contains it. */
+async function assertWithinWorktreesRoot(repo: string, worktreePath: string): Promise<void> {
+  const resolveOrFallback = (p: string): Promise<string> =>
+    fs.realpath(p).then(comparablePath, (err) => {
+      if (!isEnoent(err)) throw err
+      return comparablePath(path.resolve(p))
+    })
+  const root = await resolveOrFallback(worktreesRoot(repo))
+  const target = await resolveOrFallback(worktreePath)
+  if (target === root || !target.startsWith(`${root}${path.sep}`)) {
+    throw new GitError(
+      'worktree-failed',
+      `Refract did not delete anything. ${worktreePath} is outside Refract's worktree folder (${worktreesRoot(repo)}), so it will not delete it. Check the folder, remove it yourself if it is safe, then choose Delete again.`
+    )
+  }
+}
+
+/** Quality-gate fix (Verif, Medium-a): a folder can be REGISTERED yet already emptied by hand
+ * -- its `.git` pointer file deleted (a dotfile, hidden by default in Explorer) while the
+ * folder and its git registration both remain. `git worktree remove --force` refuses that
+ * state forever ("validation failed ... .git does not exist") on every retry, since nothing
+ * else ever deregisters it. True only when the folder exists, is a real directory, and has no
+ * `.git` entry at all -- a missing folder is the already-handled "registered, folder gone"
+ * case, which `removeWorktree`'s own `--force` already clears. */
+async function isRegisteredButHandEmptied(worktreePath: string): Promise<boolean> {
+  let stat: Stats
+  try {
+    stat = await fs.lstat(worktreePath)
+  } catch (err) {
+    if (isEnoent(err)) return false
+    throw err
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) return false
+  const hasGit = await fs.lstat(path.join(worktreePath, '.git')).then(
+    () => true,
+    () => false
+  )
+  return !hasGit
 }
 
 /** Issue #599 step 3: removes an UNREGISTERED worktree folder, never a registered one (callers
- * check `isWorktreeRegistered` first). Runs `git worktree prune` first (clears any stale admin
- * entry; harmless and a no-op when there is none), then removes the folder only once every one
- * of these holds, refusing (throwing `worktree-failed`, touching nothing) otherwise:
+ * check `isWorktreeRegistered` first; `removeSessionWorktree` below also runs
+ * `assertWithinWorktreesRoot` before either branch). Removes the folder only once every one of
+ * these holds, refusing (throwing `worktree-failed`, touching nothing) otherwise:
  *
  * - it is a REAL directory: `lstat`, never `stat`, so a symlink or Windows junction/reparse
  *   point pointing at an otherwise-innocent directory is refused, not followed;
  * - its realpath lies STRICTLY inside this repository's `worktreesRoot` (realpath-compared,
- *   case-insensitive on Windows, exactly like `isStrictDescendantOfOmpSessions` in
- *   `ipc/sessions.ts`), so a corrupted or hand-edited registry entry can never point this
- *   function at an arbitrary folder elsewhere on disk;
+ *   platform-folded via `comparablePath` -- stricter than `isStrictDescendantOfOmpSessions` in
+ *   `ipc/sessions.ts`, which only `path.resolve`s and always lowercases);
  * - it is then either EMPTY, or holds only a `.git` file -- and that file must be a regular
- *   file (never a symlink), its `gitdir:` line must resolve to somewhere strictly inside THIS
- *   repository's own `.git/worktrees` admin area (never another repository's), by construction
- *   already absent or stale (this function only ever runs for a path `isWorktreeRegistered`
- *   just said is NOT registered).
+ *   file (never a symlink), its `gitdir:` line must resolve to STRICTLY inside THIS
+ *   repository's own `.git/worktrees` admin area (never the admin area itself, and never
+ *   another repository's).
+ *
+ * Quality-gate fix (Sec, Low, TOCTOU): every filesystem operation below acts on `targetReal`,
+ * the realpath just proven to lie inside the root -- never the original, unresolved
+ * `worktreePath` -- so an intermediate component swapped for a junction between the containment
+ * check and the delete below can never redirect `readdir`/`lstat`/`unlink`/`rmdir` outside the
+ * root.
+ *
+ * No unconditional `git worktree prune` here any more (Code+Sec, Medium): it used to run before
+ * every safety check, including on refusal paths, which rewrote `.git/worktrees` for every
+ * OTHER Session's stale admin entry too (for example one on a temporarily offline drive) and
+ * contradicted "refusal touches nothing". `removeSessionWorktree` now prunes only when it has
+ * just proven a need to (this path's own entry was stale, or `branch -D` failed because a stale
+ * entry elsewhere still holds the branch).
  *
  * Never a recursive delete of unknown content: the empty-directory case uses a plain `rmdir`
  * (fails if anything is still inside), and the lone-`.git`-file case unlinks that one named
  * file before `rmdir`, rather than `rm -rf` the directory. */
 async function removeOrphanedWorktreeFolder(repo: string, worktreePath: string): Promise<void> {
-  await git(repo, ['worktree', 'prune'])
-
   let stat: Stats
   try {
     stat = await fs.lstat(worktreePath)
   } catch (err) {
-    if (isEnoent(err)) return // Issue #599 step 4: not registered, no folder -- nothing to remove.
-    throw err
+    if (isEnoent(err)) return // Not registered, no folder -- nothing to remove.
+    wrapFsError(err, worktreePath)
   }
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
-    throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath))
+    throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath, 'not-a-directory'))
   }
 
-  const root = normalizeGitPath(await fs.realpath(worktreesRoot(repo))).toLowerCase()
-  const target = normalizeGitPath(await fs.realpath(worktreePath)).toLowerCase()
+  const rootReal = await fs.realpath(worktreesRoot(repo)).catch((err) => wrapFsError(err, worktreePath))
+  const targetReal = await fs.realpath(worktreePath).catch((err) => wrapFsError(err, worktreePath))
+  const root = comparablePath(rootReal)
+  const target = comparablePath(targetReal)
   if (target === root || !target.startsWith(`${root}${path.sep}`)) {
-    throw new GitError('worktree-failed', `Refusing to remove a folder outside the worktrees root: ${worktreePath}`)
+    throw new GitError(
+      'worktree-failed',
+      `Refract did not delete anything. ${worktreePath} is outside Refract's worktree folder (${worktreesRoot(repo)}), so it will not delete it. Check the folder, remove it yourself if it is safe, then choose Delete again.`
+    )
   }
 
-  const entries = await fs.readdir(worktreePath)
+  const entries = await fs.readdir(targetReal).catch((err) => wrapFsError(err, worktreePath))
   if (entries.length === 0) {
-    await fs.rmdir(worktreePath)
+    await fs.rmdir(targetReal).catch((err) => wrapFsError(err, worktreePath))
     return
   }
   if (entries.length === 1 && entries[0] === '.git') {
-    const gitFilePath = path.join(worktreePath, '.git')
-    const gitFileStat = await fs.lstat(gitFilePath)
+    const gitFilePath = path.join(targetReal, '.git')
+    const gitFileStat = await fs.lstat(gitFilePath).catch((err) => wrapFsError(err, worktreePath))
     if (!gitFileStat.isFile()) {
-      throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath))
+      throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath, 'invalid-git-entry'))
     }
-    const content = await fs.readFile(gitFilePath, 'utf8')
+    const content = await fs.readFile(gitFilePath, 'utf8').catch((err) => wrapFsError(err, worktreePath))
     const match = /^gitdir:\s*(.+?)\s*$/m.exec(content)
     if (!match) {
-      throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath))
+      throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath, 'invalid-git-entry'))
     }
     const gitdirRaw = match[1]!
-    const gitdirAbs = normalizeGitPath(path.isAbsolute(gitdirRaw) ? gitdirRaw : path.resolve(worktreePath, gitdirRaw))
-    const adminRoot = normalizeGitPath(path.join(await gitCommonDir(repo), 'worktrees'))
-    const pointsIntoThisRepo =
-      gitdirAbs.toLowerCase() === adminRoot.toLowerCase() || gitdirAbs.toLowerCase().startsWith(`${adminRoot.toLowerCase()}${path.sep}`)
+    const gitdirAbs = path.isAbsolute(gitdirRaw) ? gitdirRaw : path.resolve(targetReal, gitdirRaw)
+    // Quality-gate fix (Verif, Low): strict descendant only -- a `gitdir:` pointing at the
+    // admin area itself (never a real per-worktree entry) no longer passes.
+    const adminRoot = comparablePath(path.join(await gitCommonDir(repo), 'worktrees'))
+    const pointsIntoThisRepo = comparablePath(gitdirAbs).startsWith(`${adminRoot}${path.sep}`)
     if (!pointsIntoThisRepo) {
-      throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath))
+      throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath, 'foreign-gitdir'))
     }
-    await fs.unlink(gitFilePath)
-    await fs.rmdir(worktreePath)
+    await fs.unlink(gitFilePath).catch((err) => wrapFsError(err, worktreePath))
+    await fs.rmdir(targetReal).catch((err) => wrapFsError(err, worktreePath))
     return
   }
-  throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath))
+  throw new GitError('worktree-failed', orphanRefusalMessage(worktreePath, 'not-empty'))
 }
 
 /**
  * Removes a Session's worktree however it currently stands (issue #599): the single entry point
  * `sessions.delete` should call instead of picking its own path with `fs.stat`.
  *
- * - Registered (`isWorktreeRegistered`): identical to `removeWorktree` above -- `git worktree
- *   remove --force` (which also cleanly handles a registered worktree whose directory has
- *   already disappeared, confirmed against a real repo: prunable, not an error), then the
- *   branch. A failure here throws and leaves the Session, branch and Conversations untouched.
- * - Not registered: `removeOrphanedWorktreeFolder` above decides the folder; the branch is then
- *   deleted only if it still exists (mirrors the pre-#599 fallback for an already-gone folder,
- *   so that half-orphaned state still finishes deleting).
+ * - `assertWithinWorktreesRoot` gates BOTH branches below (Sec, Medium): a corrupted registry
+ *   entry can never reach either removal path for a folder outside this repository's worktrees.
+ * - Registered, and NOT hand-emptied: identical to `removeWorktree` above (`--force` remove,
+ *   which also cleanly handles a registered worktree whose directory has already disappeared,
+ *   confirmed against a real repo: prunable, not an error), then the branch.
+ * - Registered, but hand-emptied (Verif, Medium-a): its own admin entry is stale even though
+ *   git has not yet noticed (`isRegisteredButHandEmptied`); prune clears exactly this entry,
+ *   then the orphan-folder checks below take over.
+ * - Not registered (and the repository itself could not even be read -- Verif, High-2): a
+ *   `GitError` from `isWorktreeRegistered` (repository deleted, moved, or no longer a git repo)
+ *   is swallowed only when the worktree folder itself is also confirmed gone (`lstat` ENOENT):
+ *   nothing to remove, matching the pre-#599 fallback (`branchExists` already returns `false`
+ *   when git fails, so the branch step below is a safe no-op too). Otherwise the folder might
+ *   still hold live work, so the original git error is rethrown rather than guessed past.
+ * - Not registered, folder present: `removeOrphanedWorktreeFolder` above decides the folder.
+ * - The branch is then deleted only if it still exists. A `branch -D` failure is retried once,
+ *   after `git worktree prune`, ONLY when git's own message says the branch is in use by a
+ *   worktree (verified wording: "cannot delete branch '<b>' used by worktree at '<path>'")
+ *   somewhere (Code+Sec, Medium-b): prune only removes entries git itself has already decided
+ *   are stale, so a genuinely live worktree elsewhere still correctly blocks the delete, while a
+ *   stale one (the same class of bug as #599 itself, just blocking the branch instead of the
+ *   folder) no longer wedges the Session forever.
  *
  * Idempotent by construction: whatever step a previous call threw on, the next call re-reads
  * live git/filesystem state from scratch rather than trusting anything cached, so a retry picks
@@ -371,14 +519,48 @@ export async function removeSessionWorktree(
   branch: string,
   opts: { deleteBranch: boolean }
 ): Promise<void> {
-  if (await isWorktreeRegistered(repo, worktreePath)) {
+  await assertWithinWorktreesRoot(repo, worktreePath)
+
+  async function deleteBranchIfRequested(): Promise<void> {
+    if (!opts.deleteBranch || !(await branchExists(repo, branch))) return
+    try {
+      await git(repo, ['branch', '-D', '--', branch])
+    } catch (err) {
+      if (!(err instanceof GitError) || !/used by worktree|checked out/i.test(err.message)) throw err
+      await git(repo, ['worktree', 'prune'])
+      await git(repo, ['branch', '-D', '--', branch])
+    }
+  }
+
+  let registered: boolean
+  try {
+    registered = await isWorktreeRegistered(repo, worktreePath)
+  } catch (gitErr) {
+    let worktreeGone: boolean
+    try {
+      await fs.lstat(worktreePath)
+      worktreeGone = false
+    } catch (lstatErr) {
+      if (!isEnoent(lstatErr)) wrapFsError(lstatErr, worktreePath)
+      worktreeGone = true
+    }
+    if (!worktreeGone) throw gitErr
+    await deleteBranchIfRequested()
+    return
+  }
+
+  if (registered && (await isRegisteredButHandEmptied(worktreePath))) {
+    await git(repo, ['worktree', 'prune'])
+    registered = false
+  }
+
+  if (registered) {
     await removeWorktree(repo, worktreePath, branch, opts)
     return
   }
+
   await removeOrphanedWorktreeFolder(repo, worktreePath)
-  if (opts.deleteBranch && (await branchExists(repo, branch))) {
-    await git(repo, ['branch', '-D', '--', branch])
-  }
+  await deleteBranchIfRequested()
 }
 
 export interface DeleteCheck {

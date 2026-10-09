@@ -113,8 +113,10 @@ export function registerSessions(manager: SessionManager): void {
         // Security remediation (Medium): `addSession` can now fail with `not-found` when the
         // Repository was removed while `listBranches`/`generateName`/`addWorktree` above were
         // still in flight -- without this, the worktree/branch just created above would be
-        // stranded (orphaned, no Session pointing at them). Reuses the same removal helper
-        // `sessions.delete` already uses, rather than a second cleanup path.
+        // stranded (orphaned, no Session pointing at them). Reuses the same `git worktree
+        // remove --force` helper `removeSessionWorktree` falls back to for a registered
+        // worktree (this one always is, having just been created), rather than a second
+        // cleanup path.
         await removeWorktree(repository.path, worktreePath, branch, { deleteBranch: true }).catch(() => undefined);
         return mapStoreThrown(err);
       }
