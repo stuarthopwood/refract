@@ -10,7 +10,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 
 export type SessionRowAction =
   | { kind: 'separator' }
-  | { kind: 'item'; key: string; label: string; variant?: 'destructive'; onSelect: () => void }
+  | { kind: 'item'; key: string; label: string; variant?: 'destructive'; disabled?: boolean; onSelect: () => void }
 
 export interface SessionRowActionHandlers {
   onRename(): void
@@ -21,11 +21,35 @@ export interface SessionRowActionHandlers {
   onRestore(): void
   onStopAgent(): void
   onDelete(): void
+  // Issue #620: creates a Session from the row's own repository and its default branch. Absent
+  // from the Manage sessions screen's row when its repository cannot be resolved (there is no
+  // `newSession` item to select in that case -- see `newSession` below), so this is optional.
+  onNewSession?(): void
 }
 
-export function buildSessionRowActions(session: SessionSummary, handlers: SessionRowActionHandlers): SessionRowAction[] {
+export function buildSessionRowActions(
+  session: SessionSummary,
+  handlers: SessionRowActionHandlers,
+  // Issue #620, UX consult item 2 decision 3/4: the row's own repository and its default branch,
+  // created instantly, no dialog. `null` when the repository cannot be resolved (Manage sessions
+  // screen's "Unknown repository" fallback, decision 5) -- the item is left out entirely rather
+  // than shown disabled, since there is no repository to create into at all.
+  newSession: { branch: string; disabled: boolean } | null
+): SessionRowAction[] {
   const isArchived = !!session.archivedAt
   return [
+    ...(newSession
+      ? ([
+          {
+            kind: 'item',
+            key: 'new-session',
+            label: `New session from ${newSession.branch}`,
+            disabled: newSession.disabled,
+            onSelect: () => handlers.onNewSession?.()
+          },
+          { kind: 'separator' }
+        ] as const)
+      : []),
     { kind: 'item', key: 'rename', label: 'Rename', onSelect: handlers.onRename },
     // Spec 005: same effect as Ctrl+click on the row's open button.
     { kind: 'item', key: 'open-in-split', label: 'Open in split', onSelect: handlers.onOpenInSplit },

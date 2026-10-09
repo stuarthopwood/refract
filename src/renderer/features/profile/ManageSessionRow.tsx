@@ -35,11 +35,18 @@ import { buildSessionRowActions } from '@/features/sessions/sessionActions'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
 import { focusSessionPane } from '@/lib/focus'
-import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { notify, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
+import type { Repository } from '../../../shared/model'
 
 export interface ManageSessionRowProps {
   session: SessionSummary
+  // Issue #620, UX consult item 2 decision 5: the row's own repository, resolved by
+  // `ManageSessionsScreen.tsx` (which already reads `useRepositoriesStore`). `undefined` in the
+  // same case `repositoryName` already falls back to "Unknown repository" -- the "New session
+  // from {branch}" item is left out of the shared builder entirely in that case, since there is
+  // no repository to create into.
+  repository: Repository | undefined
   repositoryName: string
   /** Falls back here when this row unmounts (archive/restore/delete) and neither a next nor a
    *  previous row survives -- the search input is the one control on this screen guaranteed to
@@ -49,7 +56,7 @@ export interface ManageSessionRowProps {
   onAnnounce(message: string): void
 }
 
-export function ManageSessionRow({ session, repositoryName, searchInputRef, onAnnounce }: ManageSessionRowProps) {
+export function ManageSessionRow({ session, repository, repositoryName, searchInputRef, onAnnounce }: ManageSessionRowProps) {
   const isVisible = useSplitStore((state) => state.paneSessionIds.includes(session.id))
   const isFocusedPane = useSplitStore((state) => {
     const index = state.paneSessionIds.indexOf(session.id)
@@ -58,6 +65,8 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   const replaceFocused = useSplitStore((state) => state.replaceFocused)
   const openInSplit = useSplitStore((state) => state.openInSplit)
   const open = useSessionsStore((state) => state.open)
+  const createSession = useSessionsStore((state) => state.create)
+  const creatingRepositoryIds = useSessionsStore((state) => state.creatingRepositoryIds)
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -76,6 +85,11 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
   const quickActionPendingRef = useRef(false)
+  // Issue #620, UX consult item 2 decision 8: mirrors `SessionList.tsx`'s own guard -- set
+  // synchronously in `onNewSession`'s `onSelect` so `handleMenuCloseAutoFocus` knows to
+  // `preventDefault` Radix's own return-to-trigger (there is nothing to focus yet at menu-close
+  // time; the create's own then-handler decides once it settles).
+  const createRequestedRef = useRef(false)
   // Post-build review fix (accessibility-auditor, Medium, WCAG 4.1.3): archive/restore chosen
   // from the "..." menu or the right-click context menu, below, must not announce until the
   // menu's close animation actually finishes -- see `handleMenuCloseAutoFocus`.
@@ -239,45 +253,90 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     })
   }
 
+  // Issue #620, UX consult item 2 decisions 3, 5, 8, 9: creates instantly in this row's own
+  // repository and default branch (no dialog), announces immediately, then on success switches
+  // this screen back to chat (`openChat`, the same "opens that session" requirement every other
+  // path on this row already follows -- see `handleOpen` above) and focuses the new Session's
+  // pane, but only if the user has not moved on in the meantime (still on the "..." trigger,
+  // this row, or `<body>`). On failure, focus returns to the trigger and `notify` shows a toast
+  // that stays until dismissed. Absent from `actions` entirely (never called) when `repository`
+  // could not be resolved -- see the `newSession` argument to `buildSessionRowActions` below.
+  function handleNewSession(): void {
+    if (!repository) return
+    createRequestedRef.current = true
+    onAnnounce(`Creating session from ${repository.defaultBranch}`)
+    const row = rowRef.current
+    void createSession(repository.id, repository.defaultBranch).then((result) => {
+      if (!result.ok) {
+        notify(result.error)
+        if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+        else focusListContainer()
+        return
+      }
+      requestAnimationFrame(() => {
+        const active = document.activeElement
+        const stillHere =
+          !active ||
+          active === document.body ||
+          !active.isConnected ||
+          active === menuTriggerRef.current ||
+          (row?.contains(active) ?? false)
+        if (!stillHere) return
+        useViewStore.getState().openChat(repository.id)
+        requestAnimationFrame(() => {
+          const { paneSessionIds, focusedIndex } = useSplitStore.getState()
+          const focusedSessionId = paneSessionIds[focusedIndex]
+          if (focusedSessionId) focusSessionPane(focusedSessionId)
+        })
+      })
+    })
+  }
+
   // The row's "..." menu and its right-click context menu share this one action list:
   // one set of options, reachable two ways, never two menus to keep in sync. The list itself
   // (labels/order/archived-or-not/stopped-or-not) is shared with SessionList.tsx via
   // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
   // this row's own rename/delete-dialog state) stay local, since they differ per screen.
-  const actions = buildSessionRowActions(session, {
-    onRename: () => {
-      renameRequestedRef.current = true
-      startRenaming()
+  const actions = buildSessionRowActions(
+    session,
+    {
+      onNewSession: handleNewSession,
+      onRename: () => {
+        renameRequestedRef.current = true
+        startRenaming()
+      },
+      onOpenInSplit: () => handleOpen({ ctrlKey: true }),
+      onCopyPath: () => void copyPath(),
+      onReveal: () => void reveal(),
+      onArchive: () => {
+        captureFocusFallback()
+        deferAnnouncementRef.current = true
+        void archive(session.id).then((ok) => {
+          if (!ok) return
+          const message = `Archived ${session.name}`
+          if (deferAnnouncementRef.current) pendingAnnouncementRef.current = message
+          else onAnnounce(message)
+        })
+      },
+      onRestore: () => {
+        captureFocusFallback()
+        deferAnnouncementRef.current = true
+        void restore(session.id).then((ok) => {
+          if (!ok) return
+          const message = `Restored ${session.name}`
+          if (deferAnnouncementRef.current) pendingAnnouncementRef.current = message
+          else onAnnounce(message)
+        })
+      },
+      onStopAgent: () => void stopAgent(session.id),
+      onDelete: () => {
+        captureFocusFallback()
+        setDeleteOpen(true)
+      }
     },
-    onOpenInSplit: () => handleOpen({ ctrlKey: true }),
-    onCopyPath: () => void copyPath(),
-    onReveal: () => void reveal(),
-    onArchive: () => {
-      captureFocusFallback()
-      deferAnnouncementRef.current = true
-      void archive(session.id).then((ok) => {
-        if (!ok) return
-        const message = `Archived ${session.name}`
-        if (deferAnnouncementRef.current) pendingAnnouncementRef.current = message
-        else onAnnounce(message)
-      })
-    },
-    onRestore: () => {
-      captureFocusFallback()
-      deferAnnouncementRef.current = true
-      void restore(session.id).then((ok) => {
-        if (!ok) return
-        const message = `Restored ${session.name}`
-        if (deferAnnouncementRef.current) pendingAnnouncementRef.current = message
-        else onAnnounce(message)
-      })
-    },
-    onStopAgent: () => void stopAgent(session.id),
-    onDelete: () => {
-      captureFocusFallback()
-      setDeleteOpen(true)
-    }
-  })
+    repository ? { branch: repository.defaultBranch, disabled: creatingRepositoryIds.has(repository.id) } : null
+  )
 
   // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's whole
   // surface (not a normally-focusable element), so its own close-autofocus prefers sending focus
@@ -299,6 +358,11 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
     if (renameRequestedRef.current) {
       event.preventDefault()
       renameRequestedRef.current = false
+    } else if (createRequestedRef.current) {
+      // Issue #620 decision 8: stops Radix's own return-to-trigger -- `handleNewSession`'s own
+      // then-handler above decides where focus actually goes once the create settles.
+      event.preventDefault()
+      createRequestedRef.current = false
     } else {
       event.preventDefault()
       if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
@@ -419,7 +483,7 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
                     action.kind === 'separator' ? (
                       <DropdownMenuSeparator key={`sep-${index}`} />
                     ) : (
-                      <DropdownMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+                      <DropdownMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
                         {action.label}
                       </DropdownMenuItem>
                     )
@@ -434,7 +498,7 @@ export function ManageSessionRow({ session, repositoryName, searchInputRef, onAn
             action.kind === 'separator' ? (
               <ContextMenuSeparator key={`sep-${index}`} />
             ) : (
-              <ContextMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+              <ContextMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
                 {action.label}
               </ContextMenuItem>
             )

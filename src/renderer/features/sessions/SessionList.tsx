@@ -24,12 +24,13 @@ import { cn } from '@/lib/utils'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
-import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
+import { focusRepositoryGroupOrReadiness, focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
+import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { describeStartProgress, describeStartProgressLabel } from './startProgressDisplay'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
@@ -39,7 +40,15 @@ import { useWorktreeActions } from './useWorktreeActions'
 import { canResumeSession, resumeSession, stillEligibleAfterResume } from '@/features/chat/resume'
 import { describeStopReason } from '@/features/chat/ChatPane'
 
-function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
+function SessionRow({
+  session,
+  repository,
+  onAnnounce
+}: {
+  session: SessionSummary
+  repository: Repository
+  onAnnounce(message: string): void
+}) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
   // reading, extended to this row's own marker); which pane specifically only matters to the
   // click handler below, not this visual marker.
@@ -61,6 +70,8 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   // both `openInSplit` and `replaceFocused` funnel through -- so it applies to every caller of
   // either, not just the ones wired up here by hand.
   const open = useSessionsStore((state) => state.open)
+  const createSession = useSessionsStore((state) => state.create)
+  const creatingRepositoryIds = useSessionsStore((state) => state.creatingRepositoryIds)
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -84,6 +95,11 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
   const listFocusRequestedRef = useRef(false)
+  // Issue #620, UX consult item 2 decision 8: set synchronously in `onNewSession`'s `onSelect`
+  // below so `handleMenuCloseAutoFocus` knows to `preventDefault` Radix's own return-to-trigger
+  // -- the create's own then-handler decides where focus actually goes once it settles (unlike
+  // rename/list-focus above, there is nothing to focus yet at menu-close time).
+  const createRequestedRef = useRef(false)
   // Archive/restore/delete unmount this row asynchronously (the store update that moves it
   // out of the active/archived bucket can land before `onCloseAutoFocus` fires), and sometimes
   // the whole surrounding group unmounts with it (restoring the last archived Session also
@@ -259,54 +275,90 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     openButtonRef.current?.focus()
   }, [renaming])
 
+  // Issue #620, UX consult item 2 decisions 3, 8, 9: creates instantly in this row's own
+  // repository and default branch (no dialog, no base-branch picker), announces immediately
+  // (the worktree checkout takes seconds and the menu has already closed), then -- on success --
+  // focuses the new Session's pane one frame later, but only if the user has not moved on in the
+  // meantime (still on the "..." trigger, this row, or `<body>`). On failure, focus returns to
+  // the trigger and the store's own `notify` shows a toast that stays until dismissed.
+  function handleNewSession(): void {
+    createRequestedRef.current = true
+    onAnnounce(`Creating session from ${repository.defaultBranch}`)
+    const row = rowRef.current
+    void createSession(repository.id, repository.defaultBranch).then((result) => {
+      if (!result.ok) {
+        notify(result.error)
+        if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+        else focusListContainer()
+        return
+      }
+      requestAnimationFrame(() => {
+        const active = document.activeElement
+        const stillHere =
+          !active ||
+          active === document.body ||
+          !active.isConnected ||
+          active === menuTriggerRef.current ||
+          (row?.contains(active) ?? false)
+        if (stillHere) focusSessionPane(result.value.id)
+      })
+    })
+  }
+
   // The row's "..." menu and its right-click context menu share this one action list:
   // one set of options, reachable two ways, never two menus to keep in sync. The list itself
   // (labels/order/archived-or-not/stopped-or-not) is shared with ManageSessionRow.tsx via
   // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
   // this row's own rename/delete-dialog state) stay local, since they differ per screen.
-  const actions: SessionRowAction[] = buildSessionRowActions(session, {
-    onRename: () => {
-      renameRequestedRef.current = true
-      startRenaming()
+  const actions: SessionRowAction[] = buildSessionRowActions(
+    session,
+    {
+      onNewSession: handleNewSession,
+      onRename: () => {
+        renameRequestedRef.current = true
+        startRenaming()
+      },
+      onOpenInSplit: () => openInSplit(session.id),
+      onCopyPath: () => void copyPath(),
+      onReveal: () => void reveal(),
+      // Issue #603 quality-gate follow-up (Low then Medium, a11y): archive can now be refused (a
+      // resume in progress -- issue #603 item 1), so focus must only move toward the list on
+      // SUCCESS. `listFocusRequestedRef` is no longer set synchronously here: Radix's own
+      // close-autofocus (`handleMenuCloseAutoFocus' below) falls through to its generic
+      // trigger/open-button fallback instead, keeping focus near this row by default -- correct
+      // for a refusal, since the row never goes anywhere.
+      //
+      // Round 2 (Medium): `archive()` awaits main's own `shutdown()`, which can take seconds
+      // (it waits out any start already running) -- moving focus unconditionally on success
+      // could yank it away from wherever the user had since moved it (for example into the chat
+      // textarea). Captures this row's own `<li>` before the call and only moves focus
+      // afterward when it is stranded (body/disconnected/none) or still somewhere inside THIS
+      // row -- never when the user has deliberately focused something else meanwhile.
+      onArchive: () => {
+        captureFocusFallback()
+        const row = rowRef.current
+        void archive(session.id)
+          .then((ok) => {
+            if (!ok) return
+            const active = document.activeElement
+            if (!active || active === document.body || !active.isConnected || row?.contains(active)) focusListContainer()
+          })
+          .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
+      },
+      onRestore: () => {
+        listFocusRequestedRef.current = true
+        captureFocusFallback()
+        void restore(session.id)
+      },
+      onStopAgent: () => void stopAgent(session.id),
+      onDelete: () => {
+        captureFocusFallback()
+        setDeleteOpen(true)
+      }
     },
-    onOpenInSplit: () => openInSplit(session.id),
-    onCopyPath: () => void copyPath(),
-    onReveal: () => void reveal(),
-    // Issue #603 quality-gate follow-up (Low then Medium, a11y): archive can now be refused (a
-    // resume in progress -- issue #603 item 1), so focus must only move toward the list on
-    // SUCCESS. `listFocusRequestedRef` is no longer set synchronously here: Radix's own
-    // close-autofocus (`handleMenuCloseAutoFocus' below) falls through to its generic
-    // trigger/open-button fallback instead, keeping focus near this row by default -- correct
-    // for a refusal, since the row never goes anywhere.
-    //
-    // Round 2 (Medium): `archive()` awaits main's own `shutdown()`, which can take seconds
-    // (it waits out any start already running) -- moving focus unconditionally on success
-    // could yank it away from wherever the user had since moved it (for example into the chat
-    // textarea). Captures this row's own `<li>` before the call and only moves focus
-    // afterward when it is stranded (body/disconnected/none) or still somewhere inside THIS
-    // row -- never when the user has deliberately focused something else meanwhile.
-    onArchive: () => {
-      captureFocusFallback()
-      const row = rowRef.current
-      void archive(session.id)
-        .then((ok) => {
-          if (!ok) return
-          const active = document.activeElement
-          if (!active || active === document.body || !active.isConnected || row?.contains(active)) focusListContainer()
-        })
-        .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
-    },
-    onRestore: () => {
-      listFocusRequestedRef.current = true
-      captureFocusFallback()
-      void restore(session.id)
-    },
-    onStopAgent: () => void stopAgent(session.id),
-    onDelete: () => {
-      captureFocusFallback()
-      setDeleteOpen(true)
-    }
-  })
+    { branch: repository.defaultBranch, disabled: creatingRepositoryIds.has(repository.id) }
+  )
 
   // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's open
   // button (the only normally-focusable element in the row), so its own close-autofocus prefers
@@ -319,6 +371,12 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       event.preventDefault()
       listFocusRequestedRef.current = false
       focusListContainer()
+    } else if (createRequestedRef.current) {
+      // Issue #620 decision 8: stops Radix's own return-to-trigger -- `handleNewSession`'s own
+      // then-handler above decides where focus actually goes once the create settles, which is
+      // never known yet at menu-close time.
+      event.preventDefault()
+      createRequestedRef.current = false
     } else {
       // Shared by the "..." dropdown and the right-click context menu. The dropdown's own
       // trigger is a real, focusable button, so Radix's default close-autofocus would land here
@@ -494,7 +552,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   action.kind === 'separator' ? (
                     <DropdownMenuSeparator key={`sep-${index}`} />
                   ) : (
-                    <DropdownMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+                    <DropdownMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
                       {action.label}
                     </DropdownMenuItem>
                   )
@@ -510,7 +568,7 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
             action.kind === 'separator' ? (
               <ContextMenuSeparator key={`sep-${index}`} />
             ) : (
-              <ContextMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
+              <ContextMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
                 {action.label}
               </ContextMenuItem>
             )
@@ -532,14 +590,23 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   )
 }
 
-function RepositoryGroup({ repository, sessions }: { repository: Repository; sessions: SessionSummary[] }) {
+function RepositoryGroup({
+  repository,
+  sessions,
+  onAnnounce
+}: {
+  repository: Repository
+  sessions: SessionSummary[]
+  onAnnounce(message: string): void
+}) {
   const createSession = useSessionsStore((state) => state.create)
+  // Issue #620, UX consult item 2 decision 6: this per-repository in-flight guard used to be a
+  // private ref/state pair only this button could see -- it now lives in `sessions-store.ts`,
+  // shared with the row's own "New session from {branch}" menu item and `NewSessionDialog`, so
+  // `create()` itself enforces the guard and every caller's disabled state agrees.
+  const creatingRepositoryIds = useSessionsStore((state) => state.creatingRepositoryIds)
+  const creating = creatingRepositoryIds.has(repository.id)
   const renameRepository = useRepositoriesStore((state) => state.rename)
-  // Per-repository in-flight guard: the ref blocks a second click before React re-renders (a
-  // double-click), the state drives aria-disabled and the spinner. aria-disabled, not disabled,
-  // so keyboard focus stays on the button.
-  const creatingRef = useRef(false)
-  const [creating, setCreating] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
@@ -557,16 +624,8 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   const renameErrorId = `repository-rename-error-${repository.id}`
 
   async function handleQuickCreate(): Promise<void> {
-    if (creatingRef.current) return
-    creatingRef.current = true
-    setCreating(true)
-    try {
-      const result = await createSession(repository.id, repository.defaultBranch)
-      if (!result.ok) notify(result.error)
-    } finally {
-      creatingRef.current = false
-      setCreating(false)
-    }
+    const result = await createSession(repository.id, repository.defaultBranch)
+    if (!result.ok) notify(result.error)
   }
 
   function startRenaming(): void {
@@ -754,7 +813,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
         <CollapsibleContent>
           <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0.5 py-1">
             {active.map((session) => (
-              <SessionRow key={session.id} session={session} repository={repository} />
+              <SessionRow key={session.id} session={session} repository={repository} onAnnounce={onAnnounce} />
             ))}
           </ul>
         </CollapsibleContent>
@@ -768,7 +827,7 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
           <CollapsibleContent>
             <ul aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1">
               {archived.map((session) => (
-                <SessionRow key={session.id} session={session} repository={repository} />
+                <SessionRow key={session.id} session={session} repository={repository} onAnnounce={onAnnounce} />
               ))}
             </ul>
           </CollapsibleContent>
@@ -799,6 +858,15 @@ export function SessionList() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const view = useViewStore((state) => state.view)
   const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
+  // Issue #620, UX consult item 2 decision 9: the row menu's "New session from {branch}" item
+  // announces immediately on select ("Creating session from {branch}") -- the worktree checkout
+  // takes seconds and the menu has already closed by then. Deviation note (PR body): the UX
+  // consult's decision says to reuse "the shared app-level announcer from item 1" (#621), which
+  // has not landed in this branch's base yet -- this uses the project's standard
+  // `useClearedAnnouncement` pattern instead (the same one `ManageSessionsScreen.tsx` and others
+  // already use), scoped to this component, so the two issues' PRs do not collide on the same
+  // live region.
+  const [announcement, announce] = useClearedAnnouncement()
 
   // specs/003-pull-request-management FR-001, T011: the left-nav entry has no row of its own to
   // scope a repository from, unlike a Session row -- defaults to the currently focused pane's
@@ -857,6 +925,7 @@ export function SessionList() {
               key={repository.id}
               repository={repository}
               sessions={sessions.filter((session) => session.repositoryId === repository.id)}
+              onAnnounce={announce}
             />
           ))}
         </div>
@@ -873,6 +942,9 @@ export function SessionList() {
             </Button>
           }
         />
+      </div>
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
       </div>
     </nav>
   )
