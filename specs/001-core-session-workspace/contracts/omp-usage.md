@@ -1,6 +1,6 @@
 # Contract: how Refract uses OMP
 
-Refract drives `omp --mode rpc-ui` over stdio (newline-delimited JSON). This file lists exactly what Refract sends and consumes. OMP behaviour cited here comes from [FINDINGS](../../../docs/spike/FINDINGS.md) (probed on omp 18.4.4) or `omp://rpc.md` (read, not probed, and labelled so).
+Refract drives `omp --mode rpc-ui` over stdio (newline-delimited JSON). This file lists exactly what Refract sends and consumes. OMP behaviour cited here comes from [FINDINGS](../../../docs/spike/FINDINGS.md) (probed on omp 18.4.4, re-verified up to omp 18.8.0 -- see FINDINGS item 49) or `omp://rpc.md` (read, not probed, and labelled so).
 
 ## Launch
 
@@ -183,5 +183,5 @@ itself.
 | Unparseable stdout line | Log it and continue (never crash the reader) |
 | Chunk validation error | Fail the current request, log, keep the process |
 | `success:false` response | Add an error `notice` naming the command; do not change status |
-| `omp --version` is not `18.4.x` or `18.5.x` | Readiness check still passes for any other `18.x.y` (warns, naming the version found and that it is outside the specifically verified range, FR-036) -- Stuart's 2026-10-05 decision after 18.6.1 tripped the old exact-minor allowlist for the third time. Only a different MAJOR version is a hard failure. A specifically-verified addition to `18.4.x`/`18.5.x` (no warning shown) still needs the probes rerun and a FINDINGS entry, per Principle IV. |
+| `omp --version` is not `18.4.x` or `18.5.x` | Readiness check still passes for any other `18.x.y` (warns, naming the version found and that it is outside the specifically verified range, FR-036) -- Stuart's 2026-10-05 decision after 18.6.1 tripped the old exact-minor allowlist for the third time. Only a different MAJOR version is a hard failure. A specifically-verified addition to `18.4.x`/`18.5.x` (no warning shown) still needs the probes rerun and a FINDINGS entry, per Principle IV. **Pending**: the supported minimum is decided to rise to 18.6.3 (Stuart, 2026-10-07, #520), and a subset of this file's contract (set_model/set_thinking_level, set_ask_dialog, set_host_tools registration, abort_and_restore_queue, btw, set_event_filter delta) has been partially re-probed against the actually-installed `omp/18.8.0` (FINDINGS item 49, 2026-10-08; 18.6.3 itself was never available to test), but this code's own literal version-match condition, the constitution's Principle IV pin, and this row's wording have not yet been updated to say `18.6.3` -- until that lands, a signed-in `18.6.x`-`18.8.x` machine still shows the "outside the specifically verified range" warning even though it is the newly-decided minimum. |
 | Worktree folder missing at open | `stopped`, `worktree-missing`, offer Recreate, Archive, Delete (FR-035); the agent is not started |
