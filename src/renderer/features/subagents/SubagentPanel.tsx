@@ -10,7 +10,7 @@ import { EMPTY_READOUT_ENTRY, useReadoutStore, useSubagentPanelStore } from '@/s
 import type { SubagentSummary } from '../../../shared/model'
 import { groupToolItems, isToolGroup } from '../chat/groupToolItems'
 import { ToolGroupRow } from '../chat/ToolRow'
-import { Markdown } from '../chat/Markdown'
+import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
 
 const STATE_LABEL: Record<SubagentSummary['status'], string> = {
@@ -51,6 +51,11 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   const grouped = groupToolItems(selectedStream)
 
   return (
+    // Quality-gate fix (round 2): wraps the panel in the same `LinkContext` `Transcript.tsx`
+    // provides for the main transcript, so a file link in a subagent's own stream (inline-code
+    // path, or its own tool rows) resolves against this Session's worktree too, instead of
+    // silently falling back to plain unstyled text just because this is a different mount point.
+    <LinkContext.Provider value={sessionId}>
     <div id="subagent-panel" className="flex h-full flex-col overflow-hidden">
       {/* Quality-gate remediation (gate2): same bug class as #500 -- this row had neither
        * `drag-region` nor `no-drag-region`, so it sat inside `App.tsx`'s permanent drag strip
@@ -125,5 +130,6 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
         </ScrollArea>
       </div>
     </div>
+    </LinkContext.Provider>
   )
 }

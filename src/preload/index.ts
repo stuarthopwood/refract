@@ -94,7 +94,8 @@ const refract: RefractApi = {
     cancelStart: (sessionId) => request<void>(IPC_REQUESTS.SESSIONS_CANCEL_START, sessionId),
     setVisible: (sessionIds) => request<void>(IPC_REQUESTS.SESSIONS_SET_VISIBLE, sessionIds),
     diffStat: (id) => request<DiffStat | null>(IPC_REQUESTS.SESSIONS_DIFF_STAT, id),
-    revealWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE, id)
+    revealWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE, id),
+    revealFile: (sessionId, path) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_FILE, sessionId, path)
   },
 
   clipboard: {

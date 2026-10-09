@@ -8,10 +8,16 @@ import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import type { MermaidConfig } from 'mermaid'
 import { safeUrl } from '@/lib/safe-url'
+import { parseFileReference, looksWithinWorktree } from '@/lib/linkify'
 import { THEMES } from '../../../shared/themes'
 import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
-import { useActiveThemeId } from '@/state'
+import { toast } from 'sonner'
+// Quality-gate fix (Code3 Medium, round 4): `notify` is no longer used -- the only call
+// (`FileLinkButton`'s error path) was replaced with `toast.error` directly in round 3; it now
+// appears only in this file's own comments.
+import { useActiveThemeId, useSessionsStore } from '@/state'
 import { CopyButton } from '@/components/ui/copy-button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -407,6 +413,207 @@ function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
 // with it) the moment a streaming reply finished.
 const StreamingContext = React.createContext(false)
 
+// Issue #610: the owning Session's id, read by every link/file-link renderer below so it never
+// has to be threaded as a prop through `Markdown`/`ToolRow`/`DiffView`'s whole call chain --
+// `Transcript.tsx` is the one place that provides it (never `ChatPane.tsx`, so this stays clear
+// of #621's own `ChatPane.tsx` changes). `null` outside a Session context (e.g. a PR diff's
+// `DiffViewFromPatch`, a PR description/timeline/review, or `SubagentPanel` if it is ever used
+// without one) or if a caller forgets to wrap -- `FileLinkButton` below falls back to plain,
+// unstyled text in that case, never a link-styled control that does nothing.
+export const LinkContext = React.createContext<string | null>(null)
+
+// Quality-gate fix (Code/Verif Medium, round 2): a link/file-link rendered INSIDE a markdown
+// `<a>`'s own children (e.g. `` [`src/x.ts`](https://example.com) ``) must never become a SECOND
+// nested interactive element -- invalid HTML, two tab stops, and a click on the inner control
+// bubbling up to also activate the outer anchor. Set to `true` only by the `a` renderer, around
+// everything it renders; `code` below returns its plain, non-interactive chip whenever this
+// reads `true`, skipping URL/path detection entirely.
+const InsideLinkContext = React.createContext(false)
+
+// Issue #610, decision 9: one shared class for every link-shaped control -- `--accent-text` plus
+// a permanent underline (never colour alone, WCAG 1.4.1), gated at least 4.5:1 against
+// `--background`/`--card`/`--popover` (check-theme-contrast.mjs) and against the user message
+// bubble's own composited `accent/50`-on-`background` fill (verified 4.69:1 in Dark, the binding
+// theme -- see that script's own `user-bubble` pair). `rounded-sm` plus the achromatic
+// `focus-visible` ring matches every other control in the app; `[overflow-wrap:anywhere]` stops a
+// long URL/path from forcing the row to scroll sideways.
+export const linkClassName =
+  'text-accent-text underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
+// Issue #610, decision 9: `--accent-text` does not clear 4.5:1 on `bg-muted` (check-theme-
+// contrast.mjs's own TODO(#579) note records 4.00:1 Dark/4.28:1 Obsidian) -- every `bg-muted`
+// surface (inline code, `DiffView`'s header) gets the underline only, in whatever text colour it
+// already inherits, instead.
+export const mutedLinkClassName =
+  'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
+// Quality-gate fix (Verif Low, round 2): the streaming-inert state is plain text that cannot be
+// activated -- it must never carry the active state's `hover:`/`focus-visible:` classes, which
+// would suggest a control that responds to hover or can take focus when neither is true.
+const inertLinkClassName = 'text-accent-text underline underline-offset-2 [overflow-wrap:anywhere]'
+const mutedInertLinkClassName = 'underline underline-offset-2 [overflow-wrap:anywhere]'
+
+// Issue #610, decision 7: every WEB link gets a Radix tooltip naming the real destination, on
+// hover AND keyboard focus -- this app has no browser status bar, so this is the only way to see
+// where a link actually goes before activating it (the issue's own named mitigation for a
+// prompt-injected link whose visible text and destination differ). `aria-describedby` (never
+// `aria-label`, which would discard the link's own visible text as its accessible name when that
+// text is NOT simply the href, e.g. a markdown `[Click here](https://x)`) adds the destination as
+// a DESCRIPTION, read after the name, without ever replacing it -- satisfies WCAG 2.5.3 Label in
+// Name unconditionally, with no text-equality branching needed. Shared by the `a` renderer, the
+// `img` alt-text fallback, and the inline-code URL case below.
+interface ExternalLinkProps extends Omit<React.ComponentPropsWithoutRef<'a'>, 'href' | 'className' | 'children'> {
+  href: string
+  className: string
+  children: React.ReactNode
+}
+
+function ExternalLink({ href, className, children, title: _title, ...rest }: ExternalLinkProps) {
+  // Quality-gate fix (A11y3 Low, round 4): a markdown link's own `title` (`[x](url "t")`,
+  // forwarded here via `rest` since round 3) is agent-written text that could show a plausible
+  // but FAKE destination in the browser's native `title` tooltip, layered right on top of this
+  // component's own Radix tooltip naming the REAL destination -- confusing at best, actively
+  // misleading at worst. Screen readers were never affected (`aria-describedby` already takes
+  // priority over `title` for the accessible description), so this is purely a sighted-UI fix:
+  // destructured out and discarded, never reaching the underlying `<a>`.
+  const describedById = React.useId()
+  // Quality-gate fix (Sec2/Verif2 Medium, round 3): `shown` is the URL object's own canonical
+  // serialization -- punycode host, every bidi-override/zero-width/control character percent-
+  // encoded -- displayed instead of the raw `href` string. A homograph host (Cyrillic look-alike
+  // of a real domain) or an RTL-override trick in the path previously rendered as whatever the
+  // attacker typed in BOTH the tooltip and the hidden description, while the browser actually
+  // navigated to the punycode/percent-encoded form -- the tooltip's whole job (decision 7: "name
+  // the real destination") was defeated exactly when it mattered most. `safeUrl` (lib/safe-url.ts)
+  // now already returns this canonical form itself, so this is belt-and-braces: correct even if a
+  // future caller ever passes an `href` that bypassed `safeUrl`. Wrapped in `<bdi dir="ltr">` so an
+  // RTL-override character that survived percent-encoding (there is none, `encodeURI`-shaped
+  // percent-encoding covers every bidi control point) still cannot visually reverse the string.
+  const shown = new URL(href).href
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <a
+          {...rest}
+          href={href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className={className}
+          aria-describedby={describedById}
+        >
+          {children}
+        </a>
+      </TooltipTrigger>
+      <TooltipContent className="[overflow-wrap:anywhere]">
+        Open in browser: <bdi dir="ltr">{shown}</bdi>
+      </TooltipContent>
+      {/* Quality-gate fix (A11y2/Code2 Medium, round 3): `hidden` (not `sr-only`) -- `aria-describedby`
+          still reads a `hidden` element's text content per spec, but `hidden` (unlike
+          visually-hidden-but-still-in-the-tree `sr-only`) removes it from the copy/paste
+          selection and from the accessibility tree's normal reading-order flow entirely, so it
+          can never pollute a sighted user's clipboard or get double-read by an AT's own browse
+          mode alongside the description. */}
+      <span id={describedById} hidden>
+        Open in browser: <bdi dir="ltr">{shown}</bdi>
+      </span>
+    </Tooltip>
+  )
+}
+
+interface FileLinkButtonProps {
+  /** The bare path this sends to `sessions.revealFile` -- never includes a `:line[:col]` suffix
+   * (ignored for navigation until #463's file viewer exists, decision 3). */
+  path: string
+  /** Visible text and tooltip label; defaults to `path`. */
+  display?: string
+  /** `true` on a `bg-muted` surface (inline code, `DiffView`'s header) -- see `mutedLinkClassName`. */
+  muted?: boolean
+  /** Decision 6: inert (plain underlined text, unfocusable) while the owning message still
+   * streams, so a path cut off mid-generation is never followed and no focusable control
+   * appears inside the live `role="log"` region mid-stream. */
+  streaming?: boolean
+  /** Layout-only (e.g. `DiffView`'s own truncate/focus-ring-inset rules); merged onto whichever
+   * of the three branches below actually renders, so a caller's own sizing rule always applies
+   * regardless of state. */
+  className?: string
+}
+
+// Issue #610: the one file-link control app-wide, exported for `ToolRow.tsx` (write/edit path
+// lines) and `DiffView.tsx` (header path) to reuse, the same pattern `CodeBlock` below already
+// establishes for tool-call Arguments/Output. "Show in File Explorer", never "Open" -- running a
+// file's own OS default verb (`shell.openPath`) would execute a `.cmd`/`.ps1`/`.lnk` an agent or
+// tool wrote; `sessions.revealFile` only ever calls `shell.showItemInFolder`.
+export function FileLinkButton({ path, display, muted = false, streaming = false, className }: FileLinkButtonProps) {
+  const sessionId = React.useContext(LinkContext)
+  const worktreePath = useSessionsStore((state) =>
+    sessionId ? state.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
+  )
+  const label = display ?? path
+  // Decision 8: a cheap, string-only early-out for an absolute path obviously outside the
+  // worktree -- never the security boundary itself (that is `resolveInWorktree`, main-process,
+  // on click), just a visual nicety that avoids linkifying something that can only ever fail.
+  const withinWorktree = worktreePath === undefined || looksWithinWorktree(path, worktreePath)
+
+  // Quality-gate fix (Code/A11y HIGH, round 2): nothing to click at all outside a real Session
+  // context (a PR description/timeline/review, `SubagentPanel` without a provider) or for a path
+  // obviously outside the worktree -- PLAIN, unstyled text, not a link-styled span that does
+  // nothing. `title` restores the full path a caller's own truncation would otherwise hide.
+  if (!sessionId || !withinWorktree) {
+    return (
+      <span className={className} title={label}>
+        {label}
+      </span>
+    )
+  }
+
+  if (streaming) {
+    return (
+      <span className={cn(muted ? mutedInertLinkClassName : inertLinkClassName, className)} title={label}>
+        {label}
+      </span>
+    )
+  }
+
+  const activeClassName = muted ? mutedLinkClassName : linkClassName
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className={cn(activeClassName, className)}
+          aria-label={`Show in File Explorer: ${label}`}
+          // Quality-gate fix (A11y3/Code3/Verif3 Low, round 4): round 3's `aria-hidden` on
+          // `TooltipContent` below does NOT stop the double announcement it was meant to --
+          // Radix sets `aria-describedby` to the tooltip's own id on this button while the
+          // tooltip is open regardless, and `aria-describedby` still reads a directly-referenced
+          // node's text even when that node is `aria-hidden` (the exact same accname rule
+          // `ExternalLink`'s own `hidden` span above relies on -- the two fixes contradicted each
+          // other). Fixed here instead: an explicit `aria-describedby={undefined}` on THIS
+          // element. Radix's `Slot`/`mergeProps` gives the child's own prop precedence, so this
+          // blocks Radix from setting its own `aria-describedby` at all -- nothing points at the
+          // tooltip, and the button's `aria-label` alone is read, once.
+          aria-describedby={undefined}
+          onClick={() => {
+            void window.refract.sessions.revealFile(sessionId, path).then((result) => {
+              // Quality-gate fix (Verif2 Medium, round 3): the decision comment asks for a
+              // dismiss-until-cleared toast for THIS error specifically (file-not-found/outside-
+              // worktree can be a stale/wrong file reference the user needs a moment to read and
+              // act on, not a transient blip) -- `notify()`'s own default (auto-dismissing,
+              // shared by every other IPC error app-wide) stays untouched; this is a local
+              // `toast.error` call, not a change to `notify()` itself.
+              if (!result.ok) toast.error(result.error.message, { duration: Infinity, closeButton: true })
+            })
+          }}
+        >
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="[overflow-wrap:anywhere]">
+        Show in File Explorer: {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 // Named (rather than inline arrows) so the `li` task-list-item renderer below can recognize a
 // direct child as "a nested paragraph wrapper (loose lists)" / "a nested sub-list" / "the
 // checkbox itself" by function identity -- the only reliable signal available once react-markdown
@@ -489,6 +696,9 @@ const components: Components = {
   // safe absolute http(s) URL, an unchanged footnote `#user-content-fn...` fragment, or `''`
   // (blocked); an empty href still renders as plain text here (not an <a> at all).
   a: ({ node: _node, href, children, className, ...props }) => {
+    // Quality-gate fix (Code Medium, round 2): hoisted above both early returns (rules of
+    // hooks -- a hook call must never follow a conditional return in the same component).
+    const streaming = React.useContext(StreamingContext)
     const isFootnoteAnchor = 'data-footnote-ref' in props || 'data-footnote-backref' in props
     if (isFootnoteAnchor) {
       return (
@@ -498,28 +708,41 @@ const components: Components = {
       )
     }
     if (!href) return <>{children}</>
+    // Quality-gate fix (Code/Verif Medium, round 2): everything this renders is wrapped in
+    // `InsideLinkContext` so a nested inline-code URL/path (`code` below) never becomes a SECOND
+    // interactive control inside this one.
+    const content = <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+    // Issue #610, decision 6: inert (plain underlined text, no `<a>` at all -- unfocusable, not
+    // merely visually disabled) while the owning message is still streaming, so a URL cut off
+    // mid-generation is never followed and no focusable element appears inside the live
+    // `role="log"` region mid-stream. Footnote anchors above are exempt: they are same-page
+    // fragments, never reaching `openExternal`, so the "don't follow a half-written URL" risk
+    // this guards against does not apply to them.
+    if (streaming) {
+      return <span className={cn(inertLinkClassName, className)}>{content}</span>
+    }
     return (
-      <a
-        {...props}
-        href={href}
-        target="_blank"
-        rel="noreferrer noopener"
-        className={cn('underline underline-offset-2', className)}
-      >
-        {children}
-      </a>
+      <ExternalLink href={href} className={cn(linkClassName, className)} {...props}>
+        {content}
+      </ExternalLink>
     )
   },
   // Agent-supplied images are never rendered as <img> (constitution V); the alt text becomes a
   // link to the source instead, gated by the same http(s)-only rule as `a` above.
   img: ({ alt, src }) => {
+    // Quality-gate fix (A11y2 Medium, round 3): hoisted above every early return (rules of
+    // hooks). The README-badge pattern `[![alt](img-url)](link-url)` wraps this renderer's own
+    // output in the OUTER `a` renderer's `<ExternalLink>`, which sets `InsideLinkContext`; without
+    // this check, this renderer unconditionally returned a SECOND `<ExternalLink>` (a second
+    // `<a>`), nesting an anchor inside an anchor -- invalid HTML, two tab stops for one visual
+    // control, and a click on the inner `<a>` bubbling up to activate the outer one too.
+    const insideLink = React.useContext(InsideLinkContext)
+    const streaming = React.useContext(StreamingContext)
     const safe = safeUrl(typeof src === 'string' ? src : undefined)
     if (!safe) return <>{alt || 'image'}</>
-    return (
-      <a href={safe} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
-        {alt || safe}
-      </a>
-    )
+    if (insideLink) return <>{alt || safe}</>
+    if (streaming) return <span className={inertLinkClassName}>{alt || safe}</span>
+    return <ExternalLink href={safe} className={linkClassName}>{alt || safe}</ExternalLink>
   },
   p: Paragraph,
   ul: UnorderedList,
@@ -583,12 +806,67 @@ const components: Components = {
   // fallback) so a fenced block never ends up double-wrapped in nested <pre> elements.
   pre: ({ children }) => <>{children}</>,
   code({ className, children, node: _node, ...props }) {
+    // Quality-gate fix (Code Medium, round 2): hoisted to the top, unconditionally -- none of
+    // these may follow an early return (rules of hooks).
     const streaming = React.useContext(StreamingContext)
-    const text = String(children).replace(/\n$/, '')
+    const insideLink = React.useContext(InsideLinkContext)
+    const sessionId = React.useContext(LinkContext)
+    // Quality-gate fix (Code HIGH, round 2): `raw` (BEFORE the trailing-newline strip) is what
+    // decides block-vs-inline -- mdast-util-to-hast always appends exactly one `\n` to a FENCED
+    // block's own text, so a one-line, unlabelled fence (` ``` `, a path, ` ``` `) still has a
+    // newline in `raw` even though the already-stripped `text` (used only for rendering) does
+    // not; a CommonMark code SPAN never contains one at all. Deciding `isBlock` from `text`
+    // instead let exactly that one-line fence slip through as if it were inline, breaching "no
+    // links inside code fences".
+    const raw = String(children)
+    const text = raw.replace(/\n$/, '')
     const match = /language-(\S+)/.exec(className ?? '')
     const lang = match?.[1] ?? null
-    const isBlock = Boolean(match) || text.includes('\n')
+    const isBlock = Boolean(match) || raw.includes('\n')
     if (!isBlock) {
+      // Quality-gate fix (Code/Verif HIGH, round 2): a linked inline-code span keeps its own
+      // `<code>` chip (`bg-muted`, `font-code`) as the OUTER element in every case, with the
+      // link/button/inert span INSIDE it -- replacing the chip entirely (the round-1 design)
+      // turned every inline-code span rendered outside a Session context (PR descriptions/
+      // timeline/reviews, `SubagentPanel`), or any plain route-like string, into bare underlined
+      // prose with no code styling and a misleadingly link-shaped look for something that does
+      // nothing. `insideLink` (Medium, round 2) skips URL/path detection entirely when already
+      // nested inside a markdown `<a>` -- never a second interactive control in there.
+      if (!insideLink) {
+        const trimmed = text.trim()
+        // Issue #610, decision 1/4: linked only when the WHOLE span is one URL or file path --
+        // never a scan of its text for a substring, and never inside a fenced block (`isBlock`
+        // above already excludes those; a fence stays a boxed, inert code surface regardless).
+        // Quality-gate fix (Code Low, round 2): a span with internal whitespace is never "the
+        // whole span is one URL" -- `new URL` would otherwise percent-encode the spaces and
+        // treat a path-with-spaces string as a (wrong) URL.
+        const safe = trimmed && !/\s/.test(trimmed) ? safeUrl(trimmed) : undefined
+        if (safe) {
+          return (
+            <code className="rounded bg-muted px-1 py-0.5 font-code text-[0.85em]" {...props}>
+              {streaming ? (
+                <span className={mutedInertLinkClassName}>{text}</span>
+              ) : (
+                <ExternalLink href={safe} className={mutedLinkClassName}>
+                  {text}
+                </ExternalLink>
+              )}
+            </code>
+          )
+        }
+        // Quality-gate fix (A11y Medium, round 2): a file-link candidate is only ever attempted
+        // inside a real Session context -- `FileLinkButton` itself still degrades gracefully
+        // without one, but deciding it here too means text that could never become anything but
+        // the plain chip below never even builds a `fileRef` for it.
+        const fileRef = sessionId && trimmed ? parseFileReference(trimmed) : null
+        if (fileRef) {
+          return (
+            <code className="rounded bg-muted px-1 py-0.5 font-code text-[0.85em]" {...props}>
+              <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} />
+            </code>
+          )
+        }
+      }
       return (
         <code className="rounded bg-muted px-1 py-0.5 font-code text-[0.85em]" {...props}>
           {children}

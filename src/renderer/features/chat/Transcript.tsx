@@ -13,7 +13,7 @@ import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/compone
 import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
-import { Markdown } from './Markdown'
+import { LinkContext, Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
@@ -907,6 +907,11 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   }, [])
 
   return (
+    // Issue #610: the owning Session's id, read by every link/file-link renderer
+    // (`Markdown.tsx`'s `a`/inline-`code`/`FileLinkButton`, `ToolRow.tsx`, `DiffView.tsx`) via
+    // `LinkContext` instead of a prop threaded through that whole call chain -- set here, not in
+    // `ChatPane.tsx`, so this stays clear of #621's own changes to that file.
+    <LinkContext.Provider value={sessionId}>
     <MessageScrollerProvider autoScroll={!autoScrollSuppressed} defaultScrollPosition="end">
       <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
         <MessageScrollerViewport
@@ -1095,5 +1100,6 @@ export function Transcript({ sessionId }: { sessionId: string }) {
         </Button>
       </MessageScroller>
     </MessageScrollerProvider>
+    </LinkContext.Provider>
   )
 }
