@@ -15,13 +15,16 @@ export interface Repository {
   defaultBranch: string; // read from git when added; preselected as Base branch
   addedAt: string; // ISO 8601
   // Issue #528: whether this repository has a configured git remote, for the session list's
-  // group-header icon and its tooltip. Computed fresh in main (`src/main/git/remote.ts`) on
-  // every `repositories.list()`/`add()`/`rename()` response; NEVER read from or written to
-  // `registry.json` -- a repository's own remote can change on disk at any time (added,
-  // changed, removed) with no Refract action involved, so persisting a stale value would be
-  // actively misleading. Optional only because it is absent until that first computation (for
-  // example inside a unit test's hand-built `Repository`, which never goes through the IPC
-  // boundary this field is attached at).
+  // group-header icon and its tooltip. `repositories.list()` returns the `unknown` placeholder
+  // immediately for every entry (gate round 3 fix: computing it inline used to delay the whole
+  // workspace's first paint); the real value is computed fresh in main
+  // (`src/main/git/remote.ts`) by the separate `repositories.remotes()` call, and inline in
+  // `add()`/`rename()`'s own responses. NEVER read from or written to `registry.json` -- a
+  // repository's own remote can change on disk at any time (added, changed, removed) with no
+  // Refract action involved, so persisting a stale value would be actively misleading. Optional
+  // only because it is absent until that first computation (for example inside a unit test's
+  // hand-built `Repository`, which never goes through the IPC boundary this field is attached
+  // at).
   remote?: RepositoryRemote;
 }
 

@@ -54,28 +54,40 @@ function withTimeout(): { signal: AbortSignal; clear: () => void } {
 /** `Repository.remote` (issue #528): read-only, no network call, and bounded so a hung or
  * missing `git` can never block the Session list for long. ONE git spawn per repository (gate
  * round 1 fix, Medium: the original two-call version could take up to two full timeouts in a
- * row) -- `git config --local --list` dumps every locally-configured key in one call, exit 0
- * whenever the repository's own config is readable at all (even an empty one, which `git init`
- * never actually produces -- `core.*` is always present), so success here means "the config was
- * read", never "a remote happened to exist"; `remote.<name>.url` lines are then parsed out of
- * that dump, `origin` preferred when more than one is configured, else the first one listed.
+ * row) -- `git config --local --includes --list -z` dumps every locally-configured key
+ * (following `include.path`/`includeIf`, gate round 4 fix, Medium: a bare `--local` skips
+ * includes entirely, so a remote defined only in an included file used to read as a false
+ * confirmed `none`) in one call, exit 0 whenever the repository's own config is readable at all
+ * (even a minimal one, which `git init` never actually produces -- `core.*` is always present),
+ * so success here means "the config was read", never "a remote happened to exist";
+ * `remote.<name>.url` records are then parsed out of that dump, `origin` preferred when more
+ * than one is configured, else the first one listed.
  *
- * Gate round 3 fix (High, verification): `git config --local --get-regexp <pattern>` (round 1/2)
- * exits 1 with EMPTY stdout whenever the pattern matches nothing -- the one case this function
- * needs to read as a confirmed `none` -- but `gitRaw` always fills `stderr` with its own
- * "Command failed: …" message on every non-zero exit (`git.ts`'s own `stderr: stderr ||
+ * Gate round 4 fix (Low, all four reviewers): `-z` (NUL-terminated records, each `key\nvalue`)
+ * replaces newline-split parsing on plain `--list` output -- a config VALUE containing an
+ * embedded newline could otherwise inject a fake `remote.*.url` line of its own (proved live: a
+ * crafted `user.note` value forged a `has` result for a repository with no real remote), and a
+ * remote NAME containing `=` (`[remote "a=b"]`) broke the old "split on first `=`" parsing,
+ * silently dropping that remote and reporting a false `none`. Neither the record nor its value
+ * is trimmed before matching -- only `hostFromRemoteUrl`'s own trim applies, to the VALUE alone.
+ *
+ * Gate round 3 fix (High, verification): `git config --local --get-regexp <pattern>` (round
+ * 1/2) exits 1 with EMPTY stdout whenever the pattern matches nothing -- the one case this
+ * function needs to read as a confirmed `none` -- but `gitRaw` always fills `stderr` with its
+ * own "Command failed: …" message on every non-zero exit (`git.ts`'s own `stderr: stderr ||
  * error.message`), so that "confirmed no match" case was never distinguishable from a missing
  * `git`, a spawn failure, or this call's own abort (all ALSO exit 1 with a `stderr` message) --
  * `none` could then never actually be returned, and every repository with no remote reported
- * `unknown` instead. Switching to `--list` (success is `exit 0`, not "some specific exit 1 that
- * happens to carry no stderr") removes that whole ambiguity: a real failure is a NON-zero exit,
- * full stop, and reports `unknown`; a real "no remote" is `exit 0` with no `remote.*.url` line in
- * the dump, and reports `none`.
+ * `unknown` instead. `--list` (success is `exit 0`, not "some specific exit 1 that happens to
+ * carry no stderr") removes that whole ambiguity: a real failure is a NON-zero exit, full stop,
+ * and reports `unknown`; a real "no remote" is `exit 0` with no `remote.*.url` record in the
+ * dump, and reports `none`.
  *
  * `deadline` (optional): an outer signal `repositories.ts`'s own pool aborts once its shared
  * response deadline passes, combined with this function's own per-call timeout (gate round 2
- * fix, Medium) -- a repository the pool gave up waiting on stops its own in-flight `git` call
- * too, instead of continuing to spawn processes whose result nothing reads any more.
+ * fix, Medium) via `AbortSignal.any` (gate round 3 fix, Low) -- a repository the pool gave up
+ * waiting on stops its own in-flight `git` call too, instead of continuing to spawn processes
+ * whose result nothing reads any more.
  *
  * Never throws: an unreadable repository (a moved or deleted folder, or one that is no longer a
  * git repository at all), a missing `git` executable, or a timed-out/aborted call all report
@@ -93,25 +105,19 @@ export async function repositoryRemote(repoPath: string, deadline?: AbortSignal)
   if (!gitDirExists) return { kind: 'unknown' };
   if (deadline?.aborted) return { kind: 'unknown' };
   const { signal: timeoutSignal, clear } = withTimeout();
-  // Gate round 3 fix (Low, code-reviewer + security-auditor): Electron 44's bundled Node has
-  // `AbortSignal.any` (confirmed by both reviewers), so this no longer hand-rolls a combine
-  // helper that had to remember to remove its own listeners -- `AbortSignal.any` composes and
-  // tears down its internal listeners on its own once either input fires or is garbage
-  // collected, with no accumulation across repeated calls across many repositories.
   const signal = deadline ? AbortSignal.any([timeoutSignal, deadline]) : timeoutSignal;
-  const result = await gitRaw(repoPath, ['config', '--local', '--list'], { signal });
+  const result = await gitRaw(repoPath, ['config', '--local', '--includes', '--list', '-z'], { signal });
   const aborted = signal.aborted;
   clear();
   if (aborted) return { kind: 'unknown' };
   if (result.code !== 0) return { kind: 'unknown' };
   const entries = result.stdout
-    .split('\n')
-    .map((line) => line.trim())
+    .split('\0')
     .filter(Boolean)
-    .map((line) => {
-      const eqIndex = line.indexOf('=');
-      const key = eqIndex === -1 ? line : line.slice(0, eqIndex);
-      const url = eqIndex === -1 ? '' : line.slice(eqIndex + 1);
+    .map((record) => {
+      const nlIndex = record.indexOf('\n');
+      const key = nlIndex === -1 ? record : record.slice(0, nlIndex);
+      const url = nlIndex === -1 ? '' : record.slice(nlIndex + 1);
       const match = /^remote\.(.+)\.url$/.exec(key);
       return { name: match?.[1] ?? '', url };
     })

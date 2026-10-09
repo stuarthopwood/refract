@@ -56,17 +56,25 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
 
 // Issue #528, gate round 3 fix (Medium, verification + a11y-auditor): bounds `repositories.
 // remotes()` to about REMOTE_DEADLINE_MS in aggregate, however many repositories are registered
-// or however slow one individual `git` call is -- any repository whose own check has not
-// settled by the shared deadline keeps the `unknown` placeholder for this response. Concurrency
-// is capped so a large repository count never floods the process table with simultaneous `git`
-// spawns.
+// or however slow one individual `git` call is. Concurrency is capped so a large repository
+// count never floods the process table with simultaneous `git` spawns.
+//
+// Gate round 4 fix (High, code-reviewer + security-auditor): a repository the deadline cuts off
+// mid-flight is now left OUT of the response entirely, never reported as a placeholder `unknown`
+// -- the round-3 version pre-filled every slot with `unknown` and sent every id regardless of
+// whether its own check had actually settled, so a slow refresh could overwrite an
+// already-confirmed `has`/`none` with a wrong `unknown`, permanently for any repository past the
+// concurrency cap (measured live: 8 repositories alone took ~830ms on one machine, already close
+// to the old 1s deadline before Electron's own cold-start load). The deadline is also raised
+// well above one full concurrency round, now that `remotes()` is off the first-paint path (gate
+// round 3) and has nothing left to protect by staying short -- each individual call keeps its
+// own 3 s cap regardless.
 //
 // Split out of `repositories.list()` (gate round 3 fix, Medium): `App.tsx`'s own
 // `showReadiness = !ready || !hasRepositories` gate meant this bounded step used to delay the
-// Session list's very first paint directly for anyone who already has repositories, by up to
-// REMOTE_DEADLINE_MS, every cold start. `list()` now returns immediately with every entry's
-// `remote` set to the `unknown` placeholder; the renderer calls `remotes()` separately right
-// after and merges the result in once it resolves.
+// Session list's very first paint directly for anyone who already has repositories. `list()` now
+// returns immediately with every entry's `remote` set to the `unknown` placeholder; the renderer
+// calls `remotes()` separately right after and merges the result in once it resolves.
 //
 // Gate round 2 fix (Medium, code-reviewer + security-auditor): `remote` is NOT refreshed
 // automatically beyond this -- `repositories.add()`/`rename()` recompute it for that one
@@ -76,16 +84,21 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
 // triggers; tracked as a known interim limit on the #646 follow-up, not silently different from
 // what #528 decided (no extra refresh trigger beyond focus this round).
 const REMOTE_CONCURRENCY = 8;
-const REMOTE_DEADLINE_MS = 1000;
+const REMOTE_DEADLINE_MS = 10_000;
 
-async function remotesBounded(repositories: Repository[]): Promise<RepositoryRemote[]> {
-  const results: RepositoryRemote[] = repositories.map(() => ({ kind: 'unknown' }));
+async function remotesBounded(repositories: Repository[]): Promise<Record<string, RepositoryRemote>> {
+  const byId: Record<string, RepositoryRemote> = {};
   const controller = new AbortController();
   let next = 0;
   async function worker(): Promise<void> {
     while (!controller.signal.aborted && next < repositories.length) {
-      const i = next++;
-      results[i] = await repositoryRemote(repositories[i]!.path, controller.signal);
+      const repository = repositories[next++]!;
+      const remote = await repositoryRemote(repository.path, controller.signal);
+      // Gate round 4 fix (High): only a genuinely settled check is recorded -- one the shared
+      // deadline cut off mid-flight is left absent from `byId` entirely, so the renderer's own
+      // merge (`repositories-store.ts`'s `setRemotes`) leaves that repository's existing value,
+      // if any, untouched instead of overwriting it with a wrong `unknown`.
+      if (!controller.signal.aborted) byId[repository.id] = remote;
     }
   }
   const pool = Promise.all(Array.from({ length: Math.min(REMOTE_CONCURRENCY, repositories.length) }, () => worker()));
@@ -104,8 +117,16 @@ async function remotesBounded(repositories: Repository[]): Promise<RepositoryRem
   });
   await Promise.race([pool, deadline]);
   clearTimeout(deadlineTimer!);
-  return results;
+  return byId;
 }
+
+// Gate round 4 fix (Low, security-auditor): the renderer throttles its own calls (5s, plus an
+// in-flight guard), but nothing stopped a second IPC call arriving anyway (a misbehaving or
+// compromised renderer could invoke this channel directly, bypassing the throttle) from starting
+// a SECOND full pool of `git` spawns concurrently with the first. One shared in-flight promise
+// means every caller that arrives while a pool is already running gets that same pool's result
+// instead of starting its own.
+let remotesInFlight: Promise<Record<string, RepositoryRemote>> | null = null;
 
 export function registerRepositories(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   // Issue #528, gate round 3 fix (Medium): returns the registry's own repositories at once, each
@@ -118,12 +139,13 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
   });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOTES, async () => {
-    const repositories = manager.registry.snapshot().repositories;
-    const remotes = await remotesBounded(repositories);
-    const byId: Record<string, RepositoryRemote> = {};
-    repositories.forEach((repository, i) => {
-      byId[repository.id] = remotes[i]!;
-    });
+    if (!remotesInFlight) {
+      const repositories = manager.registry.snapshot().repositories;
+      remotesInFlight = remotesBounded(repositories).finally(() => {
+        remotesInFlight = null;
+      });
+    }
+    const byId = await remotesInFlight;
     return { ok: true, value: byId };
   });
 
