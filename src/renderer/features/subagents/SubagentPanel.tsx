@@ -52,19 +52,35 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
 
   return (
     <div id="subagent-panel" className="flex h-full flex-col overflow-hidden">
-      <div className="flex h-10 shrink-0 items-center gap-2 px-3">
-        <span className="text-sm font-semibold">Subagents</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="ml-auto size-7"
-          aria-label="Close subagents panel"
-          onClick={() => closePanel()}
-        >
-          <XIcon aria-hidden className="size-4" />
-        </Button>
+      {/* Quality-gate remediation (issue #500's bug class, found by `check:drag-regions`): this
+       * row had neither `drag-region` nor `no-drag-region`, so it sat inside `App.tsx`'s
+       * permanent drag strip exactly like the Pull requests view's header did -- this panel
+       * touches the window's right edge whenever it is open, so Close could be a dead click, or
+       * sit under the native minimise/maximise/close buttons, depending on where this strip's own
+       * carve-out happened to land. Matches `ChatHeader.tsx`'s pattern: `drag-region` on the row,
+       * `no-drag-region` wrapping Close, and a trailing corner spacer. */}
+      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
+        {/* Quality-gate remediation (cycle 2, Medium): at the panel's own `minSize={240}`
+         * (App.tsx), this label's default `min-width: auto` held its full content width, so the
+         * row couldn't compress enough and pushed Close (and the corner spacer) partly under the
+         * native window buttons -- the same conflict #500 removed, just at a narrower width.
+         * `min-w-0 truncate` lets the label give up width first. */}
+        <span className="min-w-0 truncate text-sm font-semibold">Subagents</span>
+        <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label="Close subagents panel"
+            onClick={() => closePanel()}
+          >
+            <XIcon aria-hidden className="size-4" />
+          </Button>
+          <div aria-hidden className="shrink-0" style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }} />
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
+        {/* drag-regions-allow: renders below this panel's own h-10 drag-region header above, so it never touches App.tsx's strip despite the same shape. */}
         <ul className="flex shrink-0 flex-col gap-0.5 border-b px-3 py-2" aria-label="Current turn's subagents">
           {subagents.map((subagent) => (
             <li key={subagent.id}>

@@ -1,6 +1,6 @@
 // The merge confirmation (specs/003-pull-request-management FR-016, FR-017, T021): an
-// `AlertDialog` naming the pull request and the chosen merge method, with a method picker limited
-// to `PullRequestDetail.allowedMergeMethods` (only the methods this repository allows).
+// `AlertDialog` naming the pull request, with a method picker limited to
+// `PullRequestDetail.allowedMergeMethods` (only the methods this repository allows).
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import {
@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
+import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import type { MergeMethod } from '../../../shared/github'
 
@@ -48,6 +48,14 @@ const METHOD_LABEL: Record<MergeMethod, string> = {
   merge: 'Merge commit',
   squash: 'Squash and merge',
   rebase: 'Rebase and merge'
+}
+
+// Issue #498: one line of plain-language detail per method, shown under its name in the
+// radiogroup list so the choice makes sense without opening GitHub's own help.
+const METHOD_DESCRIPTION: Record<MergeMethod, string> = {
+  merge: 'Keeps every commit and adds a merge commit.',
+  squash: 'Combines every commit into a single commit.',
+  rebase: 'Replays every commit onto the base branch.'
 }
 
 export function MergeDialog({
@@ -106,7 +114,12 @@ export function MergeDialog({
         onOpenChange(next)
       }}
     >
+      {/* Issue #498: widened from the shared default (max-w-xs, sm:max-w-sm) to `size="md"`
+       * (max-w-xs, sm:max-w-md -- 448px from the `sm` breakpoint) so the radiogroup list and its
+       * descriptions have room without wrapping every word; every other `AlertDialogContent`
+       * consumer keeps the unchanged default. */}
       <AlertDialogContent
+        size="md"
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           const button = restoreFocusTo.current
@@ -126,23 +139,49 @@ export function MergeDialog({
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>Merge {title}?</AlertDialogTitle>
+          {/* Quality-gate remediation (code-reviewer, Low): `overflow-y-auto` on the shared
+           * `AlertDialogContent` (added for 1.4.10) makes `overflow-x` resolve to `auto` too, so
+           * an unbroken-token title with no wrap points would show a horizontal scrollbar instead
+           * of simply spilling; `break-words` keeps it wrapping like the rest of the dialog. */}
+          <AlertDialogTitle className="break-words">Merge {title}?</AlertDialogTitle>
           <AlertDialogDescription>Choose a merge method, then confirm.</AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="flex gap-2" role="group" aria-label="Merge method">
-          {allowedMergeMethods.map((candidate) => (
-            <Button
-              key={candidate}
-              type="button"
-              variant={method === candidate ? 'default' : 'outline'}
-              aria-pressed={method === candidate}
-              size="sm"
-              onClick={() => setMethod(candidate)}
-            >
-              {METHOD_LABEL[candidate]}
-            </Button>
-          ))}
-        </div>
+        {/* Quality-gate remediation (code-reviewer, Medium, issue #498): replaces a hand-rolled
+         * roving-tabindex `role="radiogroup"` (refs, key-to-index arithmetic, duplicated from
+         * `ThemePicker.tsx` and already drifted from it) with the shared `RadioGroup` primitive,
+         * which provides the same WAI-ARIA Radio Group keyboard behaviour (arrow keys, Home/End,
+         * wrap-around) without a hand-written key handler. */}
+        <RadioGroup aria-label="Merge method" value={method} onValueChange={(value) => setMethod(value as MergeMethod)}>
+          {allowedMergeMethods.map((candidate) => {
+            const labelId = `merge-method-${candidate}-label`
+            const descriptionId = `merge-method-${candidate}-description`
+            return (
+              // Quality-gate remediation (cycle 2, Medium): a `role="radio"` button's accessible
+              // name otherwise comes from its FULL subtree text content, so `aria-describedby`
+              // alone (pointing at the description span nested inside the same button) made the
+              // description read twice -- once as part of the name, once again as the
+              // description. `aria-labelledby` on the label span overrides the name to just the
+              // label; `aria-describedby` keeps the description as a separate, secondary read.
+              <RadioGroupItem key={candidate} value={candidate} aria-labelledby={labelId} aria-describedby={descriptionId}>
+                <span className="flex w-full min-w-0 items-center gap-2">
+                  {/* Quality-gate remediation (accessibility-auditor, Medium, WCAG 1.4.1): the
+                   * selected method used to be shown only by a border/tint colour change, which
+                   * also vanished under the focus ring. This dot is a non-colour cue that stays
+                   * visible while focused (it lives outside the border this component already
+                   * recolours on focus) and only renders for the checked item (Radix mounts
+                   * `Indicator` conditionally). */}
+                  <span aria-hidden className="grid size-4 shrink-0 place-items-center rounded-full border border-muted-foreground group-data-[state=checked]/radio-item:border-primary">
+                    <RadioGroupIndicator />
+                  </span>
+                  <span id={labelId} className="min-w-0 flex-1 break-words font-medium">{METHOD_LABEL[candidate]}</span>
+                </span>
+                <span id={descriptionId} className="w-full min-w-0 break-words pl-6 text-xs text-muted-foreground">
+                  {METHOD_DESCRIPTION[candidate]}
+                </span>
+              </RadioGroupItem>
+            )
+          })}
+        </RadioGroup>
         <p role="alert" className={cn('text-sm text-destructive', !error && 'sr-only')}>
           {error ?? ''}
         </p>
@@ -165,7 +204,10 @@ export function MergeDialog({
               void handleMerge()
             }}
           >
-            {submitting ? 'Merging…' : `Merge using ${METHOD_LABEL[method]}`}
+            {/* Issue #498: shortened from "Merge using ${METHOD_LABEL[method]}" -- the chosen
+             * method is already selected above, so the long label only pushed the footer past the
+             * dialog's edge for no extra information. */}
+            {submitting ? 'Merging…' : 'Merge'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

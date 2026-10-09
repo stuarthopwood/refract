@@ -189,6 +189,7 @@ export function PullRequestDetail({ repositoryId, number }: PullRequestDetailPro
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* drag-regions-allow: renders right of PullRequestList, below PullRequestsView's own h-10 drag-region header, so it never touches App.tsx's strip despite the same shape. */}
       <div className="shrink-0 border-b border-border p-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
