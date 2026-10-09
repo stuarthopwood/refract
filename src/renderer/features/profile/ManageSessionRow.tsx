@@ -36,7 +36,7 @@ import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { buildSessionRowActions } from '@/features/sessions/sessionActions'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
-import { focusSessionPane } from '@/lib/focus'
+import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
@@ -342,7 +342,15 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
           requestAnimationFrame(() => {
             const { paneSessionIds, focusedIndex } = useSplitStore.getState()
             const focusedSessionId = paneSessionIds[focusedIndex]
-            if (focusedSessionId) focusSessionPane(focusedSessionId)
+            // Gate round 4 (all four reviewers): do not ignore whether a pane was actually
+            // found -- `openChat` has already switched the view away from this (now unmounted)
+            // screen, so a missing pane must not be left silently unfocused; fall back to the
+            // same "always-connected" nav target `handleOpen` above implicitly relies on via
+            // `focusSessionPane`'s own internal fallback chain.
+            if (!(focusedSessionId && focusSessionPane(focusedSessionId))) {
+              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+              focusSessionsNav()
+            }
           })
         }
         if (createRequestedRef.current) settledCreateRef.current = finish
@@ -455,8 +463,12 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
       }
     } else {
       event.preventDefault()
-      if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
-      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      if (isContextMenu) {
+        const target = contextMenuOpenerRef.current?.isConnected ? contextMenuOpenerRef.current : openButtonRef.current
+        if (target?.isConnected) target.focus()
+        else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else focusListContainer()
+      } else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
       else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
       else focusListContainer()
     }
@@ -471,6 +483,15 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
       <ContextMenu
         onOpenChange={(open) => {
           if (!open) return
+          // A11y-review fix (gate round 4, Low): reopening this menu while a previous create's
+          // settle is still stashed means Radix's own close-autofocus for that earlier close may
+          // never fire at all (superseded by this new open) -- run it now, before overwriting
+          // `createOriginRef` for this new open, so the stashed `finish` still resolves the
+          // origin it actually belongs to.
+          const settled = settledCreateRef.current
+          settledCreateRef.current = null
+          createRequestedRef.current = false
+          settled?.()
           createOriginRef.current = 'context'
           // A11y-review fix (gate round 2, LOW): Shift+F10/the Menu key opens this menu from
           // whatever element already has focus (for example the "..." trigger itself), not
@@ -563,7 +584,16 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                 </TooltipTrigger>
                 <TooltipContent side="bottom">{isArchived ? 'Restore' : 'Archive'}</TooltipContent>
               </Tooltip>
-              <DropdownMenu onOpenChange={(open) => { if (open) createOriginRef.current = 'dropdown' }}>
+              <DropdownMenu
+                onOpenChange={(open) => {
+                  if (!open) return
+                  const settled = settledCreateRef.current
+                  settledCreateRef.current = null
+                  createRequestedRef.current = false
+                  settled?.()
+                  createOriginRef.current = 'dropdown'
+                }}
+              >
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>

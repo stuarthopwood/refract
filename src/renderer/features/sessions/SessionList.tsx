@@ -350,9 +350,14 @@ function SessionRow({
           requestAnimationFrame(() => {
             // Gate round 3 (code-review Medium): `focusSessionPane` can genuinely find no pane
             // (the view switched away, or the split closed) -- announce instead of silently
-            // doing nothing in that case too, not only when the user has moved on.
-            if (!(isStillHere() && focusSessionPane(result.value.id))) {
+            // doing nothing in that case too, not only when the user has moved on. Gate round 4
+            // (all four reviewers): when that happens while the user IS still here, deliberately
+            // focus the origin too -- `isStillHere()` returning `true` can mean focus is
+            // currently stranded on `<body>`, and leaving it there once more MUST NOT happen.
+            const here = isStillHere()
+            if (!(here && focusSessionPane(result.value.id))) {
               useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+              if (here) focusOrigin()
             }
           })
         }
@@ -474,8 +479,12 @@ function SessionRow({
       // Open folder / Stop agent, none of which unmount the row), else the open button, else the
       // list itself.
       event.preventDefault()
-      if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
-      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      if (isContextMenu) {
+        const target = contextMenuOpenerRef.current?.isConnected ? contextMenuOpenerRef.current : openButtonRef.current
+        if (target?.isConnected) target.focus()
+        else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else focusListContainer()
+      } else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
       else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
       else focusListContainer()
     }
@@ -489,6 +498,15 @@ function SessionRow({
       <ContextMenu
         onOpenChange={(open) => {
           if (!open) return
+          // A11y-review fix (gate round 4, Low): reopening this menu while a previous create's
+          // settle is still stashed means Radix's own close-autofocus for that earlier close may
+          // never fire at all (superseded by this new open) -- run it now, before overwriting
+          // `createOriginRef` for this new open, so the stashed `finish` still resolves the
+          // origin it actually belongs to.
+          const settled = settledCreateRef.current
+          settledCreateRef.current = null
+          createRequestedRef.current = false
+          settled?.()
           createOriginRef.current = 'context'
           // A11y-review fix (gate round 2, LOW): Shift+F10/the Menu key opens this menu from
           // whatever element already has focus (for example the "..." trigger itself), not
@@ -638,7 +656,16 @@ function SessionRow({
                 <TooltipContent>Resume {session.name}</TooltipContent>
               </Tooltip>
             )}
-            <DropdownMenu onOpenChange={(open) => { if (open) createOriginRef.current = 'dropdown' }}>
+            <DropdownMenu
+              onOpenChange={(open) => {
+                if (!open) return
+                const settled = settledCreateRef.current
+                settledCreateRef.current = null
+                createRequestedRef.current = false
+                settled?.()
+                createOriginRef.current = 'dropdown'
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <button
                   ref={menuTriggerRef}
