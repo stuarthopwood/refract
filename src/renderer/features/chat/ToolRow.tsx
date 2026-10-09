@@ -16,7 +16,23 @@ function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
-type RowStatus = 'running' | 'done' | 'error' | 'exited' | 'interrupted'
+export type RowStatus = 'running' | 'done' | 'error' | 'exited' | 'interrupted'
+
+// Issue #457 quality-gate fix (a11y, Medium): exported so `Transcript.tsx` can reuse the exact
+// same status word for a hidden-but-running `ToolGroup`'s one-line sr-only progress placeholder
+// (`isHiddenRow`'s `'sr-only'` case) that `StatusIcon` below already uses for its own sr-only
+// text -- one source of truth for the five status words, not two copies that could drift apart.
+export function toolStatusLabel(status: RowStatus): string {
+  return status === 'running'
+    ? 'Running'
+    : status === 'error'
+      ? 'Failed'
+      : status === 'exited'
+        ? 'Agent exited'
+        : status === 'interrupted'
+          ? 'Interrupted'
+          : 'Done'
+}
 
 // Language inference for a tool call's Arguments block (T083, FR-050): always `json`, except a
 // `bash` call's own `command` string, shown verbatim and highlighted as `bash` instead of being
@@ -51,16 +67,7 @@ function inferArgumentsBlock(item: ToolItem): { lang: string; code: string } {
 // #510 slice 3 -- the same family, a tool call left with no result because its Conversation's
 // tail shows the writing process is gone, reusing the unplug shape so neither reads as "done").
 function StatusIcon({ status }: { status: RowStatus }) {
-  const label =
-    status === 'running'
-      ? 'Running'
-      : status === 'error'
-        ? 'Failed'
-        : status === 'exited'
-          ? 'Agent exited'
-          : status === 'interrupted'
-            ? 'Interrupted'
-            : 'Done'
+  const label = toolStatusLabel(status)
   return (
     <>
       {status === 'running' && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />}

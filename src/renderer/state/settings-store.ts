@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
 import type { ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
 import { notify } from './notify'
+import { useChatScrollStore } from './scroll-store'
 
 interface SettingsState {
   settings: Settings
@@ -55,6 +56,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const result = await window.refract.settings.setTranscriptDisplay(field, visible)
     if (result.ok) {
       set({ settings: result.value })
+      // Issue #457 quality-gate fix (code review, Medium / a11y, Low): a remembered "detached"
+      // scroll position was recorded against the pre-toggle row layout; restoring it once every
+      // pane remounts (`App.tsx` replaces the whole chat area while Settings is open) can land on
+      // unrelated content once hidden rows change the layout's height. Falls back to #485's own
+      // default (the end) for every pane instead.
+      useChatScrollStore.getState().clearAll()
     } else {
       notify(result.error)
     }

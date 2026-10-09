@@ -98,13 +98,16 @@ export class SettingsStore {
     // `transcriptDisplay` key at all (or an invalid/corrupt shape) -- the same field-level
     // migration pattern `sessionReadout`/`split` above already use (lazy in-memory correction,
     // no raw-tracking dance since this is a plain immediate-apply toggle pair, not a
-    // Save/Cancel-previewed field like `theme`/`watermarkEnabled`).
-    if (
-      !data.transcriptDisplay ||
-      typeof data.transcriptDisplay.thinking !== 'boolean' ||
-      typeof data.transcriptDisplay.toolCalls !== 'boolean'
-    ) {
-      data.transcriptDisplay = DEFAULT_TRANSCRIPT_DISPLAY
+    // Save/Cancel-previewed field like `theme`/`watermarkEnabled`). Quality-gate fix (code
+    // review/security-auditor, Low): per FIELD, not per object -- a hand-edited
+    // `{thinking: false, toolCalls: "no"}` keeps the valid `thinking: false` choice instead of
+    // resetting it back to `true` just because the sibling field is invalid. Rebuilt from
+    // exactly these two keys either way, so a stray/extra key (including an own `__proto__` data
+    // property `JSON.parse` could produce) never survives into memory or a later re-save.
+    const rawTranscriptDisplay = data.transcriptDisplay as Partial<TranscriptDisplaySettings> | null | undefined
+    data.transcriptDisplay = {
+      thinking: typeof rawTranscriptDisplay?.thinking === 'boolean' ? rawTranscriptDisplay.thinking : true,
+      toolCalls: typeof rawTranscriptDisplay?.toolCalls === 'boolean' ? rawTranscriptDisplay.toolCalls : true
     }
     return new SettingsStore(file, data, rawTheme, rawWatermarkEnabled)
   }
@@ -209,7 +212,17 @@ export class SettingsStore {
    * (unlike `theme`/`watermarkEnabled`): this is a plain immediate-apply toggle pair, the same
    * migration shape as `sessionReadout`/`split` above, not a Save/Cancel-previewed field. */
   async setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<Settings> {
-    const next = { ...this.data, transcriptDisplay: { ...this.data.transcriptDisplay, [field]: visible } }
+    // Quality-gate fix (security-auditor, Low): rebuilt from exactly the two known keys (never a
+    // `...this.data.transcriptDisplay` spread of the possibly-already-clean object), so this
+    // setter can never itself be the path that writes a stray key back to disk.
+    const next = {
+      ...this.data,
+      transcriptDisplay: {
+        thinking: this.data.transcriptDisplay.thinking,
+        toolCalls: this.data.transcriptDisplay.toolCalls,
+        [field]: visible
+      }
+    }
     return this.persistWhole(next)
   }
 }

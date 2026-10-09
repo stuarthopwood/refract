@@ -4,7 +4,7 @@
 // default behaviour ("They apply immediately, like the readout toggles, with no Save step").
 //
 // Scope note: this section persists the setting and exposes it to the renderer
-// (`Settings.transcriptDisplay`, `useSettingsStore`); `Transcript.tsx`'s `isHiddenRow` is the
+// (`Settings.transcriptDisplay`, `useSettingsStore`); `Transcript.tsx`'s `rowVisibility` is the
 // consumer that actually filters the rendered rows from these two booleans (a `thinking` row for
 // the first switch; a `ToolGroup`/`subagent` row, unless it reports an error/interruption, for the
 // second -- see that function's own comment for the full "never hide a problem" rule this
@@ -32,7 +32,7 @@ export function ChatDisplaySection() {
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
         Chat
       </h2>
-      <p className="mb-4 text-sm text-muted-foreground">Choose what the chat transcript shows, for every open session.</p>
+      <p className="mb-4 text-sm text-muted-foreground">Choose what the chat transcript shows in every session.</p>
       <div className="flex flex-col divide-y divide-border">
         <div className="flex items-center justify-between gap-4 py-3">
           <div className="flex flex-col gap-0.5">
@@ -56,7 +56,7 @@ export function ChatDisplaySection() {
               Show tool calls
             </label>
             <span id="transcript-display-tool-calls-description" className="text-xs text-muted-foreground">
-              Tool calls the agent makes. Approvals, questions, and failed calls always show.
+              Tool calls and subagents the agent runs. Approvals, questions, and failed or interrupted calls always show.
             </span>
           </div>
           <Switch
