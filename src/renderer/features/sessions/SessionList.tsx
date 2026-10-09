@@ -435,6 +435,11 @@ function SessionRow({
       // close-autofocus parked focus on while the call was in flight).
       onRestore: () => {
         restoreRequestedRef.current = true
+        // Verif round 3 fix (Low): clears a stale value from an earlier action on this same
+        // row before this restore's own parking (if any) sets it fresh -- `isStillHere` below
+        // reads it, so a leftover value from a PREVIOUS restore could otherwise read as "the
+        // user never moved" for a restore that hasn't parked anything yet.
+        restoreParkedRef.current = null
         captureFocusFallback()
         const row = rowRef.current
         const origin = createOriginRef.current === 'context' ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
@@ -452,12 +457,17 @@ function SessionRow({
         void restore(session.id)
           .then((ok) => {
             if (!ok) {
-              // Gate round 2 fix (Medium, all four reviewers): a refused restore never moves
-              // the row anywhere -- if focus is still exactly where the generic nearby fallback
-              // parked it, send it back to the menu's own origin instead (the error toast
-              // already reports the refusal, `sessions-store.ts`'s `restore`).
+              // Gate round 3 fix (High, security-auditor + a11y-auditor): a refused restore
+              // settling BEFORE the menu actually closes stashes this finish without ever
+              // parking focus first (`restoreParkedRef` is still null or stale from an earlier
+              // action), so round 2's exact-match check against it was never true and focus was
+              // left on `<body>`. Reuses the same `isStillHere()` check `onRestore`'s own
+              // success path already relies on (covers body/disconnected/origin/parked/inside-
+              // row), never only an exact match against wherever parking happened to land.
               const finish = () => {
-                if (document.activeElement === restoreParkedRef.current && origin?.isConnected) origin.focus()
+                if (!isStillHere()) return
+                if (origin?.isConnected) origin.focus()
+                else focusListContainer()
               }
               if (restoreRequestedRef.current) settledRestoreRef.current = finish
               else finish()
