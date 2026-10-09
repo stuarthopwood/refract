@@ -1,8 +1,8 @@
 // The Settings screen (spec 004 FR-011 to FR-016, data-model.md "Settings screen"): a
-// left-section-list layout ("Session readout", spec 007's "Appearance", and issue #455's
-// "Model roles"), switching content without redesigning this screen (FR-015). Reached via
-// the temporary gear control in SessionList.tsx (research.md decision 7) until spec 008's
-// profile-item cog supersedes it.
+// left-section-list layout ("Session readout", spec 007's "Appearance", and issues #455's
+// "Model roles" / #457's "Chat"), switching content without redesigning this screen
+// (FR-015). Reached via the temporary gear control in SessionList.tsx (research.md decision 7)
+// until spec 008's profile-item cog supersedes it.
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -13,6 +13,7 @@ import { useSettingsStore, useViewStore } from '@/state'
 import type { ReadoutKind } from '../../../shared/model'
 import type { SettingsSectionId } from '../../state/view-store'
 import { AppearanceSection } from './AppearanceSection'
+import { ChatDisplaySection } from './ChatDisplaySection'
 import { ModelRolesSection } from './ModelRolesSection'
 
 interface ReadoutToggleDescriptor {
@@ -44,7 +45,8 @@ interface SettingsSectionDescriptor {
 const SECTIONS: SettingsSectionDescriptor[] = [
   { id: 'session-readout', label: 'Session readout' },
   { id: 'appearance', label: 'Appearance' },
-  { id: 'model-roles', label: 'Model roles' }
+  { id: 'model-roles', label: 'Model roles' },
+  { id: 'chat', label: 'Chat' }
 ]
 
 export function SettingsScreen() {
@@ -118,6 +120,8 @@ export function SettingsScreen() {
             <AppearanceSection />
           ) : settingsSection === 'model-roles' ? (
             <ModelRolesSection />
+          ) : settingsSection === 'chat' ? (
+            <ChatDisplaySection />
           ) : (
             <>
               <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">

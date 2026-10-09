@@ -133,8 +133,8 @@ replaces the unfocused pane rather than adding a third pane.
 3. **Given** a split is open, **When** the developer wants a single pane again, **Then** closing
    either pane returns to one pane, at any time, with no other step required.
 4. **Given** one pane is open (no split), **When** the developer closes it, **Then** the chat area
-   shows the empty state ("Select a Session or create one.") and the Session stays listed,
-   unarchived and running (quality-gate remediation, verifier LOW, PR #634).
+   shows the empty state ("Select a Session or create one.") and the Session stays listed, with
+   its agent left untouched (not stopped, archived or deleted).
 
 ---
 
