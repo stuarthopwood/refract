@@ -228,8 +228,10 @@ describe('resumeSessionCore', () => {
     expect(resumingIds.has('session-1')).toBe(false);
   });
 
-  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium): unlike `agent.start()` and
-  // `agent.send()`, nothing here catches a thrown `buildSnapshot` -- proves the lock is still
+  // Quality-gate fix (cycle 3, 2026-10-08, test-reviewer, Medium; updated issue #603): unlike
+  // `agent.start()` and `agent.send()`, the PRE-send `buildSnapshot` call still has nothing
+  // catching it (the POST-send one now falls back to the pre-send snapshot, issue #603) --
+  // this fake throws on every call, so it still throws here too, proving the lock is still
   // released (the `finally`), and that this propagates as a rejection rather than being silently
   // swallowed, same as every other `buildSnapshot` caller in this codebase (for example
   // `conversations.ts`'s own unguarded `await buildSnapshot(...)` calls).

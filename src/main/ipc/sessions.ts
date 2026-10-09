@@ -182,7 +182,7 @@ export function registerSessions(manager: SessionManager): void {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_ARCHIVE} expects a string id`);
     if (!manager.registry.getSession(id)) return notFound(`Session not found: ${id}`);
     if (resumingIds.has(id)) {
-      return { ok: false, error: { code: 'invalid-argument', message: 'A resume is in progress for this Session.' } };
+      return { ok: false, error: { code: 'invalid-argument', message: 'Another action is already in progress for this Session.' } };
     }
     resumingIds.add(id);
     try {
@@ -243,7 +243,7 @@ export function registerSessions(manager: SessionManager): void {
     // which used to be able to start a new omp process in a worktree this call is about to
     // remove.
     if (resumingIds.has(id)) {
-      return { ok: false, error: { code: 'invalid-argument', message: 'A resume is in progress for this Session.' } };
+      return { ok: false, error: { code: 'invalid-argument', message: 'Another action is already in progress for this Session.' } };
     }
     resumingIds.add(id);
     try {

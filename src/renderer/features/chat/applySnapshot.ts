@@ -42,15 +42,16 @@ export function applySnapshot(sessionId: string, snapshot: SessionSnapshot): voi
   applySnapshotParts(sessionId, snapshot, { transcript: true })
 }
 
-/** Quality-gate fix (cycle 2, 2026-10-08, updated issue #603 cycle 7): `sessions.resume`
- * (`resume.ts`) now builds its returned snapshot AFTER sending the default resume instruction,
- * not before -- but by the time this IPC round trip resolves, that send's own live
- * `transcript:patch` events may ALREADY have streamed in and been applied to the transcript
- * store in the gap between the snapshot being captured and this call returning (the same
- * "flash back to a stale transcript" race `MessageInput.tsx`'s own not-started-send path
- * already works around). `agent.start()` already flushed one full transcript reset earlier in
- * that same call, before the send, so nothing here needs a second one -- only queue/pending/
- * readout/subagents, never the transcript a second time with now-stale content. */
+/** Quality-gate fix (cycle 2, 2026-10-08; updated issue #603): `sessions.resume` (`resume.ts`)
+ * now builds its returned snapshot AFTER sending the default resume instruction, not before
+ * (or the pre-send one, if that post-send rebuild itself fails -- issue #603's own fallback) --
+ * but by the time this IPC round trip resolves, that send's own live `transcript:patch` events
+ * may ALREADY have streamed in and been applied to the transcript store in the gap between the
+ * snapshot being captured and this call returning (the same "flash back to a stale transcript"
+ * race `MessageInput.tsx`'s own not-started-send path already works around). `agent.start()`
+ * already flushed one full transcript reset earlier in that same call, before the send, so
+ * nothing here needs a second one -- only queue/pending/readout/subagents, never the transcript
+ * a second time with now-stale content. */
 export function applySnapshotExceptTranscript(sessionId: string, snapshot: SessionSnapshot): void {
   applySnapshotParts(sessionId, snapshot, { transcript: false })
 }

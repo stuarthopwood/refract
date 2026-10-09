@@ -15,14 +15,21 @@ import { checkResumeEligible } from './resumeEligibility';
 import type { ResumeRefusalCode } from './resumeEligibility';
 import { notFound } from './util';
 
+// Issue #603 quality-gate follow-up: the shared 'busy' code (renamed from
+// 'already-resuming') now also covers SESSIONS_ARCHIVE/SESSIONS_DELETE holding the same
+// lock, so its message stays neutral rather than always naming a resume specifically.
 const RESUME_REFUSAL_MESSAGE: Record<ResumeRefusalCode, string> = {
-  'already-resuming': 'A resume for this Session is already in progress.',
+  busy: 'Another action is already in progress for this Session.',
   'not-stopped': 'Session is not stopped.',
   'not-eligible': 'Session is not eligible to resume.',
 };
 
 /** The one piece of a real `SessionAgent` this needs -- narrowed so a test can supply a fake
- * without constructing a real process. */
+ * without constructing a real process. `shutdown` is optional (every real agent has one; a
+ * test fake usually does not need it) -- issue #603 quality-gate follow-up: called, if
+ * present, when the belt-and-braces archived re-check below fires, so a resume that raced
+ * past the shared lock and already started the agent never leaves it running on an archived
+ * Session. */
 export interface ResumableAgent {
   runtimeSnapshot: {
     status: SessionStatus;
@@ -31,6 +38,7 @@ export interface ResumableAgent {
   };
   start(): Promise<unknown>;
   send(text: string, images?: ImageContent[]): Promise<unknown>;
+  shutdown?(): Promise<void>;
 }
 
 export interface ResumeSessionDeps {
@@ -105,10 +113,17 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
     // (Conversation listing), a second window wide enough for a concurrent SESSIONS_ARCHIVE/
     // SESSIONS_DELETE to land in, independent of whether the `resumingIds` guard those
     // handlers now also hold (sessions.ts) actually ran -- this function cannot see that guard
-    // at all, so it never trusts it alone.
-    const beforeSend = deps.getSession(id) ?? refreshed;
-    if (beforeSend.archivedAt) {
-      return { ok: true, value: snapshot };
+    // at all, so it never trusts it alone. Reads fresh with NO fallback to `refreshed` --
+    // falling back there would silently treat a DELETED Session (`getSession` now returning
+    // `undefined`) as the stale, non-archived `refreshed` copy and send into it anyway. Also
+    // shuts the just-started agent back down (optional chain: real agents always have this;
+    // see `ResumableAgent`'s own doc comment) rather than returning `ok: true` and leaving a
+    // live omp process on a Session this call is about to report as not eligible -- exactly
+    // the end state #603 itself describes.
+    const beforeSend = deps.getSession(id);
+    if (!beforeSend || beforeSend.archivedAt) {
+      await agent.shutdown?.();
+      return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE['not-eligible'] } };
     }
     try {
       await agent.send(DEFAULT_RESUME_INSTRUCTION);

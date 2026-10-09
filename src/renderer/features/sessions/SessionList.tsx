@@ -187,6 +187,13 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
             : result.error
         )
       }
+    } catch (err) {
+      // Issue #603 quality-gate follow-up (Low, a11y): the try/finally above releases the lock
+      // on an unhandled rejection (the bridge call itself throwing, not an `{ ok: false }`
+      // result), but previously announced nothing and left `resumeFocusPendingRef` armed for a
+      // call that will now never complete the normal success/failure branch above.
+      resumeFocusPendingRef.current = false
+      notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) })
     } finally {
       resumingRef.current = false
       setResuming(false)
@@ -256,10 +263,17 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     onOpenInSplit: () => openInSplit(session.id),
     onCopyPath: () => void copyPath(),
     onReveal: () => void reveal(),
+    // Issue #603 quality-gate follow-up (Low, a11y): archive can now be refused (a resume in
+    // progress -- issue #603 item 1), so focus must only move toward the list on SUCCESS.
+    // `listFocusRequestedRef` is no longer set synchronously here: Radix's own close-autofocus
+    // (`handleMenuCloseAutoFocus' below) falls through to its generic trigger/open-button
+    // fallback instead, keeping focus near this row by default -- correct for a refusal, since
+    // the row never goes anywhere. Only an actual success moves focus toward the list.
     onArchive: () => {
-      listFocusRequestedRef.current = true
       captureFocusFallback()
-      void archive(session.id)
+      void archive(session.id).then((ok) => {
+        if (ok) focusListContainer()
+      })
     },
     onRestore: () => {
       listFocusRequestedRef.current = true
