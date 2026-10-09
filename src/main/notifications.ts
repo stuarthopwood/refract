@@ -6,7 +6,7 @@
 // Issue #494: passing `icon` below (the same dev-only `build/icon.ico` the window itself uses,
 // `WINDOW_ICON_PATH` from `index.ts`) fixes the toast's own icon -- live-verified on a scratch
 // Electron instance (main-process `Notification` driven directly over the Node inspector
-// protocol, `com.stuarthopwood.refract` already set): the body icon changed from a generic grey
+// protocol, `com.stuarthopwood.refract` already set -- pre-#615; dev now uses `.dev`): the body icon changed from a generic grey
 // icon to Refract's logo. The toast's *header* still read "Electron" in that test, because
 // Windows resolves an AppUserModelId's display name from a registered Start Menu shortcut, which
 // this dev launch method does not have -- a known limitation the issue itself names as

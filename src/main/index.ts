@@ -146,6 +146,19 @@ function currentTitleBarOverlay(): { color: string; symbolColor: string; height:
 // matches the window's.
 const WINDOW_ICON_PATH = join(__dirname, '../../build/icon.ico')
 
+// Issue #494 (2026-10-09 finding): every fresh, never-before-seen AppUserModelId worked with the
+// current `icon:`/`setIcon` code (live harness at refract-taskbar-test/main.js), but the real
+// packaged id, `com.stuarthopwood.refract`, kept showing the Electron atom even with that same
+// code -- Windows had already cached a bad taskbar icon association for that exact string from
+// an earlier unpackaged run (plausibly a scratch instance during PR #590's own verification) that
+// showed a window under it before any icon was applied. No in-process fix repairs a poisoned id
+// (`setAppDetails` did not help in the harness, even combined with `setIcon`). The only thing the
+// harness proved fixes a poisoned real id is a different id, so dev runs use their own, distinct
+// from the packaged one -- which also means a dev run can never poison or inherit the installed
+// app's taskbar/notification identity in the first place.
+const APP_USER_MODEL_ID_PACKAGED = 'com.stuarthopwood.refract'
+const APP_USER_MODEL_ID_DEV = 'com.stuarthopwood.refract.dev'
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
@@ -182,7 +195,8 @@ function createWindow(): void {
   // enough") -- in the unpackaged launch method (`pnpm build` then `electron.exe .`, confirmed
   // live) Windows was resolving the taskbar/Alt-Tab/notification icon from the running
   // `electron.exe`'s own resource, because `app.setAppUserModelId` (called below, before
-  // `createWindow()` runs here -- see the call site near the bottom of this file) used to pin
+  // `createWindow()` runs here -- see the call site near the bottom of this file, now
+  // `APP_USER_MODEL_ID_DEV` in dev) used to pin
   // the window's *identity* to that same executable; the constructor's `icon:` option above did
   // not override that. Like that option, this only ever affects an unpackaged run: a packaged
   // build's icon comes from the exe's own resource (spec 006), so `setIcon` here is a no-op
@@ -300,17 +314,19 @@ if (!gotLock) {
     registerNotifications(manager, getWindow, WINDOW_ICON_PATH)
     startMemoryMonitor(manager, getWindow)
 
-    // Issue #494 (bug fix, matching spec 006 T012's already-landed choice on `spec-006-impl`:
-    // unconditional, same `appId` as `electron-builder.yml` will use once packaged) -- the
-    // previous `process.execPath` pin (dev only) made Windows resolve the taskbar/Alt-Tab/
-    // notification icon from the *identity* (the running `electron.exe`, whose own resource is
-    // the Electron atom) rather than this window's own icon, even though `createWindow()` sets
-    // one. A fixed, Refract-specific id is resolved independently of which executable is
-    // currently running it, and unconditional (not `isDev`-gated) means a future packaged run
-    // keeps the exact same identity a dev run already established, so notifications, taskbar
-    // grouping and Apps & Features stay one identity across every upgrade, matching T012's intent
-    // even though packaging itself (spec 006) has not landed on `main` yet.
-    app.setAppUserModelId('com.stuarthopwood.refract')
+    // Issue #494 (bug fix, matching spec 006 T012's already-landed choice on `spec-006-impl` for
+    // the packaged id) -- the previous `process.execPath` pin (dev only) made Windows resolve the
+    // taskbar/Alt-Tab/notification icon from the *identity* (the running `electron.exe`, whose
+    // own resource is the Electron atom) rather than this window's own icon, even though
+    // `createWindow()` sets one. A fixed, Refract-specific id is resolved independently of which
+    // executable is currently running it. Packaged keeps the exact appId electron-builder.yml
+    // will use (spec 006 T003 scaffolds that file's `appId`; T012 is this unconditional call;
+    // `APP_USER_MODEL_ID_PACKAGED`) so notifications, taskbar grouping and Apps & Features stay
+    // one identity across every upgrade, matching T012's intent even though packaging itself
+    // (spec 006) has not landed on `main` yet. Dev uses `APP_USER_MODEL_ID_DEV` instead of that
+    // same id -- see its comment above for why (a Windows-cached poisoned icon association for
+    // the real id, found 2026-10-09).
+    app.setAppUserModelId(isDev ? APP_USER_MODEL_ID_DEV : APP_USER_MODEL_ID_PACKAGED)
 
     createWindow()
 
