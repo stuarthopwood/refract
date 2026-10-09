@@ -6,6 +6,8 @@ constitution IV; each is resolved by a Phase 1 probe task in `tasks.md`, which u
 with the exact field or frame name once run. Nothing below is a field name yet — these are the
 questions the probes answer, not an assumed answer.
 
+**Amended 2026-10-08 (#520, B5)**: this paragraph's "unverified on 18.4.x or 18.5.x" framing is now historical -- the Phase 1 probes below already resolved every question it describes, several against `omp` 18.8.0. The project's supported minimum is separately decided to rise to **18.6.3** (Stuart, 2026-10-07); see `specs/001-core-session-workspace/contracts/omp-usage.md`'s Failure handling table and `docs/spike/FINDINGS.md` item 49 for the current range and what has/has not been re-verified.
+
 ## Resolved by Phase 1 probes (FINDINGS items 34 to 36, 2026-10-04, omp 18.5.1)
 
 ### a. Context window usage (Context window usage chip, FR-003)
