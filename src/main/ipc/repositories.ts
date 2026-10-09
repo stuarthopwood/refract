@@ -8,8 +8,9 @@ import path from 'node:path';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { BranchEntry } from '../../shared/ipc';
-import type { Repository, Session } from '../../shared/model';
+import type { Repository, RepositoryRemote, Session } from '../../shared/model';
 import { gitRaw, repoInfo } from '../git/git';
+import { repositoryRemote } from '../git/remote';
 import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
@@ -53,8 +54,106 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
   return [...entries, ...sessionEntries];
 }
 
+// Issue #528, gate round 3 fix (Medium, verification + a11y-auditor): bounds `repositories.
+// remotes()` to about REMOTE_DEADLINE_MS in aggregate, however many repositories are registered
+// or however slow one individual `git` call is. Concurrency is capped so a large repository
+// count never floods the process table with simultaneous `git` spawns.
+//
+// Gate round 4 fix (High, code-reviewer + security-auditor): a repository the deadline cuts off
+// mid-flight is now left OUT of the response entirely, never reported as a placeholder `unknown`
+// -- the round-3 version pre-filled every slot with `unknown` and sent every id regardless of
+// whether its own check had actually settled, so a slow refresh could overwrite an
+// already-confirmed `has`/`none` with a wrong `unknown`, permanently for any repository past the
+// concurrency cap (measured live: 8 repositories alone took ~830ms on one machine, already close
+// to the old 1s deadline before Electron's own cold-start load). The deadline is also raised
+// well above one full concurrency round, now that `remotes()` is off the first-paint path (gate
+// round 3) and has nothing left to protect by staying short -- each individual call keeps its
+// own 3 s cap regardless.
+//
+// Split out of `repositories.list()` (gate round 3 fix, Medium): `App.tsx`'s own
+// `showReadiness = !ready || !hasRepositories` gate meant this bounded step used to delay the
+// Session list's very first paint directly for anyone who already has repositories. `list()` now
+// returns immediately with every entry's `remote` set to the `unknown` placeholder; the renderer
+// calls `remotes()` separately right after and merges the result in once it resolves.
+//
+// Gate round 2 fix (Medium, code-reviewer + security-auditor): `remote` is NOT refreshed
+// automatically beyond this -- `repositories.add()`/`rename()` recompute it for that one
+// repository; `remotes()` itself is called once more on window focus (gate round 3,
+// `init-stores.ts`, mirroring the existing GitHub-accounts refresh-on-focus pattern), throttled
+// the same way. A repository that misses a deadline keeps whatever value it already had (the
+// `unknown` placeholder if none yet) until the next of those triggers; tracked as a known interim
+// limit on the #646 follow-up, not silently different from what #528 decided (no extra refresh
+// trigger beyond focus this round).
+const REMOTE_CONCURRENCY = 8;
+const REMOTE_DEADLINE_MS = 10_000;
+
+async function remotesBounded(repositories: Repository[]): Promise<Record<string, RepositoryRemote>> {
+  const byId: Record<string, RepositoryRemote> = {};
+  const controller = new AbortController();
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (!controller.signal.aborted && next < repositories.length) {
+      const repository = repositories[next++]!;
+      const remote = await repositoryRemote(repository.path, controller.signal);
+      // Gate round 4 fix (High): only a genuinely settled check is recorded -- one the shared
+      // deadline cut off mid-flight is left absent from `byId` entirely, so the renderer's own
+      // merge (`repositories-store.ts`'s `setRemotes`) leaves that repository's existing value,
+      // if any, untouched instead of overwriting it with a wrong `unknown`.
+      // Gate round 5 fix (Medium, all four reviewers): `remote` is `null`, not just excluded by
+      // `controller.signal.aborted`, when this call hit its OWN 3 s per-call timeout -- the
+      // shared pool deadline never fired in that case, so the old `!controller.signal.aborted`
+      // check alone still recorded a false `unknown` over a confirmed `has`/`none`. Checking
+      // `remote !== null` catches both: the pool's shared deadline and this call's own timeout.
+      if (remote !== null && !controller.signal.aborted) byId[repository.id] = remote;
+    }
+  }
+  const pool = Promise.all(Array.from({ length: Math.min(REMOTE_CONCURRENCY, repositories.length) }, () => worker()));
+  let deadlineTimer: NodeJS.Timeout;
+  const deadline = new Promise<void>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      // Gate round 2 fix (Low, all four reviewers): without this, workers kept taking new
+      // repositories off the queue and spawning `git` for each one after the response had
+      // already gone, with every one of those results thrown away -- bounded only by each
+      // call's OWN 3 s timeout, not by this deadline. Aborting here stops any in-flight `git`
+      // call immediately (via the combined signal `repositoryRemote` now accepts) and the
+      // `while` condition above stops every worker from starting another.
+      controller.abort();
+      resolve();
+    }, REMOTE_DEADLINE_MS);
+  });
+  await Promise.race([pool, deadline]);
+  clearTimeout(deadlineTimer!);
+  return byId;
+}
+
+// Gate round 4 fix (Low, security-auditor): the renderer throttles its own calls (5s, plus an
+// in-flight guard), but nothing stopped a second IPC call arriving anyway (a misbehaving or
+// compromised renderer could invoke this channel directly, bypassing the throttle) from starting
+// a SECOND full pool of `git` spawns concurrently with the first. One shared in-flight promise
+// means every caller that arrives while a pool is already running gets that same pool's result
+// instead of starting its own.
+let remotesInFlight: Promise<Record<string, RepositoryRemote>> | null = null;
+
 export function registerRepositories(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
-  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => ({ ok: true, value: manager.registry.snapshot().repositories }));
+  // Issue #528, gate round 3 fix (Medium): returns the registry's own repositories at once, each
+  // carrying the `unknown` placeholder -- see `remotesBounded`'s own doc comment above for why
+  // this no longer computes `remote` inline.
+  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => {
+    const repositories = manager.registry.snapshot().repositories;
+    const withPlaceholder = repositories.map((repository) => ({ ...repository, remote: { kind: 'unknown' as const } }));
+    return { ok: true, value: withPlaceholder };
+  });
+
+  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOTES, async () => {
+    if (!remotesInFlight) {
+      const repositories = manager.registry.snapshot().repositories;
+      remotesInFlight = remotesBounded(repositories).finally(() => {
+        remotesInFlight = null;
+      });
+    }
+    const byId = await remotesInFlight;
+    return { ok: true, value: byId };
+  });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_ADD, async (_event, repoPath: unknown) => {
     if (typeof repoPath !== 'string') {
@@ -72,7 +171,12 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       };
       await manager.registry.addRepository(repository);
       manager.notifyListChanged();
-      return { ok: true, value: repository };
+      // Issue #528: a freshly added repository shows the right icon with no refetch needed.
+      // Gate round 5 fix (Medium): a `null` (this call's own 3 s timeout fired) maps to the
+      // `unknown` placeholder -- `add()` always needs a concrete `RepositoryRemote`, not an
+      // absent value, for this one-shot response.
+      const remote = (await repositoryRemote(repository.path)) ?? { kind: 'unknown' as const };
+      return { ok: true, value: { ...repository, remote } };
     } catch (err) {
       return mapStoreThrown(err);
     }
@@ -92,12 +196,21 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     // validate -> resolve -> persist -> notify sequence) now lives in `renameRepositoryCore`
     // (`renameRepository.ts`), injected with this manager's own real dependencies, so it is
     // unit-testable against fakes -- same reasoning as `resumeSessionCore`/`attachSnapshotCore`.
-    return renameRepositoryCore(id, name, {
+    const result = await renameRepositoryCore(id, name, {
       getRepository: (repositoryId) => manager.registry.getRepository(repositoryId),
       basename: (repositoryPath) => path.basename(repositoryPath),
       updateRepository: (repositoryId, patch) => manager.registry.updateRepository(repositoryId, patch),
       notifyListChanged: () => manager.notifyListChanged(),
     });
+    if (!result.ok) return result;
+    // Issue #528: the renderer's own `repositories-store.ts` replaces its whole cached Repository
+    // with this response (`rename`'s `Promise<string | null>` contract) -- without this, a
+    // rename would silently drop the group header's own remote icon back to "unknown" until the
+    // next unrelated `repositories.list()` refresh happened to restore it.
+    // Gate round 5 fix (Medium): map a `null` (this call's own 3 s timeout) to the `unknown`
+    // placeholder, for the same reason as `add()` above.
+    const remote = (await repositoryRemote(result.value.path)) ?? { kind: 'unknown' as const };
+    return { ok: true, value: { ...result.value, remote } };
   });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOVE, async (_event, id: unknown) => {

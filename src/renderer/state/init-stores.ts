@@ -161,15 +161,58 @@ export function initStores(): void {
     if (document.visibilityState === 'visible') refreshGithubOnFocus()
   })
 
+  // Issue #528, gate round 3 fix (Medium, verification): `repositories.remotes()` isolates the
+  // bounded remote-detection step from `repositories.list()` -- `list()` itself is a plain
+  // registry read and returns at once, so `App.tsx`'s own `showReadiness = !ready ||
+  // !hasRepositories` gate (and therefore the Session list's first paint) never waits on remote
+  // detection any more. `remotes()` runs right after and merges in once it resolves (each
+  // repository's icon starts as the honest "could not tell" placeholder for that first paint,
+  // then updates in place, gate round 4 fix: a repository the shared pool's own deadline cuts
+  // off mid-flight is simply absent from that response and keeps whatever it already had, never
+  // overwritten with a wrong `unknown`), and again on window focus, mirroring
+  // `refreshGithubOnFocus` above (same 5s throttle, skipped while a read is already in flight)
+  // -- the one other signal that a developer may have added or changed a remote outside Refract
+  // while it sat in the background.
+  let lastRemotesFocusRefresh = 0
+  let remotesRefreshing = false
+  // Gate round 4 fix (Low, verification): `force` bypasses the throttle for the one-shot startup
+  // call below -- without it, a `focus`/`visibilitychange` event firing (for example the window
+  // regaining focus during its own launch) before `repositories.list()` resolves could consume
+  // the throttle window on an empty `repositories` array, leaving the startup call blocked
+  // behind the 5s window with every icon stuck on `unknown` until the NEXT focus change.
+  function refreshRepositoriesRemotes(force = false): void {
+    if (remotesRefreshing) return
+    const now = Date.now()
+    if (!force && now - lastRemotesFocusRefresh < 5000) return
+    lastRemotesFocusRefresh = now
+    remotesRefreshing = true
+    void window.refract.repositories
+      .remotes()
+      .then((result) => {
+        if (result.ok) useRepositoriesStore.getState().setRemotes(result.value)
+      })
+      // Gate round 4 fix (Low, code-reviewer + security-auditor): without this, a rejected
+      // `invoke` (the handler missing mid-teardown, or a thrown error) became an unhandled
+      // rejection -- the store simply keeps whatever it already had (the `unknown` placeholder,
+      // or an earlier confirmed value) either way, so there is nothing more useful to do here
+      // than swallow it.
+      .catch(() => {})
+      .finally(() => {
+        remotesRefreshing = false
+      })
+  }
+  window.addEventListener('focus', () => refreshRepositoriesRemotes())
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshRepositoriesRemotes()
+  })
+
   void (async () => {
-    const [sessionsLoad, settingsLoad, repositoriesLoad] = await Promise.all([
+    const [sessionsLoad, settingsLoad] = await Promise.all([
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
-      loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
-      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
+      loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get')
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
-    useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
@@ -188,5 +231,11 @@ export function initStores(): void {
     if (sessionsLoad.ok) {
       useSplitStore.getState().restoreFromSettings(settingsLoad.value.split)
     }
+  })()
+
+  void (async () => {
+    const repositoriesLoad = await loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
+    useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
+    if (repositoriesLoad.value.length > 0) refreshRepositoriesRemotes(true)
   })()
 }

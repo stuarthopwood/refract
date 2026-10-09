@@ -12,6 +12,7 @@ import type {
   PendingRequest,
   ReadoutKind,
   Repository,
+  RepositoryRemote,
   Session,
   SessionReadout,
   SessionStartProgress,
@@ -303,6 +304,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_REMOVE: 'repositories.remove',
   REPOSITORIES_RENAME: 'repositories.rename',
   REPOSITORIES_BRANCHES: 'repositories.branches',
+  REPOSITORIES_REMOTES: 'repositories.remotes',
   REPOSITORIES_PICK_FOLDER: 'repositories.pickFolder',
   REPOSITORIES_USER_NAME: 'repositories.userName',
   SESSIONS_LIST: 'sessions.list',
@@ -410,12 +412,26 @@ export interface RefractApi {
   };
 
   repositories: {
+    /** Issue #528, gate round 3 fix (Medium): returns immediately with `remote: { kind:
+     * 'unknown' }` on every entry -- the per-repository remote check used to run inline here
+     * and could delay this call noticeably, which `App.tsx`'s own `showReadiness` gate means
+     * directly delays the Session list's first paint for anyone who already has repositories.
+     * Call `remotes()` separately once this resolves to fill in the real icons. */
     list(): Promise<Result<Repository[]>>;
     add(path: string): Promise<Result<Repository>>;
     remove(id: string): Promise<Result<void>>;
     /** Issue #480: display-name only -- never touches the folder, worktrees, or branches. An
      * empty (after trimming) `name` resets to the folder's own basename. */
     rename(id: string, name: string): Promise<Result<Repository>>;
+    /** Issue #528, gate round 3 fix (Medium): the bounded remote-detection step `list()` used
+     * to run inline, now split out so it never gates the Session list's first paint. Keyed by
+     * repository id; a repository the shared pool's own deadline cut off mid-flight (gate round
+     * 4 fix, High: no longer sent as a false `unknown` placeholder) is simply absent from the
+     * response -- callers should leave their own existing value for an id not present here,
+     * never treat the absence itself as meaningful. Bounded per call (3s) and in aggregate
+     * (`src/main/ipc/repositories.ts`'s own pool/deadline, now generous since this is off the
+     * first-paint path), concurrency-capped, no network call. */
+    remotes(): Promise<Result<Record<string, RepositoryRemote>>>;
     branches(id: string): Promise<Result<BranchEntry[]>>;
     pickFolder(): Promise<Result<string | null>>;
     /** `git config user.name` in the repository's own checkout, falling back to the Windows
