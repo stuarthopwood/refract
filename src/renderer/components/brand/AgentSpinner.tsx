@@ -18,21 +18,27 @@ export interface AgentSpinnerProps {
   className?: string
   /** Colour. `'brand'` (default): **follows the active theme** -- `--agent-spinner-core` is a
    * Layer 3 component token declared once per theme block in `globals.css` (`.theme-dark`,
-   * `.theme-obsidian`, `.theme-dark-high-contrast`), today the same brand violet (`#864DD6`,
-   * reused verbatim from the removed `BrandSpinner`, itself drawn from `build/refract-icon-v2.svg`)
-   * in every theme (Stuart's #616 review round 4 decision: "same brand violet in every theme for
-   * now"); a custom theme file (#458) may recolour it per-theme later. `'export'` and `'blue'`
-   * remain fixed, NON-theme-derived overrides, set directly on this element (so they win over
-   * the inherited theme value regardless of selector specificity): `'export'` is Stuart's
-   * SVGator source export's own violet (`#D347FF`, issue #612 "Colours"); `'blue'` is the
-   * electric blue from his own reference screenshot of the target core look (glowing blue discs
-   * on black, `#2A7FFF`), added after his live review of PR #616. `'brand'`'s own
-   * `--agent-spinner-core` is checked against `--sidebar`/`--card`/`--background` (every
-   * surface the mark renders on) by `scripts/check-theme-contrast.mjs`'s `PAIRS` list, a real
-   * gate in every theme; `'export'`/`'blue'` are fixed literals outside the token system, so
-   * they are not wired into that script as gates -- their own ratios against the same three
-   * surfaces were computed once and reported in the PR body instead (all >=4.3:1, comfortably
-   * clearing the 3:1 floor in every theme). */
+   * `.theme-obsidian`, `.theme-dark-high-contrast`), today the same brand violet (`#9A68E4`,
+   * lightened from the removed `BrandSpinner`'s original `#864DD6` by round 5's A11y
+   * remediation -- see below) in every theme (Stuart's #616 review round 4 decision: "same
+   * brand violet in every theme for now"); a custom theme file (#458) may recolour it per-theme
+   * later. `'export'` and `'blue'` remain fixed, NON-theme-derived overrides, set directly on
+   * this element (so they win over the inherited theme value regardless of selector
+   * specificity): `'export'` is Stuart's SVGator source export's own violet (`#D347FF`, issue
+   * #612 "Colours"); `'blue'` is the electric blue from his own reference screenshot of the
+   * target core look (glowing blue discs on black, `#2A7FFF`), added after his live review of
+   * PR #616. `'brand'`'s own `--agent-spinner-core` is checked against `--sidebar`,
+   * `--sidebar-accent` (the session list row, selected or hovered -- the icon is the only
+   * visible status cue there), `--card`, `--popover` (the session details hover card) and
+   * `--background` (every surface the mark actually renders on) by
+   * `scripts/check-theme-contrast.mjs`'s `PAIRS` list, a real gate in every theme.
+   * Quality-gate remediation (A11y HIGH, round 5): the original `#864DD6` measured under 3:1
+   * against `--sidebar-accent` in every theme; `#9A68E4` fixes it with margin everywhere
+   * (3.43-4.05:1) while every already-passing surface stays passing (it only gets lighter).
+   * `'export'`/`'blue'` are fixed literals outside the token system, so they are not wired into
+   * that script as gates -- their own ratios against all five surfaces were computed once and
+   * reported in the PR body instead (all >=3.4:1, comfortably clearing the 3:1 floor in every
+   * theme). */
   palette?: 'brand' | 'export' | 'blue'
 }
 
@@ -79,9 +85,12 @@ const CYCLE_MS = 10000
  *    gradient-ring/orbit element from rounds 1-2 is gone outright (clean cutover, not hidden or
  *    disabled) -- `AgentSpinnerCore` below is the entire mark.
  *
- * Every property animated is `transform` (`translateY`, `scale`, `rotate`) or the halo's
- * `opacity` (fixed, never animated) -- no `d` path morph, no `filter` on the core, so any number
- * of concurrently-mounted instances stay cheap.
+ * Every property animated is `transform` (`translateY`, `scale`, `rotate`) -- no `d` path morph,
+ * no `filter` on the core. The halo's own gradient `stop-opacity` is fixed, never animated.
+ * Quality-gate remediation (Code LOW, round 5): `transform` animations on these SVG child
+ * elements still repaint on the main thread each frame (not compositor-only the way a `<div>`'s
+ * CSS `transform` can be) -- the same cost class the old `BrandSpinner`'s SVG opacity cascade
+ * already was, not a regression, but "stay cheap" overstated it as free.
  *
  * Every mounted instance computes its own `animation-delay` once, at mount, as a negative offset
  * into the shared cycle (`-(Date.now() % CYCLE_MS)ms`) -- the same phase-locking technique
@@ -93,8 +102,9 @@ const CYCLE_MS = 10000
  * `sr-only` `STATUS_LABEL` text (`sessionDisplay.tsx`), unchanged from `BrandSpinner`'s own
  * contract. */
 export function AgentSpinner({ size, className, palette = 'brand' }: AgentSpinnerProps) {
-  // React's useId() includes colons, invalid in a raw SVG id/url(#...) reference -- stripped so
-  // every mounted instance still gets its own collision-free gradient/filter id.
+  // Older React `useId()` formats contained colons (invalid, unescaped, in a `url(#...)`
+  // reference); stripped defensively so every mounted instance's gradient/filter id stays
+  // collision-free and url-safe regardless of the installed React version's own id format.
   const uid = useId().replace(/:/g, '')
   // Computed once per instance via the lazy initializer -- not an effect, not a listener, and
   // never recomputed on re-render, matching BrandSpinner's own shared-clock technique.
@@ -108,7 +118,16 @@ export function AgentSpinner({ size, className, palette = 'brand' }: AgentSpinne
       viewBox={VIEW_BOX}
       className={cn('agent-spinner', className)}
       data-palette={palette}
-      style={{ '--agent-spinner-delay': delay } as CSSProperties}
+      style={
+        {
+          // Both custom properties set from this one constant (quality-gate remediation, Code
+          // LOW, round 5): previously `--agent-spinner-cycle` was a separate `10s` literal in
+          // globals.css that had to be kept in sync with `CYCLE_MS` by hand; deriving both from
+          // the same constant here removes that duplication entirely.
+          '--agent-spinner-cycle': `${CYCLE_MS}ms`,
+          '--agent-spinner-delay': delay
+        } as CSSProperties
+      }
     >
       <AgentSpinnerCore uid={uid} blurred={size >= LEGIBILITY_FLOOR_PX} />
     </svg>
@@ -151,8 +170,15 @@ const CORE_SLOT_ANGLES_DEG = [0, 120, 240] as const
  * **Worst-case extent across every keyframe** (distance + halo radius x scale, used to size
  * `VIEW_BOX`): rest/merge-settle (0%, 8%, 94%, 100%) `0 + 77*1 = 77`; grow (12%) `0 + 77*1.06 =
  * 81.6`; split-overshoot (17%) `68 + 77*0.36 = 95.7`; split-settle (22%-80%) `56 + 77*0.418 =
- * 88.2`; merge-anticipation (86%) `68 + 77*0.38 = 97.3` (the largest); merge-snap (91%) `5 +
- * 77*1.05 = 85.85`. Worst case ~97.3, comfortably inside the 110-unit half-box above. */
+ * 88.2`; merge-anticipation (86%) `68 + 77*0.38 = 97.3` at the KEYFRAME values themselves.
+ * Quality-gate remediation (Code/Verif LOW, round 5): that table omits the spring
+ * `cubic-bezier(.34,1.56,.64,1)` timing-function's own overshoot mid-segment -- it peaks at
+ * progress ~1.10-1.12, not 1.0, so the real worst case is reached WITHIN the 86% -> 91%
+ * segment, not at either endpoint: distance `-68 + 73*1.10 ~= 12.3`, scale `0.38 + 0.67*1.10 ~=
+ * 1.117`, extent `12.3 + 77*1.117 ~= 98.3`. The Full variant's blurred halo adds a further ~3sigma
+ * (~9 units at `stdDeviation="3"`) visible tail on top of that, `~98.3 + 9 ~= 107.3` -- still
+ * comfortably inside the 110-unit half-box above, but with a tighter margin than the unblurred
+ * 97.3 figure alone suggested. */
 function AgentSpinnerCore({ uid, blurred }: { uid: string; blurred: boolean }) {
   const haloGradientId = `agent-spinner-core-halo-gradient-${uid}`
   const haloBlurId = `agent-spinner-core-halo-blur-${uid}`

@@ -256,18 +256,28 @@
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
-  /* Agent-working spinner component token (issue #612, #616 review round 4: Stuart chose "same
-   * brand violet in every theme for now" over a palette prop). Layer 3 component token, same
+  /* Agent-working spinner component token (issue #612, #616 review round 4: Stuart chose to
+   * make `brand`'s default follow the theme -- "same brand violet in every theme for now" --
+   * rather than `brand` being one more fixed palette choice). Layer 3 component token, same
    * raw literal in every theme (custom theme files, #458, may override it per-theme later) --
    * `AgentSpinner.tsx`'s `palette="brand"` (default) now means "inherit this theme token"; the
    * `"export"`/`"blue"` palettes stay fixed per-instance overrides via `[data-palette=...]` in
    * the component's own CSS, which still win over this inherited value (a declaration directly
    * on the `.agent-spinner` element beats one inherited from this theme class on an ancestor,
    * regardless of selector specificity). Contrast against `--sidebar` (session list),
-   * `--card`/`--background` (chat header, session details card) verified by
+   * `--sidebar-accent` (the same row selected/hovered), `--card`/`--background` (chat header)
+   * and `--popover` (the session details hover card, `hover-card.tsx`) verified by
    * `scripts/check-theme-contrast.mjs`'s `--agent-spinner-core` pairs -- see that script and
-   * this story's PR body for the measured ratio in every theme. */
-  --agent-spinner-core: #864DD6;
+   * this story's PR body for the measured ratio in every theme.
+   *
+   * Quality-gate remediation (A11y HIGH, round 5): the original `#864DD6` (the old `BrandSpinner`
+   * core colour, reused verbatim at first) measured under 3:1 against `--sidebar-accent` in
+   * every theme (2.91 Dark / 2.54 Obsidian / 2.99 Dark HC) -- the selected/hovered session row,
+   * where the icon is the only visible status cue (the "Working" text there is `sr-only`).
+   * Stuart chose the lighter `#9A68E4` to fix it (measured 3.94 Dark / 3.43 Obsidian / 4.05 Dark
+   * HC on `--sidebar-accent`); every other already-passing surface still clears 3:1 with this
+   * lighter value (it only gets lighter, never darker). */
+  --agent-spinner-core: #9A68E4;
 }
 
 /* #550 (theme foundation, palette v2): the mock's own Obsidian canvas (`#0F1014`) and
@@ -393,9 +403,9 @@
   --state-stopped: var(--severity-error);
   --state-stopped-foreground: oklch(0.145 0 0);
   /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
-   * comment above explains in full; this preset's own contrast numbers are in
-   * `scripts/check-theme-contrast.mjs` and this story's PR body. */
-  --agent-spinner-core: #864DD6;
+   * comment explains in full, including the round-5 A11y remediation to `#9A68E4`; this
+   * preset's own contrast numbers are in `scripts/check-theme-contrast.mjs` and the PR body. */
+  --agent-spinner-core: #9A68E4;
 }
 
 /* Spec 007 T015 (FR-008, FR-009, FR-010): a dedicated high-contrast dark preset, not a scaled
@@ -518,9 +528,9 @@
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
   /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
-   * comment explains in full; this preset's own contrast numbers are in
-   * `scripts/check-theme-contrast.mjs` and this story's PR body. */
-  --agent-spinner-core: #864DD6;
+   * comment explains in full, including the round-5 A11y remediation to `#9A68E4`; this
+   * preset's own contrast numbers are in `scripts/check-theme-contrast.mjs` and the PR body. */
+  --agent-spinner-core: #9A68E4;
 }
 
 /* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================
@@ -596,26 +606,27 @@
  * rotation is the one visible-spin cue.
  *
  * Colour (#616 review round 4, Stuart's decision: "make the spinner colour a per-theme
- * component token, same brand violet in every theme for now"): `--agent-spinner-core` is a
- * LAYER 3 COMPONENT TOKEN, declared once per theme block (`.theme-dark`, `.theme-obsidian`,
- * `.theme-dark-high-contrast`, each with the same literal `#864DD6` today -- see `.theme-dark`'s
- * own comment on that token for the full rationale and the contrast numbers). It is
- * **deliberately not declared here** on `.agent-spinner` itself, so the value is inherited from
- * whichever theme class is active on an ancestor -- this is what `AgentSpinner.tsx`'s
- * `palette="brand"` (the default) now means: "follow the theme", not a fixed value. `'export'`
- * and `'blue'` remain fixed, per-instance overrides -- the `[data-palette=...]` rules below set
- * `--agent-spinner-core` directly on the `.agent-spinner` element itself, which beats the
- * inherited theme value (a same-element declaration always wins over one inherited from an
- * ancestor, regardless of selector specificity). Custom theme files (#458) may override the
- * component token per-theme once that lands; nothing else in this file sets
- * `--agent-spinner-core`. */
-.agent-spinner {
-  /* The one named loop-duration constant (Stuart: "slow it down by about 40%", 6000ms ->
-   * 10000ms) -- change this one value for a different speed; keep `AgentSpinner.tsx`'s
-   * `CYCLE_MS` constant in sync (same value, as milliseconds) since the phase-locking
-   * `animation-delay` each instance computes is a modulo of that constant. */
-  --agent-spinner-cycle: 10s;
-}
+ * component token, same brand violet in every theme for now"; round 5's A11y remediation
+ * lightened the shared literal to `#9A68E4`, see `.theme-dark`'s own comment on the token for
+ * why): `--agent-spinner-core` is a LAYER 3 COMPONENT TOKEN, declared once per theme block
+ * (`.theme-dark`, `.theme-obsidian`, `.theme-dark-high-contrast`, same literal in all three
+ * today). It is **deliberately not declared here** on `.agent-spinner` itself, so the value is
+ * inherited from whichever theme class is active on an ancestor -- this is what
+ * `AgentSpinner.tsx`'s `palette="brand"` (the default) now means: "follow the theme", not a
+ * fixed value. `'export'` and `'blue'` remain available as fixed, per-instance overrides for
+ * Stuart to compare visually (issue #612 explicitly allows keeping the unchosen palette as a
+ * one-line swap) -- the `[data-palette=...]` rules below set `--agent-spinner-core` directly on
+ * the `.agent-spinner` element itself, which beats the inherited theme value (a same-element
+ * declaration always wins over one inherited from an ancestor, regardless of selector
+ * specificity). Custom theme files (#458) may override the component token per-theme once that
+ * lands; nothing else in this file sets `--agent-spinner-core`.
+ *
+ * `--agent-spinner-cycle` and `--agent-spinner-delay` are set inline, per instance, by
+ * `AgentSpinner.tsx` itself (not declared anywhere in this file) -- quality-gate remediation
+ * (Code LOW, round 5): the loop length previously lived in two places that had to be kept in
+ * sync by hand (this file's own `10s` and `AgentSpinner.tsx`'s `CYCLE_MS = 10000`); setting both
+ * custom properties from the same `CYCLE_MS` constant, in the same inline `style` object as the
+ * delay, removes the duplication entirely -- there is now exactly one place to change the speed. */
 .agent-spinner[data-palette='export'] {
   --agent-spinner-core: #D347FF;
 }
@@ -641,13 +652,16 @@
  *               so the rendered split disc radius is 23 units against the 55-unit merged base --
  *               see `AgentSpinner.tsx`'s own sizing comment for the gap/legibility maths).
  *   22% -> 80% -- HELD at the split state while the rotator (below) spins the triangle.
- *   80% -> 86% -- still split, unchanged (rotation has returned to its start angle by 80%, before
- *               the merge begins).
- *   86% -> 91% -- anticipation: discs pull slightly further outward (distance 68, scale down to
- *               0.38) before snapping together.
- *   91% -> 94% -- snaps together with a small overshoot PAST the merged state (distance 5, scale
- *               up to 1.05) -- the "squash/overshoot" on merge Stuart asked for.
- *   94% -> 100% -- settles to the merged rest state, looping cleanly back to 0%.
+ *   80% -> 86% -- anticipation: discs pull slightly further outward (distance 56 -> 68, scale
+ *               0.418 -> 0.38) before snapping together. Quality-gate remediation (Code MEDIUM,
+ *               round 5): this bullet previously said 80%->86% was "still split, unchanged" and
+ *               mislabelled the next two segments by one each -- the keyframe VALUES were
+ *               always correct (`AgentSpinner.tsx`'s own worst-case table already matched them);
+ *               only this comment was off by one segment.
+ *   86% -> 91% -- snaps together, overshooting PAST the merged state (distance 68 -> 5, scale
+ *               0.38 -> 1.05) -- the "squash/overshoot" on merge Stuart asked for.
+ *   91% -> 94% -- settles to the merged rest state (distance 5 -> 0, scale 1.05 -> 1).
+ *   94% -> 100% -- holds at the merged rest state, looping cleanly back to 0%.
  *
  * `.agent-spinner-core-rotator` (the group wrapping all three slots) drives the whole triangle's
  * orientation, named stops:
@@ -704,7 +718,7 @@
     transform: rotate(720deg);
     animation-timing-function: ease-in-out;
   }
-  80%, 82%, 94%, 100% {
+  80%, 100% {
     transform: rotate(0deg);
   }
 }
