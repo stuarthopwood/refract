@@ -32,13 +32,23 @@ function isPathShaped(candidate: string, hadLineSuffix: boolean): boolean {
   if (/\s/.test(candidate)) return false
   if (/[*?<>|"#]/.test(candidate)) return false
   if (candidate.includes('://')) return false
-  if (candidate.startsWith('//')) return false
+  // Quality-gate fix (round 3): normalise backslashes to forward slashes BEFORE the UNC check --
+  // `startsWith('//')` on the raw candidate missed a backslash-form UNC path (`\\host\share\x.ts`),
+  // which does not literally start with `//` even though it is exactly as UNC-shaped as
+  // `//host/share/x.ts`. Mirrors the same backslash-first normalisation `files.ts`'s own UNC
+  // check already uses.
+  if (candidate.replace(/\\/g, '/').startsWith('//')) return false
   if (candidate.startsWith('@/')) return false
   const driveAbsolute = /^[A-Za-z]:[\\/]/.test(candidate)
   if (!driveAbsolute && !candidate.includes('/') && !candidate.includes('\\')) return false
   if (hadLineSuffix) return true
   const lastSegment = candidate.split(/[\\/]/).pop() ?? ''
-  return /\.[^\\/.]+$/.test(lastSegment)
+  // Quality-gate fix (Code2 Low, round 3): bounded to `[A-Za-z0-9_-]{1,10}` (was `[^\\/.]+`,
+  // unbounded and allowing any character including `+`) -- the old pattern matched a MIME type's
+  // own subtype tail (`application/vnd.api+json` -> "extension" `api+json`) as if it were a real
+  // file extension. A real extension on this codebase's own file types (`.ts`, `.tsx`, `.json`,
+  // `.yml`, `.gitignore` minus the leading dot, etc.) always fits this bound.
+  return /\.[A-Za-z0-9_-]{1,10}$/.test(lastSegment)
 }
 
 /** `null` when `token` (already trimmed by the caller) is not shaped like a file path -- a bare

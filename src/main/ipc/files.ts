@@ -69,28 +69,43 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
     return { ok: false, reason: 'worktree-missing' };
   }
 
-  // A relative token resolves against the (already-realpath'd) worktree root. An absolute one
-  // (or a drive-relative one, `D:foo`, which `path.resolve` also expands against the CURRENT
-  // process directory, never the worktree) is NOT realpath'd yet -- see the lexical check below
-  // for why.
-  const candidate = path.isAbsolute(token) ? token : path.resolve(resolvedRoot, token);
+  // Quality-gate fix (Sec2/Code2/Verif2 Medium, round 3): `path.isAbsolute` on win32 is `false`
+  // for a drive-relative token (`D:foo`), so round 2's `path.isAbsolute(token) ? token : ...`
+  // guard let one slip past the lexical check entirely -- `path.resolve` then expanded it
+  // against Node's OWN notion of "current directory on that drive", landing on `D:\foo`, another
+  // drive, and reaching `fs.realpath` there (same for a RELATIVE `..`-laden token like
+  // `../../Windows/win.ini`, which also skipped the guard and resolved straight to
+  // `C:\Windows\win.ini`). Neither ever actually escaped WITH a file revealed (the post-realpath
+  // containment check below still caught both), but both still touched an arbitrary local path
+  // or drive, and the file-missing/outside-worktree split still leaked whether that path exists.
+  // Fix: `candidate` is now `path.resolve(resolvedRoot, token)` UNCONDITIONALLY -- `path.resolve`
+  // ignores `resolvedRoot` and returns an absolute `token` unchanged, so a genuinely-absolute
+  // token is unaffected; a RELATIVE token (including one laden with `..`) is normalised against
+  // the worktree root, collapsing any `..` segments the SAME way this call already did before.
+  // The lexical containment check below now runs on every token, with no guard at all.
+  const candidate = path.resolve(resolvedRoot, token);
   const caseInsensitive = process.platform === 'win32';
   const foldCase = (value: string) => (caseInsensitive ? value.toLowerCase() : value);
   const rootLower = foldCase(resolvedRoot);
 
-  // Quality-gate fix (Sec/Verif Low, round 2): for an absolute/drive-relative token, a LEXICAL
-  // containment check runs BEFORE `fs.realpath` ever touches it -- an absolute path outside the
-  // worktree is rejected here without ever resolving it, so this handler never probes an
-  // arbitrary local path or drive, and the file-missing/outside-worktree split can never leak
-  // whether something outside the worktree happens to exist. A RELATIVE token's own candidate is
-  // already `path.resolve`d against the worktree root above, so it always starts out contained;
-  // the real risk for a relative token is a symlink/junction INSIDE the worktree that points
-  // outside it, which only `fs.realpath` below (not this lexical check) can catch.
-  if (path.isAbsolute(token)) {
-    const lexicalLower = foldCase(candidate);
-    const lexicallyContained = lexicalLower === rootLower || lexicalLower.startsWith(`${rootLower}${path.sep}`);
-    if (!lexicallyContained) return { ok: false, reason: 'outside-worktree' };
-  }
+  // Drive-relative on another drive (`D:foo`, no separator after the drive letter): rejected
+  // outright, never handed to `path.resolve` at all -- Node resolves that shape against its own
+  // process-wide "current directory on drive D" state, which this handler has no business
+  // depending on. The earlier colon rule only ever matched a single-letter PREFIX (`C:`), so a
+  // drive-relative token (which also starts `X:` but is NOT followed by a separator) reaches
+  // here, not that rule.
+  if (/^[A-Za-z]:(?![\\/])/.test(token)) return { ok: false, reason: 'outside-worktree' };
+
+  // Quality-gate fix (round 2, corrected round 3): a LEXICAL containment check on the fully
+  // resolved, normalised `candidate` runs BEFORE `fs.realpath` ever touches it -- a path outside
+  // the worktree is rejected here without ever resolving it (never probes an arbitrary local
+  // path or drive, never lets the file-missing/outside-worktree split leak whether something
+  // outside the worktree happens to exist). The remaining risk -- a symlink/junction INSIDE the
+  // worktree that points outside it -- is exactly what `fs.realpath` below still exists to catch;
+  // this lexical check alone cannot see through a symlink.
+  const lexicalLower = foldCase(candidate);
+  const lexicallyContained = lexicalLower === rootLower || lexicalLower.startsWith(`${rootLower}${path.sep}`);
+  if (!lexicallyContained) return { ok: false, reason: 'outside-worktree' };
 
   let resolvedTarget: string;
   try {

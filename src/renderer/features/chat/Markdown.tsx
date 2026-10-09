@@ -11,6 +11,7 @@ import { safeUrl } from '@/lib/safe-url'
 import { parseFileReference, looksWithinWorktree } from '@/lib/linkify'
 import { THEMES } from '../../../shared/themes'
 import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
+import { toast } from 'sonner'
 import { notify, useActiveThemeId, useSessionsStore } from '@/state'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -458,18 +459,51 @@ const mutedInertLinkClassName = 'underline underline-offset-2 [overflow-wrap:any
 // a DESCRIPTION, read after the name, without ever replacing it -- satisfies WCAG 2.5.3 Label in
 // Name unconditionally, with no text-equality branching needed. Shared by the `a` renderer, the
 // `img` alt-text fallback, and the inline-code URL case below.
-function ExternalLink({ href, className, children }: { href: string; className: string; children: React.ReactNode }) {
+interface ExternalLinkProps extends Omit<React.ComponentPropsWithoutRef<'a'>, 'href' | 'className' | 'children'> {
+  href: string
+  className: string
+  children: React.ReactNode
+}
+
+function ExternalLink({ href, className, children, ...rest }: ExternalLinkProps) {
   const describedById = React.useId()
+  // Quality-gate fix (Sec2/Verif2 Medium, round 3): `shown` is the URL object's own canonical
+  // serialization -- punycode host, every bidi-override/zero-width/control character percent-
+  // encoded -- displayed instead of the raw `href` string. A homograph host (Cyrillic look-alike
+  // of a real domain) or an RTL-override trick in the path previously rendered as whatever the
+  // attacker typed in BOTH the tooltip and the hidden description, while the browser actually
+  // navigated to the punycode/percent-encoded form -- the tooltip's whole job (decision 7: "name
+  // the real destination") was defeated exactly when it mattered most. `safeUrl` (lib/safe-url.ts)
+  // now already returns this canonical form itself, so this is belt-and-braces: correct even if a
+  // future caller ever passes an `href` that bypassed `safeUrl`. Wrapped in `<bdi dir="ltr">` so an
+  // RTL-override character that survived percent-encoding (there is none, `encodeURI`-shaped
+  // percent-encoding covers every bidi control point) still cannot visually reverse the string.
+  const shown = new URL(href).href
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <a href={href} target="_blank" rel="noreferrer noopener" className={className} aria-describedby={describedById}>
+        <a
+          {...rest}
+          href={href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className={className}
+          aria-describedby={describedById}
+        >
           {children}
         </a>
       </TooltipTrigger>
-      <TooltipContent className="[overflow-wrap:anywhere]">Open in browser: {href}</TooltipContent>
-      <span id={describedById} className="sr-only">
-        Open in browser: {href}
+      <TooltipContent className="[overflow-wrap:anywhere]">
+        Open in browser: <bdi dir="ltr">{shown}</bdi>
+      </TooltipContent>
+      {/* Quality-gate fix (A11y2/Code2 Medium, round 3): `hidden` (not `sr-only`) -- `aria-describedby`
+          still reads a `hidden` element's text content per spec, but `hidden` (unlike
+          visually-hidden-but-still-in-the-tree `sr-only`) removes it from the copy/paste
+          selection and from the accessibility tree's normal reading-order flow entirely, so it
+          can never pollute a sighted user's clipboard or get double-read by an AT's own browse
+          mode alongside the description. */}
+      <span id={describedById} hidden>
+        Open in browser: <bdi dir="ltr">{shown}</bdi>
       </span>
     </Tooltip>
   )
@@ -539,14 +573,32 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
           aria-label={`Show in File Explorer: ${label}`}
           onClick={() => {
             void window.refract.sessions.revealFile(sessionId, path).then((result) => {
-              if (!result.ok) notify(result.error)
+              // Quality-gate fix (Verif2 Medium, round 3): the decision comment asks for a
+              // dismiss-until-cleared toast for THIS error specifically (file-not-found/outside-
+              // worktree can be a stale/wrong file reference the user needs a moment to read and
+              // act on, not a transient blip) -- `notify()`'s own default (auto-dismissing,
+              // shared by every other IPC error app-wide) stays untouched; this is a local
+              // `toast.error` call, not a change to `notify()` itself.
+              if (!result.ok) toast.error(result.error.message, { duration: Infinity, closeButton: true })
             })
           }}
         >
           {label}
         </button>
       </TooltipTrigger>
-      <TooltipContent className="[overflow-wrap:anywhere]">Show in File Explorer: {label}</TooltipContent>
+      {/* Quality-gate fix (A11y2 Low, round 3): no established repo precedent for
+          Tooltip+aria-label co-occurrence to follow (checked ChatHeader.tsx and every other
+          icon/control+Tooltip site app-wide; none pair a Radix `TooltipContent` with an
+          `aria-label` on the same control, so this is a new case, not an existing convention to
+          match). Decision: `aria-hidden` on the visible tooltip bubble -- the button's own
+          `aria-label` ("Show in File Explorer: {label}") already fully states the control's
+          purpose and destination to assistive tech; the floating tooltip is sighted-only sugar
+          for the same information, and Radix wires its own `aria-describedby` from trigger to
+          content by default, which would otherwise have AT read the near-identical text twice
+          for every single hover/focus. */}
+      <TooltipContent aria-hidden="true" className="[overflow-wrap:anywhere]">
+        Show in File Explorer: {label}
+      </TooltipContent>
     </Tooltip>
   )
 }
@@ -659,7 +711,7 @@ const components: Components = {
       return <span className={cn(inertLinkClassName, className)}>{content}</span>
     }
     return (
-      <ExternalLink href={href} className={cn(linkClassName, className)}>
+      <ExternalLink href={href} className={cn(linkClassName, className)} {...props}>
         {content}
       </ExternalLink>
     )
@@ -667,9 +719,17 @@ const components: Components = {
   // Agent-supplied images are never rendered as <img> (constitution V); the alt text becomes a
   // link to the source instead, gated by the same http(s)-only rule as `a` above.
   img: ({ alt, src }) => {
+    // Quality-gate fix (A11y2 Medium, round 3): hoisted above every early return (rules of
+    // hooks). The README-badge pattern `[![alt](img-url)](link-url)` wraps this renderer's own
+    // output in the OUTER `a` renderer's `<ExternalLink>`, which sets `InsideLinkContext`; without
+    // this check, this renderer unconditionally returned a SECOND `<ExternalLink>` (a second
+    // `<a>`), nesting an anchor inside an anchor -- invalid HTML, two tab stops for one visual
+    // control, and a click on the inner `<a>` bubbling up to activate the outer one too.
+    const insideLink = React.useContext(InsideLinkContext)
     const streaming = React.useContext(StreamingContext)
     const safe = safeUrl(typeof src === 'string' ? src : undefined)
     if (!safe) return <>{alt || 'image'}</>
+    if (insideLink) return <>{alt || safe}</>
     if (streaming) return <span className={inertLinkClassName}>{alt || safe}</span>
     return <ExternalLink href={safe} className={linkClassName}>{alt || safe}</ExternalLink>
   },
