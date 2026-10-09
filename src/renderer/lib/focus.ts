@@ -100,9 +100,15 @@ export function focusPaneContent(container: HTMLElement | null): void {
 // the first enabled textarea anywhere in the document (the previous `focusMessageBox`, removed:
 // wrong pane whenever a split is open and the OTHER pane is focused, and `<body>` whenever the
 // newly-opened Session is stopped). `data-session-pane` is set on ChatPane's own region element.
-export function focusSessionPane(sessionId: string): void {
+// Quality-gate fix (code-reviewer Medium, PR #635 round 3): returns whether the pane was
+// actually found, the same `focusSessionsNav`/`focusSessionRow` pattern (#621), so a caller
+// whose target pane can genuinely be gone (the view switched away, or a split closed) can fall
+// back to announcing instead of silently doing nothing. Existing callers that predate this
+// (`ManageSessionRow.tsx`'s own `handleOpen`) ignore the return value, which TypeScript allows.
+export function focusSessionPane(sessionId: string): boolean {
   const container = document.querySelector<HTMLElement>(`[data-session-pane="${CSS.escape(sessionId)}"]`)
   focusPaneContent(container)
+  return !!container
 }
 
 // Issue #621 (close chat pane): after closing the LAST open pane, the first-choice focus target

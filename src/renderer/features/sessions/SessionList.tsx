@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -24,12 +25,13 @@ import { cn } from '@/lib/utils'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
-import { focusRepositoryGroupOrReadiness, focusSessionsNav } from '@/lib/focus'
+import { focusRepositoryGroupOrReadiness, focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { validateRepositoryName } from '../../../shared/repositoryName'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { SessionDetailsCard } from './SessionDetailsCard'
 import { describeStartProgress, describeStartProgressLabel } from './startProgressDisplay'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from './sessionDisplay'
@@ -39,7 +41,13 @@ import { useWorktreeActions } from './useWorktreeActions'
 import { canResumeSession, resumeSession, stillEligibleAfterResume } from '@/features/chat/resume'
 import { describeStopReason } from '@/features/chat/ChatPane'
 
-function SessionRow({ session, repository }: { session: SessionSummary; repository: Repository }) {
+function SessionRow({
+  session,
+  repository
+}: {
+  session: SessionSummary
+  repository: Repository
+}) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
   // reading, extended to this row's own marker); which pane specifically only matters to the
   // click handler below, not this visual marker.
@@ -61,6 +69,10 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   // both `openInSplit` and `replaceFocused` funnel through -- so it applies to every caller of
   // either, not just the ones wired up here by hand.
   const open = useSessionsStore((state) => state.open)
+  const createSession = useSessionsStore((state) => state.create)
+  // Code-review fix (gate round 1): subscribes to a derived boolean, not the whole Set, so a
+  // create for one repository does not re-render every row in every OTHER repository too.
+  const creatingThisRepository = useSessionsStore((state) => state.creatingRepositoryIds.has(repository.id))
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -84,6 +96,36 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
   const listFocusRequestedRef = useRef(false)
+  // Issue #620, UX consult item 2 decision 8: set synchronously in `onNewSession`'s `onSelect`
+  // below so `handleMenuCloseAutoFocus` knows to `preventDefault` Radix's own return-to-trigger
+  // -- the create's own then-handler decides where focus actually goes once it settles (unlike
+  // rename/list-focus above, there is nothing to focus yet at menu-close time).
+  const createRequestedRef = useRef(false)
+  // Code-review fix (gate round 2): set synchronously when either menu OPENS (see the
+  // `DropdownMenu`/`ContextMenu` `onOpenChange` below), not at close time -- a fast create that
+  // settles before the menu's own close animation finishes used to read this back as `null`.
+  const createOriginRef = useRef<'dropdown' | 'context' | null>(null)
+  // A11y-review fix (gate round 2, LOW): the element that actually had focus when a right-click/
+  // Shift+F10 context menu opened, when that element is inside this row -- a closer match than
+  // always falling back to the open button (for example, Shift+F10 pressed while the "..."
+  // trigger itself has focus).
+  const contextMenuOpenerRef = useRef<HTMLElement | null>(null)
+  // A11y-review fix (gate round 2, WCAG 4.1.3): the modal menu keeps `#root` `aria-hidden` and
+  // is still mid-close-animation at the moment `onSelect` fires, so a polite announcement made
+  // right there is lost every time. Held here and flushed once the menu actually closes (or
+  // cleared the moment the create settles, so a fast failure/success is never followed by a
+  // stale "Creating…" announcement); routed through the app-level `chatAreaAnnouncer` (#621),
+  // not the local `onAnnounce`/`announcement` region this file used to keep just for this one
+  // message -- that region is gone, since this one survives a view swap to Settings or Manage
+  // sessions mid-create, which would otherwise unmount it (gate round 2 High).
+  const pendingCreateAnnouncementRef = useRef<string | null>(null)
+  // Code-review fix (gate round 3, High): if `create()` settles DURING the menu's own close
+  // animation (focus is still on the now-portalled menu item, `#root` is still `aria-hidden`),
+  // `isStillHere()` always reads false and the toast/announcement can be added while hidden --
+  // deferred here instead: `handleNewSession`'s own settle handler stashes itself when
+  // `createRequestedRef` is still true, and `handleMenuCloseAutoFocus`'s `createRequestedRef`
+  // branch runs it once the content has actually unmounted and `aria-hidden` has lifted.
+  const settledCreateRef = useRef<(() => void) | null>(null)
   // Archive/restore/delete unmount this row asynchronously (the store update that moves it
   // out of the active/archived bucket can land before `onCloseAutoFocus` fires), and sometimes
   // the whole surrounding group unmounts with it (restoring the last archived Session also
@@ -259,54 +301,128 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     openButtonRef.current?.focus()
   }, [renaming])
 
+  // Issue #620, UX consult item 2 decisions 3, 8, 9: creates instantly in this row's own
+  // repository and default branch (no dialog, no base-branch picker), announces immediately
+  // (held until the menu actually closes, see `pendingCreateAnnouncementRef`), then -- on
+  // success -- focuses the new Session's pane one frame later, but only if the user has not
+  // moved on in the meantime (still on the menu's own origin, this row, or `<body>`). On
+  // failure, the same check gates whether focus returns there; the toast (gate-fixes a11y High
+  // x2: a plain `toast.error` auto-dismisses, and had no keyboard-reachable close control)
+  // always shows regardless, including for a rejected IPC call.
+  function handleNewSession(): void {
+    createRequestedRef.current = true
+    pendingCreateAnnouncementRef.current = `Creating session from ${repository.defaultBranch}`
+    const row = rowRef.current
+    function isStillHere(): boolean {
+      const active = document.activeElement
+      const origin = createOriginRef.current === 'context' ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
+      return !active || active === document.body || !active.isConnected || active === origin || (row?.contains(active) ?? false)
+    }
+    function focusOrigin(): void {
+      const origin = createOriginRef.current === 'context' ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
+      if (origin?.isConnected) origin.focus()
+      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else focusListContainer()
+    }
+    // Gate round 3 (code-review High): if the menu is still closing (`createRequestedRef` still
+    // true), this `finish` is stashed in `settledCreateRef` instead of running now -- focus and
+    // `#root`'s `aria-hidden` are not trustworthy yet, so `handleMenuCloseAutoFocus` runs it once
+    // the content has actually unmounted. Otherwise (the ordinary, slower case) the menu has
+    // already closed and `finish` runs immediately, exactly as before.
+    function restoreAfterCreateFailure(message: string): void {
+      pendingCreateAnnouncementRef.current = null
+      const finish = () => {
+        toast.error(message, { duration: Infinity, closeButton: true })
+        if (isStillHere()) focusOrigin()
+      }
+      if (createRequestedRef.current) settledCreateRef.current = finish
+      else finish()
+    }
+    void createSession(repository.id, repository.defaultBranch)
+      .then((result) => {
+        pendingCreateAnnouncementRef.current = null
+        if (!result.ok) {
+          restoreAfterCreateFailure(result.error.message)
+          return
+        }
+        const finish = () => {
+          requestAnimationFrame(() => {
+            // Gate round 3 (code-review Medium): `focusSessionPane` can genuinely find no pane
+            // (the view switched away, or the split closed) -- announce instead of silently
+            // doing nothing in that case too, not only when the user has moved on. Gate round 4
+            // (all four reviewers): when that happens while the user IS still here, deliberately
+            // focus the origin too -- `isStillHere()` returning `true` can mean focus is
+            // currently stranded on `<body>`, and leaving it there once more MUST NOT happen.
+            const here = isStillHere()
+            if (!(here && focusSessionPane(result.value.id))) {
+              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+              if (here) focusOrigin()
+            }
+          })
+        }
+        if (createRequestedRef.current) settledCreateRef.current = finish
+        else finish()
+      })
+      .catch((err) => restoreAfterCreateFailure(err instanceof Error ? err.message : String(err)))
+  }
+
   // The row's "..." menu and its right-click context menu share this one action list:
   // one set of options, reachable two ways, never two menus to keep in sync. The list itself
   // (labels/order/archived-or-not/stopped-or-not) is shared with ManageSessionRow.tsx via
   // sessionActions.ts (spec 008 T026); only the side effects below (focus-fallback capture,
   // this row's own rename/delete-dialog state) stay local, since they differ per screen.
-  const actions: SessionRowAction[] = buildSessionRowActions(session, {
-    onRename: () => {
-      renameRequestedRef.current = true
-      startRenaming()
+  const actions: SessionRowAction[] = buildSessionRowActions(
+    session,
+    {
+      onNewSession: handleNewSession,
+      onRename: () => {
+        renameRequestedRef.current = true
+        startRenaming()
+      },
+      onOpenInSplit: () => openInSplit(session.id),
+      onCopyPath: () => void copyPath(),
+      onReveal: () => void reveal(),
+      // Issue #603 quality-gate follow-up (Low then Medium, a11y): archive can now be refused (a
+      // resume in progress -- issue #603 item 1), so focus must only move toward the list on
+      // SUCCESS. `listFocusRequestedRef` is no longer set synchronously here: Radix's own
+      // close-autofocus (`handleMenuCloseAutoFocus' below) falls through to its generic
+      // trigger/open-button fallback instead, keeping focus near this row by default -- correct
+      // for a refusal, since the row never goes anywhere.
+      //
+      // Round 2 (Medium): `archive()` awaits main's own `shutdown()`, which can take seconds
+      // (it waits out any start already running) -- moving focus unconditionally on success
+      // could yank it away from wherever the user had since moved it (for example into the chat
+      // textarea). Captures this row's own `<li>` before the call and only moves focus
+      // afterward when it is stranded (body/disconnected/none) or still somewhere inside THIS
+      // row -- never when the user has deliberately focused something else meanwhile.
+      onArchive: () => {
+        captureFocusFallback()
+        const row = rowRef.current
+        void archive(session.id)
+          .then((ok) => {
+            if (!ok) return
+            const active = document.activeElement
+            if (!active || active === document.body || !active.isConnected || row?.contains(active)) focusListContainer()
+          })
+          .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
+      },
+      onRestore: () => {
+        listFocusRequestedRef.current = true
+        captureFocusFallback()
+        void restore(session.id)
+      },
+      onStopAgent: () => void stopAgent(session.id),
+      onDelete: () => {
+        captureFocusFallback()
+        setDeleteOpen(true)
+      }
     },
-    onOpenInSplit: () => openInSplit(session.id),
-    onCopyPath: () => void copyPath(),
-    onReveal: () => void reveal(),
-    // Issue #603 quality-gate follow-up (Low then Medium, a11y): archive can now be refused (a
-    // resume in progress -- issue #603 item 1), so focus must only move toward the list on
-    // SUCCESS. `listFocusRequestedRef` is no longer set synchronously here: Radix's own
-    // close-autofocus (`handleMenuCloseAutoFocus' below) falls through to its generic
-    // trigger/open-button fallback instead, keeping focus near this row by default -- correct
-    // for a refusal, since the row never goes anywhere.
-    //
-    // Round 2 (Medium): `archive()` awaits main's own `shutdown()`, which can take seconds
-    // (it waits out any start already running) -- moving focus unconditionally on success
-    // could yank it away from wherever the user had since moved it (for example into the chat
-    // textarea). Captures this row's own `<li>` before the call and only moves focus
-    // afterward when it is stranded (body/disconnected/none) or still somewhere inside THIS
-    // row -- never when the user has deliberately focused something else meanwhile.
-    onArchive: () => {
-      captureFocusFallback()
-      const row = rowRef.current
-      void archive(session.id)
-        .then((ok) => {
-          if (!ok) return
-          const active = document.activeElement
-          if (!active || active === document.body || !active.isConnected || row?.contains(active)) focusListContainer()
-        })
-        .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
-    },
-    onRestore: () => {
-      listFocusRequestedRef.current = true
-      captureFocusFallback()
-      void restore(session.id)
-    },
-    onStopAgent: () => void stopAgent(session.id),
-    onDelete: () => {
-      captureFocusFallback()
-      setDeleteOpen(true)
-    }
-  })
+    // A11y-review fix (gate round 1, Low): a repository whose git read failed carries no
+    // default branch -- leave the item out entirely (`null`), the same as the Manage screen's
+    // unresolved-repository case, rather than reading "New session from " and creating on "".
+    repository.defaultBranch ? { branch: repository.defaultBranch, disabled: creatingThisRepository } : null
+  )
 
   // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's open
   // button (the only normally-focusable element in the row), so its own close-autofocus prefers
@@ -319,6 +435,40 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       event.preventDefault()
       listFocusRequestedRef.current = false
       focusListContainer()
+    } else if (createRequestedRef.current) {
+      // Issue #620 decision 8, amended (gate round 1, a11y Medium): `preventDefault` alone left
+      // focus on `<body>` for the whole multi-second checkout with no defined target (WCAG
+      // 2.4.3/2.4.7) -- focuses the menu's own origin instead (the open button for a right-click/
+      // Shift+F10 open, the "..." trigger for the dropdown; `createOriginRef` is set when the
+      // menu OPENS, not here -- gate round 2 code-review Medium -- so a fast create settling
+      // before this close handler runs still reads the right one). Also flushes the
+      // announcement held in `pendingCreateAnnouncementRef` (a11y High): this is the first point
+      // that reliably runs after Radix's `#root` `aria-hidden` lifts post-close-animation.
+      event.preventDefault()
+      createRequestedRef.current = false
+      if (pendingCreateAnnouncementRef.current) {
+        useChatAreaAnnouncer.getState().announce(pendingCreateAnnouncementRef.current)
+        pendingCreateAnnouncementRef.current = null
+      }
+      // Gate round 3 (code-review High): a create that settled WHILE this menu was still
+      // closing stashed its own settle handler instead of running immediately (`handleNewSession`
+      // above) -- run it now, the first point that reliably runs after the content has actually
+      // unmounted and `#root`'s `aria-hidden` has lifted, so its own `isStillHere`/toast checks
+      // see accurate state. Only when nothing was stashed (the create is still genuinely
+      // running) does this fall back to parking focus on the menu's own origin while it waits
+      // (gate round 2 Medium) -- never both, or a finished create's own focus move would be
+      // immediately stolen back.
+      const settled = settledCreateRef.current
+      settledCreateRef.current = null
+      if (settled) {
+        settled()
+      } else if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) {
+        const origin = isContextMenu ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
+        if (origin?.isConnected) origin.focus()
+        else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+        else focusListContainer()
+      }
     } else {
       // Shared by the "..." dropdown and the right-click context menu. The dropdown's own
       // trigger is a real, focusable button, so Radix's default close-autofocus would land here
@@ -329,8 +479,12 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       // Open folder / Stop agent, none of which unmount the row), else the open button, else the
       // list itself.
       event.preventDefault()
-      if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
-      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      if (isContextMenu) {
+        const target = contextMenuOpenerRef.current?.isConnected ? contextMenuOpenerRef.current : openButtonRef.current
+        if (target?.isConnected) target.focus()
+        else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else focusListContainer()
+      } else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
       else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
       else focusListContainer()
     }
@@ -341,7 +495,27 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
       {isVisible && (
         <span aria-hidden className="absolute inset-y-0.5 left-0 z-10 w-0.5 rounded-full bg-active-indicator" />
       )}
-      <ContextMenu>
+      <ContextMenu
+        onOpenChange={(open) => {
+          if (!open) return
+          // A11y-review fix (gate round 4, Low): reopening this menu while a previous create's
+          // settle is still stashed means Radix's own close-autofocus for that earlier close may
+          // never fire at all (superseded by this new open) -- run it now, before overwriting
+          // `createOriginRef` for this new open, so the stashed `finish` still resolves the
+          // origin it actually belongs to.
+          const settled = settledCreateRef.current
+          settledCreateRef.current = null
+          createRequestedRef.current = false
+          settled?.()
+          createOriginRef.current = 'context'
+          // A11y-review fix (gate round 2, LOW): Shift+F10/the Menu key opens this menu from
+          // whatever element already has focus (for example the "..." trigger itself), not
+          // always the row's open button -- prefer that element when it is genuinely inside
+          // this row.
+          const active = document.activeElement
+          contextMenuOpenerRef.current = active instanceof HTMLElement && rowRef.current?.contains(active) ? active : null
+        }}
+      >
         <ContextMenuTrigger asChild>
           {/* The whole row is one card surface (DESIGN.md "Square choice items"): this div, not
               the open button alone, carries the hover/selected background, so the "..." trigger
@@ -482,7 +656,16 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                 <TooltipContent>Resume {session.name}</TooltipContent>
               </Tooltip>
             )}
-            <DropdownMenu>
+            <DropdownMenu
+              onOpenChange={(open) => {
+                if (!open) return
+                const settled = settledCreateRef.current
+                settledCreateRef.current = null
+                createRequestedRef.current = false
+                settled?.()
+                createOriginRef.current = 'dropdown'
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <button
                   ref={menuTriggerRef}
@@ -493,13 +676,18 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   <EllipsisVerticalIcon aria-hidden className="size-3.5" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+              <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>
                 {actions.map((action, index) =>
                   action.kind === 'separator' ? (
                     <DropdownMenuSeparator key={`sep-${index}`} />
                   ) : (
-                    <DropdownMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
-                      {action.label}
+                    <DropdownMenuItem
+                      key={action.key}
+                      variant={action.variant}
+                      disabled={action.disabled}
+                      onSelect={action.onSelect}
+                    >
+                      <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
                     </DropdownMenuItem>
                   )
                 )}
@@ -509,13 +697,18 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
         </ContextMenuTrigger>
         {/* Right-click opens the same options the "..." trigger does (T117 new feature): one
             action list, never a second menu to maintain. */}
-        <ContextMenuContent onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>
+        <ContextMenuContent className="max-w-80" onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>
           {actions.map((action, index) =>
             action.kind === 'separator' ? (
               <ContextMenuSeparator key={`sep-${index}`} />
             ) : (
-              <ContextMenuItem key={action.key} variant={action.variant} onSelect={action.onSelect}>
-                {action.label}
+              <ContextMenuItem
+                key={action.key}
+                variant={action.variant}
+                disabled={action.disabled}
+                onSelect={action.onSelect}
+              >
+                <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
               </ContextMenuItem>
             )
           )}
@@ -536,14 +729,22 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
   )
 }
 
-function RepositoryGroup({ repository, sessions }: { repository: Repository; sessions: SessionSummary[] }) {
+function RepositoryGroup({
+  repository,
+  sessions
+}: {
+  repository: Repository
+  sessions: SessionSummary[]
+}) {
   const createSession = useSessionsStore((state) => state.create)
+  // Issue #620, UX consult item 2 decision 6: this per-repository in-flight guard used to be a
+  // private ref/state pair only this button could see -- it now lives in `sessions-store.ts`,
+  // shared with the row's own "New session from {branch}" menu item and `NewSessionDialog`, so
+  // `create()` itself enforces the guard and every caller's disabled state agrees. Subscribes to
+  // a derived boolean (code-review fix, gate round 1), not the whole Set, so a create for one
+  // repository does not re-render every OTHER repository's group too.
+  const creating = useSessionsStore((state) => state.creatingRepositoryIds.has(repository.id))
   const renameRepository = useRepositoriesStore((state) => state.rename)
-  // Per-repository in-flight guard: the ref blocks a second click before React re-renders (a
-  // double-click), the state drives aria-disabled and the spinner. aria-disabled, not disabled,
-  // so keyboard focus stays on the button.
-  const creatingRef = useRef(false)
-  const [creating, setCreating] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   // Issue #480: inline rename, the same F2 / Enter / Esc / blur-commit pattern as the Session
@@ -561,16 +762,13 @@ function RepositoryGroup({ repository, sessions }: { repository: Repository; ses
   const renameErrorId = `repository-rename-error-${repository.id}`
 
   async function handleQuickCreate(): Promise<void> {
-    if (creatingRef.current) return
-    creatingRef.current = true
-    setCreating(true)
-    try {
-      const result = await createSession(repository.id, repository.defaultBranch)
-      if (!result.ok) notify(result.error)
-    } finally {
-      creatingRef.current = false
-      setCreating(false)
-    }
+    // Gate-fixes a code/a11y Medium (round 1): on `main` this returned early, silently, on a
+    // second click of this still-`aria-disabled`-but-clickable button. Removing that guard left
+    // a second click (or the #102 double-click itself) reach `create()`, which now refuses it
+    // and shows an error toast for what used to be an inert no-op.
+    if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) return
+    const result = await createSession(repository.id, repository.defaultBranch)
+    if (!result.ok) notify(result.error)
   }
 
   function startRenaming(): void {
@@ -803,7 +1001,12 @@ export function SessionList() {
   const openPullRequests = useViewStore((state) => state.openPullRequests)
   const view = useViewStore((state) => state.view)
   const selectPullRequest = usePullRequestsStore((state) => state.selectPullRequest)
-
+  // Issue #620, UX consult item 2 decision 9: the row menu's "New session from {branch}" item's
+  // "Creating session from {branch}" / "Created session {name}" announcements now go through
+  // the app-level `useChatAreaAnnouncer` (#621's shared announcer, now that it exists on
+  // `origin/main`) instead of a local region here, so they survive the view swapping to
+  // Settings or Manage sessions during the multi-second checkout (gate round 2, a11y High) --
+  // no `onAnnounce` prop or local live region needed in this file any more.
   // specs/003-pull-request-management FR-001, T011: the left-nav entry has no row of its own to
   // scope a repository from, unlike a Session row -- defaults to the currently focused pane's
   // Session's repository (App.tsx's own `frontSessionId` derivation), falling back to the first
