@@ -44,21 +44,23 @@ export interface AgentSpinnerProps {
 
 /** The viewBox, re-cropped (issue #612 PR #616, Stuart's third review round: "scale up the whole
  * mark ... re-crop the viewBox if needed" after the outer ring/orbit layers were removed). Tight
- * around the new core's own worst-case extent -- the merge-snap overshoot frame (91% in
- * `globals.css`'s `agent-spinner-core-split`), where the halo (radius 77 at rest) is scaled to
- * 1.05x and translated 5 units off-centre: `5 + 77 * 1.05 = 85.85` units from centre -- plus a
- * margin, rounded up to a clean 110 (matches the box this component shipped with before the
- * re-crop, which is coincidence: that number was derived from the old ring layer's own extent,
- * this one from the new core's). See `AgentSpinnerCore`'s own comment for the full worst-case
- * table across every keyframe. */
+ * around the new core's own worst-case extent -- the 86% -> 91% merge-snap segment's own spring
+ * `cubic-bezier(.34,1.56,.64,1)` timing-function overshoot (it peaks at progress ~1.10-1.12, not
+ * 1.0, mid-segment, not at either keyframe's own value): ~98.3 units unblurred, ~107.3 with the
+ * Full variant's blurred halo's ~9-unit tail -- plus a margin, rounded up to a clean 110 (matches
+ * the box this component shipped with before the re-crop, which is coincidence: that number was
+ * derived from the old ring layer's own extent, this one from the new core's). See
+ * `AgentSpinnerCore`'s own comment for the full worst-case table across every keyframe. */
 const VIEW_BOX = '-110 -110 220 220'
 
 /** Loop length. Originally 3000ms (matching the SVGator export's own timeline); 6000ms after the
  * first core redesign; **10000ms** after Stuart's "slow it down by about 40%" (PR #616, third
- * review round) -- the single named constant to change for a different speed. Keep this in sync
- * with `globals.css`'s `--agent-spinner-cycle` custom property (same value, as a CSS time): it
- * drives `animation-duration` for both `agent-spinner-core-split` and `agent-spinner-core-rotate`,
- * so `Date.now() % CYCLE_MS` below computes a phase offset into the same period the CSS actually
+ * review round) -- the single named constant to change for a different speed. Also set inline
+ * as the `--agent-spinner-cycle` custom property below, which drives `animation-duration` for
+ * both `agent-spinner-core-split` and `agent-spinner-core-rotate` via `var()` (quality-gate
+ * remediation, round 5: previously a separate `10s` literal in `globals.css` had to be kept in
+ * sync with this constant by hand; deriving both from one source removes that duplication).
+ * `Date.now() % CYCLE_MS` below computes a phase offset into the same period the CSS actually
  * animates over. The named percentage stops documented in `globals.css` stay exactly the same
  * proportions regardless of this value, by construction (CSS `%` keyframes always do). */
 const CYCLE_MS = 10000

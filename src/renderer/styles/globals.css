@@ -635,7 +635,8 @@
 }
 
 /* The split/rotate/merge core. Two independently-timed `transform` animations share one loop
- * (`var(--agent-spinner-cycle)`, 10s) and one `animation-delay` clock:
+ * (`var(--agent-spinner-cycle)`, set inline from `AgentSpinner.tsx`'s `CYCLE_MS`) and one
+ * `animation-delay` clock:
  *
  * `.agent-spinner-core-disc-group` (`agent-spinner-core-split`, one per disc, all three
  * identical) drives each disc's own distance from centre (`translateY`, inside its slot's static
