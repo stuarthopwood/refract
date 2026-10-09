@@ -36,7 +36,7 @@ Known gap: neither control has its tooltip today (`AttachmentStrip.tsx:41-49`, `
 ## Library and style
 
 - Use `lucide-react` for every UI, status, action, and tool icon, including #469 tool icons (agenda item 3). It is already the only icon import in `src/renderer`.
-- Use `@tabler/icons-react` only for third-party brand marks (GitHub, GitLab, Bitbucket), never for a generic icon -- still not a dependency in this repository. #528 shipped interim with `lucide`-only icons instead (`FolderGitIcon`/`FolderGit2Icon`, a binary remote-vs-local-only distinction, no per-host brand marks): Main, delegated by Stuart, asked for that simpler distinction with zero new dependencies rather than add this package mid-session (disk space on the shared build machine was tight); the three-way host classification and brand marks from #528's original decision remain a future enhancement, not built here.
+- Use `@tabler/icons-react` only for third-party brand marks (GitHub, GitLab, Bitbucket), never for a generic icon -- still not a dependency in this repository. #528 shipped interim with `lucide`-only icons instead (`FolderGitIcon`/`FolderGit2Icon`, a binary remote-vs-local-only distinction, no per-host brand marks): Main, delegated by Stuart, asked for that simpler distinction with zero new dependencies rather than add this package mid-session (disk space on the shared build machine was tight). This is a deferral, not a reversal: Tabler remains the decided brand-mark source (this same rule); the three-way host classification and brand marks from #528's original decision are tracked as **#646**, a follow-up to #528.
 - Use the default stroke width everywhere; never override it per icon.
 - Icons use `currentColor`, never a hard-coded fill.
 
@@ -62,7 +62,7 @@ Current rule, unchanged by the #474 grill: every piece of metadata shown in a to
 - **Severity icons**: one set for every notice — info circle, success check, warning triangle, error octagon — each a distinct `lucide` shape plus the severity word; colour only reinforces it.
 - **Action icons**: toolbar and row actions use plain `lucide` icons at the size ladder above. Action-menu items carry no icon (text only); destination and settings menus put a leading icon on every item (see Menus in components.md).
 - **Tool icons** (#469): `lucide`, under the same library and size rules as every other icon — there is no separate icon family for tool calls.
-- **Brand icons**: none shipped yet. `@tabler/icons-react` is the decided source for a future GitHub/GitLab/Bitbucket brand mark (see Library and style above); #528 shipped with `lucide`-only icons instead.
+- **Brand icons**: none shipped yet. `@tabler/icons-react` is the decided source for a future GitHub/GitLab/Bitbucket brand mark (see Library and style above); #528 shipped with `lucide`-only icons instead, deferred to **#646**.
 
 ## Open
 

@@ -899,18 +899,43 @@ function GroupHeaderTrigger({
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
       aria-label={tooltip ? `${label}, ${tooltip}` : undefined}
+      // Gate round 1 fix (Low, a11y-auditor): without this, the Tooltip wrapper below adds its
+      // own `aria-describedby` pointing at the SAME text `aria-label` above already carries, so
+      // a screen reader would read the remote status twice for one hover/focus. Radix's Slot
+      // merge lets this explicit prop win over the one Tooltip injects.
+      aria-describedby={undefined}
       className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
-      <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+      {/* Gate round 1 fix (High, code-reviewer): keying this off `data-state` broke the moment
+          the whole trigger became a Tooltip's child too -- Radix's `TooltipTrigger` spreads its
+          OWN `data-state` ('closed'/'delayed-open'/'instant-open') onto this element AFTER
+          `CollapsibleTrigger` sets its own ('open'/'closed'), so `[data-state=open]` never
+          matched on any repository header (the arrow stayed closed-looking even when the group
+          was open). `aria-expanded` is set only by Collapsible and untouched by Tooltip, so
+          keying off it instead is immune to this. */}
+      <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-aria-expanded/trigger:rotate-90" />
       {Icon && <Icon aria-hidden className="size-4 shrink-0" />}
-      <span className="truncate" title={title}>{label}</span>
+      <span className="truncate" title={tooltip ? undefined : title}>{label}</span>
     </CollapsibleTrigger>
   )
   if (!tooltip) return trigger
   return (
     <Tooltip>
       <TooltipTrigger asChild>{trigger}</TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
+      {/* Gate round 1 fix (Medium, all four reviewers): the label span's own native `title` (the
+          repository's absolute path) is dropped above whenever this Tooltip wraps the trigger,
+          so the two tooltips never show at once -- the path moves in here instead, as a second
+          line. `side="right"`: a full-width header's tooltip would otherwise open above it (the
+          default `side="top"`) and cover the previous group's last row and its hover actions. */}
+      <TooltipContent side="right" align="start">
+        {tooltip}
+        {title && (
+          <>
+            <br />
+            {title}
+          </>
+        )}
+      </TooltipContent>
     </Tooltip>
   )
 }

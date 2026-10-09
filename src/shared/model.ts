@@ -25,8 +25,8 @@ export interface Repository {
   remote?: RepositoryRemote;
 }
 
-/** Issue #528: the three real states this icon/tooltip needs, plus an honest "could not tell"
- * case -- `unknown` is a confirmed-neither claim (an unreadable repository, or a remote URL this
+/** Issue #528: the two real states this icon/tooltip needs (`none`/`has`), plus an honest "could
+ * not tell" case -- `unknown` is a confirmed-neither claim (an unreadable repository, or a remote URL this
  * reader could not parse a host from), never conflated with a confirmed `none`. Deliberately
  * binary beyond that (`has`/`none`), not split further by host: the originally decided three-way
  * host classification (`known`/`other`) plus `@tabler/icons-react` brand marks was superseded by

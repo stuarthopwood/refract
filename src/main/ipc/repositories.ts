@@ -8,7 +8,7 @@ import path from 'node:path';
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { BranchEntry } from '../../shared/ipc';
-import type { Repository, Session } from '../../shared/model';
+import type { Repository, RepositoryRemote, Session } from '../../shared/model';
 import { gitRaw, repoInfo } from '../git/git';
 import { repositoryRemote } from '../git/remote';
 import { defaultBranch, listBranches } from '../git/worktrees';
@@ -54,16 +54,39 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
   return [...entries, ...sessionEntries];
 }
 
+// Issue #528, gate round 1 fix (Medium, all four reviewers): bounds the remote-detection step
+// of `repositories.list()` to about REMOTE_DEADLINE_MS in aggregate, however many repositories
+// are registered or however slow one individual `git` call is -- any repository whose own
+// check has not settled by the shared deadline keeps the `unknown` placeholder for this
+// response (a later `list()` call tries again fresh, each repository's own 70% cost is just one
+// `git` spawn now). Concurrency is capped so a large repository count never floods the process
+// table with simultaneous `git` spawns.
+const REMOTE_CONCURRENCY = 8;
+const REMOTE_DEADLINE_MS = 1000;
+
+async function remotesBounded(repositories: Repository[]): Promise<RepositoryRemote[]> {
+  const results: RepositoryRemote[] = repositories.map(() => ({ kind: 'unknown' }));
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < repositories.length) {
+      const i = next++;
+      results[i] = await repositoryRemote(repositories[i]!.path);
+    }
+  }
+  const pool = Promise.all(Array.from({ length: Math.min(REMOTE_CONCURRENCY, repositories.length) }, () => worker()));
+  const deadline = new Promise<void>((resolve) => setTimeout(resolve, REMOTE_DEADLINE_MS));
+  await Promise.race([pool, deadline]);
+  return results;
+}
+
 export function registerRepositories(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   // Issue #528: `remote` is computed fresh for every response, never read from or written to
   // the registry -- a repository's own remote can change on disk at any time with no Refract
-  // action involved. Run in parallel; each call is itself bounded (`repositoryRemote`'s own
-  // timeout), so this never blocks the Session list even with several repositories.
+  // action involved.
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => {
     const repositories = manager.registry.snapshot().repositories;
-    const withRemote = await Promise.all(
-      repositories.map(async (repository) => ({ ...repository, remote: await repositoryRemote(repository.path) }))
-    );
+    const remotes = await remotesBounded(repositories);
+    const withRemote = repositories.map((repository, i) => ({ ...repository, remote: remotes[i]! }));
     return { ok: true, value: withRemote };
   });
 
