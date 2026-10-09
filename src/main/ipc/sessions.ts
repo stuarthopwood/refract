@@ -15,8 +15,7 @@ import { diffStat } from '../git/diffStat';
 import {
   addWorktree,
   branchExists,
-  deleteCheck,
-  deleteCheckForMissingWorktree,
+  deleteCheckForSession,
   generateName,
   listBranches,
   recreateWorktree,
@@ -226,22 +225,16 @@ export function registerSessions(manager: SessionManager): void {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_DELETE_CHECK} expects a string id`);
     const session = manager.registry.getSession(id);
     if (!session) return notFound(`Session not found: ${id}`);
-    const worktreeExists = await fs.stat(session.worktreePath).then(() => true, () => false);
-    if (!worktreeExists) {
-      // Issue #599: a missing folder used to report zero risk unconditionally, even though
-      // `removeSessionWorktree` can still force-remove a registered worktree entry and
-      // `branch -D` the branch underneath it. Read the real risk from the repository and
-      // branch instead of assuming none.
-      const repository = manager.registry.getRepository(session.repositoryId);
-      if (!repository) return notFound(`Repository not found: ${session.repositoryId}`);
-      try {
-        return { ok: true, value: await deleteCheckForMissingWorktree(repository.path, session.branch) };
-      } catch (err) {
-        return mapStoreThrown(err);
-      }
-    }
+    const repository = manager.registry.getRepository(session.repositoryId);
+    if (!repository) return notFound(`Repository not found: ${session.repositoryId}`);
+    // Issue #599: decide by git state, never `fs.stat`ing the folder -- the folder can exist
+    // on disk with no usable `.git` (the orphan-empty and hand-emptied states this PR makes
+    // deletable), and `removeSessionWorktree` can still force-remove a registered worktree
+    // entry and `branch -D` the branch underneath it. `deleteCheckForSession` reads the real
+    // risk straight from the repository and branch whenever there is no checked-out worktree
+    // to trust.
     try {
-      return { ok: true, value: await deleteCheck(session.worktreePath) };
+      return { ok: true, value: await deleteCheckForSession(repository.path, session.worktreePath, session.branch) };
     } catch (err) {
       return mapStoreThrown(err);
     }

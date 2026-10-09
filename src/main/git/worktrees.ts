@@ -318,10 +318,25 @@ async function isWorktreeRegistered(repo: string, worktreePath: string): Promise
  * case-insensitively, for every invocation -- the primary defence. This is independent,
  * defence-in-depth verification on top of that: for the ordinary main-checkout case
  * (`--absolute-git-dir` equals `--git-common-dir`), that common dir must literally BE
- * `<repo>/.git`; for the linked-worktree-as-repo case, `<repo>/.git` must be a regular file
- * whose own `gitdir:` line canonicalises to exactly what git reported -- so an override
- * pointing at some OTHER repository's linked-worktree admin area, which could satisfy the
- * weaker "do git's own answers agree with each other" check alone, still fails here. */
+ * `<repo>/.git`, OR `<repo>/.git` must be a regular file whose `gitdir:` line round-trips to
+ * that same common dir (a submodule checkout or a `git init --separate-git-dir` repo); for the
+ * linked-worktree-as-repo case, `<repo>/.git` must be a regular file whose own `gitdir:` line
+ * canonicalises to exactly what git reported -- so an override pointing at some OTHER
+ * repository's linked-worktree admin area, which could satisfy the weaker "do git's own answers
+ * agree with each other" check alone, still fails here. */
+async function dotGitPointsTo(dir: string, expected: string): Promise<boolean> {
+  const dotGitPath = path.join(dir, '.git')
+  const dotGitStat = await fs.lstat(dotGitPath).catch(() => null)
+  if (!dotGitStat || !dotGitStat.isFile()) return false
+  const dotGitContent = await fs.readFile(dotGitPath, 'utf8').catch(() => null)
+  if (dotGitContent === null) return false
+  const match = /^gitdir:\s*(.+?)\s*$/m.exec(dotGitContent)
+  if (!match) return false
+  const recordedRaw = match[1]!
+  const recordedAbs = path.isAbsolute(recordedRaw) ? recordedRaw : path.resolve(dir, recordedRaw)
+  return (await canonicalPath(recordedAbs)) === expected
+}
+
 async function isRepoReadable(repo: string): Promise<boolean> {
   const toplevelResult = await gitRaw(repo, ['rev-parse', '--show-toplevel'])
   if (toplevelResult.code !== 0) return false
@@ -343,21 +358,13 @@ async function isRepoReadable(repo: string): Promise<boolean> {
 
   if (gitDir === commonDir) {
     const expectedDotGit = await canonicalPath(path.join(repo, '.git'))
-    return commonDir === expectedDotGit
+    if (commonDir === expectedDotGit) return true
+    return dotGitPointsTo(repo, commonDir)
   }
 
   const worktreesAdminRoot = await canonicalPath(path.join(commonDirAbs, 'worktrees'))
   if (!gitDir.startsWith(`${worktreesAdminRoot}${path.sep}`)) return false
-  const dotGitPath = path.join(repo, '.git')
-  const dotGitStat = await fs.lstat(dotGitPath).catch(() => null)
-  if (!dotGitStat || !dotGitStat.isFile()) return false
-  const dotGitContent = await fs.readFile(dotGitPath, 'utf8').catch(() => null)
-  if (dotGitContent === null) return false
-  const match = /^gitdir:\s*(.+?)\s*$/m.exec(dotGitContent)
-  if (!match) return false
-  const recordedRaw = match[1]!
-  const recordedAbs = path.isAbsolute(recordedRaw) ? recordedRaw : path.resolve(repo, recordedRaw)
-  return (await canonicalPath(recordedAbs)) === gitDir
+  return dotGitPointsTo(repo, gitDir)
 }
 
 /** The common `.git` directory for `repo` (resolved to an absolute path): its `worktrees`
@@ -677,7 +684,7 @@ export async function removeSessionWorktree(
       const isMainCheckout =
         holderPath !== undefined &&
         (await canonicalPath(holderPath).catch(() => null)) === (await canonicalPath(repo).catch(() => null))
-      const removedClause = removedWorktree ? 'Refract removed the worktree folder but did not delete' : 'Refract did not delete'
+      const removedClause = removedWorktree ? 'Refract removed the worktree but did not delete' : 'Refract did not delete'
       const whereClause = holderPath ? ` at ${holderPath}` : ' elsewhere'
       const nextStep = isMainCheckout
         ? 'Switch that checkout to a different branch, then choose Delete again.'
@@ -706,7 +713,7 @@ export async function removeSessionWorktree(
     if (await isWorktreeRegistered(repo, worktreePath)) {
       throw new GitError(
         'worktree-failed',
-        `Refract did not delete anything. Git still records a worktree for this Session at ${worktreePath}, outside Refract's worktree folder, but that folder cannot be found (a disconnected drive, or moved?). Reconnect it and choose Delete again, or if you no longer need it run \`git worktree remove --force\` on that path yourself.`
+        `Refract did not delete anything. Git still records a worktree for this Session at ${worktreePath}, outside Refract's worktree folder, and that folder cannot be found (a disconnected drive, or moved?). Refract never removes worktrees outside its own folder. If you no longer need it, run \`git worktree remove --force\` followed by that path in the repository at ${repo}, then choose Delete again. If the drive is connected when you run it, this also deletes that folder and any uncommitted work in it.`
       )
     }
     await deleteBranchIfRequested(false)
@@ -776,18 +783,60 @@ export async function deleteCheck(worktreePath: string): Promise<DeleteCheck> {
  * destroyed a branch's unpushed commits, because `fs.stat` failing on the folder told the
  * dialog nothing was at risk, when `removeSessionWorktree` can still force-remove a registered
  * entry and `branch -D` the branch underneath it. `uncommittedFiles` stays 0 (there is no
- * working tree left to hold them); a branch that no longer exists reports no risk, since there
- * is nothing left for a delete to destroy. */
+ * working tree left to hold them). `hasUpstream: true` is returned whenever there is nothing
+ * left to warn about (repo unreadable, or branch already gone): the confirmation dialog shows
+ * its "no upstream" bullet only when this is `false`, and that bullet would be actively
+ * misleading once there is no risk left to describe. */
 export async function deleteCheckForMissingWorktree(repo: string, branch: string): Promise<DeleteCheck> {
+  if (!(await isRepoReadable(repo))) {
+    // `repo` might now be an ordinary folder inside an unrelated outer repository (moved,
+    // deleted, or never a repository at all): querying `branch` here could silently report that
+    // OTHER repository's own same-named branch, while `removeSessionWorktree` issues no git
+    // command at all in this state. Report no risk rather than someone else's risk.
+    return { uncommittedFiles: 0, unpushedCommits: 0, hasUpstream: true }
+  }
   if (!(await branchExists(repo, branch))) {
-    return { uncommittedFiles: 0, unpushedCommits: 0, hasUpstream: false }
+    return { uncommittedFiles: 0, unpushedCommits: 0, hasUpstream: true }
   }
   const ref = `refs/heads/${branch}`
-  const upstream = await gitRaw(repo, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${ref}@{u}`])
-  const hasUpstream = upstream.code === 0
-  const countOutput = await git(repo, ['rev-list', '--count', ref, '--not', '--remotes'])
-  const unpushedCommits = Number.parseInt(countOutput.trim(), 10) || 0
+  // `<ref>@{u}` is rejected by git ("no such branch") once `ref` is a full `refs/heads/...`
+  // path rather than a short name; `for-each-ref --format=%(upstream)` reads the same
+  // `branch.<name>.merge` config without that restriction.
+  const upstreamResult = await gitRaw(repo, ['for-each-ref', '--format=%(upstream)', '--', ref])
+  const hasUpstream = upstreamResult.code === 0 && upstreamResult.stdout.trim().length > 0
+  let unpushedCommits: number
+  try {
+    const countOutput = await git(repo, ['rev-list', '--count', ref, '--not', '--remotes'])
+    unpushedCommits = Number.parseInt(countOutput.trim(), 10) || 0
+  } catch {
+    throw new GitError(
+      'git-failed',
+      `Refract could not check branch ${branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your repository at ${repo} before choosing Delete.`
+    )
+  }
   return { uncommittedFiles: 0, unpushedCommits, hasUpstream }
+}
+
+/** `sessions.deleteCheck` must decide the same way `removeSessionWorktree` decides which
+ * removal path to take -- by asking git, never by `fs.stat`ing the folder. The
+ * orphan-empty-folder and hand-emptied states this PR makes
+ * deletable both have a folder that EXISTS but holds no usable `.git`; calling `deleteCheck`
+ * there ran `git status`/`HEAD` with no `.git` present, either throwing a raw git error or
+ * silently reporting whatever unrelated repository happened to sit above it in an ancestor
+ * directory -- in both cases the confirmation dialog never showed the branch's real risk before
+ * `removeSessionWorktree` could still force-delete it. Only trusts the worktree's own checkout
+ * when git itself still recognises this exact path as a registered worktree AND it has a
+ * `.git` entry of its own; every other state reads the branch's risk directly from the
+ * repository instead. */
+export async function deleteCheckForSession(repo: string, worktreePath: string, branch: string): Promise<DeleteCheck> {
+  const hasGitEntry = await fs.lstat(path.join(worktreePath, '.git')).then(
+    () => true,
+    () => false
+  )
+  if (hasGitEntry && (await isWorktreeRegistered(repo, worktreePath))) {
+    return deleteCheck(worktreePath)
+  }
+  return deleteCheckForMissingWorktree(repo, branch)
 }
 
 /**
