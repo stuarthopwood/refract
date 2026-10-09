@@ -119,6 +119,13 @@ function SessionRow({
   // message -- that region is gone, since this one survives a view swap to Settings or Manage
   // sessions mid-create, which would otherwise unmount it (gate round 2 High).
   const pendingCreateAnnouncementRef = useRef<string | null>(null)
+  // Code-review fix (gate round 3, High): if `create()` settles DURING the menu's own close
+  // animation (focus is still on the now-portalled menu item, `#root` is still `aria-hidden`),
+  // `isStillHere()` always reads false and the toast/announcement can be added while hidden --
+  // deferred here instead: `handleNewSession`'s own settle handler stashes itself when
+  // `createRequestedRef` is still true, and `handleMenuCloseAutoFocus`'s `createRequestedRef`
+  // branch runs it once the content has actually unmounted and `aria-hidden` has lifted.
+  const settledCreateRef = useRef<(() => void) | null>(null)
   // Archive/restore/delete unmount this row asynchronously (the store update that moves it
   // out of the active/archived bucket can land before `onCloseAutoFocus` fires), and sometimes
   // the whole surrounding group unmounts with it (restoring the last archived Session also
@@ -318,13 +325,19 @@ function SessionRow({
       else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
       else focusListContainer()
     }
-    // Gate round 2 (code-review Medium): clears the pending announcement before toasting, so a
-    // create that fails (or rejects) before the menu's close animation finishes is never
-    // followed by a stale "Creating session from {branch}" once the menu does close.
+    // Gate round 3 (code-review High): if the menu is still closing (`createRequestedRef` still
+    // true), this `finish` is stashed in `settledCreateRef` instead of running now -- focus and
+    // `#root`'s `aria-hidden` are not trustworthy yet, so `handleMenuCloseAutoFocus` runs it once
+    // the content has actually unmounted. Otherwise (the ordinary, slower case) the menu has
+    // already closed and `finish` runs immediately, exactly as before.
     function restoreAfterCreateFailure(message: string): void {
       pendingCreateAnnouncementRef.current = null
-      toast.error(message, { duration: Infinity, closeButton: true })
-      if (isStillHere()) focusOrigin()
+      const finish = () => {
+        toast.error(message, { duration: Infinity, closeButton: true })
+        if (isStillHere()) focusOrigin()
+      }
+      if (createRequestedRef.current) settledCreateRef.current = finish
+      else finish()
     }
     void createSession(repository.id, repository.defaultBranch)
       .then((result) => {
@@ -333,10 +346,18 @@ function SessionRow({
           restoreAfterCreateFailure(result.error.message)
           return
         }
-        requestAnimationFrame(() => {
-          if (isStillHere()) focusSessionPane(result.value.id)
-          else useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
-        })
+        const finish = () => {
+          requestAnimationFrame(() => {
+            // Gate round 3 (code-review Medium): `focusSessionPane` can genuinely find no pane
+            // (the view switched away, or the split closed) -- announce instead of silently
+            // doing nothing in that case too, not only when the user has moved on.
+            if (!(isStillHere() && focusSessionPane(result.value.id))) {
+              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+            }
+          })
+        }
+        if (createRequestedRef.current) settledCreateRef.current = finish
+        else finish()
       })
       .catch((err) => restoreAfterCreateFailure(err instanceof Error ? err.message : String(err)))
   }
@@ -424,12 +445,21 @@ function SessionRow({
         useChatAreaAnnouncer.getState().announce(pendingCreateAnnouncementRef.current)
         pendingCreateAnnouncementRef.current = null
       }
-      // Gate round 2 (code-review Medium): a create that already settled (success or failure)
-      // before this close animation finished has already moved focus itself -- forcing it back
-      // to the origin here would steal it right back off the new pane (or off wherever a fast
-      // failure's own `restoreAfterCreateFailure` already sent it).
-      if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) {
-        if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      // Gate round 3 (code-review High): a create that settled WHILE this menu was still
+      // closing stashed its own settle handler instead of running immediately (`handleNewSession`
+      // above) -- run it now, the first point that reliably runs after the content has actually
+      // unmounted and `#root`'s `aria-hidden` has lifted, so its own `isStillHere`/toast checks
+      // see accurate state. Only when nothing was stashed (the create is still genuinely
+      // running) does this fall back to parking focus on the menu's own origin while it waits
+      // (gate round 2 Medium) -- never both, or a finished create's own focus move would be
+      // immediately stolen back.
+      const settled = settledCreateRef.current
+      settledCreateRef.current = null
+      if (settled) {
+        settled()
+      } else if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) {
+        const origin = isContextMenu ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
+        if (origin?.isConnected) origin.focus()
         else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
         else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
         else focusListContainer()
@@ -630,7 +660,7 @@ function SessionRow({
                       disabled={action.disabled}
                       onSelect={action.onSelect}
                     >
-                      <span className="min-w-0 whitespace-normal break-all">{action.label}</span>
+                      <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
                     </DropdownMenuItem>
                   )
                 )}
@@ -651,7 +681,7 @@ function SessionRow({
                 disabled={action.disabled}
                 onSelect={action.onSelect}
               >
-                <span className="min-w-0 whitespace-normal break-all">{action.label}</span>
+                <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
               </ContextMenuItem>
             )
           )}
