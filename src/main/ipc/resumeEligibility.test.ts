@@ -5,9 +5,12 @@ import { describe, it, expect } from 'vitest';
 import { checkResumeEligible } from './resumeEligibility';
 
 describe('checkResumeEligible', () => {
+  // Issue #603 quality-gate follow-up: the refusal code is 'busy', not 'already-resuming' --
+  // this same lock is now also held by SESSIONS_ARCHIVE/SESSIONS_DELETE (sessions.ts), not just
+  // a resume in progress.
   it('refuses a concurrent second call for the same id', () => {
     const resumingIds = new Set(['session-1']);
-    expect(checkResumeEligible(resumingIds, 'session-1', 'stopped', 'agent-exited', false, false)).toBe('already-resuming');
+    expect(checkResumeEligible(resumingIds, 'session-1', 'stopped', 'agent-exited', false, false)).toBe('busy');
   });
 
   it('allows a concurrent call for a different id', () => {

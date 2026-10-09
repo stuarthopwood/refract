@@ -569,6 +569,51 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [session?.status])
+  // Issue #603 quality-gate follow-up (HIGH, a11y-auditor): rare stranded focus when the
+  // banner and row Resume race -- if the SessionList row's Resume for this SAME Session
+  // completes first, this pane's own stop banner disappears without `handleResume` below ever
+  // running, so nothing here rescues focus if it was on the vanishing banner.
+  //
+  // The first version of this fix keyed on `showBanner` alone and regressed the COMMON path:
+  // `ReadyWaitController` emits 'waiting' immediately (readyWait.ts), so `startProgress' is set
+  // while `status' is still 'stopped' -- `showBanner' (requires `!startProgress') flips false
+  // the instant ANY start begins (Recover, Retry, Resume, Start new conversation), not just on
+  // the rare cross-pane race. That version then ran, found the textarea still disabled, and
+  // fell through to `focusPaneContent`'s container fallback -- which the OTHER
+  // `maybeRestoreFocus' helpers below then saw as "not stranded", leaving focus stuck on the
+  // pane container instead of the textarea or Retry/Recover button once the start finished.
+  //
+  // Fixed four ways: (a) keyed on the COMBINED stop-or-start surface (`showBanner ||
+  // !!startProgress`) going true -> false -- the whole surface genuinely ended (textarea
+  // enabled again), not just the stop banner swapping for a start-progress one; (b) skipped
+  // entirely while THIS pane's own action is in flight (`recoveringId`/`startingNewId`/
+  // `resumingId` === `sessionId`) -- those flows already run their own `maybeRestoreFocus' at
+  // the right moment, so this effect exists only for the cross-pane race; (c) requires
+  // `chatHadFocusRef.current' before moving anything, matching every sibling stranded-focus
+  // effect in this file -- never steals focus the user deliberately put elsewhere; (d) scoped
+  // per Session -- the previous-value ref resets whenever `sessionId' changes, so switching
+  // panes while focus sits on `<body>' from an unrelated cause never pulls it into the newly
+  // shown Session's pane.
+  const prevStopOrStartSurfaceRef = useRef<{ sessionId: string; shown: boolean }>({ sessionId, shown: false })
+  useEffect(() => {
+    const prev = prevStopOrStartSurfaceRef.current
+    const stopOrStartSurface = showBanner || !!startProgress
+    const wasShown = prev.sessionId === sessionId && prev.shown
+    prevStopOrStartSurfaceRef.current = { sessionId, shown: stopOrStartSurface }
+    if (!wasShown || stopOrStartSurface) return
+    if (recoveringId === sessionId || startingNewId === sessionId || resumingId === sessionId) return
+    if (!chatHadFocusRef.current) return
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      const stranded = isFocusStranded(active, chatPaneRef.current)
+      // Round 2 (Low, a11y): also treats the pane container itself as restorable, unlike the
+      // first version -- the only one of the four restore paths in this file that did not.
+      // Example: a row Resume completed, the user Tabbed back into the (now stale) start
+      // banner, landed on the container via the interactive-banner effect above (the textarea
+      // was still disabled), and this effect then saw "not stranded" and left it there.
+      if (stranded || active === chatPaneRef.current) focusPaneContent(chatPaneRef.current)
+    })
+  }, [showBanner, startProgress, sessionId, recoveringId, startingNewId, resumingId])
 
   if (!session) {
     // Quality-gate remediation (code-reviewer/ui-architect, Medium): same fix as App.tsx's own
@@ -650,7 +695,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       if (!hadFocus || sessionIdRef.current !== recoveringFor) return
       const active = document.activeElement
       const stranded = isFocusStranded(active, chatPaneRef.current)
-      if (!stranded && active !== focusedAtStart) return
+      if (!stranded && active !== focusedAtStart && active !== chatPaneRef.current) return
       focusPaneContent(chatPaneRef.current)
     }
     if (!result.ok) {
@@ -679,8 +724,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // Issue #509 (PLAN.md row A2g): recovers the agent AND sends the default resume instruction as
   // a real turn (`resumeSession`, shared with the session-list row's own Resume button). Mirrors
   // `handleRecover`'s focus-restore discipline exactly; the only difference is the shared helper
-  // also sends the turn, so a successful result still carries the post-recover snapshot (from
-  // before that turn settles) for `stopInfo`.
+  // also sends the turn, so a successful result carries the snapshot built AFTER that turn was
+  // sent (or the pre-send one, if that post-send rebuild itself failed -- issue #603) for
+  // `stopInfo`.
   async function handleResume() {
     // Quality-gate fix (cycle 5, 2026-10-08): the button below now uses `aria-disabled` (not
     // `disabled`, matching the session-list row's own Resume button) so it stays focusable
@@ -691,33 +737,50 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const focusedAtStart = document.activeElement
     const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
     setResumingId(resumingFor)
-    const result = await resumeSession(resumingFor)
-    setResumingId(id => (id === resumingFor ? null : id))
+    // Issue #603 quality-gate follow-up (Low, availability): wraps the call in try/finally --
+    // an unhandled rejection from `resumeSession` (the preload bridge call itself, not an
+    // `{ ok: false }` result) used to leave `resumingId` stuck at `resumingFor` forever,
+    // locking this banner's Resume button for the rest of the session.
     const maybeRestoreFocus = () => {
       if (!hadFocus || sessionIdRef.current !== resumingFor) return
       const active = document.activeElement
       const stranded = isFocusStranded(active, chatPaneRef.current)
-      if (!stranded && active !== focusedAtStart) return
+      if (!stranded && active !== focusedAtStart && active !== chatPaneRef.current) return
       focusPaneContent(chatPaneRef.current)
     }
-    if (!result.ok) {
-      notify(result.error)
+    try {
+      const result = await resumeSession(resumingFor)
+      if (!result.ok) {
+        notify(result.error)
+        requestAnimationFrame(maybeRestoreFocus)
+        return
+      }
+      if (sessionIdRef.current === resumingFor) {
+        setStopInfo({
+          reason: result.value.runtime.stopReason,
+          detail: result.value.runtime.stopDetail,
+          terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+          // Quality-gate fix (cycle 2, 2026-10-08): dropped here, unlike handleRecover/
+          // handleStartNewConversation's own identical setStopInfo calls -- the banner's
+          // "Still waiting on <tools>" description line went blank specifically after a Resume
+          // whose restart itself failed (still-pending tools genuinely exist on that snapshot).
+          pendingToolNames: result.value.runtime.pendingToolNames
+        })
+      }
       requestAnimationFrame(maybeRestoreFocus)
-      return
+    } catch (err) {
+      // Issue #603 quality-gate follow-up (Low, a11y): the try/finally below releases the lock
+      // on an unhandled rejection (the bridge call itself throwing, not an `{ ok: false }`
+      // result), but previously announced nothing and left focus with nothing to rescue it.
+      // Round 2 (Low, a11y): hoisted `maybeRestoreFocus` above this try so it is reachable
+      // here too -- a rejection after the start began (the banner already gone) used to leave
+      // focus stuck on `<body>`, since the cross-pane effect above skips this exact window
+      // while `resumingId === sessionId`.
+      notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) })
+      requestAnimationFrame(maybeRestoreFocus)
+    } finally {
+      setResumingId(id => (id === resumingFor ? null : id))
     }
-    if (sessionIdRef.current === resumingFor) {
-      setStopInfo({
-        reason: result.value.runtime.stopReason,
-        detail: result.value.runtime.stopDetail,
-        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
-        // Quality-gate fix (cycle 2, 2026-10-08): dropped here, unlike handleRecover/
-        // handleStartNewConversation's own identical setStopInfo calls -- the banner's
-        // "Still waiting on <tools>" description line went blank specifically after a Resume
-        // whose restart itself failed (still-pending tools genuinely exist on that snapshot).
-        pendingToolNames: result.value.runtime.pendingToolNames
-      })
-    }
-    requestAnimationFrame(maybeRestoreFocus)
   }
 
   async function handleStartNewConversation() {
@@ -754,7 +817,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       if (!hadFocus || sessionIdRef.current !== startingFor) return
       const active = document.activeElement
       const stranded = isFocusStranded(active, chatPaneRef.current)
-      if (!stranded && active !== focusedAtStart) return
+      if (!stranded && active !== focusedAtStart && active !== chatPaneRef.current) return
       const pressed = startNewButtonRef.current
       if (pressed && pressed.isConnected && !pressed.disabled) {
         pressed.focus()

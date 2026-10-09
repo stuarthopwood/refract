@@ -156,33 +156,56 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     resumingRef.current = true
     if (document.activeElement === resumeButtonRef.current) resumeFocusPendingRef.current = true
     setResuming(true)
-    const result = await resumeSession(session.id)
-    resumingRef.current = false
-    setResuming(false)
-    // Quality-gate fix (cycle 5, 2026-10-08): `sessions.resume` can return `ok: true` with a
-    // STILL-stopped snapshot when the restart itself failed (e.g. start-failed) --
-    // `resumeSession.ts`'s own doc comment. Previously only `!result.ok` counted as a failure
-    // here, so this case announced nothing: the row's "Resuming X…" status text just went
-    // blank, `canResume` flipped false, the button disappeared, and focus returned to the open
-    // button with no indication anything had gone wrong (WCAG 4.1.3, 3.3.1). The banner's own
-    // `role="alert"` title change already announces this from the pane; the row had no
-    // equivalent.
-    const restartFailed = result.ok && result.value.runtime.status === 'stopped'
-    if (!result.ok || restartFailed) {
-      // Quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): only clear the pending
-      // flag when the Session is STILL resumable after this call -- a restart failure (ok:true,
-      // still stopped, now e.g. stopReason:'start-failed') flips `canResume` to false exactly
-      // like a genuine success does, so the effect above still needs to run and move focus onto
-      // the open button once the Resume button disappears. Clearing it unconditionally here (as
-      // cycle 5 did, back when a restart failure was not yet counted as this same kind of
-      // failure) left focus stranded on `<body>` instead.
-      const stillEligible = stillEligibleAfterResume(result, !!session.archivedAt)
-      if (stillEligible) resumeFocusPendingRef.current = false
-      notify(
-        result.ok
-          ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
-          : result.error
-      )
+    // Issue #603 quality-gate follow-up (Low, availability): wraps the call in try/finally --
+    // an unhandled rejection from `resumeSession` (the preload bridge call itself, not an
+    // `{ ok: false }` result) used to leave `resumingRef`/`setResuming` stuck true forever,
+    // locking this row's Resume button for the rest of the session.
+    try {
+      const result = await resumeSession(session.id)
+      // Quality-gate fix (cycle 5, 2026-10-08): `sessions.resume` can return `ok: true` with a
+      // STILL-stopped snapshot when the restart itself failed (e.g. start-failed) --
+      // `resumeSession.ts`'s own doc comment. Previously only `!result.ok` counted as a failure
+      // here, so this case announced nothing: the row's "Resuming X…" status text just went
+      // blank, `canResume` flipped false, the button disappeared, and focus returned to the open
+      // button with no indication anything had gone wrong (WCAG 4.1.3, 3.3.1). The banner's own
+      // `role="alert"` title change already announces this from the pane; the row had no
+      // equivalent.
+      const restartFailed = result.ok && result.value.runtime.status === 'stopped'
+      if (!result.ok || restartFailed) {
+        // Quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): only clear the pending
+        // flag when the Session is STILL resumable after this call -- a restart failure (ok:true,
+        // still stopped, now e.g. stopReason:'start-failed') flips `canResume` to false exactly
+        // like a genuine success does, so the effect above still needs to run and move focus onto
+        // the open button once the Resume button disappears. Clearing it unconditionally here (as
+        // cycle 5 did, back when a restart failure was not yet counted as this same kind of
+        // failure) left focus stranded on `<body>` instead.
+        const stillEligible = stillEligibleAfterResume(result, !!session.archivedAt)
+        if (stillEligible) resumeFocusPendingRef.current = false
+        notify(
+          result.ok
+            ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
+            : result.error
+        )
+      }
+    } catch (err) {
+      // Issue #603 quality-gate follow-up (Low, a11y): the try/finally above releases the lock
+      // on an unhandled rejection (the bridge call itself throwing, not an `{ ok: false }`
+      // result), but previously announced nothing. Round 2 (Low, a11y): clearing
+      // `resumeFocusPendingRef` unconditionally here (as round 1 did) was wrong whenever the
+      // rejection landed AFTER the restart actually succeeded server-side (the bridge call
+      // itself threw on the way back, not the restart) -- `canResume` would then flip false
+      // for this Session exactly like a normal success, and the effect above needs the flag
+      // still armed to rescue focus once the button unmounts. Reads the freshest store state
+      // (never the `session` prop this closure captured, now possibly stale) and only clears
+      // when the Session is STILL resumable -- otherwise leaves it armed.
+      const latest = useSessionsStore.getState().sessions.find((s) => s.id === session.id)
+      if (latest && canResumeSession(latest.status, latest.stopReason, latest.terminatedUnexpectedly, !!latest.archivedAt)) {
+        resumeFocusPendingRef.current = false
+      }
+      notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) })
+    } finally {
+      resumingRef.current = false
+      setResuming(false)
     }
   }
 
@@ -249,10 +272,29 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     onOpenInSplit: () => openInSplit(session.id),
     onCopyPath: () => void copyPath(),
     onReveal: () => void reveal(),
+    // Issue #603 quality-gate follow-up (Low then Medium, a11y): archive can now be refused (a
+    // resume in progress -- issue #603 item 1), so focus must only move toward the list on
+    // SUCCESS. `listFocusRequestedRef` is no longer set synchronously here: Radix's own
+    // close-autofocus (`handleMenuCloseAutoFocus' below) falls through to its generic
+    // trigger/open-button fallback instead, keeping focus near this row by default -- correct
+    // for a refusal, since the row never goes anywhere.
+    //
+    // Round 2 (Medium): `archive()` awaits main's own `shutdown()`, which can take seconds
+    // (it waits out any start already running) -- moving focus unconditionally on success
+    // could yank it away from wherever the user had since moved it (for example into the chat
+    // textarea). Captures this row's own `<li>` before the call and only moves focus
+    // afterward when it is stranded (body/disconnected/none) or still somewhere inside THIS
+    // row -- never when the user has deliberately focused something else meanwhile.
     onArchive: () => {
-      listFocusRequestedRef.current = true
       captureFocusFallback()
+      const row = rowRef.current
       void archive(session.id)
+        .then((ok) => {
+          if (!ok) return
+          const active = document.activeElement
+          if (!active || active === document.body || !active.isConnected || row?.contains(active)) focusListContainer()
+        })
+        .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
     },
     onRestore: () => {
       listFocusRequestedRef.current = true

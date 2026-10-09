@@ -15,14 +15,24 @@ import { checkResumeEligible } from './resumeEligibility';
 import type { ResumeRefusalCode } from './resumeEligibility';
 import { notFound } from './util';
 
+// Issue #603 quality-gate follow-up: the shared 'busy' code (renamed from
+// 'already-resuming') now also covers SESSIONS_ARCHIVE/SESSIONS_DELETE holding the same
+// lock, so its message stays neutral rather than always naming a resume specifically.
+// Exported so sessions.ts's own ARCHIVE/DELETE refusals reuse the identical string instead
+// of a second hand-typed literal that could drift from this one.
+export const BUSY_MESSAGE = 'Another action is already in progress for this Session.';
 const RESUME_REFUSAL_MESSAGE: Record<ResumeRefusalCode, string> = {
-  'already-resuming': 'A resume for this Session is already in progress.',
+  busy: BUSY_MESSAGE,
   'not-stopped': 'Session is not stopped.',
   'not-eligible': 'Session is not eligible to resume.',
 };
 
 /** The one piece of a real `SessionAgent` this needs -- narrowed so a test can supply a fake
- * without constructing a real process. */
+ * without constructing a real process. `shutdown` is optional (every real agent has one; a
+ * test fake usually does not need it) -- issue #603 quality-gate follow-up: called, if
+ * present, when the belt-and-braces archived re-check below fires, so a resume that raced
+ * past the shared lock and already started the agent never leaves it running on an archived
+ * Session. */
 export interface ResumableAgent {
   runtimeSnapshot: {
     status: SessionStatus;
@@ -31,6 +41,7 @@ export interface ResumableAgent {
   };
   start(): Promise<unknown>;
   send(text: string, images?: ImageContent[]): Promise<unknown>;
+  shutdown?(): Promise<void>;
 }
 
 export interface ResumeSessionDeps {
@@ -100,6 +111,26 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
       // Session that did not actually come back.
       return { ok: true, value: snapshot };
     }
+    // Issue #603 quality-gate follow-up (Medium, security): belt-and-braces re-check right
+    // before the one irreversible step -- `buildSnapshot` above is itself an awaited read
+    // (Conversation listing), a second window wide enough for a concurrent SESSIONS_ARCHIVE/
+    // SESSIONS_DELETE to land in, independent of whether the `resumingIds` guard those
+    // handlers now also hold (sessions.ts) actually ran -- this function cannot see that guard
+    // at all, so it never trusts it alone. Reads fresh with NO fallback to `refreshed` --
+    // falling back there would silently treat a DELETED Session (`getSession` now returning
+    // `undefined`) as the stale, non-archived `refreshed` copy and send into it anyway. Also
+    // shuts the just-started agent back down (optional chain: real agents always have this;
+    // see `ResumableAgent`'s own doc comment) rather than returning `ok: true` and leaving a
+    // live omp process on a Session this call is about to report as not eligible -- exactly
+    // the end state #603 itself describes.
+    const beforeSend = deps.getSession(id);
+    if (!beforeSend || beforeSend.archivedAt) {
+      // Issue #603 quality-gate follow-up (Low): a throw from `shutdown()` itself must never
+      // turn this intended refusal into an unrelated rejection -- the lock is released by the
+      // outer `finally` either way, so swallowing it here only affects which result comes back.
+      await agent.shutdown?.().catch(() => undefined);
+      return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE['not-eligible'] } };
+    }
     try {
       await agent.send(DEFAULT_RESUME_INSTRUCTION);
     } catch (err) {
@@ -113,7 +144,17 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
     // then never see, constitution II: every request must be answered). Build a FRESH snapshot
     // after `send` resolves so the returned value reflects whatever actually landed meanwhile.
     const postSend = deps.getSession(id) ?? refreshed;
-    return { ok: true, value: await deps.buildSnapshot(agent, postSend) };
+    // Issue #603 quality-gate follow-up (Low, availability): the turn above was already sent
+    // -- a throw here (e.g. a transient Conversation-file read failure) must never reject the
+    // whole IPC call after that, which would leave the renderer's own caller with no result to
+    // apply at all and its resuming lock stuck set forever (see resume.ts/ChatPane.tsx's new
+    // try/finally, the other half of this fix). Falls back to the pre-send snapshot, still a
+    // valid (if slightly stale) result: the instruction did go out regardless.
+    try {
+      return { ok: true, value: await deps.buildSnapshot(agent, postSend) };
+    } catch {
+      return { ok: true, value: snapshot };
+    }
   } finally {
     resumingIds.delete(id);
   }

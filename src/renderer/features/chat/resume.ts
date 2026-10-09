@@ -13,11 +13,14 @@ export { canResumeSession, stillEligibleAfterResume } from '../../../shared/canR
  * `sessions.resume` recovers the agent, re-checks eligibility server-side, and sends the default
  * instruction only once the agent is confirmed actually running again; this just applies the
  * returned snapshot (safe even when no pane currently shows this Session -- `applySnapshot` only
- * ever writes to stores keyed by `sessionId`). Quality-gate fix (cycle 2, 2026-10-08): a
- * `stopped` snapshot means the restart itself failed and no instruction was ever sent -- this
- * snapshot IS the current state, applied in full. Otherwise the instruction WAS sent as part of
- * this same call, after this snapshot was already built, so its transcript is skipped (see
- * `applySnapshotExceptTranscript`'s own doc comment for the race this avoids). */
+ * ever writes to stores keyed by `sessionId`). Quality-gate fix (cycle 2, 2026-10-08; updated
+ * issue #603): a `stopped` snapshot means the restart itself failed and no instruction was ever
+ * sent -- this snapshot IS the current state, applied in full. Otherwise the instruction WAS
+ * sent as part of this same call, and this snapshot was built AFTER that send resolved (not
+ * before, as earlier cycles had it) -- or, if that post-send rebuild itself failed, the
+ * pre-send one (issue #603's own fallback). Either way still applied without its transcript
+ * (see `applySnapshotExceptTranscript`'s own doc comment for the race this still avoids, even
+ * post-send). */
 export async function resumeSession(sessionId: string): Promise<Result<SessionSnapshot>> {
   const result = await window.refract.sessions.resume(sessionId);
   if (result.ok) {
