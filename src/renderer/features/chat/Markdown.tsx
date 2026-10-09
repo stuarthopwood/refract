@@ -8,10 +8,12 @@ import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 import type { MermaidConfig } from 'mermaid'
 import { safeUrl } from '@/lib/safe-url'
+import { parseFileReference, looksWithinWorktree } from '@/lib/linkify'
 import { THEMES } from '../../../shared/themes'
 import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
-import { useActiveThemeId } from '@/state'
+import { notify, useActiveThemeId, useSessionsStore } from '@/state'
 import { CopyButton } from '@/components/ui/copy-button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // react-markdown's own `urlTransform` prop (default: `defaultUrlTransform`) runs on every
 // href/src BEFORE a node reaches its `components` renderer, so `safeUrl`'s relative-href block
@@ -407,6 +409,86 @@ function heading(Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') {
 // with it) the moment a streaming reply finished.
 const StreamingContext = React.createContext(false)
 
+// Issue #610: the owning Session's id, read by every link/file-link renderer below so it never
+// has to be threaded as a prop through `Markdown`/`ToolRow`/`DiffView`'s whole call chain --
+// `Transcript.tsx` is the one place that provides it (never `ChatPane.tsx`, so this stays clear
+// of #621's own `ChatPane.tsx` changes). `null` outside a Session context (e.g. a PR diff's
+// `DiffViewFromPatch`, which never renders a file link at all) or if a caller forgets to wrap --
+// `FileLinkButton` below falls back to inert plain text in that case, never a broken button.
+export const LinkContext = React.createContext<string | null>(null)
+
+// Issue #610, decision 9: one shared class for every link-shaped control -- `--accent-text` plus
+// a permanent underline (never colour alone, WCAG 1.4.1), gated at least 4.5:1 against
+// `--background`/`--card`/`--popover` (check-theme-contrast.mjs) and against the user message
+// bubble's own composited `accent/50`-on-`background` fill (verified 4.69:1 in Dark, the binding
+// theme -- see that script's own `user-bubble` pair). `rounded-sm` plus the achromatic
+// `focus-visible` ring matches every other control in the app; `[overflow-wrap:anywhere]` stops a
+// long URL/path from forcing the row to scroll sideways.
+export const linkClassName =
+  'text-accent-text underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
+// Issue #610, decision 9: `--accent-text` does not clear 4.5:1 on `bg-muted` (check-theme-
+// contrast.mjs's own TODO(#579) note records 4.00:1 Dark/4.28:1 Obsidian) -- every `bg-muted`
+// surface (inline code, `DiffView`'s header) gets the underline only, in whatever text colour it
+// already inherits, instead.
+export const mutedLinkClassName =
+  'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
+interface FileLinkButtonProps {
+  /** The bare path this sends to `sessions.revealFile` -- never includes a `:line[:col]` suffix
+   * (ignored for navigation until #463's file viewer exists, decision 3). */
+  path: string
+  /** Visible text and tooltip label; defaults to `path`. */
+  display?: string
+  /** `true` on a `bg-muted` surface (inline code, `DiffView`'s header) -- see `mutedLinkClassName`. */
+  muted?: boolean
+  /** Decision 6: inert (plain underlined text, unfocusable) while the owning message still
+   * streams, so a path cut off mid-generation is never followed and no focusable control
+   * appears inside the live `role="log"` region mid-stream. */
+  streaming?: boolean
+}
+
+// Issue #610: the one file-link control app-wide, exported for `ToolRow.tsx` (write/edit path
+// lines) and `DiffView.tsx` (header path) to reuse, the same pattern `CodeBlock` below already
+// establishes for tool-call Arguments/Output. "Show in File Explorer", never "Open" -- running a
+// file's own OS default verb (`shell.openPath`) would execute a `.cmd`/`.ps1`/`.lnk` an agent or
+// tool wrote; `sessions.revealFile` only ever calls `shell.showItemInFolder`.
+export function FileLinkButton({ path, display, muted = false, streaming = false }: FileLinkButtonProps) {
+  const sessionId = React.useContext(LinkContext)
+  const worktreePath = useSessionsStore((state) =>
+    sessionId ? state.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
+  )
+  const className = muted ? mutedLinkClassName : linkClassName
+  const label = display ?? path
+  // Decision 8: a cheap, string-only early-out for an absolute path obviously outside the
+  // worktree -- never the security boundary itself (that is `resolveInWorktree`, main-process,
+  // on click), just a visual nicety that avoids linkifying something that can only ever fail.
+  const withinWorktree = worktreePath === undefined || looksWithinWorktree(path, worktreePath)
+
+  if (streaming || !sessionId || !withinWorktree) {
+    return <span className={className}>{label}</span>
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className={className}
+          onClick={() => {
+            void window.refract.sessions.revealFile(sessionId, path).then((result) => {
+              if (!result.ok) notify(result.error)
+            })
+          }}
+        >
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>Show in File Explorer: {label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 // Named (rather than inline arrows) so the `li` task-list-item renderer below can recognize a
 // direct child as "a nested paragraph wrapper (loose lists)" / "a nested sub-list" / "the
 // checkbox itself" by function identity -- the only reliable signal available once react-markdown
@@ -498,13 +580,23 @@ const components: Components = {
       )
     }
     if (!href) return <>{children}</>
+    // Issue #610, decision 6: inert (plain underlined text, no `<a>` at all -- unfocusable, not
+    // merely visually disabled) while the owning message is still streaming, so a URL cut off
+    // mid-generation is never followed and no focusable element appears inside the live
+    // `role="log"` region mid-stream. Footnote anchors above are exempt: they are same-page
+    // fragments, never reaching `openExternal`, so the "don't follow a half-written URL" risk
+    // this guards against does not apply to them.
+    const streaming = React.useContext(StreamingContext)
+    if (streaming) {
+      return <span className={cn(linkClassName, className)}>{children}</span>
+    }
     return (
       <a
         {...props}
         href={href}
         target="_blank"
         rel="noreferrer noopener"
-        className={cn('underline underline-offset-2', className)}
+        className={cn(linkClassName, className)}
       >
         {children}
       </a>
@@ -513,10 +605,12 @@ const components: Components = {
   // Agent-supplied images are never rendered as <img> (constitution V); the alt text becomes a
   // link to the source instead, gated by the same http(s)-only rule as `a` above.
   img: ({ alt, src }) => {
+    const streaming = React.useContext(StreamingContext)
     const safe = safeUrl(typeof src === 'string' ? src : undefined)
     if (!safe) return <>{alt || 'image'}</>
+    if (streaming) return <span className={linkClassName}>{alt || safe}</span>
     return (
-      <a href={safe} target="_blank" rel="noreferrer noopener" className="underline underline-offset-2">
+      <a href={safe} target="_blank" rel="noreferrer noopener" className={linkClassName}>
         {alt || safe}
       </a>
     )
@@ -589,6 +683,23 @@ const components: Components = {
     const lang = match?.[1] ?? null
     const isBlock = Boolean(match) || text.includes('\n')
     if (!isBlock) {
+      // Issue #610, decision 1/4: linked only when the WHOLE span is one URL or file path --
+      // never a scan of its text for a substring, and never inside a fenced block (`isBlock`
+      // above already excludes those; a fence stays a boxed, inert code surface regardless).
+      const trimmed = text.trim()
+      const safe = trimmed ? safeUrl(trimmed) : undefined
+      if (safe) {
+        if (streaming) return <span className={mutedLinkClassName}>{text}</span>
+        return (
+          <a href={safe} target="_blank" rel="noreferrer noopener" className={mutedLinkClassName}>
+            {text}
+          </a>
+        )
+      }
+      const fileRef = trimmed ? parseFileReference(trimmed) : null
+      if (fileRef) {
+        return <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} />
+      }
       return (
         <code className="rounded bg-muted px-1 py-0.5 font-code text-[0.85em]" {...props}>
           {children}

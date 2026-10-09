@@ -335,10 +335,12 @@ const PAIRS = [
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
   // TODO(#579): `accent-text` on `surface-hover` (the muted/accent hover fill) measures only
   // 4.00:1 in Dark and 4.28:1 in Obsidian -- under the 4.5:1 text floor. Not added as a PAIRS
-  // entry (it would fail both themes today); no component reads `--accent-text` yet, so nothing
-  // renders incorrectly. Before #579 migrates a link/text colour onto a hover row, either
-  // lighten `accent-text` further (it already has margin to spare against background/card/
-  // popover) or add this pair here once it passes.
+  // entry (it would fail both themes today). Issue #610 reads `--accent-text` now
+  // (`Markdown.tsx`'s `linkClassName`), but never on `surface-hover`: every link/file-link
+  // surface it renders on -- the plain chat background/card/popover, and the composited user
+  // message bubble checked below -- is covered by a real gate entry. Before #579 migrates a
+  // link/text colour onto a hover row, either lighten `accent-text` further (it already has
+  // margin to spare against background/card/popover) or add this pair here once it passes.
   { fg: 'severity-success', bg: 'background', min: 3 },
   { fg: 'severity-success', bg: 'card', min: 3 },
   { fg: 'severity-success', bg: 'popover', min: 3 },
@@ -839,6 +841,41 @@ for (const [themeId, props] of Object.entries(themes)) {
       bgHex: linearToHex(footerLinear),
     })
   }
+}
+
+// ---- issue #610 (hyperlinks): a link/file-link rendered inside a user message composites
+// `--accent-text` (Markdown.tsx's `linkClassName`) over the user bubble's own translucent fill
+// (`bg-accent/50`, `Transcript.tsx`'s `MessageContent` for a `kind: 'user'` row), not flat
+// `--background` -- the plain-background/card/popover PAIRS entries above never actually
+// exercise this composited case. Checked the same way the destructive-footer block above
+// checks its own composited backdrop: gamma-blend the translucent fill over the chat area's
+// own `--background` (the only surface a user bubble ever renders on), then WCAG-contrast
+// `--accent-text` against that blended result.
+for (const [themeId, props] of Object.entries(themes)) {
+  const accent = props['accent']
+  const background = props['background']
+  const accentText = props['accent-text']
+  if (!accent || !background || !accentText) {
+    checkedCount++
+    failCount++
+    rows.push({ themeId, fg: 'accent-text', bg: 'user-bubble (accent/50 on background)', min: 4.5, ratio: null, pass: false, note: 'token missing' })
+    continue
+  }
+  const bubbleLinear = resolvedLinear({ raw: 'accent/50', alpha: 0.5, linear: accent.linear }, background)
+  const ratio = contrastRatio(relativeLuminance(accentText.linear), relativeLuminance(bubbleLinear))
+  const pass = ratio >= 4.5
+  checkedCount++
+  if (!pass) failCount++
+  rows.push({
+    themeId,
+    fg: 'accent-text',
+    bg: 'user-bubble (accent/50 on background)',
+    min: 4.5,
+    ratio,
+    pass,
+    fgHex: linearToHex(accentText.linear),
+    bgHex: linearToHex(bubbleLinear),
+  })
 }
 
 // ---- print the table ---------------------------------------------------------------------
