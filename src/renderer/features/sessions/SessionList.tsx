@@ -1067,10 +1067,13 @@ function RepositoryGroup({
                 aria-label={`New session from ${repository.defaultBranch} in ${repository.name}`}
                 aria-disabled={creating || undefined}
                 className="aria-disabled:opacity-50"
-                // Matches `ChatHeader.tsx`'s Ctrl+W close button and `MessageInput.tsx`'s
-                // Ctrl+Shift+X stop button: `aria-keyshortcuts` on every control a chord also
-                // reaches, not just the tooltip's own Kbd hint below.
-                aria-keyshortcuts="Control+N"
+                // Quality-gate fix (round 2, Sec/Code/Verif Medium): no `aria-keyshortcuts`
+                // here -- unlike `ChatHeader.tsx`'s Ctrl+W button or `MessageInput.tsx`'s
+                // Ctrl+Shift+X button (each the ONE control its own chord always activates),
+                // Ctrl+N activates the FOCUSED pane's repository's button, or only focuses the
+                // first one -- every OTHER repository's button would advertise a chord that
+                // does not reach it, a false shortcut claim to assistive tech. The tooltip's own
+                // Kbd hint below stays (decision 7 asks for the hint there, not this attribute).
                 // Issue #6, first slice: Ctrl+N's own fallback target (no pane open, 2+
                 // repositories, or a focused pane's repository that can no longer be resolved)
                 // moves focus here via `document.querySelector('[data-quick-create-session]')`
