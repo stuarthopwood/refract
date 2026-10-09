@@ -393,6 +393,35 @@ function TimeGapDivider({ at }: { at: number }) {
   )
 }
 
+// Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
+// 2026-10-04; narrowed per code/test-reviewer round 2): the only transcript item a brand-new
+// agent process can produce before any real exchange is a `notice` (OMP's own unsolicited
+// startup banner -- a `command_output`/`notice` frame, same mechanism a user-run slash
+// command's own output uses, lists every mounted MCP tool verbatim). Hiding *every* `notice`
+// until a non-notice item exists was too broad: it also hid a start-failure notice, a rejected
+// first prompt's error notice, and a slash command's own output when run as the very first
+// action in a new Session -- none of which is the startup banner, and DESIGN.md's "never a
+// silent no-op" rule for slash commands means the last of those must always be visible. A
+// `notice` now counts as "conversation started" unless it is BOTH an info/warning-level notice
+// (an error is always a real outcome, never the unsolicited banner) AND tagged
+// `STARTUP_NOTICE_PREFIX` (`transcript.ts`'s `applyFrame`, keyed off `SessionAgent.hasUserActed`
+// -- the one case that is unambiguously the agent's own startup dump, not something the user
+// did). Suppressed notice(s) stay in `items` (never dropped -- they render normally the moment
+// real content exists) but are not displayed, replaced by a neutral placeholder instead.
+//
+// Gate-fix (code/a11y/verif High, round 3, Issue #618): exported (was a private inline
+// computation) so `ChatPane.tsx` can read the SAME predicate against the SAME transcript-store
+// items, instead of deciding where the start notice goes from its own, narrower `hasHistory`
+// alone. `hasHistory` (`session.currentConversation !== null`) only flips true at a settle,
+// which left a start that fails or crashes mid-first-turn -- real items already on screen,
+// `recordStartFailure`'s own error notice among them -- with NO notice and NO Keep
+// waiting/Cancel at all on the next Retry/Recover, because the centred placement required
+// `!hasConversationStarted` and the inline placement required `hasHistory`, and neither was
+// true. See `ChatPane.tsx`'s own `conversationStarted`/`showInline` for the fix.
+export function isConversationStarted(items: readonly TranscriptItem[]): boolean {
+  return items.some((item) => item.kind !== 'notice' || item.level === 'error' || !item.id.startsWith(STARTUP_NOTICE_PREFIX))
+}
+
 // The Session's transcript (T025, no props: reads the visible Session from the zustand stores).
 // Follows streamed output while the user is at the bottom via shadcn Message Scroller
 // (research.md decision 2: kept after a 30-tool-row streaming smoke test, see that paragraph for
@@ -410,9 +439,13 @@ export function Transcript({
   // can ever show at all: a Session with history never shows it, including while it loads or
   // while its agent is starting.
   hasHistory: boolean
-  // Issue #618: ChatPane.tsx's own SessionStartNotice, pre-built with this pane's startProgress
-  // and picked random message, rendered here (centred, replacing "Ready…") for a brand-new
-  // Session while its agent is starting. Undefined whenever nothing is starting right now.
+  // Issue #618 gate-fix (round 3): ChatPane.tsx's own SessionStartNotice, pre-built with this
+  // pane's startProgress and picked random message, rendered here (centred, replacing "Ready…")
+  // for a brand-new Session while its agent is starting. ChatPane now decides WHETHER to pass
+  // this at all (its own `showInline`, reading the identical `isConversationStarted` predicate
+  // against the same store) -- Transcript no longer re-derives that decision, it just renders
+  // whatever it is given. Undefined whenever nothing is starting right now, or whenever ChatPane
+  // chose the inline placement instead.
   startNotice?: React.ReactNode
 }) {
   // Spec 005: generalised from a single store-wide field to per-session storage
@@ -438,9 +471,7 @@ export function Transcript({
   // -- the one case that is unambiguously the agent's own startup dump, not something the user
   // did). Suppressed notice(s) stay in `items` (never dropped -- they render normally the moment
   // real content exists) but are not displayed, replaced by a neutral placeholder instead.
-  const hasConversationStarted = items.some(
-    (item) => item.kind !== 'notice' || item.level === 'error' || !item.id.startsWith(STARTUP_NOTICE_PREFIX)
-  )
+  const hasConversationStarted = isConversationStarted(items)
   const pendingBySession = usePendingRequestsStore((state) => state.bySession)
   const pending = pendingBySession[sessionId] ?? []
 
@@ -1109,9 +1140,12 @@ export function Transcript({
             Keep waiting/Cancel buttons were focusable controls sitting inside a live log. This
             file's `MessageScroller` root is `relative` (components/ui/message-scroller.tsx), so
             this overlays centred over the empty transcript area exactly where "Ready..." would
-            otherwise sit -- the two share the identical `!hasHistory && !hasConversationStarted`
-            guard (above and below), so exactly one of them ever renders. */}
-        {!hasHistory && !hasConversationStarted && startNotice && (
+            otherwise sit. Gate-fix (round 3): no `hasHistory`/`hasConversationStarted` check
+            here any more -- `ChatPane.tsx` already decided whether this placement applies before
+            ever passing `startNotice` (its own `showInline`), so rendering it whenever given is
+            both simpler and correct; re-adding a second, narrower guard here is exactly what let
+            a Retry-after-failure start render NEITHER notice in round 2. */}
+        {startNotice && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
             <div className="pointer-events-auto">{startNotice}</div>
           </div>
