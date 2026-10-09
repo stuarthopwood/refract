@@ -1,9 +1,14 @@
 // Spec 007 US2: a keyboard-operable theme picker (FR-001, FR-002, FR-006) -- hand-rolled
-// `role="radiogroup"`/`role="radio"` (no `radio-group.tsx` primitive exists yet under
-// `components/ui`) using the classic roving-tabindex pattern: only the currently-active entry
-// sits in the Tab order, and arrow/Home/End keys move both focus and the live preview together,
-// matching how a native `<input type="radio">` list already behaves (arrowing IS choosing, not
-// just moving focus). Every preset renders in `THEMES`' own declaration order (FR-001).
+// `role="radiogroup"`/`role="radio"` using the classic roving-tabindex pattern: only the
+// currently-active entry sits in the Tab order, and arrow/Home/End keys move both focus and the
+// live preview together, matching how a native `<input type="radio">` list already behaves
+// (arrowing IS choosing, not just moving focus). Every preset renders in `THEMES`' own
+// declaration order (FR-001).
+// Quality-gate remediation (code-reviewer, Medium, issue #498, cycle 2): a `components/ui/
+// radio-group.tsx` primitive now exists (built for `MergeDialog.tsx`), but this picker is NOT
+// migrated to it -- that primitive's Home/End only move focus (Space selects), while this
+// picker's Home/End also live-previews immediately, same as its arrow keys; migrating would be a
+// user-visible behaviour change outside #498/#500's scope. Left as a follow-up.
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { CheckIcon } from 'lucide-react'
