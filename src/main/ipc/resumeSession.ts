@@ -100,6 +100,16 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
       // Session that did not actually come back.
       return { ok: true, value: snapshot };
     }
+    // Issue #603 quality-gate follow-up (Medium, security): belt-and-braces re-check right
+    // before the one irreversible step -- `buildSnapshot` above is itself an awaited read
+    // (Conversation listing), a second window wide enough for a concurrent SESSIONS_ARCHIVE/
+    // SESSIONS_DELETE to land in, independent of whether the `resumingIds` guard those
+    // handlers now also hold (sessions.ts) actually ran -- this function cannot see that guard
+    // at all, so it never trusts it alone.
+    const beforeSend = deps.getSession(id) ?? refreshed;
+    if (beforeSend.archivedAt) {
+      return { ok: true, value: snapshot };
+    }
     try {
       await agent.send(DEFAULT_RESUME_INSTRUCTION);
     } catch (err) {
@@ -113,7 +123,17 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
     // then never see, constitution II: every request must be answered). Build a FRESH snapshot
     // after `send` resolves so the returned value reflects whatever actually landed meanwhile.
     const postSend = deps.getSession(id) ?? refreshed;
-    return { ok: true, value: await deps.buildSnapshot(agent, postSend) };
+    // Issue #603 quality-gate follow-up (Low, availability): the turn above was already sent
+    // -- a throw here (e.g. a transient Conversation-file read failure) must never reject the
+    // whole IPC call after that, which would leave the renderer's own caller with no result to
+    // apply at all and its resuming lock stuck set forever (see resume.ts/ChatPane.tsx's new
+    // try/finally, the other half of this fix). Falls back to the pre-send snapshot, still a
+    // valid (if slightly stale) result: the instruction did go out regardless.
+    try {
+      return { ok: true, value: await deps.buildSnapshot(agent, postSend) };
+    } catch {
+      return { ok: true, value: snapshot };
+    }
   } finally {
     resumingIds.delete(id);
   }

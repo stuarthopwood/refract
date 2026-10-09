@@ -569,6 +569,26 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       if (stranded) focusPaneContent(chatPaneRef.current)
     })
   }, [session?.status])
+  // Issue #603 quality-gate follow-up (Low): rare stranded focus when the banner and row
+  // Resume race. `handleResume` above only restores focus for a resume THIS pane's own banner
+  // button started -- if the SessionList row's Resume button for this SAME Session completes
+  // first, `showBanner` flips false here too (status leaves 'stopped'), silently unmounting
+  // this banner's Resume/Recover controls without this pane ever running its own
+  // `handleResume`. If focus happened to be in that vanishing banner (for example the user
+  // had tabbed to this banner's own button without clicking it), nothing moves it, stranding
+  // it on `<body>`. Mirrors the `prevInteractiveBannerRef` effect above for the START banner,
+  // but keyed on the STOP banner's own `showBanner` visibility instead.
+  const prevShowBannerRef = useRef(false)
+  useEffect(() => {
+    const wasShown = prevShowBannerRef.current
+    prevShowBannerRef.current = showBanner
+    if (!wasShown || showBanner) return
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      const stranded = isFocusStranded(active, chatPaneRef.current)
+      if (stranded) focusPaneContent(chatPaneRef.current)
+    })
+  }, [showBanner])
 
   if (!session) {
     // Quality-gate remediation (code-reviewer/ui-architect, Medium): same fix as App.tsx's own
@@ -691,33 +711,40 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const focusedAtStart = document.activeElement
     const hadFocus = !!chatPaneRef.current?.contains(focusedAtStart)
     setResumingId(resumingFor)
-    const result = await resumeSession(resumingFor)
-    setResumingId(id => (id === resumingFor ? null : id))
-    const maybeRestoreFocus = () => {
-      if (!hadFocus || sessionIdRef.current !== resumingFor) return
-      const active = document.activeElement
-      const stranded = isFocusStranded(active, chatPaneRef.current)
-      if (!stranded && active !== focusedAtStart) return
-      focusPaneContent(chatPaneRef.current)
-    }
-    if (!result.ok) {
-      notify(result.error)
+    // Issue #603 quality-gate follow-up (Low, availability): wraps the call in try/finally --
+    // an unhandled rejection from `resumeSession` (the preload bridge call itself, not an
+    // `{ ok: false }` result) used to leave `resumingId` stuck at `resumingFor` forever,
+    // locking this banner's Resume button for the rest of the session.
+    try {
+      const result = await resumeSession(resumingFor)
+      const maybeRestoreFocus = () => {
+        if (!hadFocus || sessionIdRef.current !== resumingFor) return
+        const active = document.activeElement
+        const stranded = isFocusStranded(active, chatPaneRef.current)
+        if (!stranded && active !== focusedAtStart) return
+        focusPaneContent(chatPaneRef.current)
+      }
+      if (!result.ok) {
+        notify(result.error)
+        requestAnimationFrame(maybeRestoreFocus)
+        return
+      }
+      if (sessionIdRef.current === resumingFor) {
+        setStopInfo({
+          reason: result.value.runtime.stopReason,
+          detail: result.value.runtime.stopDetail,
+          terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
+          // Quality-gate fix (cycle 2, 2026-10-08): dropped here, unlike handleRecover/
+          // handleStartNewConversation's own identical setStopInfo calls -- the banner's
+          // "Still waiting on <tools>" description line went blank specifically after a Resume
+          // whose restart itself failed (still-pending tools genuinely exist on that snapshot).
+          pendingToolNames: result.value.runtime.pendingToolNames
+        })
+      }
       requestAnimationFrame(maybeRestoreFocus)
-      return
+    } finally {
+      setResumingId(id => (id === resumingFor ? null : id))
     }
-    if (sessionIdRef.current === resumingFor) {
-      setStopInfo({
-        reason: result.value.runtime.stopReason,
-        detail: result.value.runtime.stopDetail,
-        terminatedUnexpectedly: result.value.runtime.terminatedUnexpectedly,
-        // Quality-gate fix (cycle 2, 2026-10-08): dropped here, unlike handleRecover/
-        // handleStartNewConversation's own identical setStopInfo calls -- the banner's
-        // "Still waiting on <tools>" description line went blank specifically after a Resume
-        // whose restart itself failed (still-pending tools genuinely exist on that snapshot).
-        pendingToolNames: result.value.runtime.pendingToolNames
-      })
-    }
-    requestAnimationFrame(maybeRestoreFocus)
   }
 
   async function handleStartNewConversation() {

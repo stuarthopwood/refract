@@ -156,33 +156,40 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     resumingRef.current = true
     if (document.activeElement === resumeButtonRef.current) resumeFocusPendingRef.current = true
     setResuming(true)
-    const result = await resumeSession(session.id)
-    resumingRef.current = false
-    setResuming(false)
-    // Quality-gate fix (cycle 5, 2026-10-08): `sessions.resume` can return `ok: true` with a
-    // STILL-stopped snapshot when the restart itself failed (e.g. start-failed) --
-    // `resumeSession.ts`'s own doc comment. Previously only `!result.ok` counted as a failure
-    // here, so this case announced nothing: the row's "Resuming X…" status text just went
-    // blank, `canResume` flipped false, the button disappeared, and focus returned to the open
-    // button with no indication anything had gone wrong (WCAG 4.1.3, 3.3.1). The banner's own
-    // `role="alert"` title change already announces this from the pane; the row had no
-    // equivalent.
-    const restartFailed = result.ok && result.value.runtime.status === 'stopped'
-    if (!result.ok || restartFailed) {
-      // Quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): only clear the pending
-      // flag when the Session is STILL resumable after this call -- a restart failure (ok:true,
-      // still stopped, now e.g. stopReason:'start-failed') flips `canResume` to false exactly
-      // like a genuine success does, so the effect above still needs to run and move focus onto
-      // the open button once the Resume button disappears. Clearing it unconditionally here (as
-      // cycle 5 did, back when a restart failure was not yet counted as this same kind of
-      // failure) left focus stranded on `<body>` instead.
-      const stillEligible = stillEligibleAfterResume(result, !!session.archivedAt)
-      if (stillEligible) resumeFocusPendingRef.current = false
-      notify(
-        result.ok
-          ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
-          : result.error
-      )
+    // Issue #603 quality-gate follow-up (Low, availability): wraps the call in try/finally --
+    // an unhandled rejection from `resumeSession` (the preload bridge call itself, not an
+    // `{ ok: false }` result) used to leave `resumingRef`/`setResuming` stuck true forever,
+    // locking this row's Resume button for the rest of the session.
+    try {
+      const result = await resumeSession(session.id)
+      // Quality-gate fix (cycle 5, 2026-10-08): `sessions.resume` can return `ok: true` with a
+      // STILL-stopped snapshot when the restart itself failed (e.g. start-failed) --
+      // `resumeSession.ts`'s own doc comment. Previously only `!result.ok` counted as a failure
+      // here, so this case announced nothing: the row's "Resuming X…" status text just went
+      // blank, `canResume` flipped false, the button disappeared, and focus returned to the open
+      // button with no indication anything had gone wrong (WCAG 4.1.3, 3.3.1). The banner's own
+      // `role="alert"` title change already announces this from the pane; the row had no
+      // equivalent.
+      const restartFailed = result.ok && result.value.runtime.status === 'stopped'
+      if (!result.ok || restartFailed) {
+        // Quality-gate fix (cycle 7, 2026-10-08, a11y-auditor, Medium): only clear the pending
+        // flag when the Session is STILL resumable after this call -- a restart failure (ok:true,
+        // still stopped, now e.g. stopReason:'start-failed') flips `canResume` to false exactly
+        // like a genuine success does, so the effect above still needs to run and move focus onto
+        // the open button once the Resume button disappears. Clearing it unconditionally here (as
+        // cycle 5 did, back when a restart failure was not yet counted as this same kind of
+        // failure) left focus stranded on `<body>` instead.
+        const stillEligible = stillEligibleAfterResume(result, !!session.archivedAt)
+        if (stillEligible) resumeFocusPendingRef.current = false
+        notify(
+          result.ok
+            ? { code: 'invalid-argument', message: describeStopReason(result.value.runtime.stopReason, result.value.runtime.stopDetail) }
+            : result.error
+        )
+      }
+    } finally {
+      resumingRef.current = false
+      setResuming(false)
     }
   }
 

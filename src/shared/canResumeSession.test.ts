@@ -38,10 +38,19 @@ function makeResumeResult(status: SessionStatus, stopReason: SessionRuntimeView[
 // otherwise a restart failure (ok:true, still stopped) leaves focus stranded on `<body>` instead
 // of moving it to the open button once the Resume button disappears.
 describe('stillEligibleAfterResume', () => {
-  it('reports eligible (clear the pending flag) for a hard failure, regardless of archived', () => {
-    const result: Result<SessionSnapshot> = { ok: false, error: { code: 'prompt-failed', message: 'network blip' } };
-    expect(stillEligibleAfterResume(result, false)).toBe(true);
-    expect(stillEligibleAfterResume(result, true)).toBe(true);
+  // Issue #603 quality-gate follow-up (Medium, accessibility): flips this test's own old
+  // pinned rule -- prompt-failed means agent.start() already succeeded and only the turn send
+  // afterwards threw, so the Session already left 'stopped' and is no longer eligible, the
+  // same as a genuine success; must NOT clear the pending flag for THIS code. Every other hard
+  // failure never started anything, so the Session's own resumability is unchanged.
+  it('reports NOT eligible for prompt-failed, but eligible for every other hard failure, regardless of archived', () => {
+    const promptFailed: Result<SessionSnapshot> = { ok: false, error: { code: 'prompt-failed', message: 'network blip' } };
+    expect(stillEligibleAfterResume(promptFailed, false)).toBe(false);
+    expect(stillEligibleAfterResume(promptFailed, true)).toBe(false);
+
+    const otherHardFailure: Result<SessionSnapshot> = { ok: false, error: { code: 'invalid-argument', message: 'Session is not eligible to resume.' } };
+    expect(stillEligibleAfterResume(otherHardFailure, false)).toBe(true);
+    expect(stillEligibleAfterResume(otherHardFailure, true)).toBe(true);
   });
 
   it('reports NOT eligible (keep the pending flag) for a restart failure, so focus still moves to the open button', () => {
