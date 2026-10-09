@@ -19,6 +19,7 @@ import type {
   Settings,
   SplitLayout,
   SubagentSummary,
+  TranscriptDisplaySettings,
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SlashCommandDescriptor } from './frames';
@@ -339,6 +340,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
   SETTINGS_SET_SPLIT: 'settings.setSplit',
   SETTINGS_SET_WATERMARK_ENABLED: 'settings.setWatermarkEnabled',
+  SETTINGS_SET_TRANSCRIPT_DISPLAY: 'settings.setTranscriptDisplay',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -526,6 +528,15 @@ export interface RefractApi {
      * written value, the same race-safety pattern as `setApprovalMode`/`setReadoutVisibility`/
      * `setSplit`. Pushes `settings:changed`, no new event. */
     setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
+    /** Issue #457, quality-gate remediation (HIGH): takes ONE field at a time (not the whole
+     * `TranscriptDisplaySettings` object -- a quick second toggle sent with the renderer's
+     * stale pre-write value of the first field could otherwise revert it), merged in main
+     * against the persisted row, the same per-field pattern `setReadoutVisibility` already
+     * uses. Returns this call's own written value, the same race-safety pattern as every other
+     * setter here. Pushes `settings:changed`, no new event. Hiding is a renderer-side view
+     * filter only -- hidden items stay in the persisted Conversation.
+     */
+    setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<Result<Settings>>;
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI

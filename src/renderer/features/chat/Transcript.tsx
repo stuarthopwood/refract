@@ -10,15 +10,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from 'cn'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
-import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptItem } from '../../../shared/model'
+import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
+import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
 import { groupToolItems, isToolGroup, type GroupedTranscriptItem } from './groupToolItems'
-import { ToolGroupRow, SubagentRow } from './ToolRow'
+import { ToolGroupRow, SubagentRow, toolStatusLabel } from './ToolRow'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
@@ -303,6 +303,69 @@ function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
   return BOOKKEEPING_KINDS.has(row.kind)
 }
 
+// Issue #457: two independent Settings-driven view filters. Neither toggle ever touches main's
+// `HIDDEN_TOOLS` path, which drops an item before it ever becomes a transcript row at all -- these
+// act as a pure *view* filter: turning one back on restores every hidden row immediately, including
+// past turns, with no reload, since the underlying `TranscriptItem[]` in the transcript store is
+// never touched. Filtering the array handed to `.map()` (the render loop below) rather than hiding
+// rows with CSS is what keeps a fully-hidden row out of the accessibility tree and tab order
+// entirely, and is also what makes a run of now-hidden rows leave no empty gap or stray margin:
+// `isFirstRow`/`previousRow` (the render loop's own gap-class bookkeeping) only ever see the rows
+// that are actually rendered with real content, so a hidden (or sr-only -- see below) row can never
+// become the "previous" row a later one measures its own margin against.
+//
+// "Never hide what needs the user or reports a problem" (issue #457): an answered/pending `ask`
+// question and a `request` card both survive untouched below, since neither is a `ToolGroup` or a
+// `subagent` row to begin with (`groupToolItems` never merges an `ask` call, and `request`/
+// `notice`/`advisory`/`agent-message` rows are never part of either filtered kind). A `ToolGroup`
+// or `subagent` row that reports a problem (an `error` or `interrupted` tool call; an `error` or
+// `exited` subagent) stays `'visible'` even with "Show tool calls" off, matching
+// `ChatDisplaySection.tsx`'s own copy ("failed or interrupted calls always show").
+//
+// Quality-gate fix (code review/a11y, Medium, round 2): EVERY hidden `thinking` item -- not only a
+// non-streaming one -- is stripped from the array before `groupToolItems` runs (the turn-map render
+// loop below builds `itemsForGrouping` for exactly this). A thinking part's own `streaming` flag is
+// the WHOLE assistant message's flag (`src/main/omp/transcript.ts`'s `buildAssistantItems`), so it
+// can still read `true` while that same message's later tool calls are already streaming in as
+// `running` -- a streaming thinking item is NOT always the newest item, so keeping it in the
+// grouping input (the round-1 design) could leave it sitting between two same-tool runs, merging
+// them the instant the message ends and losing the later run's own expanded/focus state. `thinking`
+// is therefore a plain `'visible'`/`'hidden'` toggle below; its own in-progress signal is announced
+// once per assistant message (the whole message shares one `streaming` flag -- see `announceThinking`
+// below), outside the grouped rows entirely (see the render loop's standalone sr-only span).
+//
+// Quality-gate fix (a11y, Medium, round 1): a `ToolGroup`/`subagent` row that is hidden by "Show
+// tool calls" off but still ACTIVE right now (a `running` call) returns `'sr-only'` as a BASE
+// candidate instead of `'hidden'` -- the render loop then promotes only the LAST such candidate in
+// the turn (round 3: not simply the turn's last row by position -- a finished, hidden row can sit
+// after the real running one, e.g. parallel subagents or a quick bookkeeping call that outraces a
+// still-running sibling) back to `'sr-only'`, downgrading every earlier candidate to `'hidden'` (a
+// group id is keyed off its first call, so a run of N sequential calls with tool calls hidden would
+// otherwise unmount-and-remount a fresh `'sr-only'` row between every pair of calls, each one a new
+// log addition and its own announcement -- one announcement per step, not per turn, if every
+// candidate were promoted instead of only the last one), and only while that row's own turn is the
+// one actually running. A visible `'sr-only'` row keeps its `MessageScrollerItem` (same key, same
+// position) but swaps its content for a one-line sr-only status span naming what is running -- the
+// transcript's `role="log"` gets one polite addition marking that a turn is in progress, instead of
+// a user whose screen reader has no visible `TurnTotalLine` text (it is `aria-hidden` while running)
+// losing every sign of life. A row that finishes without needing attention naturally falls back to
+// `'hidden'`.
+type RowVisibility = 'visible' | 'hidden' | 'sr-only'
+
+function rowVisibility(row: GroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
+  if (row.kind === 'thinking') return transcriptDisplay.thinking ? 'visible' : 'hidden'
+  if (transcriptDisplay.toolCalls) return 'visible'
+  if (isToolGroup(row)) {
+    if (row.items.some((item) => item.status === 'error' || item.status === 'interrupted')) return 'visible'
+    return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
+  }
+  if (row.kind === 'subagent') {
+    if (row.status === 'error' || row.status === 'exited') return 'visible'
+    return row.status === 'running' ? 'sr-only' : 'hidden'
+  }
+  return 'visible'
+}
+
 // `MessageScrollerContent` no longer sets a uniform `gap` (see message-scroller.tsx): every row
 // gets its own top margin instead, `mt-6` for the turns/real-message rhythm and `mt-1` only
 // between two consecutive bookkeeping rows, computed once per render by `renderTurn` below.
@@ -340,6 +403,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // clobbered by the other pane's.
   const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
   const sessions = useSessionsStore((state) => state.sessions)
+  const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
   const items = transcript.items
   const receivedAt = transcript.receivedAt
   // Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
@@ -894,10 +958,83 @@ export function Transcript({ sessionId }: { sessionId: string }) {
 
                 let previousRow: GroupedTranscriptItem | undefined
 
+                // Issue #457 quality-gate fix (round 2): every hidden thinking item is stripped
+                // before grouping (not only a non-streaming one -- see `rowVisibility`'s own comment
+                // for why a streaming one isn't safe to keep here either).
+                const itemsForGrouping = transcriptDisplay.thinking
+                  ? turn.items
+                  : turn.items.filter((item) => item.kind !== 'thinking')
+
+                // Quality-gate fix (round 2, corrected round 3): only one row per turn may ever
+                // surface as `'sr-only'` -- a sequential run of same-tool calls would otherwise
+                // unmount and remount a fresh sr-only row (a fresh id, since `groupToolItems` keys a
+                // group off its first call) between every pair of calls, each one a new log addition
+                // and its own announcement, one per step instead of one per turn. Round 2 picked the
+                // row at the turn's own last ARRAY position, which is wrong whenever a finished,
+                // already-hidden row sits after the real running one (parallel subagents; a quick
+                // bookkeeping call that resolves while a sibling is still running) -- that finished
+                // row isn't itself an `'sr-only'` candidate, so it was never promoted, and the real
+                // running candidate earlier in the array got downgraded to `'hidden'` instead,
+                // leaving no in-progress signal at all. Round 3 instead finds the LAST pair whose
+                // BASE visibility is `'sr-only'` and promotes only that one; every earlier `'sr-only'`
+                // candidate in the same turn downgrades to `'hidden'`. `rowVisibility` is still
+                // called exactly once per row (the `.map()` below), not again later in the render.
+                const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
+                const basePairs = groupToolItems(itemsForGrouping).map(
+                  (row): [GroupedTranscriptItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
+                )
+                const lastSrOnlyIndex = isActiveTurn ? basePairs.findLastIndex(([, visibility]) => visibility === 'sr-only') : -1
+                const rows = basePairs
+                  .map(([row, visibility], pairIndex): [GroupedTranscriptItem, RowVisibility] =>
+                    visibility === 'sr-only' && pairIndex !== lastSrOnlyIndex ? [row, 'hidden'] : [row, visibility]
+                  )
+                  .filter(([, visibility]) => visibility !== 'hidden')
+
+                // Quality-gate fix (a11y, round 1): a turn in progress with thinking hidden is
+                // otherwise a silent gap for a screen reader (the ticking `TurnTotalLine` below is
+                // `aria-hidden` while running). A thinking item's own `streaming` flag covers exactly
+                // this window (round 2: `finalizeLiveTranscript` always clears it on a stop or crash,
+                // so this can never get stuck on), announced once per assistant message, outside the
+                // grouped rows. Round 3 (optional): skips this span when `rows` already promoted a
+                // `'sr-only'` tool-group/subagent row for the same turn -- the same message's
+                // `streaming` flag can cover both at once (its tool calls can already be `running`
+                // while it still reads `streaming: true`), and the promoted row is the more specific
+                // of the two signals, so one announcement is enough.
+                const announceThinking =
+                  !transcriptDisplay.thinking &&
+                  turn.items.some((item) => item.kind === 'thinking' && item.streaming) &&
+                  !rows.some(([, visibility]) => visibility === 'sr-only')
+
                 return (
                   <React.Fragment key={turn.userItem?.id ?? `turn-${turnIndex}`}>
                     {showTimeGapDivider && turn.userItem != null && <TimeGapDivider at={turn.userItem.at} />}
-                    {groupToolItems(turn.items).map((row) => {
+                    {rows.map(([row, visibility]) => {
+                      if (visibility === 'sr-only') {
+                        // Quality-gate fix (code review/a11y, round 2): no `marginClass`, and
+                        // `[content-visibility:visible] [contain-intrinsic-size:none]` overrides the
+                        // base `MessageScrollerItem` class's `content-visibility:auto`/10rem
+                        // placeholder reservation, so this sr-only row never shows as a blank gap and
+                        // never reserves scroll height; `isFirstRow`/`previousRow` are deliberately
+                        // left untouched so it can never affect a later row's own margin either.
+                        return (
+                          <MessageScrollerItem
+                            key={row.id}
+                            messageId={row.id}
+                            className="[content-visibility:visible] [contain-intrinsic-size:none]"
+                          >
+                            {/* Quality-gate fix (round 3): no third branch -- `rowVisibility` only
+                                ever returns `'sr-only'` for a `ToolGroup` or a `'subagent'` row, so a
+                                row reaching here is always one of the two; a cast documents that
+                                instead of a dead-code fallback the type checker can't see is
+                                unreachable. */}
+                            <span className="sr-only">
+                              {isToolGroup(row)
+                                ? `${toolStatusLabel('running')} ${row.tool}`
+                                : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
+                            </span>
+                          </MessageScrollerItem>
+                        )
+                      }
                       const marginClass = isFirstRow
                         ? undefined
                         : previousRow && isBookkeepingRow(previousRow) && isBookkeepingRow(row)
@@ -917,6 +1054,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                         </MessageScrollerItem>
                       )
                     })}
+                    {announceThinking && <span className="sr-only">Thinking</span>}
                     <TurnTotalLine
                       turn={turn}
                       isLastTurn={turnIndex === visibleTurns.length - 1}
