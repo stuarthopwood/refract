@@ -190,9 +190,18 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     } catch (err) {
       // Issue #603 quality-gate follow-up (Low, a11y): the try/finally above releases the lock
       // on an unhandled rejection (the bridge call itself throwing, not an `{ ok: false }`
-      // result), but previously announced nothing and left `resumeFocusPendingRef` armed for a
-      // call that will now never complete the normal success/failure branch above.
-      resumeFocusPendingRef.current = false
+      // result), but previously announced nothing. Round 2 (Low, a11y): clearing
+      // `resumeFocusPendingRef` unconditionally here (as round 1 did) was wrong whenever the
+      // rejection landed AFTER the restart actually succeeded server-side (the bridge call
+      // itself threw on the way back, not the restart) -- `canResume` would then flip false
+      // for this Session exactly like a normal success, and the effect above needs the flag
+      // still armed to rescue focus once the button unmounts. Reads the freshest store state
+      // (never the `session` prop this closure captured, now possibly stale) and only clears
+      // when the Session is STILL resumable -- otherwise leaves it armed.
+      const latest = useSessionsStore.getState().sessions.find((s) => s.id === session.id)
+      if (latest && canResumeSession(latest.status, latest.stopReason, latest.terminatedUnexpectedly, !!latest.archivedAt)) {
+        resumeFocusPendingRef.current = false
+      }
       notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) })
     } finally {
       resumingRef.current = false
@@ -263,17 +272,29 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
     onOpenInSplit: () => openInSplit(session.id),
     onCopyPath: () => void copyPath(),
     onReveal: () => void reveal(),
-    // Issue #603 quality-gate follow-up (Low, a11y): archive can now be refused (a resume in
-    // progress -- issue #603 item 1), so focus must only move toward the list on SUCCESS.
-    // `listFocusRequestedRef` is no longer set synchronously here: Radix's own close-autofocus
-    // (`handleMenuCloseAutoFocus' below) falls through to its generic trigger/open-button
-    // fallback instead, keeping focus near this row by default -- correct for a refusal, since
-    // the row never goes anywhere. Only an actual success moves focus toward the list.
+    // Issue #603 quality-gate follow-up (Low then Medium, a11y): archive can now be refused (a
+    // resume in progress -- issue #603 item 1), so focus must only move toward the list on
+    // SUCCESS. `listFocusRequestedRef` is no longer set synchronously here: Radix's own
+    // close-autofocus (`handleMenuCloseAutoFocus' below) falls through to its generic
+    // trigger/open-button fallback instead, keeping focus near this row by default -- correct
+    // for a refusal, since the row never goes anywhere.
+    //
+    // Round 2 (Medium): `archive()` awaits main's own `shutdown()`, which can take seconds
+    // (it waits out any start already running) -- moving focus unconditionally on success
+    // could yank it away from wherever the user had since moved it (for example into the chat
+    // textarea). Captures this row's own `<li>` before the call and only moves focus
+    // afterward when it is stranded (body/disconnected/none) or still somewhere inside THIS
+    // row -- never when the user has deliberately focused something else meanwhile.
     onArchive: () => {
       captureFocusFallback()
-      void archive(session.id).then((ok) => {
-        if (ok) focusListContainer()
-      })
+      const row = rowRef.current
+      void archive(session.id)
+        .then((ok) => {
+          if (!ok) return
+          const active = document.activeElement
+          if (!active || active === document.body || !active.isConnected || row?.contains(active)) focusListContainer()
+        })
+        .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
     },
     onRestore: () => {
       listFocusRequestedRef.current = true

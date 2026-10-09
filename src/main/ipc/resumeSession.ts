@@ -18,8 +18,11 @@ import { notFound } from './util';
 // Issue #603 quality-gate follow-up: the shared 'busy' code (renamed from
 // 'already-resuming') now also covers SESSIONS_ARCHIVE/SESSIONS_DELETE holding the same
 // lock, so its message stays neutral rather than always naming a resume specifically.
+// Exported so sessions.ts's own ARCHIVE/DELETE refusals reuse the identical string instead
+// of a second hand-typed literal that could drift from this one.
+export const BUSY_MESSAGE = 'Another action is already in progress for this Session.';
 const RESUME_REFUSAL_MESSAGE: Record<ResumeRefusalCode, string> = {
-  busy: 'Another action is already in progress for this Session.',
+  busy: BUSY_MESSAGE,
   'not-stopped': 'Session is not stopped.',
   'not-eligible': 'Session is not eligible to resume.',
 };
@@ -122,7 +125,10 @@ export async function resumeSessionCore(resumingIds: Set<string>, id: string, de
     // the end state #603 itself describes.
     const beforeSend = deps.getSession(id);
     if (!beforeSend || beforeSend.archivedAt) {
-      await agent.shutdown?.();
+      // Issue #603 quality-gate follow-up (Low): a throw from `shutdown()` itself must never
+      // turn this intended refusal into an unrelated rejection -- the lock is released by the
+      // outer `finally` either way, so swallowing it here only affects which result comes back.
+      await agent.shutdown?.().catch(() => undefined);
       return { ok: false, error: { code: 'invalid-argument', message: RESUME_REFUSAL_MESSAGE['not-eligible'] } };
     }
     try {

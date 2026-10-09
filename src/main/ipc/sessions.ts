@@ -20,7 +20,7 @@ import { detectUnexpectedTermination } from '../omp/terminationDetection';
 import type { SessionManager } from '../SessionManager';
 import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util';
 import { attachSnapshotCore } from './attachSnapshot';
-import { resumeSessionCore } from './resumeSession';
+import { resumeSessionCore, BUSY_MESSAGE } from './resumeSession';
 import type { SessionAgent } from '../omp/SessionAgent';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
@@ -182,7 +182,7 @@ export function registerSessions(manager: SessionManager): void {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_ARCHIVE} expects a string id`);
     if (!manager.registry.getSession(id)) return notFound(`Session not found: ${id}`);
     if (resumingIds.has(id)) {
-      return { ok: false, error: { code: 'invalid-argument', message: 'Another action is already in progress for this Session.' } };
+      return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
     }
     resumingIds.add(id);
     try {
@@ -243,7 +243,7 @@ export function registerSessions(manager: SessionManager): void {
     // which used to be able to start a new omp process in a worktree this call is about to
     // remove.
     if (resumingIds.has(id)) {
-      return { ok: false, error: { code: 'invalid-argument', message: 'Another action is already in progress for this Session.' } };
+      return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
     }
     resumingIds.add(id);
     try {
