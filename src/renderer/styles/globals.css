@@ -569,90 +569,63 @@
   }
 }
 
-/* Agent-working spinner (issue #612, replaces the brand spinner `BrandSpinner`/spec 011 T002):
- * Stuart rejected `BrandSpinner`'s opacity-only per-arm cascade as not visibly spinning (its big
- * shapes were circles, and the colour cascade alone was too subtle). This is a from-scratch
- * recreation of Stuart's SVGator export -- `AgentSpinner.tsx`'s own file-level comment records
- * every deviation from the export in detail (no SVGator runtime, the visible orbiting cue added
- * on top of the export's own motion, the gradient-radius keyframe approximated by scaling a
- * second glow layer, the square-cropped coordinate frame, size-gated Full/Simplified variants).
+/* Agent-working spinner (issue #612, replaces the brand spinner `BrandSpinner`/spec 011 T002).
+ * `AgentSpinner.tsx`'s own file-level comment records the full history across PR #616's three
+ * review rounds; by this (third) round, every ring/glow/orbit layer from the first two rounds is
+ * gone outright (clean cutover) -- the split/rotate/merge triangle of discs is the entire mark,
+ * and its own rotation is the one visible-spin cue.
  *
- * Palette: CSS custom properties, two fixed values (never theme-derived, same reasoning as
- * `BrandSpinner`'s research.md decision 7 -- the mark's identity is its own specific palette).
- * `'brand'` (default, `AgentSpinner.tsx`'s own `palette` prop default): Refract's own mark
- * colours, reused verbatim from the removed `BrandSpinner` (`#864DD6` core already proven >=3:1
- * against `--sidebar` in both theme presets by that component's own quality-gate remediation --
- * reused here unchanged, not re-derived). `'export'`: the SVGator source's own five colours,
- * selected via `data-palette="export"` -- the documented one-line swap. */
+ * Palette: one CSS custom property per preset, never theme-derived (same reasoning
+ * `BrandSpinner`'s research.md decision 7 gave -- the mark's identity is its specific colour).
+ * `'brand'` (default, `AgentSpinner.tsx`'s own `palette` prop default): Refract's own mark colour,
+ * reused verbatim from the removed `BrandSpinner` (`#864DD6`, already proven >=3:1 against
+ * `--sidebar` in both theme presets by that component's own quality-gate remediation -- reused
+ * here unchanged, not re-derived). `'export'`: the SVGator source's own violet. `'blue'`: added
+ * after Stuart's live review of PR #616 -- the electric blue from his own reference screenshot,
+ * selected via `data-palette="blue"`. */
 .agent-spinner {
-  --agent-spinner-ring: #199D95;
-  --agent-spinner-ring-2: #ECA231;
   --agent-spinner-core: #864DD6;
-  --agent-spinner-glow: #A877E0;
-  --agent-spinner-orbit: #F8A740;
+  /* The one named loop-duration constant (Stuart: "slow it down by about 40%", 6000ms ->
+   * 10000ms) -- change this one value for a different speed; keep `AgentSpinner.tsx`'s
+   * `CYCLE_MS` constant in sync (same value, as milliseconds) since the phase-locking
+   * `animation-delay` each instance computes is a modulo of that constant. */
+  --agent-spinner-cycle: 10s;
 }
 .agent-spinner[data-palette='export'] {
-  --agent-spinner-ring: #0054FF;
-  --agent-spinner-ring-2: #FC0137;
   --agent-spinner-core: #D347FF;
-  --agent-spinner-glow: #FA01FC;
-  --agent-spinner-orbit: #FFFFFF;
 }
-/* Added after Stuart's live review of PR #616: the electric blue from his own reference
- * screenshot of the target core look (three glowing blue discs on black), sampled as
- * `#1a6bff`/`#3a8dff`. Not the default -- Stuart has not said which of the three he wants yet;
- * all three are shown side by side in the standalone preview file. */
 .agent-spinner[data-palette='blue'] {
-  --agent-spinner-ring: #1A6BFF;
-  --agent-spinner-ring-2: #3A8DFF;
   --agent-spinner-core: #2A7FFF;
-  --agent-spinner-glow: #3A8DFF;
-  --agent-spinner-orbit: #8FC4FF;
 }
 
-/* The visible orbiting cue (`AgentSpinner.tsx` deviation 1): one full, CONSTANT-speed turn every
- * loop -- deliberately `linear`, not the `cubic-bezier(.42,0,.58,1)` easing every other animation
- * below uses, because constant angular velocity reads as mechanical "spinning" far more clearly
- * than an eased rotation would. 0deg and 360deg are the same visual position, so this keyframe
- * is already a clean `prefers-reduced-motion` rest frame with no separate base-value override
- * needed (unlike the opacity/shape/filter animations below, which do need one). Shared by both
- * the Full and Simplified variants (`AgentSpinner.tsx`'s `.agent-spinner-rotator`). */
-@keyframes agent-spinner-orbit {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-.agent-spinner-rotator {
-  transform-origin: 0 0;
-  animation: agent-spinner-orbit 3s linear infinite;
-  animation-delay: var(--agent-spinner-delay, 0ms);
-}
-
-/* The split/rotate/merge core (design revision, 2026-10-09, after Stuart's live review of PR
- * #616 -- see `AgentSpinner.tsx`'s own file-level comment). Two independently-timed `transform`
- * animations share one 6000ms loop and one `animation-delay` clock:
+/* The split/rotate/merge core. Two independently-timed `transform` animations share one loop
+ * (`var(--agent-spinner-cycle)`, 10s) and one `animation-delay` clock:
  *
  * `.agent-spinner-core-disc-group` (`agent-spinner-core-split`, one per disc, all three
  * identical) drives each disc's own distance from centre (`translateY`, inside its slot's static
- * rotation -- see `AgentSpinner.tsx`'s `CORE_SLOT_ANGLES_DEG`) and size (`scale`), named stops:
+ * rotation -- see `AgentSpinner.tsx`'s `CORE_SLOT_ANGLES_DEG`) and size (`scale`), named stops
+ * (percentages scale with whatever `--agent-spinner-cycle` is set to, so these do not need
+ * re-deriving if the loop speed changes again):
  *   0%, 8%   -- REST: merged (distance 0, scale 1) -- three coincident discs read as one solid
  *               circle. Also the `prefers-reduced-motion` frame (0% and 100% both land here).
- *   8% -> 12% -- grows slightly (scale up to 1.12), a brief anticipatory "wind-up" before the
+ *   8% -> 12% -- grows slightly (scale up to 1.06), a brief anticipatory "wind-up" before the
  *               burst outward (spring timing-function set at 8%).
- *   12% -> 17% -- bursts outward PAST the final split distance/size (overshoot: distance 36,
- *               scale down to 0.5) -- the "spring-out" Stuart asked for.
- *   17% -> 22% -- settles back to the final split state (distance 30, scale 0.577 approx
- *               1/sqrt(3), so the three discs' combined area approximates the merged circle's).
+ *   12% -> 17% -- bursts outward PAST the final split distance/size (overshoot: distance 68,
+ *               scale down to 0.36) -- the "spring-out" Stuart asked for.
+ *   17% -> 22% -- settles back to the final split state (distance 56, scale 0.41818... = 23/55,
+ *               so the rendered split disc radius is 23 units against the 55-unit merged base --
+ *               see `AgentSpinner.tsx`'s own sizing comment for the gap/legibility maths).
  *   22% -> 80% -- HELD at the split state while the rotator (below) spins the triangle.
  *   80% -> 86% -- still split, unchanged (rotation has returned to its start angle by 80%, before
  *               the merge begins).
- *   86% -> 91% -- anticipation: discs pull slightly further outward (distance 36, scale down to
- *               0.52) before snapping together.
- *   91% -> 94% -- snaps together with a small overshoot PAST the merged state (distance 3, scale
- *               up to 1.08) -- the "squash/overshoot" on merge Stuart asked for.
+ *   86% -> 91% -- anticipation: discs pull slightly further outward (distance 68, scale down to
+ *               0.38) before snapping together.
+ *   91% -> 94% -- snaps together with a small overshoot PAST the merged state (distance 5, scale
+ *               up to 1.05) -- the "squash/overshoot" on merge Stuart asked for.
  *   94% -> 100% -- settles to the merged rest state, looping cleanly back to 0%.
  *
- * `.agent-spinner-core-rotator` (`agent-spinner-core-rotate`, the group wrapping all three
- * slots) drives the whole triangle's orientation, named stops:
+ * `.agent-spinner-core-rotator` (the group wrapping all three slots) drives the whole triangle's
+ * orientation, named stops:
  *   0% -> 22%  -- held at 0deg (the triangle has not formed yet, or has just formed).
  *   22% -> 50%  -- rotates clockwise a full 720deg (two turns), ease-in-out (set at 22%) so it
  *               reads as building then losing momentum into the stop at 50%.
@@ -662,32 +635,32 @@
  *   80% -> 100% -- held at 0deg through the merge and the rest hold.
  *
  * Both animated properties are `transform` only (no `d`, no `filter`), so any number of
- * concurrently-mounted instances stay cheap; the Full and Simplified variants share this CSS
- * exactly (`AgentSpinner.tsx`'s `AgentSpinnerCore`), with only the halo's blur filter differing
- * (Full only, see the halo rule below). */
+ * concurrently-mounted instances stay cheap; every size on the ladder shares this CSS exactly
+ * (`AgentSpinner.tsx`'s `AgentSpinnerCore`), with only the halo's blur filter differing
+ * (`blurred`, dropped below `LEGIBILITY_FLOOR_PX`). */
 @keyframes agent-spinner-core-split {
   0%, 8% {
     transform: translateY(0) scale(1);
     animation-timing-function: cubic-bezier(.34, 1.56, .64, 1);
   }
   12% {
-    transform: translateY(0) scale(1.12);
+    transform: translateY(0) scale(1.06);
     animation-timing-function: ease-in;
   }
   17% {
-    transform: translateY(-36px) scale(0.5);
+    transform: translateY(-68px) scale(0.36);
     animation-timing-function: cubic-bezier(.34, 1.56, .64, 1);
   }
   22%, 80% {
-    transform: translateY(-30px) scale(0.577);
+    transform: translateY(-56px) scale(0.41818);
     animation-timing-function: ease-in-out;
   }
   86% {
-    transform: translateY(-36px) scale(0.52);
+    transform: translateY(-68px) scale(0.38);
     animation-timing-function: cubic-bezier(.34, 1.56, .64, 1);
   }
   91% {
-    transform: translateY(3px) scale(1.08);
+    transform: translateY(5px) scale(1.05);
     animation-timing-function: ease-out;
   }
   94%, 100% {
@@ -718,78 +691,32 @@
 .agent-spinner-core-rotator {
   transform-origin: 0 0;
   transform: rotate(0deg);
-  animation: agent-spinner-core-rotate 6s linear infinite;
+  animation: agent-spinner-core-rotate var(--agent-spinner-cycle) linear infinite;
   animation-delay: var(--agent-spinner-delay, 0ms);
 }
 .agent-spinner-core-disc-group {
   transform-origin: 0 0;
   transform: translateY(0) scale(1);
-  animation: agent-spinner-core-split 6s linear infinite;
+  animation: agent-spinner-core-split var(--agent-spinner-cycle) linear infinite;
   animation-delay: var(--agent-spinner-delay, 0ms);
 }
 .agent-spinner-core-halo {
   /* Soft radial-gradient glow behind each solid disc (Stuart's reference screenshot: a bright
-   * centre fading into a soft halo). A deliberate exception to the Simplified variant's
-   * otherwise gradient-free rule -- see `AgentSpinnerCore`'s own comment in `AgentSpinner.tsx`.
-   * Moves and scales together with its disc since both are children of the same
-   * `.agent-spinner-core-disc-group`; never animated on its own. */
+   * centre fading into a soft halo). Moves and scales together with its disc since both are
+   * children of the same `.agent-spinner-core-disc-group`; never animated on its own. */
   pointer-events: none;
 }
 
-/* Glow ring 1 (Full variant only): a breathing opacity pulse on the gradient/blur/mask-ed ring
- * group. Glow ring 2 approximates the export's own animated gradient-radius keyframe -- CSS
- * cannot animate an SVG radial gradient's `r` attribute without JavaScript -- by scaling a
- * second, larger glow layer instead (`AgentSpinner.tsx` deviation 3); both variants are `g`
- * wrapper opacity/transform only, never per-circle, so forced-colors (below) can neutralise each
- * group with one rule. */
-@keyframes agent-spinner-glow-pulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.7; }
-}
-.agent-spinner-glow {
-  opacity: 0.35;
-  animation: agent-spinner-glow-pulse 3s cubic-bezier(.42, 0, .58, 1) infinite;
-  animation-delay: var(--agent-spinner-delay, 0ms);
-}
-@keyframes agent-spinner-glow-2-pulse {
-  0%, 100% { transform: scale(1); opacity: 0.2; }
-  50% { transform: scale(1.3); opacity: 0; }
-}
-.agent-spinner-glow-2 {
-  transform-origin: 0 0;
-  opacity: 0.2;
-  animation: agent-spinner-glow-2-pulse 3s cubic-bezier(.42, 0, .58, 1) infinite;
-  animation-delay: var(--agent-spinner-delay, 0ms);
-}
-
 /* Agent spinner under Windows forced-colors mode (issue #612 step 2g, mirroring `BrandSpinner`'s
- * own precedent): the Full variant's gradient/blur/mask/`mix-blend-mode` glow ring becomes a
- * plain system-colour ring (its second, redundant glow layer is hidden outright rather than
- * drawing two rings); the orbiting cue switches to `Highlight`. The split/rotate/merge core
- * (design revision above) collapses to a single flat `CanvasText` disc with no halo and no
- * motion: its gradient halo is hidden, the rotator and split animations are both frozen, and two
- * of the three slots are hidden outright, leaving one static disc -- "a simple system-colour
- * ring with an orbiting dot, no gradients" (the Simplified variant's `.agent-spinner-ring` was
- * already a flat, unanimated shape). Plain presentation attributes (SVG `stroke`/`fill`), the
- * lowest-priority CSS origin, so this plain author-stylesheet rule already overrides them
+ * own precedent, narrowed in PR #616's third review round now that there is no separate ring/
+ * orbit layer to treat): collapses to a single flat `CanvasText` disc with no halo and no
+ * motion -- its gradient halo is hidden, the rotator and split animations are both frozen, and
+ * two of the three slots are hidden outright, leaving one static disc. No orbiting dot either
+ * (removed along with the rest of the orbit layer). Plain presentation attributes (SVG `fill`),
+ * the lowest-priority CSS origin, so this plain author-stylesheet rule already overrides them
  * unconditionally -- no `!important` needed, matching `BrandSpinner`'s own quality-gate-corrected
  * reasoning. */
 @media (forced-colors: active) {
-  .agent-spinner-glow-2 {
-    display: none;
-  }
-  .agent-spinner-glow {
-    opacity: 1;
-    animation: none;
-    mix-blend-mode: normal;
-    filter: none;
-    mask: none;
-  }
-  .agent-spinner-glow circle,
-  .agent-spinner-ring {
-    stroke: CanvasText;
-    opacity: 1;
-  }
   .agent-spinner-core-halo {
     display: none;
   }
@@ -803,10 +730,6 @@
   }
   .agent-spinner-core-disc {
     fill: CanvasText;
-  }
-  .agent-spinner-rotator circle {
-    stroke: Highlight;
-    fill: Highlight;
   }
 }
 
