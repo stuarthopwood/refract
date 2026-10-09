@@ -331,20 +331,25 @@ function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
 // grouping input (the round-1 design) could leave it sitting between two same-tool runs, merging
 // them the instant the message ends and losing the later run's own expanded/focus state. `thinking`
 // is therefore a plain `'visible'`/`'hidden'` toggle below; its own in-progress signal is announced
-// once per turn, outside the grouped rows entirely (see the render loop's standalone sr-only span).
+// once per assistant message (the whole message shares one `streaming` flag -- see `announceThinking`
+// below), outside the grouped rows entirely (see the render loop's standalone sr-only span).
 //
 // Quality-gate fix (a11y, Medium, round 1): a `ToolGroup`/`subagent` row that is hidden by "Show
 // tool calls" off but still ACTIVE right now (a `running` call) returns `'sr-only'` as a BASE
-// candidate instead of `'hidden'` -- the render loop then keeps only the turn's actual LAST row as
-// `'sr-only'` (round 2: a group id is keyed off its first call, so a run of N sequential calls with
-// tool calls hidden would otherwise unmount-and-remount a fresh `'sr-only'` row, and get announced
-// as a fresh log addition, between every pair of calls -- one 'Running' per call, not per turn), and
-// only while that row's own turn is the one actually running. A visible `'sr-only'` row keeps its
-// `MessageScrollerItem` (same key, same position) but swaps its content for a one-line sr-only
-// status span naming what is running -- the transcript's `role="log"` gets one polite addition
-// marking that a turn is in progress, instead of a user whose screen reader has no visible
-// `TurnTotalLine` text (it is `aria-hidden` while running) losing every sign of life. A row that
-// finishes without needing attention (the call completes) naturally falls back to `'hidden'`.
+// candidate instead of `'hidden'` -- the render loop then promotes only the LAST such candidate in
+// the turn (round 3: not simply the turn's last row by position -- a finished, hidden row can sit
+// after the real running one, e.g. parallel subagents or a quick bookkeeping call that outraces a
+// still-running sibling) back to `'sr-only'`, downgrading every earlier candidate to `'hidden'` (a
+// group id is keyed off its first call, so a run of N sequential calls with tool calls hidden would
+// otherwise unmount-and-remount a fresh `'sr-only'` row between every pair of calls, each one a new
+// log addition and its own announcement -- one announcement per step, not per turn, if every
+// candidate were promoted instead of only the last one), and only while that row's own turn is the
+// one actually running. A visible `'sr-only'` row keeps its `MessageScrollerItem` (same key, same
+// position) but swaps its content for a one-line sr-only status span naming what is running -- the
+// transcript's `role="log"` gets one polite addition marking that a turn is in progress, instead of
+// a user whose screen reader has no visible `TurnTotalLine` text (it is `aria-hidden` while running)
+// losing every sign of life. A row that finishes without needing attention naturally falls back to
+// `'hidden'`.
 type RowVisibility = 'visible' | 'hidden' | 'sr-only'
 
 function rowVisibility(row: GroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
@@ -960,30 +965,45 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                   ? turn.items
                   : turn.items.filter((item) => item.kind !== 'thinking')
 
-                // Quality-gate fix (round 2): only the turn's own LAST row may actually surface as
-                // `'sr-only'` -- a sequential run of same-tool calls would otherwise unmount and
-                // remount a fresh sr-only row (a fresh id, since `groupToolItems` keys a group off
-                // its first call) between every pair of calls, each one a new log addition and a
-                // fresh "Running" announcement. Restricting to the last row, and only while this is
-                // the actually-running turn, gives exactly one in-progress signal per turn instead.
-                // `rowVisibility` is called exactly once per row here (round 2 perf fix), not again
-                // later in the render below.
+                // Quality-gate fix (round 2, corrected round 3): only one row per turn may ever
+                // surface as `'sr-only'` -- a sequential run of same-tool calls would otherwise
+                // unmount and remount a fresh sr-only row (a fresh id, since `groupToolItems` keys a
+                // group off its first call) between every pair of calls, each one a new log addition
+                // and its own announcement, one per step instead of one per turn. Round 2 picked the
+                // row at the turn's own last ARRAY position, which is wrong whenever a finished,
+                // already-hidden row sits after the real running one (parallel subagents; a quick
+                // bookkeeping call that resolves while a sibling is still running) -- that finished
+                // row isn't itself an `'sr-only'` candidate, so it was never promoted, and the real
+                // running candidate earlier in the array got downgraded to `'hidden'` instead,
+                // leaving no in-progress signal at all. Round 3 instead finds the LAST pair whose
+                // BASE visibility is `'sr-only'` and promotes only that one; every earlier `'sr-only'`
+                // candidate in the same turn downgrades to `'hidden'`. `rowVisibility` is still
+                // called exactly once per row (the `.map()` below), not again later in the render.
                 const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
-                const groupedRows = groupToolItems(itemsForGrouping)
-                const rows = groupedRows
-                  .map((row, rowIndex): [GroupedTranscriptItem, RowVisibility] => {
-                    const visibility = rowVisibility(row, transcriptDisplay)
-                    const isLastRow = rowIndex === groupedRows.length - 1
-                    return [row, visibility === 'sr-only' && !(isActiveTurn && isLastRow) ? 'hidden' : visibility]
-                  })
+                const basePairs = groupToolItems(itemsForGrouping).map(
+                  (row): [GroupedTranscriptItem, RowVisibility] => [row, rowVisibility(row, transcriptDisplay)]
+                )
+                const lastSrOnlyIndex = isActiveTurn ? basePairs.findLastIndex(([, visibility]) => visibility === 'sr-only') : -1
+                const rows = basePairs
+                  .map(([row, visibility], pairIndex): [GroupedTranscriptItem, RowVisibility] =>
+                    visibility === 'sr-only' && pairIndex !== lastSrOnlyIndex ? [row, 'hidden'] : [row, visibility]
+                  )
                   .filter(([, visibility]) => visibility !== 'hidden')
 
                 // Quality-gate fix (a11y, round 1): a turn in progress with thinking hidden is
                 // otherwise a silent gap for a screen reader (the ticking `TurnTotalLine` below is
                 // `aria-hidden` while running). A thinking item's own `streaming` flag covers exactly
                 // this window (round 2: `finalizeLiveTranscript` always clears it on a stop or crash,
-                // so this can never get stuck on), announced once per turn, outside the grouped rows.
-                const announceThinking = !transcriptDisplay.thinking && turn.items.some((item) => item.kind === 'thinking' && item.streaming)
+                // so this can never get stuck on), announced once per assistant message, outside the
+                // grouped rows. Round 3 (optional): skips this span when `rows` already promoted a
+                // `'sr-only'` tool-group/subagent row for the same turn -- the same message's
+                // `streaming` flag can cover both at once (its tool calls can already be `running`
+                // while it still reads `streaming: true`), and the promoted row is the more specific
+                // of the two signals, so one announcement is enough.
+                const announceThinking =
+                  !transcriptDisplay.thinking &&
+                  turn.items.some((item) => item.kind === 'thinking' && item.streaming) &&
+                  !rows.some(([, visibility]) => visibility === 'sr-only')
 
                 return (
                   <React.Fragment key={turn.userItem?.id ?? `turn-${turnIndex}`}>
@@ -1002,12 +1022,15 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                             messageId={row.id}
                             className="[content-visibility:visible] [contain-intrinsic-size:none]"
                           >
+                            {/* Quality-gate fix (round 3): no third branch -- `rowVisibility` only
+                                ever returns `'sr-only'` for a `ToolGroup` or a `'subagent'` row, so a
+                                row reaching here is always one of the two; a cast documents that
+                                instead of a dead-code fallback the type checker can't see is
+                                unreachable. */}
                             <span className="sr-only">
                               {isToolGroup(row)
                                 ? `${toolStatusLabel('running')} ${row.tool}`
-                                : row.kind === 'subagent'
-                                  ? `${toolStatusLabel('running')} subagent ${row.name}`
-                                  : toolStatusLabel('running')}
+                                : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
                             </span>
                           </MessageScrollerItem>
                         )
