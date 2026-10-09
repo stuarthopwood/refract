@@ -62,10 +62,8 @@ Current rule, unchanged by the #474 grill: every piece of metadata shown in a to
 - **Severity icons**: one set for every notice — info circle, success check, warning triangle, error octagon — each a distinct `lucide` shape plus the severity word; colour only reinforces it.
 - **Action icons**: toolbar and row actions use plain `lucide` icons at the size ladder above. Action-menu items carry no icon (text only); destination and settings menus put a leading icon on every item (see Menus in components.md).
 - **Tool icons** (#469): `lucide`, under the same library and size rules as every other icon — there is no separate icon family for tool calls.
-- **Brand icons**: none shipped yet. `@tabler/icons-react` is the decided source for a future GitHub/GitLab/Bitbucket brand mark (see Library and style above); #528 shipped with `lucide`-only icons instead, deferred to **#646**.
+- **Brand icons**: none shipped yet. `@tabler/icons-react` is the decided source for a future GitHub/GitLab/Bitbucket brand mark (see Library and style above); #528 shipped with `lucide`-only icons instead, deferred to **#646**. **Resolved** (2026-10-09, #533 issue update comment, following the 2026-10-08 Tabler-brand-marks-only rule): the composer's Markdown hint icon is NOT a brand mark, so it uses lucide `TypeIcon`, not Tabler's `IconMarkdown`.
 
 ## Open
 
 The boundary between a "decision button" and a "standalone command" at the edges is still open (#474); settle it case by case until the sweep issue records a rule.
-
-Whether the Markdown mark in the composer hint (#533, PLAN Decision 2026-10-07) counts as a third-party brand mark under the Tabler exception, or #533 switches to a lucide icon, is for Stuart to decide.

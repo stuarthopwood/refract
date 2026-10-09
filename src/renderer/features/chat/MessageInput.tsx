@@ -9,7 +9,7 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, CpuIcon, GaugeIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, CpuIcon, GaugeIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -161,6 +161,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
   const attachmentsStatusId = `${sessionId}-attachments-status`
   const attachmentsSummaryId = `${sessionId}-attachments-summary`
+  // Issue #533: sr-only accessible description for the composer's empty-state hint overlay --
+  // an inert overlay cannot act as a native `placeholder` for assistive tech, so the same
+  // content reaches it through `aria-describedby` instead (gated off whenever the overlay
+  // itself is not shown, mirroring `ghostHintId`/`attachmentsSummaryId` above).
+  const composerHintId = `${sessionId}-composer-hint`
 
   const statusRef = useRef(status)
   statusRef.current = status
@@ -942,14 +947,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   const placeholder = disabled
     ? describeStopReason(stopReason, stopDetail)
-    // Slash commands are discoverable by typing '/' itself (SlashMenu.tsx opens on it), so no
-    // parenthetical hint is needed here (docs/DESIGN.md "No bracket/parenthetical UI copy").
-    : 'Message the agent…'
+    // Issue #533: the empty-state hint overlay below now carries this copy (with icons), so the
+    // native `placeholder` is left empty here to avoid drawing both on top of each other -- the
+    // disabled branch above is unchanged, it has no overlay.
+    : ''
   // Accessibility remediation (High): a short, persistent sr-only summary of how many
   // attachments are pending right now, pointed to by the textarea's own `aria-describedby` --
   // the only programmatic link from the textarea to its pending chips/images before this.
   const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length
-  const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId].filter(Boolean).join(' ')
+  const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId, composerHintId].filter(Boolean).join(' ')
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
@@ -1049,6 +1055,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           ? `${pendingAttachmentsCount} pending attachment${pendingAttachmentsCount === 1 ? '' : 's'}`
           : ''}
       </span>
+      {/* Issue #533: sr-only description for the composer's empty-state hint overlay below --
+          an inert overlay is not read as a `placeholder` by assistive tech, so the same wording
+          reaches it through `aria-describedby` instead. Empty whenever the visible hint itself
+          is not shown (disabled, or the draft has text), same pattern as `ghostHintId`/
+          `attachmentsSummaryId` above. */}
+      <span id={composerHintId} className="sr-only">
+        {!disabled && text === '' ? 'Markdown is supported. Type slash for commands.' : ''}
+      </span>
       {/* Chip row (docs/DESIGN.md "Chat"; spec 004 appends readout chips after the pill): the
           Approval mode pill is always the first item, FR-056; `flex-wrap` lets the row wrap onto
           a further line at any window width rather than ever hiding or overlapping the box below
@@ -1140,6 +1154,62 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             placeholder={placeholder}
             className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent"
           />
+          {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
+              icons, so this inert sibling (same technique as the ghost-text overlay below) shows
+              "Message the agent" plus two short hints (slash commands, Markdown), each with a
+              leading icon, spaced apart rather than bracketed (docs/design/product-look-and-
+              feel.md:27 "No bracket/parenthetical UI copy"). Hidden as soon as there is any text,
+              so it never draws over the draft or the ghost-text suggestion, and whenever disabled
+              (the native `placeholder` carries the stop-reason text for that state instead,
+              unchanged). The accessible name stays "Message"; `composerHintId` above carries the
+              same wording through `aria-describedby` since an overlay is never read as a
+              `placeholder`. Gate-fixes (quality gate, PR #644 round 1): `TypeIcon` (lucide), not
+              Tabler's `IconMarkdown` -- Stuart's 2026-10-08 rule (PLAN.md "Icon set and style")
+              limits `@tabler/icons-react` to GitHub/GitLab/Bitbucket brand marks only, and a
+              Markdown glyph is not a brand mark (resolved, `docs/design/foundations-icons.md`
+              "Status, action, tool, and brand icons"); `@tabler/icons-react` is back out of
+              `package.json`. Responsive: the issue's own three-stage design (truncate the hint
+              labels, then icons-only with a tooltip, then truncate the main prompt) is narrowed to
+              two stages here -- a tooltip cannot attach to a `pointer-events-none` overlay, so
+              that middle tier is dropped (flagged on the issue and in the PR as a deviation,
+              Stuart's call). `min-w-0 truncate` on the leading text (no `shrink-0`) plus a
+              `shrink-[100]` weight on each hint group (CSS flexbox shrinks proportionally to
+              basis * shrink-factor, so at 100x the groups absorb nearly all of any shrink deficit
+              before the main prompt gives up any width) means a narrow pane truncates the hint
+              labels first; only once both groups hit their own `min-w-[1.125rem]` floor (the
+              14px icon plus its 4px `gap-1` to the label, the narrowest the group can go without
+              the icon itself getting clipped by `overflow-hidden`) does the main prompt start
+              truncating too, with an ellipsis instead of the earlier hard clip. Gate-fixes
+              (quality gate, PR #644 round 2): `100` was not nearly large enough -- flexbox shares
+              a shortfall by `basis * shrink-factor`, so even at 100x the main prompt's own small
+              basis (about 113px) still worked out to roughly 0.46% of any shortfall (113 /
+              (113 + 100 * 243)), enough to show an ellipsis from a wide pane down (confirmed in
+              headless Chromium against this exact CSS). `100000` instead keeps the main prompt's
+              share under one sub-pixel layout step (1/64px) until the groups are fully at their
+              floor, so it stays visually whole the entire time the labels are still truncating.
+              Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
+              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis
+              from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the
+              native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same
+              pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High
+              Contrast, where `text-muted-foreground` would otherwise resolve to the same
+              `CanvasText` as the real draft. */}
+          {!disabled && text === '' && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
+            >
+              <span className="min-w-0 truncate">Message the agent</span>
+              <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
+                <SlashIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                <span className="min-w-0 truncate">for commands</span>
+              </span>
+              <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
+                <TypeIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                <span className="min-w-0 truncate">Markdown supported</span>
+              </span>
+            </div>
+          )}
           {/* Ghost-text overlay (T103, FR-058): an inert sibling, not part of the textarea's own
               accessible value -- matching its box model exactly (same padding/font classes) so
               the invisible leading span reserves the same space the real draft occupies, landing
