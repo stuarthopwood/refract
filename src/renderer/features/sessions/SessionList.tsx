@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { KeyboardEvent, Ref } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, FolderGit2Icon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
+import type { ComponentType, KeyboardEvent, Ref } from 'react'
+import { ArchiveIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderGit2Icon, FolderGitIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
@@ -870,29 +870,48 @@ function SessionRow({
 // Repository header and the cross-repository Archived header below, so the two headers cannot
 // drift apart from each other again. A Repository header passes its own rename support; the
 // Archived header (no rename, no actions) passes only a label.
+// Issue #528: an optional leading `icon` slot (aria-hidden, decorative) plus `tooltip` text --
+// when a Repository header's icon alone carries NEW information (remote vs local-only) not
+// otherwise visible, `tooltip` both shows a Radix tooltip on hover/focus AND is appended to the
+// trigger's own accessible name, so the status is never conveyed by the icon's shape alone to a
+// screen reader that does not surface hover tooltips. The Archived header passes no tooltip:
+// its icon is pure decoration, the visible "ARCHIVED (N)" label already says everything.
 function GroupHeaderTrigger({
   label,
   title,
+  icon: Icon,
+  tooltip,
   triggerRef,
   onDoubleClick,
   onKeyDown
 }: {
   label: string
   title?: string
+  icon?: ComponentType<{ 'aria-hidden'?: boolean; className?: string }>
+  tooltip?: string
   triggerRef?: Ref<HTMLButtonElement>
   onDoubleClick?: () => void
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
 }) {
-  return (
+  const trigger = (
     <CollapsibleTrigger
       ref={triggerRef}
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
+      aria-label={tooltip ? `${label}, ${tooltip}` : undefined}
       className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+      {Icon && <Icon aria-hidden className="size-4 shrink-0" />}
       <span className="truncate" title={title}>{label}</span>
     </CollapsibleTrigger>
+  )
+  if (!tooltip) return trigger
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1022,6 +1041,17 @@ function RepositoryGroup({
   // Issue #527: archived Sessions no longer get their own per-repository group here -- they all
   // move into one cross-repository `ArchivedGroup` at the bottom of the list instead.
   const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+  // Issue #528: a confirmed `none` is the only case that earns the plain "local only" icon --
+  // `has` and the honest `unknown` "could not tell" case both get the same remote-capable icon,
+  // so an unreadable repository or a parse failure is never shown as local-only when it might
+  // not be (the issue's own accessibility rule: never a false claim either way).
+  const remoteIcon = repository.remote?.kind === 'none' ? FolderGitIcon : FolderGit2Icon
+  const remoteTooltip =
+    repository.remote?.kind === 'has'
+      ? `Git repository, remote: ${repository.remote.host}`
+      : repository.remote?.kind === 'none'
+        ? 'Git repository, local only (no remote)'
+        : 'Git repository'
   return (
     <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
@@ -1054,6 +1084,8 @@ function RepositoryGroup({
               triggerRef={triggerRef}
               label={repository.name}
               title={repository.path}
+              icon={remoteIcon}
+              tooltip={remoteTooltip}
               onDoubleClick={startRenaming}
               onKeyDown={handleTriggerKeyDown}
             />
@@ -1163,7 +1195,7 @@ function ArchivedGroup({
     <div className="flex flex-col" data-archived-group="">
       <Collapsible>
         <div className="flex items-center gap-1 px-1">
-          <GroupHeaderTrigger label={`Archived (${sorted.length})`} />
+          <GroupHeaderTrigger label={`Archived (${sorted.length})`} icon={ArchiveIcon} />
         </div>
         <CollapsibleContent>
           <ul aria-label="Archived sessions" className="flex flex-col gap-0.5 py-1">

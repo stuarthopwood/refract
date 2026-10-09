@@ -14,7 +14,25 @@ export interface Repository {
   name: string;
   defaultBranch: string; // read from git when added; preselected as Base branch
   addedAt: string; // ISO 8601
+  // Issue #528: whether this repository has a configured git remote, for the session list's
+  // group-header icon and its tooltip. Computed fresh in main (`src/main/git/remote.ts`) on
+  // every `repositories.list()`/`add()`/`rename()` response; NEVER read from or written to
+  // `registry.json` -- a repository's own remote can change on disk at any time (added,
+  // changed, removed) with no Refract action involved, so persisting a stale value would be
+  // actively misleading. Optional only because it is absent until that first computation (for
+  // example inside a unit test's hand-built `Repository`, which never goes through the IPC
+  // boundary this field is attached at).
+  remote?: RepositoryRemote;
 }
+
+/** Issue #528: the three real states this icon/tooltip needs, plus an honest "could not tell"
+ * case -- `unknown` is a confirmed-neither claim (an unreadable repository, or a remote URL this
+ * reader could not parse a host from), never conflated with a confirmed `none`. Deliberately
+ * binary beyond that (`has`/`none`), not split further by host: the originally decided three-way
+ * host classification (`known`/`other`) plus `@tabler/icons-react` brand marks was superseded by
+ * Stuart (delegated to Main), who asked for the simpler remote-vs-local-only distinction with no
+ * new dependency -- see the #528 issue comment and this PR's body for the full deviation record. */
+export type RepositoryRemote = { kind: 'none' } | { kind: 'has'; host: string } | { kind: 'unknown' };
 
 /** One unit of work: a Worktree together with the Conversations held in it. */
 export interface Session {

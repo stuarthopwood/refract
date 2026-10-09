@@ -10,6 +10,7 @@ import { IPC_REQUESTS } from '../../shared/ipc';
 import type { BranchEntry } from '../../shared/ipc';
 import type { Repository, Session } from '../../shared/model';
 import { gitRaw, repoInfo } from '../git/git';
+import { repositoryRemote } from '../git/remote';
 import { defaultBranch, listBranches } from '../git/worktrees';
 import type { SessionManager } from '../SessionManager';
 import { invalidArgument, mapStoreThrown, notFound } from './util';
@@ -54,7 +55,17 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
 }
 
 export function registerRepositories(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
-  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => ({ ok: true, value: manager.registry.snapshot().repositories }));
+  // Issue #528: `remote` is computed fresh for every response, never read from or written to
+  // the registry -- a repository's own remote can change on disk at any time with no Refract
+  // action involved. Run in parallel; each call is itself bounded (`repositoryRemote`'s own
+  // timeout), so this never blocks the Session list even with several repositories.
+  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => {
+    const repositories = manager.registry.snapshot().repositories;
+    const withRemote = await Promise.all(
+      repositories.map(async (repository) => ({ ...repository, remote: await repositoryRemote(repository.path) }))
+    );
+    return { ok: true, value: withRemote };
+  });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_ADD, async (_event, repoPath: unknown) => {
     if (typeof repoPath !== 'string') {
@@ -72,7 +83,9 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       };
       await manager.registry.addRepository(repository);
       manager.notifyListChanged();
-      return { ok: true, value: repository };
+      // Issue #528: a freshly added repository shows the right icon with no refetch needed.
+      const remote = await repositoryRemote(repository.path);
+      return { ok: true, value: { ...repository, remote } };
     } catch (err) {
       return mapStoreThrown(err);
     }
@@ -92,12 +105,18 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     // validate -> resolve -> persist -> notify sequence) now lives in `renameRepositoryCore`
     // (`renameRepository.ts`), injected with this manager's own real dependencies, so it is
     // unit-testable against fakes -- same reasoning as `resumeSessionCore`/`attachSnapshotCore`.
-    return renameRepositoryCore(id, name, {
+    const result = await renameRepositoryCore(id, name, {
       getRepository: (repositoryId) => manager.registry.getRepository(repositoryId),
       basename: (repositoryPath) => path.basename(repositoryPath),
       updateRepository: (repositoryId, patch) => manager.registry.updateRepository(repositoryId, patch),
       notifyListChanged: () => manager.notifyListChanged(),
     });
+    if (!result.ok) return result;
+    // Issue #528: the renderer's own `repositories-store.ts` replaces its whole cached Repository
+    // with this response (`rename`'s `Promise<string | null>` contract) -- without this, a
+    // rename would silently drop the group header's own remote icon back to "unknown" until the
+    // next unrelated `repositories.list()` refresh happened to restore it.
+    return { ok: true, value: { ...result.value, remote: await repositoryRemote(result.value.path) } };
   });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOVE, async (_event, id: unknown) => {
