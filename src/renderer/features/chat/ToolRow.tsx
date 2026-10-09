@@ -2,7 +2,7 @@ import * as React from 'react'
 import { CheckIcon, Loader2Icon, UnplugIcon, XIcon } from 'lucide-react'
 import type { TranscriptItem } from '../../../shared/model'
 import { Button } from '@/components/ui/button'
-import { CodeBlock, inferOutputBlock } from './Markdown'
+import { CodeBlock, FileLinkButton, inferOutputBlock } from './Markdown'
 import { CollapsedLine } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import type { ToolGroup } from './groupToolItems'
@@ -116,7 +116,8 @@ function ToolCallBody({ item }: ToolCallBodyProps) {
       {item.write && (
         <div>
           <div className="mb-1 text-xs font-medium text-muted-foreground">
-            Wrote {writeCodeLines.length} {writeCodeLines.length === 1 ? 'line' : 'lines'} to {item.write.path}
+            Wrote {writeCodeLines.length} {writeCodeLines.length === 1 ? 'line' : 'lines'} to{' '}
+            <FileLinkButton path={item.write.path} />
           </div>
           <div className="max-h-64 overflow-auto rounded-lg">
             <CodeBlock code={visibleWriteCode} lang={writeBlock?.lang ?? null} copyText={writeBlock?.code ?? ''} />

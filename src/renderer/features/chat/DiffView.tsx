@@ -3,6 +3,7 @@ import 'react-diff-view/style/index.css'
 import './diff-view.css'
 import { buildUnifiedDiff } from '@/lib/diff'
 import { CopyButton } from '@/components/ui/copy-button'
+import { FileLinkButton } from './Markdown'
 
 interface DiffViewProps {
   /** Repository-relative or absolute path, shown as the header. */
@@ -37,8 +38,17 @@ export function DiffView({ path, oldText, newText }: DiffViewProps) {
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
-        <span className="truncate" title={path}>
-          {path}
+        {/* Quality-gate fix (A11y HIGH, round 2): the old `<span className="truncate">` wrapper
+         * clipped the button's own focus ring (an inline-block child of an `overflow:hidden`
+         * flex item) and gave the inline-block button no ellipsis of its own on a long path.
+         * `min-w-0 flex` lets the button size and truncate itself instead; `FileLinkButton`'s own
+         * `className` now carries `block max-w-full truncate` plus an inset focus ring so it is
+         * never drawn outside the header's own clipped bounds. Muted: this header is a
+         * `bg-muted` surface. `DiffViewFromPatch` below (the PR Changes-tab use) has no Session
+         * to resolve against and deliberately keeps its own header plain text, not sharing this
+         * markup. */}
+        <span className="min-w-0 flex">
+          <FileLinkButton path={path} muted className="block max-w-full truncate focus-visible:outline-offset-[-2px]" />
         </span>
         {/* Copies the full unified diff (git header plus hunks) shown below -- the same "copy
          * exactly the displayed text" rule `CodeBlock`'s Copy button follows (#524); there is

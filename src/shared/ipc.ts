@@ -68,6 +68,8 @@ export type IpcErrorCode =
   | 'prompt-failed'
   | 'agent-not-running'
   | 'worktree-missing'
+  | 'file-missing'
+  | 'outside-worktree'
   | 'clipboard-failed'
   | 'unsupported-image-type'
   | 'image-too-large'
@@ -323,6 +325,7 @@ export const IPC_REQUESTS = {
   SESSIONS_SET_VISIBLE: 'sessions.setVisible',
   SESSIONS_DIFF_STAT: 'sessions.diffStat',
   SESSIONS_REVEAL_WORKTREE: 'sessions.revealWorktree',
+  SESSIONS_REVEAL_FILE: 'sessions.revealFile',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
@@ -468,6 +471,13 @@ export interface RefractApi {
     setVisible(sessionIds: string[]): Promise<Result<void>>;
     diffStat(id: string): Promise<Result<DiffStat | null>>;
     revealWorktree(id: string): Promise<Result<void>>;
+    /** Issue #610: reveals a single file in the OS file explorer (`shell.showItemInFolder`),
+     * never opens/executes it. `path` is untrusted chat text (a linkified file reference, agent-
+     * or tool-authored) -- main resolves it only against this Session's own worktree root
+     * (looked up by `sessionId`, never trusted from the renderer), rejecting anything that does
+     * not resolve, after following symlinks, to the worktree itself or a real descendant of it.
+     * `'outside-worktree'`/`'file-missing'`/`'worktree-missing'` are typed errors, not thrown. */
+    revealFile(sessionId: string, path: string): Promise<Result<void>>;
   };
 
   clipboard: {
