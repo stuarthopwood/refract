@@ -80,10 +80,47 @@ _Avoid_: PR action, operation
 One of the built-in dark-toned colour presets (Dark, Dark (high contrast), Obsidian -- #550, theme foundation palette v2) applying app-wide, chosen from the Settings screen's Appearance section with a live preview; Save persists it, Cancel/Esc/leaving Settings reverts it. Spec 008's planned profile Theme submenu reuses the same `theme-store.ts` `save`/`preview` actions and `THEMES` table, not new theme data of its own.
 _Avoid_: light mode, dark mode (ambiguous once more than one dark preset exists), follow-system
 
+### UI vocabulary
+
+Decided by Stuart in the #474 grill, 2026-10-08. Glossary only -- implementation detail (icon, button, and tooltip rules) lives in `docs/design/`, not here.
+
+**Pill**:
+A small, fully-rounded control showing one current state or mode at a glance, usually opening a menu to change it (for example, the Approval mode pill).
+_Avoid_: Badge, tag (for a control that opens a menu)
+
+**Chip**:
+A small, rounded-rectangle element showing one discrete fact or item, read-only or removable, usually grouped with others in a row (for example, a **Readout chip**, which is one specific named row of chips -- this entry defines the shape generically).
+_Avoid_: Tag, token (ambiguous with a design token)
+
+**Row**:
+One horizontal line of a list that repeats the same layout as its siblings -- an icon, a label, and trailing actions (for example, a session row).
+_Avoid_: Item, entry (too generic elsewhere in this file)
+
+**Card**:
+A boxed, self-contained block of content set apart from the surrounding list or layout, typically surfacing details or asking for a decision (for example, a session details card).
+_Avoid_: Panel
+
+**Panel**:
+A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**).
+_Avoid_: Sidebar, drawer
+
+**Pane**:
+An unboxed, resizable region of the main content area, one of possibly several side by side, each independently scrollable (for example, a **Chat pane**). Inside a **Split**, say **Chat pane**, not the bare word, per that entry's own _Avoid_ note.
+_Avoid_: Panel (a distinct, secondary tool or view, not this region), split view (for the arrangement itself -- see **Split**)
+
+**Tab**:
+One of a set of mutually exclusive selectable labels that switches which content shows in the same region, exactly one active at a time (for example, a **Pull requests view**'s **Filter tab**).
+_Avoid_: Filter (see **Filter tab**), section
+
+**Readout**:
+A compact, glanceable display of one live fact about something elsewhere in the app. Most readouts are plain text; some are also the entry point to an action, in which case they behave like a control (for example, a **Readout chip** that opens an external link or a panel).
+_Avoid_: Display, indicator
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
 - The current spec (`specs/001-core-session-workspace/spec.md`) defines Session as "one conversation with the agent bound to one worktree". That contradicts the resolution above and must be corrected when the spec is next amended.
+- The new generic **Readout** term (#474 UI vocabulary) is not mutually exclusive with interactivity: a **Readout chip** is sometimes a real button or link (for example, Pull request, Subagents), not only plain text. Say **Readout** for the display pattern, **Readout chip** for this app's specific chip row that uses it.
 
 ## Example dialogue
 
