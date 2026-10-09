@@ -24,8 +24,8 @@ import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 // click away via ChatHeader's swap chip.
 const MIN_SPLIT_WIDTH_PX = 360 * 2
 
-// Shared by every window-wide keyboard chord below (Ctrl+Shift+\, Ctrl+W): a destructive- or
-// navigation-feeling chord must not fire while a Dialog/Sheet (`role="dialog"`, which Radix
+// Shared by every window-wide keyboard chord below (Ctrl+Shift+\, Ctrl+W, Ctrl+,): a
+// destructive- or navigation-feeling chord must not fire while a Dialog/Sheet (`role="dialog"`, which Radix
 // sets despite the primitive never setting `aria-modal` -- confirmed in its installed
 // source, so matching the bare role is both correct and simpler), an AlertDialog
 // (`role="alertdialog"`), a DropdownMenu/ContextMenu (`role="menu"`), or a Select
@@ -162,17 +162,19 @@ export function App() {
       // convention at `MessageInput.tsx:724`.
       // Follow-up (PR #634 gate, read-only note): `event.key` alone mismatches non-Latin
       // keyboard layouts (Cyrillic, Greek, ...), where the physical W-position key types a
-      // non-Latin character that never equals 'w' -- the chord would never fire there even
-      // though `event.code` is still 'KeyW'. Falls back to the physical code only when
-      // `event.key` is not printable ASCII at all (quality-gate remediation,
-      // accessibility-auditor/security-auditor MEDIUM, PR #636 gate: the earlier
-      // `/^[a-z]$/i` fallback test was too narrow -- on Dvorak the physical W key types
-      // ',', which is neither 'w' nor a Latin letter, so it wrongly fell through to the
-      // code match and closed the pane on a plain Ctrl+, keypress). Any printable ASCII
-      // character (Dvorak's ',', AZERTY's 'z') is now compared by `key` and correctly
-      // does NOT match; only a genuinely non-Latin letter (Cyrillic, Greek, ...) falls
-      // back to the physical code.
-      const isW = /^[\x21-\x7e]$/.test(event.key) ? event.key.toLowerCase() === 'w' : event.code === 'KeyW'
+      // character with no relation to the Latin alphabet at all -- the chord would never
+      // fire there even though `event.code` is still 'KeyW'. Falls back to the physical
+      // code only when `event.key` is neither printable ASCII nor a Latin-script character
+      // (quality-gate remediation, PR #637 gate, MEDIUM: the PR #636 fix's printable-ASCII
+      // test still wrongly took the code fallback for a genuine, just non-ASCII, Latin
+      // letter -- BÉPO's physical W key types 'é', Turkish-Q's types 'ö', and both ARE
+      // representable Latin-alphabet letters their own layout can also type as plain 'w'
+      // elsewhere, unlike Cyrillic or Greek, which cannot). A Latin letter -- ASCII
+      // (Dvorak's ',', AZERTY's 'z') or accented (BÉPO's 'é', Turkish-Q's 'ö') -- is
+      // compared by `key` and correctly does NOT match; only a genuinely non-Latin
+      // letter (Cyrillic, Greek, ...) falls back to the physical code.
+      const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
+      const isW = latin ? event.key.toLowerCase() === 'w' : event.code === 'KeyW'
       if (
         !event.ctrlKey ||
         event.shiftKey ||
@@ -201,13 +203,15 @@ export function App() {
   // for non-Latin layouts, mirroring the Ctrl+W fix) is how VS Code binds this exact chord.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      // Quality-gate remediation (PR #637 gate, LOW): a punctuation chord DOES have its own
-      // layout mismatches -- on Russian/Ukrainian layouts the physical comma key types
-      // 'б', and producing ',' there needs Shift, which this guard already rejects. Falls
-      // back to the physical code only when `event.key` is a genuinely non-Latin letter
-      // (mirrors the Ctrl+W fix above); AZERTY and QWERTZ already type an unshifted ','
-      // and are unaffected.
-      const isComma = event.key === ',' || (!/^[\x21-\x7e]$/.test(event.key) && event.code === 'Comma')
+      // Quality-gate remediation (PR #637 gate, LOW; then MEDIUM, PR #637 gate round 2): a
+      // punctuation chord DOES have its own layout mismatches -- on Russian/Ukrainian
+      // layouts the physical comma key types 'б', and producing ',' there needs Shift,
+      // which this guard already rejects. Falls back to the physical code only when
+      // `event.key` is neither printable ASCII nor a Latin-script character (mirrors the
+      // Ctrl+W fix above): AZERTY and QWERTZ already type an unshifted ',' (a Latin
+      // character) and are unaffected either way.
+      const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
+      const isComma = latin ? event.key === ',' : event.code === 'Comma'
       if (
         !event.ctrlKey ||
         event.shiftKey ||
