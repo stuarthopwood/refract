@@ -256,6 +256,28 @@
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* Agent-working spinner component token (issue #612, #616 review round 4: Stuart chose to
+   * make `brand`'s default follow the theme -- "same brand violet in every theme for now" --
+   * rather than `brand` being one more fixed palette choice). Layer 3 component token, same
+   * raw literal in every theme (custom theme files, #458, may override it per-theme later) --
+   * `AgentSpinner.tsx`'s `palette="brand"` (default) now means "inherit this theme token"; the
+   * `"export"`/`"blue"` palettes stay fixed per-instance overrides via `[data-palette=...]` in
+   * the component's own CSS, which still win over this inherited value (a declaration directly
+   * on the `.agent-spinner` element beats one inherited from this theme class on an ancestor,
+   * regardless of selector specificity). Contrast against `--sidebar` (session list),
+   * `--sidebar-accent` (the same row selected/hovered), `--card`/`--background` (chat header)
+   * and `--popover` (the session details hover card, `hover-card.tsx`) verified by
+   * `scripts/check-theme-contrast.mjs`'s `--agent-spinner-core` pairs -- see that script and
+   * this story's PR body for the measured ratio in every theme.
+   *
+   * Quality-gate remediation (A11y HIGH, round 5): the original `#864DD6` (the old `BrandSpinner`
+   * core colour, reused verbatim at first) measured under 3:1 against `--sidebar-accent` in
+   * every theme (2.91 Dark / 2.54 Obsidian / 2.99 Dark HC) -- the selected/hovered session row,
+   * where the icon is the only visible status cue (the "Working" text there is `sr-only`).
+   * Stuart chose the lighter `#9A68E4` to fix it (measured 3.94 Dark / 3.43 Obsidian / 4.05 Dark
+   * HC on `--sidebar-accent`); every other already-passing surface still clears 3:1 with this
+   * lighter value (it only gets lighter, never darker). */
+  --agent-spinner-core: #9A68E4;
 }
 
 /* #550 (theme foundation, palette v2): the mock's own Obsidian canvas (`#0F1014`) and
@@ -380,6 +402,10 @@
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: var(--severity-error);
   --state-stopped-foreground: oklch(0.145 0 0);
+  /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
+   * comment explains in full, including the round-5 A11y remediation to `#9A68E4`; this
+   * preset's own contrast numbers are in `scripts/check-theme-contrast.mjs` and the PR body. */
+  --agent-spinner-core: #9A68E4;
 }
 
 /* Spec 007 T015 (FR-008, FR-009, FR-010): a dedicated high-contrast dark preset, not a scaled
@@ -501,6 +527,10 @@
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
+   * comment explains in full, including the round-5 A11y remediation to `#9A68E4`; this
+   * preset's own contrast numbers are in `scripts/check-theme-contrast.mjs` and the PR body. */
+  --agent-spinner-core: #9A68E4;
 }
 
 /* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================
@@ -569,76 +599,176 @@
   }
 }
 
-/* Brand spinner (spec 011 T002, data-model.md "Animation"): a per-arm opacity cascade, one
- * fixed core (`.brand-spinner-core`, opacity 1 throughout) and three arms whose own
- * `@keyframes` already encode a third-of-a-cycle stagger against each other (0%/33.333%/66.667%
- * /100%, whichever apply, all at the 0.7 rest baseline, one brief pulse frame partway through
- * reaching the 1.0 peak) -- so every arm can share the exact same `animation-delay`, set once
- * per mounted instance by `BrandSpinner.tsx` as the `--brand-spinner-delay` custom property
- * (research.md decision 5), and every instance mounted at any moment lands on the same point in
- * the cycle as every other (FR-007). The `prefers-reduced-motion: reduce` block above already
- * collapses this to one near-instant iteration landing back on each arm's shared rest frame
- * (research.md decision 6) -- no new, component-specific reduced-motion check (FR-008). Never
- * `transform`, `filter`, or `box-shadow` (FR-005).
+/* Agent-working spinner (issue #612, replaces the brand spinner `BrandSpinner`/spec 011 T002).
+ * `AgentSpinner.tsx`'s own file-level comment records the full history across PR #616's review
+ * rounds; by this point every ring/glow/orbit layer from the first two rounds is gone outright
+ * (clean cutover) -- the split/rotate/merge triangle of discs is the entire mark, and its own
+ * rotation is the one visible-spin cue.
  *
- * Quality-gate remediation (UI MEDIUM, 3 independent reviewers): two deviations from the
- * original 0.35-rest, single-ease-in-out-curve-per-arm design (research.md decision 3,
- * data-model.md "Animation"), both required for the 16px working icon to stay visible:
- * 1. Rest baseline raised 0.35 -> 0.7: the Simplified core is always opaque and the arms
- *    previously rested as low as ~1.4:1 against `--sidebar` in both built-in theme presets --
- *    under the 3:1 WCAG AA non-text floor spec 007 FR-008 holds every other state icon to, and
- *    the one visible under `prefers-reduced-motion: reduce`, which freezes on exactly this
- *    frame. 0.7 clears 3:1 for every arm colour against both presets' `--sidebar` (verified
- *    with the same OKLCH/WCAG math as `scripts/check-theme-contrast.mjs`).
- * 2. Each arm's single 0% -> peak -> 100% ease-in-out curve replaced with a short pulse that
- *    sits at rest for two-thirds of the cycle: previously, every arm was still partway through
- *    its own rise/fall whenever a neighbour peaked (research.md's "exactly one arm is at its
- *    bright peak" did not hold -- the other two were still visibly brightening/dimming, around
- *    0.78 opacity, not resting), so the highlight never read as genuinely taking turns.
- */
-@keyframes brand-spinner-arm-1 {
-  0%, 33.333%, 100% { opacity: 0.7; }
-  16.667% { opacity: 1; }
+ * Colour (#616 review round 4, Stuart's decision: "make the spinner colour a per-theme
+ * component token, same brand violet in every theme for now"; round 5's A11y remediation
+ * lightened the shared literal to `#9A68E4`, see `.theme-dark`'s own comment on the token for
+ * why): `--agent-spinner-core` is a LAYER 3 COMPONENT TOKEN, declared once per theme block
+ * (`.theme-dark`, `.theme-obsidian`, `.theme-dark-high-contrast`, same literal in all three
+ * today). It is **deliberately not declared here** on `.agent-spinner` itself, so the value is
+ * inherited from whichever theme class is active on an ancestor -- this is what
+ * `AgentSpinner.tsx`'s `palette="brand"` (the default) now means: "follow the theme", not a
+ * fixed value. `'export'` and `'blue'` remain available as fixed, per-instance overrides for
+ * Stuart to compare visually (issue #612 explicitly allows keeping the unchosen palette as a
+ * one-line swap) -- the `[data-palette=...]` rules below set `--agent-spinner-core` directly on
+ * the `.agent-spinner` element itself, which beats the inherited theme value (a same-element
+ * declaration always wins over one inherited from an ancestor, regardless of selector
+ * specificity). Custom theme files (#458) may override the component token per-theme once that
+ * lands; nothing else in this file sets `--agent-spinner-core`.
+ *
+ * `--agent-spinner-cycle` and `--agent-spinner-delay` are set inline, per instance, by
+ * `AgentSpinner.tsx` itself (not declared anywhere in this file) -- quality-gate remediation
+ * (Code LOW, round 5): the loop length previously lived in two places that had to be kept in
+ * sync by hand (this file's own `10s` and `AgentSpinner.tsx`'s `CYCLE_MS = 10000`); setting both
+ * custom properties from the same `CYCLE_MS` constant, in the same inline `style` object as the
+ * delay, removes the duplication entirely -- there is now exactly one place to change the speed. */
+.agent-spinner[data-palette='export'] {
+  --agent-spinner-core: #D347FF;
 }
-@keyframes brand-spinner-arm-2 {
-  0%, 33.333%, 66.667%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
-}
-@keyframes brand-spinner-arm-3 {
-  0%, 66.667%, 100% { opacity: 0.7; }
-  83.333% { opacity: 1; }
+.agent-spinner[data-palette='blue'] {
+  --agent-spinner-core: #2A7FFF;
 }
 
-.brand-spinner-arm-1,
-.brand-spinner-arm-2,
-.brand-spinner-arm-3 {
-  /* The rest frame is the BASE style, not only the 0%/100%/33.333%/66.667% keyframes: when the
-   * animation does not run or ends (prefers-reduced-motion collapses it to one 0.01ms iteration
-   * with no fill), the arm must settle on the dim rest frame, never the bright peak (FR-009).
-   * 0.7, not the original 0.35 -- quality-gate remediation above the @keyframes block. */
-  opacity: 0.7;
-  animation-duration: 1.2s;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-delay: var(--brand-spinner-delay, 0ms);
-}
-.brand-spinner-arm-1 { animation-name: brand-spinner-arm-1; }
-.brand-spinner-arm-2 { animation-name: brand-spinner-arm-2; }
-.brand-spinner-arm-3 { animation-name: brand-spinner-arm-3; }
-.brand-spinner-core { opacity: 1; }
-
-/* Brand spinner under Windows forced-colors mode (spec 011 T009, FR-014, research.md decision
- * 14): every arm and core fill switches from its fixed brand hex value to a system colour
- * keyword, so the mark stays visible against whatever background the active forced-colors
- * theme provides, rather than keeping colours never designed against it.
+/* The split/rotate/merge core. Two independently-timed `transform` animations share one loop
+ * (`var(--agent-spinner-cycle)`, set inline from `AgentSpinner.tsx`'s `CYCLE_MS`) and one
+ * `animation-delay` clock:
  *
- * Quality-gate remediation (Code LOW): plain `path` selector, not `:is(path, use)` -- neither
- * variant's markup contains a `<use>` element (BrandSpinner.tsx), so the `use` branch matched
- * nothing. `!important` dropped too: an SVG `fill` attribute is a presentation attribute, the
- * lowest-priority origin in the CSS cascade, so any author-stylesheet rule -- even this plain,
- * non-`!important` class-descendant selector -- already overrides it unconditionally. */
+ * `.agent-spinner-core-disc-group` (`agent-spinner-core-split`, one per disc, all three
+ * identical) drives each disc's own distance from centre (`translateY`, inside its slot's static
+ * rotation -- see `AgentSpinner.tsx`'s `CORE_SLOT_ANGLES_DEG`) and size (`scale`), named stops
+ * (percentages scale with whatever `--agent-spinner-cycle` is set to, so these do not need
+ * re-deriving if the loop speed changes again):
+ *   0%, 8%   -- REST: merged (distance 0, scale 1) -- three coincident discs read as one solid
+ *               circle. Also the `prefers-reduced-motion` frame (0% and 100% both land here).
+ *   8% -> 12% -- grows slightly (scale up to 1.06), a brief anticipatory "wind-up" before the
+ *               burst outward (spring timing-function set at 8%).
+ *   12% -> 17% -- bursts outward PAST the final split distance/size (overshoot: distance 68,
+ *               scale down to 0.36) -- the "spring-out" Stuart asked for.
+ *   17% -> 22% -- settles back to the final split state (distance 56, scale 0.41818... = 23/55,
+ *               so the rendered split disc radius is 23 units against the 55-unit merged base --
+ *               see `AgentSpinner.tsx`'s own sizing comment for the gap/legibility maths).
+ *   22% -> 80% -- HELD at the split state while the rotator (below) spins the triangle.
+ *   80% -> 86% -- anticipation: discs pull slightly further outward (distance 56 -> 68, scale
+ *               0.418 -> 0.38) before snapping together. Quality-gate remediation (Code MEDIUM,
+ *               round 5): this bullet previously said 80%->86% was "still split, unchanged" and
+ *               mislabelled the next two segments by one each -- the keyframe VALUES were
+ *               always correct (`AgentSpinner.tsx`'s own worst-case table already matched them);
+ *               only this comment was off by one segment.
+ *   86% -> 91% -- snaps together, overshooting PAST the merged state (distance 68 -> 5, scale
+ *               0.38 -> 1.05) -- the "squash/overshoot" on merge Stuart asked for.
+ *   91% -> 94% -- settles to the merged rest state (distance 5 -> 0, scale 1.05 -> 1).
+ *   94% -> 100% -- holds at the merged rest state, looping cleanly back to 0%.
+ *
+ * `.agent-spinner-core-rotator` (the group wrapping all three slots) drives the whole triangle's
+ * orientation, named stops:
+ *   0% -> 22%  -- held at 0deg (the triangle has not formed yet, or has just formed).
+ *   22% -> 50%  -- rotates clockwise a full 720deg (two turns), ease-in-out (set at 22%) so it
+ *               reads as building then losing momentum into the stop at 50%.
+ *   50% -> 54%  -- HELD at 720deg -- "decelerates to a stop" before reversing.
+ *   54% -> 80%  -- swings back anticlockwise, 720deg -> 0deg (two reverse turns), ease-in-out (set
+ *               at 54%) landing exactly back on the start angle at 80%.
+ *   80% -> 100% -- held at 0deg through the merge and the rest hold.
+ *
+ * Both animated properties are `transform` only (no `d`, no `filter`), so any number of
+ * concurrently-mounted instances stay cheap; every size on the ladder shares this CSS exactly
+ * (`AgentSpinner.tsx`'s `AgentSpinnerCore`), with only the halo's blur filter differing
+ * (`blurred`, dropped below `LEGIBILITY_FLOOR_PX`). */
+@keyframes agent-spinner-core-split {
+  0%, 8% {
+    transform: translateY(0) scale(1);
+    animation-timing-function: cubic-bezier(.34, 1.56, .64, 1);
+  }
+  12% {
+    transform: translateY(0) scale(1.06);
+    animation-timing-function: ease-in;
+  }
+  17% {
+    transform: translateY(-68px) scale(0.36);
+    animation-timing-function: cubic-bezier(.34, 1.56, .64, 1);
+  }
+  22%, 80% {
+    transform: translateY(-56px) scale(0.41818);
+    animation-timing-function: ease-in-out;
+  }
+  86% {
+    transform: translateY(-68px) scale(0.38);
+    animation-timing-function: cubic-bezier(.34, 1.56, .64, 1);
+  }
+  91% {
+    transform: translateY(5px) scale(1.05);
+    animation-timing-function: ease-out;
+  }
+  94%, 100% {
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes agent-spinner-core-rotate {
+  0%, 22% {
+    transform: rotate(0deg);
+    animation-timing-function: ease-in-out;
+  }
+  50% {
+    transform: rotate(720deg);
+  }
+  54% {
+    transform: rotate(720deg);
+    animation-timing-function: ease-in-out;
+  }
+  80%, 100% {
+    transform: rotate(0deg);
+  }
+}
+.agent-spinner-core-slot {
+  /* Static positioning only -- never animated itself. Places each of the three discs 120deg
+   * apart, one pointing straight up, matching Stuart's reference screenshot. */
+  transform: rotate(var(--agent-spinner-slot-angle));
+}
+.agent-spinner-core-rotator {
+  transform-origin: 0 0;
+  transform: rotate(0deg);
+  animation: agent-spinner-core-rotate var(--agent-spinner-cycle) linear infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+.agent-spinner-core-disc-group {
+  transform-origin: 0 0;
+  transform: translateY(0) scale(1);
+  animation: agent-spinner-core-split var(--agent-spinner-cycle) linear infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+.agent-spinner-core-halo {
+  /* Soft radial-gradient glow behind each solid disc (Stuart's reference screenshot: a bright
+   * centre fading into a soft halo). Moves and scales together with its disc since both are
+   * children of the same `.agent-spinner-core-disc-group`; never animated on its own. */
+  pointer-events: none;
+}
+
+/* Agent spinner under Windows forced-colors mode (issue #612 step 2g, mirroring `BrandSpinner`'s
+ * own precedent, narrowed in PR #616's third review round now that there is no separate ring/
+ * orbit layer to treat): collapses to a single flat `CanvasText` disc with no halo and no
+ * motion -- its gradient halo is hidden, the rotator and split animations are both frozen, and
+ * two of the three slots are hidden outright, leaving one static disc. No orbiting dot either
+ * (removed along with the rest of the orbit layer). Plain presentation attributes (SVG `fill`),
+ * the lowest-priority CSS origin, so this plain author-stylesheet rule already overrides them
+ * unconditionally -- no `!important` needed, matching `BrandSpinner`'s own quality-gate-corrected
+ * reasoning. */
 @media (forced-colors: active) {
-  .brand-spinner path {
+  .agent-spinner-core-halo {
+    display: none;
+  }
+  .agent-spinner-core-rotator,
+  .agent-spinner-core-disc-group {
+    animation: none;
+  }
+  .agent-spinner-core-slot-1,
+  .agent-spinner-core-slot-2 {
+    display: none;
+  }
+  .agent-spinner-core-disc {
     fill: CanvasText;
   }
 }

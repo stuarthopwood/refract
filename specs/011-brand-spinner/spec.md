@@ -1,5 +1,10 @@
 # Feature Specification: Brand spinner
 
+**Superseded by #612** (2026-10-09): Stuart's live review rejected the shipped `BrandSpinner`
+(this spec's own design) as not visibly spinning; it is replaced by a new `AgentSpinner`
+component built from a different source export. This document is left as-written, a historical
+record of what shipped and why.
+
 **Feature Branch**: `spec-011-brand-spinner`
 
 **Created**: 2026-10-05

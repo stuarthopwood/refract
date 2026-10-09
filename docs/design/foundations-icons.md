@@ -58,7 +58,7 @@ Current rule, unchanged by the #474 grill: every piece of metadata shown in a to
 
 ## Status, action, tool, and brand icons
 
-- **Status icons**: the shared `StateIcon` component (`src/renderer/features/sessions/sessionDisplay.tsx`) draws every session state — the brand mark (`BrandSpinner`) for working, a hollow circle for idle, a bell for needs-you, a square for stopped — each paired with an `sr-only` label, so colour is never the only signal.
+- **Status icons**: the shared `StateIcon` component (`src/renderer/features/sessions/sessionDisplay.tsx`) draws every session state — the agent-working spinner (`AgentSpinner`, issue #612) for working, a hollow circle for idle, a bell for needs-you, a square for stopped — each paired with an `sr-only` label, so colour is never the only signal.
 - **Severity icons**: one set for every notice — info circle, success check, warning triangle, error octagon — each a distinct `lucide` shape plus the severity word; colour only reinforces it.
 - **Action icons**: toolbar and row actions use plain `lucide` icons at the size ladder above. Action-menu items carry no icon (text only); destination and settings menus put a leading icon on every item (see Menus in components.md).
 - **Tool icons** (#469): `lucide`, under the same library and size rules as every other icon — there is no separate icon family for tool calls.
