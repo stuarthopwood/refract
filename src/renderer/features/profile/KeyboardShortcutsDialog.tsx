@@ -45,6 +45,12 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ]
   },
   {
+    // Issue #621 (close chat pane): its own heading, not folded into "Split view" below --
+    // Ctrl+W closes the showing chat pane whether or not a split is open.
+    heading: 'Chat pane',
+    rows: [{ action: 'Close chat pane', keys: ['Ctrl', 'W'] }]
+  },
+  {
     heading: 'Split view',
     rows: [
       { action: 'Open a session in split view', keys: ['Ctrl', 'Click'] },
