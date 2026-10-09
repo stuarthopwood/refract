@@ -162,14 +162,12 @@ export function initStores(): void {
   })
 
   void (async () => {
-    const [sessionsLoad, settingsLoad, repositoriesLoad] = await Promise.all([
+    const [sessionsLoad, settingsLoad] = await Promise.all([
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
-      loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get'),
-      loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
+      loadInitial(window.refract.settings.get(), DEFAULT_SETTINGS, 'settings.get')
     ])
     useSessionsStore.getState().setSessions(sessionsLoad.value)
     useSettingsStore.getState().setSettings(settingsLoad.value)
-    useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
     // Spec 005 FR-014: restores a persisted 2-session split (both ids already validated
     // against the registry by main's `validateSplitAtStartup`); never opens (starts) either
     // agent, per research.md Decision 4. Quality-gate remediation (code-reviewer, Medium): only
@@ -188,5 +186,17 @@ export function initStores(): void {
     if (sessionsLoad.ok) {
       useSplitStore.getState().restoreFromSettings(settingsLoad.value.split)
     }
+  })()
+
+  // Issue #528, gate round 2 fix (Medium, code-reviewer + security-auditor): `repositories.list()`
+  // now includes a bounded (~1s worst case) remote-detection step; kept out of the
+  // sessions/settings `Promise.all` above so that slower-than-usual remote detection never adds
+  // to the time before sessions and settings (and the restored split) are ready -- repository
+  // groups themselves were already necessarily gated on this same call resolving either way (the
+  // Session list has nothing to group Sessions under before `repositories` arrives), so this
+  // split narrows what actually waits, rather than widening what still does.
+  void (async () => {
+    const repositoriesLoad = await loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
+    useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
   })()
 }

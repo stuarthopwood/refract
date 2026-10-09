@@ -58,24 +58,46 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
 // of `repositories.list()` to about REMOTE_DEADLINE_MS in aggregate, however many repositories
 // are registered or however slow one individual `git` call is -- any repository whose own
 // check has not settled by the shared deadline keeps the `unknown` placeholder for this
-// response (a later `list()` call tries again fresh, each repository's own 70% cost is just one
-// `git` spawn now). Concurrency is capped so a large repository count never floods the process
-// table with simultaneous `git` spawns.
+// response. Concurrency is capped so a large repository count never floods the process table
+// with simultaneous `git` spawns.
+//
+// Gate round 2 fix (Medium, code-reviewer + security-auditor): the `remote` this call returns
+// is NOT refreshed again automatically -- the renderer calls `repositories.list()` exactly once,
+// at startup (`init-stores.ts`); only `repositories.add()`/`rename()` recompute it afterward, for
+// that one repository. A repository that misses the deadline on a cold start stays `unknown` for
+// the rest of the app session, and a remote added or changed on an existing repository while
+// Refract is already running is never picked up until the next restart. Accepted for this round,
+// same as the issue's own "no extra refresh trigger this round" decision; tracked as a known
+// consequence on the #646 follow-up, not silently different from what #528 decided.
 const REMOTE_CONCURRENCY = 8;
 const REMOTE_DEADLINE_MS = 1000;
 
 async function remotesBounded(repositories: Repository[]): Promise<RepositoryRemote[]> {
   const results: RepositoryRemote[] = repositories.map(() => ({ kind: 'unknown' }));
+  const controller = new AbortController();
   let next = 0;
   async function worker(): Promise<void> {
-    while (next < repositories.length) {
+    while (!controller.signal.aborted && next < repositories.length) {
       const i = next++;
-      results[i] = await repositoryRemote(repositories[i]!.path);
+      results[i] = await repositoryRemote(repositories[i]!.path, controller.signal);
     }
   }
   const pool = Promise.all(Array.from({ length: Math.min(REMOTE_CONCURRENCY, repositories.length) }, () => worker()));
-  const deadline = new Promise<void>((resolve) => setTimeout(resolve, REMOTE_DEADLINE_MS));
+  let deadlineTimer: NodeJS.Timeout;
+  const deadline = new Promise<void>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      // Gate round 2 fix (Low, all four reviewers): without this, workers kept taking new
+      // repositories off the queue and spawning `git` for each one after the response had
+      // already gone, with every one of those results thrown away -- bounded only by each
+      // call's OWN 3 s timeout, not by this deadline. Aborting here stops any in-flight `git`
+      // call immediately (via the combined signal `repositoryRemote` now accepts) and the
+      // `while` condition above stops every worker from starting another.
+      controller.abort();
+      resolve();
+    }, REMOTE_DEADLINE_MS);
+  });
   await Promise.race([pool, deadline]);
+  clearTimeout(deadlineTimer!);
   return results;
 }
 

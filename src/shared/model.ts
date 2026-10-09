@@ -26,12 +26,13 @@ export interface Repository {
 }
 
 /** Issue #528: the two real states this icon/tooltip needs (`none`/`has`), plus an honest "could
- * not tell" case -- `unknown` is a confirmed-neither claim (an unreadable repository, or a remote URL this
- * reader could not parse a host from), never conflated with a confirmed `none`. Deliberately
- * binary beyond that (`has`/`none`), not split further by host: the originally decided three-way
- * host classification (`known`/`other`) plus `@tabler/icons-react` brand marks was superseded by
- * Stuart (delegated to Main), who asked for the simpler remote-vs-local-only distinction with no
- * new dependency -- see the #528 issue comment and this PR's body for the full deviation record. */
+ * not tell" case -- `unknown` means detection could not confirm either way (an unreadable
+ * repository, a timed-out or aborted check, or a remote URL this reader could not parse a host
+ * from), never conflated with a confirmed `none`. Deliberately binary beyond that (`has`/`none`),
+ * not split further by host: the originally decided three-way host classification
+ * (`known`/`other`) plus `@tabler/icons-react` brand marks was deferred, not reversed, by Main
+ * (delegated by Stuart), who asked for the simpler remote-vs-local-only distinction with no new
+ * dependency this round -- tracked as follow-up issue #646. */
 export type RepositoryRemote = { kind: 'none' } | { kind: 'has'; host: string } | { kind: 'unknown' };
 
 /** One unit of work: a Worktree together with the Conversations held in it. */

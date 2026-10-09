@@ -27,7 +27,12 @@ function hostFromRemoteUrl(url: string): string | null {
     // Gate round 1 fix (Low): the host capture excludes `@` so a userinfo segment that itself
     // contains one (`a@b@host:path`) can never leak part of itself into the reported host.
     const scpMatch = /^(?:[^/]*@)?([^:/@]+):/.exec(trimmed);
-    if (scpMatch?.[1]) return scpMatch[1].toLowerCase();
+    // Gate round 2 fix (Low, all four reviewers): the round-1 IPv6 guard only covered the URL
+    // branch below -- the scp form (`git@[::1]:repo`, `[fe80::1]:repo`) still matched this
+    // pattern and reported a bare `[`/`[fe80` as the host. Display-only (no credential leak),
+    // but still a false claim.
+    if (scpMatch?.[1] && !scpMatch[1].includes('[')) return scpMatch[1].toLowerCase();
+    return null;
   }
   try {
     const host = new URL(trimmed).hostname;
@@ -46,28 +51,61 @@ function withTimeout(): { signal: AbortSignal; clear: () => void } {
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
+/** Combines two abort signals into one that fires when either does, without relying on the
+ * newer `AbortSignal.any` (avoids a pinned-`@types/node`/lib-target question for one tiny
+ * helper). `b` is optional so every caller that has no outer deadline of its own can skip it. */
+function combineSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
+  if (!b) return a;
+  const controller = new AbortController();
+  if (a.aborted || b.aborted) {
+    controller.abort();
+    return controller.signal;
+  }
+  const onAbort = (): void => controller.abort();
+  a.addEventListener('abort', onAbort, { once: true });
+  b.addEventListener('abort', onAbort, { once: true });
+  return controller.signal;
+}
+
 /** `Repository.remote` (issue #528): read-only, no network call, and bounded so a hung or
  * missing `git` can never block the Session list for long. ONE git spawn per repository (gate
  * round 1 fix, Medium: the original two-call version could take up to two full timeouts in a
  * row) -- `git config --local --get-regexp` lists every configured remote's URL in one call;
  * `origin` is preferred when more than one is configured, else the first one listed.
  *
+ * `deadline` (optional): an outer signal `repositories.ts`'s own pool aborts once its shared
+ * response deadline passes, combined with this function's own per-call timeout (gate round 2
+ * fix, Medium) -- a repository the pool gave up waiting on stops its own in-flight `git` call
+ * too, instead of continuing to spawn processes whose result nothing reads any more.
+ *
  * Never throws: an unreadable repository (a moved or deleted folder, or one that is no longer a
- * git repository at all) reports `unknown`, distinct from a confirmed `none`. A folder whose own
- * `.git` entry is gone (for example absorbed into an unrelated outer repository after a move) is
- * caught by the `fs.stat` check below -- cheaper than, and in place of, a second git call that
- * would otherwise silently walk up to that outer repository's own remotes, the exact same hazard
- * `github.ts`'s own `parseOwnerRepo` has today (gate round 1 fix, Medium). */
-export async function repositoryRemote(repoPath: string): Promise<RepositoryRemote> {
+ * git repository at all), a missing `git` executable, or a timed-out/aborted call all report
+ * `unknown` -- it makes no claim either way, distinct from a confirmed `none`. Gate round 2 fix
+ * (High, all four reviewers): a non-zero `gitRaw` exit with empty stdout is `none` ONLY when
+ * `git config --get-regexp` genuinely found no match (which always leaves `stderr` empty too) --
+ * a missing executable, a spawn failure, or this call's own abort ALL ALSO surface as `code: 1`
+ * with empty stdout but a non-empty `stderr` (or, for an abort, `signal.aborted` itself), and
+ * must report `unknown`, never the false claim that the repository has been confirmed local-only.
+ * A folder whose own `.git` entry is gone (for example absorbed into an unrelated outer
+ * repository after a move) is caught by the `fs.stat` check below -- cheaper than, and in place
+ * of, a second git call that would otherwise silently walk up to that outer repository's own
+ * remotes, the exact same hazard `github.ts`'s own `parseOwnerRepo` has today (gate round 1 fix,
+ * Medium). */
+export async function repositoryRemote(repoPath: string, deadline?: AbortSignal): Promise<RepositoryRemote> {
+  if (deadline?.aborted) return { kind: 'unknown' };
   const gitDirExists = await stat(path.join(repoPath, '.git')).then(
     () => true,
     () => false
   );
   if (!gitDirExists) return { kind: 'unknown' };
-  const { signal, clear } = withTimeout();
+  if (deadline?.aborted) return { kind: 'unknown' };
+  const { signal: timeoutSignal, clear } = withTimeout();
+  const signal = combineSignals(timeoutSignal, deadline);
   const result = await gitRaw(repoPath, ['config', '--local', '--get-regexp', '^remote\\..*\\.url$'], { signal });
+  const aborted = signal.aborted;
   clear();
-  if (result.code === 1 && !result.stdout.trim()) return { kind: 'none' };
+  if (aborted) return { kind: 'unknown' };
+  if (result.code === 1 && !result.stdout.trim() && !result.stderr.trim()) return { kind: 'none' };
   if (result.code !== 0) return { kind: 'unknown' };
   const entries = result.stdout
     .split('\n')

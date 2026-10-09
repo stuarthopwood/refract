@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ComponentType, KeyboardEvent, Ref } from 'react'
 import { ArchiveIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderGit2Icon, FolderGitIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -893,6 +893,12 @@ function GroupHeaderTrigger({
   onDoubleClick?: () => void
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
 }) {
+  const pathId = useId()
+  // Gate round 2 fix (Low, a11y-auditor): dropping the native `title` below (so it never shows
+  // a second overlapping tooltip) also dropped the repository's path from assistive tech
+  // entirely, since that span was never focusable or read either way -- an `sr-only` span plus
+  // `aria-describedby` restores it, only when there is a path to describe.
+  const describedByPath = tooltip && title
   const trigger = (
     <CollapsibleTrigger
       ref={triggerRef}
@@ -903,7 +909,7 @@ function GroupHeaderTrigger({
       // own `aria-describedby` pointing at the SAME text `aria-label` above already carries, so
       // a screen reader would read the remote status twice for one hover/focus. Radix's Slot
       // merge lets this explicit prop win over the one Tooltip injects.
-      aria-describedby={undefined}
+      aria-describedby={describedByPath ? pathId : undefined}
       className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       {/* Gate round 1 fix (High, code-reviewer): keying this off `data-state` broke the moment
@@ -916,6 +922,11 @@ function GroupHeaderTrigger({
       <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-aria-expanded/trigger:rotate-90" />
       {Icon && <Icon aria-hidden className="size-4 shrink-0" />}
       <span className="truncate" title={tooltip ? undefined : title}>{label}</span>
+      {describedByPath && (
+        <span id={pathId} className="sr-only">
+          {title}
+        </span>
+      )}
     </CollapsibleTrigger>
   )
   if (!tooltip) return trigger
@@ -926,15 +937,20 @@ function GroupHeaderTrigger({
           repository's absolute path) is dropped above whenever this Tooltip wraps the trigger,
           so the two tooltips never show at once -- the path moves in here instead, as a second
           line. `side="right"`: a full-width header's tooltip would otherwise open above it (the
-          default `side="top"`) and cover the previous group's last row and its hover actions. */}
-      <TooltipContent side="right" align="start">
-        {tooltip}
-        {title && (
-          <>
-            <br />
-            {title}
-          </>
-        )}
+          default `side="top"`) and cover the previous group's last row and its hover actions.
+          Gate round 2 fix (Medium, a11y-auditor): `sideOffset={104}` pushes it clear of the
+          always-present "+"/branch-picker/"..." buttons immediately to the trigger's right --
+          without it, the tooltip opened right on top of them, and Radix keeps hoverable content
+          open while the pointer is over it, blocking a click on any of the three. */}
+      <TooltipContent side="right" align="start" sideOffset={104}>
+        {/* Gate round 2 fix (Medium, code-reviewer): `TooltipContent` is `inline-flex`, so a
+            bare `<br/>` between two text nodes does not start a new line -- wrapping both lines
+            in their own `flex-col` container does, and `break-all` keeps a long Windows path
+            from overflowing the tooltip's own width. */}
+        <div className="flex flex-col gap-0.5">
+          <span>{tooltip}</span>
+          {title && <span className="break-all">{title}</span>}
+        </div>
       </TooltipContent>
     </Tooltip>
   )
@@ -1071,9 +1087,16 @@ function RepositoryGroup({
   // so an unreadable repository or a parse failure is never shown as local-only when it might
   // not be (the issue's own accessibility rule: never a false claim either way).
   const remoteIcon = repository.remote?.kind === 'none' ? FolderGitIcon : FolderGit2Icon
+  // Gate round 2 fix (Low, code-reviewer + security-auditor): `git config`'s raw configured URL
+  // (unlike round 1's `git remote get-url`) never applies a `url.<base>.insteadOf` rewrite, so a
+  // shorthand remote (for example `gh:owner/repo`) reports its literal, undotted alias as the
+  // "host" -- still correctly classed `has` (the icon is right), but naming a fake host in the
+  // tooltip would be worse than naming none. Only a host containing a dot is shown by name.
   const remoteTooltip =
     repository.remote?.kind === 'has'
-      ? `Git repository, remote: ${repository.remote.host}`
+      ? repository.remote.host.includes('.')
+        ? `Git repository, remote: ${repository.remote.host}`
+        : 'Git repository, has a remote'
       : repository.remote?.kind === 'none'
         ? 'Git repository, local only (no remote)'
         : 'Git repository'
