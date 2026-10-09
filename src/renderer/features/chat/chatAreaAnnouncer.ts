@@ -10,17 +10,17 @@ import { create } from 'zustand'
 // screen reader that tabs back into the region later never re-reads a stale announcement, and two
 // textually-identical announcements in a row are never silently swallowed.
 
-/** A `window.setTimeout` handle (renderer/DOM code, never Node): always a `number`. */
-export type TimerHandle = number
-
 interface ChatAreaAnnouncerState {
   text: string
   announce(text: string): void
 }
 
 export const useChatAreaAnnouncer = create<ChatAreaAnnouncerState>((set) => {
-  let clearTimer: TimerHandle | undefined
-  let pendingTimer: TimerHandle | undefined
+  // Browser `setTimeout` (renderer/DOM code, not Node) returns a numeric handle (quality-gate
+  // remediation, code-reviewer LOW, PR #634: matches `split-store.ts`'s own `persistTimer`
+  // pattern, inline rather than a one-consumer exported type).
+  let clearTimer: number | undefined
+  let pendingTimer: number | undefined
   return {
     text: '',
     announce: (next) => {

@@ -107,6 +107,9 @@ export function App() {
   // just rendering one pane) never announced its own swap-chip focus changes. Driven by
   // `isSplit` throughout instead, regardless of whether both panes currently fit on screen.
   const focusedSessionName = isSplit ? sessions.find((session) => session.id === paneSessionIds[focusedIndex])?.name : undefined
+  // Quality-gate remediation (code-reviewer, LOW, PR #634): was called inline inside the JSX
+  // below; moved up with the other hooks, which is where a hook call belongs.
+  const chatAreaAnnouncement = useChatAreaAnnouncer((s) => s.text)
 
   // Spec 005 (FR-007, research.md Decision 8): Ctrl+Shift+\ moves focus to the other pane while
   // a split is open, active window-wide (same pattern MessageInput.tsx's Ctrl+Shift+X listener
@@ -116,17 +119,23 @@ export function App() {
     if (!isSplit) return
     function onKeyDown(event: KeyboardEvent) {
       if (!event.ctrlKey || !event.shiftKey || event.code !== 'Backslash') return
-      // Round 3 (accessibility-auditor, Low): skips while a modal dialog (DeleteDialog's
-      // AlertDialog) is open -- without this, the chord could flip `focusedIndex` and move real
-      // DOM focus into the OTHER pane's textarea while Radix's own FocusScope keeps keyboard
-      // focus trapped inside the still-open dialog, leaving the "Focused" badge and live-region
-      // announcement contradicting where focus (and the Escape/Enter keys) actually go. Round 3
-      // (code-reviewer, Low): a bare `[role="dialog"]` also matched Radix's non-modal
-      // `PopoverContent` (e.g. StatusBar's "Free up memory" popover) -- focus is not trapped
-      // there, so the chord silently no-op'd while it was open for no reason. Narrowed to only
-      // the dialogs that actually trap focus: `alertdialog` (always modal) and a `dialog` that
-      // declares itself modal via `aria-modal="true"`.
-      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"]')) return
+      // Quality-gate remediation (accessibility-auditor/code-reviewer, HIGH, PR #634): the
+      // previous `[role="dialog"][aria-modal="true"]` half of this guard never matched
+      // anything -- the installed @radix-ui/react-dialog sets `role="dialog"` but never
+      // `aria-modal`, confirmed in its own source, and nothing in this codebase sets
+      // `aria-modal` by hand either. Every `role="dialog"` rendered here (Dialog, and Sheet,
+      // which is built on the same primitive) IS modal (`hideOthers`), so matching the role
+      // alone is both correct and simpler than the dead `aria-modal` check it replaces.
+      // `role="menu"` (DropdownMenu/ContextMenu) and the two `data-slot` markers (Popover,
+      // Select, neither of which sets a distinguishing role) are not modal but are
+      // conservatively included too: a destructive-feeling chord firing behind an open menu
+      // or popover is just as unexpected as behind a dialog.
+      if (
+        document.querySelector(
+          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="popover-content"], [data-slot="select-content"]'
+        )
+      )
+        return
       event.preventDefault()
       useSplitStore.getState().focusOther()
     }
@@ -138,16 +147,42 @@ export function App() {
   // the focused pane of a genuine split, the sole visible pane during the narrow-window
   // collapse (still `isSplit`, see `otherSessionForNarrowCollapse` above), or the single
   // pane when there is no split at all -- all three render with `paneIndex={isSplit ?
-  // focusedIndex : 0}` below, so that same expression picks the right pane here too. Reuses
-  // the Ctrl+Shift+\ chord's own window-wide pattern and modal guard immediately above.
+  // focusedIndex : 0}` below, so that same expression picks the right pane here too.
   // `menu.ts` moved the Electron `role: 'close'` accelerator off Ctrl+W to Alt+F4 specifically
   // so this listener -- never window close -- receives it; `event.preventDefault()` is
   // this chord's own "stop it falling through" fix on top of that.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!event.ctrlKey || event.shiftKey || event.code !== 'KeyW') return
+      // Quality-gate remediation (accessibility-auditor/code-reviewer/security-auditor,
+      // MEDIUM, PR #634): matching the physical `event.code` (copied from the Backslash
+      // chord above, where it is correct because Shift changes the character) is wrong for a
+      // plain letter chord -- on AZERTY the `KeyW` code is labelled Z, so Ctrl+Z (undo in the
+      // message box) would close the pane while the real Ctrl+W does nothing. `event.key`
+      // matches the letter instead, regardless of layout. `altKey`/`metaKey` excludes AltGr
+      // (reported as Ctrl+Alt on Windows -- some layouts type a real character on this key
+      // with AltGr) and Ctrl+Cmd combinations from closing the pane; `repeat` stops a held
+      // chord from closing a split's two panes one after another; `isComposing` matches the
+      // convention at `MessageInput.tsx:724`.
+      if (
+        !event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.repeat ||
+        event.isComposing ||
+        event.key.toLowerCase() !== 'w'
+      )
+        return
       if (showReadiness || view !== 'chat' || paneSessionIds.length === 0) return
-      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"]')) return
+      // Quality-gate remediation (accessibility-auditor, HIGH, PR #634): same guard, same fix
+      // as the Ctrl+Shift+\ chord above -- see its comment for why `role="dialog"` alone (not
+      // `[aria-modal="true"]`) is the correct match.
+      if (
+        document.querySelector(
+          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="popover-content"], [data-slot="select-content"]'
+        )
+      )
+        return
       event.preventDefault()
       closeChatPane(isSplit ? focusedIndex : 0)
     }
@@ -244,7 +279,7 @@ export function App() {
           mounted here -- outside ChatPane entirely, per the decision -- not gated on
           `isSplit` like the region above, since closing the single, non-split pane down to
           zero is the one case that region's own gate would otherwise miss. */}
-      <div aria-live="polite" className="sr-only">{useChatAreaAnnouncer((s) => s.text)}</div>
+      <div aria-live="polite" className="sr-only">{chatAreaAnnouncement}</div>
       <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
@@ -304,8 +339,10 @@ export function App() {
                   // does not, it only applies style and size containment).
                   <div
                     data-chat-empty-state
+                    role="region"
+                    aria-label="Chat"
                     tabIndex={-1}
-                    className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground outline-none [container-type:size]"
+                    className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [container-type:size]"
                   >
                     <BrandWatermark variant="live" />
                     Select a Session or create one.

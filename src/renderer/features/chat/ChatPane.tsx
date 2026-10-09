@@ -1181,8 +1181,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         open={deleteForId === sessionId}
         onOpenChange={(open) => setDeleteForId(open ? sessionId : null)}
         onDeleted={() => {
-          // FR-016: deleting the Session shown in this pane closes the pane itself (a no-op when
-          // there is no split to close down to), not just a focus move inside it.
+          // FR-016: deleting the Session shown in this pane closes the pane itself: 2->1 leaves the
+          // survivor at full width, 1->0 returns to the empty state (#621), not just a focus
+          // move inside it (quality-gate remediation, verifier LOW, PR #634).
           useSplitStore.getState().closePane(paneIndex)
           // Quality-gate remediation (code-reviewer Low, gate-4): deferred one frame -- while the
           // session list is collapsed (inert), `focusSessionsNav`'s own pane fallback can land on

@@ -132,6 +132,9 @@ replaces the unfocused pane rather than adding a third pane.
    and its session are unchanged.
 3. **Given** a split is open, **When** the developer wants a single pane again, **Then** closing
    either pane returns to one pane, at any time, with no other step required.
+4. **Given** one pane is open (no split), **When** the developer closes it, **Then** the chat area
+   shows the empty state ("Select a Session or create one.") and the Session stays listed,
+   unarchived and running (quality-gate remediation, verifier LOW, PR #634).
 
 ---
 
@@ -218,7 +221,8 @@ alone.
 - **FR-011**: Each pane MUST be independently closeable; closing one pane MUST leave the other as
   the single pane, at full width. A single, unsplit pane MUST also be independently closeable
   (generalised by issue #621): closing it MUST show the existing zero-session empty state, with
-  the session left running, unarchived, and still listed -- never auto-selecting a replacement.
+  the Session's agent left untouched (not stopped, archived or deleted) -- never auto-selecting
+  a replacement.
 - **FR-012**: While two panes are open, "Open in split" and Ctrl+click MUST replace the session
   shown in the unfocused pane rather than opening a third pane.
 - **FR-013**: The developer MUST be able to return to a single pane at any time, by closing
