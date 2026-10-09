@@ -60,7 +60,7 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 
 Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reserves them (Start menu and Task Manager), so the app may never receive them.
 
-Ctrl+W closes the chat pane that is showing right now; it no longer closes the window (Alt+F4 and the window's own caption button still do).
+Ctrl+W closes the chat pane that is showing right now; it no longer closes the window (Alt+F4 and the window's own caption button still do). Known limitation: on layouts whose physical W key types ASCII punctuation and have no w (e.g. Hebrew), Ctrl+W does not fire; use the Close button.
 
 Six rows were removed 2026-10-09 (#429): New Session (Ctrl+N), New Conversation (Ctrl+Shift+N), Jump to the Nth Session (Ctrl+1 to Ctrl+9), Hide or show the session list (Ctrl+B), Cycle Approval mode (Ctrl+Shift+A), and Command palette (Ctrl+K) had no working handler anywhere in the renderer or main process. Ctrl+N, Ctrl+Shift+N, Ctrl+1 to Ctrl+9 and Ctrl+Shift+A stay backlog issue #6; Ctrl+B is #453; Command palette (Ctrl+K) was #5, closed (as completed) without a palette ever shipping, and has no open issue. Open Settings (Ctrl+,) is the one row that instead got a real handler (#395) and stays.
 

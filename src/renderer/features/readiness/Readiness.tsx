@@ -64,7 +64,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
           <span className="font-brand mt-1 text-sm font-medium leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>
         </div>
       </div>
-      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-card-foreground">
+      <div className="w-full max-w-sm p-6 text-foreground">
         <h1 tabIndex={-1} data-readiness-root className="text-base font-medium outline-none">Get Refract ready</h1>
         <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a repository can be added.</p>
         <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-3">

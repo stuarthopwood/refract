@@ -167,12 +167,13 @@ export function App() {
       // code only when `event.key` is neither printable ASCII nor a Latin-script character
       // (quality-gate remediation, PR #637 gate, MEDIUM: the PR #636 fix's printable-ASCII
       // test still wrongly took the code fallback for a genuine, just non-ASCII, Latin
-      // letter -- BÉPO's physical W key types 'é', Turkish-Q's types 'ö', and both ARE
-      // representable Latin-alphabet letters their own layout can also type as plain 'w'
-      // elsewhere, unlike Cyrillic or Greek, which cannot). A Latin letter -- ASCII
-      // (Dvorak's ',', AZERTY's 'z') or accented (BÉPO's 'é', Turkish-Q's 'ö') -- is
-      // compared by `key` and correctly does NOT match; only a genuinely non-Latin
-      // letter (Cyrillic, Greek, ...) falls back to the physical code.
+      // letter -- BÉPO's physical W key types 'é', which IS a Latin letter, so it is
+      // compared by key and does not fire; corrected again, PR #637 gate round 3: an
+      // earlier draft of this comment wrongly claimed Turkish-Q's physical W key types
+      // 'ö' -- it types 'w' there, like QWERTY; 'ö' lives on a different key on that
+      // layout). A Latin-script or printable-ASCII key -- Dvorak's ',', AZERTY's 'z',
+      // BÉPO's 'é' -- is compared by `key` and correctly does NOT match; only a
+      // genuinely non-Latin letter (Cyrillic, Greek, ...) falls back to the physical code.
       const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
       const isW = latin ? event.key.toLowerCase() === 'w' : event.code === 'KeyW'
       if (
@@ -209,7 +210,9 @@ export function App() {
       // which this guard already rejects. Falls back to the physical code only when
       // `event.key` is neither printable ASCII nor a Latin-script character (mirrors the
       // Ctrl+W fix above): AZERTY and QWERTZ already type an unshifted ',' (a Latin
-      // character) and are unaffected either way.
+      // character) and are unaffected either way. Turkish-Q's physical comma key types
+      // 'ö' (Latin), so it is compared by key and does not fire; ',' there sits on
+      // another key.
       const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
       const isComma = latin ? event.key === ',' : event.code === 'Comma'
       if (

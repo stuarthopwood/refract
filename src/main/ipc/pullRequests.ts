@@ -648,7 +648,9 @@ export function registerPullRequests(manager: SessionManager): void {
         // can fail with `not-found` when the Repository was removed while
         // `uniquePullRequestBranchName`/`addWorktreeFromPullRequestBranch` above were still in
         // flight, which would otherwise strand the worktree/branch just created. Reuses the same
-        // removal helper `sessions.delete` already uses, rather than a second cleanup path.
+        // `git worktree remove --force` helper `removeSessionWorktree` falls back to for a
+        // registered worktree (this one always is, having just been created), rather than a
+        // second cleanup path.
         await removeWorktree(repository.path, worktreePath, branch, { deleteBranch: true }).catch(() => undefined);
         return mapStoreThrown(err);
       }
