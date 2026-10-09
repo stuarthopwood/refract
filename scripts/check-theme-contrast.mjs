@@ -365,11 +365,12 @@ const PAIRS = [
   { fg: 'destructive', bg: 'card', min: 4.5 },
   { fg: 'destructive', bg: 'popover', min: 4.5 },
   // Issue #601: `CheckRow.tsx`'s failed/warning hint text (`text-destructive`/
-  // `text-state-needs-you`) used to sit on `--card` (the readiness screen's own grey box,
-  // already covered at 4.5:1 above/below), gated only at the 3:1 non-text floor against
-  // `--background` (the pairs above, shared with the icon-only use of these same tokens).
-  // Removing that box puts the hint text directly on `--background`, so it now needs its own
-  // real 4.5:1 text pair there too.
+  // `text-state-needs-you`) used to sit on `--card` (the readiness screen's own grey box).
+  // Only `destructive`/`card` had a 4.5:1 pair there already (just above); `state-needs-you`/
+  // `card` was never gated at 4.5:1 anywhere. Both tokens were gated against `--background`
+  // only at the 3:1 non-text floor (the pairs above, shared with the icon-only use of these
+  // same tokens). Removing the box puts the hint text directly on `--background`, so both now
+  // need their own real 4.5:1 text pair there too.
   { fg: 'destructive', bg: 'background', min: 4.5 },
   { fg: 'state-needs-you', bg: 'background', min: 4.5 },
   // `--input`/`--ring`, the control-edge tokens every dialog footer's outline Cancel button and
