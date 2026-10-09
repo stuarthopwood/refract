@@ -69,43 +69,66 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
     return { ok: false, reason: 'worktree-missing' };
   }
 
-  // Quality-gate fix (Sec2/Code2/Verif2 Medium, round 3): `path.isAbsolute` on win32 is `false`
-  // for a drive-relative token (`D:foo`), so round 2's `path.isAbsolute(token) ? token : ...`
-  // guard let one slip past the lexical check entirely -- `path.resolve` then expanded it
-  // against Node's OWN notion of "current directory on that drive", landing on `D:\foo`, another
-  // drive, and reaching `fs.realpath` there (same for a RELATIVE `..`-laden token like
-  // `../../Windows/win.ini`, which also skipped the guard and resolved straight to
-  // `C:\Windows\win.ini`). Neither ever actually escaped WITH a file revealed (the post-realpath
-  // containment check below still caught both), but both still touched an arbitrary local path
-  // or drive, and the file-missing/outside-worktree split still leaked whether that path exists.
-  // Fix: `candidate` is now `path.resolve(resolvedRoot, token)` UNCONDITIONALLY -- `path.resolve`
-  // ignores `resolvedRoot` and returns an absolute `token` unchanged, so a genuinely-absolute
-  // token is unaffected; a RELATIVE token (including one laden with `..`) is normalised against
-  // the worktree root, collapsing any `..` segments the SAME way this call already did before.
-  // The lexical containment check below now runs on every token, with no guard at all.
-  const candidate = path.resolve(resolvedRoot, token);
-  const caseInsensitive = process.platform === 'win32';
-  const foldCase = (value: string) => (caseInsensitive ? value.toLowerCase() : value);
-  const rootLower = foldCase(resolvedRoot);
-
-  // Drive-relative on another drive (`D:foo`, no separator after the drive letter): rejected
-  // outright, never handed to `path.resolve` at all -- Node resolves that shape against its own
+  // Quality-gate fix (Code3/Verif3 Low, round 4): moved ABOVE `candidate`'s own computation --
+  // round 3 put this after `const candidate = path.resolve(...)` while claiming the opposite in
+  // its own comment and the PR body ("never handed to `path.resolve` at all"); there was no actual
+  // filesystem effect (a drive-relative token was always rejected here, with no realpath call on
+  // it either way), only the wording and ordering were wrong. Drive-relative on another drive
+  // (`D:foo`, no separator after the drive letter) is rejected outright, now genuinely never
+  // reaching `path.resolve` at all -- Node would otherwise resolve that shape against its own
   // process-wide "current directory on drive D" state, which this handler has no business
   // depending on. The earlier colon rule only ever matched a single-letter PREFIX (`C:`), so a
   // drive-relative token (which also starts `X:` but is NOT followed by a separator) reaches
   // here, not that rule.
   if (/^[A-Za-z]:(?![\\/])/.test(token)) return { ok: false, reason: 'outside-worktree' };
 
-  // Quality-gate fix (round 2, corrected round 3): a LEXICAL containment check on the fully
-  // resolved, normalised `candidate` runs BEFORE `fs.realpath` ever touches it -- a path outside
-  // the worktree is rejected here without ever resolving it (never probes an arbitrary local
-  // path or drive, never lets the file-missing/outside-worktree split leak whether something
-  // outside the worktree happens to exist). The remaining risk -- a symlink/junction INSIDE the
-  // worktree that points outside it -- is exactly what `fs.realpath` below still exists to catch;
-  // this lexical check alone cannot see through a symlink.
-  const lexicalLower = foldCase(candidate);
-  const lexicallyContained = lexicalLower === rootLower || lexicalLower.startsWith(`${rootLower}${path.sep}`);
+  // `candidate` is `path.resolve(resolvedRoot, token)` unconditionally (round 3 fix) --
+  // `path.resolve` ignores `resolvedRoot` and returns an absolute `token` unchanged, so a
+  // genuinely-absolute token is unaffected; a RELATIVE token (including one laden with `..`) is
+  // normalised against the worktree root, collapsing any `..` segments.
+  const candidate = path.resolve(resolvedRoot, token);
+  const caseInsensitive = process.platform === 'win32';
+  const foldCase = (value: string) => (caseInsensitive ? value.toLowerCase() : value);
+  const resolvedRootLower = foldCase(resolvedRoot);
+
+  // Quality-gate fix (Verif3 Medium, round 4): when the Session's worktree path reaches its
+  // files through a junction, symlink or 8.3 short-name segment, `resolvedRoot` above (already
+  // realpath'd) differs from the UNRESOLVED path the agent's own cwd uses and so prints in every
+  // absolute token it writes -- e.g. root `C:\Users\SHOPWO~1\wt` realpaths to
+  // `C:\Users\shopwood\wt`, or a junction `alias` -> `wt`; the agent prints `alias\a.txt`, never
+  // the realpath'd form. The lexical check below previously compared only against `resolvedRoot`,
+  // so every one of those genuinely-legitimate absolute tokens was rejected as outside-worktree
+  // (fails closed -- never an escape -- but still a functional false negative: a real, in-worktree
+  // file the agent itself just printed the path to would never link). Fix: lexical containment
+  // now accepts EITHER root -- `resolvedRoot` (realpath'd) or `unresolvedRoot` (`worktreeRoot`
+  // normalised but never realpath'd, matching what the agent's own absolute paths look like).
+  // The POST-realpath containment check below is against `resolvedRoot` only, unchanged -- a
+  // junction/symlink escape (e.g. `alias\j\secret.txt` where `j` is a junction pointing outside
+  // the worktree) is still caught there, because `fs.realpath` resolves `candidate` to its real,
+  // final target before that check ever runs.
+  const unresolvedRoot = path.resolve(worktreeRoot);
+  const unresolvedRootLower = foldCase(unresolvedRoot);
+
+  // Quality-gate fix (round 2, corrected round 3, extended round 4): a LEXICAL containment check
+  // on the fully resolved, normalised `candidate` runs BEFORE `fs.realpath` ever touches it -- a
+  // path outside the worktree is rejected here without ever resolving it (never probes an
+  // arbitrary local path or drive, never lets the file-missing/outside-worktree split leak
+  // whether something outside the worktree happens to exist). The remaining risk -- a
+  // symlink/junction INSIDE the worktree that points outside it -- is exactly what `fs.realpath`
+  // below still exists to catch; this lexical check alone cannot see through a symlink.
+  const isContainedIn = (value: string, root: string) => value === root || value.startsWith(`${root}${path.sep}`);
+  const candidateLower = foldCase(candidate);
+  const lexicallyContained =
+    isContainedIn(candidateLower, resolvedRootLower) || isContainedIn(candidateLower, unresolvedRootLower);
   if (!lexicallyContained) return { ok: false, reason: 'outside-worktree' };
+
+  // Quality-gate fix (Sec3/Verif3 Low, round 4): a token that resolves to the worktree root
+  // ITSELF (`''` or `.`) was previously accepted and would reveal the whole worktree folder --
+  // harmless (linkify never produces these tokens, and it is still the agent's own worktree), but
+  // not a real file reference either. Rejected as `file-missing` rather than silently succeeding.
+  if (candidateLower === resolvedRootLower || candidateLower === unresolvedRootLower) {
+    return { ok: false, reason: 'file-missing' };
+  }
 
   let resolvedTarget: string;
   try {
@@ -121,9 +144,12 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
   // Case-insensitive on Windows only (`startsWith` against the root plus a trailing separator,
   // never a bare prefix match, so `C:\Repos\worktree-evil` can never pass as contained in
   // `C:\Repos\worktree`); a POSIX filesystem is case-sensitive, so folding case there would let
-  // a differently-cased sibling path wrongly pass as contained.
+  // a differently-cased sibling path wrongly pass as contained. Checked against `resolvedRoot`
+  // only (never `unresolvedRoot`) -- this is the REAL, final-target containment check, and
+  // `resolvedTarget` is already fully realpath'd, so it is only ever meaningfully compared
+  // against the other realpath'd value.
   const targetLower = foldCase(resolvedTarget);
-  const contained = targetLower === rootLower || targetLower.startsWith(`${rootLower}${path.sep}`);
+  const contained = targetLower === resolvedRootLower || targetLower.startsWith(`${resolvedRootLower}${path.sep}`);
   if (!contained) return { ok: false, reason: 'outside-worktree' };
 
   const stat = await fs.stat(resolvedTarget).catch(() => null);

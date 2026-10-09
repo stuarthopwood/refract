@@ -38,6 +38,12 @@ function isPathShaped(candidate: string, hadLineSuffix: boolean): boolean {
   // `//host/share/x.ts`. Mirrors the same backslash-first normalisation `files.ts`'s own UNC
   // check already uses.
   if (candidate.replace(/\\/g, '/').startsWith('//')) return false
+  // Quality-gate fix (Code3/Verif3 Low, round 4): a drive-relative token (`D:foo/x.ts`, colon NOT
+  // followed by a separator -- distinct from the drive-ABSOLUTE `driveAbsolute` check just below,
+  // which requires one) slipped through as path-shaped (it has a `/` and a real extension),
+  // rendering a live button that `files.ts`'s own identical regex always rejects server-side on
+  // click -- a dead control, never a security hole. Rejected here too so it never renders as one.
+  if (/^[A-Za-z]:(?![\\/])/.test(candidate)) return false
   if (candidate.startsWith('@/')) return false
   const driveAbsolute = /^[A-Za-z]:[\\/]/.test(candidate)
   if (!driveAbsolute && !candidate.includes('/') && !candidate.includes('\\')) return false

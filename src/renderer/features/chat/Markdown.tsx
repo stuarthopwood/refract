@@ -12,7 +12,10 @@ import { parseFileReference, looksWithinWorktree } from '@/lib/linkify'
 import { THEMES } from '../../../shared/themes'
 import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
 import { toast } from 'sonner'
-import { notify, useActiveThemeId, useSessionsStore } from '@/state'
+// Quality-gate fix (Code3 Medium, round 4): `notify` is no longer used -- the only call
+// (`FileLinkButton`'s error path) was replaced with `toast.error` directly in round 3; it now
+// appears only in this file's own comments.
+import { useActiveThemeId, useSessionsStore } from '@/state'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -465,7 +468,14 @@ interface ExternalLinkProps extends Omit<React.ComponentPropsWithoutRef<'a'>, 'h
   children: React.ReactNode
 }
 
-function ExternalLink({ href, className, children, ...rest }: ExternalLinkProps) {
+function ExternalLink({ href, className, children, title: _title, ...rest }: ExternalLinkProps) {
+  // Quality-gate fix (A11y3 Low, round 4): a markdown link's own `title` (`[x](url "t")`,
+  // forwarded here via `rest` since round 3) is agent-written text that could show a plausible
+  // but FAKE destination in the browser's native `title` tooltip, layered right on top of this
+  // component's own Radix tooltip naming the REAL destination -- confusing at best, actively
+  // misleading at worst. Screen readers were never affected (`aria-describedby` already takes
+  // priority over `title` for the accessible description), so this is purely a sighted-UI fix:
+  // destructured out and discarded, never reaching the underlying `<a>`.
   const describedById = React.useId()
   // Quality-gate fix (Sec2/Verif2 Medium, round 3): `shown` is the URL object's own canonical
   // serialization -- punycode host, every bidi-override/zero-width/control character percent-
@@ -571,6 +581,17 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
           type="button"
           className={cn(activeClassName, className)}
           aria-label={`Show in File Explorer: ${label}`}
+          // Quality-gate fix (A11y3/Code3/Verif3 Low, round 4): round 3's `aria-hidden` on
+          // `TooltipContent` below does NOT stop the double announcement it was meant to --
+          // Radix sets `aria-describedby` to the tooltip's own id on this button while the
+          // tooltip is open regardless, and `aria-describedby` still reads a directly-referenced
+          // node's text even when that node is `aria-hidden` (the exact same accname rule
+          // `ExternalLink`'s own `hidden` span above relies on -- the two fixes contradicted each
+          // other). Fixed here instead: an explicit `aria-describedby={undefined}` on THIS
+          // element. Radix's `Slot`/`mergeProps` gives the child's own prop precedence, so this
+          // blocks Radix from setting its own `aria-describedby` at all -- nothing points at the
+          // tooltip, and the button's `aria-label` alone is read, once.
+          aria-describedby={undefined}
           onClick={() => {
             void window.refract.sessions.revealFile(sessionId, path).then((result) => {
               // Quality-gate fix (Verif2 Medium, round 3): the decision comment asks for a
@@ -586,17 +607,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
           {label}
         </button>
       </TooltipTrigger>
-      {/* Quality-gate fix (A11y2 Low, round 3): no established repo precedent for
-          Tooltip+aria-label co-occurrence to follow (checked ChatHeader.tsx and every other
-          icon/control+Tooltip site app-wide; none pair a Radix `TooltipContent` with an
-          `aria-label` on the same control, so this is a new case, not an existing convention to
-          match). Decision: `aria-hidden` on the visible tooltip bubble -- the button's own
-          `aria-label` ("Show in File Explorer: {label}") already fully states the control's
-          purpose and destination to assistive tech; the floating tooltip is sighted-only sugar
-          for the same information, and Radix wires its own `aria-describedby` from trigger to
-          content by default, which would otherwise have AT read the near-identical text twice
-          for every single hover/focus. */}
-      <TooltipContent aria-hidden="true" className="[overflow-wrap:anywhere]">
+      <TooltipContent className="[overflow-wrap:anywhere]">
         Show in File Explorer: {label}
       </TooltipContent>
     </Tooltip>

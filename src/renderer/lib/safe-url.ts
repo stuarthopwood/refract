@@ -29,5 +29,17 @@ export function safeUrl(href: string | null | undefined): string | undefined {
   } catch {
     return undefined
   }
-  return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : undefined
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined
+  // Quality-gate fix (Sec3/Code3 Medium, round 4): a URL carrying userinfo (`https://google.com@
+  // evil.example/`, or `https://user:pw@evil.example/`) parses fine and `parsed.href` serializes
+  // it unchanged -- the tooltip/description then faithfully shows the look-alike `google.com`
+  // ahead of the real host, `evil.example`, which only appears after the `@`. The browser still
+  // navigates to the REAL host (`evil.example`), so this is exactly decision 7's "tooltip names
+  // the real destination" defence being defeated by a userinfo-prefixed look-alike -- the classic
+  // version of this trick, distinct from the homograph/bidi spoofing round 3 already closed.
+  // Rejected outright rather than stripped-and-shown: a legitimate link never needs embedded
+  // basic-auth credentials in chat text, and stripping-then-showing would still invite a reader
+  // to trust a host string the href itself never promised.
+  if (parsed.username || parsed.password) return undefined
+  return parsed.href
 }
