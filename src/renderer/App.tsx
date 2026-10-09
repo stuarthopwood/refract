@@ -12,11 +12,13 @@ import { ProfileItem } from '@/features/profile/ProfileItem'
 import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
+import { toast } from 'sonner'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import { useRepositoriesStore, useSessionsStore, useSplitStore, useSubagentPanelStore, useViewStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { focusSessionPane } from '@/lib/focus'
 
 // Spec 005 (research.md Decision 6, FR-017): below this many pixels of chat-area width, two
 // minimum-width panes (360px each, matching the "chat" ResizablePanel's own existing floor) can
@@ -196,6 +198,149 @@ export function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showReadiness, view, paneSessionIds.length, isSplit, focusedIndex])
+
+  // Issue #6 (keyboard shortcut set), first slice: Ctrl+N creates a new Session. Target rule
+  // (decided on the issue before implementing, reusing #620's own UX-consult decision 7
+  // verbatim): the FOCUSED pane's repository and its default branch when a pane is open
+  // (`frontSessionId` above already picks that session id -- index 0 for a single pane, the
+  // focused pane's id for a real split); with no pane open and exactly one repository, that
+  // repository; otherwise (no pane open with 2+ repositories, OR a focused pane whose
+  // repository can no longer be resolved -- e.g. removed mid-session, a defensive extension of
+  // the decided rule) moves focus to the first repository group's quick-create "+" button
+  // instead of guessing which repository to create in. Zero repositories is covered by
+  // `showReadiness` below -- the Readiness screen, not the session list, is showing then.
+  // Restricted to `view === 'chat'`, the same guard Ctrl+W above uses, since this rule depends
+  // on the chat view's own focused-pane state; reaching from Settings/Manage sessions/Pull
+  // requests is left to a later slice. Ctrl+Shift+N, Ctrl+1..9 and Ctrl+Shift+A stay out of
+  // this slice entirely (still backlog issue #6).
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      // Same printable-ASCII/Latin-script key match (with a physical-code fallback for a
+      // non-Latin layout) as the Ctrl+W chord above -- see its own comment for the full
+      // layout-independence rationale (PR #634/#636/#637 remediations).
+      const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
+      const isN = latin ? event.key.toLowerCase() === 'n' : event.code === 'KeyN'
+      if (
+        !event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.repeat ||
+        event.isComposing ||
+        !isN
+      )
+        return
+      if (showReadiness || view !== 'chat') return
+      // Quality-gate remediation pattern (see `OVERLAY_OPEN_SELECTOR`'s own comment above).
+      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
+      event.preventDefault()
+
+      // Quality-gate fix (round 2, Code/Verif Low): read the live session list here instead of
+      // closing over the `sessions` prop, so that value no longer needs to sit in this effect's
+      // own dependency array -- every session-status update used to re-attach this listener.
+      const currentSessions = useSessionsStore.getState().sessions
+      const focusedSession = frontSessionId
+        ? currentSessions.find((session) => session.id === frontSessionId)
+        : undefined
+      const repositories = useRepositoriesStore.getState().repositories
+      const target = focusedSession
+        ? repositories.find((candidate) => candidate.id === focusedSession.repositoryId)
+        : repositories.length === 1
+          ? repositories[0]
+          : undefined
+      // Quality-gate fix (round 2, Code/A11y/Verif Medium): a repository whose git read failed
+      // has `defaultBranch === ''` -- treated as UNRESOLVED (the same "leave it out" rule
+      // #620/#635 already apply to the row menu item and the Manage screen), not as a real
+      // target, so it takes the focus-the-"+" fallback below instead of announcing "Creating
+      // session from " and calling `create(id, '')`.
+      const repository = target?.defaultBranch ? target : undefined
+
+      if (!repository) {
+        const plus = document.querySelector<HTMLElement>('[data-quick-create-session]')
+        plus?.focus()
+        // Quality-gate fix (round 2, A11y/Verif Medium): when the session list is collapsed to
+        // zero width, its content stays mounted but `inert` (App.tsx's own `navCollapsed`
+        // state further down) -- an `inert` element cannot take focus, so `.focus()` above is a
+        // silent no-op there, and the keypress has already been `preventDefault`ed. Checking
+        // whether focus genuinely moved catches that (and the button being altogether absent)
+        // in one condition, and announces instead of leaving the user with no feedback at all.
+        if (document.activeElement !== plus) {
+          useChatAreaAnnouncer
+            .getState()
+            .announce('Open the session list to choose a repository for the new session')
+        }
+        return
+      }
+
+      // Quality-gate fix (round 2, Sec/A11y/Verif Medium): the shared guard every other
+      // `create()` caller already relies on (the row menu item's #620 fix, the quick-create
+      // "+" button's own early-return at `SessionList.tsx:937`) -- silently ignores a repeat
+      // chord while this repository's create is already running, instead of re-announcing
+      // "Creating session from {branch}" and then showing a spurious "already being created"
+      // error toast for what is, from the user's own perspective, the same single request.
+      if (useSessionsStore.getState().creatingRepositoryIds.has(repository.id)) return
+
+      // Quality-gate fix (round 2, A11y/Verif Medium): captured at keydown, BEFORE the
+      // multi-second worktree create runs, so success can tell whether the user is still where
+      // they were when they pressed the chord (decision 8: move focus into the new pane "only
+      // if the user has not moved on") -- the same check #620's own row-menu create already
+      // applies via `isStillHere()`.
+      const origin = document.activeElement
+      const originPaneContainer = origin?.closest('[data-session-pane]') ?? null
+
+      // Issue #620, UX consult item 2 decision 9's own pattern: announce immediately (the
+      // worktree create itself takes seconds), then let a successful `focusSessionPane` call's
+      // own focus-move stand in for a second "created" announcement; only announce success
+      // explicitly when that pane genuinely cannot be found (the view moved on in the meantime).
+      useChatAreaAnnouncer.getState().announce(`Creating session from ${repository.defaultBranch}`)
+      void useSessionsStore
+        .getState()
+        .create(repository.id, repository.defaultBranch)
+        .then((result) => {
+          if (!result.ok) {
+            // Quality-gate fix (round 2, Sec/A11y/Verif/Code HIGH): `notify()` is a plain,
+            // auto-dismissing toast. #620's OWN create() callers (the row menu item,
+            // `SessionList.tsx:358`, and the Manage screen, `ManageSessionRow.tsx:322`) both
+            // settled a create failure as a dismiss-until-cleared toast instead, exactly
+            // decision 8's own wording ("an error toast that stays until dismissed") -- only the
+            // older quick-create "+" button still uses the auto-dismissing one. Ctrl+N has no
+            // visible on-screen trigger at all, so that toast is the ONLY failure cue there is;
+            // it must not disappear on its own (WCAG 2.2.1).
+            toast.error(result.error.message, { duration: Infinity, closeButton: true })
+            return
+          }
+          // Quality-gate fix (round 2, A11y/Verif Medium): one frame later (matching #620's own
+          // row-menu deferral), and only if the user genuinely has not moved on in the meantime
+          // -- focus is still nowhere in particular (`<body>`, disconnected), still on the
+          // control that triggered this, or still inside the pane that was focused back at
+          // keydown. Otherwise the new pane's own focus never happens at all (never yanking
+          // focus away from wherever the user has since moved to), and only the announcement
+          // reports the outcome.
+          requestAnimationFrame(() => {
+            const active = document.activeElement
+            const stillHere =
+              !active ||
+              active === document.body ||
+              !active.isConnected ||
+              active === origin ||
+              (originPaneContainer !== null && originPaneContainer.contains(active))
+            if (!stillHere || !focusSessionPane(result.value.id)) {
+              useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+            }
+          })
+        })
+        .catch((err: unknown) => {
+          // Quality-gate fix (round 2, Sec/A11y/Verif/Code HIGH+Medium): `create()`'s own
+          // `finally` re-throws a rejected IPC call rather than swallowing it -- with no
+          // `.catch` here, that was an unhandled promise rejection: no toast at all, and the
+          // "Creating session from {branch}" announcement left standing with no resolution.
+          // Mirrors #620's own row-menu create, which catches this exact case.
+          toast.error(err instanceof Error ? err.message : String(err), { duration: Infinity, closeButton: true })
+        })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showReadiness, view, frontSessionId])
 
   // Issue #395 (keyboard shortcut set): Ctrl+, opens Settings -- documented in
   // docs/design/index.md's Keyboard table since before any handler existed (found while

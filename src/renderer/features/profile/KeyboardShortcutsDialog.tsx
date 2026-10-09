@@ -33,10 +33,10 @@ interface ShortcutGroup {
 // Every row here was individually verified against its real handler before being listed
 // (MessageInput.tsx, App.tsx, SessionList.tsx) -- see this task's own report for the full
 // row-by-row verification table. A chord in docs/design/index.md's "Keyboard" table that is NOT listed
-// here (Ctrl+N, Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) has no working
+// here (Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) has no working
 // handler yet (#429 trimmed the table itself to match); it is left out entirely rather than
-// shown as a false promise. Ctrl+, (Open Settings, #395) moved from that list into a real row
-// below now that a handler exists (App.tsx).
+// shown as a false promise. Ctrl+, (Open Settings, #395) and Ctrl+N (New session, #6's first
+// slice) each moved from that list into a real row below now that a handler exists (App.tsx).
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     heading: 'Message box',
@@ -46,6 +46,12 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { action: 'Clear the message box', keys: ['Esc'] },
       { action: 'Stop the running turn', keys: ['Ctrl', 'Shift', 'X'] }
     ]
+  },
+  {
+    // Issue #6 (keyboard shortcut set), first slice: its own heading, listed before "Chat
+    // pane" -- creating a Session precedes using one.
+    heading: 'Sessions',
+    rows: [{ action: 'New session', keys: ['Ctrl', 'N'] }]
   },
   {
     // Issue #621 (close chat pane): its own heading, not folded into "Split view" below --

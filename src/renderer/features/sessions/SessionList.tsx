@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -1152,12 +1153,35 @@ function RepositoryGroup({
                 aria-label={`New session from ${repository.defaultBranch} in ${repository.name}`}
                 aria-disabled={creating || undefined}
                 className="aria-disabled:opacity-50"
+                // Quality-gate fix (round 2, Sec/Code/Verif Medium): no `aria-keyshortcuts`
+                // here -- unlike `ChatHeader.tsx`'s Ctrl+W button or `MessageInput.tsx`'s
+                // Ctrl+Shift+X button (each the ONE control its own chord always activates),
+                // Ctrl+N activates the FOCUSED pane's repository's button, or only focuses the
+                // first one -- every OTHER repository's button would advertise a chord that
+                // does not reach it, a false shortcut claim to assistive tech. The tooltip's own
+                // Kbd hint below stays (decision 7 asks for the hint there, not this attribute).
+                // Issue #6, first slice: Ctrl+N's own fallback target (no pane open, 2+
+                // repositories, or a focused pane's repository that can no longer be resolved)
+                // moves focus here via `document.querySelector('[data-quick-create-session]')`
+                // (`App.tsx`), which returns the FIRST match in DOM order -- i.e. this
+                // repository group's own button when it is the first one rendered, with no
+                // extra per-repository targeting needed.
+                data-quick-create-session
                 onClick={() => void handleQuickCreate()}
               >
                 {creating ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <PlusIcon aria-hidden />}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>New session from {repository.defaultBranch}</TooltipContent>
+            <TooltipContent>
+              New session from {repository.defaultBranch}
+              {/* Issue #6, first slice, decision 7: the Ctrl+N hint goes on THIS tooltip only
+                  -- not the row menu's "New session from {branch}" item, and not the branch-
+                  picker button below, which is a different action (#620's own decision). */}
+              <KbdGroup>
+                <Kbd>Ctrl</Kbd>
+                <Kbd>N</Kbd>
+              </KbdGroup>
+            </TooltipContent>
           </Tooltip>
           <Tooltip>
             <NewSessionDialog
