@@ -16,19 +16,40 @@ export interface FileReference {
 // drive letter sits at the very start, not the end, of a real path.
 const TRAILING_LINE_COL_RE = /^(.*?):(\d+)(?::(\d+))?$/
 
-function isPathShaped(candidate: string): boolean {
-  if (/^[A-Za-z]:[\\/]/.test(candidate)) return true // absolute Windows path, e.g. C:\Repos\...
-  return candidate.includes('/') || candidate.includes('\\') // relative, has a path separator
+// Quality-gate fix (Code/Verif HIGH/Medium, round 2): the original rule -- any path separator
+// anywhere -- linkified `origin/main`, `owner/repo`, `feat/610-hyperlinks`, `text/html`, `and/or`,
+// `@/lib/linkify`, `**/*.ts`, and whole shell commands (`git diff origin/main`), each becoming a
+// dead "Show in File Explorer" button. A candidate must now ALSO: contain no whitespace (a real
+// single-token path never does); contain none of the characters Windows forbids in a path or that
+// signal something else entirely (`*?<>|"#`); not contain `://` (scheme-shaped -- `safeUrl` already
+// had first refusal, this is never a second path guess at the same text); not start with `//`
+// (UNC-shaped) or `@/` (this repo's own import-alias convention, not a filesystem path); and
+// finally -- unless a trailing `:line[:col]` suffix was itself already stripped, which is strong
+// standalone evidence this is a source reference -- have a real extension on its last segment, the
+// one signal that actually tells `origin/main` (no extension) apart from `src/App.tsx` (does).
+function isPathShaped(candidate: string, hadLineSuffix: boolean): boolean {
+  if (!candidate) return false
+  if (/\s/.test(candidate)) return false
+  if (/[*?<>|"#]/.test(candidate)) return false
+  if (candidate.includes('://')) return false
+  if (candidate.startsWith('//')) return false
+  if (candidate.startsWith('@/')) return false
+  const driveAbsolute = /^[A-Za-z]:[\\/]/.test(candidate)
+  if (!driveAbsolute && !candidate.includes('/') && !candidate.includes('\\')) return false
+  if (hadLineSuffix) return true
+  const lastSegment = candidate.split(/[\\/]/).pop() ?? ''
+  return /\.[^\\/.]+$/.test(lastSegment)
 }
 
 /** `null` when `token` (already trimmed by the caller) is not shaped like a file path -- a bare
- * word, a command, a ratio like "4.5:1", or anything else with no path separator and no drive
- * prefix is deliberately left as plain inline code, not guessed at. */
+ * word, a command, a ratio like "4.5:1", a package/mime name, or anything else `isPathShaped`
+ * rejects is deliberately left as plain inline code, not guessed at. */
 export function parseFileReference(token: string): FileReference | null {
   if (!token) return null
   let candidate = token
   let line: number | undefined
   let col: number | undefined
+  let hadLineSuffix = false
 
   const match = TRAILING_LINE_COL_RE.exec(token)
   if (match) {
@@ -40,10 +61,11 @@ export function parseFileReference(token: string): FileReference | null {
       candidate = base
       line = Number(lineStr)
       col = colStr ? Number(colStr) : undefined
+      hadLineSuffix = true
     }
   }
 
-  if (!isPathShaped(candidate)) return null
+  if (!isPathShaped(candidate, hadLineSuffix)) return null
   return { path: candidate, line, col }
 }
 

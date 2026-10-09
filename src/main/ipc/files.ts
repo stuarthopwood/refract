@@ -15,8 +15,16 @@ import type { SessionManager } from '../SessionManager';
 import { invalidArgument, notFound } from './util';
 
 /** Windows reserved device names (case-insensitive, with or without a trailing extension) --
- * rejected as a path SEGMENT anywhere in the token, before any filesystem call ever touches it. */
-const RESERVED_NAME_RE = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.[^\\/]*)?$/i;
+ * rejected as a path SEGMENT anywhere in the token, before any filesystem call ever touches it.
+ * Quality-gate fix (round 2): also covers the console-handle aliases (`CONIN$`/`CONOUT$`),
+ * superscript digit variants of `COM`/`LPT` Windows itself still recognises (`COM\u00b9`-`COM\u00b3`,
+ * `LPT\u00b9`-`LPT\u00b3`), and trailing spaces/dots (`CON `, `NUL.`) -- none of these reach a real
+ * file in practice (confirmed: `fs.realpath` returns ENOENT for every one), so this is defence in
+ * depth, not the only thing standing between a reserved name and `shell.showItemInFolder`. */
+const RESERVED_NAME_RE = /^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(COM|LPT)[1-9\u00b9\u00b2\u00b3])[ .]*(\.[^\\/]*)?$/i;
+
+const MAX_SESSION_ID_LENGTH = 256;
+const MAX_TOKEN_LENGTH = 4096;
 
 export type ResolveInWorktreeResult =
   | { ok: true; realPath: string }
@@ -61,9 +69,29 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
     return { ok: false, reason: 'worktree-missing' };
   }
 
-  // A relative token resolves against the (already-realpath'd) worktree root; an absolute one is
-  // taken as given and only proven safe by the containment check below, after its own realpath.
+  // A relative token resolves against the (already-realpath'd) worktree root. An absolute one
+  // (or a drive-relative one, `D:foo`, which `path.resolve` also expands against the CURRENT
+  // process directory, never the worktree) is NOT realpath'd yet -- see the lexical check below
+  // for why.
   const candidate = path.isAbsolute(token) ? token : path.resolve(resolvedRoot, token);
+  const caseInsensitive = process.platform === 'win32';
+  const foldCase = (value: string) => (caseInsensitive ? value.toLowerCase() : value);
+  const rootLower = foldCase(resolvedRoot);
+
+  // Quality-gate fix (Sec/Verif Low, round 2): for an absolute/drive-relative token, a LEXICAL
+  // containment check runs BEFORE `fs.realpath` ever touches it -- an absolute path outside the
+  // worktree is rejected here without ever resolving it, so this handler never probes an
+  // arbitrary local path or drive, and the file-missing/outside-worktree split can never leak
+  // whether something outside the worktree happens to exist. A RELATIVE token's own candidate is
+  // already `path.resolve`d against the worktree root above, so it always starts out contained;
+  // the real risk for a relative token is a symlink/junction INSIDE the worktree that points
+  // outside it, which only `fs.realpath` below (not this lexical check) can catch.
+  if (path.isAbsolute(token)) {
+    const lexicalLower = foldCase(candidate);
+    const lexicallyContained = lexicalLower === rootLower || lexicalLower.startsWith(`${rootLower}${path.sep}`);
+    if (!lexicallyContained) return { ok: false, reason: 'outside-worktree' };
+  }
+
   let resolvedTarget: string;
   try {
     // `fs.realpath` (not `fs.stat` first) so a symlink/junction inside the worktree that points
@@ -75,10 +103,11 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
     return { ok: false, reason: 'file-missing' };
   }
 
-  // Case-insensitive (Windows): `startsWith` against the root plus a trailing separator, never a
-  // bare prefix match, so `C:\Repos\worktree-evil` can never pass as contained in `C:\Repos\worktree`.
-  const rootLower = resolvedRoot.toLowerCase();
-  const targetLower = resolvedTarget.toLowerCase();
+  // Case-insensitive on Windows only (`startsWith` against the root plus a trailing separator,
+  // never a bare prefix match, so `C:\Repos\worktree-evil` can never pass as contained in
+  // `C:\Repos\worktree`); a POSIX filesystem is case-sensitive, so folding case there would let
+  // a differently-cased sibling path wrongly pass as contained.
+  const targetLower = foldCase(resolvedTarget);
   const contained = targetLower === rootLower || targetLower.startsWith(`${rootLower}${path.sep}`);
   if (!contained) return { ok: false, reason: 'outside-worktree' };
 
@@ -94,6 +123,9 @@ export function registerFilesIpc(manager: SessionManager): void {
     async (_event, sessionId: unknown, token: unknown): Promise<Result<void>> => {
       if (typeof sessionId !== 'string' || typeof token !== 'string') {
         return invalidArgument(`${IPC_REQUESTS.SESSIONS_REVEAL_FILE} expects a string sessionId and a string path`);
+      }
+      if (sessionId.length > MAX_SESSION_ID_LENGTH || token.length > MAX_TOKEN_LENGTH) {
+        return invalidArgument(`${IPC_REQUESTS.SESSIONS_REVEAL_FILE} rejected an oversized sessionId or path`);
       }
       const session = manager.registry.getSession(sessionId);
       if (!session) return notFound(`Session not found: ${sessionId}`);
