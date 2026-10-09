@@ -126,13 +126,16 @@ export function App() {
       // `aria-modal` by hand either. Every `role="dialog"` rendered here (Dialog, and Sheet,
       // which is built on the same primitive) IS modal (`hideOthers`), so matching the role
       // alone is both correct and simpler than the dead `aria-modal` check it replaces.
-      // `role="menu"` (DropdownMenu/ContextMenu) and the two `data-slot` markers (Popover,
-      // Select, neither of which sets a distinguishing role) are not modal but are
-      // conservatively included too: a destructive-feeling chord firing behind an open menu
-      // or popover is just as unexpected as behind a dialog.
+      // `role="menu"` (DropdownMenu/ContextMenu) is not modal but is conservatively
+      // included too: a destructive-feeling chord firing behind an open menu is just as
+      // unexpected as behind a dialog. Follow-up (PR #634 gate, read-only note): Radix's
+      // Popover also renders `role="dialog"` despite being non-modal (confirmed in its
+      // installed source), so it is already caught by the bare `role="dialog"` match above
+      // -- no separate `data-slot="popover-content"` clause is needed. `data-slot=
+      // "select-content"` stays, since Select sets no distinguishing role at all.
       if (
         document.querySelector(
-          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="popover-content"], [data-slot="select-content"]'
+          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="select-content"]'
         )
       )
         return
@@ -163,6 +166,13 @@ export function App() {
       // with AltGr) and Ctrl+Cmd combinations from closing the pane; `repeat` stops a held
       // chord from closing a split's two panes one after another; `isComposing` matches the
       // convention at `MessageInput.tsx:724`.
+      // Follow-up (PR #634 gate, read-only note): `event.key` alone mismatches non-Latin
+      // keyboard layouts (Cyrillic, Greek, ...), where the physical W-position key types a
+      // non-Latin character that never equals 'w' -- the chord would never fire there even
+      // though `event.code` is still 'KeyW'. Falls back to the physical code only when
+      // `event.key` is not a plain Latin letter at all; a Latin letter (including AZERTY's
+      // 'z', which must NOT match) still matches by key, preserving the AZERTY fix above.
+      const isW = /^[a-z]$/i.test(event.key) ? event.key.toLowerCase() === 'w' : event.code === 'KeyW'
       if (
         !event.ctrlKey ||
         event.shiftKey ||
@@ -170,7 +180,7 @@ export function App() {
         event.metaKey ||
         event.repeat ||
         event.isComposing ||
-        event.key.toLowerCase() !== 'w'
+        !isW
       )
         return
       if (showReadiness || view !== 'chat' || paneSessionIds.length === 0) return
@@ -179,7 +189,7 @@ export function App() {
       // `[aria-modal="true"]`) is the correct match.
       if (
         document.querySelector(
-          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="popover-content"], [data-slot="select-content"]'
+          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="select-content"]'
         )
       )
         return
