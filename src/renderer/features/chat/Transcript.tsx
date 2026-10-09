@@ -10,8 +10,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from 'cn'
 import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
-import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useTranscriptStore } from '@/state'
-import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptItem } from '../../../shared/model'
+import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useTranscriptStore } from '@/state'
+import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { Markdown } from './Markdown'
 import { AgentMessageRow } from './AgentMessageRow'
@@ -303,6 +303,33 @@ function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
   return BOOKKEEPING_KINDS.has(row.kind)
 }
 
+// Issue #457: two independent Settings-driven view filters, applied here in the renderer before
+// `groupToolItems` runs its `ToolGroup` merge (never in main's `HIDDEN_TOOLS` path, which drops an
+// item before it ever becomes a transcript row at all -- these two toggles must instead act as a
+// pure *view* filter: turning one back on restores every hidden row immediately, including past
+// turns, with no reload, since the underlying `TranscriptItem[]` in the transcript store is never
+// touched). Filtering the array handed to `.map()` (the render loop below) rather than hiding rows
+// with CSS is what keeps a hidden row out of the accessibility tree and tab order entirely, and is
+// also what makes a run of now-hidden rows leave no empty gap or stray margin: `isFirstRow`/
+// `previousRow` (the render loop's own gap-class bookkeeping) only ever see the rows that survive
+// this filter, so a hidden row can never become the "previous" row a later one measures its own
+// margin against.
+//
+// "Never hide what needs the user or reports a problem" (issue #457): an answered/pending `ask`
+// question and a `request` card both survive untouched below, since neither is a `ToolGroup` or a
+// `subagent` row to begin with (`groupToolItems` never merges an `ask` call, and `request`/
+// `notice`/`advisory`/`agent-message` rows are never part of either filtered kind). A `ToolGroup`
+// or `subagent` row that reports a problem (an `error` or `interrupted` tool call; an `error` or
+// `exited` subagent) stays visible even with "Show tool calls" off, matching
+// `ChatDisplaySection.tsx`'s own copy ("Approvals, questions, and failed calls always show.").
+function isHiddenRow(row: GroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): boolean {
+  if (row.kind === 'thinking') return !transcriptDisplay.thinking
+  if (transcriptDisplay.toolCalls) return false
+  if (isToolGroup(row)) return !row.items.some((item) => item.status === 'error' || item.status === 'interrupted')
+  if (row.kind === 'subagent') return !(row.status === 'error' || row.status === 'exited')
+  return false
+}
+
 // `MessageScrollerContent` no longer sets a uniform `gap` (see message-scroller.tsx): every row
 // gets its own top margin instead, `mt-6` for the turns/real-message rhythm and `mt-1` only
 // between two consecutive bookkeeping rows, computed once per render by `renderTurn` below.
@@ -340,6 +367,7 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   // clobbered by the other pane's.
   const transcript = useTranscriptStore((state) => state.bySession[sessionId] ?? EMPTY_TRANSCRIPT)
   const sessions = useSessionsStore((state) => state.sessions)
+  const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
   const items = transcript.items
   const receivedAt = transcript.receivedAt
   // Genuinely-empty detection (docs/DESIGN.md "Hide new-session MCP-mount dump", Stuart
@@ -897,7 +925,9 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                 return (
                   <React.Fragment key={turn.userItem?.id ?? `turn-${turnIndex}`}>
                     {showTimeGapDivider && turn.userItem != null && <TimeGapDivider at={turn.userItem.at} />}
-                    {groupToolItems(turn.items).map((row) => {
+                    {groupToolItems(turn.items)
+                      .filter((row) => !isHiddenRow(row, transcriptDisplay))
+                      .map((row) => {
                       const marginClass = isFirstRow
                         ? undefined
                         : previousRow && isBookkeepingRow(previousRow) && isBookkeepingRow(row)

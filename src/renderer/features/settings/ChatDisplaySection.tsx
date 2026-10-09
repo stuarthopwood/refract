@@ -3,10 +3,12 @@
 // "Session readout" toggles' own pattern (`SettingsScreen.tsx`) and the issue's own suggested
 // default behaviour ("They apply immediately, like the readout toggles, with no Save step").
 //
-// Scope note: this section only persists the setting and exposes it to the renderer
-// (`Settings.transcriptDisplay`, `useSettingsStore`) -- applying the actual view filter inside the
-// chat transcript (`Transcript.tsx`/`ToolRow.tsx`) is Phase A territory this story does not touch;
-// see this story's PR body.
+// Scope note: this section persists the setting and exposes it to the renderer
+// (`Settings.transcriptDisplay`, `useSettingsStore`); `Transcript.tsx`'s `isHiddenRow` is the
+// consumer that actually filters the rendered rows from these two booleans (a `thinking` row for
+// the first switch; a `ToolGroup`/`subagent` row, unless it reports an error/interruption, for the
+// second -- see that function's own comment for the full "never hide a problem" rule this
+// section's description text below summarises).
 //
 // Quality-gate remediation: `setTranscriptDisplay` now takes one field at a time (not the whole
 // object spread from the current render), so toggling the second switch before the first save
