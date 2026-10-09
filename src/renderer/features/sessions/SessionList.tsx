@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
-import { ChevronRightIcon, EllipsisVerticalIcon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
+import type { KeyboardEvent, Ref } from 'react'
+import { ChevronRightIcon, EllipsisVerticalIcon, FolderGit2Icon, FolderPlusIcon, GitBranchPlusIcon, GitPullRequestIcon, LoaderCircleIcon, PlusIcon, RotateCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import refractHero from '@/assets/brand/refract-hero.svg'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils'
 import { AddRepositoryDialog } from '@/features/sessions/AddRepositoryDialog'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { RemoveRepositoryDialog } from '@/features/sessions/RemoveRepositoryDialog'
-import { focusRepositoryGroupOrReadiness, focusSessionPane, focusSessionsNav } from '@/lib/focus'
+import { focusRepositoryGroupOrReadiness, focusSessionPane, focusSessionRow, focusSessionsNav } from '@/lib/focus'
 import { NewSessionDialog } from '@/features/sessions/NewSessionDialog'
 import { notify, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
@@ -43,10 +43,17 @@ import { describeStopReason } from '@/features/chat/ChatPane'
 
 function SessionRow({
   session,
-  repository
+  repository,
+  showRepository
 }: {
   session: SessionSummary
   repository: Repository
+  // Issue #527 (UX consult): true only for a row rendered inside the new cross-repository
+  // Archived group, where the repository is no longer implied by the surrounding group alone --
+  // shows the repository name as a secondary label and marks the row "Archived" in its
+  // accessible name, instead of relying on the row's position (the issue's own accessibility
+  // note: never rely on position alone to say a Session is archived).
+  showRepository?: boolean
 }) {
   // Spec 005 (tasks.md T012, T015, T020): shown in either pane (FR-018's own "either pane"
   // reading, extended to this row's own marker); which pane specifically only matters to the
@@ -95,7 +102,6 @@ function SessionRow({
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameRequestedRef = useRef(false)
   const restoreFocusRef = useRef(false)
-  const listFocusRequestedRef = useRef(false)
   // Issue #620, UX consult item 2 decision 8: set synchronously in `onNewSession`'s `onSelect`
   // below so `handleMenuCloseAutoFocus` knows to `preventDefault` Radix's own return-to-trigger
   // -- the create's own then-handler decides where focus actually goes once it settles (unlike
@@ -126,15 +132,30 @@ function SessionRow({
   // `createRequestedRef` is still true, and `handleMenuCloseAutoFocus`'s `createRequestedRef`
   // branch runs it once the content has actually unmounted and `aria-hidden` has lifted.
   const settledCreateRef = useRef<(() => void) | null>(null)
+  // Issue #527 decision 5 (gate round 2 fix, High): mirrors `settledCreateRef`'s own pattern --
+  // a restore that settles DURING the menu's own close animation (`restoreRequestedRef` still
+  // true) stashes its finish function here instead of running immediately, since focus/`#root`
+  // `aria-hidden` are not trustworthy yet; `handleMenuCloseAutoFocus`'s own `restoreRequestedRef`
+  // branch runs it once the content has actually unmounted.
+  const settledRestoreRef = useRef<(() => void) | null>(null)
   // Archive/restore/delete unmount this row asynchronously (the store update that moves it
   // out of the active/archived bucket can land before `onCloseAutoFocus` fires), and sometimes
   // the whole surrounding group unmounts with it (restoring the last archived Session also
   // collapses the Archived <Collapsible>). A plain `closest('ul')` captured once can therefore
   // itself be gone by the time focus needs to move, landing on <body> (WCAG 2.1 AA
   // focus-visibility). Instead this captures, synchronously in each action's `onSelect` while
-  // the row is still mounted, a chain of fallback *elements* (next row, previous row, this
-  // Repository's always-present active-group trigger) and resolves it lazily against
-  // `isConnected`, falling back to the Sessions nav root, which always outlives every row.
+  // the row is still mounted, a chain of fallback *elements* (next row, previous row, this row's
+  // own group's always-present trigger -- a Repository's or, since issue #527, the cross-
+  // repository Archived group's) and resolves it lazily against `isConnected`, falling back to
+  // the Sessions nav root, which always outlives every row.
+  // Issue #527 decision 5 (gate round 1 fix, High): mirrors `createRequestedRef`'s own
+  // pattern -- set synchronously in `onRestore`'s `onSelect` below so `handleMenuCloseAutoFocus`
+  // knows to `preventDefault` Radix's own return-to-trigger and park focus on the generic
+  // nearby fallback instead, while the restore is in flight. `restoreParkedRef` remembers
+  // exactly where that parked, so the later `stillHere` check in `onRestore`'s own `.then` can
+  // tell a deliberate user move apart from focus simply still sitting where this branch left it.
+  const restoreRequestedRef = useRef(false)
+  const restoreParkedRef = useRef<HTMLElement | null>(null)
   const focusFallbackRef = useRef<() => void>(focusSessionsNav)
 
   // Captures the next still-connected place for focus to land after this row unmounts.
@@ -145,7 +166,7 @@ function SessionRow({
     const prevButton =
       (li?.previousElementSibling as HTMLElement | null)?.querySelector<HTMLButtonElement>('.session-open-button') ??
       null
-    const groupRoot = li?.closest<HTMLElement>('[data-repository-id]') ?? null
+    const groupRoot = li?.closest<HTMLElement>('[data-repository-id], [data-archived-group]') ?? null
     const trigger = groupRoot?.querySelector<HTMLButtonElement>('[data-slot="collapsible-trigger"]') ?? null
     focusFallbackRef.current = () => {
       if (nextButton?.isConnected) nextButton.focus()
@@ -407,10 +428,91 @@ function SessionRow({
           })
           .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
       },
+      // Issue #527 decision 5: once the restore actually lands, send focus to the restored
+      // row's own open button under its repository (`focusSessionRow`, #621) instead of only
+      // the generic nearby fallback `captureFocusFallback` captured -- but only while the user
+      // has not moved on in the meantime (still on this row, or on whatever the menu's own
+      // close-autofocus parked focus on while the call was in flight).
       onRestore: () => {
-        listFocusRequestedRef.current = true
+        restoreRequestedRef.current = true
+        // Verif round 3 fix (Low): clears a stale value from an earlier action on this same
+        // row before this restore's own parking (if any) sets it fresh -- `isStillHere` below
+        // reads it, so a leftover value from a PREVIOUS restore could otherwise read as "the
+        // user never moved" for a restore that hasn't parked anything yet.
+        restoreParkedRef.current = null
         captureFocusFallback()
+        const row = rowRef.current
+        const origin = createOriginRef.current === 'context' ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
+        function isStillHere(): boolean {
+          const active = document.activeElement
+          return (
+            !active ||
+            active === document.body ||
+            !active.isConnected ||
+            active === origin ||
+            active === restoreParkedRef.current ||
+            (row?.contains(active) ?? false)
+          )
+        }
         void restore(session.id)
+          .then((ok) => {
+            if (!ok) {
+              // Gate round 3 fix (High, security-auditor + a11y-auditor): a refused restore
+              // settling BEFORE the menu actually closes stashes this finish without ever
+              // parking focus first (`restoreParkedRef` is still null or stale from an earlier
+              // action), so round 2's exact-match check against it was never true and focus was
+              // left on `<body>`. Reuses the same `isStillHere()` check `onRestore`'s own
+              // success path already relies on (covers body/disconnected/origin/parked/inside-
+              // row), never only an exact match against wherever parking happened to land.
+              const finish = () => {
+                if (!isStillHere()) return
+                if (origin?.isConnected) origin.focus()
+                else focusListContainer()
+              }
+              if (restoreRequestedRef.current) settledRestoreRef.current = finish
+              else finish()
+              return
+            }
+            const finish = () => {
+              requestAnimationFrame(() => {
+                if (!isStillHere()) return
+                if (focusSessionRow(session.id)) return
+                // Gate round 2 fix (Medium, a11y-auditor): the restored row's own Repository
+                // group can be collapsed -- fall back to that group's own header trigger (a
+                // sane, specific destination) before the generic nearby fallback, and announce
+                // the outcome either way, since nothing visibly received focus here from the
+                // user's own perspective.
+                const groupTrigger = document.querySelector<HTMLElement>(
+                  `[data-repository-id="${CSS.escape(session.repositoryId)}"] [data-slot="collapsible-trigger"]`
+                )
+                if (groupTrigger?.isConnected) groupTrigger.focus()
+                else focusListContainer()
+                useChatAreaAnnouncer.getState().announce(`Restored ${session.name}`)
+              })
+            }
+            function settleOrRun(): void {
+              if (restoreRequestedRef.current) settledRestoreRef.current = finish
+              else finish()
+            }
+            // Gate round 1 fix (code-reviewer/a11y-auditor, High): `restore()` resolving only
+            // means main wrote the registry and fired `session:list-changed` -- the renderer's
+            // own `sessions` store only reflects the change after ITS OWN separate `refresh()`
+            // round trip (`init-stores.ts`'s `onSessionListChanged` listener). Waits for the
+            // store itself to confirm this Session is no longer archived before moving focus.
+            if (!useSessionsStore.getState().sessions.find((s) => s.id === session.id)?.archivedAt) {
+              settleOrRun()
+              return
+            }
+            const unsubscribe = useSessionsStore.subscribe((state) => {
+              if (state.sessions.find((s) => s.id === session.id)?.archivedAt) return
+              unsubscribe()
+              settleOrRun()
+            })
+            // Safety net: stop waiting (no leaked subscription) if the store never reflects the
+            // restore -- a missed event, or the Session was deleted or re-archived meanwhile.
+            window.setTimeout(unsubscribe, 5000)
+          })
+          .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
       },
       onStopAgent: () => void stopAgent(session.id),
       onDelete: () => {
@@ -431,10 +533,21 @@ function SessionRow({
     if (renameRequestedRef.current) {
       event.preventDefault()
       renameRequestedRef.current = false
-    } else if (listFocusRequestedRef.current) {
+    } else if (restoreRequestedRef.current) {
       event.preventDefault()
-      listFocusRequestedRef.current = false
-      focusListContainer()
+      restoreRequestedRef.current = false
+      const settledRestore = settledRestoreRef.current
+      settledRestoreRef.current = null
+      if (settledRestore) {
+        settledRestore()
+      } else {
+        const origin = isContextMenu ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
+        if (origin?.isConnected) origin.focus()
+        else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+        else focusListContainer()
+        restoreParkedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      }
     } else if (createRequestedRef.current) {
       // Issue #620 decision 8, amended (gate round 1, a11y Medium): `preventDefault` alone left
       // focus on `<body>` for the whole multi-second checkout with no defined target (WCAG
@@ -507,6 +620,14 @@ function SessionRow({
           settledCreateRef.current = null
           createRequestedRef.current = false
           settled?.()
+          // Gate round 2 fix (Low): mirrors the create cleanup above -- reopening this menu
+          // while a previous restore's own settle is still stashed means Radix's close-
+          // autofocus for that earlier close may never fire again; run it now, before this new
+          // open can overwrite anything it reads.
+          const settledRestore = settledRestoreRef.current
+          settledRestoreRef.current = null
+          restoreRequestedRef.current = false
+          settledRestore?.()
           createOriginRef.current = 'context'
           // A11y-review fix (gate round 2, LOW): Shift+F10/the Menu key opens this menu from
           // whatever element already has focus (for example the "..." trigger itself), not
@@ -586,9 +707,19 @@ function SessionRow({
                   {isSplitOpen && isVisible && (
                     <span className="sr-only">{isFocusedPane ? '(focused pane)' : '(shown, unfocused pane)'}</span>
                   )}
+                  {/* Issue #527 accessibility note: the Archived group's own flat cross-
+                      repository list must not rely on position alone to say a Session is
+                      archived. */}
+                  {session.archivedAt && <span className="sr-only">Archived</span>}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-medium">{session.name}</span>
                     <span className="truncate text-xs text-muted-foreground">{session.branch}</span>
+                    {showRepository && (
+                      <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                        <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+                        <span className="truncate" title={repository.name}>{repository.name}</span>
+                      </span>
+                    )}
                     {session.startProgress ? (
                       // Issue #512 requirement 1: the Session row's own "Starting agent... N s"
                       // (the chat pane's banner carries the Keep waiting/Cancel buttons; this row
@@ -663,6 +794,12 @@ function SessionRow({
                 settledCreateRef.current = null
                 createRequestedRef.current = false
                 settled?.()
+                // Gate round 2 fix (Low): mirrors the create cleanup above -- see the matching
+                // ContextMenu comment.
+                const settledRestore = settledRestoreRef.current
+                settledRestoreRef.current = null
+                restoreRequestedRef.current = false
+                settledRestore?.()
                 createOriginRef.current = 'dropdown'
               }}
             >
@@ -726,6 +863,36 @@ function SessionRow({
         }}
       />
     </li>
+  )
+}
+
+// Issue #527 decision 1: the one trigger styling (chevron, size, case, padding) shared by a
+// Repository header and the cross-repository Archived header below, so the two headers cannot
+// drift apart from each other again. A Repository header passes its own rename support; the
+// Archived header (no rename, no actions) passes only a label.
+function GroupHeaderTrigger({
+  label,
+  title,
+  triggerRef,
+  onDoubleClick,
+  onKeyDown
+}: {
+  label: string
+  title?: string
+  triggerRef?: Ref<HTMLButtonElement>
+  onDoubleClick?: () => void
+  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
+}) {
+  return (
+    <CollapsibleTrigger
+      ref={triggerRef}
+      onDoubleClick={onDoubleClick}
+      onKeyDown={onKeyDown}
+      className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    >
+      <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
+      <span className="truncate" title={title}>{label}</span>
+    </CollapsibleTrigger>
   )
 }
 
@@ -852,8 +1019,9 @@ function RepositoryGroup({
     triggerRef.current?.focus()
   }, [renaming])
 
+  // Issue #527: archived Sessions no longer get their own per-repository group here -- they all
+  // move into one cross-repository `ArchivedGroup` at the bottom of the list instead.
   const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
-  const archived = sessions.filter((session) => session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   return (
     <div className="flex flex-col" data-repository-id={repository.id}>
       <Collapsible defaultOpen>
@@ -882,15 +1050,13 @@ function RepositoryGroup({
               )}
             </div>
           ) : (
-            <CollapsibleTrigger
-              ref={triggerRef}
+            <GroupHeaderTrigger
+              triggerRef={triggerRef}
+              label={repository.name}
+              title={repository.path}
               onDoubleClick={startRenaming}
               onKeyDown={handleTriggerKeyDown}
-              className="group/trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-medium text-sidebar-foreground/70 uppercase tracking-wide hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
-              <span className="truncate" title={repository.path}>{repository.name}</span>
-            </CollapsibleTrigger>
+            />
           )}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -961,21 +1127,6 @@ function RepositoryGroup({
           </ul>
         </CollapsibleContent>
       </Collapsible>
-      {archived.length > 0 && (
-        <Collapsible>
-          <CollapsibleTrigger className="group/trigger flex items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-xs font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-            <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90" />
-            <span>Archived ({archived.length})</span>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <ul aria-label={`${repository.name} archived sessions`} className="flex flex-col gap-0.5 py-1">
-              {archived.map((session) => (
-                <SessionRow key={session.id} session={session} repository={repository} />
-              ))}
-            </ul>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
       <RemoveRepositoryDialog
         repository={repository}
         open={removeOpen}
@@ -990,11 +1141,53 @@ function RepositoryGroup({
   )
 }
 
+// Issue #527 (UX consult decisions 1-4): one cross-repository Archived group at the very bottom
+// of the list, a flat list (not sub-grouped by repository -- each row shows its own repository
+// name instead), collapsed by default, hidden entirely while nothing anywhere is archived.
+function ArchivedGroup({
+  sessions,
+  repositoriesById
+}: {
+  sessions: SessionSummary[]
+  repositoriesById: Map<string, Repository>
+}) {
+  // Gate round 1 fix (code-reviewer, Low): counts and renders only rows whose repository is
+  // actually still resolvable -- the invariant (no Session may outlive its own Repository) holds
+  // in practice, but the header's own count must never silently disagree with what the list
+  // below it actually shows if that invariant is ever violated transiently (for example mid-
+  // store-update).
+  const rows = sessions.filter((session) => repositoriesById.has(session.repositoryId))
+  if (rows.length === 0) return null
+  const sorted = [...rows].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+  return (
+    <div className="flex flex-col" data-archived-group="">
+      <Collapsible>
+        <div className="flex items-center gap-1 px-1">
+          <GroupHeaderTrigger label={`Archived (${sorted.length})`} />
+        </div>
+        <CollapsibleContent>
+          <ul aria-label="Archived sessions" className="flex flex-col gap-0.5 py-1">
+            {sorted.map((session) => (
+              <SessionRow
+                key={session.id}
+                session={session}
+                // Non-null: `rows` above already filtered to sessions with a resolvable repository.
+                repository={repositoriesById.get(session.repositoryId)!}
+                showRepository
+              />
+            ))}
+          </ul>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  )
+}
+
 // The session list (docs/DESIGN.md "Layout"): a collapsible group per Repository, Sessions
-// sorted by most recent activity, and a collapsed Archived group at the bottom of each group.
-// Its header (the Refract icon and name, spec 001 T100, FR-057) starts at the very top of the
-// window and is part of the app's merged top row: draggable to move the window, double-click to
-// maximise or restore.
+// sorted by most recent activity, and one cross-repository Archived group at the bottom of the
+// list (issue #527). Its header (the Refract icon and name, spec 001 T100, FR-057) starts at the
+// very top of the window and is part of the app's merged top row: draggable to move the window,
+// double-click to maximise or restore.
 export function SessionList() {
   const repositories = useRepositoriesStore((state) => state.repositories)
   const sessions = useSessionsStore((state) => state.sessions)
@@ -1066,6 +1259,10 @@ export function SessionList() {
               sessions={sessions.filter((session) => session.repositoryId === repository.id)}
             />
           ))}
+          <ArchivedGroup
+            sessions={sessions.filter((session) => session.archivedAt)}
+            repositoriesById={new Map(repositories.map((repository) => [repository.id, repository]))}
+          />
         </div>
       </ScrollArea>
       {/* #447: the only way to add another repository once the first-run screen is gone. A
