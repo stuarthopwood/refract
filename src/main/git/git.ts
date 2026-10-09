@@ -32,27 +32,34 @@ export interface GitRawResult {
   code: number
 }
 
-/** Quality-gate fix (Sec3, round 4, Medium): environment variables that redirect git to a
- * DIFFERENT repository than `cwd` says (set by an unrelated tool, a shell profile, or a parent
- * process) would otherwise let every caller of `gitRaw`/`git` -- not just the delete path --
- * silently operate on the wrong repository (reproduced: `GIT_DIR` pointed at another repo and a
- * `branch -D` deleted a branch there instead). Stripped for every invocation, so every current
- * and future caller in this module gains the same protection, not just `removeSessionWorktree`.
- * `GIT_CEILING_DIRECTORIES` is deliberately kept: it only ever narrows git's own upward search,
- * never redirects it to an unrelated repository, so it adds safety rather than risk. */
-const GIT_ENV_VARS_TO_STRIP = [
-  'GIT_DIR',
-  'GIT_WORK_TREE',
-  'GIT_COMMON_DIR',
-  'GIT_INDEX_FILE',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_NAMESPACE'
-] as const
+/** Environment variables that redirect git to a DIFFERENT repository than `cwd` says (set by an
+ * unrelated tool, a shell profile, or a parent process) would otherwise let every caller of
+ * `gitRaw`/`git` -- not just the delete path -- silently operate on the wrong repository (for
+ * example `GIT_DIR` pointed at another repo and a `branch -D` deleted a branch there instead).
+ * Stripped for every invocation, so every current and future caller in this module gains the
+ * same protection, not just `removeSessionWorktree`. Matched CASE-INSENSITIVELY on every
+ * platform: `{ ...process.env }` preserves whatever casing the variable was actually set with,
+ * and Windows environment lookups are case-insensitive, so deleting only `env['GIT_DIR']` would
+ * leave a `git_dir` or `Git_Dir` override in place for git to still honour, letting a
+ * mixed-case override redirect a `branch -D` to an unrelated repository. `GIT_CEILING_DIRECTORIES`
+ * is deliberately kept: it only ever narrows git's own upward search, never redirects it to an
+ * unrelated repository, so it adds safety rather than risk. */
+const GIT_ENV_VARS_TO_STRIP: Record<string, true> = {
+  GIT_DIR: true,
+  GIT_WORK_TREE: true,
+  GIT_COMMON_DIR: true,
+  GIT_INDEX_FILE: true,
+  GIT_OBJECT_DIRECTORY: true,
+  GIT_ALTERNATE_OBJECT_DIRECTORIES: true,
+  GIT_NAMESPACE: true
+}
 
 function sanitizedGitEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env }
-  for (const key of GIT_ENV_VARS_TO_STRIP) delete env[key]
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (GIT_ENV_VARS_TO_STRIP[key.toUpperCase()]) continue
+    env[key] = value
+  }
   return env
 }
 

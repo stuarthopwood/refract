@@ -16,6 +16,7 @@ import {
   addWorktree,
   branchExists,
   deleteCheck,
+  deleteCheckForMissingWorktree,
   generateName,
   listBranches,
   recreateWorktree,
@@ -227,7 +228,17 @@ export function registerSessions(manager: SessionManager): void {
     if (!session) return notFound(`Session not found: ${id}`);
     const worktreeExists = await fs.stat(session.worktreePath).then(() => true, () => false);
     if (!worktreeExists) {
-      return { ok: true, value: { uncommittedFiles: 0, unpushedCommits: 0, hasUpstream: false } };
+      // Issue #599: a missing folder used to report zero risk unconditionally, even though
+      // `removeSessionWorktree` can still force-remove a registered worktree entry and
+      // `branch -D` the branch underneath it. Read the real risk from the repository and
+      // branch instead of assuming none.
+      const repository = manager.registry.getRepository(session.repositoryId);
+      if (!repository) return notFound(`Repository not found: ${session.repositoryId}`);
+      try {
+        return { ok: true, value: await deleteCheckForMissingWorktree(repository.path, session.branch) };
+      } catch (err) {
+        return mapStoreThrown(err);
+      }
     }
     try {
       return { ok: true, value: await deleteCheck(session.worktreePath) };
