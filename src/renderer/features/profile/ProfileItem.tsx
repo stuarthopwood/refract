@@ -31,6 +31,7 @@ import { SettingsIcon, TriangleAlertIcon } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { initials } from '@/lib/initials'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
@@ -290,12 +291,28 @@ export function ProfileItem() {
             size="icon"
             className="shrink-0 text-muted-foreground hover:text-foreground"
             aria-label="Settings"
+            aria-keyshortcuts="Control+,"
             onClick={() => useViewStore.getState().openSettings()}
           >
             <SettingsIcon aria-hidden />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="top">Settings</TooltipContent>
+        {/* Issue #395: the chord was documented in docs/design/index.md's Keyboard table
+            with no real handler behind it until now -- this Kbd is the tooltip's own
+            "honesty rule" (KeyboardShortcutsDialog.tsx:2-6) extended to every icon-only
+            control's tooltip, not just that dialog. */}
+        <TooltipContent side="top">
+          Settings
+          <KbdGroup>
+            <Kbd>Ctrl</Kbd>
+            {/* Quality-gate remediation (PR #637 gate, optional a11y): spells the lone
+                comma glyph out for assistive tech, which reads it ambiguously on its own. */}
+            <Kbd>
+              <span aria-hidden>,</span>
+              <span className="sr-only">comma</span>
+            </Kbd>
+          </KbdGroup>
+        </TooltipContent>
       </Tooltip>
 
       <ManageAccountsDialog
