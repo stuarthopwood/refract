@@ -88,7 +88,15 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
   // normalised against the worktree root, collapsing any `..` segments.
   const candidate = path.resolve(resolvedRoot, token);
   const caseInsensitive = process.platform === 'win32';
-  const foldCase = (value: string) => (caseInsensitive ? value.toLowerCase() : value);
+  // Quality-gate fix (Sec4 Medium, round 5, pre-existing since round 2): Unicode `toLowerCase()`
+  // folds `U+212A` (the Kelvin sign) to `'k'`, but NTFS does NOT treat `U+212A` as the same
+  // character as `k`/`K` -- a real-fs probe confirmed a token spelled with `U+212A` in a path
+  // segment passed this LEXICAL check as if it matched an ordinary `k`/`K` segment, even though it
+  // names a DIFFERENT, sibling folder on disk. This lexical check is only a pre-filter (the real
+  // boundary is the post-`realpath` check below, now fixed separately), so folding ASCII letters
+  // only is still safe and correct here: it keeps the intended leniency (an ordinary differently-
+  // cased token still passes this pre-filter) without folding any non-ASCII confusable pair.
+  const foldCase = (value: string) => (caseInsensitive ? value.replace(/[A-Z]/g, (c) => c.toLowerCase()) : value);
   const resolvedRootLower = foldCase(resolvedRoot);
 
   // Quality-gate fix (Verif3 Medium, round 4): when the Session's worktree path reaches its
@@ -141,15 +149,20 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
     return { ok: false, reason: 'file-missing' };
   }
 
-  // Case-insensitive on Windows only (`startsWith` against the root plus a trailing separator,
-  // never a bare prefix match, so `C:\Repos\worktree-evil` can never pass as contained in
-  // `C:\Repos\worktree`); a POSIX filesystem is case-sensitive, so folding case there would let
-  // a differently-cased sibling path wrongly pass as contained. Checked against `resolvedRoot`
-  // only (never `unresolvedRoot`) -- this is the REAL, final-target containment check, and
-  // `resolvedTarget` is already fully realpath'd, so it is only ever meaningfully compared
-  // against the other realpath'd value.
-  const targetLower = foldCase(resolvedTarget);
-  const contained = targetLower === resolvedRootLower || targetLower.startsWith(`${resolvedRootLower}${path.sep}`);
+  // Quality-gate fix (Sec4 Medium, round 5): NO case folding at all here -- this is the REAL,
+  // final-target containment check, the actual security boundary. `resolvedTarget` and
+  // `resolvedRoot` are both already fully realpath'd, and a real-fs probe confirmed
+  // `fs.realpath` always returns the canonical ON-DISK casing regardless of the casing a token
+  // was written in (even an all-caps token realpaths to the file's own true casing) -- so
+  // comparing the two realpath'd strings directly, with no transform, is both sufficient (two
+  // paths naming the same on-disk location always realpath to byte-identical strings) and
+  // necessary (ANY case-folding transform here -- including the ASCII-only fold used for the
+  // lexical pre-check above, and especially Unicode `toLowerCase()`'s `U+212A`-to-`'k'` collapse
+  // -- can make two DIFFERENT on-disk paths compare equal, exactly the Kelvin-sign bypass this
+  // fixes). Checked against `resolvedRoot` only (never `unresolvedRoot`, which was never
+  // realpath'd and so is not a safe thing to compare a realpath'd value against here).
+  const contained =
+    resolvedTarget === resolvedRoot || resolvedTarget.startsWith(`${resolvedRoot}${path.sep}`);
   if (!contained) return { ok: false, reason: 'outside-worktree' };
 
   const stat = await fs.stat(resolvedTarget).catch(() => null);

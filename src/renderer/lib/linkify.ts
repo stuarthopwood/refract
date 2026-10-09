@@ -93,7 +93,17 @@ export function parseFileReference(token: string): FileReference | null {
  * absolute path as if it might work. */
 export function looksWithinWorktree(filePath: string, worktreePath: string): boolean {
   if (!/^[A-Za-z]:[\\/]/.test(filePath) && !filePath.startsWith('/')) return true // relative
-  const normalize = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  // Quality-gate fix (Sec4 Medium, round 5): ASCII-letters-only fold (not Unicode `toLowerCase()`,
+  // which collapses `U+212A` the Kelvin sign to `'k'` even though NTFS treats them as different
+  // characters) -- mirrors `files.ts`'s own identical fix for its lexical pre-check. This function
+  // is never the security boundary (that is `resolveInWorktree`, main-process, on click), only a
+  // cheap client-side rendering decision, but it should still agree with main's own notion of
+  // "looks contained" rather than drift from it.
+  const normalize = (value: string) =>
+    value
+      .replace(/\\/g, '/')
+      .replace(/\/+$/, '')
+      .replace(/[A-Z]/g, (c) => c.toLowerCase())
   const normalizedPath = normalize(filePath)
   const normalizedRoot = normalize(worktreePath)
   return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`)
