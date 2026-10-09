@@ -956,18 +956,24 @@ export function Transcript({
             // ordinary streamed turns are still announced as they always were.
             aria-live={suppressLogAnnouncements ? 'off' : undefined}
           >
-            {/* Issue #618: a Session with history never shows "Ready…", including while it
-                loads or while its agent is starting (hasHistory, not the items-based
-                hasConversationStarted below, which can read empty mid-load for a Session that
-                really does have history). startNotice (ChatPane.tsx's SessionStartNotice,
-                centred) replaces "Ready…" while a brand-new Session's agent is starting; once
-                neither applies (not starting, no history yet) the area is simply empty until
-                real items load -- never a misleading "Ready…" next to a start in progress. */}
-            {!hasHistory && (startNotice ?? (
+            {/* Issue #618 gate-fix (code/verif High): "Ready..." is now ALSO gated on
+                `hasConversationStarted` -- `hasHistory` (ChatPane.tsx's own
+                `session.currentConversation !== null`) only flips true at a settle, so a
+                brand-new Session's own first turn (and the streaming reply under it) used to
+                render UNDER a stale "Ready..." for the whole first turn. This is the ONLY place
+                "Ready..." ever renders (a plain log addition, same as before this issue); the
+                interactive `startNotice` (Keep waiting/Cancel, its own sr-only label) now
+                renders OUTSIDE this role="log" entirely, as a sibling of the viewport below --
+                it was being double-announced as a log addition on top of `announceStart`, and
+                its buttons were focusable controls inside a live log, both already forbidden
+                elsewhere in this file (see that sibling's own comment). Once neither applies the
+                area is simply empty until real items load -- never a misleading "Ready..." next
+                to a start in progress or an in-flight first turn. */}
+            {!hasHistory && !hasConversationStarted && !startNotice && (
               <div className="px-2 py-8 text-center text-sm text-muted-foreground">
                 Ready. Type a message to get started.
               </div>
-            ))}
+            )}
             {hasConversationStarted && hiddenCount > 0 && (
               <div className="px-2 pb-2">
                 <Button type="button" variant="ghost" size="sm" onClick={handleLoadEarlier}>
@@ -1095,6 +1101,21 @@ export function Transcript({
               })}
           </MessageScrollerContent>
         </MessageScrollerViewport>
+        {/* Issue #618 gate-fix (code/verif/a11y High): a sibling of the viewport, OUTSIDE
+            `MessageScrollerContent`'s own `role="log"` above -- same reasoning the
+            `revealedAnnouncement` status span just below already relies on. Nested inside the
+            log, this notice's own sr-only label was being read as a second announcement on top
+            of `announceStart`, each `startProgress.kind` change re-announced it again, and its
+            Keep waiting/Cancel buttons were focusable controls sitting inside a live log. This
+            file's `MessageScroller` root is `relative` (components/ui/message-scroller.tsx), so
+            this overlays centred over the empty transcript area exactly where "Ready..." would
+            otherwise sit -- the two share the identical `!hasHistory && !hasConversationStarted`
+            guard (above and below), so exactly one of them ever renders. */}
+        {!hasHistory && !hasConversationStarted && startNotice && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-2">
+            <div className="pointer-events-auto">{startNotice}</div>
+          </div>
+        )}
         {/* Quality-gate fix (a11y, cycle 2/3, 2026-10-08): a sibling of the viewport, OUTSIDE
             `MessageScrollerContent`'s own `role="log"` -- nested inside the log, this status
             text's own insertion was itself just one more log addition (announced twice: once as

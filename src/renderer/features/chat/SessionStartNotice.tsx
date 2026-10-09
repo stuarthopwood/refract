@@ -6,13 +6,20 @@
 //
 // queued/memory-deferred keep the existing plain, truthful text (describeStartProgress) and
 // the original small spinning LoaderCircleIcon (global prefers-reduced-motion CSS already
-// neutralises it, globals.css:591-599) -- no joke, since that text explains why nothing is
-// happening yet. The random pool only applies to waiting/prompt/extended: each uses its own
-// picked message's leading emoji as the one glyph (replacing the spinner for this stage -- one
-// glyph reads cleaner than a spinner plus a separate emoji) with the elapsed seconds appended
-// quietly after. The emoji and the rest of the joke text are aria-hidden together; the static
-// sr-only label (describeStartProgressLabel) is unchanged, so a screen reader still hears
+// neutralises it, src/renderer/styles/globals.css:591) -- no joke, since that text explains why
+// nothing is happening yet. The random pool only applies to waiting/prompt/extended: each uses
+// its own picked message's leading emoji as the one glyph (replacing the spinner for this stage
+// -- one glyph reads cleaner than a spinner plus a separate emoji) with the elapsed seconds
+// appended quietly after. The emoji and the rest of the joke text are aria-hidden together; the
+// static sr-only label (describeStartProgressLabel) is unchanged, so a screen reader still hears
 // "Starting agent"/"Waiting to start"/"Waiting for memory", never the joke itself.
+//
+// Gate-fix (a11y/code/verif Medium, round 2): restores two things the issue only ever asked to
+// remove the BOX around, not remove outright -- `role="group" aria-label="Agent start"` (so a
+// screen-reader user tabbing or browsing by buttons still hears what group Keep waiting/Cancel
+// belong to, not a bare "Keep waiting"/"Cancel" with no context) and the old Alert's own visible
+// guidance sentence above those buttons (sighted users previously got nothing but bare buttons
+// next to a joke).
 import type { RefObject } from 'react'
 import { LoaderCircleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -46,8 +53,7 @@ export function SessionStartNotice({
   variant
 }: SessionStartNoticeProps) {
   const isJokeStage = startProgress.kind === 'waiting' || startProgress.kind === 'prompt' || startProgress.kind === 'extended'
-  const visibleText =
-    isJokeStage && message ? `${message} ${Math.round(startProgress.elapsedMs / 1000)}s` : describeStartProgress(startProgress)
+  const hasJoke = isJokeStage && !!message
   const showControls =
     startProgress.kind === 'prompt' ||
     startProgress.kind === 'extended' ||
@@ -56,6 +62,8 @@ export function SessionStartNotice({
   return (
     <div
       data-pane-banner
+      role="group"
+      aria-label="Agent start"
       className={cn(
         'flex flex-col gap-2 text-sm text-muted-foreground',
         variant === 'centered' ? 'items-center px-2 py-8 text-center' : 'shrink-0 px-4 pt-3'
@@ -68,19 +76,38 @@ export function SessionStartNotice({
         ) : (
           <LoaderCircleIcon aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
         )}
-        <span aria-hidden="true">{visibleText}</span>
+        {hasJoke ? (
+          <span aria-hidden="true">
+            {message}{' '}
+            {/* Gate-fixes verif Low finding: the ticking counter reads quieter than the joke
+                itself -- smaller text only (same text-muted-foreground colour the whole notice
+                already uses, so no new contrast pair for check:theme-contrast to verify). */}
+            <span className="text-xs tabular-nums">{Math.round(startProgress.elapsedMs / 1000)}s</span>
+          </span>
+        ) : (
+          <span aria-hidden="true">{describeStartProgress(startProgress)}</span>
+        )}
       </p>
       {showControls && (
-        <div className="flex gap-2">
-          {startProgress.kind === 'prompt' && (
-            <Button type="button" size="sm" variant="outline" onClick={onKeepWaiting}>
-              Keep waiting
+        <>
+          <p>
+            {startProgress.kind === 'prompt'
+              ? 'Still starting. Keep waiting, or cancel?'
+              : startProgress.kind === 'extended'
+                ? 'Still starting. Cancel to stop waiting.'
+                : 'Cancel to stop waiting.'}
+          </p>
+          <div className="flex gap-2">
+            {startProgress.kind === 'prompt' && (
+              <Button type="button" size="sm" variant="outline" onClick={onKeepWaiting}>
+                Keep waiting
+              </Button>
+            )}
+            <Button type="button" ref={cancelButtonRef} size="sm" variant="outline" onClick={onCancel}>
+              Cancel
             </Button>
-          )}
-          <Button type="button" ref={cancelButtonRef} size="sm" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-        </div>
+          </div>
+        </>
       )}
     </div>
   )

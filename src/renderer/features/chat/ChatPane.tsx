@@ -2,7 +2,7 @@
 // Session, plus the persistent stopped-Session banner (docs/DESIGN.md "Feedback and errors").
 // Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -117,10 +117,14 @@ interface ChatPaneProps {
 
 export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark }: ChatPaneProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
-  // bug report point 4: while `sessions-store.ts`'s `open()` is in flight for this Session (a
-  // fresh click, or a not-started Session cold-starting its agent), show that here too -- not
-  // just as the list row's spinner -- since the transcript would otherwise just read "No
-  // messages yet" for the ~16s a cold start takes.
+  // bug report point 4 / Issue #618 gate-fix (code/verif/a11y High): while `sessions-store.ts`'s
+  // `open()` is in flight for this Session (a fresh click, or a not-started Session cold-starting
+  // its agent), the list row already shows its own spinner, but `startProgress` itself stays
+  // undefined for the gap between this call going out and the main process's first startProgress
+  // event (OmpProcess.ts spawn + readyWait's first tick) -- without `isOpening` folded into
+  // `effectiveStartProgress` below, a brand-new Session showed "Ready..." and a Session with
+  // history showed nothing at all during that gap, both violating "Ready... never shows while a
+  // start is in progress".
   const isOpening = useSessionsStore((s) => s.openingIds.has(sessionId))
   // Spec 005 (research.md Decision 4): a just-restored pane that has not yet been opened by a
   // real user action skips the snapshot-fetch effect below entirely.
@@ -145,6 +149,15 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // `applyStatus` already does for every Session row from the exact same event. Derived
   // directly from the store instead; `session` is already read above.
   const startProgress = session?.startProgress
+  // Issue #618 gate-fix (code/verif/a11y High): a synthetic placeholder stage covering the
+  // `isOpening` gap above -- `elapsedMs: 0` is a safe placeholder since `describeStartProgress`
+  // rounds to whole seconds and the real event supersedes this within moments. Every notice
+  // (centred, inline) and the starting-message pick effect below read this instead of the raw
+  // `startProgress`; `showBanner` below deliberately keeps reading the raw field -- a stale
+  // failure banner's own priority over a live start is a separate, pre-existing #512/#610
+  // concern this issue does not touch.
+  const effectiveStartProgress: SessionStartProgress | undefined =
+    startProgress ?? (isOpening ? { kind: 'waiting', elapsedMs: 0 } : undefined)
   // Issue #618: `currentConversation` is null until `get_state` first reports `messageCount > 0`
   // at a settle (SessionAgent.ts `syncFromState`), and is cleared back to null by "New
   // conversation" -- exactly the "no history yet for the CURRENT Conversation thread" signal,
@@ -188,14 +201,21 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     sessionId,
     kind: undefined
   })
-  // Issue #618: the random "agent starting" message, picked once per start (not per render,
-  // so it never flickers as the elapsed-seconds counter ticks) in the SAME effect below that
-  // already detects exactly "a start begins" via `prevStartProgressKindRef`, re-rolled only at
-  // its two existing trigger points. `queued`/`memory-deferred` never set this (they keep the
-  // plain, truthful text instead, `SessionStartNotice.tsx`). Ref remembers the last pick per
-  // Session (to avoid repeating it next time, data-model note); state is what actually renders,
-  // reset to `undefined` once a start ends so a stale pick is never read by a later consumer.
-  const startingMessageRef = useRef<{ sessionId: string; index: number } | null>(null)
+  // Issue #618 gate-fix (code/verif Medium): the random "agent starting" message, picked once
+  // per start (not per render, so it never flickers as the elapsed-seconds counter ticks) in the
+  // SAME `useLayoutEffect` below that already detects exactly "a start begins" via
+  // `prevStartProgressKindRef`. `queued`/`memory-deferred` never set this (they keep the plain,
+  // truthful text instead, `SessionStartNotice.tsx`). Keyed by `sessionId` in two Maps, not a
+  // single slot: `activeStartingMessageRef` holds each Session's pick for its CURRENTLY ongoing
+  // start (deleted the instant that start ends); `lastStartingMessageRef` remembers the most
+  // recent pick ever made for that Session (never deleted) as the "avoid repeating it next time"
+  // baseline for its NEXT start. A pane switch away and back mid-start (A -> B -> A) now reuses
+  // A's own `activeStartingMessageRef` entry instead of re-rolling -- the previous single-slot
+  // ref keyed only the current Session, so a switch always read as "nothing picked yet". The
+  // visible `startingMessageIndex` state alone is reset to `undefined` once a start ends, so a
+  // stale pick is never read by a later consumer.
+  const activeStartingMessageRef = useRef<Map<string, number>>(new Map())
+  const lastStartingMessageRef = useRef<Map<string, number>>(new Map())
   const [startingMessageIndex, setStartingMessageIndex] = useState<number | undefined>(undefined)
   const startingMessageText = startingMessageIndex !== undefined ? STARTING_MESSAGES[startingMessageIndex] : undefined
   const startingMessageEmoji = startingMessageIndex !== undefined ? STARTING_MESSAGE_EMOJI[startingMessageIndex] : undefined
@@ -288,25 +308,33 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // visibly -- same "no aria-live region for the routine tick" rule ReadoutChips.tsx's clock
   // follows for the same reason): the start beginning, and the wait reaching its 'prompt'
   // stage (gate-fixes a11y finding: Keep waiting/Cancel appearing was previously silent).
-  useEffect(() => {
+  // Gate-fixes code/a11y Medium finding (round 2, Issue #618): `useLayoutEffect`, not
+  // `useEffect` -- the starting-message pick used to land after the first paint, so every
+  // start's first frame flashed the plain "Starting agent... 0s" text before swapping to the
+  // joke, and a pane switch briefly painted the incoming Session's pane with the outgoing
+  // Session's stale picked text for one frame. Running before paint removes both flashes.
+  useLayoutEffect(() => {
     const prev = prevStartProgressKindRef.current
     const previousKind = prev.sessionId === sessionId ? prev.kind : undefined
-    // Issue #618: re-rolls the starting message at exactly the two transitions the comments
-    // below already treat as "a start genuinely begins" -- a fresh start (no previous kind for
-    // this Session) and the automatic ceiling-triggered retry (`prompt`/`extended` falling back
-    // to `queued`). Every other kind change (`queued`->`waiting`->`prompt`->`extended`) is the
-    // SAME start continuing, so it keeps its already-picked message.
-    const startingAgain =
-      !!startProgress &&
-      (previousKind === undefined ||
-        ((previousKind === 'prompt' || previousKind === 'extended') && startProgress.kind === 'queued'))
-    if (startingAgain) {
-      const prevIndex = startingMessageRef.current?.sessionId === sessionId ? startingMessageRef.current.index : undefined
-      const nextIndex = pickStartingMessageIndex(prevIndex)
-      startingMessageRef.current = { sessionId, index: nextIndex }
-      setStartingMessageIndex(nextIndex)
-    } else if (!startProgress) {
+    // Gate-fixes code/verif Medium finding (round 2, Issue #618): picking is now entirely
+    // independent of the announcement logic below (which still keys off `previousKind` for ITS
+    // own, different purpose) -- see `activeStartingMessageRef`'s own comment above for why.
+    if (!effectiveStartProgress) {
+      activeStartingMessageRef.current.delete(sessionId)
       setStartingMessageIndex(undefined)
+    } else {
+      const isRetryTransition =
+        (previousKind === 'prompt' || previousKind === 'extended') && effectiveStartProgress.kind === 'queued'
+      const active = activeStartingMessageRef.current.get(sessionId)
+      if (active !== undefined && !isRetryTransition) {
+        setStartingMessageIndex(active)
+      } else {
+        const prevIndex = lastStartingMessageRef.current.get(sessionId)
+        const nextIndex = pickStartingMessageIndex(prevIndex)
+        activeStartingMessageRef.current.set(sessionId, nextIndex)
+        lastStartingMessageRef.current.set(sessionId, nextIndex)
+        setStartingMessageIndex(nextIndex)
+      }
     }
     // Gate-fixes Medium finding (cycle 5, reworked cycle 6): the retry announcement fires on an
     // explicit `previousKind` 'prompt'/'extended' -> `startProgress.kind === 'queued'`
@@ -325,13 +353,13 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // that case silently dropped the Keep waiting/Cancel announcement the third branch below
     // exists to give, so screen-reader users switching into an already-prompting Session were
     // never told those controls were on screen.
-    if (session && startProgress?.kind === 'prompt' && !showBanner && previousKind === undefined) {
+    if (session && effectiveStartProgress?.kind === 'prompt' && !showBanner && previousKind === undefined) {
       announceStart(
-        `${session.name} is still starting after ${Math.round(startProgress.elapsedMs / 1000)} seconds. Keep waiting or cancel.`
+        `${session.name} is still starting after ${Math.round(effectiveStartProgress.elapsedMs / 1000)} seconds. Keep waiting or cancel.`
       )
-    } else if (session && startProgress?.kind === 'extended' && previousKind === undefined) {
+    } else if (session && effectiveStartProgress?.kind === 'extended' && previousKind === undefined) {
       announceStart(`${session.name} is still starting. Cancel to stop waiting.`)
-    } else if (session && startProgress && previousKind === undefined) {
+    } else if (session && effectiveStartProgress && previousKind === undefined) {
       // Gate-fixes a11y Low finding (cycle 5): the existing `role="status"` region already said
       // "Retrying…"/"Starting new conversation…"/"Resuming…" for those three cases (below, keyed
       // on `recovering`/`startingNew`/`resuming`); this polite region used to duplicate it for
@@ -346,20 +374,24 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         // ternary here was itself a second, drifting copy of exactly the kind-to-text mapping
         // `describeStartProgressLabel` exists to be the one source of (ChatPane's own banner
         // title and SessionList's row already use it). Reused directly instead.
-        announceStart(`${describeStartProgressLabel(startProgress.kind)}: ${session.name}`)
+        announceStart(`${describeStartProgressLabel(effectiveStartProgress.kind)}: ${session.name}`)
       }
-    } else if (session && (previousKind === 'prompt' || previousKind === 'extended') && startProgress?.kind === 'queued') {
+    } else if (
+      session &&
+      (previousKind === 'prompt' || previousKind === 'extended') &&
+      effectiveStartProgress?.kind === 'queued'
+    ) {
       announceStart(`Retrying start for ${session.name}`)
-    } else if (session && !showBanner && startProgress?.kind === 'prompt' && previousKind !== 'prompt') {
+    } else if (session && !showBanner && effectiveStartProgress?.kind === 'prompt' && previousKind !== 'prompt') {
       // Gate-fixes a11y High finding (cycle 3): only announce "Keep waiting or cancel" when the
       // interactive banner offering them is actually about to render (`!showBanner`) -- a
       // Recover/Retry start used to announce this while the stale failure banner still hid it.
       announceStart(
-        `${session.name} is still starting after ${Math.round(startProgress.elapsedMs / 1000)} seconds. Keep waiting or cancel.`
+        `${session.name} is still starting after ${Math.round(effectiveStartProgress.elapsedMs / 1000)} seconds. Keep waiting or cancel.`
       )
     }
-    prevStartProgressKindRef.current = { sessionId, kind: startProgress?.kind }
-  }, [startProgress, session, announceStart, showBanner, isOpening, recoveringId, startingNewId, resumingId, sessionId])
+    prevStartProgressKindRef.current = { sessionId, kind: effectiveStartProgress?.kind }
+  }, [effectiveStartProgress, session, announceStart, showBanner, recoveringId, startingNewId, resumingId, sessionId])
 
   // Asks for a full snapshot whenever this pane's Session changes (contracts/ipc.md: "the
   // renderer ... asks for a full snapshot via sessions.open when it switches"). Also covers the
@@ -1197,10 +1229,10 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           sessionId={sessionId}
           hasHistory={hasHistory}
           startNotice={
-            !hasHistory && !showBanner && startProgress ? (
+            !hasHistory && !showBanner && effectiveStartProgress ? (
               <SessionStartNotice
                 variant="centered"
-                startProgress={startProgress}
+                startProgress={effectiveStartProgress}
                 message={startingMessageText}
                 emoji={startingMessageEmoji}
                 cancelButtonRef={cancelButtonRef}
@@ -1217,10 +1249,10 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           moving it down here is deliberate, not a leftover). Only rendered when the Session HAS
           history -- a brand-new Session shows the identical notice centred in the empty
           transcript area instead (`startNotice` above), never both, never alongside "Ready…". */}
-      {hasHistory && !showBanner && startProgress && (
+      {hasHistory && !showBanner && effectiveStartProgress && (
         <SessionStartNotice
           variant="inline"
-          startProgress={startProgress}
+          startProgress={effectiveStartProgress}
           message={startingMessageText}
           emoji={startingMessageEmoji}
           cancelButtonRef={cancelButtonRef}
