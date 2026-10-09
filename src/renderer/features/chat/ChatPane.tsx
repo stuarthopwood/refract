@@ -26,6 +26,7 @@ import {
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { canResumeSession, resumeSession } from './resume'
 import { applySnapshot } from './applySnapshot'
+import { closeChatPane } from './closeChatPane'
 import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgress, describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
@@ -126,7 +127,6 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   const isFocused = useSplitStore((s) => s.paneSessionIds.length < 2 || s.focusedIndex === paneIndex)
   const focusMoveSignal = useSplitStore((s) => s.focusMoveSignal)
   const focusPane = useSplitStore((s) => s.focusPane)
-  const closePane = useSplitStore((s) => s.closePane)
   const openInSplit = useSplitStore((s) => s.openInSplit)
   const [stopInfo, setStopInfo] = useState<StopInfo>({})
   // Issue #512 requirement 2: whether the start-failed banner's "Details" disclosure (the
@@ -387,10 +387,21 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // closes its own pane -- `split-store.ts`'s own `pruneDeleted` (reacting to the next
   // `sessions.list()` refresh) is the belt to this braces, for immediate responsiveness without
   // waiting on that round trip.
+  // Pitfall (#621 report): now that `closePane` can take a single, non-split pane all the way to
+  // ZERO (not just no-op, as it did before #621), a merely TRANSIENT `session === undefined` --
+  // the sessions list momentarily out of sync with this pane's own `sessionId` -- must never be
+  // mistaken for a real deletion and close the developer's only open pane out from under them.
+  // Re-checks the freshest store state one frame later (the same tick a genuine
+  // `sessions.list()` refresh and this store's own `set` settle on); the effect's cleanup
+  // cancels the stale check if `session` becomes defined again (a re-render) before it fires.
   useEffect(() => {
     if (session) return
-    useSplitStore.getState().closePane(paneIndex)
-  }, [session, paneIndex])
+    const raf = requestAnimationFrame(() => {
+      const stillMissing = !useSessionsStore.getState().sessions.some((s) => s.id === sessionId)
+      if (stillMissing) useSplitStore.getState().closePane(paneIndex)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [session, sessionId, paneIndex])
 
   // Sibling case to applySnapshot's own reset (test-reviewer finding): archiving or deleting the
   // Session never re-triggers a sessions.open() call for it (the effect above only fires when
@@ -935,26 +946,11 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       <ChatHeader
         sessionId={sessionId}
         focused={isSplit ? isFocused : undefined}
-        onClose={
-          isSplit
-            ? () => {
-                closePane(paneIndex)
-                // Quality-gate remediation (accessibility-auditor, High): closing a pane via
-                // keyboard previously dropped focus to <body> -- both panes unmount/remount
-                // across this structural layout change (App.tsx swaps the whole subtree), so
-                // there is no previous-instance ref to refocus. Waits one frame for the
-                // survivor's fresh single-pane ChatPane/MessageInput to mount, then focuses its
-                // own message box. Round 2 (accessibility-auditor, Medium): falls back past a
-                // disabled textarea (a stopped survivor Session) to the banner's own button,
-                // via the same `focusPaneContent` helper as the focus-move effect above.
-                requestAnimationFrame(() => {
-                  focusPaneContent(
-                    document.querySelector<HTMLElement>('[role="region"][aria-label$=" chat"]')
-                  )
-                })
-              }
-            : undefined
-        }
+        // Issue #621 (close chat pane): always rendered now, not gated on `isSplit` -- a single,
+        // non-split pane is independently closeable down to the existing zero-session empty
+        // state. `closeChatPane` (shared with App.tsx's Ctrl+W chord) owns the announcement and
+        // the focus fallback chain for both the 2->1 (unchanged) and 1->0 (#621) cases.
+        onClose={() => closeChatPane(paneIndex)}
         otherSessionName={otherSession?.name}
         onSwapToOther={otherSession ? () => openInSplit(otherSession.id) : undefined}
         reservesWindowControls={reservesWindowControls}
@@ -1185,8 +1181,9 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         open={deleteForId === sessionId}
         onOpenChange={(open) => setDeleteForId(open ? sessionId : null)}
         onDeleted={() => {
-          // FR-016: deleting the Session shown in this pane closes the pane itself (a no-op when
-          // there is no split to close down to), not just a focus move inside it.
+          // FR-016: deleting the Session shown in this pane closes the pane itself: 2->1 leaves the
+          // survivor at full width, 1->0 returns to the empty state (#621), not just a focus
+          // move inside it (quality-gate remediation, verifier LOW, PR #634).
           useSplitStore.getState().closePane(paneIndex)
           // Quality-gate remediation (code-reviewer Low, gate-4): deferred one frame -- while the
           // session list is collapsed (inert), `focusSessionsNav`'s own pane fallback can land on

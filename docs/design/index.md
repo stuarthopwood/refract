@@ -53,6 +53,7 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 | Newline in message | Shift+Enter |
 | Clear the message box | Esc |
 | Stop the running turn | Ctrl+Shift+X |
+| Close chat pane | Ctrl+W |
 | New Session | Ctrl+N |
 | New Conversation | Ctrl+Shift+N |
 | Jump to the Nth Session | Ctrl+1 to Ctrl+9 |
@@ -64,6 +65,8 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 | Move focus to the other pane (split open) | Ctrl+Shift+\ |
 
 Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reserves them (Start menu and Task Manager), so the app may never receive them.
+
+Ctrl+W closes the chat pane that is showing right now; it no longer closes the window (Alt+F4 and the window's own caption button still do).
 
 Send and Stop each name their chord in a tooltip on hover and keyboard focus, as key-cap icons (the `Kbd` component), not plain text; the chord is not drawn beside the button.
 

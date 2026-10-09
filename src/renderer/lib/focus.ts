@@ -10,18 +10,26 @@
 // still showing (`focusPaneContent`, same target `focusSessionPane` uses), then to the session-
 // list panel's own resize handle -- the one other still-connected, still-focusable control that
 // survives a collapsed/inert nav.
-export function focusSessionsNav(): void {
+// Issue #621 (close chat pane): returns whether it actually found and focused something, so
+// `closeChatPane.ts`'s own last-pane-closed fallback chain can tell whether to keep falling
+// through to the empty-state container instead of assuming this always succeeds. Existing
+// callers below (DeleteDialog cancel/delete, SessionList rename/menu close) all predate this
+// and simply ignore the return value, which TypeScript allows.
+export function focusSessionsNav(): boolean {
   const nav = document.querySelector<HTMLElement>('nav[aria-label="Sessions"]')
   if (nav && !nav.closest('[inert]')) {
     nav.focus()
-    return
+    return true
   }
   const pane = document.querySelector<HTMLElement>('[data-session-pane]')
   if (pane) {
     focusPaneContent(pane)
-    return
+    return true
   }
-  document.querySelector<HTMLElement>('[aria-label="Resize session list"]')?.focus()
+  const handle = document.querySelector<HTMLElement>('[aria-label="Resize session list"]')
+  if (!handle) return false
+  handle.focus()
+  return true
 }
 
 // High remediation (a11y, spec 004): leaving the Settings screen via "Back to chat" unmounts it
@@ -95,6 +103,20 @@ export function focusPaneContent(container: HTMLElement | null): void {
 export function focusSessionPane(sessionId: string): void {
   const container = document.querySelector<HTMLElement>(`[data-session-pane="${CSS.escape(sessionId)}"]`)
   focusPaneContent(container)
+}
+
+// Issue #621 (close chat pane): after closing the LAST open pane, the first-choice focus target
+// is the closed Session's own row open button (so the keyboard lands right back on the row that
+// pane used to belong to) -- `SessionList.tsx` marks it with `data-session-open`, the same
+// stable-attribute-query pattern `focusSessionPane` above already uses. Returns whether a
+// focusable, non-inert row was actually found, so `closeChatPane.ts` can fall through to
+// `focusSessionsNav()` next rather than silently no-op when the row is gone (archived mid-close)
+// or the nav is currently inert (collapsed to zero width).
+export function focusSessionRow(sessionId: string): boolean {
+  const button = document.querySelector<HTMLElement>(`[data-session-open="${CSS.escape(sessionId)}"]`)
+  if (!button || button.closest('[inert]')) return false
+  button.focus()
+  return true
 }
 
 // Issue #488 (T108, FR-059, US1/AC14): removing a repository unmounts its whole group at once.

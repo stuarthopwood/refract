@@ -386,6 +386,10 @@ function SessionRow({ session, repository }: { session: SessionSummary; reposito
                   onDoubleClick={startRenaming}
                   onKeyDown={handleOpenButtonKeyDown}
                   data-choice-item
+                  // Issue #621 (close chat pane): a stable query target for `focusSessionRow`
+                  // (lib/focus.ts) so closing this Session's only open pane can return focus
+                  // here first, before falling back further to the Sessions nav itself.
+                  data-session-open={session.id}
                   className="session-open-button flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pl-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
                   {/* Gate-fixes a11y Low finding (cycle 5): the row kept showing the 'stopped'
