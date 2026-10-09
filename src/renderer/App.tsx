@@ -13,10 +13,11 @@ import { SessionList } from '@/features/sessions/SessionList'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { StatusBar } from '@/features/status-bar/StatusBar'
-import { useRepositoriesStore, useSessionsStore, useSplitStore, useSubagentPanelStore, useViewStore } from '@/state'
+import { notify, useRepositoriesStore, useSessionsStore, useSplitStore, useSubagentPanelStore, useViewStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { focusSessionPane } from '@/lib/focus'
 
 // Spec 005 (research.md Decision 6, FR-017): below this many pixels of chat-area width, two
 // minimum-width panes (360px each, matching the "chat" ResizablePanel's own existing floor) can
@@ -196,6 +197,77 @@ export function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showReadiness, view, paneSessionIds.length, isSplit, focusedIndex])
+
+  // Issue #6 (keyboard shortcut set), first slice: Ctrl+N creates a new Session. Target rule
+  // (decided on the issue before implementing, reusing #620's own UX-consult decision 7
+  // verbatim): the FOCUSED pane's repository and its default branch when a pane is open
+  // (`frontSessionId` above already picks that session id -- index 0 for a single pane, the
+  // focused pane's id for a real split); with no pane open and exactly one repository, that
+  // repository; otherwise (no pane open with 2+ repositories, OR a focused pane whose
+  // repository can no longer be resolved -- e.g. removed mid-session, a defensive extension of
+  // the decided rule) moves focus to the first repository group's quick-create "+" button
+  // instead of guessing which repository to create in. Zero repositories is covered by
+  // `showReadiness` below -- the Readiness screen, not the session list, is showing then.
+  // Restricted to `view === 'chat'`, the same guard Ctrl+W above uses, since this rule depends
+  // on the chat view's own focused-pane state; reaching from Settings/Manage sessions/Pull
+  // requests is left to a later slice. Ctrl+Shift+N, Ctrl+1..9 and Ctrl+Shift+A stay out of
+  // this slice entirely (still backlog issue #6).
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      // Same printable-ASCII/Latin-script key match (with a physical-code fallback for a
+      // non-Latin layout) as the Ctrl+W chord above -- see its own comment for the full
+      // layout-independence rationale (PR #634/#636/#637 remediations).
+      const latin = /^(?:[\x21-\x7e]|\p{Script=Latin})$/u.test(event.key)
+      const isN = latin ? event.key.toLowerCase() === 'n' : event.code === 'KeyN'
+      if (
+        !event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.repeat ||
+        event.isComposing ||
+        !isN
+      )
+        return
+      if (showReadiness || view !== 'chat') return
+      // Quality-gate remediation pattern (see `OVERLAY_OPEN_SELECTOR`'s own comment above).
+      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
+      event.preventDefault()
+
+      const focusedSession = frontSessionId ? sessions.find((session) => session.id === frontSessionId) : undefined
+      const repositories = useRepositoriesStore.getState().repositories
+      const repository = focusedSession
+        ? repositories.find((candidate) => candidate.id === focusedSession.repositoryId)
+        : repositories.length === 1
+          ? repositories[0]
+          : undefined
+
+      if (!repository) {
+        document.querySelector<HTMLElement>('[data-quick-create-session]')?.focus()
+        return
+      }
+
+      // Issue #620, UX consult item 2 decision 9's own pattern: announce immediately (the
+      // worktree create itself takes seconds), then let a successful `focusSessionPane` call's
+      // own focus-move stand in for a second "created" announcement; only announce success
+      // explicitly when that pane genuinely cannot be found (the view moved on in the meantime).
+      useChatAreaAnnouncer.getState().announce(`Creating session from ${repository.defaultBranch}`)
+      void useSessionsStore
+        .getState()
+        .create(repository.id, repository.defaultBranch)
+        .then((result) => {
+          if (!result.ok) {
+            notify(result.error)
+            return
+          }
+          if (!focusSessionPane(result.value.id)) {
+            useChatAreaAnnouncer.getState().announce(`Created session ${result.value.name}`)
+          }
+        })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showReadiness, view, frontSessionId, sessions])
 
   // Issue #395 (keyboard shortcut set): Ctrl+, opens Settings -- documented in
   // docs/design/index.md's Keyboard table since before any handler existed (found while
