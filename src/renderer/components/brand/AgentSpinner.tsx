@@ -21,10 +21,12 @@ export interface AgentSpinnerProps {
    * removed `BrandSpinner` (teal/amber/violet, themselves drawn from `build/refract-icon-v2.svg`)
    * -- chosen as the shipped default because it is Refract's own unambiguous brand palette,
    * already proven against the contrast floor below. `'export'`: Stuart's SVGator source export's
-   * own colours (magenta/blue/red/violet/white), kept available as the documented one-line swap
-   * (issue #612 "Colours"). Both are fixed values, never theme-derived -- same reasoning
+   * own colours (magenta/blue/red/violet/white), kept available as a one-line swap (issue #612
+   * "Colours"). `'blue'`: added after Stuart's live review of PR #616 -- the electric blue from
+   * his own reference screenshot of the target core look (glowing blue discs on black), sampled
+   * as `#1a6bff`/`#3a8dff`. All three are fixed values, never theme-derived -- same reasoning
    * `BrandSpinner`'s research.md decision 7 gave: the mark's identity is its specific palette. */
-  palette?: 'brand' | 'export'
+  palette?: 'brand' | 'export' | 'blue'
 }
 
 /** A tight square crop centred on the mark (issue #612 step 2b). The SVGator export's own
@@ -40,14 +42,9 @@ const VIEW_BOX = '-110 -110 220 220'
  * comment of the source export) exactly. */
 const CYCLE_MS = 3000
 
-/** The export's own cubic-bezier easing (`"e": [.42, 0, .58, 1]` on nearly every keyframe in the
- * source JSON) is applied in `globals.css` to every secondary cue (glow opacity, the core's shape
- * morph and hue-rotate); the orbiting cue deliberately uses `linear` instead -- see `FullMark`/
- * `SimplifiedMark` below and `globals.css`'s `.agent-spinner-rotator` comment. */
-
 /** The agent-working spinner (issue #612, replaces `BrandSpinner`/spec 011): an inline, static
- * recreation of Stuart's SVGator export -- concentric glow rings, a colour-shifting core, and a
- * ring of bright orbiting cues -- with the SVGator runtime removed entirely (the exported
+ * recreation of Stuart's SVGator export -- concentric glow rings, a split/rotate/merge core, and
+ * a ring of bright orbiting cues -- with the SVGator runtime removed entirely (the exported
  * `<script src="https://cdn.svgator.com/...">` loader is forbidden outright by
  * `.specify/memory/constitution.md`'s "App windows MUST NOT load remote content"; this component
  * is 100% static markup plus local CSS, no network, no `dangerouslySetInnerHTML`).
@@ -61,9 +58,8 @@ const CYCLE_MS = 3000
  *    instead of) the export's own colour/shape cues.
  * 2. **No SVGator runtime** (constitution security baseline, above) -- every rotation/scale/
  *    opacity/colour-shift beat the export's trailing JSON describes is reproduced as plain CSS
- *    `@keyframes`, `animation-delay`, this cubic-bezier easing, and (Full variant only) CSS
- *    `filter: hue-rotate()` and a CSS `d: path(...)` shape morph on the core -- not a 1:1 port of
- *    every one of the export's dozens of named groups/gradients/masks, which would be
+ *    `@keyframes`, `animation-delay` and the export's own cubic-bezier easing -- not a 1:1 port
+ *    of every one of the export's dozens of named groups/gradients/masks, which would be
  *    reconstructing SVGator's own renderer rather than hand-authoring a maintainable component.
  * 3. **Gradient-radius keyframe approximated, not reproduced.** The export animates one radial
  *    gradient's own `r` attribute over the loop (`fill radial gradient radius 'rd'` in its JSON).
@@ -75,6 +71,18 @@ const CYCLE_MS = 3000
  *    off-centre `(10,-140)` frame.
  * 5. **Size-gated Full/Simplified variants plus `forced-colors` support** are new: the export has
  *    neither (it is a single, fixed-size, un-size-gated SVGator player output).
+ *
+ * **Design revision (2026-10-09, after Stuart's live review of PR #616):** the core originally
+ * shipped as a single `d: path()` shape morph (a diamond/blob pulse) plus a `filter:
+ * hue-rotate()` colour cycle, both approximating facets of the SVGator export. Stuart liked the
+ * spinner overall but found that core "weird"; `AgentSpinnerCore` below replaces it entirely with
+ * a split/rotate/merge sequence he specified directly from a reference screenshot (three glowing
+ * blue discs in a triangle), which is this component's own design from this point on, not a port
+ * of anything in the SVGator export. The `d: path()` morph and the core's `filter: hue-rotate()`
+ * are both gone -- every property this component now animates is `transform` or `opacity`, so any
+ * number of concurrently-mounted instances stay cheap (no per-core filters or path morphs).
+ * `globals.css`'s `agent-spinner-core-split`/`agent-spinner-core-rotate` keyframes carry the full
+ * timeline; see their own comments for the named percentage stops.
  *
  * Every mounted instance computes its own `animation-delay` once, at mount, as a negative offset
  * into the shared cycle (`-(Date.now() % 3000)ms`) -- the same phase-locking technique
@@ -104,25 +112,77 @@ export function AgentSpinner({ size, className, palette = 'brand' }: AgentSpinne
       data-palette={palette}
       style={{ '--agent-spinner-delay': delay } as CSSProperties}
     >
-      {isFull ? <FullMark uid={uid} /> : <SimplifiedMark />}
+      {isFull ? <FullMark uid={uid} /> : <SimplifiedMark uid={uid} />}
     </svg>
   )
 }
 
-/** The rest-frame diamond (also the Simplified variant's only core shape, and the Full variant's
- * `d: path()` morph's 0%/100% frame -- chosen as the calm reduced-motion rest frame,
- * `globals.css`'s `agent-spinner-core-morph` keyframes). Four cubic segments, not four straight
- * lines, so its command list matches the mid-cycle peak shape authored in `globals.css` exactly
- * (`d: path()` interpolation requires the same command sequence on every keyframe); the peak
- * shape itself lives only in CSS (it is never read from React), so it is not duplicated here. */
-const CORE_REST_D =
-  'M0,-56 C14,-56 20,-20 40,0 C20,20 14,56 0,56 C-14,56 -20,20 -40,0 C-20,-20 -14,-56 0,-56 Z'
+/** The three disc positions, 120deg apart, one pointing straight up (so the rendered triangle
+ * matches Stuart's reference screenshot: one disc on top, two along the bottom). Each slot is a
+ * static rotation (never animated itself); `.agent-spinner-core-rotator` in `globals.css`
+ * animates the whole triangle's orientation, and `.agent-spinner-core-disc-group` animates each
+ * disc's own distance from centre and size -- see `AgentSpinnerCore` below. */
+const CORE_SLOT_ANGLES_DEG = [0, 120, 240] as const
+
+/** The merge/split/rotate core (issue #612, design revision above): shared by both the Full and
+ * Simplified variants -- same geometry, same sequence, at every size (Stuart: "both size variants
+ * ... must show the same split/rotate/reverse/merge sequence"). Each of the three slots renders a
+ * soft radial-gradient halo plus a solid disc on top, both children of one `transform`-only
+ * animated group, so a single loop drives translateY (distance from centre) and scale (disc size)
+ * together: at distance 0 / scale 1 the three discs sit exactly on top of each other and read as
+ * one solid circle (the rest frame and the `prefers-reduced-motion` frame); split moves them
+ * outward while shrinking them (area roughly conserved, `scale(0.577)` approx `1/sqrt(3)`), so the
+ * combined-at-rest circle and the three split discs read as "the same amount of light,
+ * rearranged" rather than one shrinking into nothing.
+ *
+ * The halo is a deliberate, Stuart-specified exception to the Simplified variant's otherwise
+ * gradient-free rule (its reference screenshot explicitly wants a soft glow at every size); the
+ * Full variant additionally blurs its halo (`blurred`) for a softer edge, the one treatment that
+ * stays Full-only, matching Stuart's "no blur filter on the small variant". */
+function AgentSpinnerCore({ uid, blurred }: { uid: string; blurred: boolean }) {
+  const haloGradientId = `agent-spinner-core-halo-gradient-${uid}`
+  const haloBlurId = `agent-spinner-core-halo-blur-${uid}`
+  return (
+    <>
+      <defs>
+        <radialGradient id={haloGradientId}>
+          <stop offset="0%" stopOpacity="0.9" style={{ stopColor: 'var(--agent-spinner-core)' }} />
+          <stop offset="45%" stopOpacity="0.35" style={{ stopColor: 'var(--agent-spinner-core)' }} />
+          <stop offset="100%" stopOpacity="0" style={{ stopColor: 'var(--agent-spinner-core)' }} />
+        </radialGradient>
+        {blurred ? (
+          <filter id={haloBlurId} x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="3" />
+          </filter>
+        ) : null}
+      </defs>
+      <g className="agent-spinner-core-rotator">
+        {CORE_SLOT_ANGLES_DEG.map((angle, i) => (
+          <g
+            key={angle}
+            className={`agent-spinner-core-slot agent-spinner-core-slot-${i}`}
+            style={{ '--agent-spinner-slot-angle': `${angle}deg` } as CSSProperties}
+          >
+            <g className="agent-spinner-core-disc-group">
+              <circle
+                className="agent-spinner-core-halo"
+                r="90"
+                fill={`url(#${haloGradientId})`}
+                style={blurred ? { filter: `url(#${haloBlurId})` } : undefined}
+              />
+              <circle className="agent-spinner-core-disc" r="46" fill="var(--agent-spinner-core)" />
+            </g>
+          </g>
+        ))}
+      </g>
+    </>
+  )
+}
 
 /** The Full variant (32px, 48px): layered glow rings (gradients, a blur filter, a luminance mask
- * fading the outer edge, `mix-blend-mode: screen`), a colour-shifting core (`filter:
- * hue-rotate()` plus the `d: path()` morph above), and the bright orbiting arc-and-dot cue
- * (deviation 1). Every id below is namespaced with the instance's own `uid` so any number of
- * mounted instances never collide. */
+ * fading the outer edge, `mix-blend-mode: screen`), the split/rotate/merge core above with a
+ * blurred halo, and the bright orbiting arc-and-dot cue (deviation 1). Every id below is
+ * namespaced with the instance's own `uid` so any number of mounted instances never collide. */
 function FullMark({ uid }: { uid: string }) {
   const ringGradientId = `agent-spinner-ring-gradient-${uid}`
   const maskId = `agent-spinner-fade-mask-${uid}`
@@ -160,17 +220,10 @@ function FullMark({ uid }: { uid: string }) {
       <g className="agent-spinner-glow-2" style={{ mixBlendMode: 'screen' }}>
         <circle r="60" fill="none" stroke="var(--agent-spinner-glow)" strokeWidth="14" />
       </g>
-      {/* The colour-shifting core: shape morph (`d: path()`) and `filter: hue-rotate()`, the two
-       * effects CSS can drive without JavaScript, approximating the export's own per-facet morph
-       * and hue-rotate keyframes (deviation 2). */}
-      <path
-        className="agent-spinner-core agent-spinner-core-full"
-        d={CORE_REST_D}
-        fill="var(--agent-spinner-core)"
-      />
+      <AgentSpinnerCore uid={uid} blurred />
       {/* The visible orbiting cue (deviation 1): a bright arc with a brighter leading dot,
        * rotating a full turn every loop at constant (linear) speed -- deliberately not the eased
-       * eased curve the rest of this component uses, because constant angular velocity reads as
+       * curve the rest of this component uses, because constant angular velocity reads as
        * mechanical "spinning" far more clearly than an eased one. */}
       <g className="agent-spinner-rotator">
         <circle
@@ -188,12 +241,13 @@ function FullMark({ uid }: { uid: string }) {
   )
 }
 
-/** The Simplified variant (16px, 20px, 24px): flat shapes only -- no gradients, filters, masks or
- * `mix-blend-mode` -- animating only `transform` and `opacity`, so any number of concurrently
- * mounted instances stay cheap (issue #612 step 2e). Keeps the same palette and the same visible
- * orbiting cue as `FullMark`; drops the hue-rotate/shape-morph core (Full variant only) and the
- * layered gradient glow rings, replacing them with one flat ring and one flat core shape. */
-function SimplifiedMark() {
+/** The Simplified variant (16px, 20px, 24px): flat ring and orbit (no gradients, filters, masks
+ * or `mix-blend-mode`), but the SAME split/rotate/merge core as `FullMark` -- including its
+ * gradient halo (the one deliberate exception, see `AgentSpinnerCore`'s own comment) -- just
+ * without the blur filter, matching Stuart's "no blur filter on the small variant". Animates only
+ * `transform` and `opacity`, so any number of concurrently mounted instances stay cheap (issue
+ * #612 step 2e). */
+function SimplifiedMark({ uid }: { uid: string }) {
   return (
     <>
       <circle
@@ -204,11 +258,7 @@ function SimplifiedMark() {
         strokeWidth="12"
         opacity="0.55"
       />
-      <path
-        className="agent-spinner-core agent-spinner-core-simple"
-        d={CORE_REST_D}
-        fill="var(--agent-spinner-core)"
-      />
+      <AgentSpinnerCore uid={uid} blurred={false} />
       {/* One bright dot, no arc (fewer shapes than FullMark's rotator, per issue #612 step 2e) --
        * still a full, constant-speed rotation every loop, so the visible-spin cue survives at
        * every Simplified size. */}
