@@ -20,7 +20,7 @@ import { detectUnexpectedTermination } from '../omp/terminationDetection';
 import type { SessionManager } from '../SessionManager';
 import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util';
 import { attachSnapshotCore } from './attachSnapshot';
-import { resumeSessionCore } from './resumeSession';
+import { resumeSessionCore, BUSY_MESSAGE } from './resumeSession';
 import type { SessionAgent } from '../omp/SessionAgent';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
@@ -170,16 +170,32 @@ export function registerSessions(manager: SessionManager): void {
     return attachSnapshot(id, userAction === true);
   });
 
+  // Issue #603 quality-gate follow-up (Medium, security): `resumingIds` is shared with
+  // SESSIONS_RESUME (declared once, here, so every handler below can see it) -- a resume whose
+  // own tail read finishes while THIS handler's `shutdown()` below is still in flight used to
+  // pass its archived check, start a new omp process and send the resume turn into a Session
+  // this call was about to mark archived. Checking and holding the same lock here closes that
+  // window: a resume already in progress refuses SESSIONS_ARCHIVE outright (and vice versa,
+  // via `checkResumeEligible`'s own `resumingIds.has(id)` check), rather than racing it.
+  const resumingIds = new Set<string>();
   ipcMain.handle(IPC_REQUESTS.SESSIONS_ARCHIVE, async (_event, id: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_ARCHIVE} expects a string id`);
     if (!manager.registry.getSession(id)) return notFound(`Session not found: ${id}`);
-    await manager.getOrCreateAgent(id).shutdown();
+    if (resumingIds.has(id)) {
+      return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
+    }
+    resumingIds.add(id);
     try {
-      await manager.registry.updateSession(id, { archivedAt: new Date().toISOString() });
-      manager.notifyListChanged();
-      return { ok: true, value: undefined };
-    } catch (err) {
-      return mapStoreThrown(err);
+      await manager.getOrCreateAgent(id).shutdown();
+      try {
+        await manager.registry.updateSession(id, { archivedAt: new Date().toISOString() });
+        manager.notifyListChanged();
+        return { ok: true, value: undefined };
+      } catch (err) {
+        return mapStoreThrown(err);
+      }
+    } finally {
+      resumingIds.delete(id);
     }
   });
 
@@ -221,27 +237,40 @@ export function registerSessions(manager: SessionManager): void {
     if (!session) return notFound(`Session not found: ${id}`);
     const repository = manager.registry.getRepository(session.repositoryId);
     if (!repository) return notFound(`Repository not found: ${session.repositoryId}`);
-    await manager.getOrCreateAgent(id).shutdown();
+    // Issue #603 quality-gate follow-up (Medium, security): same shared lock as
+    // SESSIONS_ARCHIVE -- refuses while a resume is in progress for this Session, rather than
+    // racing a resume whose tail read finishes while `shutdown()` below is still in flight,
+    // which used to be able to start a new omp process in a worktree this call is about to
+    // remove.
+    if (resumingIds.has(id)) {
+      return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
+    }
+    resumingIds.add(id);
     try {
-      const worktreeExists = await fs.stat(session.worktreePath).then(() => true, () => false);
-      if (worktreeExists) {
-        await removeWorktree(repository.path, session.worktreePath, session.branch, { deleteBranch: true });
-      } else if (await branchExists(repository.path, session.branch)) {
-        await git(repository.path, ['branch', '-D', session.branch]);
-      }
-      if (session.sessionDir) {
-        if (isStrictDescendantOfOmpSessions(session.sessionDir)) {
-          await deleteSessionConversations(session.sessionDir);
-        } else {
-          console.warn(`sessions.delete: refusing to delete sessionDir outside ~/.omp/agent/sessions: ${session.sessionDir}`);
+      await manager.getOrCreateAgent(id).shutdown();
+      try {
+        const worktreeExists = await fs.stat(session.worktreePath).then(() => true, () => false);
+        if (worktreeExists) {
+          await removeWorktree(repository.path, session.worktreePath, session.branch, { deleteBranch: true });
+        } else if (await branchExists(repository.path, session.branch)) {
+          await git(repository.path, ['branch', '-D', session.branch]);
         }
+        if (session.sessionDir) {
+          if (isStrictDescendantOfOmpSessions(session.sessionDir)) {
+            await deleteSessionConversations(session.sessionDir);
+          } else {
+            console.warn(`sessions.delete: refusing to delete sessionDir outside ~/.omp/agent/sessions: ${session.sessionDir}`);
+          }
+        }
+        await manager.registry.removeSession(id);
+        manager.removeAgent(id);
+        manager.notifyListChanged();
+        return { ok: true, value: undefined };
+      } catch (err) {
+        return mapStoreThrown(err);
       }
-      await manager.registry.removeSession(id);
-      manager.removeAgent(id);
-      manager.notifyListChanged();
-      return { ok: true, value: undefined };
-    } catch (err) {
-      return mapStoreThrown(err);
+    } finally {
+      resumingIds.delete(id);
     }
   });
 
@@ -270,14 +299,14 @@ export function registerSessions(manager: SessionManager): void {
 
   // Issue #509 (PLAN.md row A2g) quality-gate fix: one in-main resume path, never two renderer
   // call sites (the row button and the stop banner) each doing their own recover-then-send --
-  // `resumingIds` is a per-session server-side lock so a double click (one from each UI entry
-  // point, or two in a row before the busy state renders) can only ever send the instruction
-  // once. Re-checks `canResumeSession` here too, against a fresh tail read, rather than trusting
-  // whatever `SessionSummary` the renderer's click happened to be holding -- a second pane could
-  // have already recovered this exact Session in the meantime. Quality-gate fix (cycle 2,
+  // `resumingIds` (declared above, shared with SESSIONS_ARCHIVE/SESSIONS_DELETE -- issue #603)
+  // is a per-session server-side lock so a double click (one from each UI entry point, or two
+  // in a row before the busy state renders) can only ever send the instruction once. Re-checks
+  // `canResumeSession` here too, against a fresh tail read, rather than trusting whatever
+  // `SessionSummary` the renderer's click happened to be holding -- a second pane could have
+  // already recovered this exact Session in the meantime. Quality-gate fix (cycle 2,
   // 2026-10-08): the actual logic lives in `resumeSessionCore` (`resumeSession.ts`), injected
   // with this manager's own real dependencies, so it is unit-testable against fakes.
-  const resumingIds = new Set<string>();
   ipcMain.handle(IPC_REQUESTS.SESSIONS_RESUME, async (_event, id: unknown) => {
     if (typeof id !== 'string') return invalidArgument(`${IPC_REQUESTS.SESSIONS_RESUME} expects a string id`);
     return resumeSessionCore(resumingIds, id, {

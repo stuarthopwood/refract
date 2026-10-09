@@ -9,7 +9,11 @@ import type { SessionStatus } from '../../shared/model';
 import type { SessionRuntimeView } from '../../shared/ipc';
 import { canResumeSession } from '../../shared/canResumeSession';
 
-export type ResumeRefusalCode = 'already-resuming' | 'not-stopped' | 'not-eligible';
+// Issue #603 quality-gate follow-up: renamed from 'already-resuming' -- `resumingIds` (the
+// caller-owned Set checked below) is now also held by SESSIONS_ARCHIVE/SESSIONS_DELETE
+// (sessions.ts) for the whole duration of their own shutdown()+write, not just by a resume in
+// progress, so a refusal here no longer always means a resume specifically.
+export type ResumeRefusalCode = 'busy' | 'not-stopped' | 'not-eligible';
 
 /** `null` means the resume may proceed. Never trusts a client-computed "it's safe to resume" --
  * `status`/`stopReason`/`terminatedUnexpectedly` here must be freshly read (a fresh tail read for
@@ -23,7 +27,7 @@ export function checkResumeEligible(
   terminatedUnexpectedly: boolean,
   archived: boolean,
 ): ResumeRefusalCode | null {
-  if (resumingIds.has(id)) return 'already-resuming';
+  if (resumingIds.has(id)) return 'busy';
   if (status !== 'stopped') return 'not-stopped';
   if (!canResumeSession(status, stopReason, terminatedUnexpectedly, archived)) return 'not-eligible';
   return null;

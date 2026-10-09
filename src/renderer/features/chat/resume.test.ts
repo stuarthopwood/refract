@@ -54,7 +54,7 @@ describe('resumeSession', () => {
   });
 
   it('applies nothing and passes the error through on failure', async () => {
-    const error = { code: 'invalid-argument' as const, message: 'A resume for this Session is already in progress.' };
+    const error = { code: 'invalid-argument' as const, message: 'Another action is already in progress for this Session.' };
     (globalThis as unknown as { window: unknown }).window = {
       refract: { sessions: { resume: vi.fn(async () => ({ ok: false, error })) } },
     };
