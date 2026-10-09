@@ -49,6 +49,14 @@ On 2026-10-08 the user decided that Refract is in a rapid-prototyping phase. Tes
 - Verify behaviour by running the app and exercising the changed path.
 - The phase ends only when the user says so. Until then, put this rule in every delegation brief.
 
+## Docs-only PRs are always merged (HARD RULE)
+
+On 2026-10-09 the user decided that a docs-only PR merges without asking, so the docs in this repository never drift from the code they describe.
+
+- A PR is docs-only when every file it touches is a doc (`*.md`, `docs/`, `AGENTS.md`, `CONTEXT.md`, `README.md` and the like) — no source, test, or config file changed.
+- Open the PR, confirm `git diff origin/main...HEAD --stat` touches docs only, confirm `gh pr view` reports it as mergeable and clean, then merge it (`gh pr merge --squash --delete-branch`) and report the PR number, merge commit, and a one-paragraph summary of what changed. Do not wait for a human to say "merge it."
+- This does not relax any other rule: still no new tests while prototyping (above), still ground every factual claim before writing it, still run the safe-deletion rules for the branch/worktree cleanup that follows a merge.
+
 ## The plan
 
 `docs/PLAN.md` holds the ordered work queue, dependencies and status. When the user asks "What's next?" or "Implement the next story", read it first and follow its "How to use this file" section. Keep it current: update the row's status in the same change as the work. When the user asks for new issues to be created, update the plan in the same turn (working rule 8).
