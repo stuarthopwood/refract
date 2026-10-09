@@ -132,6 +132,12 @@ function SessionRow({
   // `createRequestedRef` is still true, and `handleMenuCloseAutoFocus`'s `createRequestedRef`
   // branch runs it once the content has actually unmounted and `aria-hidden` has lifted.
   const settledCreateRef = useRef<(() => void) | null>(null)
+  // Issue #527 decision 5 (gate round 2 fix, High): mirrors `settledCreateRef`'s own pattern --
+  // a restore that settles DURING the menu's own close animation (`restoreRequestedRef` still
+  // true) stashes its finish function here instead of running immediately, since focus/`#root`
+  // `aria-hidden` are not trustworthy yet; `handleMenuCloseAutoFocus`'s own `restoreRequestedRef`
+  // branch runs it once the content has actually unmounted.
+  const settledRestoreRef = useRef<(() => void) | null>(null)
   // Archive/restore/delete unmount this row asynchronously (the store update that moves it
   // out of the active/archived bucket can land before `onCloseAutoFocus` fires), and sometimes
   // the whole surrounding group unmounts with it (restoring the last archived Session also
@@ -432,44 +438,71 @@ function SessionRow({
         captureFocusFallback()
         const row = rowRef.current
         const origin = createOriginRef.current === 'context' ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
-        void restore(session.id).then((ok) => {
-          if (!ok) return
-          // Gate round 1 fix (code-reviewer/a11y-auditor, High): `restore()` resolving only
-          // means main wrote the registry and fired `session:list-changed` -- the renderer's own
-          // `sessions` store only reflects the change after ITS OWN separate `refresh()` round
-          // trip (`init-stores.ts`'s `onSessionListChanged` listener). Querying `focusSessionRow`
-          // before the store updates can find the STILL-ARCHIVED row (about to unmount) instead
-          // of the new one under its repository, or find nothing at all mid-animation and leave
-          // focus parked with nothing further ever run. Waits for the store itself to confirm
-          // this Session is no longer archived before moving focus at all.
-          function done(): void {
-            requestAnimationFrame(() => {
-              const active = document.activeElement
-              const stillHere =
-                !active ||
-                active === document.body ||
-                !active.isConnected ||
-                active === origin ||
-                active === restoreParkedRef.current ||
-                (row?.contains(active) ?? false) ||
-                (active instanceof HTMLElement && active.closest('[data-archived-group], [role="menu"]') !== null)
-              if (stillHere && !focusSessionRow(session.id)) focusListContainer()
+        function isStillHere(): boolean {
+          const active = document.activeElement
+          return (
+            !active ||
+            active === document.body ||
+            !active.isConnected ||
+            active === origin ||
+            active === restoreParkedRef.current ||
+            (row?.contains(active) ?? false)
+          )
+        }
+        void restore(session.id)
+          .then((ok) => {
+            if (!ok) {
+              // Gate round 2 fix (Medium, all four reviewers): a refused restore never moves
+              // the row anywhere -- if focus is still exactly where the generic nearby fallback
+              // parked it, send it back to the menu's own origin instead (the error toast
+              // already reports the refusal, `sessions-store.ts`'s `restore`).
+              const finish = () => {
+                if (document.activeElement === restoreParkedRef.current && origin?.isConnected) origin.focus()
+              }
+              if (restoreRequestedRef.current) settledRestoreRef.current = finish
+              else finish()
+              return
+            }
+            const finish = () => {
+              requestAnimationFrame(() => {
+                if (!isStillHere()) return
+                if (focusSessionRow(session.id)) return
+                // Gate round 2 fix (Medium, a11y-auditor): the restored row's own Repository
+                // group can be collapsed -- fall back to that group's own header trigger (a
+                // sane, specific destination) before the generic nearby fallback, and announce
+                // the outcome either way, since nothing visibly received focus here from the
+                // user's own perspective.
+                const groupTrigger = document.querySelector<HTMLElement>(
+                  `[data-repository-id="${CSS.escape(session.repositoryId)}"] [data-slot="collapsible-trigger"]`
+                )
+                if (groupTrigger?.isConnected) groupTrigger.focus()
+                else focusListContainer()
+                useChatAreaAnnouncer.getState().announce(`Restored ${session.name}`)
+              })
+            }
+            function settleOrRun(): void {
+              if (restoreRequestedRef.current) settledRestoreRef.current = finish
+              else finish()
+            }
+            // Gate round 1 fix (code-reviewer/a11y-auditor, High): `restore()` resolving only
+            // means main wrote the registry and fired `session:list-changed` -- the renderer's
+            // own `sessions` store only reflects the change after ITS OWN separate `refresh()`
+            // round trip (`init-stores.ts`'s `onSessionListChanged` listener). Waits for the
+            // store itself to confirm this Session is no longer archived before moving focus.
+            if (!useSessionsStore.getState().sessions.find((s) => s.id === session.id)?.archivedAt) {
+              settleOrRun()
+              return
+            }
+            const unsubscribe = useSessionsStore.subscribe((state) => {
+              if (state.sessions.find((s) => s.id === session.id)?.archivedAt) return
+              unsubscribe()
+              settleOrRun()
             })
-          }
-          const isRestored = () => !useSessionsStore.getState().sessions.find((s) => s.id === session.id)?.archivedAt
-          if (isRestored()) {
-            done()
-            return
-          }
-          const unsubscribe = useSessionsStore.subscribe((state) => {
-            if (state.sessions.find((s) => s.id === session.id)?.archivedAt) return
-            unsubscribe()
-            done()
+            // Safety net: stop waiting (no leaked subscription) if the store never reflects the
+            // restore -- a missed event, or the Session was deleted or re-archived meanwhile.
+            window.setTimeout(unsubscribe, 5000)
           })
-          // Safety net: stop waiting (no leaked subscription) if the store never reflects the
-          // restore -- a missed event, or the Session was deleted or re-archived meanwhile.
-          window.setTimeout(unsubscribe, 5000)
-        })
+          .catch((err) => notify({ code: 'reattach-failed', message: err instanceof Error ? err.message : String(err) }))
       },
       onStopAgent: () => void stopAgent(session.id),
       onDelete: () => {
@@ -493,8 +526,18 @@ function SessionRow({
     } else if (restoreRequestedRef.current) {
       event.preventDefault()
       restoreRequestedRef.current = false
-      focusListContainer()
-      restoreParkedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const settledRestore = settledRestoreRef.current
+      settledRestoreRef.current = null
+      if (settledRestore) {
+        settledRestore()
+      } else {
+        const origin = isContextMenu ? (contextMenuOpenerRef.current ?? openButtonRef.current) : menuTriggerRef.current
+        if (origin?.isConnected) origin.focus()
+        else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+        else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+        else focusListContainer()
+        restoreParkedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      }
     } else if (createRequestedRef.current) {
       // Issue #620 decision 8, amended (gate round 1, a11y Medium): `preventDefault` alone left
       // focus on `<body>` for the whole multi-second checkout with no defined target (WCAG
@@ -567,6 +610,14 @@ function SessionRow({
           settledCreateRef.current = null
           createRequestedRef.current = false
           settled?.()
+          // Gate round 2 fix (Low): mirrors the create cleanup above -- reopening this menu
+          // while a previous restore's own settle is still stashed means Radix's close-
+          // autofocus for that earlier close may never fire again; run it now, before this new
+          // open can overwrite anything it reads.
+          const settledRestore = settledRestoreRef.current
+          settledRestoreRef.current = null
+          restoreRequestedRef.current = false
+          settledRestore?.()
           createOriginRef.current = 'context'
           // A11y-review fix (gate round 2, LOW): Shift+F10/the Menu key opens this menu from
           // whatever element already has focus (for example the "..." trigger itself), not
@@ -733,6 +784,12 @@ function SessionRow({
                 settledCreateRef.current = null
                 createRequestedRef.current = false
                 settled?.()
+                // Gate round 2 fix (Low): mirrors the create cleanup above -- see the matching
+                // ContextMenu comment.
+                const settledRestore = settledRestoreRef.current
+                settledRestoreRef.current = null
+                restoreRequestedRef.current = false
+                settledRestore?.()
                 createOriginRef.current = 'dropdown'
               }}
             >
