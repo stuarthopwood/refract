@@ -51,27 +51,26 @@ function withTimeout(): { signal: AbortSignal; clear: () => void } {
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
-/** Combines two abort signals into one that fires when either does, without relying on the
- * newer `AbortSignal.any` (avoids a pinned-`@types/node`/lib-target question for one tiny
- * helper). `b` is optional so every caller that has no outer deadline of its own can skip it. */
-function combineSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
-  if (!b) return a;
-  const controller = new AbortController();
-  if (a.aborted || b.aborted) {
-    controller.abort();
-    return controller.signal;
-  }
-  const onAbort = (): void => controller.abort();
-  a.addEventListener('abort', onAbort, { once: true });
-  b.addEventListener('abort', onAbort, { once: true });
-  return controller.signal;
-}
-
 /** `Repository.remote` (issue #528): read-only, no network call, and bounded so a hung or
  * missing `git` can never block the Session list for long. ONE git spawn per repository (gate
  * round 1 fix, Medium: the original two-call version could take up to two full timeouts in a
- * row) -- `git config --local --get-regexp` lists every configured remote's URL in one call;
- * `origin` is preferred when more than one is configured, else the first one listed.
+ * row) -- `git config --local --list` dumps every locally-configured key in one call, exit 0
+ * whenever the repository's own config is readable at all (even an empty one, which `git init`
+ * never actually produces -- `core.*` is always present), so success here means "the config was
+ * read", never "a remote happened to exist"; `remote.<name>.url` lines are then parsed out of
+ * that dump, `origin` preferred when more than one is configured, else the first one listed.
+ *
+ * Gate round 3 fix (High, verification): `git config --local --get-regexp <pattern>` (round 1/2)
+ * exits 1 with EMPTY stdout whenever the pattern matches nothing -- the one case this function
+ * needs to read as a confirmed `none` -- but `gitRaw` always fills `stderr` with its own
+ * "Command failed: …" message on every non-zero exit (`git.ts`'s own `stderr: stderr ||
+ * error.message`), so that "confirmed no match" case was never distinguishable from a missing
+ * `git`, a spawn failure, or this call's own abort (all ALSO exit 1 with a `stderr` message) --
+ * `none` could then never actually be returned, and every repository with no remote reported
+ * `unknown` instead. Switching to `--list` (success is `exit 0`, not "some specific exit 1 that
+ * happens to carry no stderr") removes that whole ambiguity: a real failure is a NON-zero exit,
+ * full stop, and reports `unknown`; a real "no remote" is `exit 0` with no `remote.*.url` line in
+ * the dump, and reports `none`.
  *
  * `deadline` (optional): an outer signal `repositories.ts`'s own pool aborts once its shared
  * response deadline passes, combined with this function's own per-call timeout (gate round 2
@@ -80,17 +79,11 @@ function combineSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
  *
  * Never throws: an unreadable repository (a moved or deleted folder, or one that is no longer a
  * git repository at all), a missing `git` executable, or a timed-out/aborted call all report
- * `unknown` -- it makes no claim either way, distinct from a confirmed `none`. Gate round 2 fix
- * (High, all four reviewers): a non-zero `gitRaw` exit with empty stdout is `none` ONLY when
- * `git config --get-regexp` genuinely found no match (which always leaves `stderr` empty too) --
- * a missing executable, a spawn failure, or this call's own abort ALL ALSO surface as `code: 1`
- * with empty stdout but a non-empty `stderr` (or, for an abort, `signal.aborted` itself), and
- * must report `unknown`, never the false claim that the repository has been confirmed local-only.
- * A folder whose own `.git` entry is gone (for example absorbed into an unrelated outer
- * repository after a move) is caught by the `fs.stat` check below -- cheaper than, and in place
- * of, a second git call that would otherwise silently walk up to that outer repository's own
- * remotes, the exact same hazard `github.ts`'s own `parseOwnerRepo` has today (gate round 1 fix,
- * Medium). */
+ * `unknown` -- it makes no claim either way, distinct from a confirmed `none`. A folder whose own
+ * `.git` entry is gone (for example absorbed into an unrelated outer repository after a move) is
+ * caught by the `fs.stat` check below -- cheaper than, and in place of, a second git call that
+ * would otherwise silently walk up to that outer repository's own remotes, the exact same hazard
+ * `github.ts`'s own `parseOwnerRepo` has today (gate round 1 fix, Medium). */
 export async function repositoryRemote(repoPath: string, deadline?: AbortSignal): Promise<RepositoryRemote> {
   if (deadline?.aborted) return { kind: 'unknown' };
   const gitDirExists = await stat(path.join(repoPath, '.git')).then(
@@ -100,21 +93,25 @@ export async function repositoryRemote(repoPath: string, deadline?: AbortSignal)
   if (!gitDirExists) return { kind: 'unknown' };
   if (deadline?.aborted) return { kind: 'unknown' };
   const { signal: timeoutSignal, clear } = withTimeout();
-  const signal = combineSignals(timeoutSignal, deadline);
-  const result = await gitRaw(repoPath, ['config', '--local', '--get-regexp', '^remote\\..*\\.url$'], { signal });
+  // Gate round 3 fix (Low, code-reviewer + security-auditor): Electron 44's bundled Node has
+  // `AbortSignal.any` (confirmed by both reviewers), so this no longer hand-rolls a combine
+  // helper that had to remember to remove its own listeners -- `AbortSignal.any` composes and
+  // tears down its internal listeners on its own once either input fires or is garbage
+  // collected, with no accumulation across repeated calls across many repositories.
+  const signal = deadline ? AbortSignal.any([timeoutSignal, deadline]) : timeoutSignal;
+  const result = await gitRaw(repoPath, ['config', '--local', '--list'], { signal });
   const aborted = signal.aborted;
   clear();
   if (aborted) return { kind: 'unknown' };
-  if (result.code === 1 && !result.stdout.trim() && !result.stderr.trim()) return { kind: 'none' };
   if (result.code !== 0) return { kind: 'unknown' };
   const entries = result.stdout
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const spaceIndex = line.indexOf(' ');
-      const key = spaceIndex === -1 ? line : line.slice(0, spaceIndex);
-      const url = spaceIndex === -1 ? '' : line.slice(spaceIndex + 1);
+      const eqIndex = line.indexOf('=');
+      const key = eqIndex === -1 ? line : line.slice(0, eqIndex);
+      const url = eqIndex === -1 ? '' : line.slice(eqIndex + 1);
       const match = /^remote\.(.+)\.url$/.exec(key);
       return { name: match?.[1] ?? '', url };
     })

@@ -54,21 +54,27 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
   return [...entries, ...sessionEntries];
 }
 
-// Issue #528, gate round 1 fix (Medium, all four reviewers): bounds the remote-detection step
-// of `repositories.list()` to about REMOTE_DEADLINE_MS in aggregate, however many repositories
-// are registered or however slow one individual `git` call is -- any repository whose own
-// check has not settled by the shared deadline keeps the `unknown` placeholder for this
-// response. Concurrency is capped so a large repository count never floods the process table
-// with simultaneous `git` spawns.
+// Issue #528, gate round 3 fix (Medium, verification + a11y-auditor): bounds `repositories.
+// remotes()` to about REMOTE_DEADLINE_MS in aggregate, however many repositories are registered
+// or however slow one individual `git` call is -- any repository whose own check has not
+// settled by the shared deadline keeps the `unknown` placeholder for this response. Concurrency
+// is capped so a large repository count never floods the process table with simultaneous `git`
+// spawns.
 //
-// Gate round 2 fix (Medium, code-reviewer + security-auditor): the `remote` this call returns
-// is NOT refreshed again automatically -- the renderer calls `repositories.list()` exactly once,
-// at startup (`init-stores.ts`); only `repositories.add()`/`rename()` recompute it afterward, for
-// that one repository. A repository that misses the deadline on a cold start stays `unknown` for
-// the rest of the app session, and a remote added or changed on an existing repository while
-// Refract is already running is never picked up until the next restart. Accepted for this round,
-// same as the issue's own "no extra refresh trigger this round" decision; tracked as a known
-// consequence on the #646 follow-up, not silently different from what #528 decided.
+// Split out of `repositories.list()` (gate round 3 fix, Medium): `App.tsx`'s own
+// `showReadiness = !ready || !hasRepositories` gate meant this bounded step used to delay the
+// Session list's very first paint directly for anyone who already has repositories, by up to
+// REMOTE_DEADLINE_MS, every cold start. `list()` now returns immediately with every entry's
+// `remote` set to the `unknown` placeholder; the renderer calls `remotes()` separately right
+// after and merges the result in once it resolves.
+//
+// Gate round 2 fix (Medium, code-reviewer + security-auditor): `remote` is NOT refreshed
+// automatically beyond this -- `repositories.add()`/`rename()` recompute it for that one
+// repository; `remotes()` itself is called once more on window focus (gate round 3,
+// `init-stores.ts`, mirroring the existing GitHub-accounts refresh-on-focus pattern), throttled
+// the same way. A repository that misses a deadline stays `unknown` until the next of those
+// triggers; tracked as a known interim limit on the #646 follow-up, not silently different from
+// what #528 decided (no extra refresh trigger beyond focus this round).
 const REMOTE_CONCURRENCY = 8;
 const REMOTE_DEADLINE_MS = 1000;
 
@@ -102,14 +108,23 @@ async function remotesBounded(repositories: Repository[]): Promise<RepositoryRem
 }
 
 export function registerRepositories(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
-  // Issue #528: `remote` is computed fresh for every response, never read from or written to
-  // the registry -- a repository's own remote can change on disk at any time with no Refract
-  // action involved.
+  // Issue #528, gate round 3 fix (Medium): returns the registry's own repositories at once, each
+  // carrying the `unknown` placeholder -- see `remotesBounded`'s own doc comment above for why
+  // this no longer computes `remote` inline.
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_LIST, async () => {
     const repositories = manager.registry.snapshot().repositories;
+    const withPlaceholder = repositories.map((repository) => ({ ...repository, remote: { kind: 'unknown' as const } }));
+    return { ok: true, value: withPlaceholder };
+  });
+
+  ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOTES, async () => {
+    const repositories = manager.registry.snapshot().repositories;
     const remotes = await remotesBounded(repositories);
-    const withRemote = repositories.map((repository, i) => ({ ...repository, remote: remotes[i]! }));
-    return { ok: true, value: withRemote };
+    const byId: Record<string, RepositoryRemote> = {};
+    repositories.forEach((repository, i) => {
+      byId[repository.id] = remotes[i]!;
+    });
+    return { ok: true, value: byId };
   });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_ADD, async (_event, repoPath: unknown) => {

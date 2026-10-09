@@ -1,10 +1,19 @@
 import { create } from 'zustand'
-import type { Repository } from '../../shared/model'
+import type { Repository, RepositoryRemote } from '../../shared/model'
 import { notify } from './notify'
 
 interface RepositoriesState {
   repositories: Repository[]
   setRepositories(repositories: Repository[]): void
+  /** Issue #528, gate round 3 fix (Medium): merges a `repositories.remotes()` response into the
+   * CURRENT `repositories` array by id -- a repository id absent from `remotes` (not yet
+   * resolved by the shared pool's own deadline) is left exactly as it was, and an id present in
+   * `remotes` but no longer in `repositories` (removed in the meantime) is silently ignored,
+   * since there is nothing left to merge it onto. `add()`/`rename()` each already set their own
+   * freshly computed `remote` on success; this never runs between those two steps for the same
+   * repository (`remotes()` is only ever called once at startup and once per window-focus
+   * throttle window), so there is nothing for it to overwrite with a stale value in practice. */
+  setRemotes(remotes: Record<string, RepositoryRemote>): void
   add(path: string): Promise<Repository | null>
   remove(id: string): Promise<boolean>
   /** Quality-gate fix (a11y, Medium, 2026-10-08): returns the error message (not a bare
@@ -19,6 +28,14 @@ interface RepositoriesState {
 export const useRepositoriesStore = create<RepositoriesState>((set, get) => ({
   repositories: [],
   setRepositories: (repositories) => set({ repositories }),
+  setRemotes: (remotes) =>
+    set((state) => ({
+      repositories: state.repositories.map((repository) =>
+        Object.prototype.hasOwnProperty.call(remotes, repository.id)
+          ? { ...repository, remote: remotes[repository.id]! }
+          : repository
+      )
+    })),
   add: async (path) => {
     const result = await window.refract.repositories.add(path)
     if (!result.ok) {

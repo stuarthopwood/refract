@@ -30,6 +30,7 @@ import type {
   ModelRoleId,
   PendingRequest,
   Repository,
+  RepositoryRemote,
   Session,
   SessionReadout,
   Settings,
@@ -68,6 +69,7 @@ const refract: RefractApi = {
     add: (path) => request<Repository>(IPC_REQUESTS.REPOSITORIES_ADD, path),
     remove: (id) => request<void>(IPC_REQUESTS.REPOSITORIES_REMOVE, id),
     rename: (id, name) => request<Repository>(IPC_REQUESTS.REPOSITORIES_RENAME, id, name),
+    remotes: () => request<Record<string, RepositoryRemote>>(IPC_REQUESTS.REPOSITORIES_REMOTES),
     branches: (id) => request<BranchEntry[]>(IPC_REQUESTS.REPOSITORIES_BRANCHES, id),
     pickFolder: () => request<string | null>(IPC_REQUESTS.REPOSITORIES_PICK_FOLDER),
     userName: (id) => request<string>(IPC_REQUESTS.REPOSITORIES_USER_NAME, id)

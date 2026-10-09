@@ -12,6 +12,7 @@ import type {
   PendingRequest,
   ReadoutKind,
   Repository,
+  RepositoryRemote,
   Session,
   SessionReadout,
   SessionStartProgress,
@@ -301,6 +302,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_REMOVE: 'repositories.remove',
   REPOSITORIES_RENAME: 'repositories.rename',
   REPOSITORIES_BRANCHES: 'repositories.branches',
+  REPOSITORIES_REMOTES: 'repositories.remotes',
   REPOSITORIES_PICK_FOLDER: 'repositories.pickFolder',
   REPOSITORIES_USER_NAME: 'repositories.userName',
   SESSIONS_LIST: 'sessions.list',
@@ -407,12 +409,24 @@ export interface RefractApi {
   };
 
   repositories: {
+    /** Issue #528, gate round 3 fix (Medium): returns immediately with `remote: { kind:
+     * 'unknown' }` on every entry -- the per-repository remote check used to run inline here
+     * and could add up to ~1s before this resolved, which `App.tsx`'s own `showReadiness` gate
+     * means directly delays the Session list's first paint for anyone who already has
+     * repositories. Call `remotes()` separately once this resolves to fill in the real icons. */
     list(): Promise<Result<Repository[]>>;
     add(path: string): Promise<Result<Repository>>;
     remove(id: string): Promise<Result<void>>;
     /** Issue #480: display-name only -- never touches the folder, worktrees, or branches. An
      * empty (after trimming) `name` resets to the folder's own basename. */
     rename(id: string, name: string): Promise<Result<Repository>>;
+    /** Issue #528, gate round 3 fix (Medium): the bounded remote-detection step `list()` used
+     * to run inline, now split out so it never gates the Session list's first paint. Keyed by
+     * repository id; callers should ignore an id no longer present in their own repository
+     * list rather than treat its absence here as meaningful. Bounded to ~1s in aggregate
+     * (`src/main/ipc/repositories.ts`'s own pool/deadline), concurrency-capped, no network
+     * call. */
+    remotes(): Promise<Result<Record<string, RepositoryRemote>>>;
     branches(id: string): Promise<Result<BranchEntry[]>>;
     pickFolder(): Promise<Result<string | null>>;
     /** `git config user.name` in the repository's own checkout, falling back to the Windows

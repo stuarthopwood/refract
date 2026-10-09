@@ -161,6 +161,37 @@ export function initStores(): void {
     if (document.visibilityState === 'visible') refreshGithubOnFocus()
   })
 
+  // Issue #528, gate round 3 fix (Medium, verification): `repositories.remotes()` isolates the
+  // bounded (~1s worst case) remote-detection step from `repositories.list()` -- `list()` itself
+  // is a plain registry read and returns at once, so `App.tsx`'s own `showReadiness = !ready ||
+  // !hasRepositories` gate (and therefore the Session list's first paint) never waits on remote
+  // detection any more. `remotes()` runs right after and merges in once it resolves (each
+  // repository's icon starts as the honest "could not tell" placeholder for that first paint,
+  // then updates in place), and again on window focus, mirroring `refreshGithubOnFocus` above
+  // (same 5s throttle, skipped while a read is already in flight) -- the one other signal that a
+  // developer may have added or changed a remote outside Refract while it sat in the background.
+  let lastRemotesFocusRefresh = 0
+  let remotesRefreshing = false
+  function refreshRepositoriesRemotes(): void {
+    if (remotesRefreshing) return
+    const now = Date.now()
+    if (now - lastRemotesFocusRefresh < 5000) return
+    lastRemotesFocusRefresh = now
+    remotesRefreshing = true
+    void window.refract.repositories
+      .remotes()
+      .then((result) => {
+        if (result.ok) useRepositoriesStore.getState().setRemotes(result.value)
+      })
+      .finally(() => {
+        remotesRefreshing = false
+      })
+  }
+  window.addEventListener('focus', refreshRepositoriesRemotes)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshRepositoriesRemotes()
+  })
+
   void (async () => {
     const [sessionsLoad, settingsLoad] = await Promise.all([
       loadInitial(window.refract.sessions.list(), [] as SessionSummary[], 'sessions.list'),
@@ -188,15 +219,9 @@ export function initStores(): void {
     }
   })()
 
-  // Issue #528, gate round 2 fix (Medium, code-reviewer + security-auditor): `repositories.list()`
-  // now includes a bounded (~1s worst case) remote-detection step; kept out of the
-  // sessions/settings `Promise.all` above so that slower-than-usual remote detection never adds
-  // to the time before sessions and settings (and the restored split) are ready -- repository
-  // groups themselves were already necessarily gated on this same call resolving either way (the
-  // Session list has nothing to group Sessions under before `repositories` arrives), so this
-  // split narrows what actually waits, rather than widening what still does.
   void (async () => {
     const repositoriesLoad = await loadInitial(window.refract.repositories.list(), [] as Repository[], 'repositories.list')
     useRepositoriesStore.getState().setRepositories(repositoriesLoad.value)
+    if (repositoriesLoad.value.length > 0) refreshRepositoriesRemotes()
   })()
 }
