@@ -28,7 +28,18 @@ interface RepositoriesState {
    * auditor: the round-3 doc comment's "never runs between" claim was not actually guaranteed) --
    * harmless either way, since every apply here is id-keyed and idempotent, and `remoteEquals`
    * below means a merge that happens to say the same thing a fresher value already does creates
-   * no new object and no extra render. */
+   * no new object and no extra render. Gate round 5 fix (Low, a11y-auditor): documented, not
+   * coded, because it is not cheap to do correctly -- an OLDER `remotes()` pool call (started
+   * before an `add()`/`rename()`, but with its own up-to-10s deadline) can resolve AFTER that
+   * newer call's own fresher value has already landed, re-applying this id. `remoteEquals`
+   * makes that a no-op UNLESS the repository's actual git remote config changed externally
+   * (outside Refract) in that same window, in which case the older pool's answer briefly
+   * overwrites the newer one's -- no worse than the accepted lag of any slow refresh already
+   * inherent to this 10s-bounded, focus-triggered design (see `REMOTE_DEADLINE_MS` above
+   * `repositories.ts`'s `remotesBounded`). A correct fix needs a per-id generation counter
+   * threaded through both the IPC response and this store, to skip an apply older than the id's
+   * last `add`/`rename`; not worth the added surface for a window this narrow and a window this
+   * rare. */
   setRemotes(remotes: Record<string, RepositoryRemote>): void
   add(path: string): Promise<Repository | null>
   remove(id: string): Promise<boolean>

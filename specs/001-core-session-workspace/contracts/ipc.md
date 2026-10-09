@@ -24,7 +24,7 @@ Errors are shown to the user; codes are stable so the renderer can branch on the
 
 | Method | Returns | Errors |
 |---|---|---|
-| `repositories.list()` | `Repository[]` | |
+| `repositories.list()` | `Repository[]` | Issue #528, gate round 3 fix: every entry's `remote` carries the `{ kind: 'unknown' }` placeholder -- the real value arrives separately via `repositories.remotes()`, which the renderer calls right after and merges in once it resolves. |
 | `repositories.add(path)` | `Repository` | `not-a-repo`, `no-commits`, `duplicate` |
 | `repositories.remove(id)` | `void` | `has-sessions` |
 | `repositories.rename(id, name)` | `Repository` | Issue #480: display-name-only edit, mirroring `sessions.rename`'s rule -- never touches `path`, `defaultBranch`, or anything a Session points at; two repositories may share a display name (the header tooltip and details card show the path to tell them apart). The server trims, then validates (not empty after trimming is NOT required -- see below), a maximum of 60 Unicode code points, and no control/bidi/format characters (`\p{Cc}`, `\p{Cf}`, U+2028/U+202...

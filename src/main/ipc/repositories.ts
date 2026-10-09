@@ -80,9 +80,10 @@ function branchEntries(branches: string[], defaultName: string, sessions: Sessio
 // automatically beyond this -- `repositories.add()`/`rename()` recompute it for that one
 // repository; `remotes()` itself is called once more on window focus (gate round 3,
 // `init-stores.ts`, mirroring the existing GitHub-accounts refresh-on-focus pattern), throttled
-// the same way. A repository that misses a deadline stays `unknown` until the next of those
-// triggers; tracked as a known interim limit on the #646 follow-up, not silently different from
-// what #528 decided (no extra refresh trigger beyond focus this round).
+// the same way. A repository that misses a deadline keeps whatever value it already had (the
+// `unknown` placeholder if none yet) until the next of those triggers; tracked as a known interim
+// limit on the #646 follow-up, not silently different from what #528 decided (no extra refresh
+// trigger beyond focus this round).
 const REMOTE_CONCURRENCY = 8;
 const REMOTE_DEADLINE_MS = 10_000;
 
@@ -98,7 +99,12 @@ async function remotesBounded(repositories: Repository[]): Promise<Record<string
       // deadline cut off mid-flight is left absent from `byId` entirely, so the renderer's own
       // merge (`repositories-store.ts`'s `setRemotes`) leaves that repository's existing value,
       // if any, untouched instead of overwriting it with a wrong `unknown`.
-      if (!controller.signal.aborted) byId[repository.id] = remote;
+      // Gate round 5 fix (Medium, all four reviewers): `remote` is `null`, not just excluded by
+      // `controller.signal.aborted`, when this call hit its OWN 3 s per-call timeout -- the
+      // shared pool deadline never fired in that case, so the old `!controller.signal.aborted`
+      // check alone still recorded a false `unknown` over a confirmed `has`/`none`. Checking
+      // `remote !== null` catches both: the pool's shared deadline and this call's own timeout.
+      if (remote !== null && !controller.signal.aborted) byId[repository.id] = remote;
     }
   }
   const pool = Promise.all(Array.from({ length: Math.min(REMOTE_CONCURRENCY, repositories.length) }, () => worker()));
@@ -166,7 +172,10 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
       await manager.registry.addRepository(repository);
       manager.notifyListChanged();
       // Issue #528: a freshly added repository shows the right icon with no refetch needed.
-      const remote = await repositoryRemote(repository.path);
+      // Gate round 5 fix (Medium): a `null` (this call's own 3 s timeout fired) maps to the
+      // `unknown` placeholder -- `add()` always needs a concrete `RepositoryRemote`, not an
+      // absent value, for this one-shot response.
+      const remote = (await repositoryRemote(repository.path)) ?? { kind: 'unknown' as const };
       return { ok: true, value: { ...repository, remote } };
     } catch (err) {
       return mapStoreThrown(err);
@@ -198,7 +207,10 @@ export function registerRepositories(manager: SessionManager, getWindow: () => B
     // with this response (`rename`'s `Promise<string | null>` contract) -- without this, a
     // rename would silently drop the group header's own remote icon back to "unknown" until the
     // next unrelated `repositories.list()` refresh happened to restore it.
-    return { ok: true, value: { ...result.value, remote: await repositoryRemote(result.value.path) } };
+    // Gate round 5 fix (Medium): map a `null` (this call's own 3 s timeout) to the `unknown`
+    // placeholder, for the same reason as `add()` above.
+    const remote = (await repositoryRemote(result.value.path)) ?? { kind: 'unknown' as const };
+    return { ok: true, value: { ...result.value, remote } };
   });
 
   ipcMain.handle(IPC_REQUESTS.REPOSITORIES_REMOVE, async (_event, id: unknown) => {

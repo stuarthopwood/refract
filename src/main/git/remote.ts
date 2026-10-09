@@ -90,26 +90,38 @@ function withTimeout(): { signal: AbortSignal; clear: () => void } {
  * whose result nothing reads any more.
  *
  * Never throws: an unreadable repository (a moved or deleted folder, or one that is no longer a
- * git repository at all), a missing `git` executable, or a timed-out/aborted call all report
- * `unknown` -- it makes no claim either way, distinct from a confirmed `none`. A folder whose own
- * `.git` entry is gone (for example absorbed into an unrelated outer repository after a move) is
- * caught by the `fs.stat` check below -- cheaper than, and in place of, a second git call that
- * would otherwise silently walk up to that outer repository's own remotes, the exact same hazard
- * `github.ts`'s own `parseOwnerRepo` has today (gate round 1 fix, Medium). */
-export async function repositoryRemote(repoPath: string, deadline?: AbortSignal): Promise<RepositoryRemote> {
-  if (deadline?.aborted) return { kind: 'unknown' };
+ * git repository at all) or a missing `git` executable report `unknown` -- it makes no claim
+ * either way, distinct from a confirmed `none`. A timed-out or aborted call reports `null`
+ * instead (gate round 5 fix, Medium): it never got a settled answer, so the caller should treat
+ * it as absent rather than as a confirmed "can't tell". A folder whose own `.git` entry is gone
+ * (for example absorbed into an unrelated outer repository after a move) is caught by the
+ * `fs.stat` check below -- cheaper than, and in place of, a second git call that would otherwise
+ * silently walk up to that outer repository's own remotes, the exact same hazard `github.ts`'s
+ * own `parseOwnerRepo` has today (gate round 1 fix, Medium). */
+// Gate round 5 fix (Medium, all four reviewers): `null` is distinct from `{ kind: 'unknown' }`
+// -- `null` means this specific call never got a settled answer at all (its OWN per-call
+// timeout fired, or the caller's shared `deadline` fired), so the caller should treat it the
+// same as "absent" and keep whatever value it already had; `{ kind: 'unknown' }` means the check
+// actually ran to completion and genuinely could not tell (a real git failure, an unparseable
+// remote, ...). Round 4's fix only excluded a repository the pool's SHARED deadline aborted
+// mid-flight from `remotesBounded`'s response -- a call that instead hit its OWN 3s per-call
+// timeout (the shared deadline never fired) still returned `{ kind: 'unknown' }` and was
+// recorded as settled, so a single slow `git` (antivirus scan, a sleeping disk) during a focus
+// refresh could still overwrite an already-confirmed `has`/`none` with a false `unknown`.
+export async function repositoryRemote(repoPath: string, deadline?: AbortSignal): Promise<RepositoryRemote | null> {
+  if (deadline?.aborted) return null;
   const gitDirExists = await stat(path.join(repoPath, '.git')).then(
     () => true,
     () => false
   );
   if (!gitDirExists) return { kind: 'unknown' };
-  if (deadline?.aborted) return { kind: 'unknown' };
+  if (deadline?.aborted) return null;
   const { signal: timeoutSignal, clear } = withTimeout();
   const signal = deadline ? AbortSignal.any([timeoutSignal, deadline]) : timeoutSignal;
   const result = await gitRaw(repoPath, ['config', '--local', '--includes', '--list', '-z'], { signal });
   const aborted = signal.aborted;
   clear();
-  if (aborted) return { kind: 'unknown' };
+  if (aborted) return null;
   if (result.code !== 0) return { kind: 'unknown' };
   const entries = result.stdout
     .split('\0')
