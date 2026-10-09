@@ -42,12 +42,16 @@ function RadioGroupItem({
         // `forced-colors: active`, so the checked item looked identical to every other one;
         // `forced-colors:data-[state=checked]:border-[Highlight]` keeps a visible, theme-correct
         // border for the checked item specifically (the `Indicator` dot below carries the rest).
-        // Quality-gate remediation (gate2, Low, forced-colors focus visibility): `outline-none`
-        // sets `outline-style: none`, which `forced-colors` honours -- together with the box-shadow
-        // focus ring and `border-ring` also being reset, a focused-but-unchecked item showed no
-        // focus indicator at all in Windows High Contrast. `outline-hidden` keeps a transparent
-        // outline instead of `none`, which `forced-colors` renders visibly.
-        "group/radio-item flex w-full min-w-0 flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
+        // Quality-gate remediation (gate3, Medium): a bare `outline-hidden` draws its
+        // `forced-colors` transparent-outline rule unconditionally (it is not scoped to
+        // `:focus-visible`), so EVERY item -- not just the focused one -- got a 2px system-colour
+        // outline in Windows High Contrast, which is the same "focused item looks like every
+        // other one" problem the gate2 fix was meant to solve, just drawn differently. `outline-none
+        // focus-visible:outline-hidden` keeps the normal-mode behaviour identical (`outline-none`
+        // alone already resolves to `outline-style: none`, same as `outline-hidden` would) while
+        // only drawing the `forced-colors` transparent outline on the item that actually has
+        // keyboard focus.
+        "group/radio-item flex w-full min-w-0 flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm outline-none focus-visible:outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
         className
       )}
       {...props}

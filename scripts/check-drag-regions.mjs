@@ -132,6 +132,7 @@ for (const file of isDirectory(root) ? walk(root) : []) {
       while (stack.length > 0 && stack[stack.length - 1].indent >= indent) stack.pop();
     }
 
+    let closedThisLine = false;
     const openMatch = OPEN_TAG.exec(line);
     if (openMatch) {
       const indent = openMatch[1].length;
@@ -140,17 +141,28 @@ for (const file of isDirectory(root) ? walk(root) : []) {
       const region = noDrag ? 'no-drag' : DECLARES_REGION(text) ? 'drag' : null;
       const headerShaped = BORDER_B.test(text) || isHeaderShapedByHeight(text);
       const allowed = ALLOW_MARKER.test(line) || (i > 0 && ALLOW_MARKER.test(lines[i - 1]));
-      // Quality-gate remediation (gate2, Medium): an element that opens AND closes on the SAME
-      // line (e.g. `<Button>label</Button>`) was pushed here regardless, but `CLOSE_TAG` only
-      // matches a closing tag at the START of a line, so its frame was never popped -- it kept
-      // covering every later sibling at an equal-or-greater indent until some OTHER, unrelated
-      // close event happened to reach its indent level. Skip the push entirely for a same-line
-      // open+close: the element's own region/header-shape can never matter to anything outside
-      // its own (already-finished) subtree.
-      const closesOnSameLine = new RegExp('</' + openMatch[2].replace(/[.]/g, '\\.') + '\\s*>').test(
-        line.slice(openMatch[0].length)
-      );
-      if (!selfClosing && !closesOnSameLine) stack.push({ indent, region, headerShaped, allowed });
+      // Quality-gate remediation (gate3, Medium): a prior fix here skipped the PUSH entirely for
+      // an element that opens and closes on the same line, reasoning its own region could never
+      // matter outside its own (already-finished) subtree -- true for SIBLINGS on later lines,
+      // but wrong for the element's OWN children on that SAME line: the interactive-opener scan
+      // below runs AFTER this push and needs this frame on the stack to see its parent's
+      // drag-region/header-shape (e.g. `<div className="drag-region h-10 shrink-0"><Button
+      // onClick={...}>Close</Button></div>` all on one line -- skipping the push made the
+      // Button's own covering walk miss the enclosing div entirely, silently clearing a real
+      // violation). Fix: always push (unless self-closing), then pop again right after the
+      // interactive-opener scan below has had a chance to see it, if it closed on this same line.
+      const tagName = openMatch[2].replace(/[.]/g, '\\.');
+      const rest = line.slice(openMatch[0].length);
+      // Quality-gate remediation (gate3, Low): a plain, unanchored `</Name>` test on `rest` was
+      // fooled by a SAME-NAMED child closing on this line (e.g. `<div className="drag-region">
+      // <div>x</div>` -- the inner `</div>` matched, so the outer frame was dropped and its real,
+      // later-line children were missed). Count opens vs closes of this exact tag name on `rest`
+      // instead: the element closes on this same line only when closes outnumber opens (a nested
+      // same-named child's own open+close pair nets to zero and no longer fools this).
+      const opens = (rest.match(new RegExp('<' + tagName + '(?=[\\s/>]|$)', 'g')) || []).length;
+      const closes = (rest.match(new RegExp('</' + tagName + '\\s*>', 'g')) || []).length;
+      closedThisLine = closes > opens;
+      if (!selfClosing) stack.push({ indent, region, headerShaped, allowed });
     }
 
     // Quality-gate remediation (cycle 2, Medium, test-reviewer fixtures): runs on every line that
@@ -193,6 +205,8 @@ for (const file of isDirectory(root) ? walk(root) : []) {
         violationCount++;
       }
     }
+
+    if (openMatch && closedThisLine) stack.pop();
   }
 }
 

@@ -61,8 +61,8 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
        * wrapping Close, and a trailing corner spacer. (`check:drag-regions` could not actually
        * catch this shape until gate2: the guard's only signal for an undeclared header was
        * `border-b`, and #606 had already removed `border-b` from this project's own top-row
-       * header convention by the time this fix landed -- the guard now also recognises the
-       * top-row `h-10` token.) */}
+       * header convention by the time this fix landed -- the guard now also recognises a row
+       * carrying both `h-10` and `shrink-0` together.) */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         {/* Quality-gate remediation (cycle 2, Medium): at the panel's own `minSize={240}`
          * (App.tsx), this label's default `min-width: auto` held its full content width, so the
