@@ -397,7 +397,24 @@ function TimeGapDivider({ at }: { at: number }) {
 // Follows streamed output while the user is at the bottom via shadcn Message Scroller
 // (research.md decision 2: kept after a 30-tool-row streaming smoke test, see that paragraph for
 // the evidence; react-virtuoso was the specced fallback if it had not held up).
-export function Transcript({ sessionId }: { sessionId: string }) {
+export function Transcript({
+  sessionId,
+  hasHistory,
+  startNotice
+}: {
+  sessionId: string
+  // Issue #618: whether this Session has any real history for its CURRENT Conversation thread
+  // (ChatPane.tsx's own `hasHistory`, `session.currentConversation !== null`) -- a real signal,
+  // unlike this component's own items-based `hasConversationStarted` below, which can read empty
+  // for a Session that has real history but is still mid-snapshot-load. Gates whether "Ready…"
+  // can ever show at all: a Session with history never shows it, including while it loads or
+  // while its agent is starting.
+  hasHistory: boolean
+  // Issue #618: ChatPane.tsx's own SessionStartNotice, pre-built with this pane's startProgress
+  // and picked random message, rendered here (centred, replacing "Ready…") for a brand-new
+  // Session while its agent is starting. Undefined whenever nothing is starting right now.
+  startNotice?: React.ReactNode
+}) {
   // Spec 005: generalised from a single store-wide field to per-session storage
   // (transcript-store.ts), so each pane's own Session's items can never be dropped or
   // clobbered by the other pane's.
@@ -939,11 +956,18 @@ export function Transcript({ sessionId }: { sessionId: string }) {
             // ordinary streamed turns are still announced as they always were.
             aria-live={suppressLogAnnouncements ? 'off' : undefined}
           >
-            {!hasConversationStarted && (
+            {/* Issue #618: a Session with history never shows "Ready…", including while it
+                loads or while its agent is starting (hasHistory, not the items-based
+                hasConversationStarted below, which can read empty mid-load for a Session that
+                really does have history). startNotice (ChatPane.tsx's SessionStartNotice,
+                centred) replaces "Ready…" while a brand-new Session's agent is starting; once
+                neither applies (not starting, no history yet) the area is simply empty until
+                real items load -- never a misleading "Ready…" next to a start in progress. */}
+            {!hasHistory && (startNotice ?? (
               <div className="px-2 py-8 text-center text-sm text-muted-foreground">
                 Ready. Type a message to get started.
               </div>
-            )}
+            ))}
             {hasConversationStarted && hiddenCount > 0 && (
               <div className="px-2 pb-2">
                 <Button type="button" variant="ghost" size="sm" onClick={handleLoadEarlier}>
