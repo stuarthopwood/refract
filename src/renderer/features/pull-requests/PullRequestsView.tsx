@@ -50,7 +50,12 @@ export function PullRequestsView() {
              * window buttons, the exact dead-click conflict #500 removed. `min-w-0`/`shrink` let
              * it shrink and truncate instead (the trigger's inner `SelectValue` already
              * `line-clamp-1`s, per `select.tsx`). */}
-            <SelectTrigger size="sm" aria-label="Repository" className="no-drag-region w-56 min-w-0 shrink">
+            <SelectTrigger
+              size="sm"
+              aria-label="Repository"
+              title={repositories.find((repo) => repo.id === repositoryId)?.name}
+              className="no-drag-region w-56 min-w-0 shrink"
+            >
               <SelectValue placeholder="Select a repository" />
             </SelectTrigger>
             {/* Quality-gate remediation (accessibility-auditor, Medium): the default

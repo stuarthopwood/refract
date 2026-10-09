@@ -34,6 +34,21 @@ const root = path.resolve(process.cwd(), process.argv[2] ?? path.join(repoRoot, 
 // enough to exclude them would also hide a real future instance of this same shape.
 const TOKEN = (word) => new RegExp('(?:^|[\\s"\'`])' + word + '(?=[\\s"\'`]|$)');
 const BORDER_B = TOKEN('border-b');
+// Quality-gate remediation (gate2, Medium): #606 ("Soften panel dividers; remove header bottom
+// borders") removed `border-b` from the project's own top-row header convention (ChatHeader,
+// SessionList, SubagentPanel), so `border-b` alone no longer reliably marks a row as
+// header-shaped -- it missed the exact #500 bug class reproduced on current `origin/main`'s
+// `SubagentPanel.tsx` (an undeclared `h-10` header row with no border at all). Every real header
+// row in this codebase pairs `h-10` with `shrink-0` (the row must not shrink in its own flex
+// column), so requiring BOTH tokens together -- not `h-10` alone -- catches that shape too
+// without flagging an unrelated interior element that merely happens to be 40px tall (`h-10` on
+// its own is an extremely common Tailwind height utility with no header meaning whatsoever;
+// confirmed empirically: `h-10` alone produced a false positive on `ProfileItem.tsx`'s
+// `h-10 flex-1` name button, a bottom-bar leaf control with no `shrink-0` and no proximity to the
+// window's top drag strip at all).
+const SHRINK_0 = TOKEN('shrink-0');
+const H_10 = TOKEN('h-10');
+const isHeaderShapedByHeight = (text) => H_10.test(text) && SHRINK_0.test(text);
 const DECLARES_REGION = (classNameText) => classNameText.includes('drag-region');
 const DECLARES_NO_DRAG = (classNameText) => classNameText.includes('no-drag-region');
 
@@ -106,7 +121,7 @@ for (const file of isDirectory(root) ? walk(root) : []) {
   const relative = path.relative(repoRoot, file).split(path.sep).join('/');
   const content = readFileSync(file, 'utf-8');
   const lines = content.split(/\r\n|\n/);
-  const stack = []; // { indent, region: 'drag' | 'no-drag' | null, borderB: boolean, allowed: boolean }
+  const stack = []; // { indent, region: 'drag' | 'no-drag' | null, headerShaped: boolean, allowed: boolean }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -123,9 +138,19 @@ for (const file of isDirectory(root) ? walk(root) : []) {
       const { text, selfClosing } = gatherTag(lines, i, 0);
       const noDrag = DECLARES_NO_DRAG(text);
       const region = noDrag ? 'no-drag' : DECLARES_REGION(text) ? 'drag' : null;
-      const borderB = BORDER_B.test(text);
+      const headerShaped = BORDER_B.test(text) || isHeaderShapedByHeight(text);
       const allowed = ALLOW_MARKER.test(line) || (i > 0 && ALLOW_MARKER.test(lines[i - 1]));
-      if (!selfClosing) stack.push({ indent, region, borderB, allowed });
+      // Quality-gate remediation (gate2, Medium): an element that opens AND closes on the SAME
+      // line (e.g. `<Button>label</Button>`) was pushed here regardless, but `CLOSE_TAG` only
+      // matches a closing tag at the START of a line, so its frame was never popped -- it kept
+      // covering every later sibling at an equal-or-greater indent until some OTHER, unrelated
+      // close event happened to reach its indent level. Skip the push entirely for a same-line
+      // open+close: the element's own region/header-shape can never matter to anything outside
+      // its own (already-finished) subtree.
+      const closesOnSameLine = new RegExp('</' + openMatch[2].replace(/[.]/g, '\\.') + '\\s*>').test(
+        line.slice(openMatch[0].length)
+      );
+      if (!selfClosing && !closesOnSameLine) stack.push({ indent, region, headerShaped, allowed });
     }
 
     // Quality-gate remediation (cycle 2, Medium, test-reviewer fixtures): runs on every line that
@@ -154,16 +179,16 @@ for (const file of isDirectory(root) ? walk(root) : []) {
             covering = 'drag';
             break;
           }
-          if (frame.borderB) covering = covering ?? 'undeclared-border-b';
+          if (frame.headerShaped) covering = covering ?? 'undeclared-header-shaped';
           // keep scanning outward: a further-out explicit drag/no-drag still overrides.
         }
       }
-      if ((covering === 'drag' || covering === 'undeclared-border-b') && !allowedByAncestor) {
+      if ((covering === 'drag' || covering === 'undeclared-header-shaped') && !allowedByAncestor) {
         const lineNo = i + 1;
         const reason =
           covering === 'drag'
             ? 'interactive opener inside a drag-region element has no no-drag-region override'
-            : 'interactive opener inside an undeclared border-b row (no drag-region/no-drag-region) -- the #500 shape';
+            : 'interactive opener inside an undeclared header-shaped row (no drag-region/no-drag-region) -- the #500 shape';
         console.log(relative + ':' + lineNo + ' ' + reason);
         violationCount++;
       }

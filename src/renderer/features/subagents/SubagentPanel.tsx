@@ -52,13 +52,17 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
 
   return (
     <div id="subagent-panel" className="flex h-full flex-col overflow-hidden">
-      {/* Quality-gate remediation (issue #500's bug class, found by `check:drag-regions`): this
-       * row had neither `drag-region` nor `no-drag-region`, so it sat inside `App.tsx`'s
-       * permanent drag strip exactly like the Pull requests view's header did -- this panel
-       * touches the window's right edge whenever it is open, so Close could be a dead click, or
-       * sit under the native minimise/maximise/close buttons, depending on where this strip's own
-       * carve-out happened to land. Matches `ChatHeader.tsx`'s pattern: `drag-region` on the row,
-       * `no-drag-region` wrapping Close, and a trailing corner spacer. */}
+      {/* Quality-gate remediation (gate2): same bug class as #500 -- this row had neither
+       * `drag-region` nor `no-drag-region`, so it sat inside `App.tsx`'s permanent drag strip
+       * exactly like the Pull requests view's header did -- this panel touches the window's right
+       * edge whenever it is open, so Close could be a dead click, or sit under the native
+       * minimise/maximise/close buttons, depending on where this strip's own carve-out happened to
+       * land. Matches `ChatHeader.tsx`'s pattern: `drag-region` on the row, `no-drag-region`
+       * wrapping Close, and a trailing corner spacer. (`check:drag-regions` could not actually
+       * catch this shape until gate2: the guard's only signal for an undeclared header was
+       * `border-b`, and #606 had already removed `border-b` from this project's own top-row
+       * header convention by the time this fix landed -- the guard now also recognises the
+       * top-row `h-10` token.) */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         {/* Quality-gate remediation (cycle 2, Medium): at the panel's own `minSize={240}`
          * (App.tsx), this label's default `min-width: auto` held its full content width, so the

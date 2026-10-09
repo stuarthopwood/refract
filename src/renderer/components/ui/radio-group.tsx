@@ -42,7 +42,12 @@ function RadioGroupItem({
         // `forced-colors: active`, so the checked item looked identical to every other one;
         // `forced-colors:data-[state=checked]:border-[Highlight]` keeps a visible, theme-correct
         // border for the checked item specifically (the `Indicator` dot below carries the rest).
-        "group/radio-item flex w-full min-w-0 flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
+        // Quality-gate remediation (gate2, Low, forced-colors focus visibility): `outline-none`
+        // sets `outline-style: none`, which `forced-colors` honours -- together with the box-shadow
+        // focus ring and `border-ring` also being reset, a focused-but-unchecked item showed no
+        // focus indicator at all in Windows High Contrast. `outline-hidden` keeps a transparent
+        // outline instead of `none`, which `forced-colors` renders visibly.
+        "group/radio-item flex w-full min-w-0 flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
         className
       )}
       {...props}
