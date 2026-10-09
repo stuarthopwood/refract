@@ -1,8 +1,10 @@
 // Issue #618 (Stuart, 2026-10-09): the chat pane's 'agent starting' message, unboxed (no Alert
 // card, no bordered strip -- Stuart does not like the box). Shared by ChatPane.tsx (a quiet
-// line above the composer, for a Session with history) and Transcript.tsx (centred in the
-// empty transcript area, for a brand-new Session with none) -- ChatPane.tsx's own hasHistory
-// branch renders exactly one of the two, never both and never alongside "Ready...".
+// line above the composer, for a Session with history or a conversation already underway) and
+// Transcript.tsx (centred in the empty transcript area, for a genuinely brand-new Session with
+// neither) -- gate-fix (round 4): ChatPane.tsx's own `showInline` (`hasHistory ||
+// conversationStarted`, not `hasHistory` alone) decides which placement applies, renders exactly
+// one of the two, never both and never alongside "Ready...".
 //
 // queued/memory-deferred keep the existing plain, truthful text (describeStartProgress) and
 // the original small spinning LoaderCircleIcon (global prefers-reduced-motion CSS already

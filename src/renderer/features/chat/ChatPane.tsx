@@ -204,33 +204,59 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // the synthetic placeholder below never reapplies for that span, even if `startProgress`
   // itself briefly goes back to `undefined` before `open()`'s own IPC resolves (round 2 Low: a
   // winning Cancel, or the agent becoming ready, made the joke and a reset "0s" counter flash
-  // back with no controls for that one tick). Cleared the instant `isOpening` ends, by the
-  // effect right below.
+  // back with no controls for that one tick). Cleared the instant `isOpening` ends, or the
+  // instant the pane switches to a DIFFERENT Session mid-span (gate-fix Low, round 4: this
+  // effect used to only ever clear the CURRENT `sessionId`, so a Session left mid-span -- a
+  // switch away before its first real event -- kept its entry forever, since nothing runs this
+  // effect for it again until the pane shows it once more; the NEXT time that Session opens for
+  // real, the stale entry wrongly suppressed its placeholder until the first real event landed).
   const realStartProgressSeenRef = useRef<Set<string>>(new Set())
-  // Issue #618 gate-fix (code/verif/a11y High, round 3): the synthetic placeholder stage
-  // covering the `isOpening` gap (bug report point 4's own comment above) now ALSO requires
-  // `session?.status === 'stopped'` and `!showBanner` -- round 2's bare `isOpening` fired on
-  // EVERY `open()` call, including a plain pane switch onto an already-running or already-idle
-  // Session (the snapshot-fetch effect below calls `open()` on every non-pristine switch), which
-  // briefly flashed the joke notice and announced "Starting agent: X" for a Session that was not
-  // starting at all. `status === 'stopped'` is only true for a cold start; `!showBanner` also
-  // skips it for a stopped Session `open()` will not actually auto-start (its own stale failure
-  // banner is about to show instead). Every notice (centred, inline) and the starting-message
-  // pick effect below read this instead of the raw `startProgress`; `showBanner` itself
-  // deliberately keeps reading the raw field -- a stale failure banner's own priority over a
-  // live start is a separate, pre-existing #512/#610 concern this issue does not touch. The
-  // announcement effect below deliberately does NOT read this -- see its own comment for why.
+  // Issue #618 gate-fix (code/verif/a11y High, round 4): `canAutoStartSession` is a renderer
+  // mirror of `src/main/ipc/canAutoStart.ts`'s own boolean (kept literally in sync with it; that
+  // file takes `stopReason`/`terminatedUnexpectedly` as plain arguments, not a Session, so it
+  // cannot be imported across the main/renderer boundary) -- round 3's `!showBanner` guard was
+  // WRONG for a non-pristine pane switch: the snapshot-fetch effect below calls `setStopInfo({})`
+  // before `open()`, so `effectiveStopReason` (and so `showBanner`) reads as "nothing wrong" for
+  // the ENTIRE `isOpening` span on a Session that is actually `agent-exited`/`start-failed`/
+  // crashed -- exactly the Sessions `canAutoStart` refuses to start. The joke placeholder flashed
+  // for a Session that was never actually starting, then got replaced by the real failure banner
+  // once the snapshot arrived. `session.stopReason`/`session.terminatedUnexpectedly` (the
+  // store row itself, kept fresh by `applyStatus` on every live event, never reset by this
+  // pane's own `stopInfo`) are the right signal instead.
+  const canAutoStartSession =
+    !!session &&
+    (session.stopReason === undefined || session.stopReason === 'not-started' || session.stopReason === 'worktree-missing') &&
+    !(session.terminatedUnexpectedly && session.stopReason !== 'worktree-missing')
+  // Issue #618 gate-fix (code/verif/a11y High, round 3, corrected round 4): the synthetic
+  // placeholder stage covering the `isOpening` gap (bug report point 4's own comment above) now
+  // requires `session?.status === 'stopped'` and `canAutoStartSession` -- round 2's bare
+  // `isOpening` fired on EVERY `open()` call, including a plain pane switch onto an already-
+  // running or already-idle Session (the snapshot-fetch effect below calls `open()` on every
+  // non-pristine switch), which briefly flashed the joke notice and announced "Starting agent:
+  // X" for a Session that was not starting at all. `status === 'stopped'` is only true for a
+  // cold start; `canAutoStartSession` also skips it for a stopped Session `open()` will not
+  // actually auto-start (a real failure banner is about to show instead, once the snapshot
+  // resolves). Every notice (centred, inline) and the starting-message pick effect below read
+  // this instead of the raw `startProgress`; the announcement effect below deliberately does NOT
+  // read this -- see its own comment for why.
   const effectiveStartProgress: SessionStartProgress | undefined =
     startProgress ??
-    (isOpening && session?.status === 'stopped' && !showBanner && !realStartProgressSeenRef.current.has(sessionId)
+    (isOpening && session?.status === 'stopped' && canAutoStartSession && !realStartProgressSeenRef.current.has(sessionId)
       ? OPENING_PLACEHOLDER
       : undefined)
-  // Issue #618 gate-fix (round 3): records that a REAL event has now been seen for this
-  // `isOpening` span (so the synthetic stage never reapplies within it), and forgets that the
-  // instant `isOpening` ends (so the NEXT open starts clean). Deliberately a plain `useEffect`,
-  // not a `useLayoutEffect` -- this is bookkeeping for a LATER render's computation above, not
-  // something that must land before this render's own paint.
+  // Issue #618 gate-fix (round 3, extended round 4): records that a REAL event has now been seen
+  // for this `isOpening` span (so the synthetic stage never reapplies within it), and forgets
+  // that the instant `isOpening` ends (so the NEXT open starts clean) OR the instant the pane
+  // switches to a DIFFERENT Session (the outgoing id's own entry, tracked via
+  // `prevSeenEffectSessionIdRef` -- see `realStartProgressSeenRef`'s own comment above for why
+  // this could not simply wait for that Session's own next effect run). Deliberately a plain
+  // `useEffect`, not a `useLayoutEffect` -- this is bookkeeping for a LATER render's computation
+  // above, not something that must land before this render's own paint.
+  const prevSeenEffectSessionIdRef = useRef<string | null>(null)
   useEffect(() => {
+    const prevId = prevSeenEffectSessionIdRef.current
+    if (prevId !== null && prevId !== sessionId) realStartProgressSeenRef.current.delete(prevId)
+    prevSeenEffectSessionIdRef.current = sessionId
     if (startProgress) realStartProgressSeenRef.current.add(sessionId)
     if (!isOpening) realStartProgressSeenRef.current.delete(sessionId)
   }, [startProgress, isOpening, sessionId])
@@ -383,10 +409,16 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     // against the live store (never stale prop/closure data) each time this effect runs, for
     // every OTHER tracked Session -- the CURRENT `sessionId`'s own entry is left for the pick
     // logic below to manage via `effectiveStartProgress`, which already accounts for the
-    // synthetic stage this raw per-Session check does not know about.
+    // synthetic stage this raw per-Session check does not know about. Gate-fixes code/a11y Low
+    // finding (round 4): a Session still inside its OWN synthetic-only `isOpening` gap (no real
+    // `startProgress` yet) is also left alone -- without this, a pane showing that Session during
+    // its placeholder gap, switching away, and switching back (A -> B -> A, all before A's first
+    // real event) would have its pick swept and re-rolled, picking a different joke mid-start.
     for (const id of Array.from(activeStartingMessageRef.current.keys())) {
       if (id === sessionId) continue
-      if (!useSessionsStore.getState().sessions.find((s) => s.id === id)?.startProgress) {
+      const stillOpening = useSessionsStore.getState().openingIds.has(id)
+      const hasRealStartProgress = !!useSessionsStore.getState().sessions.find((s) => s.id === id)?.startProgress
+      if (!stillOpening && !hasRealStartProgress) {
         activeStartingMessageRef.current.delete(id)
       }
     }
