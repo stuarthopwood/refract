@@ -371,6 +371,25 @@ const PAIRS = [
   { fg: 'input', bg: 'muted', min: 3 },
   { fg: 'ring', bg: 'popover', min: 3 },
   { fg: 'ring', bg: 'muted', min: 3 },
+  // Agent-working spinner (issue #612, #616 review round 4): Stuart's decision -- the brand
+  // violet is now a per-theme Layer 3 component token (`--agent-spinner-core`, same value in
+  // every theme today, declared in each `.theme-*` block in globals.css), not a fixed colour.
+  // Checked against every surface the mark actually renders on: the session list (`--sidebar`),
+  // that same row selected or hovered (`--sidebar-accent`, `SessionList.tsx` -- the icon is the
+  // only visible status cue there, the "Working" text is `sr-only`), the chat header
+  // (`--background`), and the session details hover card (`--popover`, `hover-card.tsx` -- NOT
+  // `--card`, corrected in round 5 after the A11y gate found the real surface).
+  // Quality-gate remediation (A11y HIGH, round 5): `--sidebar-accent` was missing from this list
+  // entirely and the original `#864DD6` measured under 3:1 against it in every theme (2.91 Dark
+  // / 2.54 Obsidian / 2.99 Dark HC); Stuart's `#9A68E4` fix (see `.theme-dark`'s own comment)
+  // clears it everywhere (3.94 / 3.43 / 4.05). `--card` is kept as a fourth pair even though
+  // `--popover` is the real card surface, since `--card` happens to equal `--popover` in Dark
+  // and Dark HC (not in Obsidian) and nothing currently regresses by also checking it.
+  { fg: 'agent-spinner-core', bg: 'sidebar', min: 3 },
+  { fg: 'agent-spinner-core', bg: 'sidebar-accent', min: 3 },
+  { fg: 'agent-spinner-core', bg: 'card', min: 3 },
+  { fg: 'agent-spinner-core', bg: 'popover', min: 3 },
+  { fg: 'agent-spinner-core', bg: 'background', min: 3 },
 ]
 
 // The OTHER edge class -- soft decorative dividers (panes, rows, headers, sections), now named
