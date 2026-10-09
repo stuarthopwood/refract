@@ -150,7 +150,7 @@ const WINDOW_ICON_PATH = join(__dirname, '../../build/icon.ico')
 // current `icon:`/`setIcon` code (live harness at refract-taskbar-test/main.js), but the real
 // packaged id, `com.stuarthopwood.refract`, kept showing the Electron atom even with that same
 // code -- Windows had already cached a bad taskbar icon association for that exact string from
-// an earlier unpackaged run (plausibly a scratch instance during #494's own verification) that
+// an earlier unpackaged run (plausibly a scratch instance during PR #590's own verification) that
 // showed a window under it before any icon was applied. No in-process fix repairs a poisoned id
 // (`setAppDetails` did not help in the harness, even combined with `setIcon`). The only thing the
 // harness proved fixes a poisoned real id is a different id, so dev runs use their own, distinct
@@ -195,7 +195,8 @@ function createWindow(): void {
   // enough") -- in the unpackaged launch method (`pnpm build` then `electron.exe .`, confirmed
   // live) Windows was resolving the taskbar/Alt-Tab/notification icon from the running
   // `electron.exe`'s own resource, because `app.setAppUserModelId` (called below, before
-  // `createWindow()` runs here -- see the call site near the bottom of this file) used to pin
+  // `createWindow()` runs here -- see the call site near the bottom of this file, now
+  // `APP_USER_MODEL_ID_DEV` in dev) used to pin
   // the window's *identity* to that same executable; the constructor's `icon:` option above did
   // not override that. Like that option, this only ever affects an unpackaged run: a packaged
   // build's icon comes from the exe's own resource (spec 006), so `setIcon` here is a no-op
@@ -318,8 +319,9 @@ if (!gotLock) {
     // taskbar/Alt-Tab/notification icon from the *identity* (the running `electron.exe`, whose
     // own resource is the Electron atom) rather than this window's own icon, even though
     // `createWindow()` sets one. A fixed, Refract-specific id is resolved independently of which
-    // executable is currently running it. Packaged keeps the exact `electron-builder.yml` appId
-    // (`APP_USER_MODEL_ID_PACKAGED`) so notifications, taskbar grouping and Apps & Features stay
+    // executable is currently running it. Packaged keeps the exact appId electron-builder.yml
+    // will use (spec 006 T003 scaffolds that file's `appId`; T012 is this unconditional call;
+    // `APP_USER_MODEL_ID_PACKAGED`) so notifications, taskbar grouping and Apps & Features stay
     // one identity across every upgrade, matching T012's intent even though packaging itself
     // (spec 006) has not landed on `main` yet. Dev uses `APP_USER_MODEL_ID_DEV` instead of that
     // same id -- see its comment above for why (a Windows-cached poisoned icon association for
