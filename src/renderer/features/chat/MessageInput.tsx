@@ -1179,10 +1179,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               labels first; only once both groups hit their own `min-w-[1.125rem]` floor (the
               14px icon plus its 4px `gap-1` to the label, the narrowest the group can go without
               the icon itself getting clipped by `overflow-hidden`) does the main prompt start
-              truncating too, with an ellipsis instead of the earlier hard clip. Each label span
-              also needs its own `min-w-0` (a flex item defaults to `min-width: auto`, i.e. its own
-              content size, which would otherwise block `truncate`'s ellipsis from ever firing
-              inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the
+              truncating too, with an ellipsis instead of the earlier hard clip. Gate-fixes
+              (quality gate, PR #644 round 2): `100` was not nearly large enough -- flexbox shares
+              a shortfall by `basis * shrink-factor`, so even at 100x the main prompt's own small
+              basis (about 113px) still worked out to roughly 0.46% of any shortfall (113 /
+              (113 + 100 * 243)), enough to show an ellipsis from a wide pane down (confirmed in
+              headless Chromium against this exact CSS). `100000` instead keeps the main prompt's
+              share under one sub-pixel layout step (1/64px) until the groups are fully at their
+              floor, so it stays visually whole the entire time the labels are still truncating.
+              Each label span also needs its own `min-w-0` (a flex item defaults to `min-width:
+              auto`, i.e. its own content size, which would otherwise block `truncate`'s ellipsis
+              from ever firing inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the
               native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same
               pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High
               Contrast, where `text-muted-foreground` would otherwise resolve to the same
@@ -1193,11 +1200,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
               <span className="min-w-0 truncate">Message the agent</span>
-              <span className="flex min-w-[1.125rem] shrink-[100] items-center gap-1 overflow-hidden">
+              <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
                 <SlashIcon aria-hidden="true" className="size-3.5 shrink-0" />
                 <span className="min-w-0 truncate">for commands</span>
               </span>
-              <span className="flex min-w-[1.125rem] shrink-[100] items-center gap-1 overflow-hidden">
+              <span className="flex min-w-[1.125rem] shrink-[100000] items-center gap-1 overflow-hidden">
                 <TypeIcon aria-hidden="true" className="size-3.5 shrink-0" />
                 <span className="min-w-0 truncate">Markdown supported</span>
               </span>

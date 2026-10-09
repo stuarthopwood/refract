@@ -62,7 +62,7 @@ Current rule, unchanged by the #474 grill: every piece of metadata shown in a to
 - **Severity icons**: one set for every notice — info circle, success check, warning triangle, error octagon — each a distinct `lucide` shape plus the severity word; colour only reinforces it.
 - **Action icons**: toolbar and row actions use plain `lucide` icons at the size ladder above. Action-menu items carry no icon (text only); destination and settings menus put a leading icon on every item (see Menus in components.md).
 - **Tool icons** (#469): `lucide`, under the same library and size rules as every other icon — there is no separate icon family for tool calls.
-- **Brand icons**: `@tabler/icons-react`, brand marks only, per Library and style above. **Resolved** (2026-10-09, #533 PR decision comment, following the 2026-10-08 Tabler-brand-marks-only rule): the composer's Markdown hint icon is NOT a brand mark, so it uses lucide `TypeIcon`, not Tabler's `IconMarkdown`. `@tabler/icons-react` stays out of `package.json` until #528 actually builds.
+- **Brand icons**: `@tabler/icons-react`, brand marks only, per Library and style above. **Resolved** (2026-10-09, #533 issue update comment, following the 2026-10-08 Tabler-brand-marks-only rule): the composer's Markdown hint icon is NOT a brand mark, so it uses lucide `TypeIcon`, not Tabler's `IconMarkdown`. `@tabler/icons-react` stays out of `package.json` until #528 actually builds.
 
 ## Open
 
