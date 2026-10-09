@@ -54,19 +54,15 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 | Clear the message box | Esc |
 | Stop the running turn | Ctrl+Shift+X |
 | Close chat pane | Ctrl+W |
-| New Session | Ctrl+N |
-| New Conversation | Ctrl+Shift+N |
-| Jump to the Nth Session | Ctrl+1 to Ctrl+9 |
-| Hide or show the session list | Ctrl+B |
 | Open Settings | Ctrl+, |
-| Cycle Approval mode | Ctrl+Shift+A |
-| Command palette | Ctrl+K |
 | Open in split (a session row) | Ctrl+click |
 | Move focus to the other pane (split open) | Ctrl+Shift+\ |
 
 Ctrl+Esc and Ctrl+Shift+Esc were considered for Stop and rejected: Windows reserves them (Start menu and Task Manager), so the app may never receive them.
 
 Ctrl+W closes the chat pane that is showing right now; it no longer closes the window (Alt+F4 and the window's own caption button still do).
+
+Six rows were removed 2026-10-09 (#429): New Session (Ctrl+N), New Conversation (Ctrl+Shift+N), Jump to the Nth Session (Ctrl+1 to Ctrl+9), Hide or show the session list (Ctrl+B), Cycle Approval mode (Ctrl+Shift+A), and Command palette (Ctrl+K) had no working handler anywhere in the renderer or main process. Ctrl+N and Ctrl+Shift+N stay backlog issue #6; Ctrl+B is loosely tracked by #453 (its dead `SidebarProvider` implementation in `components/ui/sidebar.tsx` is never mounted); Cycle Approval mode and Command palette have no filed replacement issue yet. Open Settings (Ctrl+,) is the one row that instead got a real handler (#395) and stays.
 
 Send and Stop each name their chord in a tooltip on hover and keyboard focus, as key-cap icons (the `Kbd` component), not plain text; the chord is not drawn beside the button.
 

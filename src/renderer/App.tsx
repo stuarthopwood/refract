@@ -194,6 +194,31 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showReadiness, view, paneSessionIds.length, isSplit, focusedIndex])
 
+  // Issue #395 (keyboard shortcut set): Ctrl+, opens Settings -- documented in
+  // docs/design/index.md's Keyboard table since before any handler existed (found while
+  // building spec 008 T013/T014). Reuses the Ctrl+W/Ctrl+Shift+\ chords' own window-wide
+  // pattern and modal guard immediately above. Matches `event.key` (not `event.code`): a
+  // punctuation chord, unlike a letter chord, has no AZERTY-style physical-position mismatch
+  // to work around, and `key`-matching is how VS Code and Chrome bind this exact chord.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey || event.repeat || event.isComposing || event.key !== ',') return
+      // Already in Settings: a no-op, not a second `openSettings()` call, which would reset
+      // the open section back to the default and silently discard where the developer was.
+      if (showReadiness || view === 'settings') return
+      if (
+        document.querySelector(
+          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="popover-content"], [data-slot="select-content"]'
+        )
+      )
+        return
+      event.preventDefault()
+      useViewStore.getState().openSettings()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showReadiness, view])
+
   // Round 3 (code-reviewer/accessibility-auditor/test-reviewer, Low): the React
   // `onPointerDownCapture` prop this first shipped with on the button below never ran early
   // enough -- react-resizable-panels attaches its own `pointerdown` listener directly to

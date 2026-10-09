@@ -32,8 +32,10 @@ interface ShortcutGroup {
 // Every row here was individually verified against its real handler before being listed
 // (MessageInput.tsx, App.tsx, SessionList.tsx) -- see this task's own report for the full
 // row-by-row verification table. A chord in docs/DESIGN.md's "Keyboard" table that is NOT listed
-// here (Ctrl+N, Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+comma, Ctrl+Shift+A, Ctrl+K) has no
-// working handler yet; it is left out entirely rather than shown as a false promise.
+// here (Ctrl+N, Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) has no working
+// handler yet (#429 trimmed the table itself to match); it is left out entirely rather than
+// shown as a false promise. Ctrl+, (Open Settings, #395) moved from that list into a real row
+// below now that a handler exists (App.tsx).
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     heading: 'Message box',
@@ -56,6 +58,10 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { action: 'Open a session in split view', keys: ['Ctrl', 'Click'] },
       { action: 'Move focus to the other pane', keys: ['Ctrl', 'Shift', '\\'] }
     ]
+  },
+  {
+    heading: 'General',
+    rows: [{ action: 'Open Settings', keys: ['Ctrl', ','] }]
   }
 ]
 
