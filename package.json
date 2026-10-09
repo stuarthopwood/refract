@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@shadcn/react": "0.3.1",
-    "@tabler/icons-react": "3.47.0",
     "class-variance-authority": "0.7.1",
     "cn": "0.4.0",
     "diff": "9.0.0",

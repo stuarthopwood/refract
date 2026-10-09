@@ -371,14 +371,15 @@ const PAIRS = [
   // only at the 3:1 non-text floor (the pairs above, shared with the icon-only use of these
   // same tokens). Removing the box puts the hint text directly on `--background`, so both now
   // need their own real 4.5:1 text pair there too.
+  { fg: 'destructive', bg: 'background', min: 4.5 },
+  { fg: 'state-needs-you', bg: 'background', min: 4.5 },
   // Issue #533: the composer's new empty-state hint overlay (icons plus "for commands" /
   // "Markdown supported" text, `MessageInput.tsx`) renders `text-muted-foreground` directly on
   // `--composer-background`, the composer field's own distinct per-theme fill (NOT the page
-  // `--background` the `muted-foreground`/`background` pair above already covers) -- the first
-  // component to put real text on this token, so it needs its own pair.
+  // `--background` the `muted-foreground`/`background` pair above already covers). That token
+  // already carried real text -- the old native placeholder and the typed draft itself -- this
+  // pair was simply missing from the gate, not newly rendered text; closes a pre-existing gap.
   { fg: 'muted-foreground', bg: 'composer-background', min: 4.5 },
-  { fg: 'destructive', bg: 'background', min: 4.5 },
-  { fg: 'state-needs-you', bg: 'background', min: 4.5 },
   // `--input`/`--ring`, the control-edge tokens every dialog footer's outline Cancel button and
   // every focus ring actually render, checked only against `--background` before -- dialogs
   // and menus sit on `--popover`/`--muted`, not the page.

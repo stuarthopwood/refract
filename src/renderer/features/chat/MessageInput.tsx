@@ -9,8 +9,7 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, CpuIcon, GaugeIcon, Slash, SquareIcon, XIcon } from 'lucide-react'
-import { IconMarkdown } from '@tabler/icons-react'
+import { ArrowUpIcon, CpuIcon, GaugeIcon, SlashIcon, SquareIcon, TypeIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -1158,28 +1157,49 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
               icons, so this inert sibling (same technique as the ghost-text overlay below) shows
               "Message the agent" plus two short hints (slash commands, Markdown), each with a
-              leading icon, spaced apart rather than bracketed (docs/DESIGN.md "No bracket/
-              parenthetical UI copy"). Hidden as soon as there is any text, so it never draws over
-              the draft or the ghost-text suggestion, and whenever disabled (the native
-              `placeholder` carries the stop-reason text for that state instead, unchanged). The
-              accessible name stays "Message"; `composerHintId` above carries the same wording
-              through `aria-describedby` since an overlay is never read as a `placeholder`.
-              `shrink-0` on the leading text plus `min-w-0`/`truncate` on each hint group means a
-              narrow pane compresses the hints toward an ellipsis first, keeping "Message the
-              agent" itself intact as long as there is any room left for it. */}
+              leading icon, spaced apart rather than bracketed (docs/design/product-look-and-
+              feel.md:27 "No bracket/parenthetical UI copy"). Hidden as soon as there is any text,
+              so it never draws over the draft or the ghost-text suggestion, and whenever disabled
+              (the native `placeholder` carries the stop-reason text for that state instead,
+              unchanged). The accessible name stays "Message"; `composerHintId` above carries the
+              same wording through `aria-describedby` since an overlay is never read as a
+              `placeholder`. Gate-fixes (quality gate, PR #644 round 1): `TypeIcon` (lucide), not
+              Tabler's `IconMarkdown` -- Stuart's 2026-10-08 rule (PLAN.md "Icon set and style")
+              limits `@tabler/icons-react` to GitHub/GitLab/Bitbucket brand marks only, and a
+              Markdown glyph is not a brand mark (resolved, `docs/design/foundations-icons.md`
+              "Status, action, tool, and brand icons"); `@tabler/icons-react` is back out of
+              `package.json`. Responsive: the issue's own three-stage design (truncate the hint
+              labels, then icons-only with a tooltip, then truncate the main prompt) is narrowed to
+              two stages here -- a tooltip cannot attach to a `pointer-events-none` overlay, so
+              that middle tier is dropped (flagged on the issue and in the PR as a deviation,
+              Stuart's call). `min-w-0 truncate` on the leading text (no `shrink-0`) plus a
+              `shrink-[100]` weight on each hint group (CSS flexbox shrinks proportionally to
+              basis * shrink-factor, so at 100x the groups absorb nearly all of any shrink deficit
+              before the main prompt gives up any width) means a narrow pane truncates the hint
+              labels first; only once both groups hit their own `min-w-[1.125rem]` floor (the
+              14px icon plus its 4px `gap-1` to the label, the narrowest the group can go without
+              the icon itself getting clipped by `overflow-hidden`) does the main prompt start
+              truncating too, with an ellipsis instead of the earlier hard clip. Each label span
+              also needs its own `min-w-0` (a flex item defaults to `min-width: auto`, i.e. its own
+              content size, which would otherwise block `truncate`'s ellipsis from ever firing
+              inside the group's own nested flex row). `forced-colors:text-[GrayText]` matches the
+              native placeholder's own forced-colors rendering (radio-group.tsx:54,77 for the same
+              pattern elsewhere) so the hint cannot be mistaken for typed text in Windows High
+              Contrast, where `text-muted-foreground` would otherwise resolve to the same
+              `CanvasText` as the real draft. */}
           {!disabled && text === '' && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground md:text-sm"
+              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground forced-colors:text-[GrayText] md:text-sm"
             >
-              <span className="shrink-0">Message the agent</span>
-              <span className="flex min-w-0 shrink items-center gap-1">
-                <Slash aria-hidden="true" className="size-3.5 shrink-0" />
-                <span className="truncate">for commands</span>
+              <span className="min-w-0 truncate">Message the agent</span>
+              <span className="flex min-w-[1.125rem] shrink-[100] items-center gap-1 overflow-hidden">
+                <SlashIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                <span className="min-w-0 truncate">for commands</span>
               </span>
-              <span className="flex min-w-0 shrink items-center gap-1">
-                <IconMarkdown aria-hidden="true" className="size-3.5 shrink-0" />
-                <span className="truncate">Markdown supported</span>
+              <span className="flex min-w-[1.125rem] shrink-[100] items-center gap-1 overflow-hidden">
+                <TypeIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                <span className="min-w-0 truncate">Markdown supported</span>
               </span>
             </div>
           )}
