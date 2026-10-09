@@ -16,15 +16,23 @@ export interface AgentSpinnerProps {
   size: 16 | 20 | 24 | 32 | 48
   /** Merged with the component's own classes -- layout utilities only (for example `shrink-0`). */
   className?: string
-  /** Colour palette. `'brand'` (default): Refract's own mark colour, reused verbatim from the
-   * removed `BrandSpinner` (`#864DD6`, itself drawn from `build/refract-icon-v2.svg`) -- chosen
-   * as the shipped default because it is Refract's own unambiguous brand colour, already proven
-   * against the contrast floor below. `'export'`: Stuart's SVGator source export's own violet
-   * (`#D347FF`), kept available as a one-line swap (issue #612 "Colours"). `'blue'`: added after
-   * Stuart's live review of PR #616 -- the electric blue from his own reference screenshot of the
-   * target core look (glowing blue discs on black), sampled as `#2A7FFF`. All three are fixed
-   * values, never theme-derived -- same reasoning `BrandSpinner`'s research.md decision 7 gave:
-   * the mark's identity is its specific colour. */
+  /** Colour. `'brand'` (default): **follows the active theme** -- `--agent-spinner-core` is a
+   * Layer 3 component token declared once per theme block in `globals.css` (`.theme-dark`,
+   * `.theme-obsidian`, `.theme-dark-high-contrast`), today the same brand violet (`#864DD6`,
+   * reused verbatim from the removed `BrandSpinner`, itself drawn from `build/refract-icon-v2.svg`)
+   * in every theme (Stuart's #616 review round 4 decision: "same brand violet in every theme for
+   * now"); a custom theme file (#458) may recolour it per-theme later. `'export'` and `'blue'`
+   * remain fixed, NON-theme-derived overrides, set directly on this element (so they win over
+   * the inherited theme value regardless of selector specificity): `'export'` is Stuart's
+   * SVGator source export's own violet (`#D347FF`, issue #612 "Colours"); `'blue'` is the
+   * electric blue from his own reference screenshot of the target core look (glowing blue discs
+   * on black, `#2A7FFF`), added after his live review of PR #616. `'brand'`'s own
+   * `--agent-spinner-core` is checked against `--sidebar`/`--card`/`--background` (every
+   * surface the mark renders on) by `scripts/check-theme-contrast.mjs`'s `PAIRS` list, a real
+   * gate in every theme; `'export'`/`'blue'` are fixed literals outside the token system, so
+   * they are not wired into that script as gates -- their own ratios against the same three
+   * surfaces were computed once and reported in the PR body instead (all >=4.3:1, comfortably
+   * clearing the 3:1 floor in every theme). */
   palette?: 'brand' | 'export' | 'blue'
 }
 

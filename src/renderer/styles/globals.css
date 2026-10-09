@@ -256,6 +256,18 @@
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* Agent-working spinner component token (issue #612, #616 review round 4: Stuart chose "same
+   * brand violet in every theme for now" over a palette prop). Layer 3 component token, same
+   * raw literal in every theme (custom theme files, #458, may override it per-theme later) --
+   * `AgentSpinner.tsx`'s `palette="brand"` (default) now means "inherit this theme token"; the
+   * `"export"`/`"blue"` palettes stay fixed per-instance overrides via `[data-palette=...]` in
+   * the component's own CSS, which still win over this inherited value (a declaration directly
+   * on the `.agent-spinner` element beats one inherited from this theme class on an ancestor,
+   * regardless of selector specificity). Contrast against `--sidebar` (session list),
+   * `--card`/`--background` (chat header, session details card) verified by
+   * `scripts/check-theme-contrast.mjs`'s `--agent-spinner-core` pairs -- see that script and
+   * this story's PR body for the measured ratio in every theme. */
+  --agent-spinner-core: #864DD6;
 }
 
 /* #550 (theme foundation, palette v2): the mock's own Obsidian canvas (`#0F1014`) and
@@ -380,6 +392,10 @@
   --state-needs-you-foreground: oklch(0.145 0 0);
   --state-stopped: var(--severity-error);
   --state-stopped-foreground: oklch(0.145 0 0);
+  /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
+   * comment above explains in full; this preset's own contrast numbers are in
+   * `scripts/check-theme-contrast.mjs` and this story's PR body. */
+  --agent-spinner-core: #864DD6;
 }
 
 /* Spec 007 T015 (FR-008, FR-009, FR-010): a dedicated high-contrast dark preset, not a scaled
@@ -501,6 +517,10 @@
   --severity-warning-bg: color-mix(in oklab, var(--severity-warning) 12%, transparent);
   --severity-error-bg: color-mix(in oklab, var(--severity-error) 12%, transparent);
   --severity-info-bg: color-mix(in oklab, var(--severity-info) 12%, transparent);
+  /* Agent-working spinner component token (issue #612) -- same value as `.theme-dark`'s own
+   * comment explains in full; this preset's own contrast numbers are in
+   * `scripts/check-theme-contrast.mjs` and this story's PR body. */
+  --agent-spinner-core: #864DD6;
 }
 
 /* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================
@@ -570,21 +590,26 @@
 }
 
 /* Agent-working spinner (issue #612, replaces the brand spinner `BrandSpinner`/spec 011 T002).
- * `AgentSpinner.tsx`'s own file-level comment records the full history across PR #616's three
- * review rounds; by this (third) round, every ring/glow/orbit layer from the first two rounds is
- * gone outright (clean cutover) -- the split/rotate/merge triangle of discs is the entire mark,
- * and its own rotation is the one visible-spin cue.
+ * `AgentSpinner.tsx`'s own file-level comment records the full history across PR #616's review
+ * rounds; by this point every ring/glow/orbit layer from the first two rounds is gone outright
+ * (clean cutover) -- the split/rotate/merge triangle of discs is the entire mark, and its own
+ * rotation is the one visible-spin cue.
  *
- * Palette: one CSS custom property per preset, never theme-derived (same reasoning
- * `BrandSpinner`'s research.md decision 7 gave -- the mark's identity is its specific colour).
- * `'brand'` (default, `AgentSpinner.tsx`'s own `palette` prop default): Refract's own mark colour,
- * reused verbatim from the removed `BrandSpinner` (`#864DD6`, already proven >=3:1 against
- * `--sidebar` in both theme presets by that component's own quality-gate remediation -- reused
- * here unchanged, not re-derived). `'export'`: the SVGator source's own violet. `'blue'`: added
- * after Stuart's live review of PR #616 -- the electric blue from his own reference screenshot,
- * selected via `data-palette="blue"`. */
+ * Colour (#616 review round 4, Stuart's decision: "make the spinner colour a per-theme
+ * component token, same brand violet in every theme for now"): `--agent-spinner-core` is a
+ * LAYER 3 COMPONENT TOKEN, declared once per theme block (`.theme-dark`, `.theme-obsidian`,
+ * `.theme-dark-high-contrast`, each with the same literal `#864DD6` today -- see `.theme-dark`'s
+ * own comment on that token for the full rationale and the contrast numbers). It is
+ * **deliberately not declared here** on `.agent-spinner` itself, so the value is inherited from
+ * whichever theme class is active on an ancestor -- this is what `AgentSpinner.tsx`'s
+ * `palette="brand"` (the default) now means: "follow the theme", not a fixed value. `'export'`
+ * and `'blue'` remain fixed, per-instance overrides -- the `[data-palette=...]` rules below set
+ * `--agent-spinner-core` directly on the `.agent-spinner` element itself, which beats the
+ * inherited theme value (a same-element declaration always wins over one inherited from an
+ * ancestor, regardless of selector specificity). Custom theme files (#458) may override the
+ * component token per-theme once that lands; nothing else in this file sets
+ * `--agent-spinner-core`. */
 .agent-spinner {
-  --agent-spinner-core: #864DD6;
   /* The one named loop-duration constant (Stuart: "slow it down by about 40%", 6000ms ->
    * 10000ms) -- change this one value for a different speed; keep `AgentSpinner.tsx`'s
    * `CYCLE_MS` constant in sync (same value, as milliseconds) since the phase-locking

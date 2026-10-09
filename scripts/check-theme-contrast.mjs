@@ -371,6 +371,14 @@ const PAIRS = [
   { fg: 'input', bg: 'muted', min: 3 },
   { fg: 'ring', bg: 'popover', min: 3 },
   { fg: 'ring', bg: 'muted', min: 3 },
+  // Agent-working spinner (issue #612, #616 review round 4): Stuart's decision -- the brand
+  // violet is now a per-theme Layer 3 component token (`--agent-spinner-core`, same value in
+  // every theme today, declared in each `.theme-*` block in globals.css), not a fixed colour.
+  // Checked against every surface the mark actually renders on: the session list
+  // (`--sidebar`), and the chat header / session details card (`--card`/`--background`).
+  { fg: 'agent-spinner-core', bg: 'sidebar', min: 3 },
+  { fg: 'agent-spinner-core', bg: 'card', min: 3 },
+  { fg: 'agent-spinner-core', bg: 'background', min: 3 },
 ]
 
 // The OTHER edge class -- soft decorative dividers (panes, rows, headers, sections), now named
