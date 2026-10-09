@@ -153,9 +153,12 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   // failure its own way (a toast for one-click, inline text in the picker).
   create: async (repositoryId, baseBranch) => {
     // Issue #620, UX consult item 2 decision 6: a caller that fires while this repository's own
-    // create is already in flight (every "disabled" surface is a *visual* guard only -- Radix
-    // `aria-disabled`, not `disabled`, keeps these keyboard-focusable) gets turned away here
-    // instead of issuing a second IPC round-trip / worktree.
+    // create is already in flight gets turned away here instead of issuing a second IPC
+    // round-trip / worktree. The header "+" is only `aria-disabled` (still clickable), and the
+    // row menu item and `NewSessionDialog`'s Create button both use a real Radix/HTML
+    // `disabled` (unselectable, keyboard-skipped) -- this synchronous check-and-set, run before
+    // the first `await` on the single renderer thread, is the one race-proof gate every caller
+    // actually depends on.
     if (get().creatingRepositoryIds.has(repositoryId)) {
       return { ok: false, error: { code: 'invalid-argument', message: 'A session is already being created for this repository.' } }
     }

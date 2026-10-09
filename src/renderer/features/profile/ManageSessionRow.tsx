@@ -6,6 +6,7 @@
 // SIBLINGS, never nested inside it (a button must never contain another button).
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, RefObject } from 'react'
+import { toast } from 'sonner'
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
@@ -35,7 +36,7 @@ import { buildSessionRowActions } from '@/features/sessions/sessionActions'
 import { STATUS_LABEL, StateIcon, formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { useWorktreeActions } from '@/features/sessions/useWorktreeActions'
 import { focusSessionPane } from '@/lib/focus'
-import { notify, useSessionsStore, useSplitStore, useViewStore } from '@/state'
+import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 
@@ -66,7 +67,9 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   const openInSplit = useSplitStore((state) => state.openInSplit)
   const open = useSessionsStore((state) => state.open)
   const createSession = useSessionsStore((state) => state.create)
-  const creatingRepositoryIds = useSessionsStore((state) => state.creatingRepositoryIds)
+  // Code-review fix (gate round 1): subscribes to a derived boolean, not the whole Set, so a
+  // create for one repository does not re-render every OTHER row.
+  const creatingThisRepository = useSessionsStore((state) => (repository ? state.creatingRepositoryIds.has(repository.id) : false))
   const rename = useSessionsStore((state) => state.rename)
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -90,6 +93,11 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   // `preventDefault` Radix's own return-to-trigger (there is nothing to focus yet at menu-close
   // time; the create's own then-handler decides once it settles).
   const createRequestedRef = useRef(false)
+  // Code-review fix (gate round 1): which menu the create was requested from -- set in
+  // `handleMenuCloseAutoFocus`'s `createRequestedRef` branch (the one place that already knows
+  // `isContextMenu`) and read later by `handleNewSession`'s own then/catch handlers, which run
+  // well after that menu has closed and `isContextMenu` is out of scope.
+  const createOriginRef = useRef<'dropdown' | 'context' | null>(null)
   // Post-build review fix (accessibility-auditor, Medium, WCAG 4.1.3): archive/restore chosen
   // from the "..." menu or the right-click context menu, below, must not announce until the
   // menu's close animation actually finishes -- see `handleMenuCloseAutoFocus`.
@@ -254,43 +262,57 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
   }
 
   // Issue #620, UX consult item 2 decisions 3, 5, 8, 9: creates instantly in this row's own
-  // repository and default branch (no dialog), announces immediately, then on success switches
-  // this screen back to chat (`openChat`, the same "opens that session" requirement every other
-  // path on this row already follows -- see `handleOpen` above) and focuses the new Session's
-  // pane, but only if the user has not moved on in the meantime (still on the "..." trigger,
-  // this row, or `<body>`). On failure, focus returns to the trigger and `notify` shows a toast
-  // that stays until dismissed. Absent from `actions` entirely (never called) when `repository`
-  // could not be resolved -- see the `newSession` argument to `buildSessionRowActions` below.
+  // repository and default branch (no dialog), announces immediately (deferred through
+  // `pendingAnnouncementRef`, the same mechanism archive/restore above already use, since the
+  // modal menu keeps `#root` `aria-hidden` through its close animation), then on success
+  // switches this screen back to chat unconditionally (`openChat`, decision 5's "opens that
+  // session" requirement, matching `handleOpen` above) and focuses the new Session's pane, but
+  // only if the user has not moved on in the meantime (still on the menu's own origin, this
+  // row, or `<body>`). On failure the same check gates whether focus returns to the origin; the
+  // toast (gate-fixes a11y High: a plain `toast.error` auto-dismisses, contradicting "stays
+  // until dismissed") always shows regardless, including for a rejected IPC call. Absent from
+  // `actions` entirely (never called) when `repository` could not be resolved -- see the
+  // `newSession` argument to `buildSessionRowActions` below.
   function handleNewSession(): void {
     if (!repository) return
     createRequestedRef.current = true
-    onAnnounce(`Creating session from ${repository.defaultBranch}`)
+    deferAnnouncementRef.current = true
+    pendingAnnouncementRef.current = `Creating session from ${repository.defaultBranch}`
     const row = rowRef.current
-    void createSession(repository.id, repository.defaultBranch).then((result) => {
-      if (!result.ok) {
-        notify(result.error)
-        if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
-        else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
-        else focusListContainer()
-        return
-      }
-      requestAnimationFrame(() => {
-        const active = document.activeElement
-        const stillHere =
-          !active ||
-          active === document.body ||
-          !active.isConnected ||
-          active === menuTriggerRef.current ||
-          (row?.contains(active) ?? false)
-        if (!stillHere) return
+    function isStillHere(): boolean {
+      const active = document.activeElement
+      const origin = createOriginRef.current === 'context' ? openButtonRef.current : menuTriggerRef.current
+      return !active || active === document.body || !active.isConnected || active === origin || (row?.contains(active) ?? false)
+    }
+    function focusOrigin(): void {
+      const origin = createOriginRef.current === 'context' ? openButtonRef.current : menuTriggerRef.current
+      if (origin?.isConnected) origin.focus()
+      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else focusListContainer()
+    }
+    function restoreAfterCreateFailure(message: string): void {
+      toast.error(message, { duration: Infinity })
+      if (isStillHere()) focusOrigin()
+    }
+    void createSession(repository.id, repository.defaultBranch)
+      .then((result) => {
+        if (!result.ok) {
+          restoreAfterCreateFailure(result.error.message)
+          return
+        }
         useViewStore.getState().openChat(repository.id)
         requestAnimationFrame(() => {
-          const { paneSessionIds, focusedIndex } = useSplitStore.getState()
-          const focusedSessionId = paneSessionIds[focusedIndex]
-          if (focusedSessionId) focusSessionPane(focusedSessionId)
+          if (isStillHere()) {
+            const { paneSessionIds, focusedIndex } = useSplitStore.getState()
+            const focusedSessionId = paneSessionIds[focusedIndex]
+            if (focusedSessionId) focusSessionPane(focusedSessionId)
+          } else {
+            onAnnounce(`Created session ${result.value.name}`)
+          }
         })
       })
-    })
+      .catch((err) => restoreAfterCreateFailure(err instanceof Error ? err.message : String(err)))
   }
 
   // The row's "..." menu and its right-click context menu share this one action list:
@@ -335,7 +357,10 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
         setDeleteOpen(true)
       }
     },
-    repository ? { branch: repository.defaultBranch, disabled: creatingRepositoryIds.has(repository.id) } : null
+    // A11y-review fix (gate round 1, Low): a repository whose git read failed carries no
+    // default branch -- leave the item out entirely (`null`), rather than reading "New session
+    // from " and creating on "".
+    repository && repository.defaultBranch ? { branch: repository.defaultBranch, disabled: creatingThisRepository } : null
   )
 
   // `isContextMenu`: the right-click/Shift+F10 context menu is invoked from the row's whole
@@ -359,10 +384,19 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
       event.preventDefault()
       renameRequestedRef.current = false
     } else if (createRequestedRef.current) {
-      // Issue #620 decision 8: stops Radix's own return-to-trigger -- `handleNewSession`'s own
-      // then-handler above decides where focus actually goes once the create settles.
+      // Issue #620 decision 8, amended (gate round 1, a11y Medium): `preventDefault` alone left
+      // focus on `<body>` for the whole multi-second checkout with no defined target (WCAG
+      // 2.4.3/2.4.7) -- focuses the menu's own origin instead (the open button for a right-click/
+      // Shift+F10 open, the "..." trigger for the dropdown), recorded here in `createOriginRef`
+      // for `handleNewSession`'s own then/catch handlers (run later, once `isContextMenu` is out
+      // of scope) to prefer the same element in their own `stillHere` check.
       event.preventDefault()
       createRequestedRef.current = false
+      createOriginRef.current = isContextMenu ? 'context' : 'dropdown'
+      if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else if (menuTriggerRef.current?.isConnected) menuTriggerRef.current.focus()
+      else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else focusListContainer()
     } else {
       event.preventDefault()
       if (isContextMenu && openButtonRef.current?.isConnected) openButtonRef.current.focus()
@@ -478,13 +512,19 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
                   </TooltipTrigger>
                   <TooltipContent side="bottom">More actions</TooltipContent>
                 </Tooltip>
-                <DropdownMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+                <DropdownMenuContent className="max-w-80" onCloseAutoFocus={handleMenuCloseAutoFocus}>
                   {actions.map((action, index) =>
                     action.kind === 'separator' ? (
                       <DropdownMenuSeparator key={`sep-${index}`} />
                     ) : (
-                      <DropdownMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
-                        {action.label}
+                      <DropdownMenuItem
+                        key={action.key}
+                        variant={action.variant}
+                        disabled={action.disabled}
+                        title={action.label}
+                        onSelect={action.onSelect}
+                      >
+                        <span className="min-w-0 truncate">{action.label}</span>
                       </DropdownMenuItem>
                     )
                   )}
@@ -493,13 +533,19 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
             </div>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>
+        <ContextMenuContent className="max-w-80" onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>
           {actions.map((action, index) =>
             action.kind === 'separator' ? (
               <ContextMenuSeparator key={`sep-${index}`} />
             ) : (
-              <ContextMenuItem key={action.key} variant={action.variant} disabled={action.disabled} onSelect={action.onSelect}>
-                {action.label}
+              <ContextMenuItem
+                key={action.key}
+                variant={action.variant}
+                disabled={action.disabled}
+                title={action.label}
+                onSelect={action.onSelect}
+              >
+                <span className="min-w-0 truncate">{action.label}</span>
               </ContextMenuItem>
             )
           )}

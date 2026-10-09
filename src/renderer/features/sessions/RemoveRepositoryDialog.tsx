@@ -57,9 +57,9 @@ function findAdjacentRepositoryId(repositoryId: string): string | undefined {
 export function RemoveRepositoryDialog({ repository, open, onOpenChange, onRemoved, onCancelled }: RemoveRepositoryDialogProps) {
   const sessions = useSessionsStore((state) => state.sessions)
   const remove = useRepositoriesStore((state) => state.remove)
-  // Mirrors RepositoryGroup's own `creatingRef`/`creating` pair: the ref blocks a second submit
-  // before React re-renders (a double-click or double-Enter), the state drives aria-disabled and
-  // the button's label.
+  // The same local double-submit guard `sessions-store.ts`'s `creatingRepositoryIds` now covers
+  // for Session creation (issue #620): the ref blocks a second submit before React re-renders (a
+  // double-click or double-Enter), the state drives aria-disabled and the button's label.
   const removingRef = useRef(false)
   const [removing, setRemoving] = useState(false)
   const removedRef = useRef(false)
