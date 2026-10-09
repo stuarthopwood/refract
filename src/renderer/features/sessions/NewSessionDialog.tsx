@@ -44,6 +44,12 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
   const [loadingBranches, setLoadingBranches] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Issue #620, UX consult item 2 decision 6: the same per-repository in-flight guard the
+  // header "+" and the row's "New session from {branch}" menu item share -- `create()` itself
+  // enforces it (so a submit here while one of those is already running is refused, not a
+  // silent second worktree), but the Create button also reads it directly so it reads
+  // "Creating…" and is disabled for that case too, not just this dialog's own `submitting`.
+  const creatingRepository = useSessionsStore((state) => state.creatingRepositoryIds.has(repository.id))
 
   useEffect(() => {
     if (!open) return
@@ -149,8 +155,8 @@ export function NewSessionDialog({ repository, trigger }: NewSessionDialogProps)
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || loadingBranches}>
-              {submitting ? 'Creating…' : 'Create session'}
+            <Button type="submit" disabled={submitting || loadingBranches || creatingRepository}>
+              {submitting || creatingRepository ? 'Creating…' : 'Create session'}
             </Button>
           </DialogFooter>
         </form>

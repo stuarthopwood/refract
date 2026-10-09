@@ -15,6 +15,7 @@ import { focusProfileItemName } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
+import type { Repository } from '../../../shared/model'
 import { ManageSessionRow } from './ManageSessionRow'
 import { ManageSessionsToolbar } from './ManageSessionsToolbar'
 import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel, showingCountLabel } from './manageSessionsHelpers'
@@ -34,6 +35,12 @@ export function ManageSessionsScreen() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const repositoryNameById = new Map(repositories.map((repository) => [repository.id, repository.name]))
+  // Issue #620, UX consult item 2 decision 5: resolves the row's own repository here (this
+  // screen already reads `repositories` above) so `ManageSessionRow` can offer "New session
+  // from {branch}" through the identical shared builder -- when it cannot be resolved (the
+  // "Unknown repository" fallback `repositoryNameById` above already covers), the item is left
+  // out entirely rather than shown disabled.
+  const repositoryById: Map<string, Repository> = new Map(repositories.map((repository) => [repository.id, repository] as const))
 
   // High remediation pattern (a11y, same as SettingsScreen.tsx): the profile menu's "Manage
   // sessions" item unmounts the instant this screen shows (App.tsx swaps the whole main area on
@@ -222,6 +229,7 @@ export function ManageSessionsScreen() {
               <ManageSessionRow
                 key={session.id}
                 session={session}
+                repository={repositoryById.get(session.repositoryId)}
                 repositoryName={repositoryNameById.get(session.repositoryId) ?? 'Unknown repository'}
                 searchInputRef={searchInputRef}
                 onAnnounce={announce}

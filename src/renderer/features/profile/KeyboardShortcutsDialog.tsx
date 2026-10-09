@@ -1,9 +1,10 @@
 // Keyboard shortcuts (spec 008 FR-020, T023): a read-only list reachable from the profile menu.
 // HONESTY RULE: lists ONLY a chord actually verified to have a working handler in this codebase
 // (a keydown listener, a textarea default, or an Electron accelerator) -- never a chord
-// docs/DESIGN.md's own "Keyboard" table documents that has no real handler behind it yet. See
-// issue #429 for the table's own currently-unimplemented rows; this dialog is the one place
-// that only ever shows what is really there.
+// docs/design/index.md's own "Keyboard" table documents that has no real handler behind it yet.
+// See the "Six rows were removed" paragraph in docs/design/index.md for the full set of rows
+// this codebase does NOT implement; this dialog is the one place that only ever shows what is
+// really there.
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -31,9 +32,11 @@ interface ShortcutGroup {
 
 // Every row here was individually verified against its real handler before being listed
 // (MessageInput.tsx, App.tsx, SessionList.tsx) -- see this task's own report for the full
-// row-by-row verification table. A chord in docs/DESIGN.md's "Keyboard" table that is NOT listed
-// here (Ctrl+N, Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+comma, Ctrl+Shift+A, Ctrl+K) has no
-// working handler yet; it is left out entirely rather than shown as a false promise.
+// row-by-row verification table. A chord in docs/design/index.md's "Keyboard" table that is NOT listed
+// here (Ctrl+N, Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) has no working
+// handler yet (#429 trimmed the table itself to match); it is left out entirely rather than
+// shown as a false promise. Ctrl+, (Open Settings, #395) moved from that list into a real row
+// below now that a handler exists (App.tsx).
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     heading: 'Message box',
@@ -56,6 +59,10 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { action: 'Open a session in split view', keys: ['Ctrl', 'Click'] },
       { action: 'Move focus to the other pane', keys: ['Ctrl', 'Shift', '\\'] }
     ]
+  },
+  {
+    heading: 'General',
+    rows: [{ action: 'Open Settings', keys: ['Ctrl', ','] }]
   }
 ]
 
@@ -89,7 +96,20 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
                     <span className="min-w-0 truncate text-sm">{row.action}</span>
                     <KbdGroup className="shrink-0">
                       {row.keys.map((key) => (
-                        <Kbd key={key}>{key}</Kbd>
+                        <Kbd key={key}>
+                          {/* Quality-gate remediation (PR #637 gate, optional a11y): a lone ','
+                              glyph reads ambiguously to a screen reader (sometimes silent,
+                              sometimes "comma" depending on the engine) -- spelling it out for
+                              assistive tech while keeping the visible key-cap glyph unchanged. */}
+                          {key === ',' ? (
+                            <>
+                              <span aria-hidden>,</span>
+                              <span className="sr-only">comma</span>
+                            </>
+                          ) : (
+                            key
+                          )}
+                        </Kbd>
                       ))}
                     </KbdGroup>
                   </li>

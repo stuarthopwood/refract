@@ -9,6 +9,14 @@ interface SessionsState {
   /** Session ids with an `open()` call in flight (bug report point 4): lets a row/ChatPane show
    * "Starting the agent..." feedback and ignore a second click while the first is still opening. */
   openingIds: Set<string>
+  // Issue #620, UX consult item 2 decision 6: per-repository in-flight guard, shared by every
+  // `create()` caller (the header "+", the row's "New session from {branch}" menu item, and
+  // `NewSessionDialog`) -- previously `SessionList.tsx`'s own `RepositoryGroup` kept this as a
+  // private ref/state pair that only the header "+" button could see, so a second caller (the
+  // menu item) had no way to know a create was already running for that repository (the #102
+  // class of double-create bug). `create()` below both enforces and owns this set, so every
+  // caller's disabled state stays correct without re-implementing the guard itself.
+  creatingRepositoryIds: Set<string>
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
   refresh(): Promise<void>
@@ -45,6 +53,7 @@ const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
   openingIds: new Set(),
+  creatingRepositoryIds: new Set(),
   setSessions: (sessions) => set({ sessions }),
   applyStatus: (event) =>
     set({
@@ -143,12 +152,29 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   // ChatPane's per-pane effect turns into an open. Returns the result so each caller reports a
   // failure its own way (a toast for one-click, inline text in the picker).
   create: async (repositoryId, baseBranch) => {
-    const result = await window.refract.sessions.create({ repositoryId, baseBranch })
-    if (result.ok) {
-      await get().refresh()
-      useSplitStore.getState().replaceFocused(result.value.id)
+    // Issue #620, UX consult item 2 decision 6: a caller that fires while this repository's own
+    // create is already in flight gets turned away here instead of issuing a second IPC
+    // round-trip / worktree. The header "+" is only `aria-disabled` (still clickable), and the
+    // row menu item and `NewSessionDialog`'s Create button both use a real Radix/HTML
+    // `disabled` (unselectable, keyboard-skipped) -- this synchronous check-and-set, run before
+    // the first `await` on the single renderer thread, is the one race-proof gate every caller
+    // actually depends on.
+    if (get().creatingRepositoryIds.has(repositoryId)) {
+      return { ok: false, error: { code: 'invalid-argument', message: 'A session is already being created for this repository.' } }
     }
-    return result
+    set({ creatingRepositoryIds: new Set(get().creatingRepositoryIds).add(repositoryId) })
+    try {
+      const result = await window.refract.sessions.create({ repositoryId, baseBranch })
+      if (result.ok) {
+        await get().refresh()
+        useSplitStore.getState().replaceFocused(result.value.id)
+      }
+      return result
+    } finally {
+      const creatingRepositoryIds = new Set(get().creatingRepositoryIds)
+      creatingRepositoryIds.delete(repositoryId)
+      set({ creatingRepositoryIds })
+    }
   },
   rename: async (id, name) => {
     const result = await window.refract.sessions.rename(id, name)
