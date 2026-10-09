@@ -569,77 +569,154 @@
   }
 }
 
-/* Brand spinner (spec 011 T002, data-model.md "Animation"): a per-arm opacity cascade, one
- * fixed core (`.brand-spinner-core`, opacity 1 throughout) and three arms whose own
- * `@keyframes` already encode a third-of-a-cycle stagger against each other (0%/33.333%/66.667%
- * /100%, whichever apply, all at the 0.7 rest baseline, one brief pulse frame partway through
- * reaching the 1.0 peak) -- so every arm can share the exact same `animation-delay`, set once
- * per mounted instance by `BrandSpinner.tsx` as the `--brand-spinner-delay` custom property
- * (research.md decision 5), and every instance mounted at any moment lands on the same point in
- * the cycle as every other (FR-007). The `prefers-reduced-motion: reduce` block above already
- * collapses this to one near-instant iteration landing back on each arm's shared rest frame
- * (research.md decision 6) -- no new, component-specific reduced-motion check (FR-008). Never
- * `transform`, `filter`, or `box-shadow` (FR-005).
+/* Agent-working spinner (issue #612, replaces the brand spinner `BrandSpinner`/spec 011 T002):
+ * Stuart rejected `BrandSpinner`'s opacity-only per-arm cascade as not visibly spinning (its big
+ * shapes were circles, and the colour cascade alone was too subtle). This is a from-scratch
+ * recreation of Stuart's SVGator export -- `AgentSpinner.tsx`'s own file-level comment records
+ * every deviation from the export in detail (no SVGator runtime, the visible orbiting cue added
+ * on top of the export's own motion, the gradient-radius keyframe approximated by scaling a
+ * second glow layer, the square-cropped coordinate frame, size-gated Full/Simplified variants).
  *
- * Quality-gate remediation (UI MEDIUM, 3 independent reviewers): two deviations from the
- * original 0.35-rest, single-ease-in-out-curve-per-arm design (research.md decision 3,
- * data-model.md "Animation"), both required for the 16px working icon to stay visible:
- * 1. Rest baseline raised 0.35 -> 0.7: the Simplified core is always opaque and the arms
- *    previously rested as low as ~1.4:1 against `--sidebar` in both built-in theme presets --
- *    under the 3:1 WCAG AA non-text floor spec 007 FR-008 holds every other state icon to, and
- *    the one visible under `prefers-reduced-motion: reduce`, which freezes on exactly this
- *    frame. 0.7 clears 3:1 for every arm colour against both presets' `--sidebar` (verified
- *    with the same OKLCH/WCAG math as `scripts/check-theme-contrast.mjs`).
- * 2. Each arm's single 0% -> peak -> 100% ease-in-out curve replaced with a short pulse that
- *    sits at rest for two-thirds of the cycle: previously, every arm was still partway through
- *    its own rise/fall whenever a neighbour peaked (research.md's "exactly one arm is at its
- *    bright peak" did not hold -- the other two were still visibly brightening/dimming, around
- *    0.78 opacity, not resting), so the highlight never read as genuinely taking turns.
- */
-@keyframes brand-spinner-arm-1 {
-  0%, 33.333%, 100% { opacity: 0.7; }
-  16.667% { opacity: 1; }
+ * Palette: CSS custom properties, two fixed values (never theme-derived, same reasoning as
+ * `BrandSpinner`'s research.md decision 7 -- the mark's identity is its own specific palette).
+ * `'brand'` (default, `AgentSpinner.tsx`'s own `palette` prop default): Refract's own mark
+ * colours, reused verbatim from the removed `BrandSpinner` (`#864DD6` core already proven >=3:1
+ * against `--sidebar` in both theme presets by that component's own quality-gate remediation --
+ * reused here unchanged, not re-derived). `'export'`: the SVGator source's own five colours,
+ * selected via `data-palette="export"` -- the documented one-line swap. */
+.agent-spinner {
+  --agent-spinner-ring: #199D95;
+  --agent-spinner-ring-2: #ECA231;
+  --agent-spinner-core: #864DD6;
+  --agent-spinner-glow: #A877E0;
+  --agent-spinner-orbit: #F8A740;
 }
-@keyframes brand-spinner-arm-2 {
-  0%, 33.333%, 66.667%, 100% { opacity: 0.7; }
+.agent-spinner[data-palette='export'] {
+  --agent-spinner-ring: #0054FF;
+  --agent-spinner-ring-2: #FC0137;
+  --agent-spinner-core: #D347FF;
+  --agent-spinner-glow: #FA01FC;
+  --agent-spinner-orbit: #FFFFFF;
+}
+
+/* The visible orbiting cue (`AgentSpinner.tsx` deviation 1): one full, CONSTANT-speed turn every
+ * loop -- deliberately `linear`, not the `cubic-bezier(.42,0,.58,1)` easing every other animation
+ * below uses, because constant angular velocity reads as mechanical "spinning" far more clearly
+ * than an eased rotation would. 0deg and 360deg are the same visual position, so this keyframe
+ * is already a clean `prefers-reduced-motion` rest frame with no separate base-value override
+ * needed (unlike the opacity/shape/filter animations below, which do need one). Shared by both
+ * the Full and Simplified variants (`AgentSpinner.tsx`'s `.agent-spinner-rotator`). */
+@keyframes agent-spinner-orbit {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.agent-spinner-rotator {
+  transform-origin: 0 0;
+  animation: agent-spinner-orbit 3s linear infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+
+/* The core's shape morph, Full variant only (`AgentSpinner.tsx`'s `CORE_REST_D`/`CORE_PEAK_D`,
+ * `.agent-spinner-core-full`): CSS `d: path(...)`, approximating the export's own per-facet
+ * morph keyframes. 0%/100% both equal the rest diamond, so `prefers-reduced-motion` (which
+ * collapses this to one near-instant iteration) settles back on the calm rest shape, never the
+ * mid-cycle peak -- the same rest-frame discipline `BrandSpinner`'s own keyframes used. Paired
+ * with a `filter: hue-rotate()` cycle, in place of the export's `feColorMatrix` hue-rotate
+ * keyframe (`AgentSpinner.tsx` deviation 2); its own 0%/100% frame is given as this element's
+ * plain base `filter` value below, since (unlike `d`, which already falls back to the path's own
+ * attribute) CSS `filter` has no such attribute fallback to revert to. */
+@keyframes agent-spinner-core-morph {
+  0%, 100% { d: path('M0,-56 C14,-56 20,-20 40,0 C20,20 14,56 0,56 C-14,56 -20,20 -40,0 C-20,-20 -14,-56 0,-56 Z'); }
+  50% { d: path('M0,-70 C34,-70 44,-34 70,0 C44,34 34,70 0,70 C-34,70 -44,34 -70,0 C-44,-34 -34,-70 0,-70 Z'); }
+}
+@keyframes agent-spinner-core-hue {
+  0%, 100% { filter: hue-rotate(-15deg); }
+  50% { filter: hue-rotate(45deg); }
+}
+.agent-spinner-core-full {
+  filter: hue-rotate(-15deg);
+  animation:
+    agent-spinner-core-morph 3s cubic-bezier(.42, 0, .58, 1) infinite,
+    agent-spinner-core-hue 3s cubic-bezier(.42, 0, .58, 1) infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+
+/* The Simplified variant's own flat core (`.agent-spinner-core-simple`): opacity only, no morph
+ * or hue-rotate (Full variant only, above). Rest baseline 0.7, reusing `BrandSpinner`'s own
+ * quality-gate-fixed value and rationale verbatim: the core is always visible (never dips below
+ * its rest value), so it independently needs the same >=3:1 floor against `--sidebar` in both
+ * theme presets spec 007 FR-008 holds every other state icon to -- 0.7 on `#864DD6` already
+ * clears it (verified by that remediation, reused unchanged here). */
+@keyframes agent-spinner-core-pulse {
+  0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
-@keyframes brand-spinner-arm-3 {
-  0%, 66.667%, 100% { opacity: 0.7; }
-  83.333% { opacity: 1; }
-}
-
-.brand-spinner-arm-1,
-.brand-spinner-arm-2,
-.brand-spinner-arm-3 {
-  /* The rest frame is the BASE style, not only the 0%/100%/33.333%/66.667% keyframes: when the
-   * animation does not run or ends (prefers-reduced-motion collapses it to one 0.01ms iteration
-   * with no fill), the arm must settle on the dim rest frame, never the bright peak (FR-009).
-   * 0.7, not the original 0.35 -- quality-gate remediation above the @keyframes block. */
+.agent-spinner-core-simple {
   opacity: 0.7;
-  animation-duration: 1.2s;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-  animation-delay: var(--brand-spinner-delay, 0ms);
+  animation: agent-spinner-core-pulse 3s cubic-bezier(.42, 0, .58, 1) infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
 }
-.brand-spinner-arm-1 { animation-name: brand-spinner-arm-1; }
-.brand-spinner-arm-2 { animation-name: brand-spinner-arm-2; }
-.brand-spinner-arm-3 { animation-name: brand-spinner-arm-3; }
-.brand-spinner-core { opacity: 1; }
 
-/* Brand spinner under Windows forced-colors mode (spec 011 T009, FR-014, research.md decision
- * 14): every arm and core fill switches from its fixed brand hex value to a system colour
- * keyword, so the mark stays visible against whatever background the active forced-colors
- * theme provides, rather than keeping colours never designed against it.
- *
- * Quality-gate remediation (Code LOW): plain `path` selector, not `:is(path, use)` -- neither
- * variant's markup contains a `<use>` element (BrandSpinner.tsx), so the `use` branch matched
- * nothing. `!important` dropped too: an SVG `fill` attribute is a presentation attribute, the
- * lowest-priority origin in the CSS cascade, so any author-stylesheet rule -- even this plain,
- * non-`!important` class-descendant selector -- already overrides it unconditionally. */
+/* Glow ring 1 (Full variant only): a breathing opacity pulse on the gradient/blur/mask-ed ring
+ * group. Glow ring 2 approximates the export's own animated gradient-radius keyframe -- CSS
+ * cannot animate an SVG radial gradient's `r` attribute without JavaScript -- by scaling a
+ * second, larger glow layer instead (`AgentSpinner.tsx` deviation 3); both variants are `g`
+ * wrapper opacity/transform only, never per-circle, so forced-colors (below) can neutralise each
+ * group with one rule. */
+@keyframes agent-spinner-glow-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.7; }
+}
+.agent-spinner-glow {
+  opacity: 0.35;
+  animation: agent-spinner-glow-pulse 3s cubic-bezier(.42, 0, .58, 1) infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+@keyframes agent-spinner-glow-2-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50% { transform: scale(1.3); opacity: 0; }
+}
+.agent-spinner-glow-2 {
+  transform-origin: 0 0;
+  opacity: 0.2;
+  animation: agent-spinner-glow-2-pulse 3s cubic-bezier(.42, 0, .58, 1) infinite;
+  animation-delay: var(--agent-spinner-delay, 0ms);
+}
+
+/* Agent spinner under Windows forced-colors mode (issue #612 step 2g, mirroring `BrandSpinner`'s
+ * own precedent): the Full variant's gradient/blur/mask/`mix-blend-mode` glow ring becomes a
+ * plain system-colour ring (its second, redundant glow layer is hidden outright rather than
+ * drawing two rings), the core drops to a flat, unanimated system colour, and the orbiting cue
+ * switches to `Highlight` -- "a simple system-colour ring with an orbiting dot, no gradients",
+ * for both variants from the same rules (the Simplified variant's `.agent-spinner-ring` and
+ * `.agent-spinner-core` were already flat, unanimated shapes). Plain presentation attributes
+ * (SVG `stroke`/`fill`), the lowest-priority CSS origin, so this plain author-stylesheet rule
+ * already overrides them unconditionally -- no `!important` needed, matching `BrandSpinner`'s own
+ * quality-gate-corrected reasoning. */
 @media (forced-colors: active) {
-  .brand-spinner path {
+  .agent-spinner-glow-2 {
+    display: none;
+  }
+  .agent-spinner-glow {
+    opacity: 1;
+    animation: none;
+    mix-blend-mode: normal;
+    filter: none;
+    mask: none;
+  }
+  .agent-spinner-glow circle,
+  .agent-spinner-ring {
+    stroke: CanvasText;
+    opacity: 1;
+  }
+  .agent-spinner-core {
     fill: CanvasText;
+    filter: none;
+    animation: none;
+  }
+  .agent-spinner-rotator circle {
+    stroke: Highlight;
+    fill: Highlight;
   }
 }
 

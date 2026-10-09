@@ -36,7 +36,7 @@ Verified in code: `AttachmentStrip.tsx:41-49` ("Remove pasted image") and `Messa
 
 ## Loading
 
-A loading state is a lucide spinner (`Loader2Icon`) plus words (for example, "Checking GitHub sign-in…"). The animating brand mark (`BrandSpinner`) is reserved for exactly one meaning: an agent is working (settled in principle by #400). Do not reuse the brand mark for any other kind of loading.
+A loading state is a lucide spinner (`Loader2Icon`) plus words (for example, "Checking GitHub sign-in…"). The animating agent-working spinner (`AgentSpinner`, issue #612, supersedes the brand mark spinner `BrandSpinner`/spec 011) is reserved for exactly one meaning: an agent is working. Do not reuse it for any other kind of loading.
 
 ## Feedback channels
 

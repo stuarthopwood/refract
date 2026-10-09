@@ -1,5 +1,10 @@
 # Implementation Plan: Brand spinner
 
+**Superseded by #612** (2026-10-09): Stuart's live review rejected the shipped `BrandSpinner`
+(this plan's own design) as not visibly spinning; it is replaced by a new `AgentSpinner`
+component built from a different source export. This document is left as-written, a historical
+record of what shipped and why.
+
 **Branch**: `spec-011-brand-spinner` | **Date**: 2026-10-05 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/011-brand-spinner/spec.md`
