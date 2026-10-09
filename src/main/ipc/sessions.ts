@@ -11,9 +11,17 @@ import path from 'node:path';
 import { ipcMain, shell } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
 import type { DiffStat, Result, SessionSnapshot, SessionRuntimeView } from '../../shared/ipc';
-import { git } from '../git/git';
 import { diffStat } from '../git/diffStat';
-import { addWorktree, branchExists, deleteCheck, generateName, listBranches, recreateWorktree, removeWorktree } from '../git/worktrees';
+import {
+  addWorktree,
+  branchExists,
+  deleteCheck,
+  generateName,
+  listBranches,
+  recreateWorktree,
+  removeSessionWorktree,
+  removeWorktree
+} from '../git/worktrees';
 import type { Session } from '../../shared/model';
 import { listConversations } from '../conversations';
 import { detectUnexpectedTermination } from '../omp/terminationDetection';
@@ -249,12 +257,13 @@ export function registerSessions(manager: SessionManager): void {
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
-        const worktreeExists = await fs.stat(session.worktreePath).then(() => true, () => false);
-        if (worktreeExists) {
-          await removeWorktree(repository.path, session.worktreePath, session.branch, { deleteBranch: true });
-        } else if (await branchExists(repository.path, session.branch)) {
-          await git(repository.path, ['branch', '-D', session.branch]);
-        }
+        // Issue #599 quality-gate fix: decide by `git worktree list --porcelain`, never
+        // `fs.stat` -- an orphaned folder (left behind by a crash, a manual `git worktree
+        // prune`, or hand cleanup) still exists on disk while git has already lost track of
+        // it, and the old `fs.stat`-then-`removeWorktree` path threw on that state with no
+        // retry. `removeSessionWorktree` (`git/worktrees.ts`) owns the full registered/
+        // unregistered decision and the folder-removal safety checks.
+        await removeSessionWorktree(repository.path, session.worktreePath, session.branch, { deleteBranch: true });
         if (session.sessionDir) {
           if (isStrictDescendantOfOmpSessions(session.sessionDir)) {
             await deleteSessionConversations(session.sessionDir);
