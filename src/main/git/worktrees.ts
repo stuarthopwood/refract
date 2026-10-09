@@ -333,7 +333,12 @@ async function dotGitPointsTo(dir: string, expected: string): Promise<boolean> {
   const match = /^gitdir:\s*(.+?)\s*$/m.exec(dotGitContent)
   if (!match) return false
   const recordedRaw = match[1]!
-  const recordedAbs = path.isAbsolute(recordedRaw) ? recordedRaw : path.resolve(dir, recordedRaw)
+  // A relative `gitdir:` is resolved by git against the DIRECTORY'S REAL location, never a
+  // junction/symlink alias it happened to be reached through -- resolving against the
+  // aliased `dir` as written could land on the wrong parent and wrongly refuse a legitimate
+  // gitfile repo reached through a junction.
+  const realDir = await fs.realpath(dir).catch(() => dir)
+  const recordedAbs = path.isAbsolute(recordedRaw) ? recordedRaw : path.resolve(realDir, recordedRaw)
   return (await canonicalPath(recordedAbs)) === expected
 }
 
@@ -408,11 +413,11 @@ function orphanRefusalMessage(worktreePath: string, reason: OrphanRefusalReason)
  * caller), EXISTING directory outside the root -- `assertWithinWorktreesRoot` never reaches
  * this for a path that no longer exists, since there is nothing there to protect or to retry
  * deleting, and this same text would otherwise be a dead end the user can never act on. */
-function outsideWorktreesRootMessage(worktreePath: string, root: string, isRootItself: boolean): string {
+function outsideWorktreesRootMessage(worktreePath: string, root: string, repo: string, isRootItself: boolean): string {
   if (isRootItself) {
     return `Refract did not delete anything. ${worktreePath} is Refract's worktree folder itself, not a single worktree. Delete the individual Session worktrees inside it instead, then choose Delete again for each.`
   }
-  return `Refract did not delete anything. ${worktreePath} is outside Refract's worktree folder (${root}), so Refract will never remove it. To remove this Session, move or rename that folder yourself (only if you are sure it is not your own work), then choose Delete again.`
+  return `Refract did not delete anything. ${worktreePath} is outside Refract's worktree folder (${root}), so Refract will never remove it. To remove this Session, move or rename that folder yourself (only if you are sure it is not your own work), or run \`git worktree remove\` on that path yourself in the repository at ${normalizeGitPath(repo)}, then choose Delete again.`
 }
 
 function lockedWorktreeMessage(worktreePath: string): string {
@@ -463,7 +468,7 @@ async function assertWithinWorktreesRoot(repo: string, worktreePath: string): Pr
   const root = await canonicalPath(worktreesRoot(repo)).catch((err) => wrapFsError(err, worktreePath))
   const target = await canonicalPath(worktreePath).catch((err) => wrapFsError(err, worktreePath))
   if (target === root) {
-    throw new GitError('worktree-failed', outsideWorktreesRootMessage(worktreePath, worktreesRoot(repo), true))
+    throw new GitError('worktree-failed', outsideWorktreesRootMessage(worktreePath, worktreesRoot(repo), repo, true))
   }
   if (target.startsWith(`${root}${path.sep}`)) return 'inside'
 
@@ -476,7 +481,7 @@ async function assertWithinWorktreesRoot(repo: string, worktreePath: string): Pr
     exists = false
   }
   if (!exists) return 'outside-missing'
-  throw new GitError('worktree-failed', outsideWorktreesRootMessage(worktreePath, worktreesRoot(repo), false))
+  throw new GitError('worktree-failed', outsideWorktreesRootMessage(worktreePath, worktreesRoot(repo), repo, false))
 }
 
 /** A folder can be REGISTERED yet already emptied by hand -- its `.git` pointer file deleted (a
@@ -681,11 +686,16 @@ export async function removeSessionWorktree(
       if (!(err instanceof GitError) || !/used by worktree/i.test(err.message)) throw err
       const usedByMatch = /used by worktree at '(.*)'\s*$/im.exec(err.message)
       const holderPath = usedByMatch?.[1]
-      const isMainCheckout =
-        holderPath !== undefined &&
-        (await canonicalPath(holderPath).catch(() => null)) === (await canonicalPath(repo).catch(() => null))
+      const holderCanonical = holderPath !== undefined ? await canonicalPath(holderPath).catch(() => null) : null
+      const repoCanonical = await canonicalPath(repo).catch(() => null)
+      // A submodule checkout or a `git init --separate-git-dir` repo's MAIN checkout is
+      // reported by git at its common/git dir, never at `repo` itself (the repo's own `.git`
+      // is just a file pointing there) -- without this, the main-checkout case for those repos
+      // fell through to the generic wording, which named the git dir as a removable worktree.
+      const commonDirCanonical = await gitCommonDir(repo).then((d) => canonicalPath(d)).catch(() => null)
+      const isMainCheckout = holderCanonical !== null && (holderCanonical === repoCanonical || holderCanonical === commonDirCanonical)
       const removedClause = removedWorktree ? 'Refract removed the worktree but did not delete' : 'Refract did not delete'
-      const whereClause = holderPath ? ` at ${holderPath}` : ' elsewhere'
+      const whereClause = isMainCheckout ? ` at ${repo}` : holderPath ? ` at ${holderPath}` : ' elsewhere'
       const nextStep = isMainCheckout
         ? 'Switch that checkout to a different branch, then choose Delete again.'
         : 'Switch that checkout to a different branch (or, if its drive is connected and you no longer need it, remove that worktree), then choose Delete again.'
@@ -713,7 +723,7 @@ export async function removeSessionWorktree(
     if (await isWorktreeRegistered(repo, worktreePath)) {
       throw new GitError(
         'worktree-failed',
-        `Refract did not delete anything. Git still records a worktree for this Session at ${worktreePath}, outside Refract's worktree folder, and that folder cannot be found (a disconnected drive, or moved?). Refract never removes worktrees outside its own folder. If you no longer need it, run \`git worktree remove --force\` followed by that path in the repository at ${repo}, then choose Delete again. If the drive is connected when you run it, this also deletes that folder and any uncommitted work in it.`
+        `Refract did not delete anything. Git still records a worktree for this Session at ${worktreePath}, outside Refract's worktree folder, and that folder cannot be found (a disconnected drive, or moved?). Refract never removes worktrees outside its own folder. If you no longer need it, run \`git worktree remove --force\` followed by that path in the repository at ${normalizeGitPath(repo)}, then choose Delete again. If git says the worktree is locked, run \`git worktree unlock\` followed by that path first. If the drive is connected when you run it, this also deletes that folder and any uncommitted work in it.`
       )
     }
     await deleteBranchIfRequested(false)
@@ -824,17 +834,25 @@ export async function deleteCheckForMissingWorktree(repo: string, branch: string
  * there ran `git status`/`HEAD` with no `.git` present, either throwing a raw git error or
  * silently reporting whatever unrelated repository happened to sit above it in an ancestor
  * directory -- in both cases the confirmation dialog never showed the branch's real risk before
- * `removeSessionWorktree` could still force-delete it. Only trusts the worktree's own checkout
- * when git itself still recognises this exact path as a registered worktree AND it has a
- * `.git` entry of its own; every other state reads the branch's risk directly from the
- * repository instead. */
+ * `removeSessionWorktree` could still force-delete it. Checks `isRepoReadable` FIRST: if the
+ * repository has moved, been deleted, or is otherwise unreadable, `isWorktreeRegistered` below
+ * would itself run a raw `git worktree list` that can surface a jargon-y spawn error (reads as
+ * though git itself is missing) instead of the calm zero-risk result. Only trusts the worktree's
+ * own checkout when git itself still recognises this exact path as a registered worktree AND it
+ * has a `.git` entry of its own -- and even then, only for `uncommittedFiles`: that folder's
+ * checked-out branch may not be the Session's own `branch` (nothing stops `git switch` running
+ * inside it), so `unpushedCommits`/`hasUpstream` always come from the branch-scoped
+ * `deleteCheckForMissingWorktree`, never from whatever `HEAD` happens to be. */
 export async function deleteCheckForSession(repo: string, worktreePath: string, branch: string): Promise<DeleteCheck> {
+  if (!(await isRepoReadable(repo))) return deleteCheckForMissingWorktree(repo, branch)
   const hasGitEntry = await fs.lstat(path.join(worktreePath, '.git')).then(
     () => true,
     () => false
   )
   if (hasGitEntry && (await isWorktreeRegistered(repo, worktreePath))) {
-    return deleteCheck(worktreePath)
+    const { uncommittedFiles } = await deleteCheck(worktreePath)
+    const { unpushedCommits, hasUpstream } = await deleteCheckForMissingWorktree(repo, branch)
+    return { uncommittedFiles, unpushedCommits, hasUpstream }
   }
   return deleteCheckForMissingWorktree(repo, branch)
 }
