@@ -48,13 +48,13 @@ Pausing on a hidden window (Caps and pause rules above), the 3-row shimmer cap, 
 
 ## Focus
 
-- Use a 2px focus-visible ring in the accent token, at least 3:1 against its surface, and never remove it.
+- Use a 2px focus-visible ring (achromatic `--ring`, **decided 2026-10-09**: not the accent token -- see "Accent and primary fill" in [foundations-tokens-theming.md](foundations-tokens-theming.md)), at least 3:1 against its surface, and never remove it.
 - Return focus to the trigger after a menu or dialog closes.
 - Give every hover-only action a keyboard path too.
 
 Today's code uses a 3px ring (`focus-visible:ring-3`, `button.tsx`), not the 2px above. The 2px figure is Stuart's literal Q11 wording; the separate high-contrast decision (#552) calls its own ring "a thicker 2px focus ring", which is inconsistent with a 2px base — flagged here, not resolved, since picking new numbers is Stuart's call; `foundations-tokens-theming.md` and `accessibility.md` need the same note.
 
-Today's focus ring token (`--ring`, an achromatic grey) is not yet the accent token this decision calls for; the accent-token ring lands with the token-layering work (see foundations-tokens-theming.md).
+Today's focus ring token (`--ring`, an achromatic grey) is the **decided, permanent** token for this rule: Stuart ruled 2026-10-09 that the focus ring stays achromatic rather than moving to the accent token, closing the gap PR #596 had declared open (see "Accent and primary fill" in foundations-tokens-theming.md).
 
 ## Open
 
