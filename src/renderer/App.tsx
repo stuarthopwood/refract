@@ -197,21 +197,33 @@ export function App() {
   // Issue #395 (keyboard shortcut set): Ctrl+, opens Settings -- documented in
   // docs/design/index.md's Keyboard table since before any handler existed (found while
   // building spec 008 T013/T014). Reuses the Ctrl+W/Ctrl+Shift+\ chords' own window-wide
-  // pattern and modal guard immediately above. Matches `event.key` (not `event.code`): a
-  // punctuation chord, unlike a letter chord, has no AZERTY-style physical-position mismatch
-  // to work around, and `key`-matching is how VS Code and Chrome bind this exact chord.
+  // pattern and modal guard immediately above; `key`-matching (with a code-based fallback
+  // for non-Latin layouts, mirroring the Ctrl+W fix) is how VS Code binds this exact chord.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey || event.repeat || event.isComposing || event.key !== ',') return
+      // Quality-gate remediation (PR #637 gate, LOW): a punctuation chord DOES have its own
+      // layout mismatches -- on Russian/Ukrainian layouts the physical comma key types
+      // 'б', and producing ',' there needs Shift, which this guard already rejects. Falls
+      // back to the physical code only when `event.key` is a genuinely non-Latin letter
+      // (mirrors the Ctrl+W fix above); AZERTY and QWERTZ already type an unshifted ','
+      // and are unaffected.
+      const isComma = event.key === ',' || (!/^[\x21-\x7e]$/.test(event.key) && event.code === 'Comma')
+      if (
+        !event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.repeat ||
+        event.isComposing ||
+        !isComma
+      )
+        return
       // Already in Settings: a no-op, not a second `openSettings()` call, which would reset
       // the open section back to the default and silently discard where the developer was.
       if (showReadiness || view === 'settings') return
-      if (
-        document.querySelector(
-          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="popover-content"], [data-slot="select-content"]'
-        )
-      )
-        return
+      // Quality-gate remediation (PR #636/#637 gates): see `OVERLAY_OPEN_SELECTOR`'s own
+      // comment above.
+      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
       event.preventDefault()
       useViewStore.getState().openSettings()
     }

@@ -305,7 +305,12 @@ export function ProfileItem() {
           Settings
           <KbdGroup>
             <Kbd>Ctrl</Kbd>
-            <Kbd>,</Kbd>
+            {/* Quality-gate remediation (PR #637 gate, optional a11y): spells the lone
+                comma glyph out for assistive tech, which reads it ambiguously on its own. */}
+            <Kbd>
+              <span aria-hidden>,</span>
+              <span className="sr-only">comma</span>
+            </Kbd>
           </KbdGroup>
         </TooltipContent>
       </Tooltip>
