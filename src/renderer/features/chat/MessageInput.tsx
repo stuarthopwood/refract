@@ -9,7 +9,8 @@ import type {
   FocusEvent as ReactFocusEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { ArrowUpIcon, CpuIcon, GaugeIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, CpuIcon, GaugeIcon, Slash, SquareIcon, XIcon } from 'lucide-react'
+import { IconMarkdown } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -161,6 +162,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
   const attachmentsStatusId = `${sessionId}-attachments-status`
   const attachmentsSummaryId = `${sessionId}-attachments-summary`
+  // Issue #533: sr-only accessible description for the composer's empty-state hint overlay --
+  // an inert overlay cannot act as a native `placeholder` for assistive tech, so the same
+  // content reaches it through `aria-describedby` instead (gated off whenever the overlay
+  // itself is not shown, mirroring `ghostHintId`/`attachmentsSummaryId` above).
+  const composerHintId = `${sessionId}-composer-hint`
 
   const statusRef = useRef(status)
   statusRef.current = status
@@ -942,14 +948,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
 
   const placeholder = disabled
     ? describeStopReason(stopReason, stopDetail)
-    // Slash commands are discoverable by typing '/' itself (SlashMenu.tsx opens on it), so no
-    // parenthetical hint is needed here (docs/DESIGN.md "No bracket/parenthetical UI copy").
-    : 'Message the agent…'
+    // Issue #533: the empty-state hint overlay below now carries this copy (with icons), so the
+    // native `placeholder` is left empty here to avoid drawing both on top of each other -- the
+    // disabled branch above is unchanged, it has no overlay.
+    : ''
   // Accessibility remediation (High): a short, persistent sr-only summary of how many
   // attachments are pending right now, pointed to by the textarea's own `aria-describedby` --
   // the only programmatic link from the textarea to its pending chips/images before this.
   const pendingAttachmentsCount = attachments.images.length + attachments.textChips.length
-  const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId].filter(Boolean).join(' ')
+  const describedByIds = [disabled ? stopReasonId : null, ghostHintId, attachmentsSummaryId, composerHintId].filter(Boolean).join(' ')
 
   return (
     <div className="flex shrink-0 flex-col gap-2 border-t border-divider px-4 py-3">
@@ -1049,6 +1056,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           ? `${pendingAttachmentsCount} pending attachment${pendingAttachmentsCount === 1 ? '' : 's'}`
           : ''}
       </span>
+      {/* Issue #533: sr-only description for the composer's empty-state hint overlay below --
+          an inert overlay is not read as a `placeholder` by assistive tech, so the same wording
+          reaches it through `aria-describedby` instead. Empty whenever the visible hint itself
+          is not shown (disabled, or the draft has text), same pattern as `ghostHintId`/
+          `attachmentsSummaryId` above. */}
+      <span id={composerHintId} className="sr-only">
+        {!disabled && text === '' ? 'Markdown is supported. Type slash for commands.' : ''}
+      </span>
       {/* Chip row (docs/DESIGN.md "Chat"; spec 004 appends readout chips after the pill): the
           Approval mode pill is always the first item, FR-056; `flex-wrap` lets the row wrap onto
           a further line at any window width rather than ever hiding or overlapping the box below
@@ -1140,6 +1155,34 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             placeholder={placeholder}
             className="max-h-48 min-h-16 resize-none overflow-y-auto border-none bg-transparent pr-20 shadow-none focus-visible:border-none focus-visible:ring-0 dark:bg-transparent"
           />
+          {/* Issue #533: empty-state hint overlay. A native `placeholder` attribute cannot carry
+              icons, so this inert sibling (same technique as the ghost-text overlay below) shows
+              "Message the agent" plus two short hints (slash commands, Markdown), each with a
+              leading icon, spaced apart rather than bracketed (docs/DESIGN.md "No bracket/
+              parenthetical UI copy"). Hidden as soon as there is any text, so it never draws over
+              the draft or the ghost-text suggestion, and whenever disabled (the native
+              `placeholder` carries the stop-reason text for that state instead, unchanged). The
+              accessible name stays "Message"; `composerHintId` above carries the same wording
+              through `aria-describedby` since an overlay is never read as a `placeholder`.
+              `shrink-0` on the leading text plus `min-w-0`/`truncate` on each hint group means a
+              narrow pane compresses the hints toward an ellipsis first, keeping "Message the
+              agent" itself intact as long as there is any room left for it. */}
+          {!disabled && text === '' && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 flex items-start gap-1.5 overflow-hidden px-2.5 py-2 pr-20 text-base text-muted-foreground md:text-sm"
+            >
+              <span className="shrink-0">Message the agent</span>
+              <span className="flex min-w-0 shrink items-center gap-1">
+                <Slash aria-hidden="true" className="size-3.5 shrink-0" />
+                <span className="truncate">for commands</span>
+              </span>
+              <span className="flex min-w-0 shrink items-center gap-1">
+                <IconMarkdown aria-hidden="true" className="size-3.5 shrink-0" />
+                <span className="truncate">Markdown supported</span>
+              </span>
+            </div>
+          )}
           {/* Ghost-text overlay (T103, FR-058): an inert sibling, not part of the textarea's own
               accessible value -- matching its box model exactly (same padding/font classes) so
               the invisible leading span reserves the same space the real draft occupies, landing
