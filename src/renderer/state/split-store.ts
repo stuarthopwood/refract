@@ -33,7 +33,9 @@ interface SplitState {
   /** The keyboard focus-move command/button (FR-007): flips to whichever pane is not currently
    * focused; a no-op when a split is not open. */
   focusOther(): void
-  /** Closing one pane's control (FR-011, FR-013): the other becomes the sole pane, full width. */
+  /** Closing one pane's control (FR-011, FR-013): the other becomes the sole pane, full width.
+   * Issue #621: also closes a single, non-split pane down to zero, landing on the existing
+   * zero-session empty state. */
   closePane(index: number): void
   /** `ResizablePanelGroup`'s `onLayoutChanged` (research.md Decision 5): always updates the live
    * value; persists (debounced ~300ms) only when `isUserInteraction` is true, never for a
@@ -223,13 +225,27 @@ export const useSplitStore = create<SplitState>((set, get) => {
       persist()
     },
 
+    // Issue #621 (close chat pane): generalised from "closing one of a known-2-element split"
+    // to also cover closing the single, non-split pane down to zero -- `paneSessionIds: []`
+    // lands on the existing zero-session empty state (App.tsx), unchanged. Mirrors
+    // `pruneDeleted`'s own "filter down, `focusedIndex` resets to 0, drop the closed id from
+    // `pristineIds`, persist()" shape so the two zero-panes-reachable paths behave identically.
     closePane: (index) => {
-      const { paneSessionIds } = get()
-      if (paneSessionIds.length !== 2) return
-      const survivor = index === 0 ? paneSessionIds[1] : paneSessionIds[0]
-      if (survivor === undefined) return
-      const next = [survivor]
-      set({ paneSessionIds: next, focusedIndex: 0 })
+      const { paneSessionIds, pristineIds } = get()
+      if (paneSessionIds.length === 2) {
+        const survivor = index === 0 ? paneSessionIds[1] : paneSessionIds[0]
+        if (survivor === undefined) return
+        set({ paneSessionIds: [survivor], focusedIndex: 0 })
+        persist()
+        return
+      }
+      if (paneSessionIds.length !== 1) return
+      const closedId = paneSessionIds[0]
+      set({
+        paneSessionIds: [],
+        focusedIndex: 0,
+        pristineIds: closedId === undefined ? pristineIds : withoutPristine(closedId)
+      })
       persist()
     },
 

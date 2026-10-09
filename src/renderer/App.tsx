@@ -15,6 +15,8 @@ import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import { useRepositoriesStore, useSessionsStore, useSplitStore, useSubagentPanelStore, useViewStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
+import { closeChatPane } from '@/features/chat/closeChatPane'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 
 // Spec 005 (research.md Decision 6, FR-017): below this many pixels of chat-area width, two
 // minimum-width panes (360px each, matching the "chat" ResizablePanel's own existing floor) can
@@ -132,6 +134,27 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isSplit])
 
+  // Issue #621 (close chat pane): Ctrl+W closes whichever chat pane is actually showing --
+  // the focused pane of a genuine split, the sole visible pane during the narrow-window
+  // collapse (still `isSplit`, see `otherSessionForNarrowCollapse` above), or the single
+  // pane when there is no split at all -- all three render with `paneIndex={isSplit ?
+  // focusedIndex : 0}` below, so that same expression picks the right pane here too. Reuses
+  // the Ctrl+Shift+\ chord's own window-wide pattern and modal guard immediately above.
+  // `menu.ts` moved the Electron `role: 'close'` accelerator off Ctrl+W to Alt+F4 specifically
+  // so this listener -- never window close -- receives it; `event.preventDefault()` is
+  // this chord's own "stop it falling through" fix on top of that.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!event.ctrlKey || event.shiftKey || event.code !== 'KeyW') return
+      if (showReadiness || view !== 'chat' || paneSessionIds.length === 0) return
+      if (document.querySelector('[role="alertdialog"], [role="dialog"][aria-modal="true"]')) return
+      event.preventDefault()
+      closeChatPane(isSplit ? focusedIndex : 0)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showReadiness, view, paneSessionIds.length, isSplit, focusedIndex])
+
   // Round 3 (code-reviewer/accessibility-auditor/test-reviewer, Low): the React
   // `onPointerDownCapture` prop this first shipped with on the button below never ran early
   // enough -- react-resizable-panels attaches its own `pointerdown` listener directly to
@@ -217,6 +240,11 @@ export function App() {
           once (React only touches this text node when the computed string itself changes)
           rather than each pane re-reading on every unrelated re-render. */}
       {isSplit && <div aria-live="polite" className="sr-only">{focusedSessionName ? `Focused: ${focusedSessionName}` : ''}</div>}
+      {/* Issue #621 (close chat pane): the "Closed {name} chat pane" announcement, always
+          mounted here -- outside ChatPane entirely, per the decision -- not gated on
+          `isSplit` like the region above, since closing the single, non-split pane down to
+          zero is the one case that region's own gate would otherwise miss. */}
+      <div aria-live="polite" className="sr-only">{useChatAreaAnnouncer((s) => s.text)}</div>
       <div className="min-h-0 flex-1">
         {showReadiness ? (
           <Readiness onReadyChange={setReady} />
@@ -274,7 +302,11 @@ export function App() {
                   // absolutely-positioned mark painting BEHIND this normal-flow text instead of
                   // over it: `isolate` is what creates the stacking context here (`container-type`
                   // does not, it only applies style and size containment).
-                  <div className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground [container-type:size]">
+                  <div
+                    data-chat-empty-state
+                    tabIndex={-1}
+                    className="relative isolate flex h-full items-center justify-center text-sm text-muted-foreground outline-none [container-type:size]"
+                  >
                     <BrandWatermark variant="live" />
                     Select a Session or create one.
                   </div>

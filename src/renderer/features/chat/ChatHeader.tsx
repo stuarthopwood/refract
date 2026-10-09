@@ -14,6 +14,8 @@
 // code and has been removed.
 import { PanelRightCloseIcon, SplitSquareHorizontalIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Kbd, KbdGroup } from '@/components/ui/kbd'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useSessionsStore } from '@/state'
 import { STATUS_LABEL, StateIcon } from '@/features/sessions/sessionDisplay'
 import { ConversationSwitcher } from './ConversationSwitcher'
@@ -23,7 +25,9 @@ interface ChatHeaderProps {
   /** Spec 005 (research.md Decision 9): set while a split is open; renders the "Focused" text
    * badge (never colour alone) when true. `undefined` while there is no split at all. */
   focused?: boolean
-  /** Spec 005 (FR-011, FR-013): renders a close-pane control when provided (only while split). */
+  /** Issue #621: always rendered now (removed the previous `isSplit`-only gate at the call
+   * site, `ChatPane.tsx`) -- a single, non-split pane is independently closeable too, down to
+   * the existing zero-session empty state. */
   onClose?: () => void
   /** Spec 005 (FR-017, research.md Decision 6): the other (hidden) Session's name, while the
    * window is too narrow for two panes; renders a small swap chip when provided. */
@@ -79,15 +83,27 @@ export function ChatHeader({
           <ConversationSwitcher sessionId={sessionId} />
         </div>
         {onClose && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={onClose}
-            aria-label={`Close ${session.name}'s pane`}
-          >
-            <PanelRightCloseIcon aria-hidden className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={onClose}
+                aria-label={`Close ${session.name} chat pane`}
+                aria-keyshortcuts="Control+W"
+              >
+                <PanelRightCloseIcon aria-hidden className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Close {session.name} chat pane
+              <KbdGroup>
+                <Kbd>Ctrl</Kbd>
+                <Kbd>W</Kbd>
+              </KbdGroup>
+            </TooltipContent>
+          </Tooltip>
         )}
         {/* Reserves the top-right corner for the window's own minimise/maximise/close buttons
             (FR-057), sized from the exact overlay geometry Electron exposes once

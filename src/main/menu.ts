@@ -31,7 +31,10 @@ export function buildAppMenu(isDev: boolean): Menu {
     {
       id: 'file',
       label: MENU_LABEL.file,
-      submenu: [{ role: 'close' }],
+      // Issue #621 (close chat pane): Electron's `role: 'close'` defaults to Ctrl+W on
+      // win32/linux -- moved to Alt+F4 explicitly so Ctrl+W reaches the renderer's own
+      // close-chat-pane keydown listener (App.tsx) instead of quitting the window.
+      submenu: [{ role: 'close', accelerator: 'Alt+F4' }],
     },
     {
       id: 'edit',
@@ -72,7 +75,7 @@ export function buildAppMenu(isDev: boolean): Menu {
           },
         },
         { type: 'separator' },
-        { role: 'close' },
+        { role: 'close', accelerator: 'Alt+F4' },
       ],
     },
   ]);
