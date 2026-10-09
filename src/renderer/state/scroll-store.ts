@@ -56,6 +56,14 @@ interface ScrollMemoryState {
    * `handleOpenConversation` -- see its own comment for why a failed `conversations.open` always
    * lands at the end instead of attempting (and usually losing the race to) a restore. */
   restoreIfAbsent(sessionId: string, previous: SessionScrollState | undefined): void
+  /** Issue #457 quality-gate fix (code review, Medium): toggling a transcript-display switch
+   * unmounts and remounts every pane's `Transcript` (the Settings screen replaces the whole chat
+   * area, `App.tsx`), and a remembered "detached" (not-at-end) raw `scrollTop` was recorded
+   * against the OLD row layout -- restoring it into the new, now shorter-or-taller layout lands on
+   * unrelated content instead of where the developer actually left off. Clearing every pane's
+   * memory here makes each one fall back to #485's own default (the end), the same "never visited
+   * this layout before" treatment a brand-new Conversation already gets. */
+  clearAll(): void
 }
 
 export const useChatScrollStore = create<ScrollMemoryState>((set, get) => ({
@@ -82,5 +90,6 @@ export const useChatScrollStore = create<ScrollMemoryState>((set, get) => ({
     if (!previous) return
     if (sessionId in get().bySession) return
     set({ bySession: { ...get().bySession, [sessionId]: previous } })
-  }
+  },
+  clearAll: () => set({ bySession: {} })
 }))

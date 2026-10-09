@@ -126,4 +126,29 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });
+
+  // Issue #457: two independent view-filter switches (Show thinking output / Show tool
+  // calls), the same immediate-apply + basic-shape-validation pattern as
+  // `SETTINGS_SET_WATERMARK_ENABLED` above. Quality-gate remediation (HIGH): takes ONE field
+  // at a time (not the whole `TranscriptDisplaySettings` object) and merges it in
+  // `SettingsStore.setTranscriptDisplay`, the same per-field pattern `SETTINGS_SET_READOUT_
+  // VISIBILITY` already uses -- a whole-object payload let a quick second toggle (built from
+  // the renderer's stale pre-write value of the first field) silently revert it.
+  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, async (_event, field: unknown, visible: unknown): Promise<Result<Settings>> => {
+    if (field !== 'thinking' && field !== 'toolCalls') {
+      return {
+        ok: false,
+        error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects field 'thinking' | 'toolCalls'` },
+      };
+    }
+    if (typeof visible !== 'boolean') {
+      return {
+        ok: false,
+        error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY} expects a boolean visible` },
+      };
+    }
+    const value = await manager.settings.setTranscriptDisplay(field, visible);
+    broadcastSettingsChanged(value, getWindow);
+    return { ok: true, value };
+  });
 }
