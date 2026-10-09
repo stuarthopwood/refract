@@ -24,6 +24,16 @@ import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 // click away via ChatHeader's swap chip.
 const MIN_SPLIT_WIDTH_PX = 360 * 2
 
+// Shared by every window-wide keyboard chord below (Ctrl+Shift+\, Ctrl+W): a destructive- or
+// navigation-feeling chord must not fire while a Dialog/Sheet (`role="dialog"`, which Radix
+// sets despite the primitive never setting `aria-modal` -- confirmed in its installed
+// source, so matching the bare role is both correct and simpler), an AlertDialog
+// (`role="alertdialog"`), a DropdownMenu/ContextMenu (`role="menu"`), or a Select
+// (`data-slot="select-content"`, which sets no distinguishing role at all) is open. Radix
+// Popover also renders `role="dialog"` despite being non-modal, so it needs no separate
+// `data-slot` clause either (quality-gate remediation, PR #634/#636 gates).
+const OVERLAY_OPEN_SELECTOR = '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="select-content"]'
+
 // Three-region layout (docs/DESIGN.md "Layout"): session list, chat, and the right region --
 // spec 004's Subagents panel is its first occupant (FR-017 to FR-020), always mounted but
 // collapsed to zero width until opened (see the `useLayoutEffect` below for why);
@@ -119,26 +129,10 @@ export function App() {
     if (!isSplit) return
     function onKeyDown(event: KeyboardEvent) {
       if (!event.ctrlKey || !event.shiftKey || event.code !== 'Backslash') return
-      // Quality-gate remediation (accessibility-auditor/code-reviewer, HIGH, PR #634): the
-      // previous `[role="dialog"][aria-modal="true"]` half of this guard never matched
-      // anything -- the installed @radix-ui/react-dialog sets `role="dialog"` but never
-      // `aria-modal`, confirmed in its own source, and nothing in this codebase sets
-      // `aria-modal` by hand either. Every `role="dialog"` rendered here (Dialog, and Sheet,
-      // which is built on the same primitive) IS modal (`hideOthers`), so matching the role
-      // alone is both correct and simpler than the dead `aria-modal` check it replaces.
-      // `role="menu"` (DropdownMenu/ContextMenu) is not modal but is conservatively
-      // included too: a destructive-feeling chord firing behind an open menu is just as
-      // unexpected as behind a dialog. Follow-up (PR #634 gate, read-only note): Radix's
-      // Popover also renders `role="dialog"` despite being non-modal (confirmed in its
-      // installed source), so it is already caught by the bare `role="dialog"` match above
-      // -- no separate `data-slot="popover-content"` clause is needed. `data-slot=
-      // "select-content"` stays, since Select sets no distinguishing role at all.
-      if (
-        document.querySelector(
-          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="select-content"]'
-        )
-      )
-        return
+      // Quality-gate remediation (PR #636 gate, MEDIUM): hoisted into the shared
+      // `OVERLAY_OPEN_SELECTOR` constant above -- this chord and Ctrl+W below were
+      // carrying an identical, independently-maintained copy of the same selector string.
+      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
       event.preventDefault()
       useSplitStore.getState().focusOther()
     }
@@ -170,9 +164,15 @@ export function App() {
       // keyboard layouts (Cyrillic, Greek, ...), where the physical W-position key types a
       // non-Latin character that never equals 'w' -- the chord would never fire there even
       // though `event.code` is still 'KeyW'. Falls back to the physical code only when
-      // `event.key` is not a plain Latin letter at all; a Latin letter (including AZERTY's
-      // 'z', which must NOT match) still matches by key, preserving the AZERTY fix above.
-      const isW = /^[a-z]$/i.test(event.key) ? event.key.toLowerCase() === 'w' : event.code === 'KeyW'
+      // `event.key` is not printable ASCII at all (quality-gate remediation,
+      // accessibility-auditor/security-auditor MEDIUM, PR #636 gate: the earlier
+      // `/^[a-z]$/i` fallback test was too narrow -- on Dvorak the physical W key types
+      // ',', which is neither 'w' nor a Latin letter, so it wrongly fell through to the
+      // code match and closed the pane on a plain Ctrl+, keypress). Any printable ASCII
+      // character (Dvorak's ',', AZERTY's 'z') is now compared by `key` and correctly
+      // does NOT match; only a genuinely non-Latin letter (Cyrillic, Greek, ...) falls
+      // back to the physical code.
+      const isW = /^[\x21-\x7e]$/.test(event.key) ? event.key.toLowerCase() === 'w' : event.code === 'KeyW'
       if (
         !event.ctrlKey ||
         event.shiftKey ||
@@ -184,15 +184,9 @@ export function App() {
       )
         return
       if (showReadiness || view !== 'chat' || paneSessionIds.length === 0) return
-      // Quality-gate remediation (accessibility-auditor, HIGH, PR #634): same guard, same fix
-      // as the Ctrl+Shift+\ chord above -- see its comment for why `role="dialog"` alone (not
-      // `[aria-modal="true"]`) is the correct match.
-      if (
-        document.querySelector(
-          '[role="alertdialog"], [role="dialog"], [role="menu"], [data-slot="select-content"]'
-        )
-      )
-        return
+      // Quality-gate remediation (PR #636 gate, MEDIUM): see `OVERLAY_OPEN_SELECTOR`'s own
+      // comment above for why `role="dialog"` alone (not `[aria-modal="true"]`) is correct.
+      if (document.querySelector(OVERLAY_OPEN_SELECTOR)) return
       event.preventDefault()
       closeChatPane(isSplit ? focusedIndex : 0)
     }
