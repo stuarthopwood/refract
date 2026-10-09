@@ -49,7 +49,7 @@ A Session's worktree lives next to the Repository it belongs to, not under `user
 | What | Where |
 |---|---|
 | Vocabulary | [`CONTEXT.md`](CONTEXT.md) |
-| Look, feel, and interaction rules | [`docs/DESIGN.md`](docs/DESIGN.md) |
+| UI design system (look, feel, and interaction rules) | [`docs/design/`](docs/design/index.md) (short pointer at [`docs/DESIGN.md`](docs/DESIGN.md)) |
 | Rules for building Refract | [`.specify/memory/constitution.md`](.specify/memory/constitution.md) |
 | What OMP does over RPC | [`docs/spike/FINDINGS.md`](docs/spike/FINDINGS.md) |
 | Feature behaviour | [`specs/`](specs/) |

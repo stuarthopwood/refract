@@ -26,7 +26,7 @@ export function formatRelativeTime(iso: string): string {
   return `${days}d ago`
 }
 
-// A distinct icon per Session state, never colour alone (docs/DESIGN.md "Look and feel").
+// A distinct icon per Session state, never colour alone (docs/design/product-look-and-feel.md "Look and feel").
 export function StateIcon({ status }: { status: SessionStatus }) {
   const className = 'size-4 shrink-0'
   switch (status) {
