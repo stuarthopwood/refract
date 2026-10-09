@@ -303,22 +303,16 @@ function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
   return BOOKKEEPING_KINDS.has(row.kind)
 }
 
-// Issue #457: two independent Settings-driven view filters. Quality-gate fix (test-reviewer,
-// Medium): a non-streaming `thinking` row is stripped from the array BEFORE `groupToolItems` runs
-// (the turn-map render loop below builds `itemsForGrouping` for exactly this), applied to
-// `groupToolItems`' output, after grouping, for the tool-calls/subagent half of the filter --
-// stripping thinking first means two runs of the same tool that a hidden thinking row used to sit
-// between become adjacent in the grouping input and merge into one `ToolGroup`, instead of staying
-// two separate groups with a gap where the hidden row used to be. Neither toggle ever touches
-// main's `HIDDEN_TOOLS` path, which drops an item before it ever becomes a transcript row at all --
-// these two toggles act as a pure *view* filter: turning one back on restores every hidden row
-// immediately, including past turns, with no reload, since the underlying `TranscriptItem[]` in the
-// transcript store is never touched. Filtering the array handed to `.map()` (the render loop below)
-// rather than hiding rows with CSS is what keeps a fully-hidden row out of the accessibility tree
-// and tab order entirely, and is also what makes a run of now-hidden rows leave no empty gap or
-// stray margin: `isFirstRow`/`previousRow` (the render loop's own gap-class bookkeeping) only ever
-// see the rows that are actually rendered, so a fully-hidden row can never become the "previous"
-// row a later one measures its own margin against.
+// Issue #457: two independent Settings-driven view filters. Neither toggle ever touches main's
+// `HIDDEN_TOOLS` path, which drops an item before it ever becomes a transcript row at all -- these
+// act as a pure *view* filter: turning one back on restores every hidden row immediately, including
+// past turns, with no reload, since the underlying `TranscriptItem[]` in the transcript store is
+// never touched. Filtering the array handed to `.map()` (the render loop below) rather than hiding
+// rows with CSS is what keeps a fully-hidden row out of the accessibility tree and tab order
+// entirely, and is also what makes a run of now-hidden rows leave no empty gap or stray margin:
+// `isFirstRow`/`previousRow` (the render loop's own gap-class bookkeeping) only ever see the rows
+// that are actually rendered with real content, so a hidden (or sr-only -- see below) row can never
+// become the "previous" row a later one measures its own margin against.
 //
 // "Never hide what needs the user or reports a problem" (issue #457): an answered/pending `ask`
 // question and a `request` card both survive untouched below, since neither is a `ToolGroup` or a
@@ -328,30 +322,42 @@ function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
 // `exited` subagent) stays `'visible'` even with "Show tool calls" off, matching
 // `ChatDisplaySection.tsx`'s own copy ("failed or interrupted calls always show").
 //
-// Quality-gate fix (a11y, Medium): a hidden row that is still ACTIVE right now (a streaming
-// `thinking` row; a `ToolGroup` with a `running` call) returns `'sr-only'` instead of `'hidden'`,
-// so the render loop below keeps its `MessageScrollerItem` (same key, same position) but swaps its
-// content for a one-line sr-only status span -- the transcript's `role="log"` still gets one polite
-// addition marking that a turn is in progress, instead of a user whose screen reader has no visible
+// Quality-gate fix (code review/a11y, Medium, round 2): EVERY hidden `thinking` item -- not only a
+// non-streaming one -- is stripped from the array before `groupToolItems` runs (the turn-map render
+// loop below builds `itemsForGrouping` for exactly this). A thinking part's own `streaming` flag is
+// the WHOLE assistant message's flag (`src/main/omp/transcript.ts`'s `buildAssistantItems`), so it
+// can still read `true` while that same message's later tool calls are already streaming in as
+// `running` -- a streaming thinking item is NOT always the newest item, so keeping it in the
+// grouping input (the round-1 design) could leave it sitting between two same-tool runs, merging
+// them the instant the message ends and losing the later run's own expanded/focus state. `thinking`
+// is therefore a plain `'visible'`/`'hidden'` toggle below; its own in-progress signal is announced
+// once per turn, outside the grouped rows entirely (see the render loop's standalone sr-only span).
+//
+// Quality-gate fix (a11y, Medium, round 1): a `ToolGroup`/`subagent` row that is hidden by "Show
+// tool calls" off but still ACTIVE right now (a `running` call) returns `'sr-only'` as a BASE
+// candidate instead of `'hidden'` -- the render loop then keeps only the turn's actual LAST row as
+// `'sr-only'` (round 2: a group id is keyed off its first call, so a run of N sequential calls with
+// tool calls hidden would otherwise unmount-and-remount a fresh `'sr-only'` row, and get announced
+// as a fresh log addition, between every pair of calls -- one 'Running' per call, not per turn), and
+// only while that row's own turn is the one actually running. A visible `'sr-only'` row keeps its
+// `MessageScrollerItem` (same key, same position) but swaps its content for a one-line sr-only
+// status span naming what is running -- the transcript's `role="log"` gets one polite addition
+// marking that a turn is in progress, instead of a user whose screen reader has no visible
 // `TurnTotalLine` text (it is `aria-hidden` while running) losing every sign of life. A row that
-// finishes without needing attention (streaming ends, the call completes) naturally falls back to
-// `'hidden'` on the next render, the same as any other hidden row.
+// finishes without needing attention (the call completes) naturally falls back to `'hidden'`.
 type RowVisibility = 'visible' | 'hidden' | 'sr-only'
 
 function rowVisibility(row: GroupedTranscriptItem, transcriptDisplay: TranscriptDisplaySettings): RowVisibility {
-  if (row.kind === 'thinking') {
-    if (transcriptDisplay.thinking) return 'visible'
-    // A non-streaming thinking row never reaches here: `itemsForGrouping` already dropped it
-    // before `groupToolItems` ran, so a 'thinking' row surviving to this point is always the one
-    // actively streaming right now.
-    return 'sr-only'
-  }
+  if (row.kind === 'thinking') return transcriptDisplay.thinking ? 'visible' : 'hidden'
   if (transcriptDisplay.toolCalls) return 'visible'
   if (isToolGroup(row)) {
     if (row.items.some((item) => item.status === 'error' || item.status === 'interrupted')) return 'visible'
     return row.items.some((item) => item.status === 'running') ? 'sr-only' : 'hidden'
   }
-  if (row.kind === 'subagent') return row.status === 'error' || row.status === 'exited' ? 'visible' : 'hidden'
+  if (row.kind === 'subagent') {
+    if (row.status === 'error' || row.status === 'exited') return 'visible'
+    return row.status === 'running' ? 'sr-only' : 'hidden'
+  }
   return 'visible'
 }
 
@@ -947,22 +953,65 @@ export function Transcript({ sessionId }: { sessionId: string }) {
 
                 let previousRow: GroupedTranscriptItem | undefined
 
-                // Issue #457 quality-gate fix (test-reviewer, Medium): strip a non-streaming hidden
-                // `thinking` item before grouping, so two runs of the same tool it used to separate
-                // merge into one `ToolGroup` instead of staying apart with a gap between them. A
-                // streaming thinking item is always the newest item received so far (nothing can
-                // exist "after" a turn still being generated), so keeping it here never re-splits an
-                // otherwise-adjacent pair of tool runs; `rowVisibility` renders it as `'sr-only'`.
+                // Issue #457 quality-gate fix (round 2): every hidden thinking item is stripped
+                // before grouping (not only a non-streaming one -- see `rowVisibility`'s own comment
+                // for why a streaming one isn't safe to keep here either).
                 const itemsForGrouping = transcriptDisplay.thinking
                   ? turn.items
-                  : turn.items.filter((item) => item.kind !== 'thinking' || item.streaming)
+                  : turn.items.filter((item) => item.kind !== 'thinking')
+
+                // Quality-gate fix (round 2): only the turn's own LAST row may actually surface as
+                // `'sr-only'` -- a sequential run of same-tool calls would otherwise unmount and
+                // remount a fresh sr-only row (a fresh id, since `groupToolItems` keys a group off
+                // its first call) between every pair of calls, each one a new log addition and a
+                // fresh "Running" announcement. Restricting to the last row, and only while this is
+                // the actually-running turn, gives exactly one in-progress signal per turn instead.
+                // `rowVisibility` is called exactly once per row here (round 2 perf fix), not again
+                // later in the render below.
+                const isActiveTurn = turnIndex === visibleTurns.length - 1 && isTurnRunning
+                const groupedRows = groupToolItems(itemsForGrouping)
+                const rows = groupedRows
+                  .map((row, rowIndex): [GroupedTranscriptItem, RowVisibility] => {
+                    const visibility = rowVisibility(row, transcriptDisplay)
+                    const isLastRow = rowIndex === groupedRows.length - 1
+                    return [row, visibility === 'sr-only' && !(isActiveTurn && isLastRow) ? 'hidden' : visibility]
+                  })
+                  .filter(([, visibility]) => visibility !== 'hidden')
+
+                // Quality-gate fix (a11y, round 1): a turn in progress with thinking hidden is
+                // otherwise a silent gap for a screen reader (the ticking `TurnTotalLine` below is
+                // `aria-hidden` while running). A thinking item's own `streaming` flag covers exactly
+                // this window (round 2: `finalizeLiveTranscript` always clears it on a stop or crash,
+                // so this can never get stuck on), announced once per turn, outside the grouped rows.
+                const announceThinking = !transcriptDisplay.thinking && turn.items.some((item) => item.kind === 'thinking' && item.streaming)
 
                 return (
                   <React.Fragment key={turn.userItem?.id ?? `turn-${turnIndex}`}>
                     {showTimeGapDivider && turn.userItem != null && <TimeGapDivider at={turn.userItem.at} />}
-                    {groupToolItems(itemsForGrouping)
-                      .filter((row) => rowVisibility(row, transcriptDisplay) !== 'hidden')
-                      .map((row) => {
+                    {rows.map(([row, visibility]) => {
+                      if (visibility === 'sr-only') {
+                        // Quality-gate fix (code review/a11y, round 2): no `marginClass`, and
+                        // `[content-visibility:visible] [contain-intrinsic-size:none]` overrides the
+                        // base `MessageScrollerItem` class's `content-visibility:auto`/10rem
+                        // placeholder reservation, so this sr-only row never shows as a blank gap and
+                        // never reserves scroll height; `isFirstRow`/`previousRow` are deliberately
+                        // left untouched so it can never affect a later row's own margin either.
+                        return (
+                          <MessageScrollerItem
+                            key={row.id}
+                            messageId={row.id}
+                            className="[content-visibility:visible] [contain-intrinsic-size:none]"
+                          >
+                            <span className="sr-only">
+                              {isToolGroup(row)
+                                ? `${toolStatusLabel('running')} ${row.tool}`
+                                : row.kind === 'subagent'
+                                  ? `${toolStatusLabel('running')} subagent ${row.name}`
+                                  : toolStatusLabel('running')}
+                            </span>
+                          </MessageScrollerItem>
+                        )
+                      }
                       const marginClass = isFirstRow
                         ? undefined
                         : previousRow && isBookkeepingRow(previousRow) && isBookkeepingRow(row)
@@ -970,23 +1019,19 @@ export function Transcript({ sessionId }: { sessionId: string }) {
                           : TURN_GAP_CLASS
                       isFirstRow = false
                       previousRow = row
-                      const visibility = rowVisibility(row, transcriptDisplay)
                       return (
                         <MessageScrollerItem key={row.id} messageId={row.id} className={marginClass}>
-                          {visibility === 'sr-only' ? (
-                            <span className="sr-only">{row.kind === 'thinking' ? 'Thinking' : toolStatusLabel('running')}</span>
-                          ) : (
-                            <TranscriptRow
-                              item={row}
-                              sessionId={sessionId}
-                              pending={pending}
-                              userName={userName}
-                              resolvedAskByRequestId={resolvedAskByRequestId}
-                            />
-                          )}
+                          <TranscriptRow
+                            item={row}
+                            sessionId={sessionId}
+                            pending={pending}
+                            userName={userName}
+                            resolvedAskByRequestId={resolvedAskByRequestId}
+                          />
                         </MessageScrollerItem>
                       )
                     })}
+                    {announceThinking && <span className="sr-only">Thinking</span>}
                     <TurnTotalLine
                       turn={turn}
                       isLastTurn={turnIndex === visibleTurns.length - 1}
