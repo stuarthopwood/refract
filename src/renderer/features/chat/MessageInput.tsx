@@ -1164,10 +1164,13 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               unchanged). The accessible name stays "Message"; `composerHintId` above carries the
               same wording through `aria-describedby` since an overlay is never read as a
               `placeholder`. Gate-fixes (quality gate, PR #644 round 1): `TypeIcon` (lucide), not
-              Tabler's `IconMarkdown` -- Stuart's 2026-10-08 rule (PLAN.md "Icon set and style")
-              limits `@tabler/icons-react` to GitHub/GitLab/Bitbucket brand marks only, and a
-              Markdown glyph is not a brand mark (resolved, `docs/design/foundations-icons.md`
-              "Status, action, tool, and brand icons"); `@tabler/icons-react` is back out of
+              Tabler's `IconMarkdown` -- at the time, Stuart's 2026-10-08 rule (PLAN.md "Icon set
+              and style") limited `@tabler/icons-react` to GitHub/GitLab/Bitbucket brand marks
+              only, and a Markdown glyph is not a brand mark (resolved, `docs/design/
+              foundations-icons.md` "Status, action, tool, and brand icons"); that brand-marks-only
+              limit was itself superseded 2026-10-10 (Tabler is now allowed whenever lucide lacks
+              the icon), but this choice is unaffected either way since lucide already has
+              `TypeIcon`; `@tabler/icons-react` is back out of
               `package.json`. Responsive: the issue's own three-stage design (truncate the hint
               labels, then icons-only with a tooltip, then truncate the main prompt) is narrowed to
               two stages here -- a tooltip cannot attach to a `pointer-events-none` overlay, so

@@ -65,7 +65,7 @@ Governance (agenda item 12) decided to put this checklist in the Spec Kit plan t
 - [ ] No hex literals or Tailwind palette colours in component code; only semantic or component tokens.
 - [ ] No opacity modifiers on a token class (`bg-accent/50`); alpha lives inside the token value.
 - [ ] Spacing uses only the 4/8/12/16/24px steps; no arbitrary pixel values.
-- [ ] Icons are `lucide-react` only, except a documented third-party brand mark (`@tabler/icons-react`).
+- [ ] Icons are `lucide-react` by default; `@tabler/icons-react` is used only when lucide lacks the needed icon (2026-10-10, supersedes the brand-marks-only limit).
 - [ ] Icon size matches its context (12/14/16px ladder).
 - [ ] New animation has a reduced-motion fallback, verified by running the app with OS reduced motion on (constitution: automated tests are not required), and a pause path if it can run longer than 5s (blocked on #566 for the pause mechanism; record as not yet satisfiable until it is decided).
 - [ ] Theme-file loading treats the file as untrusted and meets every point of [Untrusted input](foundations-tokens-theming.md#theme-files): main-process loader reached only through the preload allowlist, path stays in the themes folder with no symlink following, size cap, try/catch parsing, known token names only (unknown keys rejected), colour-grammar values only, no `url()` or at-rules, import via the same validator, export only via a save dialog, security policy unchanged.

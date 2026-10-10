@@ -32,11 +32,14 @@ interface ShortcutGroup {
 
 // Every row here was individually verified against its real handler before being listed
 // (MessageInput.tsx, App.tsx, SessionList.tsx) -- see this task's own report for the full
-// row-by-row verification table. A chord in docs/design/index.md's "Keyboard" table that is NOT listed
-// here (Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) has no working
+// row-by-row verification table. A chord in docs/design/index.md's "Keyboard" table that is NOT
+// listed here (Ctrl+Shift+N, Ctrl+1 to Ctrl+9, Ctrl+B, Ctrl+Shift+A, Ctrl+K) has no working
 // handler yet (#429 trimmed the table itself to match); it is left out entirely rather than
 // shown as a false promise. Ctrl+, (Open Settings, #395) and Ctrl+N (New session, #6's first
-// slice) each moved from that list into a real row below now that a handler exists (App.tsx).
+// slice, PR #647) each moved from that list into a real row below now that a handler exists
+// (App.tsx). Issue #6 closed 2026-10-10 by decision: Ctrl+Shift+N, Ctrl+1 to Ctrl+9 and
+// Ctrl+Shift+A are not built and are no longer tracked by any open issue; Ctrl+B is tracked
+// separately by #453; Command palette (Ctrl+K) has no open issue.
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     heading: 'Message box',
