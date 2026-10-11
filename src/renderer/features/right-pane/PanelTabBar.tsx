@@ -350,24 +350,34 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   // panels a running count could shrink all the way to an ellipsis, leaving colour as the only
   // signal (FR-012). Split the count into its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks,
   // so the figure itself is always legible) and the trailing WORD (`running`, `min-w-0 truncate`
-  // -- gives way first). `+a -d` has no separate word, so its whole text stays `shrink-0` too.
+  // -- gives way first). `+a -d` has no separate word, so its whole text stays `shrink-0` too --
+  // `usePanelCount` never actually produces this kind today (only `running`), so it is a forward-
+  // looking case, not exercised live.
   //
   // Round 5 gate remediation (Medium, Code4/Verif4): the word was `' running'` with a leading
   // space baked into the string, inside its own `white-space: nowrap` (`truncate`) span -- CSS
   // collapses a leading space at the start of an inline box, so the space never actually
   // rendered ("12running"/"12r." in the screenshots, not "12 running"). Fixed: `splitPanelCount`
-  // (`panel-registry.ts`) returns the word with no leading space, and the gap is a real `gap-1` on
-  // the wrapper instead of a text character. Round 5 (Low, A11y4): the word now shrinks BEFORE the
-  // label (`shrink-[1000]` against the label's `shrink-[100]`) -- a label collapsed to nothing
-  // with a meaningless word fragment left over (last round's "r.") is worse than the word
-  // disappearing first and the label truncating normally with an ellipsis if it must. `overflow-
-  // hidden` on the count wrapper is a cheap guard against a hypothetical fourth panel (this spec
-  // only ever registers three, tasks.md's geometry table): the NUMBER itself can never visually
-  // spill past the close button's own reserved space even if the floor math (which assumes N<=3)
-  // stopped holding.
+  // (`panel-registry.ts`) returns the word with no leading space, spaced by a real gap instead of
+  // a text character.
+  //
+  // Round 6 gate remediation (High, Code5/Verif5, corrects round 5): wrapping the number and word
+  // in their own `<span>` made that span, not the word itself, the thing competing against the
+  // label in the BUTTON's own flex layout -- the wrapper's own (unset, default 1) shrink factor
+  // lost to the label's `shrink-[100]` every time, so the label still collapsed first regardless
+  // of the word's own `shrink-[1000]` (round 5's own screenshot showed the label gone, "12 r"
+  // surviving -- the opposite of the intended order). Fixed by dropping the wrapper: the number
+  // and word are now direct children of the button's own flex row, spaced by its own `gap-1` like
+  // every other child, so the word's `shrink-[1000]` genuinely outcompetes the label's
+  // `shrink-[100]` the way round 5 intended. The running-state colour moves onto each child
+  // directly (a wrapper's `text-state-working` would have nothing left to apply to). The
+  // `overflow-hidden` "guard" from round 5 is removed -- it would have clipped the number itself,
+  // the one thing that must never visually disappear (FR-012); `overflow-x-auto` on the whole
+  // strip remains the real safety net for a hypothetical fourth panel (tasks.md's own scope note).
   const parts = splitPanelCount(count)
   const countNumber = parts?.number
   const countWord = parts?.word
+  const runningCls = count?.kind === 'running' ? 'text-state-working' : undefined
 
   const button = (
     <button
@@ -389,12 +399,8 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="min-w-0 shrink-[100] truncate">{descriptor.name}</span>
-      {countText && (
-        <span className={cn('inline-flex min-w-0 shrink items-baseline gap-1 overflow-hidden', count?.kind === 'running' ? 'text-state-working' : undefined)}>
-          <span className="shrink-0 tabular-nums">{countNumber}</span>
-          {countWord && <span className="min-w-0 shrink-[1000] truncate">{countWord}</span>}
-        </span>
-      )}
+      {countText && <span className={cn('shrink-0 tabular-nums', runningCls)}>{countNumber}</span>}
+      {countWord && <span className={cn('min-w-0 shrink-[1000] truncate', runningCls)}>{countWord}</span>}
     </button>
   )
 
