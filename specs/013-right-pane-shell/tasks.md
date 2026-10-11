@@ -438,9 +438,17 @@ and a real live count exercised, each keeping its own close button and live coun
 2's own independent test; the 380px window width is a separate, flagged open question (above), not
 silently folded into "Done."
 
-**Checkpoint (PR3)**: quickstart.md Story 4 step 1 (confirming "Show sample data" is off by
-default) now passes, live-verified -- a fresh scratch instance's own `window.refract.settings.get()`
-read `showSampleData: false` before any interaction, and the Settings > Right pane screenshot
+**Checkpoint (PR3)**: two separate scratch runs produced this slice's evidence --
+`01-default-off-settings.png`, `02-default-off-fdb-empty.png`, `03-switch-on.png`,
+`05-on-agent-builder-sample.png`, `06-off-fdb-empty.png` and `07-off-agent-builder-empty.png` are
+from the original run (session "silent-stoat"); `04-on-fdb-sample.png` and
+`09-restart-fdb-sample.png` were retaken in a second, separate scratch run (session
+"gentle-falcon") after the sample strings were shortened, since those two were the only
+screenshots the text change affected.
+
+quickstart.md Story 4 step 1 (confirming "Show sample data" is off by default) now passes,
+live-verified -- a fresh scratch instance's own `window.refract.settings.get()` read
+`showSampleData: false` before any interaction, and the Settings > Right pane screenshot
 (`01-default-off-settings.png`) shows the switch unchecked; `02-default-off-fdb-empty.png` shows
 the FDB Knowledge panel's unchanged empty state at that same default. Story 5's scenarios 1-3 are
 live-verified: with both FDB Knowledge and Agent Builder already open as tabs, turning the switch
@@ -451,25 +459,26 @@ on (`03-switch-on.png`) shows each panel's own sample rows on return from Settin
 layout out for `SettingsScreen` while Settings is open, so `RightPaneShell` and both panels
 actually unmount and remount on this round trip -- FR-022 still holds because the open-tab/tab-
 order state lives in `right-pane-store`, not in either panel's own component state, so nothing has
-to be reopened; "re-renders in place with no remount" (this paragraph's own prior wording) was
-inaccurate about the mechanism. Scenario 4 (restart) is live-verified for the Settings switch
-itself and for FDB Knowledge specifically, not for Agent Builder: with the switch left on, the
-scratch instance was killed (`taskkill`) and relaunched against the same `--user-data-dir`; a
-fresh `window.refract.settings.get()` read against the new process confirmed `showSampleData:
-true` before any screenshot; `09-restart-fdb-sample.png` shows a freshly-opened (never-before-
-mounted-this-session) FDB Knowledge panel rendering its sample rows immediately after that
-restart, confirming the persisted flag drives a brand-new mount's first render, not only a live
-toggle of an already-mounted one. Agent Builder was not reopened after the restart in this round
--- its own post-restart state is source-reasoned, not live-verified: it reads the exact same
-`useSettingsStore` subscription `FdbKnowledgePanel.tsx` does, with no per-panel persistence path of
-its own, so the same mechanism applies, but this has not been observed on screen. Scenario 5 (the
-switch and sample content removed once #391/#392 ship) is future work, not testable now. Step 4's
-"no network call" finding from PR2's own checkpoint still holds for the sample branch too --
-`FdbKnowledgePanel.tsx`/`AgentBuilderPanel.tsx` read `Settings.showSampleData` from the existing
-`settings-store.ts` subscription and render a static, hard-coded sample array; neither branch adds
-a hook, an effect, or any call of any kind, confirmed by reading the components' own source (not
-by an actual live Network-tab check, the same honesty caveat PR2's own checkpoint recorded for
-Story 4).
+to be reopened; the earlier no-remount wording in this paragraph was inaccurate about the
+mechanism. Scenario 4 (restart) is live-verified for the Settings switch itself and for FDB
+Knowledge specifically, not for Agent Builder: the second scratch run ("gentle-falcon") performed
+its own complete, self-contained restart test for the current `04`/`09` pair -- with the switch
+left on, that run's own first process was killed (`taskkill`) and a new one relaunched against the
+same `--user-data-dir`; a fresh `window.refract.settings.get()` read against that new process
+confirmed `showSampleData: true` before any screenshot; `09-restart-fdb-sample.png` then shows a
+freshly-opened (never-before-mounted-this-session) FDB Knowledge panel rendering its sample rows
+immediately after that restart, confirming the persisted flag drives a brand-new mount's first
+render, not only a live toggle of an already-mounted one. Agent Builder was not reopened after
+either run's restart -- its own post-restart state is source-reasoned, not live-verified: it reads
+the exact same `useSettingsStore` subscription `FdbKnowledgePanel.tsx` does, with no per-panel
+persistence path of its own, so the same mechanism applies, but this has not been observed on
+screen. Scenario 5 (the switch and sample content removed once #391/#392 ship) is future work, not
+testable now. Step 4's "no network call" finding from PR2's own checkpoint still holds for the
+sample branch too -- `FdbKnowledgePanel.tsx`/`AgentBuilderPanel.tsx` read `Settings.showSampleData`
+from the existing `settings-store.ts` subscription and render a static, hard-coded sample array;
+neither branch adds a hook, an effect, or any call of any kind, confirmed by reading the
+components' own source (not by an actual live Network-tab check, the same honesty caveat PR2's
+own checkpoint recorded for Story 4).
 
 ### Right-pane store `closePanel` active-tab transitions (gate remediation, PR2 round 1)
 
