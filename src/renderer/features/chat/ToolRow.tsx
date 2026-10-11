@@ -1,61 +1,19 @@
 import * as React from 'react'
-import { CheckIcon, Loader2Icon, UnplugIcon, XIcon } from 'lucide-react'
 import type { TranscriptItem } from '../../../shared/model'
 import { CodeBlock, FileLinkButton, inferOutputBlock } from './Markdown'
 import { CollapsedLine } from './CollapsedLine'
 import { DiffView } from './DiffView'
 import { ToolCallDialog } from './ToolCallDialog'
+import { formatDuration, StatusIcon, toolStatusLabel, type RowStatus } from './toolStatus'
 import type { ToolGroup } from './groupToolItems'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
-// Exported for `ToolCallDialog.tsx`'s own small "tool, target, status, duration" header (#628
-// Formatted tab) -- one source of truth for how a duration renders, not a second copy.
-export function formatDuration(ms: number): string {
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
-}
-
-export type RowStatus = 'running' | 'done' | 'error' | 'exited' | 'interrupted'
-
-// Issue #457 quality-gate fix (a11y, Medium): exported so `Transcript.tsx` can reuse the exact
-// same status word for a hidden-but-running `ToolGroup`'s one-line sr-only progress placeholder
-// (`isHiddenRow`'s `'sr-only'` case) that `StatusIcon` below already uses for its own sr-only
-// text -- one source of truth for the five status words, not two copies that could drift apart.
-export function toolStatusLabel(status: RowStatus): string {
-  return status === 'running'
-    ? 'Running'
-    : status === 'error'
-      ? 'Failed'
-      : status === 'exited'
-        ? 'Agent exited'
-        : status === 'interrupted'
-          ? 'Interrupted'
-          : 'Done'
-}
-
-// A distinct icon shape per status (never colour alone, T080/WCAG 2.1 AA): spinner, check, cross,
-// unplug (`'exited'`, issue #489 gate finding 4 -- matches `SubagentPanel.tsx`'s own icon/wording
-// for the same state so the chat row and the panel row never disagree; `'interrupted'`, issue
-// #510 slice 3 -- the same family, a tool call left with no result because its Conversation's
-// tail shows the writing process is gone, reusing the unplug shape so neither reads as "done").
-// Exported for `ToolCallDialog.tsx`'s own small header (#628 Formatted tab): the one place a
-// status renders as an icon, reused rather than copied so the two surfaces can never disagree.
-export function StatusIcon({ status }: { status: RowStatus }) {
-  const label = toolStatusLabel(status)
-  return (
-    <>
-      {status === 'running' && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-state-working" />}
-      {status === 'error' && <XIcon className="size-3.5 shrink-0 text-destructive" />}
-      {(status === 'exited' || status === 'interrupted') && <UnplugIcon className="size-3.5 shrink-0 text-muted-foreground" />}
-      {status === 'done' && <CheckIcon className="size-3.5 shrink-0 text-state-working" />}
-      <span className="sr-only">{label}</span>
-    </>
-  )
-}
-
 interface ToolCallBodyProps {
   item: ToolItem
+  dialogOpen: boolean
+  onDialogOpenChange: (open: boolean) => void
 }
 
 // A short result is safe to show as this call's own quiet one-line summary straight in the row
@@ -77,23 +35,46 @@ function quietSummary(output: string | undefined): string | undefined {
 // FR-050). Split out from the row wrapper so `ToolGroupRow` can reuse the same content for a
 // solo call (no nested `CollapsedLine`) and for each call inside a multi-call group (its own
 // nested `CollapsedLine` via `ToolCallRow` below) without ever changing the *wrapper* element
-// type at a given tree position.
-function ToolCallBody({ item }: ToolCallBodyProps) {
+// type at a given tree position. `dialogOpen`/`onDialogOpenChange` are controlled from
+// `ToolGroupRow` (quality-gate remediation, Medium): see that component's own comment for why.
+function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProps) {
   const isError = item.status === 'error'
-  const summary = isError ? undefined : quietSummary(item.output)
-  const writeLineCount = item.write ? item.write.content.split('\n').length : 0
+  // Quality-gate remediation (Sec, Medium): `item.write`/`item.output` are both populated from
+  // the call's own arguments or a partial result while it is still running (`transcript.ts`),
+  // not only once it actually finishes -- "Wrote N lines to <path>" and a quiet one-line result
+  // are both claims that the call *succeeded*, so both are gated on `status === 'done'` and
+  // never shown for a running, interrupted or exited call (which could still fail, or never
+  // actually have written anything).
+  const isDone = item.status === 'done'
+  const summary = isDone ? quietSummary(item.output) : undefined
+  // Quality-gate remediation (Low): a `content` ending in a trailing newline (the common case for
+  // a real file) used to count one line too many -- `split('\n')` turns "a\nb\n" into
+  // `['a', 'b', '']`, counting the empty string after the final newline as a line of its own.
+  const writeLineCount = item.write
+    ? item.write.content === ''
+      ? 0
+      : item.write.content.split('\n').length - (item.write.content.endsWith('\n') ? 1 : 0)
+    : 0
 
   return (
     <>
       {item.edit && <DiffView path={item.edit.path} oldText={item.edit.oldText} newText={item.edit.newText} capped />}
-      {isError && <p className="line-clamp-2 text-xs text-destructive">{item.output || 'Failed.'}</p>}
-      {!isError && item.write && (
+      {isError && (
+        // Quality-gate remediation (Medium): `[overflow-wrap:anywhere]` so a long unbroken token
+        // (a path, URL or hash) in the error text wraps instead of running past the row at a
+        // narrow width (WCAG 1.4.10) -- hiding a failure behind horizontal overflow would be the
+        // exact thing #628 says must never happen.
+        <p className="line-clamp-2 [overflow-wrap:anywhere] text-xs text-destructive">{item.output || 'Failed.'}</p>
+      )}
+      {isDone && item.write && (
         <p className="text-xs text-muted-foreground">
           Wrote {writeLineCount} {writeLineCount === 1 ? 'line' : 'lines'} to <FileLinkButton path={item.write.path} />
         </p>
       )}
-      {!isError && !item.write && summary && <p className="text-xs text-muted-foreground">{summary}</p>}
-      <ToolCallDialog item={item} />
+      {isDone && !item.write && summary && (
+        <p className="[overflow-wrap:anywhere] text-xs text-muted-foreground">{summary}</p>
+      )}
+      <ToolCallDialog item={item} open={dialogOpen} onOpenChange={onDialogOpenChange} />
     </>
   )
 }
@@ -102,11 +83,13 @@ interface ToolCallRowProps {
   item: ToolItem
   /** Forwarded to the nested `CollapsedLine`'s `summaryWrap` (see `ToolGroupRowProps`). */
   summaryWrap?: boolean
+  dialogOpen: boolean
+  onDialogOpenChange: (open: boolean) => void
 }
 
 // One compact row per tool call, used only for each call nested inside an expanded multi-call
 // group (never at the top-level tree position `ToolGroupRow` itself occupies).
-function ToolCallRow({ item, summaryWrap }: ToolCallRowProps) {
+function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange }: ToolCallRowProps) {
   return (
     <CollapsedLine
       icon={<StatusIcon status={item.status} />}
@@ -115,7 +98,7 @@ function ToolCallRow({ item, summaryWrap }: ToolCallRowProps) {
       summaryWrap={summaryWrap}
       meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
     >
-      <ToolCallBody item={item} />
+      <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
     </CollapsedLine>
   )
 }
@@ -141,7 +124,20 @@ interface ToolGroupRowProps {
 // any call runs, else failed when any call failed; the summary is the last call's target plus
 // "+ N others" (", N failed" appended, text not colour, when any failed), and only the *children*
 // of this one `CollapsedLine` -- never its own presence or type -- switch to the per-call list.
+//
+// Quality-gate remediation (A11y, Medium): `openDialogItemId` (which call's "View full call"
+// dialog, if any, is open) is held HERE, above the solo/multi switch above, keyed by `item.id` --
+// not as `ToolCallDialog`'s own internal state. The switch between the solo branch (`ToolCallBody`
+// directly) and the multi branch (a `<div>` of `ToolCallRow`s) changes the child's element type at
+// this tree position (exactly the `ToolCallRow`-vs-`CollapsedLine` problem the comment above
+// already solved one level up), so a `ToolCallBody`/`ToolCallDialog` for a call that is mid-run
+// unmounts and remounts the moment a second call of the same tool starts streaming. Before this
+// fix, an open dialog's own internal `open` state lived inside that remounted subtree and was
+// silently destroyed -- the dialog vanished and stayed closed, with focus falling to `<body>`.
+// With the state lifted here and `ToolCallDialog` now a controlled component, the freshly
+// mounted instance reads `open` as already `true` and renders open again immediately.
 export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
+  const [openDialogItemId, setOpenDialogItemId] = React.useState<string | null>(null)
   const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
   // Issue #510 slice 3 quality-gate fix (a11y, Low): a multi-call group's own summary names
@@ -166,11 +162,21 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   return (
     <CollapsedLine icon={<StatusIcon status={status} />} label={label} summary={summary} summaryWrap={summaryWrap} meta={meta}>
       {solo ? (
-        <ToolCallBody item={last} />
+        <ToolCallBody
+          item={last}
+          dialogOpen={openDialogItemId === last.id}
+          onDialogOpenChange={(open) => setOpenDialogItemId(open ? last.id : null)}
+        />
       ) : (
         <div className="space-y-1">
           {group.items.map((item) => (
-            <ToolCallRow key={item.id} item={item} summaryWrap={summaryWrap} />
+            <ToolCallRow
+              key={item.id}
+              item={item}
+              summaryWrap={summaryWrap}
+              dialogOpen={openDialogItemId === item.id}
+              onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
+            />
           ))}
         </div>
       )}

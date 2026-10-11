@@ -37,18 +37,23 @@ function renderGutter({ change, side, renderDefault }: GutterOptions) {
 // `oldText === ''` renders as an added file. Inert text throughout: react-diff-view tokenises
 // the diff text itself, it never interprets it as markup.
 export function DiffView({ path, oldText, newText, capped = false }: DiffViewProps) {
-  const patch = buildUnifiedDiff(path, oldText, newText)
-  const parsed = patch ? parseDiff(patch)[0] : undefined
+  // Quality-gate remediation (Critical, round 2): `patch`/`parsed`/`changedFile` used to be
+  // recomputed on every render (a fresh object each time), so the `canExpand` effect below
+  // re-ran on every render too -- including the one caused by clicking Expand itself. Memoised
+  // here on the real inputs (`path`/`oldText`/`newText`, then `patch`) so object identity is
+  // stable across a render the diff text itself didn't change for.
+  const patch = React.useMemo(() => buildUnifiedDiff(path, oldText, newText), [path, oldText, newText])
+  const parsed = React.useMemo(() => (patch ? parseDiff(patch)[0] : undefined), [patch])
   // Quality-gate remediation (Medium): narrows to a single `changedFile` once, instead of a
   // `hasChanges` boolean paired with non-null `!` assertions at every later use -- the type
   // checker now actually proves `changedFile.hunks` is non-empty everywhere it's read.
-  const changedFile = parsed && parsed.hunks.length > 0 ? parsed : undefined
+  const changedFile = React.useMemo(() => (parsed && parsed.hunks.length > 0 ? parsed : undefined), [parsed])
   const [expanded, setExpanded] = React.useState(false)
   // Whether the collapsed cap actually clips anything (#630: "if the whole diff fits inside the
-  // cap, show no Expand button") -- measured, not guessed, once against the real rendered
-  // height, while the body still renders in its capped, collapsed form below.
+  // cap, show no Expand button") -- measured, not guessed, against the real rendered height.
   const [canExpand, setCanExpand] = React.useState(false)
   const bodyRef = React.useRef<HTMLDivElement>(null)
+  const regionId = React.useId()
 
   const stats = React.useMemo(() => {
     if (!changedFile) return { added: 0, removed: 0 }
@@ -63,15 +68,26 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
     return { added, removed }
   }, [changedFile])
 
+  // Quality-gate remediation (Critical, round 2): only ever measures (and so only ever flips
+  // `canExpand`) while the body is actually capped and collapsed -- `expanded` short-circuits
+  // the effect entirely once the user clicks Expand, so `canExpand` (and the Collapse button it
+  // gates) can never be reset to `false` by the body losing its height cap. A `ResizeObserver`
+  // (not a one-shot measurement) re-checks whenever the collapsed body's own rendered height
+  // changes -- e.g. the pane resizing -- not only on mount or when the diff text itself changes.
   React.useLayoutEffect(() => {
-    if (!capped) return
+    if (!capped || expanded) return
     const el = bodyRef.current
-    setCanExpand(el != null && el.scrollHeight > el.clientHeight)
-  }, [capped, changedFile])
+    if (!el) return
+    const measure = () => setCanExpand(el.scrollHeight > el.clientHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [capped, expanded, patch])
 
   return (
     <div className="diff-view overflow-hidden rounded-md border border-border">
-      {/* drag-regions-allow: a diff box's own header, nested inside an expanded `ToolRow`/`DiffViewFromPatch` inside the chat transcript or the PR Changes tab, always well below that screen's own real drag-region header (ChatHeader.tsx/PullRequestsView.tsx) -- it never touches App.tsx's permanent strip despite the `border-b` shape, same pattern as PullRequestDetail.tsx/ManageSessionsToolbar.tsx below. */}
+      {/* drag-regions-allow: a diff box's own header, nested inside an expanded `ToolRow` call in the chat transcript, always well below that screen's own real drag-region header (ChatHeader.tsx) -- it never touches App.tsx's permanent strip despite the `border-b` shape, same pattern as PullRequestDetail.tsx/ManageSessionsToolbar.tsx below. Gained an interactive opener (`capped`'s own Expand/Collapse `<Button>`) that `check:drag-regions` had not flagged before, since `CopyButton`/`FileLinkButton`'s own internal `<button>` aren't in its tag list. */}
       <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1 font-code text-xs text-muted-foreground">
         {/* Quality-gate fix (A11y HIGH, round 2): the old `<span className="truncate">` wrapper
          * clipped the button's own focus ring (an inline-block child of an `overflow:hidden`
@@ -87,10 +103,14 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
         </span>
         <span className="flex shrink-0 items-center gap-2">
           {/* #630: added/removed line counts from the parsed hunks, never colour alone (the
-           * leading +/− glyph is the same cue the gutter already uses). */}
+           * leading +/− glyph is the same cue the gutter already uses). `text-state-working` is
+           * the same token the diff gutter's own insert tint uses (diff-view.css) -- quality-gate
+           * remediation (High, round 2): a raw `text-green-600` measured under 4.5:1 against this
+           * `bg-muted` header in the Obsidian theme, and `check-theme-contrast` cannot catch a
+           * raw Tailwind palette colour at all; the token is now a gated PAIRS entry. */}
           {changedFile && (
             <span className="tabular-nums">
-              <span className="text-green-600">+{stats.added}</span> <span className="text-destructive">−{stats.removed}</span>
+              <span className="text-state-working">+{stats.added}</span> <span className="text-destructive">−{stats.removed}</span>
             </span>
           )}
           {/* Copies the full unified diff (git header plus hunks) shown below -- the same "copy
@@ -109,9 +129,10 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
           {capped && canExpand && (
             <Button
               variant="ghost"
-              size="sm"
-              className="-my-1 h-auto gap-1 px-1.5 py-0.5 text-muted-foreground"
+              size="xs"
+              className="-my-1 text-muted-foreground"
               aria-expanded={expanded}
+              aria-controls={regionId}
               onClick={() => setExpanded((value) => !value)}
             >
               {expanded ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
@@ -126,14 +147,20 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
         // #630: a keyboard-focusable, named scroll region (WCAG 2.1.1, 1.4.10, 2.4.11) so Tab
         // reaches it and arrow/Page-Down keys scroll it even though nothing inside is itself
         // focusable; `ring-inset` keeps the focus ring inside this element's own clipped bounds
-        // (the outer wrapper above is `overflow-hidden` for its rounded corners).
+        // (the outer wrapper above is `overflow-hidden` for its rounded corners). `tabIndex` is
+        // only ever `0` while there is actually something to scroll (quality-gate, Low): a
+        // non-overflowing or expanded region is not a useful Tab stop. `focus-visible:outline-
+        // hidden` draws a `forced-colors`-only transparent outline (Windows High Contrast ignores
+        // `box-shadow`, which is how the Tailwind `ring-*` utilities paint, matching
+        // `radio-group.tsx`'s own fix for the same gap).
         <div
           ref={bodyRef}
-          tabIndex={0}
+          id={regionId}
+          tabIndex={capped && !expanded && canExpand ? 0 : undefined}
           role="region"
           aria-label={`Diff of ${path}`}
           className={cn(
-            'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            'outline-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
             capped && !expanded && 'max-h-96 overflow-auto'
           )}
         >
