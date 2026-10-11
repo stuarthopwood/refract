@@ -16,6 +16,7 @@ import { EMPTY_TRANSCRIPT, useTranscriptStore } from './transcript-store'
 import { useViewStore } from './view-store'
 import { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
+import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore } from './right-pane-store'
 import { useSplitStore } from './split-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useThemeStore } from './theme-store'
@@ -40,6 +41,7 @@ export { useViewStore }
 export type { MainView, SettingsSectionId } from './view-store'
 export { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore }
 export { useSubagentPanelStore }
+export { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore }
 export { useSplitStore }
 export { usePullRequestsStore }
 export type { PullRequestsRepoState } from './pull-requests-store'
@@ -63,6 +65,7 @@ export interface RefractDevStores {
   view: typeof useViewStore
   readout: typeof useReadoutStore
   subagentPanel: typeof useSubagentPanelStore
+  rightPane: typeof useRightPaneStore
   split: typeof useSplitStore
   pullRequests: typeof usePullRequestsStore
   theme: typeof useThemeStore
@@ -95,6 +98,7 @@ if (import.meta.env.DEV) {
     view: useViewStore,
     readout: useReadoutStore,
     subagentPanel: useSubagentPanelStore,
+    rightPane: useRightPaneStore,
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
     theme: useThemeStore

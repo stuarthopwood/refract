@@ -6,8 +6,11 @@
 // This header is also the right half of the app's merged top row (spec 001 T100, FR-057):
 // draggable to move the window (its own buttons stay clickable via `.no-drag-region`), and a
 // trailing spacer reserves the top-right corner for the window's minimise/maximise/close buttons
-// -- spec 005: only when `reservesWindowControls` is true, since a split's left pane no longer
-// touches that corner (only the right pane, or the single pane when there is no split, does).
+// -- spec 005/spec 013: only when `reservesWindowControls` is true, since a split's left pane
+// never touches that corner, and the right-most pane's own copy of it stops reserving the corner
+// while the right pane shell (`RightPaneShell.tsx`) is open -- its own header reserves the same
+// corner instead, so exactly one of the two ever does (`App.tsx` computes this prop as
+// `!rightPaneOpen`, spec 013 FR-011).
 // No double-click handler here: verified live (tasks.md T100) that double-clicking this
 // `.drag-region` already maximises/restores the window entirely at the OS level (HTCAPTION)
 // before the double-click ever reaches the page's own JS, so a renderer-driven toggle was dead

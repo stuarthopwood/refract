@@ -2,10 +2,13 @@ import { create } from 'zustand'
 import type { TranscriptItem } from '../../shared/model'
 import type { TranscriptOp } from '../../shared/ipc'
 import { notify } from './notify'
+import { useRightPaneStore } from './right-pane-store'
 
-// Spec 004 FR-017 to FR-020: the Subagents panel's open/closed state and the selected subagent's
-// live stream. `streams` holds every subagent's stream the panel has ever fetched this turn
-// (cleared on `close`/a new turn), so re-selecting one already seen does not re-fetch.
+// Spec 004 FR-017 to FR-020: the selected subagent's live stream. `streams` holds every
+// subagent's stream the panel has ever fetched this turn (cleared on `close`/a new turn), so
+// re-selecting one already seen does not re-fetch. Spec 013 (research.md decision 3): "is this
+// panel showing" moved to `right-pane-store.ts`'s `openPanelIds` -- this store only tracks which
+// Session the panel's content is bound to and that Session's selected subagent/streams.
 
 function applyOps(items: TranscriptItem[], ops: TranscriptOp[]): TranscriptItem[] {
   let next = items
@@ -21,15 +24,18 @@ function applyOps(items: TranscriptItem[], ops: TranscriptOp[]): TranscriptItem[
 }
 
 interface SubagentPanelState {
-  open: boolean
   sessionId: string | null
   selectedId: string | null
   streams: Record<string, TranscriptItem[]>
+  /** Binds the panel's content to `sessionId` -- the shell (`right-pane-store.ts`'s
+   * `openPanel('subagents')`) decides whether the panel is actually showing. */
   openPanel(sessionId: string): void
   /** `restoreFocus` (default true) moves focus to the Subagents chip only when it was
    * actually inside the panel at close time -- callers closing the panel for a reason OTHER
    * than the user clicking its own Close button (a new turn starting, the visible Session
-   * archiving/vanishing, a drag-collapse) pass `false` so a steal never happens. */
+   * archiving/vanishing, a drag-collapse) pass `false` so a steal never happens. Also keeps
+   * `right-pane-store.ts`'s `openPanelIds` in sync (a no-op if 'subagents' is already closed
+   * there), so every existing call site stays the single place this panel's close goes through. */
   closePanel(options?: { restoreFocus?: boolean }): void
   selectSubagent(subagentId: string): Promise<void>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
@@ -45,23 +51,23 @@ interface SubagentPanelState {
 }
 
 export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
-  open: false,
   sessionId: null,
   selectedId: null,
   streams: {},
-  openPanel: (sessionId) => set({ open: true, sessionId }),
+  openPanel: (sessionId) => set({ sessionId }),
   closePanel: (options) => {
     const { sessionId } = get()
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
     // Critical remediation (a11y + test-reviewer, same root cause from two angles): `sessionId`
-    // used to survive a close, so `panelSessionId && <SubagentPanel/>` (App.tsx) kept rendering
-    // the panel's real content -- Close button and every subagent row button included -- forever
+    // used to survive a close, so `panelSessionId && <SubagentPanel/>` kept rendering the
+    // panel's real content -- Close button and every subagent row button included -- forever
     // after the first open/close, collapsed to zero width but never unmounted (react-resizable-
     // panels sets no inert/hidden/display:none on a collapsed Panel). That stranded every one of
-    // those controls in the Tab order and in screen-reader browse mode. App.tsx now also gates
-    // the content on `panelOpen`, but clearing `sessionId` here too means no stale panel state
-    // lingers for `resetForNewTurn`/the ChatPane archive-while-open guard to ever see.
-    set({ open: false, sessionId: null, selectedId: null, streams: {} })
+    // those controls in the Tab order and in screen-reader browse mode. The shell (RightPaneShell)
+    // also gates the content on `openPanelIds`, but clearing `sessionId` here too means no stale
+    // panel state lingers for `resetForNewTurn`/the ChatPane archive-while-open guard to ever see.
+    set({ sessionId: null, selectedId: null, streams: {} })
+    useRightPaneStore.getState().closePanel('subagents')
     // High remediation (code-reviewer, spec-004 final confirmation pass): the readout update
     // that unmounts this panel's content is debounced, so the chip this used to focus
     // unconditionally was ALWAYS still mounted at this point, regardless of whether focus was
@@ -73,9 +79,11 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // already was (the message box, most often, the very moment the user wants to type a
     // follow-up). The containment check below is the remaining guard for this component's only
     // other caller, the panel's own explicit Close button: focus should return to the chip only
-    // if it was actually inside the panel when Close was clicked.
+    // if it was actually inside the panel when Close was clicked. `right-pane-active-panel` is
+    // the shell's own wrapper (header + content) now that the panel's Close button lives in the
+    // shell, not inside this panel's own content (spec 013 T012).
     if (options?.restoreFocus ?? true) {
-      const panelEl = document.getElementById('subagent-panel')
+      const panelEl = document.getElementById('right-pane-active-panel')
       if (panelEl?.contains(document.activeElement)) {
         document.querySelector<HTMLElement>('button[aria-label^="Open subagents panel"]')?.focus()
       }
@@ -108,12 +116,13 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // from, for no listener.
     const { sessionId } = get()
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
-    set({ open: false, sessionId: null, selectedId: null, streams: {} })
+    set({ sessionId: null, selectedId: null, streams: {} })
+    useRightPaneStore.getState().closePanel('subagents')
   },
   resetForNewTurn: (sessionId) => {
     const state = get()
     if (state.sessionId !== sessionId) return
-    if (state.open) {
+    if (useRightPaneStore.getState().openPanelIds.includes('subagents')) {
       state.closePanel({ restoreFocus: false })
       return
     }

@@ -15,7 +15,8 @@ import {
   TriangleAlertIcon,
   UsersIcon
 } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useSubagentPanelStore, useViewStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, usePullRequestsStore, useReadoutStore, useSessionsStore, useViewStore } from '@/state'
+import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
 import { formatDiffStat } from '@/features/sessions/sessionDisplay'
 import { formatElapsed } from '../Transcript'
 import { ReadoutChip } from './ReadoutChip'
@@ -182,7 +183,7 @@ export function PullRequestChip({ sessionId }: { sessionId: string }) {
  * reusing `phrase` verbatim inside the name makes that impossible to drift apart again. */
 export function SubagentsChip({ sessionId }: { sessionId: string }) {
   const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
-  const openPanel = useSubagentPanelStore((s) => s.openPanel)
+  const onActivate = () => openHostedPanel('subagents', sessionId)
   if (subagentCount === null) return null
   const { running, finished, exited, failed } = subagentCount
   const phrase = (() => {
@@ -199,7 +200,7 @@ export function SubagentsChip({ sessionId }: { sessionId: string }) {
       // Spec 005 convergence (tasks.md T031): activating this chip opens/retargets the one
       // shared Subagents panel to THIS pane's session -- explicit activation, never a silent
       // focus-move retarget (research.md Decision 10).
-      onActivate={() => openPanel(sessionId)}
+      onActivate={onActivate}
       accessibleName={`Open subagents panel (${phrase})`}
       className={running === 0 ? 'text-muted-foreground' : undefined}
     >
