@@ -100,14 +100,8 @@ import { useRightPaneStore } from '@/state'
 import { formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
 import { WidthPresetControl } from './WidthPresetControl'
+import { WINDOW_CONTROLS_SPACER_STYLE, WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 
-// Gate remediation: the rail sits in its own 40px (`2.5rem`) column to the right of the pane, but
-// the native caption-button cluster is wider than that (about 138px) and overlaps both the rail's
-// top (handled by `IconRail.tsx`'s own vertical spacer) and the pane header's own top-right corner
-// -- only the REMAINING width past the rail needs reserving here, or the pane would reserve the
-// full caption width a second time. Clamped at 0 so a window narrower than the caption cluster
-// never produces a negative width.
-const WINDOW_CONTROLS_SPACER_STYLE = { width: 'max(0px, calc(100vw - env(titlebar-area-width, 100vw) - 2.5rem))' }
 // Inset (negative offset), matching `RightPaneShell.tsx`'s own content-focus ring: an outset ring
 // drawn outside this row's `overflow` wrapper gets its top/bottom (and the first tab's left edge)
 // clipped, since the wrapper is exactly as tall as a tab (gate remediation, round 1).
@@ -123,9 +117,7 @@ interface PanelTabBarProps {
   /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7, tasks.md T029):
    * `App.tsx`'s own `ResizablePanel` ref, already wired to `right-pane-store.ts`'s `setWidth`
    * through the same `onResize` guard the drag handle uses, so a preset click and a drag can
-   * never desync (User Story 6 scenario 2). Rendered in both header variants below; the 0-panel
-   * launcher state has no header row to host it in (T008's own delegation to `PanelLauncher`,
-   * out of scope for this task -- see tasks.md's Checkpoint for PR4). */
+   * never desync (User Story 6 scenario 2). */
   resize(widthPx: number): void
 }
 
@@ -229,14 +221,10 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
             <div aria-hidden className="shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
           </div>
         </div>
-        {/* Own row (gate-pattern precedent: PanelTabBar's own tab strip moved to its own row,
-            above, when it didn't fit alongside the window-controls spacer at the 240px floor;
-            the width-preset control's three buttons plus that same spacer would overflow the
-            same floor by roughly 16-20px if packed into the row above, so it gets the same fix
-            before it ever needs one). */}
-        <div className="no-drag-region flex h-10 shrink-0 items-center border-t border-border px-2">
-          <WidthPresetControl resize={resize} />
-        </div>
+        {/* Own row, below the title row -- the DRY wrapper `WidthPresetControl.tsx` now owns
+            itself, shared with the tab-bar variant below and the 0-panel launcher
+            (RightPaneShell.tsx). */}
+        <WidthPresetControl resize={resize} />
       </div>
     )
   }
@@ -292,19 +280,18 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
 
   return (
     <div className="flex shrink-0 flex-col">
-      {/* Row 1: reserves the window-controls corner only (FR-011) -- the tab strip below needs
-          none of this width, freeing it for the tabs themselves (the round-2 shortfall's root
-          cause). No title text here: the active tab's own label already names the pane. */}
-      <div aria-hidden className="drag-region flex h-10 items-center px-2">
-        <div className="no-drag-region ml-auto shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
-      </div>
-      {/* Row W: the width-preset control (FR-025, tasks.md T029), its own row for the same
-          reason the tab strip below got one (round-2 remediation, same file): packed into Row 1
-          alongside the window-controls spacer, the three buttons would overflow the 240px pane
-          floor by roughly 16-20px. */}
-      <div className="no-drag-region flex h-10 shrink-0 items-center border-t border-border px-2">
-        <WidthPresetControl resize={resize} />
-      </div>
+      {/* Row 1: reserves the window-controls corner only (FR-011), nothing else -- stays
+          `aria-hidden` (see `WindowControlsSpacerRow.tsx`), unlike the width-preset row below it,
+          which hosts a real control and must not be. No title text here: the active tab's own
+          label already names the pane. */}
+      <WindowControlsSpacerRow />
+      {/* Row W: the width-preset control (FR-025, tasks.md T029) -- its own row, below Row 1, for
+          the same reason the tab strip below it got one (round-2 remediation, same file): packed
+          into Row 1 alongside the window-controls spacer, the three buttons would overflow the
+          240px pane floor by roughly 16-20px. `WidthPresetControl.tsx` owns its own row wrapper
+          now (DRY, shared with the single-panel variant above and the 0-panel launcher in
+          `RightPaneShell.tsx`). */}
+      <WidthPresetControl resize={resize} />
       {/* Row 2: the tab strip, now with the whole pane width (less this row's own padding) to
           itself. */}
       <div ref={wrapperRef} className="no-drag-region flex h-10 shrink-0 items-center gap-1 border-t border-border px-2">
