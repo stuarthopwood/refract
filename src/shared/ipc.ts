@@ -393,6 +393,7 @@ export const IPC_EVENTS = {
   SUBAGENT_PATCH: 'subagent:patch',
   SIDE_CHAT_PATCH: 'side-chat:patch',
   SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
+  SIDE_CHAT_CONVERSATION_CHANGED: 'side-chat:conversation-changed',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
 } as const;
@@ -724,6 +725,12 @@ export interface RefractApi {
    * `reconcileInterrupted` marks any `running` side-chat record `interrupted` so it never blocks
    * Send/Retry/`/btw` forever. */
   onSideChatInterrupted(handler: (payload: { sessionId: string }) => void): Unsubscribe;
+  /** Gate-fix (round 5, Code5 HIGH): fired after `startNewConversation`/`openConversation`
+   * confirms the Session's Conversation actually changed -- OMP's own `btw` topics are scoped
+   * to the Conversation, not the Session, so the store's own `clearThread` must run here or the
+   * panel keeps showing the PREVIOUS Conversation's rows and the next question sends an id the
+   * new Conversation's side-chat store rejects. */
+  onSideChatConversationChanged(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }

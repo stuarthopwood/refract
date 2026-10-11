@@ -30,13 +30,20 @@ interface SideChatSessionState {
    * before the Session's process has started) so the next render's effect retries instead of
    * silently treating "could not load yet" as "there is no history". */
   loaded: boolean
+  /** Gate-fix (round 5, A11y5 LOW): set when `loadHistory` fails for a reason OTHER than
+   * `agent-not-running` (a genuine `get_btw_history` failure that will not resolve itself once
+   * the Session starts) -- the panel's own `!loaded` hint text must not keep telling the
+   * developer side chat "is available once the Session is running" when the real problem is
+   * that history could not be loaded at all. Cleared whenever a load attempt starts again. */
+  loadError: boolean
 }
 
 const EMPTY_SESSION_STATE: SideChatSessionState = {
   records: [],
   activeTopicRecordId: undefined,
   running: false,
-  loaded: false
+  loaded: false,
+  loadError: false
 }
 
 interface SideChatThreadState {
@@ -65,10 +72,11 @@ function computeRunning(records: SideChatRecord[]): boolean {
   return records.some((record) => isRunningStatus(record.status))
 }
 function stripInternalPrefix(message: string): string {
-  // Gate-fix (round 3, Sec3 LOW): `SessionAgent.ts`'s own thrown errors are prefixed
-  // `SessionAgent <uuid>: ...` for its OWN logs -- an internal implementation detail that must
-  // never leak into a user-facing toast.
-  return message.replace(/^SessionAgent [^:]+:\s*/, '')
+  // Gate-fix (round 3, Sec3 LOW; extended round 5, Sec5 LOW): `SessionAgent.ts`'s own thrown
+  // errors are prefixed `SessionAgent <uuid>: ...`; `OmpProcess`'s own rejections (a request
+  // that timed out, or the process exiting mid-request) are prefixed `OmpProcess: ...` -- both
+  // are internal implementation details that must never leak into a user-facing toast.
+  return message.replace(/^(SessionAgent [^:]+|OmpProcess):\s*/, '')
 }
 
 export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
@@ -82,6 +90,13 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       // so `loaded` must stay `false` (the panel's own effect retries once the Session starts)
       // and no raw internal error text reaches the user as a toast.
       if (result.error.code === 'agent-not-running') return
+      // Gate-fix (round 5, A11y5 LOW): any OTHER failure is a genuine load error that will not
+      // resolve itself once the Session starts -- `loadError` lets the panel's own hint say so
+      // instead of repeating the "available once running" text forever.
+      set((state) => {
+        const existing = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
+        return { bySession: { ...state.bySession, [sessionId]: { ...existing, loadError: true } } }
+      })
       toast.error(`Could not load side chat history: ${stripInternalPrefix(result.error.message)}`)
       return
     }
@@ -89,35 +104,53 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
     // `get_btw_history` is one entry per independent topic, flattened root-first then its own
     // follow-ups in order (`SessionAgent.flattenBtwHistory`, which sorts topics OLDEST first,
     // gate-fix round 4, Code4/Verif4 HIGH -- OMP's own `get_btw_history` itself returns them
-    // newest first); only a flattened ROOT row carries `leafId` and a non-synthetic `id` (a
-    // non-root follow-up has no real OMP id of its own). Gate-fix (round 3, Code3/Verif3 HIGH):
-    // `leafId` is NOT the continuation key -- live-tested against a RESTARTED omp process
-    // sending a completed thread's own `id` as `recordId` succeeded; `leafId` was rejected
-    // every time with "Unknown /btw topic" (it is the MAIN session's own leaf entry id at topic
-    // creation, unrelated to `btw` continuation -- round 4, Code4 LOW). The topic to continue is
-    // the LAST root in the (now correctly oldest-first) list -- the most recently STARTED topic,
-    // never the last flattened row itself -- a follow-up's own synthetic `${root.id}.${index}`
-    // key must never be sent back as `recordId` either; `topicId` (equal to the root's own `id`
-    // for a root row) is the one canonical field for that, gate-fix round 4, Code4/Verif4
-    // CRITICAL.
-    const lastRoot = [...fetched].reverse().find((record) => record.leafId !== undefined)
+    // newest first); only a flattened ROOT row's own `id` equals its own `topicId` (a non-root
+    // follow-up's `topicId` points at its own root instead). Gate-fix (round 3, Code3/Verif3
+    // HIGH): `leafId` is NOT the continuation key -- live-tested against a RESTARTED omp
+    // process sending a completed thread's own `id` as `recordId` succeeded; `leafId` was
+    // rejected every time with "Unknown /btw topic" (it is the MAIN session's own leaf entry id
+    // at topic creation, unrelated to `btw` continuation -- round 4, Code4 LOW). Gate-fix (round
+    // 5, Code5 LOW): found via `id === topicId`, not `leafId !== undefined` -- OMP's own schema
+    // allows `leafId: string | null`, so the old predicate worked only by accident. The topic to
+    // continue is the LAST root in the (now correctly oldest-first) list -- the most recently
+    // STARTED topic, never the last flattened row itself -- a follow-up's own synthetic
+    // `${root.id}.${index}` key must never be sent back as `recordId` either; `topicId` is the
+    // one canonical field for that, gate-fix round 4, Code4/Verif4 CRITICAL.
+    const lastRoot = [...fetched].reverse().find((record) => record.id === record.topicId)
     set((state) => {
       const existing = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
-      // Gate-fix (round 2, Code2 Medium): merge, never replace outright -- a question asked
-      // (or still running) after this fetch started must survive a slower `get_btw_history`
-      // reply landing afterward. Any record `fetched` already has (by id) wins (it is OMP's own
-      // authoritative history); a still-running or newly-seeded record not yet reflected in
-      // `fetched` is kept alongside it.
-      const fetchedIds = new Set(fetched.map((record) => record.id))
-      const merged = [...fetched, ...existing.records.filter((record) => !fetchedIds.has(record.id))]
+      // Gate-fix (round 2, Code2 Medium; round 5, Verif5 MEDIUM): merge, never replace outright
+      // -- a question asked (or still running) after this fetch started must survive a slower
+      // `get_btw_history` reply landing afterward. OMP's own history reply can include an
+      // in-flight (`running`) record for a turn that has ALREADY settled live by the time this
+      // reply arrives (the likeliest trigger: `/btw` from the main composer opens the panel,
+      // starting `loadHistory` and `ask` together) -- blindly letting the fetched copy win would
+      // put a stale `running`/empty-answer row back over one `applyPatch` already completed,
+      // re-stalling the panel on "Thinking" and discarding any text already streamed into it.
+      // For an id present in both, the store's own existing copy wins whenever it is NEWER
+      // (`updatedAt`) or already terminal while the fetched copy is still `running`; otherwise
+      // the fetched copy (OMP's own authoritative history) wins, same as before. A record not
+      // yet reflected in `fetched` at all (brand new, or still running) is kept alongside it.
+      const existingById = new Map(existing.records.map((record) => [record.id, record]))
+      const merged = fetched.map((record) => {
+        const current = existingById.get(record.id)
+        if (!current) return record
+        const currentIsAuthoritative =
+          (current.updatedAt ?? 0) >= (record.updatedAt ?? 0) || (current.status !== 'running' && record.status === 'running')
+        return currentIsAuthoritative ? current : record
+      })
+      const mergedIds = new Set(merged.map((record) => record.id))
+      const onlyInExisting = existing.records.filter((record) => !mergedIds.has(record.id))
+      const finalRecords = [...merged, ...onlyInExisting]
       return {
         bySession: {
           ...state.bySession,
           [sessionId]: {
-            records: merged,
+            records: finalRecords,
             activeTopicRecordId: existing.activeTopicRecordId ?? lastRoot?.topicId ?? lastRoot?.id,
-            running: computeRunning(merged),
-            loaded: true
+            running: computeRunning(finalRecords),
+            loaded: true,
+            loadError: false
           }
         }
       }
@@ -159,7 +192,7 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       // `SessionAgent <uuid>: ` one), and renders the "Unknown /btw topic" rejection in plain
       // English -- a raw hex topic id in a toast means nothing to the developer.
       const cleaned = stripInternalPrefix(result.error.message).replace(/^btw failed:\s*/, '')
-      const friendly = /Unknown \/btw topic/.test(cleaned) ? 'That topic is no longer available; starting a new one.' : cleaned
+      const friendly = /Unknown \/btw topic/.test(cleaned) ? 'That topic is no longer available. Send again to start a new one.' : cleaned
       toast.error(`Side question failed: ${friendly}`)
       throw new Error(result.error.message)
     }

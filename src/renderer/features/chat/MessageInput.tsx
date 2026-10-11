@@ -523,6 +523,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         toast.error('A side question is already running for this Session.')
         return
       }
+      // Gate-fix (round 5, Code5 Medium): the panel's own Send button already refuses while
+      // `!loaded` -- this path did not, so `/btw` typed before `loadHistory` finishes (most
+      // likely right after a restart) ran `ask` with `activeTopicRecordId` still `undefined`,
+      // silently starting a FRESH topic instead of continuing the Session's real one. Opening
+      // the panel triggers its own `loadHistory` effect; the draft is kept (not cleared) so
+      // Enter/Send can simply be tried again once it resolves.
+      if (!useSideChatStore.getState().bySession[sessionId]?.loaded) {
+        useRightPaneStore.getState().openPanel('side-chat')
+        toast.error('Side chat is still loading its history. Try again in a moment.')
+        return
+      }
       useRightPaneStore.getState().openPanel('side-chat')
       if (slashInvocation.rest.length === 0) {
         useDraftStore.getState().clear(sessionId)

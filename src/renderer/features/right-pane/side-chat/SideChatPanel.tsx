@@ -76,6 +76,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const satisfiedFocusRef = useRef(0)
   const records = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.records ?? EMPTY_RECORDS) : EMPTY_RECORDS))
   const running = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.running ?? false) : false))
+  const loadError = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.loadError ?? false) : false))
   const loaded = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.loaded ?? false) : false))
   const loadHistory = useSideChatStore((s) => s.loadHistory)
   const ask = useSideChatStore((s) => s.ask)
@@ -106,27 +107,27 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
 
   // FR-013: focus moves into this composer whenever the rail, the launcher, or `/btw` names this
   // panel (`sideChatFocusRequestId` bumps on every `openPanel('side-chat')` call, including while
-  // it is already the active panel). Gate-fix (live re-verification, round 2): two layered races,
-  // both found by tracing every real `HTMLElement.focus()` call live. (1) React runs a child's
-  // own effects BEFORE its parent's in the same commit, so a plain synchronous call here lost
-  // the race to `RightPaneShell.tsx`'s own generic "focus the newly active panel's content
-  // region" effect, which ran straight after and overwrote this with the `tabIndex=-1` wrapper
-  // `div` -- `setTimeout(0)` defers this call to the next task, strictly after that effect
-  // flush. (2) a disabled form control cannot receive focus at all, and on the panel's FIRST
-  // open this turn `loaded` is still `false` (the `get_btw_history` round trip has not resolved
-  // yet) -- calling `.focus()` on the still-disabled textarea at that moment is a silent no-op,
-  // confirmed live (the call fires, `document.activeElement` never moves). `satisfiedFocusRef`
-  // remembers the last request id this effect actually delivered focus for, so a request that
-  // arrives before `loaded` flips true is retried the instant `loaded` does (both are this
-  // effect's own dependencies), without re-focusing on every later unrelated `loaded` change.
+  // it is already the active panel). Gate-fix (live re-verification, round 2): a parent/child
+  // effect-ordering race -- React runs a child's own effects BEFORE its parent's in the same
+  // commit, so a plain synchronous call here lost the race to `RightPaneShell.tsx`'s own
+  // generic "focus the newly active panel's content region" effect, which ran straight after
+  // and overwrote this with the `tabIndex=-1` wrapper `div` -- `setTimeout(0)` defers this call
+  // to the next task, strictly after that effect flush. `satisfiedFocusRef` remembers the last
+  // request id this effect actually delivered focus for, so a request is never re-delivered for
+  // the same id twice. Gate-fix (round 5, A11y5 Medium): the textarea is NEVER disabled (only
+  // Send is gated on `loaded`), so there is no "still-disabled, focus silently no-ops" case to
+  // wait for any more -- an earlier round's own `if (!loaded) return` gate (needed when the
+  // textarea WAS disabled, before that was removed) stayed behind it, long after the condition
+  // it guarded against stopped existing. Left in place, it could defer a focus request
+  // indefinitely (e.g. `/btw` on a stopped Session: `ask` fails, `loaded` stays `false`, focus
+  // never moves into the panel at all -- then jumps there LATER, mid-task, the moment the
+  // Session happens to start from the main composer instead), violating WCAG 2.4.3/3.2.2.
   useEffect(() => {
     if (sideChatFocusRequestId === 0 || sideChatFocusRequestId === satisfiedFocusRef.current) return
-    if (!loaded) return
     satisfiedFocusRef.current = sideChatFocusRequestId
     const timer = setTimeout(() => textareaRef.current?.focus(), 0)
     return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideChatFocusRequestId, loaded])
+  }, [sideChatFocusRequestId])
 
   // A11y (round 2, A11y2 HIGH, FR-012; round 3, A11y3 Medium): announces once per record that
   // settles from `running` to a final state, using the same clear-first-then-set shape as
@@ -173,15 +174,29 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   // fold with no visible confirmation beyond the (screen-reader-only) live region. Deliberately
   // simple (no vendored scroller, no content-visibility concerns, unlike the main transcript):
   // this panel never virtualises and is rarely more than a handful of records, so a direct
-  // `scrollTo` on every `records.length`/last-status change is enough. `prefers-reduced-motion`
-  // drops the smooth animation, matching the main transcript's own convention.
+  // `scrollTo` is enough. `prefers-reduced-motion` drops the smooth animation, matching the main
+  // transcript's own convention. Gate-fix (round 5, A11y5 Low): also re-runs as a streaming
+  // answer's own length grows (previously only `records.length`/the last record's `status` were
+  // watched, so a long answer growing below the fold never pulled the view down to follow it).
+  // A brand-new row (the developer just sent a question) always scrolls -- the same deliberate
+  // action Send/`/btw` already is. For every OTHER update (a status change or streamed growth on
+  // the SAME row count), it scrolls only when the developer was already within ~48px of the
+  // bottom, so someone who has deliberately scrolled up to re-read an earlier answer is never
+  // yanked back down by an unrelated later record settling or streaming.
   const lastRecord = records[records.length - 1]
+  const prevRowCountRef = useRef(0)
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container || !lastRecord) return
+    const rowCountChanged = records.length !== prevRowCountRef.current
+    prevRowCountRef.current = records.length
+    if (!rowCountChanged) {
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+      if (distanceFromBottom > 48) return
+    }
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     container.scrollTo({ top: container.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
-  }, [records.length, lastRecord?.status])
+  }, [records.length, lastRecord?.status, lastRecord?.answer?.length])
 
   async function send(): Promise<void> {
     const question = draft.trim()
@@ -226,10 +241,12 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   }
 
   function handleRetry(question: string): void {
-    if (!sessionId || running) return
-    // Gate-fix (round 3, A11y3 Medium): the Retry button `disabled={running}` below, so it
-    // disables the instant `running` flips true -- focus the textarea BEFORE issuing the retry,
-    // same pattern as `handleCancelClick`, so focus never drops to `<body>`.
+    if (!sessionId || running || !loaded) return
+    // Gate-fix (round 3, A11y3 Medium): the Retry button's own `disabled` (below) matches Send's
+    // `running || !loaded` (round 5, Code5/A11y5 Low: Retry used to ignore `!loaded`, so it
+    // silently produced only an `agent-not-running` toast on a Session that was not running) --
+    // focus the textarea BEFORE issuing the retry, same pattern as `handleCancelClick`, so focus
+    // never drops to `<body>`.
     textareaRef.current?.focus()
     void ask(sessionId, question).catch(() => {
       // `ask` already surfaces the failure via toast.
@@ -293,7 +310,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={running}
+                        disabled={running || !loaded}
                         onClick={() => handleRetry(record.question)}
                       >
                         Retry
@@ -340,8 +357,12 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             // reason while `!loaded` (the Session's agent is not running yet, or a permanent
             // `get_btw_history` failure) -- WCAG 3.3.1/4.1.2. The textarea itself still accepts
             // typing (Enter silently no-ops in `send()`); this line explains why nothing happens.
+            // Gate-fix (round 5, A11y5 Low): `loadError` (set by a genuine `get_btw_history`
+            // failure, never by `agent-not-running`) picks the honest wording -- the original
+            // text kept claiming side chat would become available "once the Session is
+            // running" even for a Session that already WAS running when the load itself failed.
             <p id={unavailableHintId} className="mt-1 text-xs text-muted-foreground">
-              Side chat is available once the Session is running.
+              {loadError ? 'Side chat history could not be loaded.' : 'Side chat is available once the Session is running.'}
             </p>
           )}
           <div className="mt-2 flex justify-end gap-2">

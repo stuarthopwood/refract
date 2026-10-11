@@ -51,3 +51,11 @@ do not block the spec's P1/P2 stories.
    unknown** (logged, not guessed): what `leafId` itself denotes inside OMP's own model, since it
    is clearly not a continuation id -- possibly an internal pointer unrelated to anything a
    client ever needs. Revisit only if a future `btw` capability turns out to need it.
+   **Corrected 2026-10-11 (round 5, Verif5 Low)**: two points above are stale. (1) The safety net
+   is narrower than described -- it clears `activeTopicRecordId` only on the specific "Unknown
+   /btw topic" rejection (round 4, Code4/Verif4 Medium), not "whenever the `recordId` it just
+   sent is rejected" for any reason (a transient "still running"/`agent-not-running` rejection
+   now leaves the topic untouched). (2) What `leafId` denotes is no longer unknown: it is the
+   MAIN session's own leaf entry id at the moment the topic was first started (confirmed round 4,
+   Code4/Verif4 LOW, against omp 18.8.6's own bundled source) -- `frames.ts` and `data-model.md`
+   already say so; this item's own "still unknown" line was never updated to match.

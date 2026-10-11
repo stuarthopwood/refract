@@ -26,6 +26,7 @@ export type ManagerEvent =
   | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
   | { type: 'sideChatPatch'; payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string } }
   | { type: 'sideChatInterrupted'; payload: { sessionId: string } }
+  | { type: 'sideChatConversationChanged'; payload: { sessionId: string } }
   | { type: 'list-changed' };
 
 /** Issue #510 (quality gate 2026-10-08): caps how many Sessions' Conversation tails `summaries()`
@@ -149,6 +150,12 @@ export class SessionManager {
     // is not currently looked at.
     agent.on('sideChatInterrupted', (payload) => {
       this.emit({ type: 'sideChatInterrupted', payload });
+    });
+    // Gate-fix (round 5, Code5 HIGH): unconditional, regardless of visibility -- the Conversation
+    // just changed for this Session, so any side-chat topic/history the renderer is still
+    // showing (visible or not) belongs to the PREVIOUS Conversation and must be dropped.
+    agent.on('sideChatConversationChanged', (payload) => {
+      this.emit({ type: 'sideChatConversationChanged', payload });
     });
     // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and
     // `currentConversation`/...) to the registry on every settle, Conversation switch, and

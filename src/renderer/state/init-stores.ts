@@ -115,6 +115,14 @@ export function initStores(): void {
   window.refract.onSideChatInterrupted(({ sessionId }) => {
     useSideChatStore.getState().reconcileInterrupted(sessionId)
   })
+  // Gate-fix (round 5, Code5 HIGH): OMP's own `btw` topics are scoped to the Conversation (the
+  // OMP session file), not the Refract Session -- `clearThread` drops `loaded` so the panel's
+  // own effect re-runs `loadHistory` fresh for whichever Conversation is now current, instead
+  // of continuing to show the PREVIOUS Conversation's rows (and sending its topic id, which the
+  // new Conversation's own side-chat store rejects with "Unknown /btw topic").
+  window.refract.onSideChatConversationChanged(({ sessionId }) => {
+    useSideChatStore.getState().clearThread(sessionId)
+  })
   // Spec 005 (tasks.md T012): a Windows-notification click, or a restored split that dropped to
   // one surviving Session (main's `index.ts` validateSplitAtStartup), both reuse this one
   // existing event; replaceFocused is the ordinary single-target action (same as a row click).

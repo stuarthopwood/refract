@@ -121,7 +121,12 @@ Both join the existing `KnownFrame` union (`frames.ts:384`) alongside `MessageUp
 
 Mirrors `subagent-store.ts`'s own per-Session keying (research.md decision 6), not the main
 transcript's single-Session-at-a-time model, since a side-chat thread must survive the owning
-pane losing focus (Edge Cases: closing the panel never cancels an in-flight question).
+pane losing focus (Edge Cases: closing the panel never cancels an in-flight question). **Corrected
+2026-10-11 (round 5, Code5 HIGH)**: OMP's own `btw` topics are scoped to the Conversation (the OMP
+session file), not the Session as a whole (spec.md item 6) -- the store stays keyed by Session
+(`bySession`), but `clearThread` now runs whenever `SIDE_CHAT_CONVERSATION_CHANGED` fires for that
+Session, so a Conversation switch within the same Session always reloads a fresh thread instead of
+continuing to show the PREVIOUS Conversation's rows.
 
 **Corrected 2026-10-11 (gate-fix round 2, Code2/Sec2/Verif2)**: `activeTopicRecordId` only moves
 when a record reaches `status: 'complete'` (an error or a cancelled record is never "the prior
@@ -141,7 +146,9 @@ specifically (round 2's own blanket clear on ANY failure also wiped the topic fo
 "still running"/`agent-not-running` rejection, unrelated to the wrong-id case it is meant for):
 if `ask` fails with that specific rejection and the `recordId` it sent is still the current
 `activeTopicRecordId`, it is reset to `undefined` so the NEXT question starts a fresh topic
-(FR-003) instead of retrying the same rejected id forever.
+(FR-003) instead of retrying the same rejected id forever. (Round 5, Verif5 Low: the toast for
+this case now reads "Send again to start a new one" -- nothing is auto-sent, only the topic is
+cleared, which the round-3/4 wording implied incorrectly.)
 
 **Corrected 2026-10-11 (round 4, Code4/Verif4 CRITICAL)**: `activeTopicRecordId` moves to
 `record.topicId ?? record.id` on `complete`, not a record's own `id` alone -- for a follow-up
@@ -151,7 +158,16 @@ topics ascending by `createdAt` before flattening -- `get_btw_history` itself re
 NEWEST first, so `loadHistory`'s own `[...fetched].reverse().find(...)` previously picked the
 OLDEST topic, not "the most recently started topic" its own comment claimed (round 3's account
 was wrong; live-tested, round 4: every round-3 follow-up had in fact landed on the older of two
-topics).
+topics). (Round 5, Code5 Low: found via `id === topicId`, not `leafId !== undefined` -- OMP's own
+schema allows `leafId: string | null`, so the old predicate worked only by accident.)
+
+**Corrected 2026-10-11 (round 5, Verif5 Medium)**: `loadHistory`'s merge let a stale fetched copy
+of a turn that was `running` when `get_btw_history` was called overwrite a NEWER or already-
+terminal store copy -- the likeliest trigger is `/btw` opening the panel for the first time,
+which starts `loadHistory` and `ask` together, racing a live `btw_record` that already settled
+the SAME turn. For an id present in both, the store's own existing copy now wins whenever it is
+newer (`updatedAt`) or already terminal while the fetched copy is still `running`; otherwise the
+fetched copy (OMP's own authoritative history) wins, as before.
 
 ```ts
 interface SideChatThreadState {
@@ -170,10 +186,18 @@ interface SideChatThreadState {
      * failed load (for example the Session has no live process yet) leaves this `false` so the
      * panel's own effect retries once the Session starts. */
     loaded: boolean;
+    /** Round 5, A11y5 Low: `true` when `loadHistory` failed for a reason OTHER than
+     * `agent-not-running` -- a genuine failure that will not resolve itself once the Session
+     * starts, so the panel's own `!loaded` hint picks different wording than the ordinary
+     * "available once running" case. */
+    loadError: boolean;
   }>;
   loadHistory(sessionId: string): Promise<void>;
   ask(sessionId: string, question: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
+  /** Drops this Session's entry entirely (`loaded`/`loadError` both reset to `false`), so the
+   * panel's own effect reloads history fresh. Called on `SIDE_CHAT_CONVERSATION_CHANGED` (round
+   * 5, Code5 HIGH) as well as any explicit "Clear thread" UI action. */
   clearThread(sessionId: string): void;
   /** Applies a BtwDeltaFrame (`delta` + `recordId` set, matched by `topicId` + `status:
    * 'running'`, round 4), a terminal BtwRecordFrame (`record` set), or a btw-history
@@ -181,10 +205,12 @@ interface SideChatThreadState {
    * main transcript) arriving over SIDE_CHAT_PATCH (main -> renderer). */
   applyPatch(sessionId: string, patch: { delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }): void;
   /** Gate-fix (round 3, Code3/A11y3 Medium; round 4, Sec4 Medium): called when the Session
-   * leaves a live state OR its agent process exits via the NEW `sideChatInterrupted` event
-   * (round 4 -- covers an approval-mode restart, which never reaches `status: 'stopped'` at all)
-   * -- marks any `running` record `interrupted` instead of leaving it to block Send/Retry/`/btw`
-   * forever. */
+   * leaves a live state OR its agent process exits via the `sideChatInterrupted` event (round 4
+   * -- covers an approval-mode restart, which never reaches `status: 'stopped'` at all) --
+   * marks any `running` record `interrupted` instead of leaving it to block Send/Retry/`/btw`
+   * forever. A no-op (including `running` itself) when nothing is actually running (round 5,
+   * Verif5 Low: the old code forced `running: false` even while an `ask` call still genuinely
+   * in flight had set it `true` with no record landed yet). */
   reconcileInterrupted(sessionId: string): void;
 }
 ```

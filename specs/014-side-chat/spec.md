@@ -35,8 +35,14 @@ Principles I, II, IV.
    reattach at all) -- a Session used ONLY for side-chat, never a single main message, has
    nothing to reattach to and `get_btw_history` returns empty after a restart (item 13 below;
    `future/open-questions.md` item 5). Refract reads it either way, stores nothing of its own for
-   durability. Per-Session (not per-Conversation): `get_btw_history` is scoped to the session
-   file, same scope `btw`/`btw_cancel` use.
+   durability. **Corrected 2026-10-11 (round 5, Code5 HIGH)**: PER CONVERSATION, not per Session
+   as this item originally said -- `get_btw_history`/`btw`/`btw_cancel` are all scoped to the OMP
+   session FILE (the OMP process's own `getSessionId()`), which is a Refract Conversation, not
+   the Refract Session as a whole. `RpcBtwController` reopens its own history store whenever that
+   file changes (`/new`, or opening a different past Conversation, both send `new_session` in the
+   SAME process) -- Refract's own renderer store is corrected to clear and reload on that signal
+   (`SIDE_CHAT_CONVERSATION_CHANGED`, contracts/ipc.md), not left keyed by Session with no
+   Conversation-change handling at all, as it originally was.
 7. **Concurrency**: one `btw` request at a time per Session; OMP itself cancels a running one on
    Session switch, `new_session`, `fork`, `open_session`, or shutdown (issue://516, from rpc.md).
    Refract reflects that state; it does not implement its own single-flight guard beyond disabling

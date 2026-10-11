@@ -177,6 +177,17 @@ export interface SessionAgentEvents {
    * process starts. Harmless if fired on every OTHER exit path too (`reconcileInterrupted` is a
    * no-op when nothing is running). */
   sideChatInterrupted: (payload: { sessionId: string }) => void;
+  /** Gate-fix (round 5, Code5 HIGH): fired from `startNewConversation` (after `new_session`
+   * succeeds) and `openConversation` (after reattach is verified, skipped if the Conversation
+   * is unchanged) -- OMP's own `btw` topics are scoped to the OMP session FILE (a Refract
+   * Conversation, not a Refract Session: `RpcBtwController` reopens its own history store
+   * whenever `getSessionId()` changes). `side-chat-store.ts`'s own store is keyed by Refract
+   * Session and was never cleared on a Conversation change, so the panel kept showing the
+   * PREVIOUS Conversation's rows and the next question sent that Conversation's own topic id,
+   * which the new Conversation's side-chat store rejects with "Unknown /btw topic". The
+   * renderer clears the thread on this event so the panel's own effect reloads history fresh
+   * for the Conversation now current. */
+  sideChatConversationChanged: (payload: { sessionId: string }) => void;
   /** Fired whenever `syncFromState` writes a registry patch (after the initial `get_state`, every
    * `session_settled`, a Conversation switch, or a mode-change restart) -- i.e. whenever
    * `lastModel`/`lastThinkingLevel`/`currentConversation`/... may have changed. `SessionManager`
@@ -1025,6 +1036,13 @@ export class SessionAgent extends EventEmitter {
     if (!res.success) {
       throw new Error(`SessionAgent ${this.sessionId}: new_session failed: ${res.error ?? 'unknown error'}`);
     }
+    // Gate-fix (round 5, Code5 HIGH): OMP keeps `btw` topics per OMP session FILE (a Refract
+    // Conversation), not per Refract Session -- `new_session` just rebound this process to a
+    // brand-new one, so any side-chat topic/history the renderer is still showing belongs to
+    // the PREVIOUS Conversation and must be dropped before the next question runs, or OMP
+    // rejects it with "Unknown /btw topic" (the topic id the renderer still holds no longer
+    // exists in the NEW Conversation's own side-chat store).
+    this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
     try {
       await this.registry.updateSession(this.sessionId, { currentConversation: null, lastMessageCount: null });
     } catch (err) {
@@ -1099,6 +1117,14 @@ export class SessionAgent extends EventEmitter {
     if (failure) {
       await this.recoverFromFailedSwitch(previousConversation, file, failure);
       throw new ReattachFailedError(failure);
+    }
+    // Gate-fix (round 5, Code5 HIGH): same reasoning as `startNewConversation`'s own emit --
+    // OMP's own `btw` topics are scoped to the OMP session FILE just switched away from, so any
+    // side-chat topic/history the renderer still holds belongs to `previousConversation`, not
+    // `file`. Skipped when `file` IS `previousConversation` (reopening the same Conversation --
+    // its side-chat topics are still valid, nothing to drop).
+    if (file !== previousConversation) {
+      this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
     }
 
     const state = stateRes.data as GetStateResponseData;
@@ -1456,7 +1482,11 @@ export class SessionAgent extends EventEmitter {
         // still carries the ROOT's whole tree (its own `question`/`answer`/`status`, the new
         // turn nested at `followUps[last]`) -- `latestTurn` normalises it to the actual latest
         // turn before this ever reaches the renderer (see `BtwRecordFrame`'s doc comment).
+        // Gate-fix (round 5, Sec5 LOW): guarded the same way `askSideChat` already guards its
+        // own response -- OMP's own client validator guarantees `record` is present, so this
+        // only matters for malformed/unexpected local input, never a real OMP frame.
         const recordFrame = frame as BtwRecordFrame;
+        if (!recordFrame.record) return;
         this.emit('sideChatPatch', { sessionId: this.sessionId, record: latestTurn(recordFrame.record) });
         return;
       }

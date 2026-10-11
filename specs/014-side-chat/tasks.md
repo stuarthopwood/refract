@@ -160,7 +160,68 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 4 (gate-fix remediation, supersedes the round-3 account below)**: PR #668's
+**Checkpoint, round 5 (gate-fix remediation, supersedes the round-4 account below)**: PR #668's
+fourth gate round (Code5 HIGH; Sec5/A11y5/Verif5 PASS with Mediums/Lows) found round 4's own
+critical fix was correct but incomplete: OMP scopes `btw` topics PER CONVERSATION (the OMP
+session file, `btw-history/sessions/<getSessionId()>`), not per Refract Session as spec.md/
+data-model.md originally assumed -- `RpcBtwController` reopens its own history store whenever
+that file changes. Refract's side-chat store was keyed by Session only and never cleared on
+"New conversation" or opening an earlier Conversation (both send `new_session` in the SAME
+process): the panel kept showing the PREVIOUS Conversation's rows, the next question sent its
+topic id, and OMP rejected it with "Unknown /btw topic" -- the exact symptom round 3/4 both
+investigated as a restart problem, never a same-process Conversation-switch problem.
+
+**Fixed**: a new `sideChatConversationChanged` event, emitted from `SessionAgent.
+startNewConversation` (after `new_session` succeeds) and `openConversation` (after reattach is
+verified, skipped when the Conversation is unchanged), wired through `SessionManager`/
+`register.ts`/preload/`init-stores.ts` to call `useSideChatStore.getState().clearThread
+(sessionId)` -- the panel's own effect then reloads history fresh for whichever Conversation is
+now current.
+
+**Medium/Low fixes**: `loadHistory`'s merge no longer lets a stale FETCHED copy of a turn that
+was still `running` when `get_btw_history` was called overwrite a NEWER or already-terminal
+STORE copy (the likeliest trigger: `/btw` opening the panel for the first time starts
+`loadHistory` and `ask` together, racing a live settle). `/btw` from the main composer now also
+checks `loaded`, not just `running` (a `/btw` typed before history finishes loading, most likely
+right after a restart, used to silently start a fresh topic instead of continuing the real one).
+The focus-request effect's stale `if (!loaded) return` gate (left over from when the textarea
+WAS disabled, long since removed) is deleted -- it could defer a focus request indefinitely,
+moving focus into the panel mid-task later instead of never. Retry now also respects `!loaded`,
+matching Send; a `loadError` flag gives the `!loaded` hint honest wording when the real problem
+is a permanent `get_btw_history` failure, not an agent that simply has not started yet; the
+scroll-into-view effect now also tracks a streaming answer's own growing length, auto-scrolling
+only within ~48px of the bottom for an update on the SAME row (a brand-new row always scrolls).
+`contracts/ipc.md`'s Events table gained the missing `SIDE_CHAT_INTERRUPTED` row (shipped round
+4, never documented) alongside the new `SIDE_CHAT_CONVERSATION_CHANGED` one. `lastRoot` is now
+found via `id === topicId`, not `leafId !== undefined` (which worked only by accident -- OMP's
+own schema allows `leafId: string | null`). The "topic no longer available" toast no longer
+claims a new one was auto-started. `stripInternalPrefix` now also strips an `OmpProcess:`
+prefix (a mid-request process exit/timeout). `latestTurn`'s own callsite in the `btw_record`
+case is guarded against a missing `record`, matching `askSideChat`'s existing guard. `side-
+chat.ts`'s `cancel`/`getHistory` validation messages are plain English now too, matching `ask`'s
+own round-4 fix (an edit here briefly dropped `getHistory`'s own `notFound` check -- caught and
+restored before committing).
+
+**Re-verified live** (`C:/Users/shopwood/refract-live-check-668-round5/`, 8 screenshots --
+02/03 disclosed pixel-identical, the panel had already self-cleared by the time 02 was taken --
+`report.json`, `sha256.json`, real `omp 18.8.6`), through the REAL UI: asked a side question in
+Conversation A (settled correctly); clicked "New conversation"; the ALREADY-OPEN side-chat panel
+self-cleared to its own empty state with NO manual re-trigger (confirmed: 0 rows, no trace of
+the old question, the real empty-state text); asked a NEW question in Conversation B through the
+real Send button -- it SUCCEEDED (not "Unknown /btw topic"); opened the Conversation history
+dialog and switched back to Conversation A -- its side-chat panel correctly reloaded showing
+Conversation A's own original row again (confirmed via a direct DOM read of the panel's own
+record rows, not just a screenshot).
+
+**Record-keeping**: `spec.md` item 6 and `data-model.md`'s `SideChatThreadState` section
+corrected to per-Conversation scope; `contracts/ipc.md`'s "Non-IPC" section updated to match;
+`future/open-questions.md` item 6 corrected (the safety net's own narrowed wording, and
+`leafId`'s now-known meaning, both left stale since round 4). A short decision-changed note
+posted on issues #1 and #516 (the per-Conversation scope correction).
+
+<details>
+<summary>Checkpoint, round 4 (superseded by round 5 above -- kept for history, not a current claim)</summary>
+
 third gate round (Code4/Verif4 CRITICAL, Sec4/A11y4 PASS-ish with Mediums + one HIGH record-
 keeping gap) found that round 3's own fix, while correct about WHICH id continues a topic, never
 actually reached the renderer at all: OMP's live `btw`/`btw_record` response is the SAME
@@ -223,6 +284,7 @@ round); the btw-history notice routing (no reliable way found to make OMP's own 
 fail on demand); a real `btw_delta` frame's exact payload (this round's own observation was the
 row's text growing in the DOM, not a captured raw frame). All added to #650 (see the comment
 above).
+</details>
 
 <details>
 <summary>Checkpoint, round 3 (superseded by round 4 above -- kept for history, not a current claim)</summary>

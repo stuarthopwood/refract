@@ -56,7 +56,9 @@ export function registerSideChat(manager: SessionManager): void {
   // `subagents.cancel`'s own idempotent shape; `cancelSideChat` itself no-ops with no live
   // process instead of throwing `AgentNotRunningError`.
   ipcMain.handle(IPC_REQUESTS.SIDE_CHAT_CANCEL, async (_event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string') return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_CANCEL} expects a string sessionId`);
+    // Gate-fix (round 5, Verif5/Sec5 Low): plain English, matching `sideChat.ask`'s own fix
+    // (round 4) -- these messages can reach the renderer's own toast verbatim.
+    if (typeof sessionId !== 'string') return invalidArgument('Cancelling a side question needs a Session id');
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     try {
       await manager.getOrCreateAgent(sessionId).cancelSideChat();
@@ -72,7 +74,7 @@ export function registerSideChat(manager: SessionManager): void {
   // list) -- gate-fix round 2 (Code2/Sec2 Medium): the store reads this specific code to retry
   // once the Session actually starts, instead of wrongly caching "no history" forever.
   ipcMain.handle(IPC_REQUESTS.SIDE_CHAT_GET_HISTORY, async (_event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string') return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_GET_HISTORY} expects a string sessionId`);
+    if (typeof sessionId !== 'string') return invalidArgument('Loading side chat history needs a Session id');
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     try {
       const records: SideChatRecord[] = await manager.getOrCreateAgent(sessionId).getSideChatHistory();
