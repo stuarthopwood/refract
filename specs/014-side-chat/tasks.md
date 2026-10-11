@@ -160,7 +160,69 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 2 (gate-fix remediation, supersedes the round-1 account below)**: PR #668's
+**Checkpoint, round 3 (gate-fix remediation, supersedes the round-2 account below)**: PR #668's
+second gate round (Code3/A11y3/Sec3/Verif3) found the SAME core defect two different ways: the
+restart-lockout round 2 logged as an open question (item 6) was actually a plain bug (seeding
+`activeTopicRecordId` from the wrong field), `init-stores.ts` silently dropped every `btw_delta`
+frame since round 2's own fix (a one-line omission at the single callsite that fix depended on),
+and the round-2 evidence itself had gaps (a readiness-screen screenshot standing in for the real
+empty state, SC-001 measured with both counts null, `/btw` from the main composer never actually
+exercised). All fixed (see `side-chat-store.ts`/`init-stores.ts`/`SideChatPanel.tsx`/`frames.ts`/
+`SessionAgent.ts` changes) and re-verified across TWO scratch passes this round: a surgical
+API-level test isolating the exact recordId format, then a full re-run through the real UI.
+Screenshots + `report.json`/`sha256.json` under `C:/Users/shopwood/refract-live-check-668-round3/`
+(round 2's own folder deleted first by literal path).
+**Confirmed live, this round**:
+- **The restart-lockout root cause, isolated**: a thread's own root `id`, sent as `recordId`
+  after killing and relaunching the agent process, continued the SAME topic correctly (`ok:
+  true`, the new question landed as a further follow-up) -- that same thread's `leafId` was
+  rejected every time with `"Unknown /btw topic"`. `leafId` was never a volatile-but-sometimes-
+  valid id (round 2's own theory); it is simply the wrong field, in every process life. Fix:
+  `loadHistory` now seeds from root `id`; `ask`'s failure branch now resets `activeTopicRecordId`
+  to `undefined` whenever the id it just sent is rejected and still current, so no wrong id can
+  ever lock a Session permanently.
+- **The fix, re-verified end-to-end through the real UI** (not a raw API call): a Session with a
+  real main Conversation, two prior side-chat questions answered, killed and relaunched three
+  separate times across this round's own verification pass -- each time, typing a follow-up in
+  the panel's own composer and clicking Send succeeded, correctly continuing the same topic
+  (confirmed by reading the panel's own rendered record rows directly: 12 rows total, the last
+  three all `"What is 1000 + 1? ... Answer: 1001"`).
+- **`/btw` from the MAIN composer**, never actually exercised in round 2 (only re-asserted
+  "unchanged from round 1"): typed, the draft held the exact typed text, Enter cleared it, the
+  main transcript's own row count was unchanged before/after (7/7, confirming `chat.send` was
+  never called), and the answer ("Madrid") landed in the Side chat panel.
+- **SC-001, measured with a REAL main conversation present** (round 2's own measurement had both
+  counts null -- no main conversation existed yet, a weak signal): `lastMessageCount` 9 before
+  and 9 after a side question, unchanged.
+- **The no-Session empty state**, recaptured properly this round (round 2's own screenshot for
+  this, reused unchanged into round 3 without re-verifying, actually showed the readiness screen,
+  not the real empty state) -- confirmed `document.body.innerText` contains `"No Session open"`.
+- `init-stores.ts`'s `onSideChatPatch` now forwards `recordId` to `applyPatch` -- re-confirmed
+  typecheck/build-clean; no long/slow answer happened to stream during this pass, so a real
+  `btw_delta` frame reaching the store live is still not directly observed (same as every round
+  before this one, FINDINGS item 14).
+- Retry focuses the textarea before issuing the retry (matches Cancel's own pattern); the live
+  region now also announces a record that arrives already-terminal without ever being seen
+  running first; the Markdown answer wrapper is a `div`, not a `span`; toast messages no longer
+  leak the internal `SessionAgent <uuid>:` prefix; announcement timers clear on unmount --
+  typecheck/build-verified; not independently live-exercised this round beyond the end-to-end
+  flows above (no reachable way found to force a record to arrive already-terminal, or to crash
+  the OMP child process specifically without killing Electron itself).
+- `contracts/ipc.md` corrected: an unknown `recordId` (and "one already running") are RPC-level
+  failures (`ok: false`), never a `status: "error"` record -- confirmed live, this round.
+**SC-002 (spec.md Clarification item 13, `future/open-questions.md` item 5)**: met for a Session
+with a real main Conversation (shown above); still unmet for a side-chat-only Session (re-
+confirmed this round: `get_btw_history` still returns empty after a restart for one, exactly as
+item 5 already described) -- an open question for Stuart, not a defect introduced this round.
+**Not live-verified this round** (disclosed, not guessed): screen reader behaviour; `axe`/
+automated accessibility scan; the `reconcileInterrupted` process-exit reconciliation (no reliable
+way found to crash the OMP child process specifically, mid-turn, without killing Electron
+itself); Retry rendering against a real OMP `status: "error"` record (same gap as round 2 -- no
+live-reachable failure case produces one). All added to #650.
+
+<details>
+<summary>Checkpoint, round 2 (superseded by round 3 above -- kept for history, not a current claim)</summary>
+
 first gate round (Code2/A11y2/Sec2/Verif2) found real Highs in both the code (main-transcript
 leak, a stuck-`running` race, no single-flight guard) and the round-1 evidence itself (no
 `report.json`, the cancel screenshots did not show a genuinely running question, several claims
@@ -217,6 +279,7 @@ against real OMP data; the live region's own announced text (checked once, read 
 timing of the check, not re-verified with a longer wait); `btw_delta` streaming (still 0 frames
 observed across every probe run including this one); screen reader behaviour; `axe`/automated
 accessibility scan. All added to #650.
+</details>
 
 <details>
 <summary>Checkpoint, round 1 (superseded by round 2 above -- kept for history, not a current claim)</summary>
