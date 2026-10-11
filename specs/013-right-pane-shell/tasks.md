@@ -537,11 +537,51 @@ assignment requires before a PR is called ready.
   reuses the existing `outline` button variant and `border-border` divider token verbatim).
 - [x] T033 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
   0 violations across 106 files (present on this branch's base, PR3's merged head).
-- [ ] T034 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
+- [x] T034 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`): every story's numbered steps, at both 380px and 1280px window widths, with
   screenshots of the rail, the launcher, a two-tab bar, closing the last panel back to the
   launcher, both placeholders with the switch off and on, and the window-controls corner clear at
-  both widths (depends on T009 through T028).
+  both widths (depends on T009 through T028). Live-verified in a scratch Electron instance (own
+  `--user-data-dir`/CDP port, scratch repo/registry, never touching Stuart's live Sessions --
+  process exit confirmed by pid): at **1280px**, every check this task names passed --
+  `window.resizeTo()` drove a real OS-level resize (`navigator.windowControlsOverlay
+  .getTitlebarAreaRect().width` read 1143px, confirming genuine window geometry, not an emulated
+  viewport); the rail alone (collapsed); opening Subagents (title row) then FDB Knowledge
+  (two-tab bar); the **width-preset control** reached by focusing each button directly and
+  activating it with Enter -- measured pane width read exactly **240px (Min), 320px (Default),
+  520px (Max)** against `#right-pane-active-panel`'s own `getBoundingClientRect().width`, at
+  every preset, both in the two-tab-bar header (its own new row) and the single-panel title row
+  (its own new row) -- no overlap with the window-controls spacer or the tab strip at any preset,
+  confirming the 240px-floor overflow fix actually holds under a real layout, not just the
+  arithmetic above; closing both tabs via their own Close buttons back to the launcher (confirmed
+  by `[data-panel-launcher]` presence); the Settings "Right pane" switch toggling FDB Knowledge
+  between the empty state and labelled sample content with no reopen needed, confirmed both
+  directions (`window.refract.settings.get()` read `false` -> `true` -> `false`). **Not
+  conclusively verified**: the drag handle's behaviour immediately after a preset click -- a
+  CDP-synthetic drag left the measured width unchanged (520px before and after), consistent with
+  this same file's own round-5 finding above (`onResize` fires only from a `ResizeObserver`
+  callback that a CDP-attached renderer's `document.hidden: true` throttles), not evidence either
+  way about User Story 6 scenario 2 itself.
+
+  At **380px**, the rail stayed visible and the window-controls-corner geometry still measured
+  correctly (`titlebarArea.width` 243px, exactly 1143 - (1280-380), confirming the OS resize was
+  genuine at this width too) -- but the right pane itself (and therefore the width-preset control
+  inside it) **could not be opened at all**: with the session-list panel's own 220px `minSize`,
+  the chat panel's 360px `minSize`, the right pane's 240px `minSize` and the rail's fixed 40px all
+  competing for 380px total, no combination satisfies even the chat panel's own minimum alone
+  (640px needed for rail + chat + right-pane floors together, before the session list is even
+  counted), so both the session list and the right pane auto-collapse to 0, leaving only the chat
+  area and the rail -- the SAME pre-existing, already-escalated SC-007 380px edge case flagged to
+  Stuart on issue #650 since PR2 ("SC-007's 380px edge case needs Stuart's decision"), not a new
+  gap this task introduces or could fix: a two-tab bar and the width-preset control are
+  structurally unreachable at 380px today, given the floors every prior slice already shipped.
+  Screenshots taken at 380px regardless (rail, the collapsed state, an attempted two-panel open)
+  to document this rather than silently skip the width.
+
+  Not live-verified in this pass (tracked on issue #650, same as every prior PR in this spec): a
+  real screen reader pass (NVDA/JAWS/VoiceOver) on the width-preset control or the restructured
+  header rows; an axe run. Screenshots under
+  `C:/Users/shopwood/refract-live-check-538-pr4/`.
 - [ ] T035 Update `docs/PLAN.md` row C1 only: status, branch, PR number (minimal diff, this
   story's own row) (depends on T034 passing).
 
