@@ -32,10 +32,28 @@ export type PanelCount =
   | { kind: 'additions-deletions'; additions: number; deletions: number }
   | null
 
+// Round 5 gate remediation (Low, Code4): one source for the count's text, split into its number
+// and its trailing word (if any) -- `formatPanelCount` (the full string, for the launcher row and
+// for tooltips/accessible names) and `PanelTabBar.tsx`'s own split rendering (the number never
+// shrinks, FR-012; only the word may truncate) both build from this, instead of each re-deriving
+// the `running`/`+a -d` shapes independently.
+export interface PanelCountParts {
+  /** Always shown in full -- FR-012's "never the only signal" figure. */
+  number: string
+  /** '' when the shape has no separate trailing word (`+a -d`, both numbers already). */
+  word: string
+}
+
+export function splitPanelCount(count: PanelCount): PanelCountParts | null {
+  if (!count) return null
+  if (count.kind === 'running') return { number: String(count.value), word: 'running' }
+  return { number: `+${count.additions} -${count.deletions}`, word: '' }
+}
+
 export function formatPanelCount(count: PanelCount): string {
-  if (!count) return ''
-  if (count.kind === 'running') return `${count.value} running`
-  return `+${count.additions} -${count.deletions}`
+  const parts = splitPanelCount(count)
+  if (!parts) return ''
+  return parts.word ? `${parts.number} ${parts.word}` : parts.number
 }
 
 /** data-model.md `getPanelCount`, as a reactive hook: 'subagents' reads the number running for

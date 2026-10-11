@@ -57,16 +57,19 @@ this writing — cited by content, not by path on `main`).
 
 - **Q: SC-007 ("no horizontal scrollbar... at both a 380px and a 1280px window width") and the
   "Narrow window (380px minimum)" edge case (below, User Scenarios) read as contradictory once the
-  tab strip exists.** At a 380px window, the chat pane's own 360px `minSize` already wins the
-  squeeze before the right pane's own 240px floor is ever reached (the edge case's own text), so
-  the pane auto-collapses to 0 width there — there is no tab strip to check for a scrollbar in the
-  first place at that width. SC-007 was written before PR2's tab strip existed and was verified
-  against PR1's rail/launcher/single-title-row states only; it has never been live-verified against
-  a tab bar at a real 380px OS window resize (PR2 round 3 used a renderer-viewport override, not a
-  real window, and found the pane absent, not a passing tab-strip check). Options: (a) SC-007's
-  380px clause only ever meant the rail/launcher/single-panel states, and the Narrow-window edge
-  case already covers the tab-bar case correctly (nothing to fix); (b) SC-007 needs a tab-strip
-  carve-out at 380px added explicitly. Tracked on issue #650 pending Stuart's call.
+  tab strip exists.** The edge case's own text only says the chat pane's existing 360px `minSize`
+  "wins the squeeze" against the right pane's `ResizablePanel` the same way it does on `main` today
+  — it does not itself state what that squeeze actually produces at 380px. A real OS window resize
+  to 380px (PR2 round 4, native `SetWindowPos`/`GetWindowRect` on a scratch instance, not the
+  renderer-viewport override round 3 used) found the right pane collapses to 0 width there — there
+  is no tab strip to check for a scrollbar in the first place at that width, and the document-level
+  check that matters for SC-007 passed cleanly (`scrollWidth === clientWidth`). SC-007 was written
+  before PR2's tab strip existed and was verified against PR1's rail/launcher/single-title-row
+  states only. Options: (a) SC-007's 380px clause only ever meant the rail/launcher/single-panel
+  states, and the Narrow-window edge case already covers the tab-bar case correctly as observed
+  (nothing to fix); (b) SC-007 needs a tab-strip carve-out at 380px added explicitly, stating the
+  pane-collapse outcome as a spec-level guarantee rather than an observed side effect of existing
+  `ResizablePanel` mechanics. Tracked on issue #650 pending Stuart's call.
 
 ### Carved out, not blocking this spec (per the constitution's Incremental Enhancement rule)
 

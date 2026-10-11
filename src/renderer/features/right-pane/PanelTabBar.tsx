@@ -37,16 +37,21 @@
 // (28px: `CLOSE_BUTTON_PX` 24 + its own 4px inset, the button's real drawn footprint, not an extra
 // margin on top of it). Round 4 gate remediation (High, Code3/A11y3/Verif3 converged): a tab's
 // live count has its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks, so the figure itself
-// stays legible, FR-012) and its trailing WORD (` running`, `min-w-0 truncate` -- gives way first,
-// same priority as `+a -d`'s own lack of a separate word); the label gives up space before the
-// count's word does (`shrink-[100]` against the word's plain `shrink`). Every tab's floor is
-// therefore ~56px without a count, ~58px with one and both parts fully truncated -- three tabs'
-// worst case with a two-digit running count is ~194px against 224px available at the 240px floor
-// (30px slack; see the recomputed geometry table in tasks.md). Live-verified with a REAL count
-// change (temporary local-only dev-store injection in the scratch instance only, reverted before
-// this push, never shipped): `running` set to 1 then 12 on the actual focused Session while the
-// strip was already squeezed at the 240px floor -- both digit counts rendered with zero overflow
-// and every tab's own close button stayed inside that tab's own rect.
+// stays legible, FR-012) and its trailing WORD (`running`, `min-w-0 truncate` -- gives way before
+// the label does, round 5 corrected this priority: `shrink-[1000]` against the label's own
+// `shrink-[100]`, since a label collapsed to nothing with a meaningless word fragment left over,
+// round 4's own screenshots, is worse than the word disappearing first and the label truncating
+// normally with an ellipsis). Round 5 (Medium, Code4/Verif4): the word was `' running'` with a
+// leading space baked into the string -- CSS collapses a leading space at the start of an inline
+// box, so it never actually rendered; the word is now a bare `'running'` with a real `gap-1`
+// spacing it from the number instead. Every tab's floor is therefore ~56px without a count, ~62px
+// with one (the extra inner `gap-1`) plus the number's own digit width -- three tabs' worst case
+// with a two-digit running count is ~188px against 224px available at the 240px floor (36px
+// slack; see the recomputed geometry table in tasks.md). Live-verified with a REAL count change
+// (temporary local-only dev-store injection in the scratch instance only, reverted before each
+// push, never shipped): `running` set to 1 then 12 on the actual focused Session while the strip
+// was already squeezed at the 240px floor -- both digit counts rendered with zero overflow and
+// every tab's own close button stayed inside that tab's own rect.
 //
 // Round 4 also fixed the bug that live count change was exposing: the `ResizeObserver` from round
 // 3 watched only the tablist container, which -- once the strip is already squeezed and the
@@ -63,10 +68,12 @@
 // `role=tab` so axe's `aria-required-children` rule stays satisfied); every tab also carries its
 // own Tooltip (full name plus count) for sighted users when its label visually truncates, since
 // the accessible name (the tab's own text content) is never actually truncated by the CSS
-// ellipsis regardless -- the tooltip's own content is `aria-hidden` (round 4, Low) so Radix's
-// usual `aria-describedby` wiring does not announce that same name a second time. Clicking a
-// tab's own body selects it; clicking its close button closes it directly, selected or not, with
-// no select-first step. Delete on a focused tab -- selected or not -- still closes it directly,
+// ellipsis regardless -- `aria-describedby={undefined}` on the `TooltipTrigger` itself (round 5,
+// corrects round 4's own `aria-hidden`-on-content attempt, which did not actually stop Radix's
+// `aria-describedby` wiring on the trigger once the tooltip is open) keeps that same name from
+// being announced a second time. Clicking a tab's own body selects it; clicking its close button
+// closes it directly, selected or not, with no select-first step.
+// Delete on a focused tab -- selected or not -- still closes it directly,
 // unchanged from round 1/2 (`handleTabKeyDown` reads the keystroke from the tab button itself,
 // never from a close overlay). Only the ACTIVE tab's own close button is a Tab stop (`tabIndex=0`,
 // round 4, Medium A11y3: every close button being a Tab stop added N of them to the tab order,
@@ -80,7 +87,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useRightPaneStore } from '@/state'
-import { formatPanelCount, getPanelDescriptor, usePanelCount, type PanelId } from './panel-registry'
+import { formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
 
 // Gate remediation: the rail sits in its own 40px (`2.5rem`) column to the right of the pane, but
@@ -342,13 +349,25 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   // round 3 made the whole count span `min-w-0 shrink truncate`, so at the 240px floor with three
   // panels a running count could shrink all the way to an ellipsis, leaving colour as the only
   // signal (FR-012). Split the count into its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks,
-  // so the figure itself is always legible) and the trailing WORD/sign (` running`, `min-w-0
-  // truncate` -- gives way first). `+a -d` has no separate word, so its whole text stays
-  // `shrink-0` too. The label gives up space before the count's word does (`shrink-[100]` against
-  // the word's plain `shrink`), since the count is the more load-bearing of the two once space is
-  // tight.
-  const countNumber = count ? (count.kind === 'running' ? String(count.value) : `+${count.additions} -${count.deletions}`) : undefined
-  const countWord = count?.kind === 'running' ? ' running' : ''
+  // so the figure itself is always legible) and the trailing WORD (`running`, `min-w-0 truncate`
+  // -- gives way first). `+a -d` has no separate word, so its whole text stays `shrink-0` too.
+  //
+  // Round 5 gate remediation (Medium, Code4/Verif4): the word was `' running'` with a leading
+  // space baked into the string, inside its own `white-space: nowrap` (`truncate`) span -- CSS
+  // collapses a leading space at the start of an inline box, so the space never actually
+  // rendered ("12running"/"12r." in the screenshots, not "12 running"). Fixed: `splitPanelCount`
+  // (`panel-registry.ts`) returns the word with no leading space, and the gap is a real `gap-1` on
+  // the wrapper instead of a text character. Round 5 (Low, A11y4): the word now shrinks BEFORE the
+  // label (`shrink-[1000]` against the label's `shrink-[100]`) -- a label collapsed to nothing
+  // with a meaningless word fragment left over (last round's "r.") is worse than the word
+  // disappearing first and the label truncating normally with an ellipsis if it must. `overflow-
+  // hidden` on the count wrapper is a cheap guard against a hypothetical fourth panel (this spec
+  // only ever registers three, tasks.md's geometry table): the NUMBER itself can never visually
+  // spill past the close button's own reserved space even if the floor math (which assumes N<=3)
+  // stopped holding.
+  const parts = splitPanelCount(count)
+  const countNumber = parts?.number
+  const countWord = parts?.word
 
   const button = (
     <button
@@ -371,9 +390,9 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       <Icon aria-hidden className="size-3.5 shrink-0" />
       <span className="min-w-0 shrink-[100] truncate">{descriptor.name}</span>
       {countText && (
-        <span className={cn('inline-flex min-w-0 shrink items-baseline', count?.kind === 'running' ? 'text-state-working' : undefined)}>
+        <span className={cn('inline-flex min-w-0 shrink items-baseline gap-1 overflow-hidden', count?.kind === 'running' ? 'text-state-working' : undefined)}>
           <span className="shrink-0 tabular-nums">{countNumber}</span>
-          {countWord && <span className="min-w-0 truncate">{countWord}</span>}
+          {countWord && <span className="min-w-0 shrink-[1000] truncate">{countWord}</span>}
         </span>
       )}
     </button>
@@ -382,14 +401,21 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   // Round 3: every tab carries a Tooltip with its full name and count -- a sighted-user recovery
   // path when the label visually truncates (the accessible name, this button's own text content,
   // is never actually truncated by the CSS ellipsis regardless of how little of it is visible).
-  // Round 4 (Low, Verif3): the tooltip repeated the accessible name verbatim via Radix's own
-  // `aria-describedby` wiring on the trigger -- `aria-hidden` on this tooltip's own content keeps
-  // it a sighted-only recovery path, since a screen reader already has the full name from the
-  // tab's own text content.
+  // Round 5 gate remediation (Medium, Code4/A11y4/Verif4, corrects round 4): `aria-hidden` on the
+  // tooltip's own content does NOT stop the double announcement -- Radix sets `aria-describedby`
+  // on the TRIGGER whenever the tooltip is open (keyboard focus opens it), and a screen reader's
+  // accessible-description computation follows that reference into hidden content regardless;
+  // round 4's "confirmed absent" check was taken with the tooltip CLOSED, which never sets the
+  // attribute in the first place. Fixed at the actual source: `aria-describedby={undefined}` on
+  // the `TooltipTrigger` itself, which Radix's `asChild` spreads onto this button AFTER its own
+  // internally-computed props, so the explicit override wins -- re-verified with the tooltip
+  // OPEN (keyboard-focused), not closed.
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent aria-hidden>{fullLabel}</TooltipContent>
+      <TooltipTrigger asChild aria-describedby={undefined}>
+        {button}
+      </TooltipTrigger>
+      <TooltipContent>{fullLabel}</TooltipContent>
     </Tooltip>
   )
 }
