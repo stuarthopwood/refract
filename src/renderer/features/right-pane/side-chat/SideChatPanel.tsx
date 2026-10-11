@@ -62,6 +62,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prevStatusesRef = useRef<Record<string, SideChatRecord['status']>>({})
   const announceTimersRef = useRef<{ clear?: number; pending?: number }>({})
+  const satisfiedFocusRef = useRef(0)
   const records = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.records ?? EMPTY_RECORDS) : EMPTY_RECORDS))
   const running = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.running ?? false) : false))
   const loaded = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.loaded ?? false) : false))
@@ -83,12 +84,27 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
 
   // FR-013: focus moves into this composer whenever the rail, the launcher, or `/btw` names this
   // panel (`sideChatFocusRequestId` bumps on every `openPanel('side-chat')` call, including while
-  // it is already the active panel).
+  // it is already the active panel). Gate-fix (live re-verification, round 2): two layered races,
+  // both found by tracing every real `HTMLElement.focus()` call live. (1) React runs a child's
+  // own effects BEFORE its parent's in the same commit, so a plain synchronous call here lost
+  // the race to `RightPaneShell.tsx`'s own generic "focus the newly active panel's content
+  // region" effect, which ran straight after and overwrote this with the `tabIndex=-1` wrapper
+  // `div` -- `setTimeout(0)` defers this call to the next task, strictly after that effect
+  // flush. (2) a disabled form control cannot receive focus at all, and on the panel's FIRST
+  // open this turn `loaded` is still `false` (the `get_btw_history` round trip has not resolved
+  // yet) -- calling `.focus()` on the still-disabled textarea at that moment is a silent no-op,
+  // confirmed live (the call fires, `document.activeElement` never moves). `satisfiedFocusRef`
+  // remembers the last request id this effect actually delivered focus for, so a request that
+  // arrives before `loaded` flips true is retried the instant `loaded` does (both are this
+  // effect's own dependencies), without re-focusing on every later unrelated `loaded` change.
   useEffect(() => {
-    if (sideChatFocusRequestId === 0) return
-    textareaRef.current?.focus()
+    if (sideChatFocusRequestId === 0 || sideChatFocusRequestId === satisfiedFocusRef.current) return
+    if (!loaded) return
+    satisfiedFocusRef.current = sideChatFocusRequestId
+    const timer = setTimeout(() => textareaRef.current?.focus(), 0)
+    return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideChatFocusRequestId])
+  }, [sideChatFocusRequestId, loaded])
 
   // A11y (round 2, A11y2 HIGH, FR-012): announces once per record that settles from `running` to
   // a final state, using the same clear-first-then-set shape as `chatAreaAnnouncer.ts` so a
@@ -111,7 +127,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
 
   async function send(): Promise<void> {
     const question = draft.trim()
-    if (!question || !sessionId || running) return
+    if (!question || !sessionId || running || !loaded) return
     try {
       await onSend(question)
       setDraft('')
@@ -252,7 +268,6 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             onKeyDown={handleKeyDown}
             placeholder="Ask a side question…"
             aria-label="Side chat question"
-            disabled={!loaded}
             className="max-h-48 min-h-16 resize-none overflow-y-auto"
           />
           <div className="mt-2 flex justify-end gap-2">
