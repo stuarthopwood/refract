@@ -658,15 +658,21 @@ export function App() {
                 // `ResizablePanelGroup`, so returning to chat with the pane previously left open
                 // (e.g. after a chat -> Pull requests -> Settings -> chat round trip) remounts
                 // this Panel already expanded (`defaultSize` is non-zero) -- the layout effect
-                // sees `paneShown` already true and the handle already not collapsed, so it never
-                // fires, and this is the ONLY resize event for that remount. Resuming here, but
-                // only when the rendered size is genuinely non-zero AND the destination view is
+                // sees `paneShown` already true and the handle already not collapsed, so it
+                // never fires, and this is the ONLY resize event for that remount. Resuming here
+                // only when the rendered size is genuinely non-zero, the destination view is
                 // actually chat (never while merely passing through a remount that lands on Pull
                 // requests, which should stay paused and not spend an IPC round trip nobody can
-                // see), closes that gap without duplicating the collapse/expand branches below.
+                // see), AND the store still thinks the pane is open (gate remediation, round 4,
+                // Medium): without this last check, remounting a pane the user had left COLLAPSED
+                // in chat view would still momentarily resume -- the layout effect's own
+                // `collapse()` call corrects it a moment later (same generation-guard machinery
+                // drops the now-stale fetch), but it would still cost a pointless subscribe/
+                // unsubscribe round trip the whole point of this gate is to avoid.
                 if (prevSize === undefined) {
-                  if (size.inPixels > 0 && useViewStore.getState().view === 'chat') {
-                    resumeHostedPanels(useRightPaneStore.getState().openPanelIds)
+                  const paneStore = useRightPaneStore.getState()
+                  if (size.inPixels > 0 && useViewStore.getState().view === 'chat' && paneStore.open) {
+                    resumeHostedPanels(paneStore.openPanelIds)
                   }
                   return
                 }

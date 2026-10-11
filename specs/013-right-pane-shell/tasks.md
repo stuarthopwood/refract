@@ -233,3 +233,32 @@ Once Slice 1 lands, Slice 2 and Slice 3 touch disjoint files (`subagent-store.ts
 `settings-store.ts`/`view-store.ts`/`SettingsScreen.tsx`/the two new placeholder files) and can be
 built by two parallel subagents, each finishing with their own slice's Checkpoint, before Slice 4
 runs the combined gate.
+
+## Subagents stream state table (gate remediation, round 4)
+
+Four gate rounds each found a new hole in the Subagents panel's suspend/resume state machine
+(round 3: a dead stream after a Settings round trip; round 4: a dead stream reopening through the
+rail after a drag-collapse). This table traces every event against `subagent-store.ts`'s state
+and main's visibility subscription, verified against the code as it stands after round 4's fixes
+(`openPanel`'s same-Session branch no longer touches `suspended`; `fetchSeq` only bumps on a real
+rebind; the `App.tsx` mount branch is gated on size, view AND the store's own `open` flag).
+
+| Event | `suspended` after | `streams` after | `selectedId` after | main's `setVisibleSubagent` | `fetchSeq` |
+|---|---|---|---|---|---|
+| Open panel, Session S, no prior binding | `false` | `{}` | `null` | not called yet | unchanged |
+| Select subagent A (first time) | `false` | `{A: [...]}` | `'A'` | `(S, A)` | unchanged |
+| Drag-collapse (A selected, streaming) | `true` | `{}` (cleared) | `'A'` (kept) | `(S, null)` | **+1** |
+| Drag-expand (same mount) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`) |
+| Reopen via rail/chip/launcher after a drag-collapse (same Session) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`, NOT from `openPanel`) |
+| chat → Pull requests → chat (one mount, programmatic collapse/expand) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`) |
+| chat → Pull requests → Settings/Manage sessions → chat (remount, was suspended) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (mount branch calls `resume()`) |
+| chat → Settings/Manage sessions → chat directly (remount, never suspended) | `false` (unchanged) | `{A: [...+ any live patches]}` (never interrupted) | `'A'` | `(S, A)` (never stopped) | unchanged (`resume()` no-ops) |
+| Rebind: open panel for a different Session T | `false` | `{}` | `null` | `(S, null)` then none for T until selected | **+1** |
+| New turn, no subagents, panel open | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
+| New turn, no subagents, panel not open | `false` | `{}` | `null` | unchanged | **+1** |
+| Archive/delete the bound Session | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
+| Explicit Close (title row/tab) | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
+| Reset (Session switch/recover, different Session) | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
+
+Not covered above because the resize handle is `disabled` outside the chat view (no drag is
+possible there): a manual drag while Pull requests or Settings/Manage sessions is showing.
