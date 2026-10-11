@@ -710,7 +710,10 @@ export function App() {
             >
               <ErrorBoundary>
                 <div className="h-full" inert={!paneShown} aria-hidden={!paneShown || undefined}>
-                  <RightPaneShell sessionId={frontSessionId ?? null} />
+                  <RightPaneShell
+                    sessionId={frontSessionId ?? null}
+                    resize={(widthPx) => rightPaneRef.current?.resize(widthPx)}
+                  />
                 </div>
               </ErrorBoundary>
             </ResizablePanel>

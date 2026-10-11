@@ -18,9 +18,14 @@ interface RightPaneShellProps {
    * content (each panel reads its own binding, e.g. `SubagentPanel` reads `subagent-store.ts`'s
    * `sessionId`). */
   sessionId: string | null
+  /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7, tasks.md T029) --
+   * `App.tsx`'s own `ResizablePanel` ref, forwarded through to `PanelTabBar`'s header. Not used
+   * in the 0-panel launcher branch below (no header row exists there to host it; see
+   * `PanelTabBar.tsx`'s own prop doc). */
+  resize(widthPx: number): void
 }
 
-export function RightPaneShell({ sessionId }: RightPaneShellProps) {
+export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
@@ -49,7 +54,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
 
   return (
     <div id="right-pane-active-panel" className="flex h-full flex-col overflow-hidden">
-      <PanelTabBar sessionId={sessionId} />
+      <PanelTabBar sessionId={sessionId} resize={resize} />
       <div
         ref={contentRef}
         tabIndex={-1}

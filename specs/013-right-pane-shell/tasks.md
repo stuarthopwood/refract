@@ -514,15 +514,29 @@ launcher fallback (unchanged, FR-024) runs as before.
 **Purpose**: the WCAG 2.5.7 alternative, then the cross-slice gate and live verification the
 assignment requires before a PR is called ready.
 
-- [ ] T029 [US6] Wire `WidthPresetControl.tsx` (T007) into `RightPaneShell.tsx`'s header, calling
+- [x] T029 [US6] Wire `WidthPresetControl.tsx` (T007) into `RightPaneShell.tsx`'s header, calling
   the `ResizablePanel` ref's `.resize()` through the same ref `App.tsx` already holds (research.md
-  decision 12, FR-025) (depends on T008, T009).
-- [ ] T030 [P] Run `pnpm typecheck` and `pnpm build`; fix any error before proceeding.
-- [ ] T031 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term in the
-  new Settings section or either placeholder.
-- [ ] T032 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
-  decision 13 — no new token expected).
-- [ ] T033 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
+  decision 12, FR-025) (depends on T008, T009). Forwarded as a `resize(widthPx)` prop:
+  `App.tsx` -> `RightPaneShell` -> `PanelTabBar` (the 0-panel launcher state has no header row to
+  host it in -- T008's own delegation to `PanelLauncher`, unchanged by this task; width presets
+  are reachable whenever 1+ panel is open, the state User Story 6's own quickstart steps exercise
+  -- documented as an explicit scope boundary, not a gap introduced here). Gate remediation
+  (self-caught before any review, matching this file's own `min-w-14` 240px-floor precedent a few
+  sections up): packing the three preset buttons into the SAME row as the window-controls spacer
+  overflows the 240px pane floor by roughly 16-20px (buttons+gaps ~134px, spacer ~98px, against
+  ~224px available) -- both header variants (single-panel title row, 2-tab-bar) now give the
+  control its OWN row instead, the same fix this file already applied to the tab strip itself.
+  The single-panel case is 2 rows (80px) with this control below the title/close row; the 2+-tab
+  case is 3 rows (120px): the unchanged window-controls-only Row 1, the new width-control row, the
+  unchanged tab-strip Row 2.
+- [x] T030 [P] Run `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Both pass.
+- [x] T031 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term in the
+  new Settings section or either placeholder. 0 leaks across 371 files.
+- [x] T032 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
+  decision 13 — no new token expected). 313/313 pairs PASS, no new token (`WidthPresetControl`
+  reuses the existing `outline` button variant and `border-border` divider token verbatim).
+- [x] T033 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
+  0 violations across 106 files (present on this branch's base, PR3's merged head).
 - [ ] T034 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`): every story's numbered steps, at both 380px and 1280px window widths, with
   screenshots of the rail, the launcher, a two-tab bar, closing the last panel back to the

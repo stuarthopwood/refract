@@ -99,6 +99,7 @@ import { cn } from '@/lib/utils'
 import { useRightPaneStore } from '@/state'
 import { formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
+import { WidthPresetControl } from './WidthPresetControl'
 
 // Gate remediation: the rail sits in its own 40px (`2.5rem`) column to the right of the pane, but
 // the native caption-button cluster is wider than that (about 138px) and overlaps both the rail's
@@ -119,9 +120,16 @@ interface PanelTabBarProps {
   /** The focused chat pane's Session -- feeds a per-Session panel's live count (data-model.md
    * `getPanelCount`), independent of which Session that panel's own content is bound to. */
   sessionId: string | null
+  /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7, tasks.md T029):
+   * `App.tsx`'s own `ResizablePanel` ref, already wired to `right-pane-store.ts`'s `setWidth`
+   * through the same `onResize` guard the drag handle uses, so a preset click and a drag can
+   * never desync (User Story 6 scenario 2). Rendered in both header variants below; the 0-panel
+   * launcher state has no header row to host it in (T008's own delegation to `PanelLauncher`,
+   * out of scope for this task -- see tasks.md's Checkpoint for PR4). */
+  resize(widthPx: number): void
 }
 
-export function PanelTabBar({ sessionId }: PanelTabBarProps) {
+export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const openPanel = useRightPaneStore((s) => s.openPanel)
@@ -195,28 +203,39 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     const id = openPanelIds[0]
     const descriptor = id ? getPanelDescriptor(id) : undefined
     if (!id || !descriptor) return null
+
     return (
-      <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
-        <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-semibold">
-          {descriptor.name}
-        </h2>
-        <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                data-panel-close
-                aria-label={`Close ${descriptor.name} panel`}
-                onClick={() => closeHostedPanel(id)}
-              >
-                <XIcon aria-hidden className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{`Close ${descriptor.name} panel`}</TooltipContent>
-          </Tooltip>
-          <div aria-hidden className="shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
+      <div className="flex shrink-0 flex-col">
+        <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
+          <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-semibold">
+            {descriptor.name}
+          </h2>
+          <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  data-panel-close
+                  aria-label={`Close ${descriptor.name} panel`}
+                  onClick={() => closeHostedPanel(id)}
+                >
+                  <XIcon aria-hidden className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{`Close ${descriptor.name} panel`}</TooltipContent>
+            </Tooltip>
+            <div aria-hidden className="shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
+          </div>
+        </div>
+        {/* Own row (gate-pattern precedent: PanelTabBar's own tab strip moved to its own row,
+            above, when it didn't fit alongside the window-controls spacer at the 240px floor;
+            the width-preset control's three buttons plus that same spacer would overflow the
+            same floor by roughly 16-20px if packed into the row above, so it gets the same fix
+            before it ever needs one). */}
+        <div className="no-drag-region flex h-10 shrink-0 items-center border-t border-border px-2">
+          <WidthPresetControl resize={resize} />
         </div>
       </div>
     )
@@ -278,6 +297,13 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
           cause). No title text here: the active tab's own label already names the pane. */}
       <div aria-hidden className="drag-region flex h-10 items-center px-2">
         <div className="no-drag-region ml-auto shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
+      </div>
+      {/* Row W: the width-preset control (FR-025, tasks.md T029), its own row for the same
+          reason the tab strip below got one (round-2 remediation, same file): packed into Row 1
+          alongside the window-controls spacer, the three buttons would overflow the 240px pane
+          floor by roughly 16-20px. */}
+      <div className="no-drag-region flex h-10 shrink-0 items-center border-t border-border px-2">
+        <WidthPresetControl resize={resize} />
       </div>
       {/* Row 2: the tab strip, now with the whole pane width (less this row's own padding) to
           itself. */}

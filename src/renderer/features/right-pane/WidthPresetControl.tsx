@@ -1,7 +1,7 @@
 // The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7): three buttons calling a
-// passed-in `resize` callback with the pane's three named widths. Pure/dumb -- wiring this into
-// the shell's header (via the `ResizablePanel` ref's own `.resize()`) is tasks.md T029, a later
-// slice (PR4); this component only renders the buttons.
+// passed-in `resize` callback with the pane's three named widths. Pure/dumb -- wired into the
+// shell's header (via the `ResizablePanel` ref's own `.resize()`) by `PanelTabBar.tsx`, called
+// from `App.tsx`'s own ref (tasks.md T029, PR4); this component only renders the buttons.
 import { Button } from '@/components/ui/button'
 import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX } from '@/state/right-pane-store'
 
