@@ -33,9 +33,9 @@ interface SubagentPanelState {
   /** `restoreFocus` (default true) moves focus to the Subagents chip only when it was
    * actually inside the panel at close time -- callers closing the panel for a reason OTHER
    * than the user clicking its own Close button (a new turn starting, the visible Session
-   * archiving/vanishing, a drag-collapse) pass `false` so a steal never happens. Also keeps
-   * `right-pane-store.ts`'s `openPanelIds` in sync (a no-op if 'subagents' is already closed
-   * there), so every existing call site stays the single place this panel's close goes through. */
+   * archiving/vanishing) pass `false` so a steal never happens. Also keeps `right-pane-
+   * store.ts`'s `openPanelIds` in sync (a no-op if 'subagents' is already closed there), so
+   * every existing call site stays the single place this panel's close goes through. */
   closePanel(options?: { restoreFocus?: boolean }): void
   selectSubagent(subagentId: string): Promise<void>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
@@ -48,13 +48,36 @@ interface SubagentPanelState {
    * silently inherit the previous turn's cached stream under a visually "open" panel showing a
    * list that has already moved on. Does nothing for a Session this panel isn't tracking. */
   resetForNewTurn(sessionId: string): void
+  /** Spec 013 gate remediation (Critical/High): dragging the pane fully shut MUST NOT close the
+   * panel (FR-003, data-model.md's collapsed-pane invariant, issue://538 "collapsing is a
+   * separate action from closing") -- it keeps `sessionId`/`selectedId` bound, only stopping
+   * main's live stream so a collapsed-but-bound panel isn't still being pushed patches for
+   * content nobody can see. */
+  suspend(): void
+  /** The pane's counterpart to `suspend()`, called when it is dragged back open with this panel
+   * still bound: re-subscribes and re-fetches the selected subagent's stream, since `suspend()`
+   * dropped the cached copy (`selectSubagent` returns early when a stream is already cached, so
+   * the cache must be cleared for this to actually re-fetch). */
+  resume(): void
 }
 
 export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   sessionId: null,
   selectedId: null,
   streams: {},
-  openPanel: (sessionId) => set({ sessionId }),
+  openPanel: (sessionId) => {
+    const { sessionId: prevSessionId } = get()
+    // Gate remediation (Low/Medium, code-reviewer + security-auditor): rebinding to a different
+    // Session without clearing the old one left main still forwarding the previous Session's
+    // selected subagent's patches to no listener, and this store's own `selectedId`/`streams`
+    // still describing that old Session underneath the new binding.
+    if (prevSessionId && prevSessionId !== sessionId) {
+      void window.refract.chat.setVisibleSubagent(prevSessionId, null)
+      set({ sessionId, selectedId: null, streams: {} })
+    } else {
+      set({ sessionId })
+    }
+  },
   closePanel: (options) => {
     const { sessionId } = get()
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
@@ -73,15 +96,17 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // unconditionally was ALWAYS still mounted at this point, regardless of whether focus was
     // ever inside the panel to begin with -- `resetForNewTurn`'s own call path (a new turn
     // starting, e.g. right after the user sends the very message that starts it) and the
-    // ChatPane archive-path/onResize drag-collapse path all close this panel for reasons that
-    // have nothing to do with the user having been inside it, and every one of them now passes
-    // `restoreFocus: false` to skip this outright rather than steal focus out of wherever it
-    // already was (the message box, most often, the very moment the user wants to type a
-    // follow-up). The containment check below is the remaining guard for this component's only
-    // other caller, the panel's own explicit Close button: focus should return to the chip only
-    // if it was actually inside the panel when Close was clicked. `right-pane-active-panel` is
-    // the shell's own wrapper (header + content) now that the panel's Close button lives in the
-    // shell, not inside this panel's own content (spec 013 T012).
+    // ChatPane archive path all close this panel for reasons that have nothing to do with the
+    // user having been inside it, and every one of them now passes `restoreFocus: false` to skip
+    // this outright rather than steal focus out of wherever it already was (the message box, most
+    // often, the very moment the user wants to type a follow-up). The containment check below is
+    // the remaining guard for this component's only other caller, the panel's own explicit Close
+    // button: focus should return to the chip only if it was actually inside the panel when
+    // Close was clicked. `right-pane-active-panel` is the shell's own wrapper (header + content)
+    // now that the panel's Close button lives in the shell, not inside this panel's own content
+    // (spec 013 T012). `hosted-panel-actions.ts`'s `closeHostedPanel` is the generalised caller
+    // that falls back further (the rail button, then the launcher) when this restore doesn't
+    // fire -- for example the chip isn't rendered because this turn has no subagents.
     if (options?.restoreFocus ?? true) {
       const panelEl = document.getElementById('right-pane-active-panel')
       if (panelEl?.contains(document.activeElement)) {
@@ -127,5 +152,14 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       return
     }
     set({ selectedId: null, streams: {} })
+  },
+  suspend: () => {
+    const { sessionId } = get()
+    if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
+    set({ streams: {} })
+  },
+  resume: () => {
+    const { selectedId } = get()
+    if (selectedId) void get().selectSubagent(selectedId)
   }
 }))

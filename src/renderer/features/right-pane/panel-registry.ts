@@ -36,18 +36,11 @@ export function formatPanelCount(count: PanelCount): string {
   return `+${count.additions} -${count.deletions}`
 }
 
-/** data-model.md `getPanelCount`: 'subagents' reads the number running for whichever Session
- * backs a per-Session panel's count -- `frontSessionId` (research.md: "whichever Session's data
- * should back a per-Session panel's count"), not necessarily the Session this panel's own
- * content is bound to. Non-reactive (reads `.getState()` directly); `usePanelCount` below is the
- * reactive wrapper every rendering call site actually uses. 'fdb-knowledge'/'agent-builder'
- * always return `null` in this spec (neither placeholder defines a count). */
-export function getPanelCount(id: PanelId, sessionId: string | null): PanelCount {
-  if (id !== 'subagents' || !sessionId) return null
-  const running = useReadoutStore.getState().bySession[sessionId]?.readout.subagentCount?.running ?? 0
-  return running > 0 ? { kind: 'running', value: running } : null
-}
-
+/** data-model.md `getPanelCount`, as a reactive hook: 'subagents' reads the number running for
+ * whichever Session backs a per-Session panel's count -- `frontSessionId` (research.md:
+ * "whichever Session's data should back a per-Session panel's count"), not necessarily the
+ * Session this panel's own content is bound to. 'fdb-knowledge'/'agent-builder' always return
+ * `null` in this spec (neither placeholder defines a count). */
 export function usePanelCount(id: PanelId, sessionId: string | null): PanelCount {
   const running = useReadoutStore((s) =>
     id === 'subagents' && sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount?.running : undefined

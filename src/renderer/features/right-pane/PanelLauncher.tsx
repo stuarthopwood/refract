@@ -30,7 +30,7 @@ function LauncherRow({ panel, sessionId }: { panel: HostedPanelDescriptor; sessi
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-foreground hover:bg-muted/50"
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-foreground outline-none hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       onClick={() => openHostedPanel(panel.id, sessionId)}
     >
       <Icon aria-hidden className="size-4 shrink-0" />

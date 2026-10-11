@@ -27,8 +27,6 @@ interface RightPaneState {
   /** Removes `id`; if it was active, activates the new last id, or `null` if `openPanelIds` is
    * now empty (FR-009) -- never collapses `open`. */
   closePanel(id: PanelId): void
-  /** FR-005/FR-006: `openPanel` if not open-and-active, `closePanel` if open-and-active. */
-  togglePanelFromRail(id: PanelId): void
   /** The drag handle and the (PR4) width-preset buttons both call this. */
   setWidth(widthPx: number): void
   /** Generalises `App.tsx`'s existing `onResize` desync guard (research.md decision 2) from the
@@ -57,11 +55,6 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
       openPanelIds: nextIds,
       activePanelId: activePanelId === id ? (nextIds.length > 0 ? nextIds[nextIds.length - 1] : null) : activePanelId
     })
-  },
-  togglePanelFromRail: (id) => {
-    const { openPanelIds, activePanelId } = get()
-    if (openPanelIds.includes(id) && activePanelId === id) get().closePanel(id)
-    else get().openPanel(id)
   },
   setWidth: (widthPx) => set({ widthPx }),
   syncRenderedState: (open, widthPx) => set({ open, widthPx })

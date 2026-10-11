@@ -6,11 +6,19 @@
 //
 // The tab bar is hand-rolled, not the shared `Tabs` primitive (`components/ui/tabs.tsx`): each
 // tab needs its own close button, and issue://394's own prototype review flagged "close button
-// inside the tablist" as a Medium accessibility finding. Per the tab, not role=tab itself, and
-// given its own tabIndex synced to the roving-tabindex state (0 only when its tab is the active
-// one, -1 otherwise) so it never joins the arrow-key cycle -- the pattern the W3C ARIA working
-// group tested and confirmed accessible across NVDA/JAWS/VoiceOver (w3c/aria#2322) once button
-// nesting inside role=tablist was raised as a real-world need.
+// inside the tablist" as a Medium accessibility finding. Each close button's own `tabIndex` is
+// synced to the roving-tabindex state (0 only when its tab is the active one, -1 otherwise) so it
+// never joins the arrow-key cycle, and it is not itself `role=tab` -- the pattern the W3C ARIA
+// working group tested and confirmed accessible across NVDA/JAWS/VoiceOver (w3c/aria#2322) once
+// button nesting inside role=tablist was raised as a real-world need.
+//
+// Declined (gate remediation, Medium, unreachable this slice): fully moving each close button out
+// of the tablist's own DOM subtree (so axe's static `aria-required-children` rule stops flagging
+// it) needs per-tab width measurement (a ResizeObserver, since tab width varies with its name and
+// count) to keep a detached close button visually aligned -- real engineering cost for code this
+// slice cannot reach (`HOSTED_PANELS` has one entry; a second panel, and so a real tab bar, ships
+// in PR2). Deferred to PR2, where it can be built and verified against a real screen reader
+// instead of only against axe's static rule.
 import { useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
@@ -22,6 +30,7 @@ import { formatPanelCount, getPanelDescriptor, usePanelCount, type PanelId } fro
 import { closeHostedPanel } from './hosted-panel-actions'
 
 const WINDOW_CONTROLS_SPACER_STYLE = { width: 'calc(100vw - env(titlebar-area-width, 100vw))' }
+const FOCUS_VISIBLE = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 interface PanelTabBarProps {
   /** The focused chat pane's Session -- feeds a per-Session panel's live count (data-model.md
@@ -41,7 +50,9 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     if (!id || !descriptor) return null
     return (
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
-        <span className="min-w-0 truncate text-sm font-semibold">{descriptor.name}</span>
+        <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-semibold">
+          {descriptor.name}
+        </h2>
         <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -76,11 +87,17 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, id: PanelId): void {
+    const index = openPanelIds.indexOf(id)
     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       event.preventDefault()
-      const index = openPanelIds.indexOf(id)
       const delta = event.key === 'ArrowRight' ? 1 : -1
       const nextId = openPanelIds[(index + delta + openPanelIds.length) % openPanelIds.length]
+      if (!nextId) return
+      openPanel(nextId)
+      focusTab(nextId)
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      const nextId = event.key === 'Home' ? openPanelIds[0] : openPanelIds[openPanelIds.length - 1]
       if (!nextId) return
       openPanel(nextId)
       focusTab(nextId)
@@ -135,11 +152,14 @@ function Tab({ id, selected, sessionId, tabRef, onSelect, onClose, onKeyDown }: 
         role="tab"
         id={`panel-tab-${id}`}
         aria-selected={selected}
-        aria-controls={`panel-content-${id}`}
+        aria-controls={selected ? `panel-content-${id}` : undefined}
         tabIndex={selected ? 0 : -1}
         className={cn(
-          'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 pr-7 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          selected ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+          'relative inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 pr-8 text-sm font-medium outline-none',
+          FOCUS_VISIBLE,
+          selected
+            ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
+            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
         )}
         onClick={onSelect}
         onKeyDown={onKeyDown}
@@ -148,15 +168,20 @@ function Tab({ id, selected, sessionId, tabRef, onSelect, onClose, onKeyDown }: 
         <span>{descriptor.name}</span>
         {count && <span className={count.kind === 'running' ? 'text-state-working' : undefined}>{formatPanelCount(count)}</span>}
       </button>
-      <button
-        type="button"
-        tabIndex={selected ? 0 : -1}
-        aria-label={`Close ${descriptor.name} panel`}
-        className="absolute right-1 inline-flex size-5 items-center justify-center rounded hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={onClose}
-      >
-        <XIcon aria-hidden className="size-3" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            tabIndex={selected ? 0 : -1}
+            aria-label={`Close ${descriptor.name} panel`}
+            className={cn('absolute right-1 inline-flex size-6 items-center justify-center rounded hover:bg-muted', FOCUS_VISIBLE)}
+            onClick={onClose}
+          >
+            <XIcon aria-hidden className="size-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{`Close ${descriptor.name} panel`}</TooltipContent>
+      </Tooltip>
     </span>
   )
 }

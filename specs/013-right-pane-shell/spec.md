@@ -157,10 +157,11 @@ User Story 3 Acceptance Scenario 4 verbatim.
    the chip's own Session, exactly as `openPanel(sessionId)` does today.
 2. **Given** the Subagents panel is the shell's only open panel, **When** the developer closes it
    (chip-opened chat still running), **Then** closing behaves exactly as today: the chat pane's
-   size and scroll position are unchanged, and dragging the pane's own resize handle fully closed
-   still closes the panel the same way (App.tsx's existing `onResize` desync guard keeps working,
-   now against the shell's generalised pane state instead of the Subagents-only
-   `useSubagentPanelStore.open` boolean).
+   size and scroll position are unchanged; **When** the developer instead drags the pane's own
+   resize handle fully shut, **Then** the pane collapses (FR-003) but the panel stays open and
+   bound to its Session, its live stream paused, and dragging the handle back open restores it
+   live -- collapsing is a separate action from closing (data-model.md's collapsed-pane
+   invariant), not spec 004's old single-flag behaviour.
 3. **Given** the Subagents panel is open and selected on a subagent's live stream, **When** that
    subagent finishes, **Then** the panel updates in place without closing itself (spec 004 FR-020,
    unchanged).

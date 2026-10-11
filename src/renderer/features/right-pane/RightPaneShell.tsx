@@ -52,11 +52,16 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         ref={contentRef}
         tabIndex={-1}
         className="flex min-h-0 flex-1 flex-col outline-none"
-        role={isTabBar ? 'tabpanel' : undefined}
+        role={isTabBar ? 'tabpanel' : 'region'}
         id={isTabBar && activePanelId ? `panel-content-${activePanelId}` : undefined}
-        aria-labelledby={isTabBar && activePanelId ? `panel-tab-${activePanelId}` : undefined}
+        aria-labelledby={isTabBar && activePanelId ? `panel-tab-${activePanelId}` : 'right-pane-panel-title'}
       >
-        {activePanelId === 'subagents' && subagentSessionId && <SubagentPanel sessionId={subagentSessionId} />}
+        {activePanelId === 'subagents' &&
+          (subagentSessionId ? (
+            <SubagentPanel sessionId={subagentSessionId} />
+          ) : (
+            <p className="p-4 text-sm text-muted-foreground">Open a Session to see its subagents.</p>
+          ))}
       </div>
     </div>
   )
