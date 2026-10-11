@@ -517,83 +517,104 @@ assignment requires before a PR is called ready.
 - [x] T029 [US6] Wire `WidthPresetControl.tsx` (T007) into `RightPaneShell.tsx`'s header, calling
   the `ResizablePanel` ref's `.resize()` through the same ref `App.tsx` already holds (research.md
   decision 12, FR-025) (depends on T008, T009). Forwarded as a `resize(widthPx)` prop:
-  `App.tsx` -> `RightPaneShell` -> `PanelTabBar` (the 0-panel launcher state has no header row to
-  host it in -- T008's own delegation to `PanelLauncher`, unchanged by this task; width presets
-  are reachable whenever 1+ panel is open, the state User Story 6's own quickstart steps exercise
-  -- documented as an explicit scope boundary, not a gap introduced here). Gate remediation
+  `App.tsx` -> `RightPaneShell` -> `PanelTabBar`/`WidthPresetControl` directly. Gate remediation
   (self-caught before any review, matching this file's own `min-w-14` 240px-floor precedent a few
   sections up): packing the three preset buttons into the SAME row as the window-controls spacer
   overflows the 240px pane floor by roughly 16-20px (buttons+gaps ~134px, spacer ~98px, against
-  ~224px available) -- both header variants (single-panel title row, 2-tab-bar) now give the
-  control its OWN row instead, the same fix this file already applied to the tab strip itself.
-  The single-panel case is 2 rows (80px) with this control below the title/close row; the 2+-tab
-  case is 3 rows (120px): the unchanged window-controls-only Row 1, the new width-control row, the
-  unchanged tab-strip Row 2.
+  ~224px available) -- every header variant gives the control its OWN row instead, the same fix
+  this file already applied to the tab strip itself.
+
+  **Gate round 1 remediation (Code1/Verif1, High)**: the 0-panel launcher state -- reached by
+  closing the last open tab (Stuart's 2026-10-07 decision keeps the pane open there) or by
+  dragging the pane open with nothing bound -- still had the drag handle but no width-preset
+  control. US6 scenario 1, FR-025 and SC-008 all say "the pane is open", never "a panel is open",
+  so this was a real gap, not the "explicit scope boundary" this entry originally (wrongly)
+  claimed. Fixed: `RightPaneShell.tsx`'s `openPanelIds.length === 0` branch now renders the same
+  `WindowControlsSpacerRow` + `WidthPresetControl` pair the tab-bar variant uses, above
+  `PanelLauncher`. DRY fix alongside it: `WidthPresetControl.tsx` now owns its own row wrapper
+  (height, border, padding) instead of three call sites each repeating it; the decorative spacer
+  row itself (`WINDOW_CONTROLS_SPACER_STYLE` + the `aria-hidden` row around it) moved to a new
+  `WindowControlsSpacerRow.tsx`, shared by `PanelTabBar.tsx`'s tab-bar Row 1 and the launcher
+  branch instead of being hand-copied. The tab-bar's own Row 1 is UNCHANGED and stays
+  `aria-hidden` (decoration only, still just the spacer) -- the width control lives in a separate
+  row that was never `aria-hidden`, never the other way around (an earlier draft of this PR's own
+  body wrongly described Row 1 itself as "no longer aria-hidden"; corrected there too).
+
+  **Gate round 1 remediation (A11y1/Verif1, Medium)**: the currently-applied width had no visible
+  marker. Each button now carries `aria-pressed` (`Math.round(store widthPx) === preset.widthPx`)
+  plus the same `aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground`
+  utility `IconRail.tsx`'s own toggle buttons already use -- no new token.
 - [x] T030 [P] Run `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Both pass.
 - [x] T031 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term in the
   new Settings section or either placeholder. 0 leaks across 371 files.
 - [x] T032 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
   decision 13 — no new token expected). 313/313 pairs PASS, no new token (`WidthPresetControl`
-  reuses the existing `outline` button variant and `border-border` divider token verbatim).
+  reuses the existing `outline` button variant, the `aria-pressed:*` utility `IconRail.tsx`
+  already uses, and the `border-border` divider token, all verbatim).
 - [x] T033 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
-  0 violations across 106 files (present on this branch's base, PR3's merged head).
+  0 violations across 107 files (the new `WindowControlsSpacerRow.tsx` included).
 - [x] T034 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`): every story's numbered steps, at both 380px and 1280px window widths, with
   screenshots of the rail, the launcher, a two-tab bar, closing the last panel back to the
   launcher, both placeholders with the switch off and on, and the window-controls corner clear at
   both widths (depends on T009 through T028). Live-verified in a scratch Electron instance (own
   `--user-data-dir`/CDP port, scratch repo/registry, never touching Stuart's live Sessions --
-  process exit confirmed by pid): at **1280px**, every check this task names passed --
-  `window.resizeTo()` drove a real OS-level resize (`navigator.windowControlsOverlay
-  .getTitlebarAreaRect().width` read 1143px, confirming genuine window geometry, not an emulated
-  viewport); the rail alone (collapsed); opening Subagents (title row) then FDB Knowledge
-  (two-tab bar); the **width-preset control** reached by focusing each button directly and
-  activating it with Enter -- measured pane width read exactly **240px (Min), 320px (Default),
-  520px (Max)** against `#right-pane-active-panel`'s own `getBoundingClientRect().width`, at
-  every preset, both in the two-tab-bar header (its own new row) and the single-panel title row
-  (its own new row) -- no overlap with the window-controls spacer or the tab strip at any preset,
-  confirming the 240px-floor overflow fix actually holds under a real layout, not just the
-  arithmetic above; closing both tabs via their own Close buttons back to the launcher (confirmed
-  by `[data-panel-launcher]` presence); the Settings "Right pane" switch toggling FDB Knowledge
-  between the empty state and labelled sample content with no reopen needed, confirmed both
-  directions (`window.refract.settings.get()` read `false` -> `true` -> `false`). **Not
-  conclusively verified**: the drag handle's behaviour immediately after a preset click -- a
-  CDP-synthetic drag left the measured width unchanged (520px before and after), consistent with
-  this same file's own round-5 finding above (`onResize` fires only from a `ResizeObserver`
-  callback that a CDP-attached renderer's `document.hidden: true` throttles), not evidence either
-  way about User Story 6 scenario 2 itself.
+  process exit confirmed by pid), one coherent run, 13 named screenshots, sha256-checked, no
+  duplicates, under `C:/Users/shopwood/refract-live-check-538-pr4/`:
 
-  At **380px**, the rail stayed visible and the window-controls-corner geometry still measured
-  correctly (`titlebarArea.width` 243px, exactly 1143 - (1280-380), confirming the OS resize was
-  genuine at this width too) -- but the right pane itself (and therefore the width-preset control
-  inside it) **could not be opened at all**: with the session-list panel's own 220px `minSize`,
-  the chat panel's 360px `minSize`, the right pane's 240px `minSize` and the rail's fixed 40px all
-  competing for 380px total, no combination satisfies even the chat panel's own minimum alone
-  (640px needed for rail + chat + right-pane floors together, before the session list is even
-  counted), so both the session list and the right pane auto-collapse to 0, leaving only the chat
-  area and the rail -- the SAME pre-existing, already-escalated SC-007 380px edge case flagged to
-  Stuart on issue #650 since PR2 ("SC-007's 380px edge case needs Stuart's decision"), not a new
-  gap this task introduces or could fix: a two-tab bar and the width-preset control are
-  structurally unreachable at 380px today, given the floors every prior slice already shipped.
-  Screenshots taken at 380px regardless (rail, the collapsed state, an attempted two-panel open)
-  to document this rather than silently skip the width.
+  At **1280px** (`window.resizeTo()` confirmed as a genuine OS-level resize via
+  `navigator.windowControlsOverlay.getTitlebarAreaRect().width` reading 1143px, not an emulated
+  viewport): the rail alone, collapsed (`01`). Closing the last open tab to reach the **launcher
+  with the pane still open** (`02`) -- the gate round 1 fix's own target state -- then activating
+  **all three presets there** and measuring `document.getElementById('right-pane')`'s own
+  `getBoundingClientRect().width` after each: exactly **240px (Min), 320px (Default), 520px
+  (Max)** (`03-*`), with the pressed preset's own button visibly marked (round 1's `aria-pressed`
+  fix, confirmed by eye in every screenshot, e.g. `04-single-panel-width-default-1280.png`'s
+  "Default" button). The SAME three measurements repeated in the **single-panel title row**
+  (`04-*`) and the **two-tab bar** (`05-*`) -- all nine measurements exact, no overlap against the
+  window-controls spacer or the tab strip at any preset in any variant, confirming the 240px-floor
+  overflow fix holds under a real layout in every header state, not just the launcher. Closing
+  both tabs back to the launcher a second time (`06`, confirming FR-009 still holds after the
+  width-preset round trip). The Settings "Right pane" switch, off by default
+  (`window.refract.settings.get().value.showSampleData` read `false`) with both **FDB Knowledge**
+  (`08`) and **Agent Builder** (`09`) showing their own empty state; switched on (`10`), both
+  showing labelled sample content (`11`, `12`).
+
+  **Not conclusively verified**: the drag handle's behaviour immediately after a preset click -- a
+  CDP-synthetic drag left the measured width unchanged (520px before and after, this same file's
+  own round-5 finding: `onResize` fires only from a `ResizeObserver` callback a CDP-attached
+  renderer's `document.hidden: true` throttles), not evidence either way about User Story 6
+  scenario 2 itself.
+
+  At **380px**, the window-controls-corner geometry still measured correctly
+  (`titlebarArea.width` 243px, exactly 1143 - (1280-380)) but the right pane itself **could not be
+  opened at all** (`13`, `document.getElementById('right-pane')`'s own measured width: **0px**):
+  the session list's 220px `minSize`, the chat panel's 360px `minSize`, the right pane's 240px
+  `minSize` and the rail's fixed 40px together need 640px before the pane can stay open, far more
+  than 380px, so both the session list and the right pane auto-collapse. This is the SAME
+  pre-existing SC-007 380px edge case already flagged to Stuart on issue #650 since PR2 ("SC-007's
+  380px edge case needs Stuart's decision"), not a new gap this task introduces or could fix.
+  `report.json`'s own `widthControlDomPresentAt380_INERT_NOT_REACHABLE: true` is a DOM-presence
+  check only -- a `querySelector` still finds the button inside the collapsed pane's `inert`
+  subtree, but `inert` blocks all pointer/keyboard interaction with it, so this is NOT evidence the
+  control is reachable at 380px; it is the opposite, named explicitly to prevent that
+  misreading (an earlier pass of this same task misread an equivalent value as "present ergo
+  reachable").
 
   Not live-verified in this pass (tracked on issue #650, same as every prior PR in this spec): a
   real screen reader pass (NVDA/JAWS/VoiceOver) on the width-preset control or the restructured
-  header rows; an axe run. Screenshots under
-  `C:/Users/shopwood/refract-live-check-538-pr4/`.
+  header rows; an axe run.
 - [x] T035 Update `docs/PLAN.md` row C1 only: status, branch, PR number (minimal diff, this
-  story's own row) (depends on T034 passing). Done: status cell now reads PR4 of 4, draft PR
-  #665; trailing narrative appended a PR4 paragraph with the same findings as T034 above (width
-  presets exact at every width, 380px structurally unreachable per the pre-existing SC-007
-  question on issue #650, not closing #538/#393/#394).
+  story's own row) (depends on T034 passing). Done: status cell reads PR4 of 4, draft PR #665;
+  trailing narrative reflects the gate round 1 fixes and round-2 evidence above.
 
 **Checkpoint**: every quickstart.md story passes at both widths; the four gate commands above
-exit 0; `docs/PLAN.md` row C1 reflects the real PR. Met at 1280px; at 380px the right pane itself
-cannot open given current minSizes (session list 220 + chat 360 + pane 240 + rail 40 = 640px vs
-the 380px window), so the two-tab-bar/width-preset-control stories could not be exercised there --
-the same SC-007 edge case already flagged to Stuart on issue #650 since PR2, not resolved by this
-task.
+exit 0; `docs/PLAN.md` row C1 reflects the real PR. Met at 1280px, including the gate round 1 fix
+(width presets now reachable from the launcher, not only from an open panel). At 380px the right
+pane itself cannot open given current minSizes (session list 220 + chat 360 + pane 240 + rail 40 =
+640px vs the 380px window), so the two-tab-bar/width-preset-control stories could not be exercised
+there -- the same SC-007 edge case already flagged to Stuart on issue #650 since PR2, not resolved
+by this task.
 
 ---
 
