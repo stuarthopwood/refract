@@ -9,25 +9,22 @@
 // behaviour) -- there is nothing real behind them yet (FR-021: sample content is never mixed with
 // real content), and a fake-but-interactive control would itself read as the "disabled control
 // with a reason" pattern FR-019 forbids.
-import { MessageCircleIcon, LibraryIcon, SearchIcon, WrenchIcon, type LucideIcon } from 'lucide-react'
+import { MessageCircleIcon, SearchIcon, WrenchIcon, LibraryIcon } from 'lucide-react'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { useSettingsStore } from '@/state'
-import { SampleDataRow } from './SampleDataRow'
+import { SampleDataRow, type SampleDataRowProps } from './SampleDataRow'
 
-interface SampleRow {
-  icon: LucideIcon
-  text: string
-}
+type SampleRow = Pick<SampleDataRowProps, 'icon' | 'text'>
 
 const SAMPLE_SEARCHES: SampleRow[] = [
-  { icon: SearchIcon, text: 'Paracetamol max daily dose, adult' },
+  { icon: SearchIcon, text: 'Paracetamol max dose' },
   { icon: SearchIcon, text: 'Warfarin interactions' }
 ]
 
-const SAMPLE_ASKS: SampleRow[] = [{ icon: MessageCircleIcon, text: 'Summarise interactions for amoxicillin' }]
+const SAMPLE_ASKS: SampleRow[] = [{ icon: MessageCircleIcon, text: 'Amoxicillin interactions' }]
 
 const SAMPLE_TOOLS: SampleRow[] = [
-  { icon: WrenchIcon, text: 'lookup_drug_interactions' },
+  { icon: WrenchIcon, text: 'drug_interactions' },
   { icon: WrenchIcon, text: 'search_bnf_monograph' }
 ]
 
