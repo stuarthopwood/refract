@@ -297,10 +297,10 @@ in another).
 
 ### Tab-strip width geometry
 
-Proves the tab strip fits at every pane width this spec supports (240px floor, 320px default,
+Measures that the tab strip fits at every pane width this spec supports (240px floor, 320px default,
 520px maximum) with up to three panels open, including a live count, with no scrollbar needed at
-any of them (`overflow-x-auto` on the wrapper is a pure safety net, never exercised by this spec's
-own panel set). Available width is `widthPx - 16` (the row's own `px-2`), confirmed live:
+any of them (`overflow-x-auto` on the wrapper is a pure safety net, not exercised by today's
+panel set). Available width is `widthPx - 16` (the row's own `px-2`), confirmed live:
 224/304/504px at 240/320/520px.
 
 **Corrected from round 4** (Code4/Verif4, Medium): the count's word was `' running'`, a leading
@@ -320,9 +320,9 @@ the number and word are now direct children of the button's own flex row, spaced
 `gap-1` like every other child, so the word's `shrink-[1000]` genuinely outcompetes the label's
 `shrink-[100]`. The running-state colour (`text-state-working`) moved onto each child directly.
 The `overflow-hidden` "guard" round 5 put on the (now-removed) wrapper is gone too -- it would have
-clipped the number itself, the one thing that must never visually disappear (FR-012); see the
-"Tab-strip width geometry" section above for the current measured facts and what CSS actually
-enforces, with `overflow-x-auto` on the whole strip staying as the strip's own safety net.
+clipped the number itself, the one thing that must never visually disappear (FR-012); see
+"Measured facts" / "What CSS actually enforces" below for the current measured facts and what CSS
+actually enforces, with `overflow-x-auto` on the whole strip staying as the strip's own safety net.
 
 **Measured facts** (`getBoundingClientRect()` on every tab child at the 240px floor): a plain
 tab's rendered floor is `56px` (its `min-w-14` Tailwind class, not its own `54px` content need). A
@@ -345,9 +345,11 @@ count ever reaches 3+ digits.
 limit, not yet re-derived from a real render.
 
 **Known limit, not implemented**: `min-w-14`'s `56px` is below a count tab's own content need
-(`62px`), so it is slack that does nothing for that tab specifically, while it still binds for a
-plain tab. A content-aware minimum (`min-w-[max(3.5rem,min-content)]` or similar) is a candidate
-hardening, tracked as a follow-up on issue #650, not built in this PR.
+(`62px` + digits), so it does not protect that need: a squeezed count tab can still be pushed down
+to `56px`, spilling its number into the close reserve. For a plain tab it sits above the `54px`
+content need and is the rendered floor. A content-aware minimum
+(`min-w-[max(3.5rem,min-content)]` or similar) is a candidate hardening, tracked as a follow-up
+on issue #650, not built in this PR.
 
 N=1 never reaches this code at all (`openPanelIds.length === 1` renders the single title row
 branch above, not a tab bar). Live-verified at the 240px floor with three panels open **and a
