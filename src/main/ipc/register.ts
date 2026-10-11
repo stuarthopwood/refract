@@ -17,6 +17,7 @@ import { registerReadiness } from './readiness';
 import { registerPullRequests } from './pullRequests';
 import { registerRepositories } from './repositories';
 import { registerSessions } from './sessions';
+import { registerSideChat } from './side-chat';
 import { registerSettings } from './settings';
 import { registerTheme } from './theme';
 import { registerWindow } from './window';
@@ -30,6 +31,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerPullRequests(manager);
   registerConversations(manager);
   registerChat(manager);
+  registerSideChat(manager);
   registerSettings(manager, getWindow);
   registerModelRoles();
   registerTheme(manager, getWindow);
@@ -71,6 +73,9 @@ function forwardEvent(event: ManagerEvent, getWindow: () => BrowserWindow | unde
         return;
       case 'subagentPatch':
         window.webContents.send(IPC_EVENTS.SUBAGENT_PATCH, event.payload);
+        return;
+      case 'sideChatPatch':
+        window.webContents.send(IPC_EVENTS.SIDE_CHAT_PATCH, event.payload);
         return;
       case 'list-changed':
         window.webContents.send(IPC_EVENTS.SESSION_LIST_CHANGED);

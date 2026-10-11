@@ -95,10 +95,12 @@ export const NATIVE_RESERVED_COMMANDS: Readonly<Record<string, true>> = {
 };
 
 /** Refract's own native commands (a subset of `NATIVE_RESERVED_COMMANDS`) that actually have a
- * working implementation today: just `/new` (`SessionAgent.startNewConversation`). Listed here,
- * not just handled in `chat.send`, so the menu shows it too (FR-032). */
+ * working implementation today: `/new` (`SessionAgent.startNewConversation`) and `/btw` (spec
+ * 014 FR-007: opens the Side chat panel and issues a `btw` request with the text after it).
+ * Listed here, not just handled in `chat.send`, so the menu shows both (FR-032). */
 export const NATIVE_BUILT_COMMANDS: readonly SlashCommandDescriptor[] = [
   { name: 'new', description: 'Start a new Conversation in this Session' },
+  { name: 'btw', description: 'Ask the agent a side question' },
 ];
 
 /** Keeps only the subcommands this command actually has verified (`SUPPORTED_OMP_COMMANDS`);

@@ -23,7 +23,7 @@ import type {
   TranscriptDisplaySettings,
   TranscriptItem,
 } from './model';
-import type { ImageContent, QueueKind, SlashCommandDescriptor } from './frames';
+import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
 import type {
   ChangedFile,
   FilterTab,
@@ -340,6 +340,9 @@ export const IPC_REQUESTS = {
   CHAT_PREDICT_WORD_FEEDBACK: 'chat.predictWordFeedback',
   CHAT_SET_VISIBLE_SUBAGENT: 'chat.setVisibleSubagent',
   CHAT_SUBAGENT_SNAPSHOT: 'chat.subagentSnapshot',
+  SIDE_CHAT_ASK: 'sideChat.ask',
+  SIDE_CHAT_CANCEL: 'sideChat.cancel',
+  SIDE_CHAT_GET_HISTORY: 'sideChat.getHistory',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
@@ -388,6 +391,7 @@ export const IPC_EVENTS = {
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   SUBAGENT_PATCH: 'subagent:patch',
+  SIDE_CHAT_PATCH: 'side-chat:patch',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
 } as const;
@@ -538,6 +542,21 @@ export interface RefractApi {
      * it, before patches arrive. Error `not-found` when the id does not match a `SubagentSummary`
      * of the current turn. */
     subagentSnapshot(sessionId: string, subagentId: string): Promise<Result<TranscriptItem[]>>;
+  };
+
+  sideChat: {
+    /** Spec 014 contracts/ipc.md "Side chat": issues `{type:"btw", question, recordId?}` to that
+     * Session's OMP process. Returns the new record's own id immediately (the `running` record);
+     * the answer itself arrives over `onSideChatPatch`, not this call's own return value.
+     * `recordId` omitted starts a fresh topic (FR-003). A blank `question` is rejected locally
+     * with `invalid-argument` before ever reaching OMP. */
+    ask(sessionId: string, question: string, recordId?: string): Promise<Result<{ recordId: string }>>;
+    /** Issues `btw_cancel` for that Session's currently-running record, if any. A no-op (not an
+     * error) if nothing is running -- mirrors `subagents.cancel`'s own idempotent shape. */
+    cancel(sessionId: string): Promise<Result<void>>;
+    /** Issues `get_btw_history`; every record OMP has for that Session's saved session file, in
+     * the order OMP returns them. Called once per Session per app run (FR-004), not polled. */
+    getHistory(sessionId: string): Promise<Result<SideChatRecord[]>>;
   };
 
   settings: {
@@ -695,6 +714,7 @@ export interface RefractApi {
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
+  onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; record?: SideChatRecord }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }

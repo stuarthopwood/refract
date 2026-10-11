@@ -28,13 +28,18 @@ import { shouldApplyCrashExitVerdict } from './exitVerdictGuard';
 import { clearStoppedOnRequestMarker, recordStoppedOnRequestMarker } from './stoppedOnRequestMarker';
 import type {
   AvailableCommandsUpdateFrame,
+  BtwDeltaFrame,
+  BtwRecordFrame,
+  BtwResponseData,
   ExtensionUiRequestFrame,
   Frame,
+  GetBtwHistoryResponseData,
   GetStateResponseData,
   ImageContent,
   PredictWordResponseData,
   QueueKind,
   QueueUpdateFrame,
+  SideChatRecord,
   SwitchSessionResponseData,
   ToolExecutionEndFrame,
   ToolExecutionStartFrame,
@@ -107,6 +112,11 @@ export interface SessionAgentEvents {
   subagents: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void;
   /** Spec 004 `subagent:patch`: only for whichever subagent `setVisibleSubagent` last named. */
   subagentPatch: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void;
+  /** Spec 014 `side-chat:patch`: a `btw_delta` (`delta` set) or terminal `btw_record` (`record`
+   * set) for this Session's current side-chat question. No recordId at this level -- single-
+   * flight (one side question running per Session), so the renderer store always applies it to
+   * whichever record is currently `running`. */
+  sideChatPatch: (payload: { sessionId: string; delta?: string; record?: SideChatRecord }) => void;
   /** Fired whenever `syncFromState` writes a registry patch (after the initial `get_state`, every
    * `session_settled`, a Conversation switch, or a mode-change restart) -- i.e. whenever
    * `lastModel`/`lastThinkingLevel`/`currentConversation`/... may have changed. `SessionManager`
@@ -867,6 +877,54 @@ export class SessionAgent extends EventEmitter {
     return { promoted };
   }
 
+  /** `sideChat.ask` (contracts/ipc.md "Side chat", spec 014): issues `btw`, returning the new
+   * (`running`) record's own id immediately -- the answer itself arrives over `SIDE_CHAT_PATCH`
+   * as a terminal `btw_record` (`onFrame`'s `btw_record` case), never this call's own return
+   * value. `recordId` omitted starts a fresh topic (FR-003); set, it continues an existing one.
+   * An OMP-side failure case (one already running, unknown recordId, no model, history-save
+   * failure) is NOT thrown here -- it arrives as an ordinary `btw_record` with `status: "error"`
+   * (contracts/ipc.md "Error codes added"); only an RPC-level failure throws, mirroring `send`. */
+  async askSideChat(question: string, recordId?: string): Promise<{ recordId: string }> {
+    if (!this.process) {
+      throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot ask a side question, no live process`);
+    }
+    const res = await this.process.request({ type: 'btw', id: '', question, ...(recordId ? { recordId } : {}) });
+    if (!res.success) {
+      this.appendNotice(`btw failed: ${res.error ?? 'unknown error'}`, 'error');
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw failed: ${res.error ?? 'unknown error'}`);
+    }
+    const record = (res.data as BtwResponseData | undefined)?.record;
+    if (!record) {
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw succeeded but returned no record`);
+    }
+    return { recordId: record.id };
+  }
+
+  /** `sideChat.cancel` (contracts/ipc.md): issues `btw_cancel` for this Session's currently-
+   * running side question, if any -- a no-op (not an error) if nothing is running, mirroring
+   * `subagents.cancel`'s own idempotent shape. The cancelled record itself arrives over
+   * `SIDE_CHAT_PATCH` as an ordinary `btw_record` with `status: "cancelled"` (FR-006). */
+  async cancelSideChat(): Promise<void> {
+    if (!this.process) return;
+    const res = await this.process.request({ type: 'btw_cancel', id: '' });
+    if (!res.success) {
+      this.appendNotice(`btw_cancel failed: ${res.error ?? 'unknown error'}`, 'error');
+    }
+  }
+
+  /** `sideChat.getHistory` (contracts/ipc.md, FR-004): every side-chat record OMP has for this
+   * Session's saved session file, in the order OMP returns them. */
+  async getSideChatHistory(): Promise<SideChatRecord[]> {
+    if (!this.process) {
+      throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot read side chat history, no live process`);
+    }
+    const res = await this.process.request({ type: 'get_btw_history', id: '' });
+    if (!res.success) {
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: get_btw_history failed: ${res.error ?? 'unknown error'}`);
+    }
+    return (res.data as GetBtwHistoryResponseData | undefined)?.records ?? [];
+  }
+
   /** `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same
    * cwd, same Session; clears the transcript. No Conversation is current until the first message
    * of the new one is written (OMP creates the file lazily), so `currentConversation` is cleared
@@ -1283,6 +1341,16 @@ export class SessionAgent extends EventEmitter {
       case 'tool_execution_update': {
         const updateFrame = frame as ToolExecutionUpdateFrame;
         if (updateFrame.toolName === 'task') this.handleTaskUpdate(updateFrame);
+        return;
+      }
+      case 'btw_delta': {
+        const deltaFrame = frame as BtwDeltaFrame;
+        this.emit('sideChatPatch', { sessionId: this.sessionId, delta: deltaFrame.textDelta });
+        return;
+      }
+      case 'btw_record': {
+        const recordFrame = frame as BtwRecordFrame;
+        this.emit('sideChatPatch', { sessionId: this.sessionId, record: recordFrame.record });
         return;
       }
       default: {

@@ -11,6 +11,7 @@ import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
+import { useSideChatStore } from './side-chat-store'
 import { useSplitStore } from './split-store'
 import { useThemeStore } from './theme-store'
 
@@ -92,6 +93,9 @@ export function initStores(): void {
   })
   window.refract.onSubagentPatch(({ sessionId, subagentId, ops }) => {
     useSubagentPanelStore.getState().applyPatch(sessionId, subagentId, ops)
+  })
+  window.refract.onSideChatPatch(({ sessionId, delta, record }) => {
+    useSideChatStore.getState().applyPatch(sessionId, { delta, record })
   })
   // Spec 005 (tasks.md T012): a Windows-notification click, or a restored split that dropped to
   // one surviving Session (main's `index.ts` validateSplitAtStartup), both reuse this one

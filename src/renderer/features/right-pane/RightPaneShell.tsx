@@ -4,7 +4,7 @@
 // `ResizablePanel`'s content in `App.tsx`; the permanent icon rail is a separate sibling, not
 // rendered here.
 import { useEffect, useRef } from 'react'
-import { useRightPaneStore, useSubagentPanelStore } from '@/state'
+import { useRightPaneStore, useSideChatStore, useSubagentPanelStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { PanelLauncher } from './PanelLauncher'
 import { PanelTabBar } from './PanelTabBar'
@@ -17,9 +17,11 @@ import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
   /** The focused chat pane's Session -- passed down to the launcher/tab bar for opening a new
-   * panel and for a per-Session panel's live count; never used to render a hosted panel's own
-   * content (each panel reads its own binding, e.g. `SubagentPanel` reads `subagent-store.ts`'s
-   * `sessionId`). */
+   * panel and for a per-Session panel's live count. Most hosted panels read their own binding
+   * instead (e.g. `SubagentPanel` reads `subagent-store.ts`'s `sessionId`); `SideChatPanel` is
+   * the one exception (spec 014 T006/T007) and reads this prop directly, since a side-chat
+   * thread has no independent binding of its own (FR-005: it always follows whichever Session
+   * the chat pane currently shows). */
   sessionId: string | null
   /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7) -- `App.tsx`'s own
    * `ResizablePanel` ref, forwarded to `WidthPresetControl` in every state the pane can be open
@@ -77,7 +79,15 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
           ))}
         {activePanelId === 'fdb-knowledge' && <FdbKnowledgePanel />}
         {activePanelId === 'agent-builder' && <AgentBuilderPanel />}
-        {activePanelId === 'side-chat' && <SideChatPanel sessionId={sessionId} />}
+        {activePanelId === 'side-chat' && (
+          <SideChatPanel
+            sessionId={sessionId}
+            onSend={async (question) => {
+              if (!sessionId) return
+              await useSideChatStore.getState().ask(sessionId, question)
+            }}
+          />
+        )}
       </div>
     </div>
   )

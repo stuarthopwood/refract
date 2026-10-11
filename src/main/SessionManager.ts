@@ -7,6 +7,7 @@
 
 import { existsSync } from 'node:fs';
 import type { ApprovalMode, PendingRequest, SessionReadout, SubagentSummary } from '../shared/model';
+import type { SideChatRecord } from '../shared/frames';
 import type { SessionStatusEvent, SessionSummary, SlashCommand, TranscriptOp } from '../shared/ipc';
 import { SessionAgent } from './omp/SessionAgent';
 import { resolveTermination } from './omp/stoppedOnRequestMarker';
@@ -23,6 +24,7 @@ export type ManagerEvent =
   | { type: 'readout'; payload: { sessionId: string; readout: SessionReadout } }
   | { type: 'subagents'; payload: { sessionId: string; subagents: SubagentSummary[] } }
   | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
+  | { type: 'sideChatPatch'; payload: { sessionId: string; delta?: string; record?: SideChatRecord } }
   | { type: 'list-changed' };
 
 /** Issue #510 (quality gate 2026-10-08): caps how many Sessions' Conversation tails `summaries()`
@@ -129,6 +131,10 @@ export class SessionManager {
     agent.on('subagentPatch', (payload) => {
       if (!this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'subagentPatch', payload });
+    });
+    agent.on('sideChatPatch', (payload) => {
+      if (!this.visibleSessionIds.has(payload.sessionId)) return;
+      this.emit({ type: 'sideChatPatch', payload });
     });
     // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and
     // `currentConversation`/...) to the registry on every settle, Conversation switch, and

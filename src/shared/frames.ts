@@ -209,6 +209,15 @@ export interface PredictWordResponseData {
   suffix: string | null;
 }
 
+/** Spec 014 (`btw` side chat, FR-002 to FR-007): the `btw`/`get_btw_history` response payload. */
+export interface BtwResponseData {
+  record: SideChatRecord;
+}
+
+export interface GetBtwHistoryResponseData {
+  records: SideChatRecord[];
+}
+
 // ---------------------------------------------------------------------------
 // Frames Refract consumes
 // ---------------------------------------------------------------------------
@@ -381,6 +390,38 @@ export interface RpcChunkFrame {
   data: string; // base64
 }
 
+/** Spec 014 (`btw` side chat, data-model.md): OMP's own per-question record shape. `id`/`status`
+ * (at least `"running"`) are confirmed live (FINDINGS item 14, `docs/spike/probe-batch-18.8.0.mjs`);
+ * `answer`/`error`/`recordId` are `[INFERENCE: from issue://516's documented shape, not a raw
+ * captured frame]` -- the probe's 20s watch window ended while the record was still `"running"`,
+ * so a `"complete"`/`"error"` record was never directly observed. */
+export interface SideChatRecord {
+  id: string;
+  status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
+  question: string;
+  /** [INFERENCE: not observed live -- see doc comment above.] */
+  answer?: string;
+  /** Present when this record is a follow-up in an existing topic. [INFERENCE] */
+  recordId?: string;
+  /** [INFERENCE: from issue://516's own failure-case list -- blank question, one already
+   * running, unknown recordId, no model, history-save failure.] */
+  error?: string;
+}
+
+/** [INFERENCE: 0 `btw_delta` frames were observed across every probe run (FINDINGS item 14) --
+ * this shape mirrors `MessageUpdateFrame`'s own delta-text convention until a real capture
+ * exists.] */
+export interface BtwDeltaFrame {
+  type: 'btw_delta';
+  recordId: string;
+  textDelta: string;
+}
+
+export interface BtwRecordFrame {
+  type: 'btw_record';
+  record: SideChatRecord;
+}
+
 export type KnownFrame =
   | ReadyFrame
   | ResponseFrame
@@ -399,7 +440,9 @@ export type KnownFrame =
   | AvailableCommandsUpdateFrame
   | CommandOutputFrame
   | NoticeFrame
-  | RpcChunkFrame;
+  | RpcChunkFrame
+  | BtwDeltaFrame
+  | BtwRecordFrame;
 
 /** Anything OMP sends whose `type` Refract does not recognise. Never throw on it. */
 export interface UnknownFrame {
@@ -428,6 +471,8 @@ const KNOWN_FRAME_TYPES: Record<KnownFrame['type'], true> = {
   command_output: true,
   notice: true,
   rpc_chunk: true,
+  btw_delta: true,
+  btw_record: true,
 };
 
 export function isKnownFrame(frame: Frame): frame is KnownFrame {
@@ -560,6 +605,25 @@ export interface PredictWordFeedbackCommand {
   accepted: boolean;
 }
 
+/** Spec 014 (`btw` side chat, contracts/ipc.md): starts a fresh topic (`recordId` omitted) or
+ * continues one (`recordId` set to a prior record's own id). */
+export interface BtwCommand {
+  type: 'btw';
+  id: string;
+  question: string;
+  recordId?: string;
+}
+
+export interface BtwCancelCommand {
+  type: 'btw_cancel';
+  id: string;
+}
+
+export interface GetBtwHistoryCommand {
+  type: 'get_btw_history';
+  id: string;
+}
+
 export type RpcCommand =
   | PromptCommand
   | AbortCommand
@@ -574,4 +638,7 @@ export type RpcCommand =
   | ExtensionUiResponseFrame
   | GetAvailableCommandsCommand
   | PredictWordCommand
-  | PredictWordFeedbackCommand;
+  | PredictWordFeedbackCommand
+  | BtwCommand
+  | BtwCancelCommand
+  | GetBtwHistoryCommand;

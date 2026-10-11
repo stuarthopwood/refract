@@ -18,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
+import { EMPTY_QUEUE, notify, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
@@ -502,6 +502,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // it back if `chat.send` fails below AND nothing newer has been recorded for this Session in
     // the meantime (`restoreIfAbsent`).
     const slashInvocation = parseSlashCommand(message)
+    // FR-007 (constitution II): `/btw` is Refract's own locally-handled native command, never
+    // forwarded to OMP as a literal prompt (the defensive `NATIVE_RESERVED_COMMANDS` guard in
+    // `chat.ts` would refuse it anyway if this ever slipped through) -- opens and focuses the
+    // Side chat panel for this Session (`openPanel`'s own effect in `RightPaneShell.tsx` moves
+    // focus into the panel the instant it becomes newly active) and, when `.rest` is non-empty,
+    // issues the side question itself through `useSideChatStore`, bypassing `chat.send` entirely.
+    if (slashInvocation?.name === 'btw') {
+      useRightPaneStore.getState().openPanel('side-chat')
+      useDraftStore.getState().clear(sessionId)
+      clearGhostState()
+      if (slashInvocation.rest.length > 0) {
+        // `ask` already surfaces a failure via toast; this call site has no draft left to
+        // preserve (cleared above), so only the unhandled-rejection needs catching here.
+        useSideChatStore.getState().ask(sessionId, slashInvocation.rest).catch(() => {})
+      }
+      return
+    }
     const isNewConversationCommand = slashInvocation?.name === 'new' && slashInvocation.rest === ''
     const previousScroll = isNewConversationCommand
       ? useChatScrollStore.getState().bySession[sessionId]
