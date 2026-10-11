@@ -88,7 +88,9 @@ whole time -- Shift+Enter and plain Enter both produced an empty value because n
 typed into a disabled field, not because of a real behaviour difference. Re-run with one seeded
 Session open: the composer is not disabled, Shift+Enter correctly inserts a newline
 (`"line one\nline two"`, measured via the textarea's own `.value`, not asserted from a screenshot
-alone), and a plain Enter correctly clears the draft (the stub `onSend` fires, no crash). The
+alone), and a plain Enter correctly clears the draft (the stub `onSend` fired with no crash at
+the time -- Slice 2 below replaces this stub with `useSideChatStore`'s real `ask`, so this
+sentence is now historical). The
 two-tab bar (Side chat + FDB Knowledge) and all-four-tab bar (adding Subagents and Agent Builder)
 both render correctly; closing all four returns to the same four-entry launcher. No regression to
 the other three panels.
@@ -101,35 +103,101 @@ the other three panels.
 where the readiness gate's own 18.6.3 version check (if its code is updated alongside, see T009)
 starts mattering for real.
 
-- [ ] T009 Edit `src/main/readiness.ts`: raise the literal version-match condition and warning
+- [x] T009 Edit `src/main/readiness.ts`: raise the literal version-match condition and warning
   text from `18.4.x`/`18.5.x` to the 18.6.3 minimum (constitution Principle IV, already amended in
   Slice 0; this task is the CODE catching up to the docs, same split both issues asked for).
-- [ ] T010 [P] Add `BtwDeltaFrame`/`BtwRecordFrame` to `src/shared/frames.ts`'s `KnownFrame` union
+  **Live-verified**: a real scratch `omp --version` reported `18.8.6` (newer than the `18.8.0`
+  FINDINGS recorded); `readiness.check()` returned `{omp:{ok:true,found:"18.8.6"}}` with no
+  `warning` field, confirming 18.8.x is recognised as the specifically re-probed minor.
+- [x] T010 [P] Add `BtwDeltaFrame`/`BtwRecordFrame` to `src/shared/frames.ts`'s `KnownFrame` union
   (data-model.md).
-- [ ] T011 [P] Add `IPC_REQUESTS.SIDE_CHAT_ASK`/`SIDE_CHAT_CANCEL`/`SIDE_CHAT_GET_HISTORY` and
+- [x] T011 [P] Add `IPC_REQUESTS.SIDE_CHAT_ASK`/`SIDE_CHAT_CANCEL`/`SIDE_CHAT_GET_HISTORY` and
   `IPC_EVENTS.SIDE_CHAT_PATCH` to `src/shared/ipc.ts`, plus `RefractApi.sideChat.{ask,cancel,
   getHistory}` and `onSideChatPatch` (contracts/ipc.md).
-- [ ] T012 Add `askSideChat(question, recordId?)`, `cancelSideChat()`, `getSideChatHistory()` to
+- [x] T012 Add `askSideChat(question, recordId?)`, `cancelSideChat()`, `getSideChatHistory()` to
   `SessionAgent.ts`: issue the `btw`/`btw_cancel`/`get_btw_history` RPC requests over the session's
   existing connection; forward `btw_delta`/`btw_record` frames as `SIDE_CHAT_PATCH` events keyed by
-  this session's id (depends on T010).
-- [ ] T013 Create `src/main/ipc/side-chat.ts`: `registerSideChat(manager)` wiring the three
-  requests to `SessionAgent`'s new methods, mirroring `subagents.ts`'s existing shape (depends on
-  T011, T012).
-- [ ] T014 Edit `src/preload/index.ts`: expose `refract.sideChat.*` and `onSideChatPatch` (depends
+  this session's id (depends on T010). **Correction during live verification**: `get_btw_history`
+  does NOT return a flat array of independent records as this spec's own `data-model.md`
+  originally inferred -- confirmed live, it returns one entry per independent topic/thread, each a
+  tree (a root node carrying `id`/`leafId`, plus a nested `followUps[]` whose entries carry no id
+  of their own at all). `frames.ts` gained `BtwHistoryNode`/`BtwHistoryThread` for the real shape;
+  a new `flattenBtwHistory` helper turns each thread into the flat, ordered `SideChatRecord[]` the
+  IPC contract and renderer actually consume, synthesizing a stable `${root.id}.${index}` key for
+  a non-root row (safe for React keys and `applyPatch`'s by-id match, never sent back to OMP as a
+  `recordId`).
+- [x] T013 Create `src/main/ipc/side-chat.ts`: `registerSideChat(manager)` wiring the three
+  requests to `SessionAgent`'s new methods, mirroring `chat.ts`'s validation/error-mapping shape
+  (depends on T011, T012). (`subagents.ts` does not exist as a separate file -- subagent IPC lives
+  inside `chat.ts`; `side-chat.ts` is its own file since `sideChat.*` is its own namespace per
+  contracts/ipc.md.) A blank or >10,000-character question is rejected locally before reaching OMP.
+- [x] T014 Edit `src/preload/index.ts`: expose `refract.sideChat.*` and `onSideChatPatch` (depends
   on T011).
-- [ ] T015 Create `src/renderer/state/side-chat-store.ts`: `SideChatThreadState` (data-model.md) --
+- [x] T015 Create `src/renderer/state/side-chat-store.ts`: `SideChatThreadState` (data-model.md) --
   `loadHistory`, `ask`, `cancel`, `clearThread`, `applyPatch`, subscribed to `onSideChatPatch` once
-  at store creation (depends on T014).
-- [ ] T016 [P] Export `useSideChatStore` from `src/renderer/state/index.ts` (depends on T015).
-- [ ] T017 Wire `SideChatPanel.tsx` to `useSideChatStore`: load history on first open per Session
+  in `init-stores.ts` (mirrors every other event subscription's own central-wiring location, not
+  inside the store file itself) (depends on T014). `loadHistory` carries forward the last thread's
+  own `leafId` as `activeTopicRecordId` (the real continuation point OMP tracks internally), not a
+  flattened row's synthetic id.
+- [x] T016 [P] Export `useSideChatStore` from `src/renderer/state/index.ts` (depends on T015).
+- [x] T017 Wire `SideChatPanel.tsx` to `useSideChatStore`: load history on first open per Session
   (FR-004), send through `ask`, show "Thinking" while `running` (FR-005), render the answer through
   the shared `Markdown`/`CodeBlock` components (FR-009), Cancel button issuing `cancel` (FR-006),
   error record rendering with an icon plus text (FR-008) (depends on T006, T015, T016).
-- [ ] T018 [P] Run `pnpm typecheck` and `pnpm build`; fix any error before proceeding.
+  **Critical bug found and fixed during live verification**: the `records` zustand selector fell
+  back to a freshly-created `[]` literal when `bySession[sessionId]` was absent -- a new array
+  reference on every render fails `useSyncExternalStore`'s equality check, an infinite re-render
+  loop (React error #185) that crashed this panel into its error boundary the instant it opened
+  for a Session with no side-chat history loaded yet. Fixed with a module-level stable
+  `EMPTY_RECORDS` constant.
+- [x] T018 [P] Run `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Both pass;
+  vitest 376/376 (no new tests, AGENTS.md #605), check:indent 0 odd-indent (318 files),
+  check:ui-text 0 leaks (371 files, after rewording three inline comments that happened to survive
+  esbuild's minifier unminified in this exact JSX position -- `FR-008`/`FR-009`/`FR-006` replaced
+  with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
+  new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint**: quickstart.md Stories 1, 2, 3, and 5 all pass live against a real OMP 18.6.3+
-process in a scratch instance.
+**Checkpoint**: live-verified in an isolated scratch Electron instance (own `--user-data-dir`/CDP
+port 9357, scratch repo + two seeded Sessions via `repositories.add`/`sessions.create`, never
+touching Stuart's live Sessions; every process exit confirmed by pid), real signed-in `omp 18.8.6`
+agent (`github-copilot/Claude Sonnet 5.5`). 21 named screenshots, hash-checked (certutil SHA256,
+`Get-FileHash` unavailable on this machine's PowerShell), 0 duplicates, under
+`C:/Users/shopwood/refract-live-check-1-516-shell/` (the 7 superseded Slice-1 files and their
+`report.json`/`sha256.json` deleted first by literal path, per the "one coherent run" rule).
+**Confirmed live**: a real `btw` round trip (question sent, "Thinking" shown, Cancel button
+appears, terminal answer rendered through `Markdown`, main transcript provably unchanged -- same
+text before and after); Enter/Shift+Enter/Escape on BOTH composers with real recorded `.value`
+(not screenshots alone); the no-Session empty state ("No Session open" / "Open a Session to ask a
+side question."); Cancel issued against an acknowledged running request returns cleanly to idle
+(no stuck "Thinking"); history persists across a kill (`taskkill`, pid-verified) + relaunch
+against the same `--user-data-dir` **for a Session whose main conversation was already started**
+(`currentConversation` set) -- `get_btw_history` correctly returned the prior question/answer/
+`leafId` after the restart; the composer's local `/btw <question>` interception (FR-007): typed in
+the main composer, the draft clears, nothing is added to the main transcript, and the question
+correctly lands in the Side chat panel with a real answer; four-tab geometry at 240/320/520 (the
+existing `WidthPresetControl` Min/Default/Max buttons) -- Min is icon-only with a horizontal
+scrollbar (no label text, so no ambiguity); Default (320px) reproduces the previously-flagged
+finding that "Subagents" and "Side chat" truncate to visually similar labels (`"S.."` vs `"S."`,
+confirmed via `[role="tab"]` text content, not merely eyeballed) with no real overlap or clipping
+of either tab's own close button or count -- added to #650, no redesign attempted per Main's own
+qualifier; Max (520px) shows every label clearly distinguishable.
+**A real, substantive finding, NOT fixed this round (an OMP/SessionAgent architecture question,
+not a guess to patch blind)**: `get_btw_history` did NOT find prior side-chat history across a
+restart for a Session that had ONLY ever been used for side-chat questions, never a single main
+composer message (`currentConversation` stays `null` the whole time) -- `SessionAgent.
+attachAndVerify` only issues `switch_session` when `session.currentConversation` is set, so a
+restarted process in this specific edge case has no Conversation file to reattach to at all, and
+`get_btw_history` legitimately finds nothing (confirmed: the original btw-history JSON file itself
+was still present on disk at `~/.omp/agent/sessions/<session>/<conversation>/btw-history/
+entry-<id>.json`, so this is NOT data loss, only a lookup-scope question). A realistic Session
+(main conversation started before or alongside the first side question, the normal case for any
+real developer) does not hit this -- confirmed by the SAME restart test on a second scratch
+Session that had sent one real main message first, which persisted correctly. Flagging this as an
+open question for Stuart/a future round rather than guessing a `switch_session` target with no
+conversation file to name.
+**Not live-verified this round**: `btw_delta` streaming (still 0 frames observed across every
+probe run including this one -- every answer arrived as a single terminal `btw_record`, same as
+FINDINGS item 14); screen reader behaviour; `axe`/automated accessibility scan. Added to #650.
 
 ---
 
@@ -138,13 +206,20 @@ process in a scratch instance.
 **Purpose**: the composer-level `/btw` entry point, per-answer actions, and the cross-slice gate
 and live verification the assignment requires before a PR is called ready.
 
-- [ ] T019 [US4] Edit `src/shared/slash-commands.ts`: add `{ name: 'btw', description: 'Ask the
+**T019 and T020 were pulled forward into the Slice 1+2 round above, per Main's own decision** (the
+composer-level `/btw` entry point is the natural way to actually exercise Slice 2's `ask`/`cancel`
+live, and Main's remediation instructions explicitly named it) -- both done and live-verified, see
+their own entries and the Checkpoint above. T021-T027 remain genuinely not started.
+
+- [x] T019 [US4] Edit `src/shared/slash-commands.ts`: add `{ name: 'btw', description: 'Ask the
   agent a side question' }` to `NATIVE_BUILT_COMMANDS` (data-model.md); `btw` stays in
   `NATIVE_RESERVED_COMMANDS` unchanged.
-- [ ] T020 [US4] Edit `MessageInput.tsx`: intercept `parseSlashCommand(message)?.name === 'btw'`
+- [x] T020 [US4] Edit `MessageInput.tsx`: intercept `parseSlashCommand(message)?.name === 'btw'`
   before calling `chat.send` (same tier as the existing `/new` interception, research.md decision
   3) -- open and focus the Side chat panel for this Session, and if `rest` is non-empty, call
-  `useSideChatStore.getState().ask(sessionId, rest)` (FR-007).
+  `useSideChatStore.getState().ask(sessionId, rest)` (FR-007). **Live-verified**: see the
+  Checkpoint above.
+
 - [ ] T021 [P] Add a Copy action to a completed answer (FR-011, issue://466's existing pattern) and
   a Clear thread action (FR-003's own "omit `recordId`" reset, clearing only Refract's displayed
   history for that Session).

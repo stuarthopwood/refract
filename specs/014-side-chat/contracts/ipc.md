@@ -12,7 +12,7 @@ streamed, cancellable sub-conversation).
 |---|---|---|
 | `sideChat.ask(sessionId, question, recordId?)` | `{ recordId: string }` | Issues `{type:"btw", question, recordId?}` to that Session's OMP process. Returns the new record's own id immediately (the `running` record, FINDINGS item 14); the answer itself arrives over `SIDE_CHAT_PATCH`, not this call's own return value. `recordId` omitted starts a fresh topic (FR-003). A blank `question` is rejected locally with `invalid-argument` before ever reaching OMP (one of `btw`'s own documented failure cases, issue://516 -- caught client-side to avoid a round trip for a case Refract can already detect). |
 | `sideChat.cancel(sessionId)` | `void` | Issues `btw_cancel` for that Session's currently-running record, if any. A no-op (not an error) if nothing is running -- mirrors `subagents.cancel`'s own idempotent shape. |
-| `sideChat.getHistory(sessionId)` | `SideChatRecord[]` | Issues `get_btw_history`; returns every record OMP has for that Session's saved session file, in the order OMP returns them. Called once per Session per app run (FR-004), not polled. |
+| `sideChat.getHistory(sessionId)` | `SideChatRecord[]` | Issues `get_btw_history`; `get_btw_history` itself returns a nested per-topic tree (`BtwHistoryThread`/`BtwHistoryNode`, data-model.md -- corrected 2026-10-11, live verification), flattened to this flat, ordered `SideChatRecord[]` by `SessionAgent.flattenBtwHistory` before crossing the IPC boundary. Called once per Session per app run (FR-004), not polled. |
 
 ## Events (main to renderer)
 

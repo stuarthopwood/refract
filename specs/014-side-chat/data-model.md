@@ -1,26 +1,53 @@
 # Data Model: Side chat (`/btw`)
 
-## `SideChatRecord` (OMP's own shape, mirrored not redefined -- `src/shared/frames.ts`)
+## `SideChatRecord` (OMP's own flat per-question shape, mirrored not redefined -- `src/shared/frames.ts`)
 
-Per issue://516's summary of `omp://rpc.md` and FINDINGS item 14's live capture
-(`{success:true, data:{record:{status:"running", ...}}}`); fields beyond `id`/`status`/`question`
-not directly observed live (the watch window ended before a `complete` record arrived) -- typed
-from the issue's own documented shape, flagged `[INFERENCE: from issue, not a raw captured frame]`
-where not directly observed.
+**Corrected 2026-10-11 (Slice 1+2 live verification)**: a live `btw` call and a terminal
+`btw_record` both confirmed flat (`id`/`status`/`question`/`answer`/`createdAt`/`updatedAt` all
+observed); the original `recordId?` field below never existed on the wire and is removed --
+continuing a topic is done by passing a PRIOR record's own `id` (or a thread's own `leafId`, see
+`BtwHistoryThread` below) as the NEXT `btw` call's `recordId` parameter, not a field carried on
+the record itself.
 
 ```ts
 export interface SideChatRecord {
   id: string;
   status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
   question: string;
-  /** Present once status is 'complete'. [INFERENCE: not observed live this pass -- FINDINGS item
-   * 14's watch window ended while still 'running'.] */
   answer?: string;
-  /** Present when this record is a follow-up in an existing topic. */
-  recordId?: string;
-  /** Present on an 'error' record. [INFERENCE: from issue://516's own failure-case list -- blank
-   * question, one already running, unknown recordId, no model, history-save failure.] */
+  createdAt?: number;
+  updatedAt?: number;
+  /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`). */
+  leafId?: string;
+  /** [INFERENCE: from issue://516's own failure-case list -- blank question, one already
+   * running, unknown recordId, no model, history-save failure.] */
   error?: string;
+}
+```
+
+## `BtwHistoryNode` / `BtwHistoryThread` (`get_btw_history`'s real response shape, `src/shared/frames.ts`)
+
+**Corrected 2026-10-11**: `get_btw_history` does NOT return a flat array of independent records.
+It returns one entry per independent topic/thread, each a tree: a root node (the only one
+carrying `id`/`leafId`) plus a nested `followUps[]` whose entries carry no id of their own.
+`SessionAgent.flattenBtwHistory` turns each thread into the flat `SideChatRecord[]` the IPC
+contract and renderer actually consume (synthesizing a stable `${root.id}.${index}` key for a
+non-root row, never sent back to OMP as a `recordId`).
+
+```ts
+export interface BtwHistoryNode {
+  question: string;
+  answer: string;
+  status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
+  createdAt: number;
+  updatedAt: number;
+  error?: string;
+  followUps?: BtwHistoryNode[];
+}
+
+export interface BtwHistoryThread extends BtwHistoryNode {
+  id: string;
+  leafId: string;
 }
 ```
 
@@ -30,9 +57,9 @@ export interface SideChatRecord {
 export interface BtwDeltaFrame {
   type: 'btw_delta';
   recordId: string;
-  /** [INFERENCE: not observed live -- 0 btw_delta frames across all probe runs, FINDINGS item 14.
-   * Shape assumed to mirror MessageUpdateFrame's own delta-text convention until a real capture
-   * exists.] */
+  /** [INFERENCE: not observed live -- 0 btw_delta frames across all probe runs, FINDINGS item 14,
+   * including this spec's own Slice 1+2 live round. Shape assumed to mirror MessageUpdateFrame's
+   * own delta-text convention until a real capture exists.] */
   textDelta: string;
 }
 
