@@ -184,7 +184,18 @@ belongs to the Conversation just left). `SessionAgent` mirrors this with its own
 before it is ever forwarded -- all defense in depth: the bundled omp 18.8.6
 `RpcBtwController.close()` already cancels and settles any running question, synchronously,
 strictly before `new_session`/`switch_session`/`branch`/`fork` itself runs (confirmed against its
-own bundled source).
+own bundled source), so this guard is a no-op against live frame ordering today; it exists
+against a hypothetical future OMP version that settles a cancellation after the switch instead
+of before it. **Corrected 2026-10-11 (round 8, Code8/Sec8/Verif8 HIGH/Medium)**: round 7's own
+pruning of `sideChatTopicEpoch` (added to bound its size) deleted every entry for the
+Conversation just left immediately on the switch, which silently disabled the guard for the
+most common case (a topic whose `btw` response had already returned before the switch, with the
+real answer still streaming) -- `onFrame` then treated the now-unstamped topic as current and
+forwarded its late frame. Fixed to keep one generation back (`stampedEpoch < epoch - 1`, never
+`< epoch`): the guard holds for the Conversation just left plus the in-flight-request window a
+switch can race; a topic from TWO OR MORE Conversations ago is no longer stamped and is treated
+as current, which is acceptable since no live code path ever sends `btw`/`btw_cancel` for one
+that old.
 
 ```ts
 interface SideChatThreadState {

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
-import { useRightPaneStore, useSessionsStore, useSideChatStore } from '@/state'
+import { SIDE_CHAT_LOADING_HINT, useRightPaneStore, useSessionsStore, useSideChatStore } from '@/state'
 import type { SideChatRecord } from '../../../../shared/frames'
 
 // Gate-fix (live verification, round 1): the zustand selector below used to fall back to a
@@ -373,16 +373,18 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             // failure, never by `agent-not-running`) picks the honest wording -- the original
             // text kept claiming side chat would become available "once the Session is
             // running" even for a Session that already WAS running when the load itself failed.
-            // Gate-fix (round 7, A11y7 Low): a THIRD case -- a running Session reloading after a
-            // Conversation change -- used to fall into the same "available once running" text,
-            // which is wrong (it already is running) and disagreed with `MessageInput`'s own
-            // `/btw` toast for the identical situation; now matches that wording exactly.
+            // Gate-fix (round 7, A11y7 Low; round 8, Code8/A11y8/Sec8/Verif8 Low): a THIRD case
+            // -- a running Session reloading after a Conversation change -- used to fall into
+            // the same "available once running" text, which is wrong (it already is running).
+            // Round 7 claimed this now "matches `MessageInput`'s own `/btw` toast... exactly",
+            // which was never true (two independently-worded strings); round 8 replaces both
+            // with the shared `SIDE_CHAT_LOADING_HINT` constant so they cannot drift again.
             <p id={unavailableHintId} className="mt-1 text-xs text-muted-foreground">
               {loadError
                 ? 'Side chat history could not be loaded.'
                 : sessionStatus === 'stopped'
                   ? 'Side chat is available once the Session is running.'
-                  : 'Loading side chat history…'}
+                  : SIDE_CHAT_LOADING_HINT}
             </p>
           )}
           <div className="mt-2 flex justify-end gap-2">

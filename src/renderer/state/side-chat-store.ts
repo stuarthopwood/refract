@@ -2,6 +2,14 @@ import { create } from 'zustand'
 import { toast } from 'sonner'
 import type { SideChatRecord } from '../../shared/frames'
 
+// Gate-fix (round 8, Code8/A11y8/Sec8/Verif8 Low): the single source of truth for the "side
+// chat history is still loading" wording, shared by `SideChatPanel.tsx`'s own `!loaded` hint
+// and `MessageInput.tsx`'s `/btw` toast for the identical situation -- round 7's own comments
+// claimed the two already matched "exactly"; they never did (the hint said "Loading side chat
+// history…", the toast said "Side chat is still loading its history. Try again in a moment.").
+// A shared constant makes that claim true going forward instead of two copies drifting again.
+export const SIDE_CHAT_LOADING_HINT = 'Side chat is still loading its history.'
+
 // Spec 014 data-model.md `SideChatThreadState`: per-Session side-chat thread state, rebuilt fresh
 // on every launch (no renderer-side persistence) -- `get_btw_history` is the single source of
 // truth for anything older than this app run (FR-004), same reasoning `right-pane-store.ts` uses

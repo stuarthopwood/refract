@@ -71,4 +71,13 @@ their own `set` if it changed underneath them; `applyPatch` ignores an unknown r
 three are defense in depth: the bundled omp 18.8.6 `RpcBtwController.close()` already cancels and
 settles any running question, synchronously, strictly before `new_session`/`switch_session`/
 `branch`/`fork` itself runs (confirmed against its own bundled source), so a genuinely late frame
-for the just-left Conversation should never actually arrive.
+for the just-left Conversation should never actually arrive live today -- this guard exists
+against a hypothetical future OMP version that settles a cancellation after the switch instead.
+**Corrected 2026-10-11 (round 8, Code8/Sec8/Verif8 HIGH/Medium)**: `sideChatTopicEpoch` keeps
+ONE generation back (an entry is only pruned once it is stamped `< epoch - 1`, never `< epoch`)
+-- round 7's own version pruned every entry immediately on the switch, which silently disabled
+the drop for the most common late-frame case (a topic whose `btw` response had already returned
+before the switch) and was fixed this round. The guard holds for the Conversation just left plus
+the in-flight-request window a switch can race; a topic from two or more Conversations ago is no
+longer stamped and is treated as current, which is fine since nothing live ever asks about one
+that old.

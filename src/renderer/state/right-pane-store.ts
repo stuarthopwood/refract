@@ -70,14 +70,21 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   sideChatFocusRequestId: 0,
   suppressNextContentFocus: false,
   openPanel: (id, options) => {
-    const { openPanelIds, sideChatFocusRequestId } = get()
+    const { openPanelIds, activePanelId, sideChatFocusRequestId } = get()
     const focus = options?.focus ?? true
     set({
       open: true,
       openPanelIds: openPanelIds.includes(id) ? openPanelIds : [...openPanelIds, id],
       activePanelId: id,
       sideChatFocusRequestId: id === 'side-chat' && focus ? sideChatFocusRequestId + 1 : sideChatFocusRequestId,
-      suppressNextContentFocus: !focus
+      // Gate-fix (round 8, Sec8/A11y8 Low): only set when this open/active-panel change will
+      // actually make `RightPaneShell`'s own effect re-run (a genuine new open, or switching
+      // which panel is active) -- when `id` was ALREADY the open, active panel (round 7's own
+      // version always set it unconditionally), neither `openPanelIds` nor `activePanelId`
+      // changes, so that effect never re-runs to consume (and clear) the flag; it would then
+      // sit `true` until the NEXT `openPanel`/`closePanel` call, which is harmless (every real
+      // open still goes through one of those and resets it first) but was needlessly imprecise.
+      suppressNextContentFocus: !focus && (!openPanelIds.includes(id) || activePanelId !== id)
     })
   },
   closePanel: (id) => {

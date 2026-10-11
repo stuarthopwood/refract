@@ -160,7 +160,66 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 7 (gate-fix remediation, supersedes the round-6 account below)**: PR #668's
+**Checkpoint, round 8 (gate-fix remediation, supersedes the round-7 account below)**: PR #668's
+seventh gate round (Sec8/A11y8/Verif8 PASS with Mediums; Code8 FAIL High) found round 7's own
+`sideChatTopicEpoch` pruning (added as a Low fix, to bound its unbounded growth) actually
+DISABLED the frame-drop guard it sat right next to, for almost every case that guard exists to
+catch.
+
+**Found**: `notifySideChatConversationChanged()`'s pruning loop deleted EVERY
+`sideChatTopicEpoch` entry stamped before the new epoch, including entries for the Conversation
+just being left. `onFrame` then found no entry for those topics and fell back to treating them
+as CURRENT (`?? this.sideChatConversationEpoch`, the same default an ever-unstamped topic
+gets), so a late `btw_delta`/`btw_record` for a topic whose `btw` response had ALREADY returned
+before the switch (the common case: `ask()` returns almost immediately with a `running` record,
+the real answer streams later) was forwarded into the new Conversation instead of dropped --
+exactly the round-6 leak this mechanism exists to block, silently reopened by round 7's own
+prune. Four places (the code comment, `tasks.md`, `data-model.md`, `contracts/ipc.md`) still
+described the guard as working.
+
+**Fixed**: the pruning now keeps one generation back (`stampedEpoch < this.
+sideChatConversationEpoch - 1`, never `< this.sideChatConversationEpoch`) -- bounds the map the
+same way (an entry survives at most one extra Conversation change past the one it belongs to)
+while a topic from the Conversation JUST left stays correctly stamped through the one switch
+where a late frame for it could actually arrive. All four docs (plus the PR body and a new #650
+comment, never editing the old one) corrected to say exactly this: the guard holds for the
+Conversation just left plus the in-flight-ask window a switch can race; with the bundled omp
+18.8.6, `RpcBtwController.close()` cancels synchronously before a switch ever runs, so this
+remains a no-op against live frame ordering today, protecting only against a hypothetical
+future OMP version; a topic from two-or-more Conversations ago is no longer stamped and is
+treated as current, which is fine since nothing live ever references one that old.
+
+**Also fixed** (A11y8/Sec8 Low, small/cheap): `SideChatPanel`'s hint and `MessageInput`'s
+matching `/btw` toast now share one `SIDE_CHAT_LOADING_HINT` constant -- round 7 claimed the two
+wordings already "matched exactly"; they never did (the hint said "Loading side chat
+history…", the toast said "Side chat is still loading its history. Try again in a moment.").
+`right-pane-store.ts`'s `openPanel` now sets `suppressNextContentFocus` only when the
+open/active-panel lists will actually change (it could otherwise linger harmlessly until the
+next `openPanel`/`closePanel`). The PR body's "What it builds" bullet for `/btw` now discloses
+that focus stays in the main composer while history is still loading.
+
+**Corrected** (evidence honesty -- Code8/Verif8 Medium, raised independently by both, fixed
+alongside even though Main's own numbered list did not itemise it separately): round 7's own
+account claimed the rapid-switch screenshots "confirmed ... the round-7 Code7 HIGH fix" -- but
+round 7's OWN `report.json` already disclosed the stale-epoch retry branch was never
+instrumented, and a timing analysis shows both races would very likely reach the SAME end state
+even WITHOUT that fix (a local `get_btw_history` round-trip is fast enough that the panel's own
+ordinary load effect, not necessarily the retry, most likely handled the reload either way).
+Reworded here, in `C:/Users/shopwood/refract-live-check-668-round7/report.json`, and in a new
+#650 comment: the END STATE (panel loaded, Send enabled, question answered) was verified;
+whether the stale-epoch retry branch itself fired was never observed. Also corrected
+`report.json`'s "no icon-rail visible" (the rail IS visible; only the pane was collapsed) and
+its "hint/toast" wording (the toast covers/obscures the hint in screenshot 07 -- only the toast
+was actually visible).
+
+**Record-keeping**: #650 given a new comment (the old round-7 one never edited); the round-7
+Checkpoint below has its own two wrong claims (the pruning description, and the evidence
+overclaim) corrected in place, the same convention round 7 used for round 6's false focus claim.
+
+<details>
+<summary>Checkpoint, round 7 (superseded by round 8 above -- kept for history, with two inline corrections where it was wrong)</summary>
+
+**Checkpoint, round 7.** PR #668's
 sixth gate round (Code7/A11y7 FAIL with Highs; Sec7/Verif7 PASS with Mediums/Lows) found two
 fresh defects in round 6's own fix, plus confirmed round 6's "focus stays in the main composer"
 claim was never actually true.
@@ -200,11 +259,18 @@ claim was never actually true.
 - **Low (Code7/Sec7)**: `SessionAgent.sideChatTopicEpoch` is pruned inside
   `notifySideChatConversationChanged()` -- every entry stamped before the bump is deleted
   (a topic belonging to the Conversation just left), instead of growing by one entry per side
-  question for the whole life of the agent.
+  question for the whole life of the agent. **Corrected round 8 (Code8/Sec8/Verif8 HIGH/
+  Medium): this was WRONG.** Deleting every entry for the Conversation just left broke the
+  frame-drop guard for the main case it exists to catch (a topic whose `btw` response had
+  already returned before the switch) -- see the round-8 Checkpoint above for the real fix
+  (keep one generation back).
 - **Low (A11y7)**: `SideChatPanel`'s own `!loaded` hint now has a third branch -- a running
   Session reloading after a Conversation change showed "available once the Session is running"
   (wrong: it already is running), which also disagreed with `MessageInput`'s own matching `/btw`
   toast; now `loadError` / `stopped` / "Loading side chat history…", matching exactly.
+  **Corrected round 8 (Code8/A11y8/Sec8/Verif8 Low): "matching exactly" was false** (two
+  independently-worded strings) -- round 8 replaces both with one shared
+  `SIDE_CHAT_LOADING_HINT` constant so they cannot drift again.
 
 **Re-verified live** (`C:/Users/shopwood/refract-live-check-668-round7/`, 19 screenshots -- one
 disclosed pixel-identical pair, 11/15, both a fresh never-asked Conversation's own empty panel --
@@ -215,9 +281,14 @@ asserted via CDP immediately after the toast to be the MAIN composer's own texta
 side-chat content region; two rapid "New conversation" clicks (~110ms apart) and, separately,
 opening the panel for the very first time then switching Conversation ~52ms later -- BOTH races
 end with the panel loaded and Send enabled, confirmed by a fresh question succeeding each time
-(the round-7 Code7 HIGH fix); Stop, then open an EARLIER Conversation from history (not "New
-conversation" -- the other branch of the stopped-Session fix, untested in round 6 and wrongly
-described as untestable in round 6's own report.json) -- the panel correctly reloaded that
+-- **corrected round 8 (Code8/Verif8 Medium): "(the round-7 Code7 HIGH fix)" overclaimed this.**
+The end state (loaded, Send enabled, answered) was genuinely verified; whether the stale-epoch
+retry branch itself fired, rather than the panel's own ordinary load effect handling the reload
+either way, was never instrumented or observed -- disclosed as such in `report.json` all along,
+just not reflected in this sentence until round 8. Stop, then open an EARLIER Conversation from
+history (not "New conversation" -- the other branch of the stopped-Session fix, untested in
+round 6 and wrongly described as untestable in round 6's own report.json) -- the panel correctly
+reloaded that
 Conversation's own row and correctly continued its existing topic (not a fresh one) once asked
 again. A raw `window.refract.sessions.list()` dump (sessionId + `currentConversation`) was
 captured for the switch-back assertion this round, closing round 6's own narrative-only gap.
@@ -228,6 +299,7 @@ over unchanged; the main/renderer epoch-drop defense-in-depth paths remain logic
 confirmed again this round to be no-ops against the real OMP 18.8.6 ordering). No new decision
 needed for Stuart. The round-6 Checkpoint below is corrected in place (not rewritten) where its
 own "focus stays in the main composer" claim was false.
+</details>
 
 <details>
 <summary>Checkpoint, round 6 (superseded by round 7 above -- kept for history, with one inline correction where it was false)</summary>
@@ -263,7 +335,10 @@ stamps every topic's root id with the epoch at ask-time (`sideChatTopicEpoch`) a
 (3) the renderer's `side-chat-store.ts` gained a module-level `epochBySession` map (kept outside
 `clearThread`'s own deleted entry) that `loadHistory`/`ask` capture before their one `await` and
 skip their own `set` entirely if it changed, `?? before` fallbacks replaced with
-`?? EMPTY_SESSION_STATE`, and `applyPatch` ignores an unknown record id while `!loaded`.
+`?? EMPTY_SESSION_STATE`, and `applyPatch` ignores an unknown record id while `!loaded`. (This
+description was accurate for what round 6 itself shipped; round 7's own LOW fix later broke
+layer (2) via over-aggressive pruning, and round 8 restored it -- see the round-8 Checkpoint
+above for the real account of what `sideChatTopicEpoch` does today.)
 
 **Medium/Low fixes**: `SideChatPanel`'s seed effect now resets `seededSessionsRef` the instant
 `loaded` drops (a Conversation change), re-arming seeding for the reload instead of leaving the

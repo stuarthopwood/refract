@@ -1039,13 +1039,30 @@ export class SessionAgent extends EventEmitter {
    * out of sync. */
   notifySideChatConversationChanged(): void {
     this.sideChatConversationEpoch++;
-    // Gate-fix (round 7, Code7/Sec7 Low): `sideChatTopicEpoch` otherwise grows by one entry per
-    // side question asked for the whole lifetime of this agent. Every entry stamped before the
-    // bump above belongs to a Conversation now being left; dropping them here is safe (a future
-    // lookup for one of those ids falls back to "current epoch" in `onFrame`, same as any
-    // topic never stamped at all, which is already the documented default).
+    // Gate-fix (round 7, Code7/Sec7 Low; round 8, Code8/Sec8/Verif8 HIGH/Medium -- the round-7
+    // version of this loop was WRONG): `sideChatTopicEpoch` otherwise grows by one entry per
+    // side question for the whole lifetime of this agent, so it needs SOME bound -- but
+    // deleting every entry stamped before THIS bump (round 7's own code) deleted the entries
+    // for the Conversation just being left too, including a topic whose `btw` response had
+    // ALREADY returned before the switch (the common case: `ask()` returns almost immediately
+    // with a `running` record, and the real answer streams later as `btw_delta`/`btw_record`).
+    // `onFrame` then found no entry for that topic and fell back to treating it as CURRENT
+    // (`?? this.sideChatConversationEpoch`, the same default an ever-unstamped topic gets),
+    // so its late frame was forwarded into the new Conversation instead of dropped -- exactly
+    // the round-6 leak this whole mechanism exists to block, reopened by round 7's own prune.
+    // Keeping one generation back (only deleting an entry stamped `< epoch - 1`, never
+    // `< epoch`) still bounds the map -- an entry survives at most one extra Conversation
+    // change past the one it belongs to -- while a topic from the Conversation JUST left stays
+    // correctly stamped through the one switch where a late frame for it could actually arrive.
+    // With the bundled omp 18.8.6, `RpcBtwController.close()` cancels and synchronously settles
+    // any running question before `new_session`/`switch_session` itself ever runs, so this
+    // guard (like `sideChatConversationEpoch`/`cancelSideChat()` itself) is a no-op against
+    // real live frame ordering today; it exists against a hypothetical future OMP version that
+    // settles a cancellation after the switch instead of before it. A topic from TWO OR MORE
+    // Conversations ago is no longer stamped at all and is treated as current by `onFrame` --
+    // acceptable, since no live code path ever sends `btw`/`btw_cancel` for a topic that old.
     for (const [id, stampedEpoch] of this.sideChatTopicEpoch) {
-      if (stampedEpoch < this.sideChatConversationEpoch) this.sideChatTopicEpoch.delete(id);
+      if (stampedEpoch < this.sideChatConversationEpoch - 1) this.sideChatTopicEpoch.delete(id);
     }
     this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
   }

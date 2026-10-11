@@ -18,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
+import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
@@ -542,16 +542,18 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // the panel's own mount effect still fires its own `loadHistory`. Wording matches the
       // actual cause instead of always claiming "still loading": `loadError` means a permanent
       // failure that a retry will not fix either; a stopped Session means there is nothing
-      // running yet to load from.
+      // running yet to load from. Gate-fix (round 8, Code8/A11y8/Sec8/Verif8 Low): the loading
+      // branch now uses the SAME `SIDE_CHAT_LOADING_HINT` constant `SideChatPanel.tsx`'s own
+      // hint does -- round 7 claimed the two already matched exactly; they never did.
       if (!useSideChatStore.getState().bySession[sessionId]?.loaded) {
         useRightPaneStore.getState().openPanel('side-chat', { focus: false })
         const sideChatState = useSideChatStore.getState().bySession[sessionId]
-        const message = sideChatState?.loadError
+        const toastMessage = sideChatState?.loadError
           ? 'Side chat history could not be loaded.'
           : status === 'stopped'
             ? 'Side chat is available once the Session is running.'
-            : 'Side chat is still loading its history. Try again in a moment.'
-        toast.error(message)
+            : SIDE_CHAT_LOADING_HINT
+        toast.error(toastMessage)
         return
       }
       useRightPaneStore.getState().openPanel('side-chat')
