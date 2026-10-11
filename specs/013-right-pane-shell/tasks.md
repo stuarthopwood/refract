@@ -293,39 +293,75 @@ deleted by literal path too, and the PR body's wording is aligned with `06b`'s o
 method throughout (round 1's text inconsistently said "dragging" in one place and "keyboard-driven"
 in another).
 
-### Tab-strip width geometry (gate remediation, PR2 round 3)
+### Tab-strip width geometry (gate remediation, PR2 round 4, corrected from round 3)
 
-Proves the round-3 design fits at every pane width this spec supports (240px floor, 320px default,
-520px maximum) with one, two or three panels open, **regardless of count length** -- no scrollbar
-is needed at any of these, so `overflow-x-auto` on the wrapper is a pure safety net, never actually
+Proves the design fits at every pane width this spec supports (240px floor, 320px default, 520px
+maximum) with one, two or three panels open, **including a real live count** -- no scrollbar is
+needed at any of these, so `overflow-x-auto` on the wrapper is a pure safety net, never actually
 exercised by this spec's own panel set. Available width is the pane's own `widthPx` minus this
 row's own `px-2` (16px) only, since the window-controls spacer lives in the row above now --
 `available(widthPx) = widthPx - 16`, confirmed exactly against the live-measured `clientWidth`
-values below (224/304/504 against 240/320/520 widths, each exactly `widthPx - 16`). Required
-(worst case, every label and every count truncated to nothing) = `N * 54` (`pl-2` 8px + icon 14px +
-`gap-1` 4px + `pr-7` 28px per tab) `+ (N - 1) * 2` (the tablist's own `gap-0.5` between tabs) --
-independent of which specific panels are open or whether any one of them is showing a count, since
-the count is now `min-w-0 shrink truncate`, the same priority as the label, so it never forces a
-floor wider than the fixed per-tab minimum above.
+values below (224/304/504 against 240/320/520 widths, each exactly `widthPx - 16`).
 
-| Pane width | `available(widthPx)` (live-measured) | N=2 required | N=2 fits? | N=3 required | N=3 fits? |
-|---|---|---|---|---|---|
-| 240 (floor) | 224 | 110 | yes (114px slack) | 166 | yes (58px slack) |
-| 320 (default) | 304 | 110 | yes | 166 | yes (138px slack) |
-| 520 (maximum) | 504 | 110 | yes | 166 | yes (338px slack) |
+**Corrected from round 3** (Verif3/Code3, High): round 3's count span was `min-w-0 shrink
+truncate` end to end, so FR-012's "a count shows with an icon and a colour that is never the only
+signal" could fail at the floor -- a long running count could shrink all the way to an ellipsis,
+leaving colour as the only surviving signal. Round 4 splits the count into its NUMBER
+(`tabular-nums`, `shrink-0` -- never shrinks) and its trailing WORD (` running`, `min-w-0
+truncate` -- gives way first, the label giving way before that via `shrink-[100]`). Required
+(worst case, label and the count's word both truncated to nothing) = `N * 56` (without a count:
+`pl-2` 8px + icon 14px + `gap-1` 4px + `pr-7` 28px, rounding for border/line-height) `+ (N - 1) *
+2` (the tablist's own `gap-0.5` between tabs), `+ 2` for the one tab showing a count (its
+non-shrinking number adds roughly 2px over the bare floor once its own word is fully gone) `+`
+that number's own digit width (`~7px` per digit at this font, `tabular-nums` keeping every digit
+the same width) -- a two-digit running count's worst case for three tabs is `56*2 + 58 + 2*2 +
+14` (two digits) `= 186px`, or with the sign-pair `+a -d` shape (never truncates at all, both
+numbers): similar magnitude, well inside the same margin.
+
+| Pane width | `available(widthPx)` (live-measured) | N=3, no count required | N=3, 2-digit count required | fits? |
+|---|---|---|---|---|
+| 240 (floor) | 224 | 168 | ~186-194 | yes (30-38px slack) |
+| 320 (default) | 304 | 168 | ~186-194 | yes |
+| 520 (maximum) | 504 | 168 | ~186-194 | yes |
 
 N=1 never reaches this code at all (`openPanelIds.length === 1` renders the single title row
-branch above, not a tab bar). Live-verified at all three widths with three panels open (no live
-count exercised, see above): `scrollWidth === clientWidth` exactly at every width (224/224,
-304/304, 504/504) -- zero overflow, including the 240px floor, the combination both round 1 and
-round 2 failed. Every tab's own close button was confirmed present (`closeButtonCount ===
-tabCount`) and never overlapping its own icon, at the floor specifically. A window-width check
-(renderer viewport override, this Electron build's CDP has no `Browser.setWindowBounds`) at 380px
-found the right pane auto-collapses to 0 width there -- pre-existing behaviour from PR1 (the chat
-pane's own 360px `minSize` already wins the squeeze below ~400px total, spec.md's "Narrow window"
-edge case), unrelated to this round's change and not newly broken by it; the document-level check
-that matters for SC-007 (`document.documentElement.scrollWidth === clientWidth`) passed at both
-380px and the default 1280px window width.
+branch above, not a tab bar). Live-verified at the 240px floor with three panels open **and a
+REAL live count**, not a synthetic estimate: a temporary, local-only dev-store injection
+(`window.__refractStores`, already gated `DEV`-only for other verification scripts; force-enabled
+for one throwaway build in the scratch instance only, reverted before this round's push, never
+committed) set the focused Session's `subagentCount.running` to 1, then to 12, while the strip was
+already squeezed at 240px: `scrollWidth === clientWidth === 224` throughout (zero overflow at
+either digit count), the Subagents tab's own width grew (67px -> 80px -> 82px) as its neighbours'
+shrank to compensate, and -- the actual regression this exercises -- every tab's own close button
+stayed inside that tab's own rect at every step, confirmed by a direct hit-test (the close
+button's centre point inside its tab's bounding rect), not an assumption.
+
+**Corrected from round 3** (Verif3/Code3/A11y3, High): round 3's `ResizeObserver` watched only the
+tablist container. Once the strip is already squeezed, the tablist's own outer width is pinned to
+its flex parent rather than driven by its children's natural size, so one tab's internal content
+changing length (a count's digit count) does not change the tablist's own border-box size and the
+single observer never fires -- confirmed by the live count-injection above: the tablist's total
+stayed exactly 224px both before and after the count changed (the per-tab widths inside it
+redistributed, 79/67/74 -> 71/82/67), a change the old tablist-only observer would have missed
+entirely. Fixed: every open tab's own element is now observed too (`PanelTabBar.tsx`'s own
+comment), re-subscribed whenever `openPanelIds` changes.
+
+**Corrected from round 3** (Verif3, High, honesty): round 3 claimed a renderer-viewport override to
+380px "drives the same `100vw`-based CSS calc... a real window resize would" -- not fully true, since
+`env(titlebar-area-width)` is set once by the real OS window and does not change with a viewport
+override alone. Round 4 did a REAL OS window resize instead (`SetWindowPos` on the scratch
+instance's own window, by its own process id, confirmed before/after via `GetWindowRect`: 1296px ->
+380px). Result: the right pane still auto-collapses to 0 width there (pre-existing PR1 behaviour,
+the chat pane's own 360px `minSize` already wins the squeeze below ~400px total, spec.md's "Narrow
+window" edge case, unrelated to this round's change); the document-level check that matters for
+SC-007 (`document.documentElement.scrollWidth === clientWidth`) passed cleanly (364/364). The
+pre-existing `ChatHeader` "New conversation" button overlapping the branch label at this width was
+also visible and is a separate, already-known issue, not introduced here. **Honesty note**: SC-007
+("no horizontal scrollbar... at both a 380px and a 1280px window width") and the "Narrow window"
+edge case read as contradictory once a tab strip exists at all -- at 380px there is no tab strip to
+check a scrollbar against, since the pane is not there. New Clarifications entry added to spec.md
+("Needs Stuart's decision") and a #650 item logging this for Stuart, rather than silently declaring
+SC-007 "Done" at 380px.
 
 **Checkpoint**: quickstart.md Story 4 steps 2 and 3 pass (both placeholders' empty states, live
 and screenshotted) — step 1 (confirming the Settings switch is off by default) cannot run, since
@@ -335,11 +371,11 @@ effect, no call of any kind), not by an actual live Network-tab check. Story 5 (
 and sample content) is out of scope for this checkpoint — PR3 builds T017-T025 and re-runs
 quickstart.md Story 5 against them. The now-three-panel rail/launcher/tab-bar paths from Slice 1/2
 pass with a real second and third panel exercising them for the first time, including round 1's
-focus/selection fixes and round 3's per-tab-close/no-overlap/tab-strip-overflow fixes above -- the
-tab strip genuinely meets SC-007 (no horizontal scrollbar) at every pane width this spec supports,
-with up to three panels open, each keeping its own close button and live count per User Story 2's
-own independent test, proven by the geometry table above and confirmed live.
-
+focus/selection fixes and round 4's per-tab-close/no-overlap/count-split/ResizeObserver fixes above
+-- the tab strip genuinely meets SC-007 at every pane width this spec supports (240/320/520px),
+with up to three panels open and a real live count exercised, each keeping its own close button and
+live count per User Story 2's own independent test; the 380px window width is a separate, flagged
+open question (above), not silently folded into "Done."
 
 ### Right-pane store `closePanel` active-tab transitions (gate remediation, PR2 round 1)
 

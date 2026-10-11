@@ -35,16 +35,27 @@
 // floor with three panels: `clientWidth` 224px (see the geometry table in tasks.md). The
 // close-button reserve was tightened from `pr-8` (32px, the round-1/round-2 value) to `pr-7`
 // (28px: `CLOSE_BUTTON_PX` 24 + its own 4px inset, the button's real drawn footprint, not an extra
-// margin on top of it), and -- unlike round 2 -- a tab's live count is now `min-w-0 shrink
-// truncate`, the same shrink priority as its label, instead of `shrink-0` (never shrinks): with
-// both willing to collapse to nothing under pressure, every tab's absolute floor is the same
-// fixed ~54px (icon + its own two internal gaps + the close-button reserve) regardless of whether
-// it is showing a count, so the worst case for three tabs (~166px) never depends on how many
-// digits a live count happens to have. Live-verified (`scrollWidth <= clientWidth`, no exceptions)
-// at the pane's 240/320/520px widths with one/two/three panels open before calling
-// `overflow-x-auto` on the wrapper a true safety net rather than a scrollbar this spec's own three
-// panels would ever actually trigger; a live subagent count was not exercised (reasoned from a
-// synthetic same-font DOM measurement instead, tasks.md).
+// margin on top of it). Round 4 gate remediation (High, Code3/A11y3/Verif3 converged): a tab's
+// live count has its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks, so the figure itself
+// stays legible, FR-012) and its trailing WORD (` running`, `min-w-0 truncate` -- gives way first,
+// same priority as `+a -d`'s own lack of a separate word); the label gives up space before the
+// count's word does (`shrink-[100]` against the word's plain `shrink`). Every tab's floor is
+// therefore ~56px without a count, ~58px with one and both parts fully truncated -- three tabs'
+// worst case with a two-digit running count is ~194px against 224px available at the 240px floor
+// (30px slack; see the recomputed geometry table in tasks.md). Live-verified with a REAL count
+// change (temporary local-only dev-store injection in the scratch instance only, reverted before
+// this push, never shipped): `running` set to 1 then 12 on the actual focused Session while the
+// strip was already squeezed at the 240px floor -- both digit counts rendered with zero overflow
+// and every tab's own close button stayed inside that tab's own rect.
+//
+// Round 4 also fixed the bug that live count change was exposing: the `ResizeObserver` from round
+// 3 watched only the tablist container, which -- once the strip is already squeezed and the
+// tablist's own outer width is pinned to its flex parent rather than driven by its children's
+// natural size -- never fires when one tab's internal content changes length without changing the
+// tablist's own total width (confirmed live: the total stayed 224px before and after the count
+// change, redistributed among tabs, while the single tablist-level observer would have missed it
+// entirely). Fixed: every open tab's own element is observed too, not just the tablist, so any
+// one tab's own resize now triggers a full `closePositions` recompute.
 //
 // Every tab -- selected or not -- renders its icon, a truncating label, a truncating count and its
 // own close button (restoring round 1's per-tab close, but still a DOM sibling of the tablist via
@@ -52,10 +63,15 @@
 // `role=tab` so axe's `aria-required-children` rule stays satisfied); every tab also carries its
 // own Tooltip (full name plus count) for sighted users when its label visually truncates, since
 // the accessible name (the tab's own text content) is never actually truncated by the CSS
-// ellipsis regardless. Clicking a tab's own body selects it; clicking its close button closes it
-// directly, selected or not, with no select-first step. Delete on a focused tab -- selected or
-// not -- still closes it directly, unchanged from round 1/2 (`handleTabKeyDown` reads the
-// keystroke from the tab button itself, never from a close overlay).
+// ellipsis regardless -- the tooltip's own content is `aria-hidden` (round 4, Low) so Radix's
+// usual `aria-describedby` wiring does not announce that same name a second time. Clicking a
+// tab's own body selects it; clicking its close button closes it directly, selected or not, with
+// no select-first step. Delete on a focused tab -- selected or not -- still closes it directly,
+// unchanged from round 1/2 (`handleTabKeyDown` reads the keystroke from the tab button itself,
+// never from a close overlay). Only the ACTIVE tab's own close button is a Tab stop (`tabIndex=0`,
+// round 4, Medium A11y3: every close button being a Tab stop added N of them to the tab order,
+// jumping back to the leftmost X after the rightmost selected tab); inactive tabs' close buttons
+// stay reachable by mouse only, and also answer Delete directly if somehow focused programmatically.
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
@@ -100,10 +116,16 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
 
   // Round 3: every open tab draws its own close button, so every tab's own position is tracked
-  // (restoring round 1's map, which round 2 had narrowed to just the active tab). Recomputed
-  // whenever the set of open tabs changes, or any individual tab's own measured width changes
-  // (its live count's digit count, for example) via a `ResizeObserver` on the tablist container
-  // itself -- one observer for the whole row instead of one per tab.
+  // (restoring round 1's map, which round 2 had narrowed to just the active tab). Round 4 gate
+  // remediation (High, Code3/A11y3/Verif3 converged): observing only the tablist container missed
+  // a live count changing length while the strip is already squeezed -- once the tablist's own
+  // width is pinned to its flex parent (not driven by its children's natural size), a tab growing
+  // or shrinking internally (its count's digit count changing) does not change the tablist's own
+  // border-box size, so that single observer never fires and a stale `closePositions` entry leaves
+  // a close button sitting over the WRONG tab (a click meant to select one tab could close its
+  // neighbour instead, WCAG 2.5.8). Fixed: observe every open tab's own element too, not just the
+  // tablist -- any one tab's own resize now triggers a full recompute, re-subscribed whenever
+  // `openPanelIds` changes.
   const [closePositions, setClosePositions] = useState<Partial<Record<PanelId, { left: number; top: number }>>>({})
 
   const recomputeClosePositions = () => {
@@ -125,6 +147,10 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     if (!tablist) return
     const observer = new ResizeObserver(() => recomputeClosePositions())
     observer.observe(tablist)
+    for (const id of openPanelIds) {
+      const el = tabRefs.current[id]
+      if (el) observer.observe(el)
+    }
     return () => observer.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openPanelIds])
@@ -264,7 +290,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    tabIndex={0}
+                    tabIndex={id === activePanelId ? 0 : -1}
                     data-panel-close
                     aria-label={`Close ${descriptor.name} panel`}
                     style={{ position: 'absolute', left: position.left, top: position.top }}
@@ -273,6 +299,12 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
                       FOCUS_VISIBLE
                     )}
                     onClick={() => closeTab(id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Delete') {
+                        event.preventDefault()
+                        closeTab(id)
+                      }
+                    }}
                   >
                     <XIcon aria-hidden className="size-3.5" />
                   </button>
@@ -306,6 +338,17 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   const Icon = descriptor.icon
   const countText = count ? formatPanelCount(count) : undefined
   const fullLabel = `${descriptor.name}${countText ? ` ${countText}` : ''}`
+  // Round 4 gate remediation (High, Verif3/Code3, Stuart's "every tab has its own count" rule):
+  // round 3 made the whole count span `min-w-0 shrink truncate`, so at the 240px floor with three
+  // panels a running count could shrink all the way to an ellipsis, leaving colour as the only
+  // signal (FR-012). Split the count into its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks,
+  // so the figure itself is always legible) and the trailing WORD/sign (` running`, `min-w-0
+  // truncate` -- gives way first). `+a -d` has no separate word, so its whole text stays
+  // `shrink-0` too. The label gives up space before the count's word does (`shrink-[100]` against
+  // the word's plain `shrink`), since the count is the more load-bearing of the two once space is
+  // tight.
+  const countNumber = count ? (count.kind === 'running' ? String(count.value) : `+${count.additions} -${count.deletions}`) : undefined
+  const countWord = count?.kind === 'running' ? ' running' : ''
 
   const button = (
     <button
@@ -326,10 +369,11 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       onKeyDown={onKeyDown}
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{descriptor.name}</span>
+      <span className="min-w-0 shrink-[100] truncate">{descriptor.name}</span>
       {countText && (
-        <span className={cn('min-w-0 shrink truncate', count?.kind === 'running' ? 'text-state-working' : undefined)}>
-          {countText}
+        <span className={cn('inline-flex min-w-0 shrink items-baseline', count?.kind === 'running' ? 'text-state-working' : undefined)}>
+          <span className="shrink-0 tabular-nums">{countNumber}</span>
+          {countWord && <span className="min-w-0 truncate">{countWord}</span>}
         </span>
       )}
     </button>
@@ -338,10 +382,14 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   // Round 3: every tab carries a Tooltip with its full name and count -- a sighted-user recovery
   // path when the label visually truncates (the accessible name, this button's own text content,
   // is never actually truncated by the CSS ellipsis regardless of how little of it is visible).
+  // Round 4 (Low, Verif3): the tooltip repeated the accessible name verbatim via Radix's own
+  // `aria-describedby` wiring on the trigger -- `aria-hidden` on this tooltip's own content keeps
+  // it a sighted-only recovery path, since a screen reader already has the full name from the
+  // tab's own text content.
   return (
     <Tooltip>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent>{fullLabel}</TooltipContent>
+      <TooltipContent aria-hidden>{fullLabel}</TooltipContent>
     </Tooltip>
   )
 }
