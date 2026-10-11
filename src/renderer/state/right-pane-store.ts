@@ -24,8 +24,11 @@ interface RightPaneState {
   activePanelId: PanelId | null
   /** Opens the pane if collapsed; adds `id` if absent; makes it active (FR-005). */
   openPanel(id: PanelId): void
-  /** Removes `id`; if it was active, activates the new last id, or `null` if `openPanelIds` is
-   * now empty (FR-009) -- never collapses `open`. */
+  /** Removes `id`; if it was active, activates the NEIGHBOUR left in its place -- the tab at the
+   * same index in the remaining order, clamped to the new last index (gate remediation, round 1
+   * of PR2's own gate: three reviewers converged that "activate the last tab" desynced from
+   * `PanelTabBar.tsx`'s own focus target, which always moves to the neighbour, the standard tabs
+   * pattern) -- or `null` if `openPanelIds` is now empty (FR-009). Never collapses `open`. */
   closePanel(id: PanelId): void
   /** The drag handle and the (PR4) width-preset buttons both call this. */
   setWidth(widthPx: number): void
@@ -50,10 +53,16 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   },
   closePanel: (id) => {
     const { openPanelIds, activePanelId } = get()
+    const index = openPanelIds.indexOf(id)
     const nextIds = openPanelIds.filter((openId) => openId !== id)
     set({
       openPanelIds: nextIds,
-      activePanelId: activePanelId === id ? (nextIds.length > 0 ? nextIds[nextIds.length - 1] : null) : activePanelId
+      activePanelId:
+        activePanelId === id
+          ? nextIds.length > 0
+            ? nextIds[Math.min(index, nextIds.length - 1)]
+            : null
+          : activePanelId
     })
   },
   setWidth: (widthPx) => set({ widthPx }),

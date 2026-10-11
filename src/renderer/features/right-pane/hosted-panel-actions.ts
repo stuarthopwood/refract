@@ -24,15 +24,26 @@ export function openHostedPanel(id: PanelId, sessionId: string | null): void {
  * stranded afterwards (the chip didn't fire, or this isn't Subagents), it moves to that panel's
  * own rail button first, and only to the launcher's first row if the rail button itself cannot
  * be found (mirroring the containment checks `ChatPane.tsx`/`App.tsx` already use elsewhere in
- * this codebase). */
-export function closeHostedPanel(id: PanelId): void {
+ * this codebase).
+ *
+ * Gate remediation (PR2's own gate, round 1, High): `options.skipFocusFallback` lets a caller
+ * that is ABOUT to move focus itself -- `PanelTabBar.tsx`'s `closeTab`, when one or more other
+ * panels remain open -- suppress both this function's own rail/launcher fallback AND the chip
+ * restore inside `subagent-store.ts`'s `closePanel`. Without it the two raced: the chip or rail
+ * fallback's own `requestAnimationFrame` ran first (flashing the rail button's tooltip and
+ * moving its roving-tabindex stop) and the tab bar's focus-the-neighbour call landed a frame
+ * later, stealing focus right back out of the tab bar it just set. Only the single-panel-close
+ * path (nothing left to switch to) and the rail-toggle path (focus was never inside the pane to
+ * begin with) still want this function's own fallback, so it stays the default. */
+export function closeHostedPanel(id: PanelId, options?: { skipFocusFallback?: boolean }): void {
   const panelEl = document.getElementById('right-pane-active-panel')
   const wasInside = panelEl?.contains(document.activeElement) ?? false
   if (id === 'subagents') {
-    useSubagentPanelStore.getState().closePanel()
+    useSubagentPanelStore.getState().closePanel({ restoreFocus: !options?.skipFocusFallback })
   } else {
     useRightPaneStore.getState().closePanel(id)
   }
+  if (options?.skipFocusFallback) return
   if (!wasInside) return
   requestAnimationFrame(() => {
     const active = document.activeElement

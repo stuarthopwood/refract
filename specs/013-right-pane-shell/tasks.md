@@ -166,13 +166,15 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   (research.md decision 7) (depends on T022).
 - [ ] T025 Edit `SettingsScreen.tsx`: `SECTIONS` gains `{ id: 'right-pane', label: 'Right pane' }`;
   render `RightPaneSection` for it (depends on T023, T024).
-- [x] T026 [P] [US4] Create `src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx`:
+- [~] T026 [P] [US4] Create `src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx`:
   reads `Settings.showSampleData`; `false` -> the three-part empty state (icon, one line, next
   action — FR-018); `true` -> sample search/ask/agent-tools content, each element carrying a
-  visible "Sample data" label (FR-021) (depends on T022).
-- [x] T027 [P] [US4] Create
+  visible "Sample data" label (FR-021) (depends on T022). **Empty-state branch only this PR; the
+  sample branch (`Settings.showSampleData`, FR-021) is PR3 (T017-T025).**
+- [~] T027 [P] [US4] Create
   `src/renderer/features/right-pane/placeholders/AgentBuilderPanel.tsx`: same two-state shape,
-  naming Agent Builder and its own sample cloud-agent content (depends on T022).
+  naming Agent Builder and its own sample cloud-agent content (depends on T022). **Empty-state
+  branch only this PR, same split as T026.**
 - [x] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
   the two new components (no count, per FR-013) (depends on T001, T026, T027). **Prerequisite
   carried from PR1's gate (deferred, not optional)**: once this task makes `openPanelIds.length
@@ -181,30 +183,81 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   sibling of the `role=tab` button inside a shared, non-semantic wrapper `<span>` -- harmless in
   practice per the pattern the W3C ARIA working group tested, w3c/aria#2322, but still flagged by
   axe-core's static `aria-required-children` rule) -- needs per-tab width measurement
-  (`ResizeObserver`) to keep a detached close button visually aligned, and must be verified
-  against a real screen reader now that the tab bar is reachable, not only against axe.
+  (`ResizeObserver`) to keep a detached close button visually aligned, and **must be verified
+  against a real screen reader now that the tab bar is reachable, not only against axe (this check
+  is NOT done -- open on issue #650, same as PR1's own backlog there)**.
 
 **Deviations from this phase's description, found while implementing PR2** (T017-T025 are NOT
 done in PR2 -- Stuart's own PR2/PR3 split, posted as a decision comment on issue://538 before
 implementation started): T026/T027 do not read `Settings.showSampleData` yet, since that field
 does not exist until T017-T022 land (PR3) -- both placeholders always render the honest
 empty-state branch only, unconditionally; the sample-content branch and its "Sample data" label
-(FR-021) are PR3's work, not built here. T028's carried prerequisite IS done in full this PR:
+(FR-021) are PR3's work, not built here. T028's carried prerequisite is done EXCEPT the real
+screen-reader verification its own text requires (round-1 gate finding, High: the first push of
+this PR marked it "done in full", which overclaimed that specific check -- corrected here):
 `PanelTabBar.tsx`'s tablist now contains only `role=tab` buttons; every close button is a DOM
 sibling in a separate overlay, positioned per tab via each tab button's own measured
 `offsetLeft`/`offsetWidth`/`offsetTop`/`offsetHeight`, recomputed by a `ResizeObserver` watching
 every tab button (a live count changing a tab's own width shifts every later tab too) and on
-`openPanelIds` changes. `IconRail.tsx` also gained roving-tabindex arrow-key navigation
-(ArrowUp/ArrowDown/Home/End) now that it has three buttons instead of one -- not called out as
-its own task, but the conventional ARIA toolbar pattern this phase's second real panel needs
-(there was nothing to rove between with only `subagents` registered).
+`openPanelIds` changes -- **verified by direct DOM query (the tablist's own children are only
+`role=tab`), not by running axe, and not against a real screen reader**. `IconRail.tsx` also
+gained roving-tabindex arrow-key navigation (ArrowUp/ArrowDown/Home/End) now that it has three
+buttons instead of one -- not called out as its own task, but the conventional ARIA toolbar
+pattern this phase's second real panel needs (there was nothing to rove between with only
+`subagents` registered).
 
-**Checkpoint**: quickstart.md Story 4 passes in full — both placeholders show the honest empty
-state unconditionally (no Settings switch exists yet to turn off), make no network call, and the
-now-three-panel rail/launcher/tab-bar paths from Slice 1/2 all still pass with a real second and
-third panel exercising them for the first time. Story 5 (the Settings switch and sample content)
-is out of scope for this checkpoint -- PR3 builds T017-T025 and re-runs quickstart.md Story 5
-against them.
+**Round-1 gate remediation (High, all three functional reviewers converged)**: the tab strip
+overflowed the pane's own width at its 320px default and its 240px minimum (every tab was
+`shrink-0`, and the window-controls spacer reserved the rail's own 40px a second time) -- fixed by
+letting tabs shrink and truncate their label (`min-w-0 shrink` plus a truncating `<span>`), by
+subtracting the rail's width from the spacer, and by scrolling the active tab into view
+defensively. Focus rings on tabs and close buttons were clipped by the scrolling wrapper's own
+28px height (an outset `outline-offset-2` drew outside it) -- fixed by insetting the ring
+(`outline-offset-[-2px]`), matching `RightPaneShell.tsx`'s own content-focus convention. Closing a
+tab could leave keyboard focus on a tab OTHER than the one the store made active once three panels
+existed (`closeTab` computed its own neighbour index independently of `right-pane-store.ts`'s own
+choice, which activated the LAST remaining tab, not the neighbour) -- fixed in both places: the
+store's own `closePanel` now activates the neighbour (see the state table below), and `closeTab`
+reads that choice back from the store instead of recomputing it, with `closeHostedPanel`'s own
+rail/chip fallback suppressed (`skipFocusFallback`) whenever another panel remains so the two
+focus-restoration paths can't race.
+
+**Checkpoint**: quickstart.md Story 4 steps 2 and 3 pass (both placeholders' empty states, live
+and screenshotted) — step 1 (confirming the Settings switch is off by default) cannot run, since
+the switch does not exist yet (PR3); step 4 (DevTools Network tab, no request from either
+placeholder) was verified by reading the components' source (both are static JSX with no hook, no
+effect, no call of any kind), not by an actual live Network-tab check. Story 5 (the Settings switch
+and sample content) is out of scope for this checkpoint — PR3 builds T017-T025 and re-runs
+quickstart.md Story 5 against them. The now-three-panel rail/launcher/tab-bar paths from Slice 1/2
+pass with a real second and third panel exercising them for the first time, including the round-1
+gate's own focus/selection and overflow fixes above.
+
+### Right-pane store `closePanel` active-tab transitions (gate remediation, PR2 round 1)
+
+Round 1's High finding: `closePanel` activated the LAST remaining tab unconditionally, which
+desynced from `PanelTabBar.tsx`'s own (separately computed) focus target once three panels
+existed. Fixed: `closePanel` now activates the NEIGHBOUR at the closed tab's own index, clamped to
+the new last index -- the standard tabs-pattern rule ("select the tab now in the closed tab's old
+seat"), traced here cell by cell against the final code (`right-pane-store.ts`'s `closePanel`).
+
+| Event (`openPanelIds` before, closed id, `activePanelId` before) | `openPanelIds` after | `activePanelId` after | Why |
+|---|---|---|---|
+| `[A]`, close A, active A (the only panel) | `[]` | `null` | `nextIds.length === 0` |
+| `[A, B]`, close A, active A (closing the active FIRST of two) | `[B]` | `B` | `index=0`, `min(0, 0)=0` -> `nextIds[0]` |
+| `[A, B]`, close B, active B (closing the active LAST of two) | `[A]` | `A` | `index=1`, `min(1, 0)=0` -> `nextIds[0]` |
+| `[A, B, C]`, close A, active A (closing the active FIRST of three) | `[B, C]` | `B` | `index=0`, `min(0, 1)=0` -> `nextIds[0]` (the tab that slides into A's old seat) |
+| `[A, B, C]`, close B, active B (closing the active MIDDLE of three) | `[A, C]` | `C` | `index=1`, `min(1, 1)=1` -> `nextIds[1]` |
+| `[A, B, C]`, close C, active C (closing the active LAST of three) | `[A, B]` | `B` | `index=2`, `min(2, 1)=1` -> `nextIds[1]` (the new last tab) |
+| `[A, B, C]`, close A, active B (closing an INACTIVE tab) | `[B, C]` | `B` (unchanged) | `activePanelId !== id` -> the ternary's else branch, never recomputed |
+| `[A, B, C]`, close C, active A (closing an INACTIVE tab at the end) | `[A, B]` | `A` (unchanged) | same as above |
+
+`PanelTabBar.tsx`'s `closeTab` reads this same `activePanelId` back from the store after calling
+`closeHostedPanel` (a synchronous zustand `set()`, so the new value is already committed by the
+time `closeTab` reads it) and focuses that tab's own ref -- never a separately computed index, so
+the two can no longer disagree. When exactly one panel remains, the tablist itself unmounts into
+the single-panel title row; `closeTab` focuses that row's `[data-panel-close]` button instead
+(there is no tab ref left to focus). When none remain, `closeHostedPanel`'s own existing rail/chip/
+launcher fallback (unchanged, FR-024) runs as before.
 
 ---
 
