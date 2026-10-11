@@ -227,7 +227,8 @@ const refract: RefractApi = {
   onSubagentPatch: (handler) =>
     on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler),
   onSideChatPatch: (handler) =>
-    on<{ sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord }>(IPC_EVENTS.SIDE_CHAT_PATCH, handler),
+    on<{ sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }>(IPC_EVENTS.SIDE_CHAT_PATCH, handler),
+  onSideChatInterrupted: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SIDE_CHAT_INTERRUPTED, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
 }

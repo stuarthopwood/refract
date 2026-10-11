@@ -29,16 +29,19 @@ export function registerSideChat(manager: SessionManager): void {
   // detect. `recordId` omitted starts a fresh topic (FR-003); given, continues one.
   ipcMain.handle(IPC_REQUESTS.SIDE_CHAT_ASK, async (_event, sessionId: unknown, question: unknown, recordId: unknown) => {
     if (typeof sessionId !== 'string' || typeof question !== 'string' || (recordId !== undefined && typeof recordId !== 'string')) {
-      return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_ASK} expects (sessionId, question, recordId?) strings`);
+      // Gate-fix (round 4, Sec4 Low): these four messages reach the renderer's own toast
+      // verbatim (`sideChat.ask`'s `invalid-argument` result, same path as any other failure) --
+      // plain English, never the internal IPC channel name a developer never asked about.
+      return invalidArgument('sideChat.ask expects (sessionId, question, recordId?) strings');
     }
     if (question.trim().length === 0) {
-      return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_ASK}: question must not be blank`);
+      return invalidArgument('A side question must not be blank');
     }
     if (question.length > SIDE_CHAT_MAX_QUESTION_LENGTH) {
-      return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_ASK}: question exceeds ${SIDE_CHAT_MAX_QUESTION_LENGTH} characters`);
+      return invalidArgument(`A side question must not exceed ${SIDE_CHAT_MAX_QUESTION_LENGTH} characters`);
     }
     if (recordId !== undefined && (recordId.length === 0 || recordId.length > SIDE_CHAT_MAX_RECORD_ID_LENGTH)) {
-      return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_ASK}: recordId must be 1-${SIDE_CHAT_MAX_RECORD_ID_LENGTH} characters when given`);
+      return invalidArgument(`recordId must be 1-${SIDE_CHAT_MAX_RECORD_ID_LENGTH} characters when given`);
     }
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     try {

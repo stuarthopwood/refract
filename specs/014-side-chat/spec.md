@@ -66,19 +66,24 @@ blocking)
     in the app (readout chips) for the main turn, so this is a smaller follow-up once the shell
     ships, not a blocker.
 13. **SC-002 is unmet for side-chat-only Sessions (never sent a single main composer message) --
-    still open for Stuart's decision.** Live-tested (round 3, 2026-10-11): a Session's side-chat
-    history correctly survives a restart, and a follow-up question correctly continues the same
-    topic after that restart, WHEN the Session has a real main Conversation already
-    (`currentConversation` set) -- confirmed three separate times across three separate
-    restarts in this round's own scratch verification. For a Session that has ONLY ever been used
-    for side-chat questions, `get_btw_history` itself returns empty after a restart (nothing for
-    `SessionAgent` to reattach to, per item 6 above) -- its side-chat history becomes invisible to
-    Refract, though the underlying `btw-history/entry-<id>.json` file is not deleted
-    (`future/open-questions.md` item 5). Whether this narrow case (asking `/btw` before ever
-    sending a main message) needs its own fix is Stuart's call -- referenced on issue://1,
-    issue://516, and issue://650; not blocking this spec's P1/P2 stories per the constitution's
-    Incremental Enhancement rule (conservative choice: ship as-is, carried forward as an open
-    question, not guessed-fixed).
+    still open for Stuart's decision.** Live-tested (rounds 3 and 4, 2026-10-11): a Session's
+    side-chat history correctly survives a restart, and a follow-up question correctly continues
+    the NEWEST topic after that restart, WHEN the Session has a real main Conversation already
+    (`currentConversation` set) -- confirmed across five separate restarts total in this spec's
+    own scratch verification (three in round 3, two in round 4, the latter also confirming a
+    second, independently-seeded topic was correctly picked over an older one). For a Session
+    that has ONLY ever been used for side-chat questions, `get_btw_history` itself returns empty
+    after a restart (nothing for `SessionAgent` to reattach to, per item 6 above) -- its side-chat
+    history becomes invisible to Refract, though the underlying `btw-history/entry-<id>.json`
+    file is not deleted (`future/open-questions.md` item 5). Whether this narrow case (asking
+    `/btw` before ever sending a main message) needs its own fix is Stuart's call -- posted as a
+    decision request (round 4, Code4/Verif4/Sec4 HIGH, 2026-10-11) on
+    [issue #1](https://github.com/stuarthopwood/refract/issues/1#issuecomment-6113942112) and
+    [issue #516](https://github.com/stuarthopwood/refract/issues/516#issuecomment-6113943061);
+    the round's own not-live-verified checklist is on
+    [issue #650](https://github.com/stuarthopwood/refract/issues/650#issuecomment-6113945611).
+    Not blocking this spec's P1/P2 stories per the constitution's Incremental Enhancement rule
+    (conservative choice: ship as-is, carried forward as an open question, not guessed-fixed).
 
 ### Carved out, not blocking this spec (per the constitution's Incremental Enhancement rule)
 

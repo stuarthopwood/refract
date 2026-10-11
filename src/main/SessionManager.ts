@@ -24,7 +24,8 @@ export type ManagerEvent =
   | { type: 'readout'; payload: { sessionId: string; readout: SessionReadout } }
   | { type: 'subagents'; payload: { sessionId: string; subagents: SubagentSummary[] } }
   | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
-  | { type: 'sideChatPatch'; payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord } }
+  | { type: 'sideChatPatch'; payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string } }
+  | { type: 'sideChatInterrupted'; payload: { sessionId: string } }
   | { type: 'list-changed' };
 
 /** Issue #510 (quality gate 2026-10-08): caps how many Sessions' Conversation tails `summaries()`
@@ -136,10 +137,18 @@ export class SessionManager {
     // Session hidden mid-request -- unlike `subagentPatch`/`readout`, losing a side chat's own
     // completion to the visibility gate leaves the panel stuck on "Thinking" until a reload.
     // Only `btw_delta` (no `record`) stays gated on visibility, matching every other live-stream
-    // patch's own discipline.
+    // patch's own discipline. Gate-fix (round 4, Code4 Medium): a `notice` (a btw-history save
+    // failure) is forwarded unconditionally too -- the question itself may have landed while the
+    // pane was hidden; the developer must still learn their answer did not save when they return.
     agent.on('sideChatPatch', (payload) => {
-      if (!payload.record && !this.visibleSessionIds.has(payload.sessionId)) return;
+      if (!payload.record && !payload.notice && !this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'sideChatPatch', payload });
+    });
+    // Gate-fix (round 4, Sec4 Medium): unconditional, regardless of visibility -- this corrects
+    // state (a stuck `running` side-chat record) that must stay correct even while its own pane
+    // is not currently looked at.
+    agent.on('sideChatInterrupted', (payload) => {
+      this.emit({ type: 'sideChatInterrupted', payload });
     });
     // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and
     // `currentConversation`/...) to the registry on every settle, Conversation switch, and

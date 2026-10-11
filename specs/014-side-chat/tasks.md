@@ -160,7 +160,73 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 3 (gate-fix remediation, supersedes the round-2 account below)**: PR #668's
+**Checkpoint, round 4 (gate-fix remediation, supersedes the round-3 account below)**: PR #668's
+third gate round (Code4/Verif4 CRITICAL, Sec4/A11y4 PASS-ish with Mediums + one HIGH record-
+keeping gap) found that round 3's own fix, while correct about WHICH id continues a topic, never
+actually reached the renderer at all: OMP's live `btw`/`btw_record` response is the SAME
+whole-topic tree `get_btw_history` returns (confirmed live, round 3's own captured
+`ask2_followup_response_preRestart` evidence already showed this, previously unnoticed) -- a
+follow-up's own response still carries the ROOT's `question`/`answer`/`status`, with the new
+turn nested at `followUps[last]`. Refract passed this raw tree straight to the renderer, so EVERY
+follow-up (every question after a topic's first answer) silently merged into the root row instead
+of appearing as its own new one: no "Thinking", the single-flight guard off, a second Send hitting
+OMP's own "still running" rejection, and the round-3 safety net then wiping the topic. A second
+High: `get_btw_history` returns topics NEWEST first, so `loadHistory`'s own `reverse().find(...)`
+picked the OLDEST topic after a restart, not "the most recently started" as round 3's own comment
+claimed -- round 3's own evidence already showed every follow-up landing on the older of two
+topics. A third High: round 3's evidence/record-keeping overstated itself (a readiness-screen
+screenshot's own near-identical duplicate standing in for the real "answer landed" claim, and the
+SC-002 decision said to be "recorded for Stuart" on three issues that had no such comment).
+
+**Fixed this round**: `SessionAgent.latestTurn` (new, reuses `flattenBtwHistory`) normalises
+every live `btw`/`btw_record` response to its actual latest turn, with a new `topicId` field
+(the topic's own root id) added to `SideChatRecord`; `applyPatch` matches a `btw_delta` by
+`topicId` + `status: 'running'` (its own `recordId` is always the topic root, never a follow-up's
+flattened id) and sets `activeTopicRecordId` from `topicId` on `complete`; `getSideChatHistory`
+sorts topics ascending by `createdAt` before flattening. `BtwDeltaFrame`'s own wire field is
+`delta`, never `textDelta` (round 3's own rename fixed nothing -- it renamed the WRONG field).
+The safety net now clears `activeTopicRecordId` only on the specific `"Unknown /btw topic"`
+rejection (round 3's own blanket-clear-on-any-failure wiped the topic for a transient "still
+running"/`agent-not-running` error too). A `sideChatInterrupted` event, emitted unconditionally
+at the top of `SessionAgent.onExit`, closes the one exit path (`setPendingMode` -> `restart`)
+that never reaches `status: 'stopped'` at all, so `reconcileInterrupted` now fires for it too.
+A btw-history save-failure `notice` (`source: 'btw-history'`) now routes to the side-chat
+store as a toast, never the main transcript. A11y: a muted status line (`aria-describedby`)
+explains why Send is disabled while `!loaded`; the newest record scrolls into view on ask/settle
+(`prefers-reduced-motion` respected). Toasts no longer leak `btw failed:`/the IPC channel name;
+"Unknown /btw topic" renders as plain English.
+
+**Re-verified live, this round** (`C:/Users/shopwood/refract-live-check-668-round4/`, 11 named
+screenshots -- all unique, 0 duplicates -- `report.json`, `sha256.json`, real `omp 18.8.6`, every
+process exit pid-verified), through the REAL UI (DOM row-count deltas, never substring matching):
+a first question (1 row, correct answer); a follow-up via the Send button (a genuinely NEW row
+appears, "Thinking"/Cancel visible, settles with its own distinct answer -- the exact regression
+this round fixes); a follow-up via `/btw` from the main composer (same result, main transcript
+unchanged 6/6); a follow-up CANCELLED while running (a correct "Cancelled." row; the answer's own
+text was observed growing mid-run -- the first round of this PR to see `btw_delta` actually
+reach the UI); a further follow-up straight after the cancel (confirms the topic is still
+continuable, not locked); a SECOND, independently-seeded topic; a full app kill+relaunch; a
+follow-up sent through the real Send button that correctly landed on the NEWER topic, not the
+older one (confirmed by reading both topics' own `btw-history/entry-<id>.json` files on disk
+directly, before and after -- the newer topic's own `followUps` array grew, the older one's did
+not). Three GitHub comments posted and verified (`gh issue view --json comments`): the SC-002
+decision request on [#1](https://github.com/stuarthopwood/refract/issues/1#issuecomment-6113942112)
+and [#516](https://github.com/stuarthopwood/refract/issues/516#issuecomment-6113943061), the
+not-live-verified checklist on
+[#650](https://github.com/stuarthopwood/refract/issues/650#issuecomment-6113945611).
+
+**Not live-verified this round** (disclosed, not guessed): screen reader behaviour; `axe`/
+automated accessibility scan; the NEW `sideChatInterrupted` event path specifically (no reliable
+way found to trigger an approval-mode restart mid-question in this scratch harness -- logic-
+verified only); Retry against a real OMP `status: "error"` record (same gap as every prior
+round); the btw-history notice routing (no reliable way found to make OMP's own history save
+fail on demand); a real `btw_delta` frame's exact payload (this round's own observation was the
+row's text growing in the DOM, not a captured raw frame). All added to #650 (see the comment
+above).
+
+<details>
+<summary>Checkpoint, round 3 (superseded by round 4 above -- kept for history, not a current claim)</summary>
+
 second gate round (Code3/A11y3/Sec3/Verif3) found the SAME core defect two different ways: the
 restart-lockout round 2 logged as an open question (item 6) was actually a plain bug (seeding
 `activeTopicRecordId` from the wrong field), `init-stores.ts` silently dropped every `btw_delta`
@@ -219,6 +285,7 @@ automated accessibility scan; the `reconcileInterrupted` process-exit reconcilia
 way found to crash the OMP child process specifically, mid-turn, without killing Electron
 itself); Retry rendering against a real OMP `status: "error"` record (same gap as round 2 -- no
 live-reachable failure case produces one). All added to #650.
+</details>
 
 <details>
 <summary>Checkpoint, round 2 (superseded by round 3 above -- kept for history, not a current claim)</summary>

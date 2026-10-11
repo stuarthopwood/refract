@@ -392,6 +392,7 @@ export const IPC_EVENTS = {
   SUBAGENTS_UPDATE: 'subagents:update',
   SUBAGENT_PATCH: 'subagent:patch',
   SIDE_CHAT_PATCH: 'side-chat:patch',
+  SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
 } as const;
@@ -717,7 +718,12 @@ export interface RefractApi {
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
-  onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord }) => void): Unsubscribe;
+  onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void): Unsubscribe;
+  /** Gate-fix (round 4, Sec4 Medium): fired whenever the Session's agent process exits, even an
+   * approval-mode restart that never reaches `status: 'stopped'` -- the store's own
+   * `reconcileInterrupted` marks any `running` side-chat record `interrupted` so it never blocks
+   * Send/Retry/`/btw` forever. */
+  onSideChatInterrupted(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }

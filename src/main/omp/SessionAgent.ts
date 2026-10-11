@@ -38,6 +38,7 @@ import type {
   GetBtwHistoryResponseData,
   GetStateResponseData,
   ImageContent,
+  NoticeFrame,
   PredictWordResponseData,
   QueueKind,
   QueueUpdateFrame,
@@ -107,18 +108,18 @@ function isValidModelRef(model: unknown): model is { provider: string; id: strin
  * that `get_btw_history` returns one entry per independent topic, each a tree, NOT a flat list of
  * every individual question as `data-model.md` originally inferred. A non-root node carries no
  * real id of its own (see `BtwHistoryNode`'s doc comment, `frames.ts`), so each is given a
- * stable, position-derived `${root.id}.${index}` key -- safe as a React list key and for
- * `applyPatch`'s by-id match (a live patch only ever targets the single currently-`running`
- * record, never a past flattened row), but this synthetic id must never be sent back to OMP as a
- * `recordId`. Gate-fix (round 3, Code3/Verif3 HIGH): the flattened ROOT row's own `id` -- never
- * `root.leafId` -- is the one `SideChatThreadState.loadHistory` must use for that (live-tested
- * against a restarted omp process: `id` continued the topic, `leafId` was rejected every time
- * with "Unknown /btw topic"). */
+ * stable, position-derived `${root.id}.${index}` key -- safe as a React list key, but this
+ * synthetic id must never be sent back to OMP as a `recordId`; every flattened record also
+ * carries `topicId` (the thread's own root `id`, gate-fix round 4, Code4/Verif4 CRITICAL) --
+ * THAT is the one value `applyPatch`'s delta match and `SideChatThreadState.loadHistory` use to
+ * continue a topic, never a flattened non-root row's own `id` and never `root.leafId` (round 3). */
 function flattenBtwHistory(thread: BtwHistoryThread): SideChatRecord[] {
   const out: SideChatRecord[] = [];
+  const topicId = thread.id;
   const visit = (node: BtwHistoryNode, id: string, leafId?: string): void => {
     out.push({
       id,
+      topicId,
       status: node.status,
       question: node.question,
       answer: node.answer,
@@ -131,6 +132,19 @@ function flattenBtwHistory(thread: BtwHistoryThread): SideChatRecord[] {
   };
   visit(thread, thread.id, thread.leafId);
   return out;
+}
+
+/** Gate-fix (round 4, Code4/Verif4 CRITICAL): a live `btw`/`btw_record` response is the SAME
+ * whole-tree shape `get_btw_history` returns per topic -- a follow-up's own response still
+ * carries the ROOT's `question`/`answer`/`status`, with the new turn nested at
+ * `followUps[last]` (confirmed live: round 3's own captured `ask2_followup_response_preRestart`
+ * showed exactly this shape, previously unnoticed). Reuses `flattenBtwHistory` (same ids, same
+ * `topicId`) and returns its LAST entry -- the actual latest turn OMP's response/push describes,
+ * never the stale root row `ask`/`applyPatch` would otherwise silently re-patch forever. */
+function latestTurn(thread: BtwHistoryThread): SideChatRecord {
+  const flattened = flattenBtwHistory(thread);
+  // `flattenBtwHistory` always visits the root first, so `flattened` is never empty.
+  return flattened[flattened.length - 1] as SideChatRecord;
 }
 
 export interface SessionAgentEvents {
@@ -153,7 +167,16 @@ export interface SessionAgentEvents {
    * forwarded regardless of visibility -- gate-fix round 2, Verif2 LOW: a Session hidden mid-
    * request must not lose its own terminal answer; only `btw_delta` is still visibility-gated,
    * in `SessionManager.ts`). */
-  sideChatPatch: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord }) => void;
+  sideChatPatch: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void;
+  /** Gate-fix (round 4, Sec4 Medium): fired unconditionally at the very top of `onExit`, before
+   * ANY early return -- an approval-mode restart (`setPendingMode` -> `restart` -> `doRestart`)
+   * takes the `this.restarting && info.requested` branch immediately and never reaches
+   * `setStatus('stopped', ...)` at all, so `onSessionStatus`'s own 'stopped'-triggered
+   * `reconcileInterrupted` (round 3) never fires for that exit path -- any side-chat record left
+   * `running` at that instant would otherwise block Send/Retry/`/btw` forever, even once the NEW
+   * process starts. Harmless if fired on every OTHER exit path too (`reconcileInterrupted` is a
+   * no-op when nothing is running). */
+  sideChatInterrupted: (payload: { sessionId: string }) => void;
   /** Fired whenever `syncFromState` writes a registry patch (after the initial `get_state`, every
    * `session_settled`, a Conversation switch, or a mode-change restart) -- i.e. whenever
    * `lastModel`/`lastThinkingLevel`/`currentConversation`/... may have changed. `SessionManager`
@@ -918,13 +941,18 @@ export class SessionAgent extends EventEmitter {
    * (`running`) record's own whole shape immediately -- the answer itself arrives over
    * `SIDE_CHAT_PATCH` as a terminal `btw_record` (`onFrame`'s `btw_record` case), never this
    * call's own return value. `recordId` omitted starts a fresh topic (FR-003); set, it continues
-   * an existing one. An OMP-side failure case (one already running, unknown recordId, no model,
-   * history-save failure) is NOT thrown here -- it arrives as an ordinary `btw_record` with
-   * `status: "error"` (contracts/ipc.md "Error codes added"); only an RPC-level failure throws,
-   * mirroring `send`. Gate-fix (round 2, Code2/Sec2/Verif2 HIGH): a failed `btw` request MUST
-   * NEVER call `appendNotice` -- that writes into the MAIN transcript (constitution II, FR-010),
-   * which a side-chat failure must never touch; `side-chat.ts`'s own error mapping plus the
-   * store's toast are the only places a side-chat failure is ever shown. */
+   * an existing one. Gate-fix (round 4, Code4 LOW): a blank question, one already running, an
+   * unknown `recordId`, no active model, and a history-save failure all confirmed live to throw
+   * inside OMP's own `ask()` -- every one is an RPC-level failure here (never a `status: "error"`
+   * record), mirroring `send`. Gate-fix (round 2, Code2/Sec2/Verif2 HIGH): a failed `btw` request
+   * MUST NEVER call `appendNotice` -- that writes into the MAIN transcript (constitution II,
+   * FR-010), which a side-chat failure must never touch; `side-chat.ts`'s own error mapping plus
+   * the store's toast are the only places a side-chat failure is ever shown. Gate-fix (round 4,
+   * Code4/Verif4 CRITICAL): OMP's own response is the WHOLE topic tree under the root id, not a
+   * flat record -- a follow-up's response still carries the ROOT's `question`/`answer`/`status`,
+   * with the new turn nested at `followUps[last]` (`BtwResponseData`'s doc comment). `latestTurn`
+   * normalises it to the actual latest turn before this returns, so the renderer never silently
+   * re-patches the stale root row. */
   async askSideChat(question: string, recordId?: string): Promise<{ record: SideChatRecord }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot ask a side question, no live process`);
@@ -933,11 +961,11 @@ export class SessionAgent extends EventEmitter {
     if (!res.success) {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw failed: ${res.error ?? 'unknown error'}`);
     }
-    const record = (res.data as BtwResponseData | undefined)?.record;
-    if (!record) {
+    const thread = (res.data as BtwResponseData | undefined)?.record;
+    if (!thread) {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw succeeded but returned no record`);
     }
-    return { record };
+    return { record: latestTurn(thread) };
   }
 
   /** `sideChat.cancel` (contracts/ipc.md): issues `btw_cancel` for this Session's currently-
@@ -959,7 +987,13 @@ export class SessionAgent extends EventEmitter {
   /** `sideChat.getHistory` (contracts/ipc.md, FR-004): every side-chat record OMP has for this
    * Session's saved session file, flattened from `get_btw_history`'s own nested per-topic shape
    * (`BtwHistoryThread`/`BtwHistoryNode` -- confirmed live 2026-10-11, NOT a flat list of
-   * records as the original spec inferred) via `flattenBtwHistory`. */
+   * records as the original spec inferred) via `flattenBtwHistory`. Gate-fix (round 4,
+   * Code4/Verif4 HIGH): OMP's own `history()` returns topics NEWEST first -- sorted ascending
+   * by `createdAt` here so the flattened result reads oldest-to-newest (matching the panel's own
+   * top-to-bottom reading order) and so `loadHistory`'s `[...fetched].reverse().find(...)` picks
+   * the topic that was actually started MOST RECENTLY, not the oldest one (confirmed live, round
+   * 3's own evidence: every follow-up had landed on the OLDER of two topics, the exact bug this
+   * sort fixes). */
   async getSideChatHistory(): Promise<SideChatRecord[]> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot read side chat history, no live process`);
@@ -969,7 +1003,8 @@ export class SessionAgent extends EventEmitter {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: get_btw_history failed: ${res.error ?? 'unknown error'}`);
     }
     const threads = (res.data as GetBtwHistoryResponseData | undefined)?.records ?? [];
-    return threads.flatMap((thread) => flattenBtwHistory(thread));
+    const oldestFirst = [...threads].sort((a, b) => a.createdAt - b.createdAt);
+    return oldestFirst.flatMap((thread) => flattenBtwHistory(thread));
   }
 
   /** `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same
@@ -1233,6 +1268,10 @@ export class SessionAgent extends EventEmitter {
   private async onExit(info: { code: number | null; requested: boolean }): Promise<void> {
     this.process = undefined;
     this.finalizeLiveItems();
+    // Gate-fix (round 4, Sec4 Medium): emitted unconditionally, before the `restarting` early
+    // return directly below -- see `SessionAgentEvents.sideChatInterrupted`'s own doc comment
+    // for exactly which exit path this closes.
+    this.emit('sideChatInterrupted', { sessionId: this.sessionId });
     if (this.restarting && info.requested) return; // restart() owns this transition; see its doc comment.
     this.settleTurnPendingRequests('Request withdrawn: the agent process exited.');
     if (this.runtime.turnStartedAt !== null) {
@@ -1368,9 +1407,21 @@ export class SessionAgent extends EventEmitter {
       case 'message_update':
       case 'message_end':
       case 'command_output':
-      case 'notice':
         this.applyTranscriptFrame(frame);
         return;
+      case 'notice': {
+        // Gate-fix (round 4, Code4 Medium, constitution II/FR-010): a `btw-history` save
+        // failure arrives as an ordinary `notice` frame -- the generic path below would write
+        // it into the MAIN transcript, which a side-chat failure must never touch. Routed to the
+        // side-chat store as a toast instead, same as every other side-chat failure.
+        const noticeFrame = frame as NoticeFrame;
+        if (noticeFrame.source === 'btw-history') {
+          this.emit('sideChatPatch', { sessionId: this.sessionId, notice: noticeFrame.message });
+          return;
+        }
+        this.applyTranscriptFrame(frame);
+        return;
+      }
       case 'tool_execution_start': {
         this.applyTranscriptFrame(frame);
         const startFrame = frame as ToolExecutionStartFrame;
@@ -1391,13 +1442,22 @@ export class SessionAgent extends EventEmitter {
         return;
       }
       case 'btw_delta': {
+        // Gate-fix (round 4, Code4/Verif4 MEDIUM): OMP's own wire field is `delta`, never
+        // `textDelta` -- confirmed live against the bundled omp 18.8.6 `rpc-btw.ts`. `recordId`
+        // is always the TOPIC's own root id, never the latest turn's own flattened id; the
+        // store's `applyPatch` matches it against whichever record has that `topicId` AND
+        // `status: 'running'` (gate-fix round 4, Code4/Verif4 CRITICAL).
         const deltaFrame = frame as BtwDeltaFrame;
-        this.emit('sideChatPatch', { sessionId: this.sessionId, delta: deltaFrame.textDelta, recordId: deltaFrame.recordId });
+        this.emit('sideChatPatch', { sessionId: this.sessionId, delta: deltaFrame.delta, recordId: deltaFrame.recordId });
         return;
       }
       case 'btw_record': {
+        // Gate-fix (round 4, Code4/Verif4 CRITICAL): a follow-up's own terminal `btw_record`
+        // still carries the ROOT's whole tree (its own `question`/`answer`/`status`, the new
+        // turn nested at `followUps[last]`) -- `latestTurn` normalises it to the actual latest
+        // turn before this ever reaches the renderer (see `BtwRecordFrame`'s doc comment).
         const recordFrame = frame as BtwRecordFrame;
-        this.emit('sideChatPatch', { sessionId: this.sessionId, record: recordFrame.record });
+        this.emit('sideChatPatch', { sessionId: this.sessionId, record: latestTurn(recordFrame.record) });
         return;
       }
       default: {

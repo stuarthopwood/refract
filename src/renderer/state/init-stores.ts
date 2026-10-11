@@ -105,8 +105,15 @@ export function initStores(): void {
   // branch (which requires `patch.recordId !== undefined`) silently discarded every real
   // `btw_delta` frame -- round 2's own "match by recordId" fix never did anything in practice
   // because this callsite never forwarded the field the fix depended on.
-  window.refract.onSideChatPatch(({ sessionId, delta, recordId, record }) => {
-    useSideChatStore.getState().applyPatch(sessionId, { delta, recordId, record })
+  window.refract.onSideChatPatch(({ sessionId, delta, recordId, record, notice }) => {
+    useSideChatStore.getState().applyPatch(sessionId, { delta, recordId, record, notice })
+  })
+  // Gate-fix (round 4, Sec4 Medium): covers the approval-mode-restart exit path that never
+  // reaches `status: 'stopped'` at all (see `SessionAgentEvents.sideChatInterrupted`'s own doc
+  // comment) -- the `onSessionStatus`-triggered reconcile above stays too, as a second,
+  // harmless (idempotent) trigger for every OTHER exit path.
+  window.refract.onSideChatInterrupted(({ sessionId }) => {
+    useSideChatStore.getState().reconcileInterrupted(sessionId)
   })
   // Spec 005 (tasks.md T012): a Windows-notification click, or a restored split that dropped to
   // one surviving Session (main's `index.ts` validateSplitAtStartup), both reuse this one

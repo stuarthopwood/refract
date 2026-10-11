@@ -5,7 +5,7 @@
 // must be hidden entirely" rule). Gate-fix round 2 (Code2/A11y2/Sec2/Verif2): single-flight
 // guard, correct `running`/`activeTopicRecordId` tracking, a live region, focus management,
 // Retry, and the question rendered right-aligned (spec.md User Story 1 Scenario 2).
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { MessageCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -57,9 +57,11 @@ interface SideChatPanelProps {
 }
 
 export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
+  const unavailableHintId = useId()
   const [draft, setDraft] = useState('')
   const [announcement, setAnnouncement] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const prevStatusesRef = useRef<Record<string, SideChatRecord['status']>>({})
   const announceTimersRef = useRef<{ clear?: number; pending?: number }>({})
   // Gate-fix (round 3, A11y3 Medium): a record that arrives ALREADY terminal -- `ask`'s own
@@ -166,6 +168,21 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     }
   }, [])
 
+  // Gate-fix (round 4, A11y4 Medium, Verif4 Medium): a new or settling record was never scrolled
+  // into view -- a new question (or its own settling answer) could land entirely below the
+  // fold with no visible confirmation beyond the (screen-reader-only) live region. Deliberately
+  // simple (no vendored scroller, no content-visibility concerns, unlike the main transcript):
+  // this panel never virtualises and is rarely more than a handful of records, so a direct
+  // `scrollTo` on every `records.length`/last-status change is enough. `prefers-reduced-motion`
+  // drops the smooth animation, matching the main transcript's own convention.
+  const lastRecord = records[records.length - 1]
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container || !lastRecord) return
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    container.scrollTo({ top: container.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
+  }, [records.length, lastRecord?.status])
+
   async function send(): Promise<void> {
     const question = draft.trim()
     if (!question || !sessionId || running || !loaded) return
@@ -239,7 +256,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
         <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
           {announcement}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto p-4">
           {records.length === 0 ? (
             <Empty className="h-full">
               <EmptyHeader>
@@ -315,8 +332,18 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             onKeyDown={handleKeyDown}
             placeholder="Ask a side question…"
             aria-label="Side chat question"
+            aria-describedby={loaded ? undefined : unavailableHintId}
             className="max-h-48 min-h-16 resize-none overflow-y-auto"
           />
+          {!loaded && (
+            // Gate-fix (round 4, A11y4 Medium): Send disables with no visible or announced
+            // reason while `!loaded` (the Session's agent is not running yet, or a permanent
+            // `get_btw_history` failure) -- WCAG 3.3.1/4.1.2. The textarea itself still accepts
+            // typing (Enter silently no-ops in `send()`); this line explains why nothing happens.
+            <p id={unavailableHintId} className="mt-1 text-xs text-muted-foreground">
+              Side chat is available once the Session is running.
+            </p>
+          )}
           <div className="mt-2 flex justify-end gap-2">
             {running && (
               // Spec 014: Cancel issues `btw_cancel` for the running request.

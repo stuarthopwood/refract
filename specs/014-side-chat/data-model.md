@@ -13,8 +13,25 @@ process)**: a thread's own `leafId` (`BtwHistoryThread.leafId`, below) is NOT a 
 -- sending it back is rejected every time with `"Unknown /btw topic"`, including immediately
 after a restart. Only a genuine root `id` continues a topic, and it continues correctly across a
 restart too (confirmed live: a completed topic's own `id`, sent as `recordId` after killing and
-relaunching the agent process, landed as a further follow-up of the same topic). What `leafId`
-itself denotes inside OMP's own model is unknown -- logged as an open question, never guessed.
+relaunching the agent process, landed as a further follow-up of the same topic). `leafId` itself
+denotes the MAIN session's own leaf entry id at the moment the topic was first started (round 4,
+Code4/Verif4 LOW) -- unrelated to `btw` continuation, which is why it was always rejected.
+
+**Corrected 2026-10-11 (round 4, Code4/Verif4 CRITICAL)**: OMP's own LIVE `btw`/`btw_record`
+response is NOT this flat shape either -- it is the SAME whole-topic tree `get_btw_history`
+returns (confirmed live: a follow-up's own response still carries the ROOT's `question`/
+`answer`/`status`, with the new turn nested at `followUps[last]`; round 3's own captured
+`ask2_followup_response_preRestart` evidence showed exactly this, previously unnoticed). Without
+normalising it, a follow-up silently merged into the root row instead of appearing as its own
+new one (no "Thinking", single-flight guard off, the terminal answer overwriting the FIRST
+question's own text). `SessionAgent.latestTurn` (reusing `flattenBtwHistory`) normalises the raw
+tree to the actual latest turn -- with a new `topicId` field (the topic's root id, present on
+EVERY flattened record including the root) -- before it ever reaches the renderer. `topicId`,
+not a record's own `id`, is the one canonical value to send back as the next `recordId`; a
+`btw_delta`'s own `recordId` is ALSO always the topic root (round 4, Code4/Verif4 MEDIUM: its
+field is `delta`, not `textDelta` -- renamed below), so `applyPatch`'s delta branch matches by
+`topicId` + `status: 'running'`, never a plain id match (which could never find a follow-up's own
+row, since its flattened id never equals the root id a delta actually carries).
 
 ```ts
 export interface SideChatRecord {
@@ -24,12 +41,19 @@ export interface SideChatRecord {
   answer?: string;
   createdAt?: number;
   updatedAt?: number;
+  /** The TOPIC this record belongs to -- always the thread's own root id, present on EVERY
+   * flattened record (root included, where it equals this record's own `id`). THE value the
+   * next question in this topic must carry as `recordId` (round 4, Code4/Verif4 CRITICAL). */
+  topicId?: string;
   /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`).
-   * NOT the id the next question should carry (round 3, Code3/Verif3 HIGH) -- that is this
-   * record's own `id`; `leafId` was rejected every time it was tried as `recordId`. */
+   * NOT a btw continuation value (round 3/4) -- the main session's own leaf entry id at topic
+   * creation. Use `topicId` (or this record's own `id` when it IS the root), never this field. */
   leafId?: string;
-  /** [INFERENCE: from issue://516's own failure-case list -- blank question, one already
-   * running, unknown recordId, no model, history-save failure.] */
+  /** Confirmed live (round 4, Code4 LOW): a blank question, one already running, an unknown
+   * `recordId`, no active model, and a history-save failure all throw inside OMP's own `ask()`
+   * -- an RPC-level failure (never a `status: 'error'` record with this field populated). Some
+   * OTHER in-flight failure (the model erroring out mid-answer) may still populate it; none has
+   * been observed live. */
   error?: string;
 }
 ```
@@ -41,8 +65,8 @@ It returns one entry per independent topic/thread, each a tree: a root node (the
 carrying `id`/`leafId`) plus a nested `followUps[]` whose entries carry no id of their own.
 `SessionAgent.flattenBtwHistory` turns each thread into the flat `SideChatRecord[]` the IPC
 contract and renderer actually consume (synthesizing a stable `${root.id}.${index}` key for a
-non-root row, never sent back to OMP as a `recordId`). The root's own `id` -- never `leafId` --
-is what continues the topic (round 3, live-tested against a restart, see `SideChatRecord` above).
+non-root row, and a `topicId` -- the root's own id -- for EVERY row, round 4). The root's own
+`id` -- never `leafId` -- is what continues the topic (round 3, live-tested against a restart).
 
 ```ts
 export interface BtwHistoryNode {
@@ -61,21 +85,32 @@ export interface BtwHistoryThread extends BtwHistoryNode {
 }
 ```
 
-## `BtwDeltaFrame` / `BtwRecordFrame` (new `KnownFrame` members, `src/shared/frames.ts`)
+## `BtwResponseData` / `BtwDeltaFrame` / `BtwRecordFrame` (`src/shared/frames.ts`)
+
+**Corrected 2026-10-11 (round 4, Code4/Verif4 CRITICAL)**: the `btw` RPC response AND the
+`btw_record` push frame both carry a `BtwHistoryThread`, the SAME whole-tree shape as
+`get_btw_history` -- NOT a flat `SideChatRecord` as earlier rounds assumed. `SessionAgent`'s
+`askSideChat` and its `btw_record` case both normalise it with `latestTurn` (reuses
+`flattenBtwHistory`, returns its last entry) before either one ever reaches the renderer.
 
 ```ts
+export interface BtwResponseData {
+  record: BtwHistoryThread;
+}
+
 export interface BtwDeltaFrame {
   type: 'btw_delta';
   recordId: string;
-  /** [INFERENCE: not observed live -- 0 btw_delta frames across all probe runs, FINDINGS item 14,
-   * including this spec's own Slice 1+2 live round. Shape assumed to mirror MessageUpdateFrame's
-   * own delta-text convention until a real capture exists.] */
-  textDelta: string;
+  /** Confirmed live (round 4, Code4/Verif4 MEDIUM, against omp 18.8.6's own bundled
+   * `rpc-btw.ts`): the wire field is `delta`, never `textDelta` -- the round-3 fix read a field
+   * that never existed, so a delta was still silently dropped despite `recordId` being forwarded.
+   * `recordId` is always the TOPIC's own root id, never the latest turn's own flattened id. */
+  delta: string;
 }
 
 export interface BtwRecordFrame {
   type: 'btw_record';
-  record: SideChatRecord;
+  record: BtwHistoryThread;
 }
 ```
 
@@ -101,9 +136,22 @@ retries once the Session starts.
 **Corrected 2026-10-11 (round 3, Code3/Verif3 HIGH)**: `loadHistory` seeds `activeTopicRecordId`
 from the last topic's root `id`, never its `leafId` (live-tested against a restarted omp
 process: `id` continued the topic correctly, `leafId` was rejected every time). A rejected
-`recordId` is now also a safety net, not only a restart-specific fix: if `ask` fails and the
-`recordId` it sent is still the current `activeTopicRecordId`, it is reset to `undefined` so the
-NEXT question starts a fresh topic (FR-003) instead of retrying the same rejected id forever.
+`recordId` is now also a safety net, narrowed in round 4 to the `"Unknown /btw topic"` case
+specifically (round 2's own blanket clear on ANY failure also wiped the topic for a transient
+"still running"/`agent-not-running` rejection, unrelated to the wrong-id case it is meant for):
+if `ask` fails with that specific rejection and the `recordId` it sent is still the current
+`activeTopicRecordId`, it is reset to `undefined` so the NEXT question starts a fresh topic
+(FR-003) instead of retrying the same rejected id forever.
+
+**Corrected 2026-10-11 (round 4, Code4/Verif4 CRITICAL)**: `activeTopicRecordId` moves to
+`record.topicId ?? record.id` on `complete`, not a record's own `id` alone -- for a follow-up
+turn those differ (its own `id` is a flattened `${root.id}.${n}`), and only the topic's root id
+is ever a valid `recordId`. Also corrected: `getSideChatHistory` (`SessionAgent.ts`) now sorts
+topics ascending by `createdAt` before flattening -- `get_btw_history` itself returns them
+NEWEST first, so `loadHistory`'s own `[...fetched].reverse().find(...)` previously picked the
+OLDEST topic, not "the most recently started topic" its own comment claimed (round 3's account
+was wrong; live-tested, round 4: every round-3 follow-up had in fact landed on the older of two
+topics).
 
 ```ts
 interface SideChatThreadState {
@@ -111,9 +159,9 @@ interface SideChatThreadState {
    * that Session this app run (FR-004). */
   bySession: Record<string, {
     records: SideChatRecord[];
-    /** The record id the NEXT question should carry as `recordId`, or undefined for a fresh
-     * topic (FR-003). Moves only when a record reaches `status: 'complete'`; cleared by Clear
-     * thread. */
+    /** The TOPIC id the NEXT question should carry as `recordId`, or undefined for a fresh
+     * topic (FR-003). Moves only when a record reaches `status: 'complete'` (its `topicId`, not
+     * its own `id` -- round 4); cleared by Clear thread. */
     activeTopicRecordId: string | undefined;
     /** True while at least one record for this Session has `status: 'running'` (FR-005);
      * recomputed from `records` on every change, never hard-coded. */
@@ -127,9 +175,17 @@ interface SideChatThreadState {
   ask(sessionId: string, question: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   clearThread(sessionId: string): void;
-  /** Applies a BtwDeltaFrame (`delta` + `recordId` set) or BtwRecordFrame (`record` set)
-   * arriving over SIDE_CHAT_PATCH (main -> renderer). */
-  applyPatch(sessionId: string, patch: { delta?: string; recordId?: string; record?: SideChatRecord }): void;
+  /** Applies a BtwDeltaFrame (`delta` + `recordId` set, matched by `topicId` + `status:
+   * 'running'`, round 4), a terminal BtwRecordFrame (`record` set), or a btw-history
+   * save-failure notice (`notice` set, round 4, Code4 Medium -- routed to a toast, never the
+   * main transcript) arriving over SIDE_CHAT_PATCH (main -> renderer). */
+  applyPatch(sessionId: string, patch: { delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }): void;
+  /** Gate-fix (round 3, Code3/A11y3 Medium; round 4, Sec4 Medium): called when the Session
+   * leaves a live state OR its agent process exits via the NEW `sideChatInterrupted` event
+   * (round 4 -- covers an approval-mode restart, which never reaches `status: 'stopped'` at all)
+   * -- marks any `running` record `interrupted` instead of leaving it to block Send/Retry/`/btw`
+   * forever. */
+  reconcileInterrupted(sessionId: string): void;
 }
 ```
 

@@ -77,6 +77,9 @@ function forwardEvent(event: ManagerEvent, getWindow: () => BrowserWindow | unde
       case 'sideChatPatch':
         window.webContents.send(IPC_EVENTS.SIDE_CHAT_PATCH, event.payload);
         return;
+      case 'sideChatInterrupted':
+        window.webContents.send(IPC_EVENTS.SIDE_CHAT_INTERRUPTED, event.payload);
+        return;
       case 'list-changed':
         window.webContents.send(IPC_EVENTS.SESSION_LIST_CHANGED);
         return;
