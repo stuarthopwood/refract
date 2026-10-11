@@ -582,11 +582,18 @@ assignment requires before a PR is called ready.
   real screen reader pass (NVDA/JAWS/VoiceOver) on the width-preset control or the restructured
   header rows; an axe run. Screenshots under
   `C:/Users/shopwood/refract-live-check-538-pr4/`.
-- [ ] T035 Update `docs/PLAN.md` row C1 only: status, branch, PR number (minimal diff, this
-  story's own row) (depends on T034 passing).
+- [x] T035 Update `docs/PLAN.md` row C1 only: status, branch, PR number (minimal diff, this
+  story's own row) (depends on T034 passing). Done: status cell now reads PR4 of 4, draft PR
+  #665; trailing narrative appended a PR4 paragraph with the same findings as T034 above (width
+  presets exact at every width, 380px structurally unreachable per the pre-existing SC-007
+  question on issue #650, not closing #538/#393/#394).
 
 **Checkpoint**: every quickstart.md story passes at both widths; the four gate commands above
-exit 0; `docs/PLAN.md` row C1 reflects the real PR.
+exit 0; `docs/PLAN.md` row C1 reflects the real PR. Met at 1280px; at 380px the right pane itself
+cannot open given current minSizes (session list 220 + chat 360 + pane 240 + rail 40 = 640px vs
+the 380px window), so the two-tab-bar/width-preset-control stories could not be exercised there --
+the same SC-007 edge case already flagged to Stuart on issue #650 since PR2, not resolved by this
+task.
 
 ---
 
