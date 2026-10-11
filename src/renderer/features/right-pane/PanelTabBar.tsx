@@ -111,10 +111,16 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     return () => observer.disconnect()
   }, [openPanelIds, recomputeClosePositions])
 
-  // Gate remediation: scrolls the active tab into view defensively -- `TabButton`'s own
-  // `min-w-0 shrink` plus truncation should mean the strip never actually overflows its wrapper at
-  // any pane width this spec supports (240-520px, up to 3 tabs), but a future panel or an unusually
-  // long name could still produce a sliver of overflow, and this costs nothing when it doesn't.
+  // Gate remediation: scrolls the active tab into view, and the wrapper keeps `overflow-x-auto`
+  // (not `-hidden`) rather than relying on `TabButton`'s own `min-w-0 shrink`/truncation alone --
+  // live verification found that at the pane's absolute 240px minimum with all three panels open
+  // at once, the shrunk/truncated tabs can still collectively need more width than is available
+  // (each tab has a hard floor: its own icon, which never shrinks, plus the close button's
+  // reserved `pr-8`), and `overflow-hidden` there clipped the FIRST tab's icon invisibly, with no
+  // way to reach it. `overflow-x-auto` turns that same shortfall into a visible, scrollable
+  // strip instead -- not overflow-free at that one extreme combination, but nothing is ever
+  // unreachable. At every other width/panel-count this spec supports, the strip already fits
+  // with room to spare, so no scrollbar appears either way.
   useLayoutEffect(() => {
     if (!activePanelId) return
     tabRefs.current[activePanelId]?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -201,7 +207,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
 
   return (
     <div className="drag-region flex h-10 shrink-0 items-center gap-1 px-2">
-      <div className="no-drag-region relative flex min-w-0 flex-1 items-center overflow-hidden">
+      <div className="no-drag-region relative flex min-w-0 flex-1 items-center overflow-x-auto">
         <div role="tablist" aria-label="Open panels" className="flex min-w-0 flex-1 items-center gap-1">
           {openPanelIds.map((id) => (
             <TabButton
