@@ -85,8 +85,12 @@ root's own possibly-stale status for a follow-up) reaches a terminal status, whe
 frame was forwarded or dropped -- a topic with nothing left to hear about needs no entry at ANY
 age, and one still awaiting its terminal frame is kept regardless of how many Conversation
 switches have happened since. `onExit` clears the whole map unconditionally on every process
-exit too. The guard protects against a late frame from OMP for a topic of the Conversation just
-left, for as long as that topic remains unsettled; with the bundled omp 18.8.6 this is a no-op
-against live frame ordering (`close()` settles a running question before a switch ever runs) and
-is not live-verified -- it exists only against a hypothetical future OMP version that emits a
-late frame after a switch instead of before it.
+exit too. **Corrected 2026-10-11 (round 11, Code11/Sec11/A11y11/Verif11)**: the guard protects
+against a late frame from OMP for every stamped topic until it settles (residual gaps (a)-(d):
+see `data-model.md`'s own correction, same section) -- not "for as long as that topic remains
+unsettled" in the abstract, which omitted that an UNSTAMPED topic (one never asked, or one whose
+entry has already been pruned/deleted) is always treated as current regardless of how settled it
+actually is. With the
+bundled omp 18.8.6 this is a no-op against live frame ordering (`close()` settles a running
+question before a switch ever runs) and is not live-verified -- it exists only against a
+hypothetical future OMP version that emits a late frame after a switch instead of before it.

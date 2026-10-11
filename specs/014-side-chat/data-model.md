@@ -200,20 +200,40 @@ to hear about needs no entry at ANY age, and one still awaiting its terminal fra
 regardless of how many Conversation switches have happened since it was stamped. `onExit` also
 clears the whole map unconditionally on every process exit (a topic whose terminal frame never
 arrives before the process dies). This closes the late-frame window for EVERY STAMPED TOPIC
-UNTIL IT SETTLES (not "entirely" -- three residual gaps remain, all against the same hypothetical
-future OMP ordering this whole guard protects against, none live-verified): a fresh topic's OWN
-first frame, arriving before `askSideChat`'s own `btw` response stamps it, is unstamped and
-treated as current by design (round 6) -- the same behaviour any never-asked topic gets;
-`askSideChat`'s own post-await `set` is unconditional, so a `btw` response handled after a
-faster terminal frame for the SAME topic can re-add an inert, already-settled entry that nothing
-deletes again until the next `onExit` (harmless -- the frame that raced it was still handled
-correctly, the leftover entry is memory-only); and a process that has just exited can still have
-a few already-buffered stdout frames reach `onFrame` after `onExit`'s own clear, which are also
-treated as current (the renderer's own `!loaded` guard in `applyPatch` is the only thing still
-covering that narrow case). It remains a no-op against live frame ordering with the bundled omp
-18.8.6 (confirmed: `close()` settles a running question before a switch ever runs) and is not
-live-verified; it protects only a hypothetical future OMP version that emits a late frame after
-a switch instead of before it.
+UNTIL IT SETTLES (not "entirely"). **Corrected 2026-10-11 (round 11, Code11/Sec11/A11y11/
+Verif11)**: four residual gaps remain, lettered for cross-reference from `tasks.md`/the PR body,
+all against the same hypothetical future OMP ordering this whole guard protects against, none
+live-verified (the bundled omp 18.8.6 settles a running question before a switch ever runs, so
+none of these are reachable today):
+
+- **(a)** Any frame arriving BEFORE `askSideChat`'s own `btw` response stamps its topic --
+  `btw_delta`, a `running` record, or a terminal one -- is unstamped and treated as current by
+  design (round 6's own original behaviour, unrelated to rounds 7-9), the same treatment any
+  never-asked topic already gets.
+- **(b)** `askSideChat`'s own post-await `set` is unconditional, so it can re-add an inert,
+  already-settled entry if a terminal frame for the SAME topic arrives here FIRST (a fast settle
+  racing a slower `btw` response handler) -- an orphan nothing deletes again until the next
+  `onExit`. The same class of orphan is left behind when the `btw` request itself FAILS after a
+  follow-up's `recordId` was already stamped pre-await (the `!res.success` branch, or the
+  no-record throw) -- no terminal frame ever arrives for it either, so it also lingers until the
+  next `onExit`. Both are harmless and memory-only.
+- **(c)** `OmpProcess` emits `exit` from the child process's own `'exit'` event without first
+  detaching stdout parsing, so a few already-buffered frames can in theory still reach `onFrame`
+  after `onExit`'s own clear -- these are also treated as current. The renderer's own `!loaded`
+  guard in `applyPatch` is PARTIAL cover here, not complete: it drops an unknown record id only
+  while the new Conversation's history has not yet loaded; once loaded, a late terminal record
+  would be appended.
+- **(d)** A follow-up `ask` stamps its own `recordId` with the CURRENT epoch before the `btw`
+  request is even sent (`askSideChat`'s pre-await stamp), and `side-chat.ts` passes `recordId`
+  through unchecked. An ask that races a Conversation switch can therefore name a topic from the
+  Conversation just left, which this stamps as CURRENT right up until OMP itself rejects it as
+  unknown -- if a late frame for that same topic arrived in the meantime, it would be forwarded
+  rather than dropped.
+
+With the bundled omp 18.8.6 this is a no-op against live frame ordering (confirmed: `close()`
+settles a running question before a switch ever runs) and none of (a)-(d) is live-verified; the
+guard protects only a hypothetical future OMP version that emits a late frame after a switch
+instead of before it.
 
 ```ts
 interface SideChatThreadState {
