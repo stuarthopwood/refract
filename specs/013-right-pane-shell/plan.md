@@ -109,7 +109,7 @@ src/
 │   └── index.ts                                 # EDIT: expose settings.setShowSampleData
 └── renderer/
     ├── state/
-    │   ├── right-pane-store.ts                  # NEW: RightPaneState (data-model.md) — open, widthPx, openPanelIds, activePanelId, openPanel/closePanel/togglePanelFromRail/setWidth/syncRenderedState
+    │   ├── right-pane-store.ts                  # NEW: RightPaneState (data-model.md) — open, widthPx, openPanelIds, activePanelId, openPanel/closePanel/setWidth/syncRenderedState (FR-005/006's toggle lives in hosted-panel-actions.ts, see below)
     │   ├── settings-store.ts                     # EDIT: DEFAULT_SETTINGS.showSampleData, setShowSampleData action
     │   ├── view-store.ts                         # EDIT: SettingsSectionId gains 'right-pane'
     │   ├── subagent-store.ts                     # EDIT: drop `open`/`sessionId`'s "is the panel showing" role (superseded by right-pane-store); keep selectedId/streams/openPanel(now binds session)/closePanel/selectSubagent/applyPatch/reset/resetForNewTurn, now driven by right-pane-store's openPanelIds
@@ -120,7 +120,8 @@ src/
     │   │   ├── IconRail.tsx                        # NEW: the permanent rail, one button per HostedPanelDescriptor, aria-pressed, tooltip bundle
     │   │   ├── PanelTabBar.tsx                      # NEW: ARIA tabs pattern, per-tab close, live count, window-controls corner spacer
     │   │   ├── PanelLauncher.tsx                    # NEW: centred list, one row per available panel
-    │   │   ├── panel-registry.ts                    # NEW: HostedPanelDescriptor[] (data-model.md), getPanelCount()
+    │   │   ├── panel-registry.ts                    # NEW: HostedPanelDescriptor[] (data-model.md), usePanelCount() (reactive hook)
+    │   │   ├── hosted-panel-actions.ts               # NEW: openHostedPanel/closeHostedPanel/toggleHostedPanelFromRail/suspendHostedPanels/resumeHostedPanels — the one place that knows both right-pane-store.ts and a hosted panel's own store (research.md decision 3)
     │   │   ├── WidthPresetControl.tsx               # NEW: FR-025 non-drag resize alternative, calls the shell's ResizablePanel ref
     │   │   └── placeholders/
     │   │       ├── FdbKnowledgePanel.tsx            # NEW: empty state + sample content behind Settings.showSampleData

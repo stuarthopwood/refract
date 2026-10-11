@@ -155,7 +155,7 @@ function Tab({ id, selected, sessionId, tabRef, onSelect, onClose, onKeyDown }: 
         aria-controls={selected ? `panel-content-${id}` : undefined}
         tabIndex={selected ? 0 : -1}
         className={cn(
-          'relative inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 pr-8 text-sm font-medium outline-none',
+          'relative inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 pr-8 text-sm font-medium',
           FOCUS_VISIBLE,
           selected
             ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'

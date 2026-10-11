@@ -45,7 +45,7 @@ export function IconRail({ sessionId }: IconRailProps) {
                   data-rail-button={panel.id}
                   aria-pressed={pressed}
                   aria-label={label}
-                  className="aria-pressed:bg-muted aria-pressed:text-foreground"
+                  className="aria-pressed:bg-muted aria-pressed:text-foreground aria-pressed:border-foreground"
                   onClick={() => toggleHostedPanelFromRail(panel.id, sessionId)}
                 >
                   <Icon aria-hidden className="size-4" />

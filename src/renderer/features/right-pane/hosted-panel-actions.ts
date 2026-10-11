@@ -17,11 +17,13 @@ export function openHostedPanel(id: PanelId, sessionId: string | null): void {
  * toggling an open-and-active rail icon off). `subagents` keeps its own existing `closePanel()`
  * unchanged (FR-015's regression guarantee): it clears the session binding, tells main to stop
  * forwarding the selected subagent's patches, keeps `right-pane-store.ts` in sync, and restores
- * focus to the Subagents chip when that chip is what had focus. Gate remediation (High, FR-024):
- * the chip is not always rendered (no subagents this turn), so this generalises the fallback --
- * if focus is still stranded afterwards, it moves to the rail button, or to the launcher's first
- * row once this was the last open panel (mirroring the containment checks `ChatPane.tsx`/
- * `App.tsx` already use elsewhere in this codebase). */
+ * focus to the Subagents chip when that chip is what had focus. Gate remediation (FR-024, round
+ * 2): FR-024 says closing the shell's only open panel returns focus to the rail button that
+ * opened it -- the chip is not always rendered (no subagents this turn), so this generalises
+ * that fallback for every hosted panel: if focus is still stranded afterwards, it moves to that
+ * panel's own rail button first, and only to the launcher's first row if the rail button itself
+ * cannot be found (mirroring the containment checks `ChatPane.tsx`/`App.tsx` already use
+ * elsewhere in this codebase). */
 export function closeHostedPanel(id: PanelId): void {
   const panelEl = document.getElementById('right-pane-active-panel')
   const wasInside = panelEl?.contains(document.activeElement) ?? false
@@ -35,11 +37,9 @@ export function closeHostedPanel(id: PanelId): void {
     const active = document.activeElement
     const stranded = !active || active === document.body || !active.isConnected
     if (!stranded) return
-    const { openPanelIds } = useRightPaneStore.getState()
     const target =
-      openPanelIds.length === 0
-        ? document.querySelector<HTMLElement>('[data-panel-launcher] button')
-        : document.querySelector<HTMLElement>(`[data-rail-button="${id}"]`)
+      document.querySelector<HTMLElement>(`[data-rail-button="${id}"]`) ??
+      document.querySelector<HTMLElement>('[data-panel-launcher] button')
     target?.focus()
   })
 }

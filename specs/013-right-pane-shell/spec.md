@@ -169,9 +169,10 @@ User Story 3 Acceptance Scenario 4 verbatim.
    with no subagents, **Then** the panel's own per-turn reset (`resetForNewTurn`) still closes it
    exactly as it does on `main` today (spec 004 remediation note, `readout-store.ts`).
 5. **Given** the developer opens the Subagents panel via its own rail icon instead of the chip,
-   **Then** it binds to the currently focused chat pane's Session (the same fallback FR-008
-   already uses for an ambiguous click), matching the existing drag-to-open fallback rule in
-   `App.tsx`'s `onResize` handler.
+   **Then** it binds to the currently focused chat pane's Session (FR-005 via
+   `toggleHostedPanelFromRail`, the same fallback FR-008 already uses for an ambiguous click);
+   dragging the pane open with no panel bound shows the launcher instead (FR-009), never a
+   forced default panel.
 
 ---
 

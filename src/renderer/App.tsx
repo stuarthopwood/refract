@@ -70,11 +70,15 @@ export function App() {
   const showReadiness = !ready || !hasRepositories
   const view = useViewStore((state) => state.view)
   const rightPaneOpen = useRightPaneStore((state) => state.open)
-  // Gate remediation (Medium): the rail and pane are chat-view only (Stuart's decision) -- the
-  // store's own `open` flag survives a view switch (FR-003's collapse/restore applies here too),
-  // but the rendered pane and the right-most `ChatPane`'s `reservesWindowControls` must both
-  // treat it as closed outside the chat view, so `PullRequestsView`'s own header is the one
-  // reserving the window-controls corner there instead of double-reserving it (FR-011).
+  // Gate remediation (Medium, round 2): the rail and pane are chat-view only (Stuart's
+  // decision). The store's own `open` flag genuinely survives a view switch (not just FR-003's
+  // collapse/restore semantics) -- the `onResize` handler below only persists a drag-collapse's
+  // `open: false` back to the store while `view === 'chat'`, so the programmatic collapse that
+  // fires when leaving the chat view (the layout effect's own `handle.collapse()` call) never
+  // overwrites it. The rendered pane and the right-most `ChatPane`'s `reservesWindowControls`
+  // still both treat the pane as closed outside the chat view (`paneShown` below), so
+  // `PullRequestsView`'s own header is the one reserving the window-controls corner there
+  // instead of double-reserving it (FR-011).
   const paneShown = rightPaneOpen && view === 'chat'
   const sessions = useSessionsStore((state) => state.sessions)
   const paneSessionIds = useSplitStore((state) => state.paneSessionIds)
@@ -661,13 +665,21 @@ export function App() {
                 }
                 const paneState = useRightPaneStore.getState()
                 if (collapsed) {
-                  // Gate remediation (Critical/High): FR-003 and data-model.md's collapsed-pane
-                  // invariant -- collapsing the pane is a separate action from closing a panel.
-                  // Every open panel and its Session binding survive (including this view-switch
-                  // path); only the live stream pauses, since nothing can see it at 0px wide.
-                  // `widthPx` keeps its last real value too (FR-003's "same width"), never 0.
-                  paneState.syncRenderedState(false, paneState.widthPx)
+                  // Gate remediation (Critical/High, round 1; Medium, round 2): FR-003 and
+                  // data-model.md's collapsed-pane invariant -- collapsing the pane is a separate
+                  // action from closing a panel. Every open panel and its Session binding survive
+                  // (including a programmatic collapse from leaving the chat view); only the live
+                  // stream pauses, since nothing can see it at 0px wide. The store's own `open`
+                  // flag is only overwritten by a GENUINE drag-collapse inside the chat view --
+                  // leaving the chat view also collapses the panel visually (via the layout
+                  // effect's `handle.collapse()`, which fires this same callback) but must not
+                  // persist `open: false`, or returning to chat would find the pane already
+                  // closed instead of restoring it.
                   suspendHostedPanels(paneState.openPanelIds)
+                  if (useViewStore.getState().view === 'chat') {
+                    // `widthPx` keeps its last real value too (FR-003's "same width"), never 0.
+                    paneState.syncRenderedState(false, paneState.widthPx)
+                  }
                 } else {
                   // FR-009: dragging the pane open with no panels bound (or returning to the chat
                   // view) shows the launcher, same as closing the last open panel -- never a

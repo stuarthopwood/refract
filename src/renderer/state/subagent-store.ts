@@ -125,6 +125,12 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       notify(result.error)
       return
     }
+    // Gate remediation (Low, Code2/Sec2): a collapse (`suspend()`) racing this in-flight fetch
+    // could otherwise write a stale snapshot back in AFTER suspend cleared `streams`, which
+    // `resume()` would then treat as already-cached and skip re-fetching, silently dropping the
+    // patches that arrived while collapsed. Only commit the result if the binding this fetch was
+    // FOR is still the current one, and the pane is still open (not mid/post-collapse).
+    if (get().sessionId !== sessionId || get().selectedId !== subagentId || !useRightPaneStore.getState().open) return
     set((state) => ({ streams: { ...state.streams, [subagentId]: result.value } }))
   },
   applyPatch: (sessionId, subagentId, ops) => {
@@ -160,6 +166,10 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   },
   resume: () => {
     const { selectedId } = get()
-    if (selectedId) void get().selectSubagent(selectedId)
+    if (!selectedId) return
+    // Belt-and-braces alongside the guard in `selectSubagent` above: a stale write that landed
+    // between `suspend()` and this call would otherwise be mistaken for an already-fetched cache.
+    set({ streams: {} })
+    void get().selectSubagent(selectedId)
   }
 }))

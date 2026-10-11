@@ -126,8 +126,10 @@ existing chip, and this makes User Stories 1 and 2 fully exercisable (two real p
   spec 004's own collapse-desync edge cases (drag-to-collapse while open, drag-to-open with no
   `frontSessionId`, drag-to-open with a focused Session) using the Subagents panel specifically,
   since it is the one hosted panel with real session-binding state to desync (depends on T009,
-  T011). Gate remediation revised the ruling: collapsing keeps the panel bound (FR-003); only
-  drag-open with no Session falls back to the launcher now, never a forced default panel.
+  T011). Round 2 gate remediation revised the ruling: collapsing keeps every open panel bound
+  (FR-003), and a second round fixed the store's `open` flag surviving a non-chat view switch
+  too; dragging open with no open panels shows the launcher (FR-009), never a forced default
+  panel, whether or not a Session is focused.
 
 **Checkpoint**: quickstart.md Stories 1, 2, and 3 all pass in full — two real panels (Subagents
 plus any placeholder stub from Slice 3, or a temporary second registry entry if Slice 3 is not yet
@@ -172,7 +174,15 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   `src/renderer/features/right-pane/placeholders/AgentBuilderPanel.tsx`: same two-state shape,
   naming Agent Builder and its own sample cloud-agent content (depends on T022).
 - [ ] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
-  the two new components (no count, per FR-013) (depends on T001, T026, T027).
+  the two new components (no count, per FR-013) (depends on T001, T026, T027). **Prerequisite
+  carried from PR1's gate (deferred, not optional)**: once this task makes `openPanelIds.length
+  >= 2` reachable for the first time, `PanelTabBar.tsx`'s tab bar must be restructured so each
+  tab's close button sits fully outside `role="tablist"`'s own DOM subtree (today it is a DOM
+  sibling of the `role=tab` button inside a shared, non-semantic wrapper `<span>` -- harmless in
+  practice per the pattern the W3C ARIA working group tested, w3c/aria#2322, but still flagged by
+  axe-core's static `aria-required-children` rule) -- needs per-tab width measurement
+  (`ResizeObserver`) to keep a detached close button visually aligned, and must be verified
+  against a real screen reader now that the tab bar is reachable, not only against axe.
 
 **Checkpoint**: quickstart.md Stories 4 and 5 pass in full — both placeholders show the honest
 empty state with the switch off, make no network call, and show clearly labelled sample content

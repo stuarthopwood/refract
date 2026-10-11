@@ -1126,7 +1126,7 @@ function RepositoryGroup({
                 aria-label="Repository name"
                 aria-invalid={renameError ? true : undefined}
                 aria-describedby={renameError ? renameErrorId : undefined}
-                className="min-w-0 flex-1 rounded border border-border bg-transparent px-1.5 py-1 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="min-w-0 flex-1 rounded border border-border bg-transparent px-1.5 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               />
               {renameError && (
                 <p id={renameErrorId} role="alert" className="px-1.5 text-xs text-destructive">

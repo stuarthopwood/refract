@@ -31,8 +31,10 @@ interface RightPaneState {
   openPanel(id: PanelId): void        // opens pane if collapsed; adds id if absent; makes it active
   closePanel(id: PanelId): void       // removes id; if it was active, activates the new last id,
                                        // or null if openPanelIds is now empty (never collapses `open`)
-  togglePanelFromRail(id: PanelId): void // FR-005/FR-006: openPanel if not open-and-active,
-                                       // closePanel if open-and-active
+  // FR-005/FR-006 (openPanel if not open-and-active, closePanel if open-and-active) is
+  // implemented as `toggleHostedPanelFromRail` in `features/right-pane/hosted-panel-actions.ts`,
+  // not a method on this store -- it also needs a panel's own binding (e.g. subagent-store.ts's
+  // Session bind), which this store deliberately never imports (research.md decision 3).
   setWidth(widthPx: number): void     // drag handle AND the width-preset buttons (FR-025) both call this
   syncRenderedState(open: boolean, widthPx: number): void
     // generalises App.tsx's existing onResize desync guard (research.md decision 2) from the
@@ -64,7 +66,9 @@ type PanelCount =
   | { kind: 'additions-deletions'; additions: number; deletions: number } // future Git panel (FR-014)
   | null                                          // no meaningful count (FR-012) — renders nothing
 
-function getPanelCount(id: PanelId, sessionId: string | null): PanelCount
+function usePanelCount(id: PanelId, sessionId: string | null): PanelCount
+// implemented as a reactive hook in `panel-registry.ts` (every render site needs to re-render
+// live, not just read a snapshot):
 // 'subagents': reads useReadoutStore's bySession[sessionId].readout.subagentCount.running (FR-013);
 //   null if sessionId is null or running === 0 (zero is "not meaningful" here, matching the
 //   issue://538 rule "A panel with no meaningful count shows none")

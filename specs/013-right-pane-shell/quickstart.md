@@ -60,8 +60,9 @@ Requirement and story numbers refer to [spec.md](spec.md); data and protocol det
    subagent's stream live again (no desync between the dragged width and the shell's own
    `open`/`widthPx`/`openPanelIds` state, and no blank panel).
 6. Open the Subagents panel via its rail icon (not the chip) while two chat panes are split.
-   Expect: it binds to the currently focused pane's Session, matching the existing drag-to-open
-   fallback already on `main`.
+   Expect: it binds to the currently focused pane's Session (FR-005 via
+   `toggleHostedPanelFromRail`, the same ambiguous-click fallback FR-008 uses). Dragging the pane
+   open with no panel bound instead shows the launcher (FR-009), never a forced default panel.
 7. Start a fresh turn with no subagents in the same Session while its panel is open. Expect: the
    panel closes on its own (the existing per-turn reset), exactly as today.
 
