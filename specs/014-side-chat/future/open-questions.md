@@ -28,3 +28,19 @@ do not block the spec's P1/P2 stories.
    untested; revisit if Stuart reports hitting this with a real Session, or fix by having
    `SessionAgent` reattach to this Session's own side-chat context independent of
    `currentConversation`.
+6. **Continuing a topic (a follow-up's own `recordId`) fails after a Refract restart, even when
+   history itself loads correctly.** Live-verified (2026-10-11, gate-fix round 2): a Session with
+   one question answered, then killed and relaunched, correctly shows its history via
+   `get_btw_history` (data-model.md's `leafId` is present and used as `activeTopicRecordId`,
+   `tasks.md` T015) -- but sending a follow-up with that `leafId` as `recordId` fails with OMP's
+   own `"Unknown /btw topic: <id>"` (an RPC-level `success:false`, not a `status:"error"` record).
+   Root cause appears to be that `leafId` is a volatile, process-lifetime identifier OMP does not
+   keep valid across a restart, even though the question/answer CONTENT it reports is durable and
+   correct. Refract's own error handling degrades safely here (the store's existing toast fires,
+   the typed draft is preserved, nothing corrupts) -- this is a real functional gap (FR-003's
+   "include the prior answer's own record id" does not survive a restart), not a crash or data
+   loss, but it means asking a follow-up right after reopening a Session with side-chat history
+   will currently fail once, visibly, before the developer can continue that topic. No fix
+   attempted this round (an OMP/SessionAgent architecture question, same category as item 5, not
+   a guess to patch blind -- the correct mechanism, if one exists, for resuming a topic after a
+   restart is unknown from the docs read for this spec). Revisit together with item 5.

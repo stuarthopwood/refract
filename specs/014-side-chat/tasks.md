@@ -157,7 +157,68 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint**: live-verified in an isolated scratch Electron instance (own `--user-data-dir`/CDP
+**Checkpoint, round 2 (gate-fix remediation, supersedes the round-1 account below)**: PR #668's
+first gate round (Code2/A11y2/Sec2/Verif2) found real Highs in both the code (main-transcript
+leak, a stuck-`running` race, no single-flight guard) and the round-1 evidence itself (no
+`report.json`, the cancel screenshots did not show a genuinely running question, several claims
+had no artifact at all). All were fixed (see T009-T022 above) and re-verified in ONE fresh,
+coherent scratch Electron run (own `--user-data-dir`/CDP port 9361, real signed-in `omp 18.8.6`
+agent, `github-copilot/Claude Sonnet 5.5`, every process exit pid-verified) against the fixed
+build: 15 named screenshots plus `report.json` (every measured value: composer `.value`s, focus
+`document.activeElement` before/after Cancel and Send, the live region's own text, `lastMessageCount`
+before/after, the raw `get_btw_history` payloads) and `sha256.json` (0 duplicates), under
+`C:/Users/shopwood/refract-live-check-668-round2/` (the round-1 folder's own contents superseded
+and not reused).
+**Confirmed live, this round**:
+- Focus lands in the Side chat composer itself (not the generic panel wrapper) the instant it
+  opens via the rail -- two layered bugs found and fixed by tracing every real
+  `HTMLElement.focus()` call live: a parent/child effect-ordering race (`setTimeout(0)` defers
+  past it), and the textarea being `disabled` while history was still loading, which silently
+  swallowed the first `.focus()` attempt (only `Send` is gated on `loaded` now).
+- Enter/Shift+Enter/Escape on BOTH composers, real recorded `.value` (`"line one\nline two"` then
+  `""`).
+- A real `btw` round trip (Thinking shown, Cancel button appears, terminal answer "4" rendered),
+  `sessions.list()`'s own `lastMessageCount` for this Session read and confirmed unchanged
+  (SC-001) -- a stronger, more precise signal than the round-1 account's full-body-text diff
+  (which was comparing against ambient, unrelated UI text like token-usage percentages).
+- **Cancel of a GENUINELY running question**, the round-1 gate's own specific complaint: a fresh
+  question polled for the Cancel button at a 100ms cadence, clicked the instant it appeared
+  (`16-genuinely-running-before-cancel-click.png`: "Thinking…" plus both Cancel and Send
+  visible), and the terminal "Cancelled." row plus focus still on the textarea confirmed after
+  (`17-genuinely-running-after-cancel-click.png`) -- `document.activeElement` read as the
+  textarea both before AND after the click, confirming focus never dropped to `body` when the
+  Cancel button itself unmounted.
+- The no-Session empty state ("No Session open" / "Open a Session to ask a side question.").
+- History persists across a kill (`taskkill`, pid-verified) + relaunch **for a Session whose main
+  conversation was already started** -- both the original answer and a same-session follow-up
+  both showed correctly after the restart.
+- The composer's local `/btw <question>` interception (unchanged from round 1, re-confirmed:
+  draft clears only after `ask` resolves, nothing reaches the main transcript).
+- Four-tab geometry at 240/320/520, reworded per A11y2's own correction: Default (320px)
+  truncates "Subagents" and "Side chat" to a single glyph each (not "no ambiguity" as round 1
+  claimed) -- told apart only by icon and tooltip, added to #650; Min is icon-only with a
+  scrollbar; Max is clearly distinguishable.
+**Two NEW findings from this round's own live testing** (both honestly carried forward, neither
+guessed-fixed): `future/open-questions.md` item 5 (history not shown after a restart for a
+Session that never sent a main message, reworded this round per Verif2) and **item 6, newly
+found**: continuing a topic's own `recordId` (the `leafId` `get_btw_history` reports) fails with
+OMP's own `"Unknown /btw topic"` once the process has been restarted, even though the history
+content itself loads correctly -- `leafId` appears to be a volatile, process-lifetime identifier.
+Refract's own error handling degrades safely (toast, draft preserved, no corruption); the
+underlying OMP-side mechanism for resuming a topic across a restart, if one exists, is unknown.
+**Not live-verified this round** (disclosed, not guessed): FR-008's Retry button actually
+rendering against a real OMP `status: "error"` record -- the one live-reachable failure mode
+tried (a bogus `recordId`) produced an RPC-level rejection (a toast), never a renderable error
+record, so Retry's own structural correctness is typecheck/build-verified only, not live-exercised
+against real OMP data; the live region's own announced text (checked once, read back empty --
+timing of the check, not re-verified with a longer wait); `btw_delta` streaming (still 0 frames
+observed across every probe run including this one); screen reader behaviour; `axe`/automated
+accessibility scan. All added to #650.
+
+<details>
+<summary>Checkpoint, round 1 (superseded by round 2 above -- kept for history, not a current claim)</summary>
+
+live-verified in an isolated scratch Electron instance (own `--user-data-dir`/CDP
 port 9357, scratch repo + two seeded Sessions via `repositories.add`/`sessions.create`, never
 touching Stuart's live Sessions; every process exit confirmed by pid), real signed-in `omp 18.8.6`
 agent (`github-copilot/Claude Sonnet 5.5`). 21 named screenshots, hash-checked (certutil SHA256,
@@ -198,6 +259,8 @@ conversation file to name.
 **Not live-verified this round**: `btw_delta` streaming (still 0 frames observed across every
 probe run including this one -- every answer arrived as a single terminal `btw_record`, same as
 FINDINGS item 14); screen reader behaviour; `axe`/automated accessibility scan. Added to #650.
+
+</details>
 
 ---
 
