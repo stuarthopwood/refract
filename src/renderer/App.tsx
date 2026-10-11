@@ -653,10 +653,23 @@ export function App() {
                 // icon, the launcher, or a panel's own Close control) must keep `right-pane-
                 // store.ts`'s `open`/`widthPx` in sync with the panel's REAL rendered size, not
                 // just the state the store last commanded. `prevSize === undefined` is the
-                // initial mount, which the layout effect above already owns. A view switch away
-                // from chat also lands here (the layout effect's own `handle.collapse()` call
-                // fires this same callback), so the suspend path below covers both causes.
-                if (prevSize === undefined) return
+                // initial mount, which the layout effect above already owns EXCEPT for one gap
+                // (gate remediation, High, round 3): Settings/Manage sessions unmount the whole
+                // `ResizablePanelGroup`, so returning to chat with the pane previously left open
+                // (e.g. after a chat -> Pull requests -> Settings -> chat round trip) remounts
+                // this Panel already expanded (`defaultSize` is non-zero) -- the layout effect
+                // sees `paneShown` already true and the handle already not collapsed, so it never
+                // fires, and this is the ONLY resize event for that remount. Resuming here, but
+                // only when the rendered size is genuinely non-zero AND the destination view is
+                // actually chat (never while merely passing through a remount that lands on Pull
+                // requests, which should stay paused and not spend an IPC round trip nobody can
+                // see), closes that gap without duplicating the collapse/expand branches below.
+                if (prevSize === undefined) {
+                  if (size.inPixels > 0 && useViewStore.getState().view === 'chat') {
+                    resumeHostedPanels(useRightPaneStore.getState().openPanelIds)
+                  }
+                  return
+                }
                 const collapsed = size.inPixels <= 0
                 const wasCollapsed = prevSize.inPixels <= 0
                 if (collapsed === wasCollapsed) {

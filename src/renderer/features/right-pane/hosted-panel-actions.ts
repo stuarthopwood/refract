@@ -17,13 +17,14 @@ export function openHostedPanel(id: PanelId, sessionId: string | null): void {
  * toggling an open-and-active rail icon off). `subagents` keeps its own existing `closePanel()`
  * unchanged (FR-015's regression guarantee): it clears the session binding, tells main to stop
  * forwarding the selected subagent's patches, keeps `right-pane-store.ts` in sync, and restores
- * focus to the Subagents chip when that chip is what had focus. Gate remediation (FR-024, round
- * 2): FR-024 says closing the shell's only open panel returns focus to the rail button that
- * opened it -- the chip is not always rendered (no subagents this turn), so this generalises
- * that fallback for every hosted panel: if focus is still stranded afterwards, it moves to that
- * panel's own rail button first, and only to the launcher's first row if the rail button itself
- * cannot be found (mirroring the containment checks `ChatPane.tsx`/`App.tsx` already use
- * elsewhere in this codebase). */
+ * focus to the Subagents chip whenever that chip is rendered this turn AND focus was inside the
+ * panel -- the chip keeps first priority regardless of which control opened the panel (FR-015,
+ * unchanged). Gate remediation (FR-024, round 3): the chip is not always rendered (no subagents
+ * this turn), so this generalises the fallback for every hosted panel: if focus is still
+ * stranded afterwards (the chip didn't fire, or this isn't Subagents), it moves to that panel's
+ * own rail button first, and only to the launcher's first row if the rail button itself cannot
+ * be found (mirroring the containment checks `ChatPane.tsx`/`App.tsx` already use elsewhere in
+ * this codebase). */
 export function closeHostedPanel(id: PanelId): void {
   const panelEl = document.getElementById('right-pane-active-panel')
   const wasInside = panelEl?.contains(document.activeElement) ?? false

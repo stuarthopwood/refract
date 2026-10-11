@@ -394,9 +394,12 @@ each offered preset and that the drag handle still works unchanged alongside it.
 
 - **FR-023**: Every rail button MUST have a name (not icon-alone) reachable as an accessible name,
   and MUST expose `aria-pressed` reflecting whether its panel is currently open.
-- **FR-024**: Closing the shell's only open panel, or the pane itself, MUST return focus to the
-  rail button that opened it — mirroring the existing Subagents panel's own `restoreFocus` rule
-  (`subagent-store.ts`) generalised to every hosted panel.
+- **FR-024**: Closing the shell's only open panel, or the pane itself, MUST return focus to a
+  working control: for Subagents specifically, the existing Subagents panel's own `restoreFocus`
+  rule (`subagent-store.ts`) is unchanged (FR-015) and keeps first priority -- the chip when it
+  is rendered this turn. For every hosted panel (Subagents included, when the chip isn't
+  rendered), the rail button that opened it comes next, and the launcher's first row only if the
+  rail button itself cannot be found.
 - **FR-025**: The pane MUST offer a non-drag, single-pointer, keyboard-reachable alternative to
   resizing it by dragging the handle (WCAG 2.5.7; User Story 6), since issue://538 itself does not
   yet specify one and `docs/design/accessibility.md` records this as open until a spec supplies

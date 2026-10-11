@@ -23,10 +23,24 @@ function applyOps(items: TranscriptItem[], ops: TranscriptOp[]): TranscriptItem[
   return next
 }
 
+// Gate remediation (Low, all four round-2/3 reviewers): a plain generation counter, not reactive
+// store state -- every action that changes what `selectSubagent` is fetching FOR bumps it, and
+// `selectSubagent` only commits its result if the generation is still the one it started under.
+// This replaces the narrower `sessionId`/`selectedId`/pane-`open` ad-hoc guard from round 2, which
+// missed a collapse-then-expand-within-one-round-trip race: an in-flight fetch started before a
+// collapse could still land after `resume()`'s own re-fetch had already started, since by then
+// `sessionId`/`selectedId`/`open` had all gone back to matching again.
+let fetchSeq = 0
+
 interface SubagentPanelState {
   sessionId: string | null
   selectedId: string | null
   streams: Record<string, TranscriptItem[]>
+  /** Spec 013 gate remediation (High, round 3): true only between a real `suspend()` and its
+   * matching `resume()` -- lets `resume()` no-op when nothing was ever suspended (a fresh mount
+   * with a live, uninterrupted stream needs no re-fetch) while still letting `App.tsx`'s mount
+   * branch call it unconditionally on every possible "was this suspended while unmounted" path. */
+  suspended: boolean
   /** Binds the panel's content to `sessionId` -- the shell (`right-pane-store.ts`'s
    * `openPanel('subagents')`) decides whether the panel is actually showing. */
   openPanel(sessionId: string): void
@@ -54,10 +68,10 @@ interface SubagentPanelState {
    * main's live stream so a collapsed-but-bound panel isn't still being pushed patches for
    * content nobody can see. */
   suspend(): void
-  /** The pane's counterpart to `suspend()`, called when it is dragged back open with this panel
-   * still bound: re-subscribes and re-fetches the selected subagent's stream, since `suspend()`
-   * dropped the cached copy (`selectSubagent` returns early when a stream is already cached, so
-   * the cache must be cleared for this to actually re-fetch). */
+  /** The pane's counterpart to `suspend()`, called when it is dragged back open (or the whole
+   * app remounts the group, e.g. returning from Settings while the pane was left open in the
+   * Pull requests view) with this panel still bound: re-subscribes and re-fetches the selected
+   * subagent's stream. No-ops if nothing was actually suspended. */
   resume(): void
 }
 
@@ -65,21 +79,24 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   sessionId: null,
   selectedId: null,
   streams: {},
+  suspended: false,
   openPanel: (sessionId) => {
     const { sessionId: prevSessionId } = get()
+    fetchSeq += 1
     // Gate remediation (Low/Medium, code-reviewer + security-auditor): rebinding to a different
     // Session without clearing the old one left main still forwarding the previous Session's
     // selected subagent's patches to no listener, and this store's own `selectedId`/`streams`
     // still describing that old Session underneath the new binding.
     if (prevSessionId && prevSessionId !== sessionId) {
       void window.refract.chat.setVisibleSubagent(prevSessionId, null)
-      set({ sessionId, selectedId: null, streams: {} })
+      set({ sessionId, selectedId: null, streams: {}, suspended: false })
     } else {
-      set({ sessionId })
+      set({ sessionId, suspended: false })
     }
   },
   closePanel: (options) => {
     const { sessionId } = get()
+    fetchSeq += 1
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
     // Critical remediation (a11y + test-reviewer, same root cause from two angles): `sessionId`
     // used to survive a close, so `panelSessionId && <SubagentPanel/>` kept rendering the
@@ -89,7 +106,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // those controls in the Tab order and in screen-reader browse mode. The shell (RightPaneShell)
     // also gates the content on `openPanelIds`, but clearing `sessionId` here too means no stale
     // panel state lingers for `resetForNewTurn`/the ChatPane archive-while-open guard to ever see.
-    set({ sessionId: null, selectedId: null, streams: {} })
+    set({ sessionId: null, selectedId: null, streams: {}, suspended: false })
     useRightPaneStore.getState().closePanel('subagents')
     // High remediation (code-reviewer, spec-004 final confirmation pass): the readout update
     // that unmounts this panel's content is debounced, so the chip this used to focus
@@ -102,11 +119,11 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // often, the very moment the user wants to type a follow-up). The containment check below is
     // the remaining guard for this component's only other caller, the panel's own explicit Close
     // button: focus should return to the chip only if it was actually inside the panel when
-    // Close was clicked. `right-pane-active-panel` is the shell's own wrapper (header + content)
-    // now that the panel's Close button lives in the shell, not inside this panel's own content
-    // (spec 013 T012). `hosted-panel-actions.ts`'s `closeHostedPanel` is the generalised caller
-    // that falls back further (the rail button, then the launcher) when this restore doesn't
-    // fire -- for example the chip isn't rendered because this turn has no subagents.
+    // Close was clicked, and only for Subagents -- it keeps first priority over the generalised
+    // rail-button/launcher fallback `hosted-panel-actions.ts`'s `closeHostedPanel` applies for
+    // every other case (FR-024, FR-015 unchanged). `right-pane-active-panel` is the shell's own
+    // wrapper (header + content) now that the panel's Close button lives in the shell, not
+    // inside this panel's own content (spec 013 T012).
     if (options?.restoreFocus ?? true) {
       const panelEl = document.getElementById('right-pane-active-panel')
       if (panelEl?.contains(document.activeElement)) {
@@ -117,6 +134,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   selectSubagent: async (subagentId) => {
     const { sessionId } = get()
     if (!sessionId) return
+    const seq = fetchSeq
     set({ selectedId: subagentId })
     await window.refract.chat.setVisibleSubagent(sessionId, subagentId)
     if (get().streams[subagentId]) return // already fetched this turn
@@ -125,12 +143,10 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       notify(result.error)
       return
     }
-    // Gate remediation (Low, Code2/Sec2): a collapse (`suspend()`) racing this in-flight fetch
-    // could otherwise write a stale snapshot back in AFTER suspend cleared `streams`, which
-    // `resume()` would then treat as already-cached and skip re-fetching, silently dropping the
-    // patches that arrived while collapsed. Only commit the result if the binding this fetch was
-    // FOR is still the current one, and the pane is still open (not mid/post-collapse).
-    if (get().sessionId !== sessionId || get().selectedId !== subagentId || !useRightPaneStore.getState().open) return
+    // Gate remediation (Low, round 2/3, all four reviewers): only commit if nothing moved on
+    // while this fetch was in flight -- a collapse/resume, a rebind, a close, or a new turn all
+    // bump `fetchSeq`, so a stale snapshot from before any of them can never land after the fact.
+    if (fetchSeq !== seq || get().sessionId !== sessionId || get().selectedId !== subagentId) return
     set((state) => ({ streams: { ...state.streams, [subagentId]: result.value } }))
   },
   applyPatch: (sessionId, subagentId, ops) => {
@@ -146,8 +162,9 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     // leaving main still queuing patches for a subagent id the panel had already walked away
     // from, for no listener.
     const { sessionId } = get()
+    fetchSeq += 1
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
-    set({ sessionId: null, selectedId: null, streams: {} })
+    set({ sessionId: null, selectedId: null, streams: {}, suspended: false })
     useRightPaneStore.getState().closePanel('subagents')
   },
   resetForNewTurn: (sessionId) => {
@@ -157,19 +174,25 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       state.closePanel({ restoreFocus: false })
       return
     }
+    fetchSeq += 1
     set({ selectedId: null, streams: {} })
   },
   suspend: () => {
     const { sessionId } = get()
+    fetchSeq += 1
     if (sessionId) void window.refract.chat.setVisibleSubagent(sessionId, null)
-    set({ streams: {} })
+    set({ streams: {}, suspended: true })
   },
   resume: () => {
+    // Gate remediation (High, round 3): only do anything if this panel was genuinely suspended --
+    // a fresh mount whose stream was never interrupted (e.g. a straight chat -> Settings -> chat
+    // round trip, which never fires `onResize` at all) needs no re-fetch; calling `resume()`
+    // unconditionally on every mount would otherwise waste a round trip re-fetching data that was
+    // never stale.
+    if (!get().suspended) return
     const { selectedId } = get()
-    if (!selectedId) return
-    // Belt-and-braces alongside the guard in `selectSubagent` above: a stale write that landed
-    // between `suspend()` and this call would otherwise be mistaken for an already-fetched cache.
-    set({ streams: {} })
-    void get().selectSubagent(selectedId)
+    fetchSeq += 1
+    set({ suspended: false, streams: {} })
+    if (selectedId) void get().selectSubagent(selectedId)
   }
 }))
