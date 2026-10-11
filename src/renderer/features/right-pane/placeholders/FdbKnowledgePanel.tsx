@@ -3,18 +3,19 @@
 // three-part empty state from `docs/design/patterns.md` ("Empty-state shape") -- no Settings
 // dependency beyond reading the flag itself, no network call, no stored state (FR-018). On
 // renders believable, clearly labelled sample content instead (FR-021, `docs/design/patterns.md`
-// "Placeholders and 'coming soon'"): each sample row carries its own visible "Sample data" badge,
-// so no element is ever shown unlabelled (SC-006). The sample rows are inert (no `onClick`, no
-// real search/ask/tool-call behaviour) -- there is nothing real behind them yet (FR-021: sample
-// content is never mixed with real content), and a fake-but-interactive control would itself read
-// as the "disabled control with a reason" pattern FR-019 forbids.
-import { MessageCircleIcon, LibraryIcon, SearchIcon, WrenchIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+// "Placeholders and 'coming soon'"): each sample row carries its own visible "Sample data" badge
+// (`SampleDataRow.tsx`, shared with `AgentBuilderPanel.tsx`), so no element is ever shown
+// unlabelled (SC-006). The sample rows are inert (no `onClick`, no real search/ask/tool-call
+// behaviour) -- there is nothing real behind them yet (FR-021: sample content is never mixed with
+// real content), and a fake-but-interactive control would itself read as the "disabled control
+// with a reason" pattern FR-019 forbids.
+import { MessageCircleIcon, LibraryIcon, SearchIcon, WrenchIcon, type LucideIcon } from 'lucide-react'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { useSettingsStore } from '@/state'
+import { SampleDataRow } from './SampleDataRow'
 
 interface SampleRow {
-  icon: typeof SearchIcon
+  icon: LucideIcon
   text: string
 }
 
@@ -35,18 +36,9 @@ function SampleSection({ heading, rows }: { heading: string; rows: SampleRow[] }
     <div>
       <h3 className="mb-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">{heading}</h3>
       <ul className="flex flex-col gap-1">
-        {rows.map((row) => {
-          const Icon = row.icon
-          return (
-            <li key={row.text} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
-              <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{row.text}</span>
-              <Badge variant="secondary" className="shrink-0">
-                Sample data
-              </Badge>
-            </li>
-          )
-        })}
+        {rows.map((row) => (
+          <SampleDataRow key={row.text} icon={row.icon} text={row.text} />
+        ))}
       </ul>
     </div>
   )

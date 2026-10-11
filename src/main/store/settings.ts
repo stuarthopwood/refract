@@ -144,7 +144,9 @@ export class SettingsStore {
   // correction on an unrelated theme save. `serialize` is now the one place every writer in this
   // class builds its on-disk row from, so `setTheme` (which must write its OWN just-updated
   // `rawTheme`, unlike every other setter) and `persistWhole` (which writes the OLD `rawTheme`/
-  // `rawWatermarkEnabled`) can never again drift apart on this.
+  // `rawWatermarkEnabled`/`rawShowSampleData`) can never again drift apart on this. Spec 013
+  // (T019) added `rawShowSampleData` to this same list for the identical reason (research.md
+  // decision 6).
   private serialize(next: Settings): Settings {
     return {
       ...next,
@@ -200,8 +202,9 @@ export class SettingsStore {
     // The one and only place allowed to turn `rawTheme` into a real, developer-saved value --
     // every other setter above goes through `persistWhole`, which deliberately writes the OLD
     // `rawTheme` back, not this new one, until this method itself runs. `serialize` still writes
-    // `rawWatermarkEnabled` (unchanged by this call) rather than `next.watermarkEnabled`, so an
-    // in-memory FR-019/FR-020 correction never rides along on an unrelated theme save.
+    // `rawWatermarkEnabled`/`rawShowSampleData` (both unchanged by this call) rather than
+    // `next.watermarkEnabled`/`next.showSampleData`, so an in-memory FR-019/FR-020 correction
+    // never rides along on an unrelated theme save.
     this.rawTheme = themeId
     await writeJsonFile(this.file, this.serialize(next))
     return { ...next }

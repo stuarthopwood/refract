@@ -214,9 +214,13 @@ use, so an unrelated setter's whole-row write never silently persists the correc
 "Right pane" Settings section (`RightPaneSection.tsx`) mirrors `ChatDisplaySection.tsx`'s
 immediate-apply layout, not `AppearanceSection.tsx`'s Save/Cancel one -- this switch, like the
 transcript-display toggles, takes effect live with no Save step (FR-022). Both placeholders now
-read the flag directly via `useSettingsStore`, so toggling it re-renders any already-open panel in
-place without a remount (FR-022's own requirement). Sample content is inert by design (no
-`onClick`, no real search/ask/tool-call behaviour) rather than a fake-but-interactive control,
+read the flag directly via `useSettingsStore`, so an already-open tab shows the new state on
+return from Settings with no reopen needed (FR-022's own requirement) -- `App.tsx:499` swaps the
+whole chat layout out for `SettingsScreen` while Settings is open, so `RightPaneShell` and both
+panels DO unmount and remount; FR-022 is met because the open-panel/tab-order state lives in
+`right-pane-store`, not in either panel's own component state, so nothing has to be reopened.
+Sample content is inert by design (no `onClick`, no real search/ask/tool-call behaviour) rather
+than a fake-but-interactive control,
 since nothing real exists behind either panel yet and a convincingly-clickable dead control would
 itself read as the "disabled control with a reason" pattern FR-019 forbids; each sample row
 carries its own trailing `Badge` reading "Sample data" (FR-021/SC-006), reusing the existing
@@ -435,20 +439,37 @@ and a real live count exercised, each keeping its own close button and live coun
 silently folded into "Done."
 
 **Checkpoint (PR3)**: quickstart.md Story 4 step 1 (confirming "Show sample data" is off by
-default) now passes -- `DEFAULT_SETTINGS.showSampleData`/`SettingsStore.open`'s own default are
-both `false`, confirmed by reading the source (no live toggle needed to prove a default). Story 5
-passes in full: turning the switch on shows each panel's own sample rows (recent searches/ask/
-agent-tools for FDB Knowledge, cloud agents for Agent Builder), every row carrying its own visible
-"Sample data" badge; turning it off returns both panels to Story 4's empty state immediately, with
-no remount (both read `useSettingsStore` directly, so the existing subscription re-renders them in
-place); the switch's own persistence (restart, reopen both panels, confirm still on) uses the same
-`SettingsStore.setShowSampleData`/`rawShowSampleData` round trip already verified for
-`watermarkEnabled` in spec 012's own gate, not re-derived here. Step 4's "no network call" finding
-from PR2's own checkpoint still holds for the sample branch too -- `FdbKnowledgePanel.tsx`/
-`AgentBuilderPanel.tsx` read `Settings.showSampleData` from the existing `settings-store.ts`
-subscription and render a static, hard-coded sample array; neither branch adds a hook, an effect,
-or any call of any kind, confirmed by reading the components' own source (not by an actual live
-Network-tab check, the same honesty caveat PR2's own checkpoint recorded for Story 4).
+default) now passes, live-verified -- a fresh scratch instance's own `window.refract.settings.get()`
+read `showSampleData: false` before any interaction, and the Settings > Right pane screenshot
+(`01-default-off-settings.png`) shows the switch unchecked; `02-default-off-fdb-empty.png` shows
+the FDB Knowledge panel's unchanged empty state at that same default. Story 5 passes in full,
+live-verified: with both FDB Knowledge and Agent Builder already open as tabs, turning the switch
+on (`03-switch-on.png`) shows each panel's own sample rows on return from Settings
+(`04-on-fdb-sample.png`, `05-on-agent-builder-sample.png`), every row carrying its own visible
+"Sample data" badge; turning it back off returns both tabs to Story 4's empty state
+(`06-off-fdb-empty.png`, `07-off-agent-builder-empty.png`). `App.tsx:499` swaps the whole chat
+layout out for `SettingsScreen` while Settings is open, so `RightPaneShell` and both panels
+actually unmount and remount on this round trip -- FR-022 still holds because the open-tab/tab-
+order state lives in `right-pane-store`, not in either panel's own component state, so nothing has
+to be reopened; "re-renders in place with no remount" (this paragraph's own prior wording) was
+inaccurate about the mechanism. The switch's own restart persistence is now live-verified too, not
+just inferred from `watermarkEnabled`'s spec-012 gate: with the switch left on, the scratch
+instance was killed (`taskkill`) and relaunched against the same `--user-data-dir`;
+`08-restart-switch-state.png` shows the Settings > Right pane switch still checked after that real
+restart, backed by a fresh `window.refract.settings.get()` read (`showSampleData: true`) taken
+against the new process before the screenshot; `09-restart-fdb-sample.png` shows a freshly-opened
+(never-before-mounted-this-session) FDB Knowledge panel rendering its sample rows immediately,
+confirming the persisted flag drives a brand-new mount's first render, not only a live toggle of
+an already-mounted one. (`08` and `03` are byte-identical PNGs -- both show the exact same static
+Settings > Right pane screen with the switch on and nothing dynamic in view, which a different
+process genuinely producing the same pixels will do; the restart claim itself rests on the
+independent IPC read logged immediately before `08` was captured, not on the screenshot's bytes
+differing.) Step 4's "no network call" finding from PR2's own checkpoint still holds for the
+sample branch too -- `FdbKnowledgePanel.tsx`/`AgentBuilderPanel.tsx` read `Settings.showSampleData`
+from the existing `settings-store.ts` subscription and render a static, hard-coded sample array;
+neither branch adds a hook, an effect, or any call of any kind, confirmed by reading the
+components' own source (not by an actual live Network-tab check, the same honesty caveat PR2's
+own checkpoint recorded for Story 4).
 
 ### Right-pane store `closePanel` active-tab transitions (gate remediation, PR2 round 1)
 
