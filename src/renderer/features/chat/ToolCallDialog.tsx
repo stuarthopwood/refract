@@ -14,10 +14,12 @@ type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 // unusably long to scroll past.
 const OUTPUT_LINE_CAP = 200
 
-// WCAG 2.5.3/accessible-name sanity (quality-gate, Low): an agent-authored `item.target` can be
-// an arbitrarily long or multi-line bash command; a screen reader would otherwise read the
-// entire thing as the link's name on every visit. Capped to the tool name alone past 80 chars --
-// the full target is still the row's own visible summary text right next to the link.
+// WCAG 2.5.3/accessible-name sanity (quality-gate, Low round 2; Medium round 3): an agent-
+// authored `item.target` can be an arbitrarily long or multi-line bash command; a screen reader
+// would otherwise read the entire thing as the link's name on every visit. Truncated with an
+// ellipsis past 80 chars (never dropped -- FR-061 says the name MUST include both the tool and
+// the target) -- the full target is still the row's own visible summary text right next to the
+// link.
 const ARIA_LABEL_MAX_CHARS = 80
 
 interface Section {
@@ -157,7 +159,11 @@ export interface ToolCallDialogProps {
 // ever parsed as markup.
 export function ToolCallDialog({ item, open, onOpenChange }: ToolCallDialogProps) {
   const fullName = `${item.tool} ${item.target}`
-  const ariaLabel = fullName.length > ARIA_LABEL_MAX_CHARS ? `View full call: ${item.tool}` : `View full call: ${fullName}`
+  // Quality-gate remediation (Medium, round 3): truncates rather than drops the target once the
+  // combined name passes 80 characters, so the accessible name always "includes the tool and
+  // target" (FR-061) instead of silently falling back to the tool alone for a long bash command.
+  const ariaLabel =
+    fullName.length > ARIA_LABEL_MAX_CHARS ? `View full call: ${fullName.slice(0, ARIA_LABEL_MAX_CHARS)}…` : `View full call: ${fullName}`
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

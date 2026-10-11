@@ -74,6 +74,13 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
   // gates) can never be reset to `false` by the body losing its height cap. A `ResizeObserver`
   // (not a one-shot measurement) re-checks whenever the collapsed body's own rendered height
   // changes -- e.g. the pane resizing -- not only on mount or when the diff text itself changes.
+  // Known accepted edge (round 3, LOW): `canExpand` is never re-measured WHILE expanded, so if
+  // `patch` itself changes to something shorter while the user already has it expanded, Collapse
+  // stays offered even once the (now-shorter) diff would fit uncapped; clicking it re-measures
+  // truthfully and can then remove the button, moving focus to `<body>` the same way the
+  // round-1 bug did. Rare in practice (an already-rendered edit's diff text does not normally
+  // change shape after the fact) and not fixed here; a future fix would move focus to the path
+  // link above when this transition is detected.
   React.useLayoutEffect(() => {
     if (!capped || expanded) return
     const el = bodyRef.current
@@ -126,11 +133,17 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
               className="-my-1 text-muted-foreground focus-visible:ring-inset"
             />
           )}
+          {/* Quality-gate remediation (Medium, round 3): `focus-visible:ring-inset` -- at
+           * `size="xs"` with `-my-1`, this button fills the header's own full height, the first
+           * child of the outer `overflow-hidden` wrapper; without `ring-inset` its outside
+           * `ring-3` box-shadow was clipped top and bottom, leaving only a sliver of the focus
+           * ring visible either side. Matches the Copy button right next to it, which already
+           * carries the same class for the same reason. */}
           {capped && canExpand && (
             <Button
               variant="ghost"
               size="xs"
-              className="-my-1 text-muted-foreground"
+              className="-my-1 text-muted-foreground focus-visible:ring-inset"
               aria-expanded={expanded}
               aria-controls={regionId}
               onClick={() => setExpanded((value) => !value)}
@@ -152,7 +165,11 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
         // non-overflowing or expanded region is not a useful Tab stop. `focus-visible:outline-
         // hidden` draws a `forced-colors`-only transparent outline (Windows High Contrast ignores
         // `box-shadow`, which is how the Tailwind `ring-*` utilities paint, matching
-        // `radio-group.tsx`'s own fix for the same gap).
+        // `radio-group.tsx`'s own fix for the same gap); `outline-offset-[-2px]` (quality-gate
+        // remediation, Low, round 3) draws that outline INSIDE this element's own bounds, the
+        // same inset pattern `FileLinkButton` above uses -- without it, the region's left/right/
+        // bottom edges sit flush against the outer `overflow-hidden` wrapper and clip all but
+        // the top edge of the outline in Windows High Contrast.
         <div
           ref={bodyRef}
           id={regionId}
@@ -160,7 +177,7 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
           role="region"
           aria-label={`Diff of ${path}`}
           className={cn(
-            'outline-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            'outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
             capped && !expanded && 'max-h-96 overflow-auto'
           )}
         >

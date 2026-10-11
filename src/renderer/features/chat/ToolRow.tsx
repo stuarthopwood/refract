@@ -85,11 +85,21 @@ interface ToolCallRowProps {
   summaryWrap?: boolean
   dialogOpen: boolean
   onDialogOpenChange: (open: boolean) => void
+  /** Quality-gate remediation (High, round 3): when the solo→multi reshape below mounts a FRESH
+   * `ToolCallRow` for a call whose dialog was already open, its nested `CollapsedLine` must
+   * start expanded -- `Collapsible`'s `CollapsibleContent` has no `forceMount` (`collapsible.tsx`,
+   * `ui/collapsible.tsx`) and renders no children at all while collapsed, so an uncontrolled
+   * `defaultOpen={false}` here would mean `ToolCallBody`/`ToolCallDialog` never mount in the new
+   * position: the dialog would stay invisible with focus dropped to `<body>` even though
+   * `ToolGroupRow`'s own `openDialogItemId` still names this item, and that stale id would later
+   * pop the dialog open unprompted the moment the user manually expanded this row. Read once, on
+   * mount, the same contract `CollapsedLine`'s own `defaultOpen` already has. */
+  defaultOpen?: boolean
 }
 
 // One compact row per tool call, used only for each call nested inside an expanded multi-call
 // group (never at the top-level tree position `ToolGroupRow` itself occupies).
-function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange }: ToolCallRowProps) {
+function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
   return (
     <CollapsedLine
       icon={<StatusIcon status={item.status} />}
@@ -97,6 +107,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange }: Tool
       summary={item.target}
       summaryWrap={summaryWrap}
       meta={item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined}
+      defaultOpen={defaultOpen}
     >
       <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
     </CollapsedLine>
@@ -125,19 +136,31 @@ interface ToolGroupRowProps {
 // "+ N others" (", N failed" appended, text not colour, when any failed), and only the *children*
 // of this one `CollapsedLine` -- never its own presence or type -- switch to the per-call list.
 //
-// Quality-gate remediation (A11y, Medium): `openDialogItemId` (which call's "View full call"
-// dialog, if any, is open) is held HERE, above the solo/multi switch above, keyed by `item.id` --
-// not as `ToolCallDialog`'s own internal state. The switch between the solo branch (`ToolCallBody`
-// directly) and the multi branch (a `<div>` of `ToolCallRow`s) changes the child's element type at
-// this tree position (exactly the `ToolCallRow`-vs-`CollapsedLine` problem the comment above
-// already solved one level up), so a `ToolCallBody`/`ToolCallDialog` for a call that is mid-run
-// unmounts and remounts the moment a second call of the same tool starts streaming. Before this
-// fix, an open dialog's own internal `open` state lived inside that remounted subtree and was
-// silently destroyed -- the dialog vanished and stayed closed, with focus falling to `<body>`.
-// With the state lifted here and `ToolCallDialog` now a controlled component, the freshly
-// mounted instance reads `open` as already `true` and renders open again immediately.
+// Quality-gate remediation (A11y, High round 3; Medium round 2): `openDialogItemId` (which
+// call's "View full call" dialog, if any, is open) is held HERE, above the solo/multi switch
+// above, keyed by `item.id` -- not as `ToolCallDialog`'s own internal state. The switch between
+// the solo branch (`ToolCallBody` directly) and the multi branch (a `<div>` of `ToolCallRow`s)
+// changes the child's element type at this tree position (exactly the
+// `ToolCallRow`-vs-`CollapsedLine` problem the comment above already solved one level up), so a
+// `ToolCallBody`/`ToolCallDialog` for a call that is mid-run unmounts and remounts the moment a
+// second call of the same tool starts streaming. Lifting the state here is necessary but NOT
+// sufficient on its own (round 2's mistake): `ToolCallRow`'s own nested `CollapsedLine` is still
+// uncontrolled and mounts collapsed by default, and `Collapsible`'s content renders nothing at
+// all while collapsed (no `forceMount`) -- so without `ToolCallRow`'s own `defaultOpen` prop
+// (above), the freshly mounted `ToolCallBody`/`ToolCallDialog` would never mount into the DOM at
+// all, the dialog would stay invisible with focus dropped to `<body>`, and the stale
+// `openDialogItemId` would later pop the dialog open unprompted the next time the user manually
+// expanded that row. With BOTH the lifted state and `ToolCallRow`'s `defaultOpen={dialogOpen}`,
+// the freshly mounted nested row starts expanded, so `ToolCallDialog` mounts with `open` already
+// `true` and Radix's own focus-return targets the newly mounted trigger on close.
 export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
-  const [openDialogItemId, setOpenDialogItemId] = React.useState<string | null>(null)
+  const [openDialogItemIdState, setOpenDialogItemId] = React.useState<string | null>(null)
+  // Defensive (round 3): `groupToolItems` only ever appends to a run, never removes from it, so
+  // this should never actually trigger today -- but a stale id naming a call that is no longer
+  // in this group must never be treated as "open" (it would silently start a nested row expanded
+  // for the wrong reason, or leave `openDialogItemId` unreclaimable).
+  const openDialogItemId =
+    openDialogItemIdState != null && group.items.some((item) => item.id === openDialogItemIdState) ? openDialogItemIdState : null
   const solo = group.items.length === 1
   const failedCount = group.items.filter((item) => item.status === 'error').length
   // Issue #510 slice 3 quality-gate fix (a11y, Low): a multi-call group's own summary names
@@ -176,6 +199,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
               summaryWrap={summaryWrap}
               dialogOpen={openDialogItemId === item.id}
               onDialogOpenChange={(open) => setOpenDialogItemId(open ? item.id : null)}
+              defaultOpen={openDialogItemId === item.id}
             />
           ))}
         </div>
