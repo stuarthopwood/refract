@@ -331,10 +331,13 @@ each offered preset and that the drag handle still works unchanged alongside it.
   icon, name, and (FR-012) its live count where it has one; activating a row (pointer, Enter, or
   Space) MUST open that panel.
 - **FR-011**: The pane header (tab bar or single title row) MUST reserve the window-controls
-  corner — the same `calc(100vw - env(titlebar-area-width, 100vw))` trailing spacer `ChatHeader`
-  uses today — whenever the pane is open; the right-most `ChatPane`'s own `reservesWindowControls`
-  prop MUST be `false` whenever the pane is open, so the corner is reserved exactly once at a
-  time, never by both headers and never by neither (fixes issue://394's reported bug).
+  corner whenever the pane is open — the caption-button cluster's width past the permanent icon
+  rail's own 40px column, which already sits under its near side (`calc(100vw -
+  env(titlebar-area-width, 100vw) - 2.5rem)`, clamped at 0; `ChatHeader`'s own spacer, which has no
+  rail beside it, keeps the plain `calc(100vw - env(titlebar-area-width, 100vw))`); the right-most
+  `ChatPane`'s own `reservesWindowControls` prop MUST be `false` whenever the pane is open, so the
+  corner is reserved exactly once at a time, never by both headers and never by neither (fixes
+  issue://394's reported bug).
 
 **Counts**
 

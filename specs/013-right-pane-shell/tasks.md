@@ -222,6 +222,82 @@ reads that choice back from the store instead of recomputing it, with `closeHost
 rail/chip fallback suppressed (`skipFocusFallback`) whenever another panel remains so the two
 focus-restoration paths can't race.
 
+**Round-2 gate remediation (High, Code2 and Verif2 converged; A11y2 PASSed with the same finding
+at Medium)**: round 1's `min-w-0 shrink` let a tab's own measured box (used to position its close
+button) shrink below content that does not shrink -- the icon, and the close button's own reserved
+space -- so at narrow widths with three panels open the close button landed ON TOP OF the icon:
+clicking a tab's icon closed it instead of selecting it (WCAG 2.5.8), and at the pane's 320px
+default with three panels every tab's label clipped to near nothing with no Tooltip to recover the
+name (FR-026). **Replaced round 1's shrink/truncate approach entirely**, rather than patching it
+further: every tab EXCEPT the active one is now a fixed 28px icon-only square (`w-7 shrink-0`, no
+close button ever drawn on it, `aria-label` carrying its full name and count, and its own Tooltip
+-- the FR-026 icon-only bundle); only the ACTIVE tab shows its icon, a truncating label, a
+truncating count, and the one close button this bar ever renders at a time, with a `min-w-14`
+(56px) floor sized around the icon plus the close button's own reserved space specifically, never
+the label (which may truncate to nothing at that exact floor -- the active state is already marked
+by more than its label, via the underline and surface change, and its close button carries its own
+Tooltip with the full name). This needs no width-measurement or compact/non-compact toggle at all:
+the floor is a fixed minimum regardless of pane width, proven to fit at every supported pane width
+with up to three panels open, including one showing a live count, by the geometry table below --
+`overflow-x-auto` on the wrapper stays only as a safety net for a future fourth panel, not because
+this spec's own three ever need it. Closing an inactive tab from the pointer is therefore
+select-then-close (click selects it, revealing its close button); Delete on a focused inactive tab
+still closes it directly (`handleTabKeyDown` reads the keystroke from the tab button itself, never
+from the close overlay) -- unchanged from round 1, re-verified this round.
+
+Also this round: `scrollIntoView` (round 1) scrolled every scrollable ancestor needed to bring the
+active tab into view, including `RightPaneShell`'s own `overflow-hidden` region and the
+`ResizablePanel` itself, both still technically "scrollable containers" to the browser even though
+neither is meant to scroll -- replaced with a manual `scrollLeft` adjustment on the tab strip's own
+wrapper ref only, and the effect now returns early while the pane is collapsed. `closeTab`'s dead
+`remainingCount === 0` branch (round 1: this function only ever runs from the tab-bar render
+branch, which never renders with fewer than two open panels, so closing one here always leaves at
+least one behind) is deleted. The `[data-panel-close]` focus query is now scoped to this
+component's own wrapper ref, not the whole document (Sec2, Low). The `hosted-panel-actions.ts`
+comment describing the round-1 focus race was corrected: the Subagents chip's own restore runs
+SYNCHRONOUSLY inside `closePanel`, not via a `requestAnimationFrame` the way the rail fallback
+does -- it was the chip restore firing before `closeTab`'s own deferred focus call that caused the
+flash, not a race between two `requestAnimationFrame` callbacks as the round-1 comment claimed.
+
+Two honesty corrections, both found by Verif2 hash-checking the evidence instead of trusting the
+round-1 PR body's own claims: `refract-live-check-538-pr2/07-fdb-knowledge-empty-state.png` was
+still byte-identical to `03-launcher.png` (sha256 `66da9e86…eddd`) despite the round-1 PR body
+saying it had been "retaken" -- it had not; a genuine new screenshot showing FDB Knowledge open
+alone is captured this round and the stale file is deleted by literal path so it cannot be cited
+again. `06-after-drag-to-240.png` showed a pane of about 312px, not 240 (only `06b`, the
+keyboard-driven resize, actually reached the floor) -- the stale `06` is deleted by literal path
+too, and the PR body's wording is aligned with `06b`'s own keyboard-driven method throughout
+(round 1's text inconsistently said "dragging" in one place and "keyboard-driven" in another).
+
+### Tab-strip width geometry (gate remediation, PR2 round 2)
+
+Proves the round-2 redesign fits at every pane width this spec supports (240px floor, 320px
+default, 520px maximum) with one, two or three panels open, including one showing a live count --
+**no scrollbar is needed at any of these**, so `overflow-x-auto` on the wrapper is a pure safety
+net, never actually exercised by this spec's own panel set. Available width is the pane's own
+`widthPx` minus the outer row's `px-2` (16px) minus its `gap-1` to the window-controls spacer (4px)
+minus the spacer itself (`max(0px, calc(100vw - env(titlebar-area-width, 100vw) - 2.5rem))`,
+measured live at a stable ~98px on this machine's caption-button cluster regardless of pane width,
+since it is a window-relative, not pane-relative, calculation) -- `available(widthPx) = widthPx -
+118`, confirmed against the live-measured `clientWidth` values below. Required (compact mode, N
+open tabs) = `(N - 1) * 28` (inactive icon squares) `+ 56` (the active tab's floor) `+ (N - 1) * 4`
+(the `gap-1` between every pair of tabs) -- independent of which specific panels are open or
+whether the active one is showing a count, since the count only ever takes space ABOVE the 56px
+floor, never below it (it uses `min-w-0 truncate`, so it shrinks to nothing before anything else
+breaks).
+
+| Pane width | `available(widthPx)` (measured) | N=1 | N=2 required | N=2 fits? | N=3 required | N=3 fits? |
+|---|---|---|---|---|---|---|
+| 240 (floor) | 122-123 | n/a (single title row, no tab bar) | 88 | yes | 120 | yes |
+| 320 (default) | ~202 | n/a | 88 | yes | 120 | yes |
+| 520 (maximum) | ~402 | n/a | 88 | yes | 120 | yes |
+
+N=1 never reaches this code at all (`openPanelIds.length === 1` renders the single title row
+branch above, not a tab bar). At every width this spec supports, required stays far below
+available even at the 240px floor with three panels and a live count on the active tab --
+confirmed live this round (see the live-check section below), not just by this table's own
+arithmetic.
+
 **Checkpoint**: quickstart.md Story 4 steps 2 and 3 pass (both placeholders' empty states, live
 and screenshotted) — step 1 (confirming the Settings switch is off by default) cannot run, since
 the switch does not exist yet (PR3); step 4 (DevTools Network tab, no request from either
@@ -229,8 +305,10 @@ placeholder) was verified by reading the components' source (both are static JSX
 effect, no call of any kind), not by an actual live Network-tab check. Story 5 (the Settings switch
 and sample content) is out of scope for this checkpoint — PR3 builds T017-T025 and re-runs
 quickstart.md Story 5 against them. The now-three-panel rail/launcher/tab-bar paths from Slice 1/2
-pass with a real second and third panel exercising them for the first time, including the round-1
-gate's own focus/selection and overflow fixes above.
+pass with a real second and third panel exercising them for the first time, including round 1's
+focus/selection fixes and round 2's icon/close-button-overlap and tab-strip overflow fixes above
+-- the tab strip now genuinely meets SC-007 (no horizontal scrollbar) at every pane width this
+spec supports, with up to three panels open, proven by the geometry table above and confirmed live.
 
 ### Right-pane store `closePanel` active-tab transitions (gate remediation, PR2 round 1)
 

@@ -11,39 +11,33 @@
 // but still flagged by axe-core's static `aria-required-children` rule, and deferred to PR2
 // (tasks.md T028's own note) since a second real panel was needed to reach it at all.
 //
-// PR2: the tablist's own children are now ONLY `role=tab` buttons. Every close button lives in a
-// separate overlay, a DOM sibling of the tablist (not a descendant), positioned per tab from that
-// tab button's own measured `offsetLeft`/`offsetWidth`/`offsetTop`/`offsetHeight` -- both the
-// tablist and the overlay are children of the same `relative` wrapper. A `ResizeObserver` watches
-// every tab button (a tab's own width changes when its live count's digit count changes, shifting
-// its own close button and every later tab's) and recomputes every position on any of their
-// resizes, and on `openPanelIds` changes (a tab closing or opening shifts everyone after it). Each
-// close button's own `tabIndex` stays synced to the roving-tabindex state (0 only when its tab is
-// the active one, -1 otherwise) exactly as before, so it still never joins the arrow-key cycle and
-// Tab still only ever adds one extra stop for the whole bar.
+// PR2 round 1: the tablist's own children became ONLY `role=tab` buttons, with every close button
+// a DOM sibling outside it -- verified by direct DOM query (`tablist` children are only
+// `role=tab`), not by running axe, and a real screen reader pass (NVDA/JAWS/VoiceOver) was not
+// performed in this environment; both recorded as open live-check items (issue #650), not claimed.
 //
-// Known, accepted trade-off: grouping every tab before every close button in document order changes
-// a screen reader's browse-mode reading order ("tab 1, tab 2, ... close 1, close 2" instead of the
-// previous "tab 1, close 1, tab 2, close 2"); Tab-key interaction order is unaffected, since
-// `tabIndex=-1` elements are never a Tab stop regardless of DOM position. Verified by DOM query
-// only (the tablist's own children are queried directly and confirmed to be only `role=tab`) --
-// axe itself was not run, and a real screen reader pass (NVDA/JAWS/VoiceOver) was not performed in
-// this environment either; both are recorded as open live-check items (issue #650), not claimed.
-//
-// Gate remediation (PR2's own gate, round 1): the tab strip used to overflow at the pane's default
-// 320px width (`shrink-0` on every tab, plus a window-controls spacer that double-reserved the
-// rail's own 40px) -- fixed by letting tabs shrink and truncate their label, trimming the rail's
-// width out of the spacer, and scrolling the active tab into view defensively. Focus rings on tabs
-// and close buttons were also clipped by the scrolling wrapper's own height (an outset
-// `outline-offset-2` drew outside it) -- fixed by insetting the ring, matching the pane content
-// region's own `outline-offset-[-2px]` convention. Closing a tab used to leave keyboard focus on a
-// DIFFERENT tab from the one the store made active (`closeTab` computed its own neighbour index
-// independently of `right-pane-store.ts`'s own choice) -- fixed by making the store's own
-// `closePanel` activate the neighbour (not always the last tab) and having `closeTab` read that
-// choice back from the store instead of recomputing it, with `closeHostedPanel`'s own rail/chip
-// fallback suppressed via `skipFocusFallback` whenever another panel remains open so the two
-// focus-restoration paths can't race.
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+// PR2 round 2: round 1's `min-w-0 shrink` let a tab's own measured box (used to position its close
+// button) shrink below content that does not shrink -- the icon, and the close button's own
+// reserved space -- so at narrow widths the close button landed ON TOP OF the icon: clicking a
+// tab's icon closed it instead of selecting it (WCAG 2.5.8), and at the pane's 320px default with
+// three panels every tab's label was clipped to near nothing with no Tooltip to recover the name
+// (FR-026). Round 2 redesign (replaces round 1's per-tab shrink/truncate entirely): every tab
+// EXCEPT the active one renders as a fixed 28px icon-only square (`w-7 shrink-0`, no close button
+// overlay at all, `aria-label` carrying its full name and count, and its own Tooltip -- the FR-026
+// icon-only bundle); only the ACTIVE tab shows its icon, a truncating label, a truncating count,
+// and the one close button this bar ever renders at a time, with a `min-w-14` (56px) floor sized
+// around the icon plus the close button's own reserved space specifically (never the label, which
+// may truncate to nothing at that exact floor -- the active state is already marked by more than
+// its label, via the underline and surface change, and its close button carries its own Tooltip
+// with the full name). This needs no width-measurement or compact/non-compact toggle at all: the
+// floor is a fixed minimum regardless of pane width, and the geometry table in tasks.md proves it
+// fits at every supported pane width (240/320/520px) with up to three panels open, including one
+// showing a live count, with room to spare -- `overflow-x-auto` on the wrapper stays only as a
+// safety net for a future fourth panel; it should never actually scroll for this spec's own three.
+// Closing an inactive tab from the pointer is therefore select-then-close (click selects it,
+// revealing its close button); Delete on a focused inactive tab still closes it directly, since
+// `handleTabKeyDown` reads the keystroke from the tab button itself, never from the close overlay.
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -75,55 +69,62 @@ interface PanelTabBarProps {
   sessionId: string | null
 }
 
-interface ClosePosition {
-  left: number
-  top: number
-}
-
 export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const openPanel = useRightPaneStore((s) => s.openPanel)
   const tabRefs = useRef<Partial<Record<PanelId, HTMLButtonElement | null>>>({})
-  const [closePositions, setClosePositions] = useState<Partial<Record<PanelId, ClosePosition>>>({})
+  // Gate remediation (Sec2, Low): scoped to this component's own rendered subtree, so a future
+  // second `PanelTabBar` instance (there is only ever one today) could never steal focus from
+  // this one's `[data-panel-close]` query. Shared by both render branches below.
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
-  const recomputeClosePositions = useCallback(() => {
-    const next: Partial<Record<PanelId, ClosePosition>> = {}
-    for (const id of openPanelIds) {
-      const el = tabRefs.current[id]
-      if (!el) continue
-      next[id] = {
-        left: el.offsetLeft + el.offsetWidth - CLOSE_BUTTON_PX - CLOSE_BUTTON_INSET_PX,
-        top: el.offsetTop + (el.offsetHeight - CLOSE_BUTTON_PX) / 2
-      }
+  // Gate remediation (round 2): the active tab is the only one with a close button, so only its
+  // own position needs tracking -- not a map over every open tab the way round 1's per-tab
+  // overlay needed. A `ResizeObserver` on that one tab re-measures its close button's position
+  // whenever the tab's own content changes width (its live count's digit count, for example).
+  const [closePosition, setClosePosition] = useState<{ left: number; top: number } | null>(null)
+
+  const recomputeClosePosition = () => {
+    const el = activePanelId ? tabRefs.current[activePanelId] : null
+    if (!el) {
+      setClosePosition(null)
+      return
     }
-    setClosePositions(next)
-  }, [openPanelIds])
+    setClosePosition({
+      left: el.offsetLeft + el.offsetWidth - CLOSE_BUTTON_PX - CLOSE_BUTTON_INSET_PX,
+      top: el.offsetTop + (el.offsetHeight - CLOSE_BUTTON_PX) / 2
+    })
+  }
 
   useLayoutEffect(() => {
-    recomputeClosePositions()
-    if (openPanelIds.length < 2) return
-    const observer = new ResizeObserver(() => recomputeClosePositions())
-    for (const id of openPanelIds) {
-      const el = tabRefs.current[id]
-      if (el) observer.observe(el)
-    }
+    recomputeClosePosition()
+    const el = activePanelId ? tabRefs.current[activePanelId] : null
+    if (!el) return
+    const observer = new ResizeObserver(() => recomputeClosePosition())
+    observer.observe(el)
     return () => observer.disconnect()
-  }, [openPanelIds, recomputeClosePositions])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePanelId, openPanelIds])
 
-  // Gate remediation: scrolls the active tab into view, and the wrapper keeps `overflow-x-auto`
-  // (not `-hidden`) rather than relying on `TabButton`'s own `min-w-0 shrink`/truncation alone --
-  // live verification found that at the pane's absolute 240px minimum with all three panels open
-  // at once, the shrunk/truncated tabs can still collectively need more width than is available
-  // (each tab has a hard floor: its own icon, which never shrinks, plus the close button's
-  // reserved `pr-8`), and `overflow-hidden` there clipped the FIRST tab's icon invisibly, with no
-  // way to reach it. `overflow-x-auto` turns that same shortfall into a visible, scrollable
-  // strip instead -- not overflow-free at that one extreme combination, but nothing is ever
-  // unreachable. At every other width/panel-count this spec supports, the strip already fits
-  // with room to spare, so no scrollbar appears either way.
+  // Gate remediation (round 2, Code2/Verif2): `scrollIntoView` scrolls every scrollable ancestor
+  // needed to bring the element into view, including `RightPaneShell`'s own `overflow-hidden`
+  // region and the `ResizablePanel` itself -- both still technically "scrollable containers" to
+  // the browser even though neither is meant to scroll, so a stray call could shift the whole pane
+  // sideways instead of only this row's own strip. Adjusts `wrapRef`'s own `scrollLeft` directly
+  // instead. Also returns early while the pane is collapsed, when this row's measurements (and the
+  // whole point of scrolling it into view) do not mean anything yet.
   useLayoutEffect(() => {
     if (!activePanelId) return
-    tabRefs.current[activePanelId]?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (!useRightPaneStore.getState().open) return
+    const wrap = wrapRef.current
+    const tab = tabRefs.current[activePanelId]
+    if (!wrap || !tab) return
+    const tabLeft = tab.offsetLeft
+    const tabRight = tab.offsetLeft + tab.offsetWidth
+    if (tabLeft < wrap.scrollLeft) wrap.scrollLeft = tabLeft
+    else if (tabRight > wrap.scrollLeft + wrap.clientWidth) wrap.scrollLeft = tabRight - wrap.clientWidth
   }, [activePanelId, openPanelIds])
 
   if (openPanelIds.length === 1) {
@@ -131,7 +132,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     const descriptor = id ? getPanelDescriptor(id) : undefined
     if (!id || !descriptor) return null
     return (
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
+      <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
         <h2 id="right-pane-panel-title" className="min-w-0 truncate text-sm font-semibold">
           {descriptor.name}
         </h2>
@@ -166,17 +167,19 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   // that `aria-selected=false` while a DIFFERENT tab's content showed. Now `closePanel` itself
   // picks the neighbour (see its own doc comment), and this function simply reads that choice back
   // -- there is exactly one source of truth for "which tab is next" instead of two that can drift.
-  // `closeHostedPanel`'s own rail/chip fallback is suppressed (`skipFocusFallback`) whenever another
-  // panel remains, so its `requestAnimationFrame` can't race this one and steal focus back out.
+  // `closeHostedPanel`'s own rail/chip fallback is suppressed (`skipFocusFallback`) whenever
+  // another panel remains, so its `requestAnimationFrame` can't race this one and steal focus back
+  // out. Gate remediation (Low, round 2): the `remainingCount === 0` case from round 1 was dead
+  // code -- this function only ever runs from the tab-bar branch below, which never renders with
+  // fewer than two open panels, so closing one here always leaves at least one behind.
   function closeTab(id: PanelId): void {
     const remainingCount = openPanelIds.length - 1
-    closeHostedPanel(id, { skipFocusFallback: remainingCount >= 1 })
-    if (remainingCount === 0) return
+    closeHostedPanel(id, { skipFocusFallback: true })
     if (remainingCount === 1) {
       // Drops into the single-panel title-row branch above on the next render; focus its Close
       // button (not a tab ref, which no longer exists once the tablist itself unmounts).
       requestAnimationFrame(() => {
-        document.querySelector<HTMLElement>('[data-panel-close]')?.focus()
+        wrapperRef.current?.querySelector<HTMLElement>('[data-panel-close]')?.focus()
       })
       return
     }
@@ -205,10 +208,12 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
     }
   }
 
+  const activeDescriptor = activePanelId ? getPanelDescriptor(activePanelId) : undefined
+
   return (
-    <div className="drag-region flex h-10 shrink-0 items-center gap-1 px-2">
-      <div className="no-drag-region relative flex min-w-0 flex-1 items-center overflow-x-auto">
-        <div role="tablist" aria-label="Open panels" className="flex min-w-0 flex-1 items-center gap-1">
+    <div ref={wrapperRef} className="drag-region flex h-10 shrink-0 items-center gap-1 px-2">
+      <div ref={wrapRef} className="no-drag-region relative flex min-w-0 flex-1 items-center overflow-x-auto">
+        <div role="tablist" aria-label="Open panels" className="flex min-w-0 items-center gap-1">
           {openPanelIds.map((id) => (
             <TabButton
               key={id}
@@ -223,34 +228,29 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
             />
           ))}
         </div>
-        {openPanelIds.map((id) => {
-          const descriptor = getPanelDescriptor(id)
-          const position = closePositions[id]
-          if (!descriptor || !position) return null
-          return (
-            <Tooltip key={id}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  tabIndex={id === activePanelId ? 0 : -1}
-                  aria-label={`Close ${descriptor.name} panel`}
-                  style={{ position: 'absolute', left: position.left, top: position.top }}
-                  className={cn(
-                    'inline-flex size-6 items-center justify-center rounded text-current hover:bg-foreground/10',
-                    FOCUS_VISIBLE
-                  )}
-                  onClick={() => closeTab(id)}
-                >
-                  <XIcon aria-hidden className="size-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {`Close ${descriptor.name} panel`}
-                <Kbd>Delete</Kbd>
-              </TooltipContent>
-            </Tooltip>
-          )
-        })}
+        {activePanelId && activeDescriptor && closePosition && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                tabIndex={0}
+                aria-label={`Close ${activeDescriptor.name} panel`}
+                style={{ position: 'absolute', left: closePosition.left, top: closePosition.top }}
+                className={cn(
+                  'inline-flex size-6 items-center justify-center rounded text-current hover:bg-foreground/10',
+                  FOCUS_VISIBLE
+                )}
+                onClick={() => closeTab(activePanelId)}
+              >
+                <XIcon aria-hidden className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {`Close ${activeDescriptor.name} panel`}
+              <Kbd>Delete</Kbd>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
       <div aria-hidden className="no-drag-region shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
     </div>
@@ -271,21 +271,27 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
   const count = usePanelCount(id, sessionId)
   if (!descriptor) return null
   const Icon = descriptor.icon
-  return (
+  const countText = count ? formatPanelCount(count) : undefined
+
+  const button = (
     <button
       ref={tabRef}
       role="tab"
       id={`panel-tab-${id}`}
       aria-selected={selected}
       aria-controls={selected ? `panel-content-${id}` : undefined}
+      aria-label={!selected ? `${descriptor.name}${countText ? ` ${countText}` : ''}` : undefined}
       tabIndex={selected ? 0 : -1}
       className={cn(
-        // `pr-8` reserves room so the label/count never sits under the overlaid close button.
-        // `min-w-0 shrink` (gate remediation, round 1): without it every tab stayed at its content
-        // width regardless of available space, overflowing the pane at its 320px default and its
-        // 240px minimum; the label's own `truncate` is what actually shrinks, never the icon.
-        'relative inline-flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2.5 pr-8 text-sm font-medium',
+        'relative inline-flex h-7 items-center rounded-md text-sm font-medium',
         FOCUS_VISIBLE,
+        // Round 2 redesign: a selected tab gets a floor sized around its icon plus the overlaid
+        // close button's own reserved space specifically (`pr-8`) -- never the label, which may
+        // truncate to nothing at that exact floor (geometry table, tasks.md). An unselected tab is
+        // a fixed 28px icon-only square (`w-7`): with no close button ever drawn on it, it has
+        // nothing left to reserve space for, and `shrink-0` keeps every inactive tab's width
+        // identical regardless of how many others are open.
+        selected ? 'min-w-14 shrink gap-1.5 px-2.5 pr-8' : 'w-7 shrink-0 justify-center',
         selected
           ? 'bg-muted text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
           : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -294,8 +300,30 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       onKeyDown={onKeyDown}
     >
       <Icon aria-hidden className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">{descriptor.name}</span>
-      {count && <span className={cn('shrink-0', count.kind === 'running' ? 'text-state-working' : undefined)}>{formatPanelCount(count)}</span>}
+      {selected && (
+        <>
+          <span className="min-w-0 truncate">{descriptor.name}</span>
+          {countText && (
+            <span className={cn('min-w-0 shrink truncate', count?.kind === 'running' ? 'text-state-working' : undefined)}>
+              {countText}
+            </span>
+          )}
+        </>
+      )}
     </button>
+  )
+
+  // Round 2: an unselected tab is icon-only -- the FR-026 bundle (a Tooltip whose text equals the
+  // accessible name) applies to it the same way it already does to the icon rail's own buttons.
+  // The selected tab's own close button carries its own, separate Tooltip with the full name; the
+  // tab itself is not wrapped here, since it always shows at least its icon plus whatever of its
+  // label/count fits, never pure icon-only the way an unselected tab always is.
+  if (selected) return button
+  const label = `${descriptor.name}${countText ? ` ${countText}` : ''}`
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
