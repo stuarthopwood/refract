@@ -234,28 +234,34 @@ Once Slice 1 lands, Slice 2 and Slice 3 touch disjoint files (`subagent-store.ts
 built by two parallel subagents, each finishing with their own slice's Checkpoint, before Slice 4
 runs the combined gate.
 
-## Subagents stream state table (gate remediation, round 4)
+## Subagents stream state table (gate remediation, rounds 4–5)
 
 Four gate rounds each found a new hole in the Subagents panel's suspend/resume state machine
 (round 3: a dead stream after a Settings round trip; round 4: a dead stream reopening through the
-rail after a drag-collapse). This table traces every event against `subagent-store.ts`'s state
-and main's visibility subscription, verified against the code as it stands after round 4's fixes
-(`openPanel`'s same-Session branch no longer touches `suspended`; `fetchSeq` only bumps on a real
-rebind; the `App.tsx` mount branch is gated on size, view AND the store's own `open` flag).
+rail after a drag-collapse). Round 5 traced this table cell by cell against the code and found it
+still undercounted `fetchSeq` on two round-trip rows (each is a `suspend()` **and** a `resume()`,
+not one call), was missing the collapsed-pane and remount-while-collapsed cases entirely, and
+overstated the launcher as reachable while the pane is collapsed (`RightPaneShell` is `inert` then,
+so only the rail and the Subagents chip — not the launcher — can reopen it). This revision is
+verified against the code as it stands after round 4's fixes (`openPanel`'s same-Session branch no
+longer touches `suspended`; `fetchSeq` only bumps on a real rebind; the `App.tsx` mount branch is
+gated on size, view AND the store's own `open` flag) with no further source changes.
 
 | Event | `suspended` after | `streams` after | `selectedId` after | main's `setVisibleSubagent` | `fetchSeq` |
 |---|---|---|---|---|---|
-| Open panel, Session S, no prior binding | `false` | `{}` | `null` | not called yet | unchanged |
+| Open panel, Session S, no prior binding | `false` (if `suspended` was already stale-`true` with no session bound, `openPanel`'s same-ish branch here does not clear it directly — harmless: the next expand's `resume()` clears it, with `selectedId` still `null`, so there is nothing to re-fetch) | `{}` | `null` | not called yet | unchanged |
 | Select subagent A (first time) | `false` | `{A: [...]}` | `'A'` | `(S, A)` | unchanged |
 | Drag-collapse (A selected, streaming) | `true` | `{}` (cleared) | `'A'` (kept) | `(S, null)` | **+1** |
 | Drag-expand (same mount) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`) |
-| Reopen via rail/chip/launcher after a drag-collapse (same Session) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`, NOT from `openPanel`) |
-| chat → Pull requests → chat (one mount, programmatic collapse/expand) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`) |
-| chat → Pull requests → Settings/Manage sessions → chat (remount, was suspended) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (mount branch calls `resume()`) |
+| Reopen via rail/chip after a drag-collapse (same Session; the launcher is `inert` while collapsed and cannot be the one reopening it) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`, NOT from `openPanel`) |
+| chat → Pull requests → chat (one mount, programmatic collapse/expand) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+2** (`suspend()` leaving chat, `resume()` returning to it) |
+| chat → Pull requests → Settings/Manage sessions → chat (remount, was suspended) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+2** (`suspend()` on the chat → Pull requests leg; the Settings → chat remount's mount branch calling `resume()`; no further event fires across the Pull requests → Settings leg itself, since the whole `ResizablePanelGroup` unmounts) |
 | chat → Settings/Manage sessions → chat directly (remount, never suspended) | `false` (unchanged) | `{A: [...+ any live patches]}` (never interrupted) | `'A'` | `(S, A)` (never stopped) | unchanged (`resume()` no-ops) |
+| Remount of a drag-collapsed pane (chat → Settings/Manage sessions → chat, pane left collapsed, `open: false`) | `true` (unchanged, already true) | `{}` (cleared again) | `'A'` (kept) | `(S, null)` (fired again, redundant but harmless) | **+1** (the mount branch's `resume()` is skipped since `paneStore.open` is `false`; the Panel still mounts at its non-zero `defaultSize` regardless, so the layout effect's own `handle.collapse()` fires a genuine second collapse transition on this remount, calling `suspend()` again) |
 | Rebind: open panel for a different Session T | `false` | `{}` | `null` | `(S, null)` then none for T until selected | **+1** |
-| New turn, no subagents, panel open | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
-| New turn, no subagents, panel not open | `false` | `{}` | `null` | unchanged | **+1** |
+| New turn while collapsed (pane drag-collapsed, bound Session's turn restarts; `openPanelIds` still includes `'subagents'` — collapsing never removes it) | `false` (forced by the `closePanel` branch below, overwriting the suspended-`true` it had) | `{}` | `null` (this is a full `closePanel`, not a selection reset: `sessionId` clears too, and `'subagents'` is removed from `openPanelIds` — reopening afterward lands on the **launcher**, not the Subagents panel) | `(S, null)` (redundant with `suspend()`'s earlier call) | **+1** (via `resetForNewTurn`'s `closePanel` branch) |
+| New turn, no subagents, panel open (same `closePanel` branch as above — `resetForNewTurn` only checks `openPanelIds`, never the pane's collapsed/expanded state) | `false` | `{}` | `null` (`sessionId` also clears; `'subagents'` is removed from `openPanelIds`, so the next view shows the launcher, not a reset Subagents panel) | `(S, null)` | **+1** |
+| New turn, no subagents, panel not open (not in `openPanelIds`) | `false` | `{}` | `null` | unchanged | **+1** |
 | Archive/delete the bound Session | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
 | Explicit Close (title row/tab) | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
 | Reset (Session switch/recover, different Session) | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
