@@ -43,18 +43,21 @@
 // word gives way before the label does (`shrink-[1000]` against the label's own `shrink-[100]`),
 // since a label collapsed to nothing with a meaningless word fragment left over is worse than the
 // word disappearing first and the label truncating normally with an ellipsis. Every plain tab's
-// exact floor is `54px` (`pl-2` 8 + icon 14 + one `gap-1` 4 + `pr-7` 28, measured to the pixel,
-// no rounding); a count-showing tab's exact floor is `62px` (the same four terms, but THREE
-// `gap-1`s -- icon-label, label-number, number-word -- since the word is always a rendered sibling
-// even once it shrinks to 0 width, and CSS `gap` spaces every flex item regardless of its own
-// final size) plus that tab's number's own digit width. Three tabs' worst case with a two-digit
-// running count is `190px` against `224px` available at the 240px floor (`~34px` slack) -- see
-// tasks.md's "Tab-strip width geometry" for the full, pixel-exact derivation (round 7; rounds 4-6
-// each estimated a slightly different, never-pixel-verified total). Live-verified with a REAL count
-// change (temporary local-only dev-store injection in the scratch instance only, reverted before
-// each push, never shipped): `running` set to 1 then 12 on the actual focused Session while the
-// strip was already squeezed at the 240px floor -- both digit counts rendered with zero overflow
-// and every tab's own close button stayed inside that tab's own rect.
+// own content needs only `54px` (`pl-2` 8 + icon 14 + one `gap-1` 4 + `pr-7` 28), but `min-w-14`
+// (56px) is a hard CSS minimum that still binds on top of that -- a plain tab's actual RENDERED
+// floor is `56px`, not its own lower content requirement. A count-showing tab's content floor is
+// `62px` (the same four terms, but THREE `gap-1`s -- icon-label, label-number, number-word --
+// since the word is always a rendered sibling even once it shrinks to 0 width, and CSS `gap`
+// spaces every flex item regardless of its own final size) plus that tab's number's own digit
+// width; `62px` already exceeds `min-w-14`, so it is the one case where content alone drives the
+// rendered width (see the "known limit" note in tasks.md). Three tabs' worst case with a two-digit
+// running count is `56 + 56 + 62 + 15.546875 + 2*2 = ~194px` against `224px` available at the
+// 240px floor (`~30px` slack) -- see tasks.md's "Tab-strip width geometry" for the full, pixel-
+// exact derivation (round 7). Live-verified with a REAL count change (temporary local-only
+// dev-store injection in the scratch instance only, reverted before each push, never shipped):
+// `running` set to 1 then 12 on the actual focused Session while the strip was already squeezed
+// at the 240px floor -- both digit counts rendered with zero overflow and every tab's own close
+// button stayed inside that tab's own rect.
 //
 // Round 4 also fixed the bug that live count change was exposing: the `ResizeObserver` from round
 // 3 watched only the tablist container, which -- once the strip is already squeezed and the
