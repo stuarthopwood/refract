@@ -1,12 +1,12 @@
-import { BotIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, HammerIcon, LibraryIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 
 // Spec 013 (data-model.md `HostedPanelDescriptor`/`PanelId`): the single source of which right
 // pane panels exist, read by the rail, the tab bar, and the launcher so none of the three keeps
-// its own list. `PanelId` names every panel issue://538's rail will eventually carry; `HOSTED_
-// PANELS` only lists a panel this build can actually render -- `fdb-knowledge`/`agent-builder`
-// are appended here once their own placeholder components exist (spec 013 Slice 3/PR2), so the
-// rail and launcher never show an entry with no content behind it.
+// its own list. `HOSTED_PANELS` only lists a panel this build can actually render -- all three
+// land here once PR2 (spec 013 Slice 3, tasks T026-T028) registers `fdb-knowledge`/
+// `agent-builder` alongside PR1's `subagents`, so the rail and launcher never show an entry with
+// no content behind it.
 export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder'
 
 export interface HostedPanelDescriptor {
@@ -17,7 +17,9 @@ export interface HostedPanelDescriptor {
 }
 
 export const HOSTED_PANELS: HostedPanelDescriptor[] = [
-  { id: 'subagents', name: 'Subagents', icon: BotIcon, hasCount: true }
+  { id: 'subagents', name: 'Subagents', icon: BotIcon, hasCount: true },
+  { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false },
+  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false }
 ]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {

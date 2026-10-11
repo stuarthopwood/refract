@@ -166,14 +166,14 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   (research.md decision 7) (depends on T022).
 - [ ] T025 Edit `SettingsScreen.tsx`: `SECTIONS` gains `{ id: 'right-pane', label: 'Right pane' }`;
   render `RightPaneSection` for it (depends on T023, T024).
-- [ ] T026 [P] [US4] Create `src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx`:
+- [x] T026 [P] [US4] Create `src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx`:
   reads `Settings.showSampleData`; `false` -> the three-part empty state (icon, one line, next
   action — FR-018); `true` -> sample search/ask/agent-tools content, each element carrying a
   visible "Sample data" label (FR-021) (depends on T022).
-- [ ] T027 [P] [US4] Create
+- [x] T027 [P] [US4] Create
   `src/renderer/features/right-pane/placeholders/AgentBuilderPanel.tsx`: same two-state shape,
   naming Agent Builder and its own sample cloud-agent content (depends on T022).
-- [ ] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
+- [x] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
   the two new components (no count, per FR-013) (depends on T001, T026, T027). **Prerequisite
   carried from PR1's gate (deferred, not optional)**: once this task makes `openPanelIds.length
   >= 2` reachable for the first time, `PanelTabBar.tsx`'s tab bar must be restructured so each
@@ -184,9 +184,27 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   (`ResizeObserver`) to keep a detached close button visually aligned, and must be verified
   against a real screen reader now that the tab bar is reachable, not only against axe.
 
-**Checkpoint**: quickstart.md Stories 4 and 5 pass in full — both placeholders show the honest
-empty state with the switch off, make no network call, and show clearly labelled sample content
-with it on; the switch persists across a restart.
+**Deviations from this phase's description, found while implementing PR2** (T017-T025 are NOT
+done in PR2 -- Stuart's own PR2/PR3 split, posted as a decision comment on issue://538 before
+implementation started): T026/T027 do not read `Settings.showSampleData` yet, since that field
+does not exist until T017-T022 land (PR3) -- both placeholders always render the honest
+empty-state branch only, unconditionally; the sample-content branch and its "Sample data" label
+(FR-021) are PR3's work, not built here. T028's carried prerequisite IS done in full this PR:
+`PanelTabBar.tsx`'s tablist now contains only `role=tab` buttons; every close button is a DOM
+sibling in a separate overlay, positioned per tab via each tab button's own measured
+`offsetLeft`/`offsetWidth`/`offsetTop`/`offsetHeight`, recomputed by a `ResizeObserver` watching
+every tab button (a live count changing a tab's own width shifts every later tab too) and on
+`openPanelIds` changes. `IconRail.tsx` also gained roving-tabindex arrow-key navigation
+(ArrowUp/ArrowDown/Home/End) now that it has three buttons instead of one -- not called out as
+its own task, but the conventional ARIA toolbar pattern this phase's second real panel needs
+(there was nothing to rove between with only `subagents` registered).
+
+**Checkpoint**: quickstart.md Story 4 passes in full — both placeholders show the honest empty
+state unconditionally (no Settings switch exists yet to turn off), make no network call, and the
+now-three-panel rail/launcher/tab-bar paths from Slice 1/2 all still pass with a real second and
+third panel exercising them for the first time. Story 5 (the Settings switch and sample content)
+is out of scope for this checkpoint -- PR3 builds T017-T025 and re-runs quickstart.md Story 5
+against them.
 
 ---
 
