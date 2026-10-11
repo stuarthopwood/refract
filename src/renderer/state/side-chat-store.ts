@@ -116,7 +116,20 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       return { bySession: { ...state.bySession, [sessionId]: { ...existing, loadError: false } } }
     })
     const result = await window.refract.sideChat.getHistory(sessionId)
-    if (epoch !== currentSideChatEpoch(sessionId)) return
+    if (epoch !== currentSideChatEpoch(sessionId)) {
+      // Gate-fix (round 7, Code7 HIGH): a Conversation change landed while this fetch was in
+      // flight. The stale result is correctly dropped above, but without this, nothing else
+      // ever retries: the panel's own load effect depends on `[sessionId, loaded, sessionStatus,
+      // loadHistory]` -- `loaded` was already `false` (false -> false, no change) and a
+      // Conversation switch never touches `sessionStatus` -- so Send/`/btw` stayed permanently
+      // refused as "still loading" until the Session's live status happened to change on its
+      // own. Kicks off a fresh load for whichever Conversation is current NOW; that call
+      // captures its OWN epoch at the top, so this never loops forever -- it either completes
+      // cleanly, or another Conversation change lands during ITS flight and retriggers this
+      // same recovery again, which is the correct behaviour for a rapid run of switches.
+      if (!get().bySession[sessionId]?.loaded) void get().loadHistory(sessionId)
+      return
+    }
     if (!result.ok) {
       // Gate-fix (round 2, Code2/Sec2 Medium): a Session whose process has not started yet
       // throws `agent-not-running` here -- that is NOT "this Session has no side-chat history",
@@ -204,31 +217,36 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
     const result = await window.refract.sideChat.ask(sessionId, question, recordId)
     const stale = epoch !== currentSideChatEpoch(sessionId)
     if (!result.ok) {
-      if (!stale) {
-        set((state) => {
-          const current = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
-          return {
-            bySession: {
-              ...state.bySession,
-              [sessionId]: {
-                ...current,
-                running: computeRunning(current.records),
-                // Gate-fix (round 3, Verif3 HIGH safety net; narrowed round 4, Code4/Verif4
-                // MEDIUM): clearing on ANY failure also wiped the topic for a transient
-                // "still running"/`agent-not-running`/save-failure rejection, unrelated to the
-                // restart/wrong-id case this is meant for -- only a genuine "Unknown /btw topic"
-                // rejection (confirmed live, round 3: the exact OMP wording for a rejected
-                // `recordId`) means the id itself is actually bad; every other failure leaves
-                // the topic as-is so the SAME question (or Retry) can simply be sent again.
-                activeTopicRecordId:
-                  current.activeTopicRecordId === recordId && /Unknown \/btw topic/.test(result.error.message)
-                    ? undefined
-                    : current.activeTopicRecordId
-              }
+      // Gate-fix (round 7, Code7/A11y7/Sec7 Medium): a Conversation change landed while this
+      // request was in flight -- the question itself belonged to the Conversation just left,
+      // so neither an error toast about it nor keeping it as the NEW Conversation's own draft
+      // makes sense; the caller's own success path (clearing its draft) runs instead, same as
+      // when a stale ASK SUCCEEDS (below). No `set` either: the store entry for the old
+      // Conversation is already gone.
+      if (stale) return
+      set((state) => {
+        const current = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
+        return {
+          bySession: {
+            ...state.bySession,
+            [sessionId]: {
+              ...current,
+              running: computeRunning(current.records),
+              // Gate-fix (round 3, Verif3 HIGH safety net; narrowed round 4, Code4/Verif4
+              // MEDIUM): clearing on ANY failure also wiped the topic for a transient
+              // "still running"/`agent-not-running`/save-failure rejection, unrelated to the
+              // restart/wrong-id case this is meant for -- only a genuine "Unknown /btw topic"
+              // rejection (confirmed live, round 3: the exact OMP wording for a rejected
+              // `recordId`) means the id itself is actually bad; every other failure leaves
+              // the topic as-is so the SAME question (or Retry) can simply be sent again.
+              activeTopicRecordId:
+                current.activeTopicRecordId === recordId && /Unknown \/btw topic/.test(result.error.message)
+                  ? undefined
+                  : current.activeTopicRecordId
             }
           }
-        })
-      }
+        }
+      })
       // Gate-fix (round 4, Code4 LOW): strips OMP's own `btw failed: ` prefix too (not just the
       // `SessionAgent <uuid>: ` one), and renders the "Unknown /btw topic" rejection in plain
       // English -- a raw hex topic id in a toast means nothing to the developer.

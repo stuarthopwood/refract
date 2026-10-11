@@ -988,6 +988,16 @@ export class SessionAgent extends EventEmitter {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot ask a side question, no live process`);
     }
+    // Gate-fix (round 7, Code7/Verif7 Medium): captured BEFORE the request, not after it
+    // resolves -- stamping with the LIVE `sideChatConversationEpoch` once the response arrives
+    // would give a question that was asked in the Conversation just left the NEW epoch if a
+    // switch lands while it is still in flight, defeating `onFrame`'s own drop for exactly the
+    // case it exists for (and contradicting this method's own doc comment / tasks.md's account
+    // of "stamped at ask-time"). `recordId`'s own existing entry (a continued topic) is
+    // re-stamped too, before awaiting, so a `btw_record`/`btw_delta` OMP sends for it while
+    // this request is still in flight is never dropped for still carrying an older epoch.
+    const epoch = this.sideChatConversationEpoch;
+    if (recordId !== undefined) this.sideChatTopicEpoch.set(recordId, epoch);
     const res = await this.process.request({ type: 'btw', id: '', question, ...(recordId ? { recordId } : {}) });
     if (!res.success) {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw failed: ${res.error ?? 'unknown error'}`);
@@ -998,10 +1008,10 @@ export class SessionAgent extends EventEmitter {
     }
     // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH defense in depth): stamps the TOPIC's own
     // root id (`thread.id`, never the latest turn's own flattened id -- same distinction
-    // `applyPatch`'s `btw_delta` case already relies on) with the epoch current right now, so a
+    // `applyPatch`'s `btw_delta` case already relies on) with the epoch captured above, so a
     // later `btw_delta`/`btw_record` frame for this exact topic is dropped by `onFrame` instead
-    // of forwarded, if a Conversation change happened in between.
-    this.sideChatTopicEpoch.set(thread.id, this.sideChatConversationEpoch);
+    // of forwarded, if a Conversation change happened while this request was in flight.
+    this.sideChatTopicEpoch.set(thread.id, epoch);
     return { record: latestTurn(thread) };
   }
 
@@ -1029,6 +1039,14 @@ export class SessionAgent extends EventEmitter {
    * out of sync. */
   notifySideChatConversationChanged(): void {
     this.sideChatConversationEpoch++;
+    // Gate-fix (round 7, Code7/Sec7 Low): `sideChatTopicEpoch` otherwise grows by one entry per
+    // side question asked for the whole lifetime of this agent. Every entry stamped before the
+    // bump above belongs to a Conversation now being left; dropping them here is safe (a future
+    // lookup for one of those ids falls back to "current epoch" in `onFrame`, same as any
+    // topic never stamped at all, which is already the documented default).
+    for (const [id, stampedEpoch] of this.sideChatTopicEpoch) {
+      if (stampedEpoch < this.sideChatConversationEpoch) this.sideChatTopicEpoch.delete(id);
+    }
     this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
   }
 

@@ -373,8 +373,16 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             // failure, never by `agent-not-running`) picks the honest wording -- the original
             // text kept claiming side chat would become available "once the Session is
             // running" even for a Session that already WAS running when the load itself failed.
+            // Gate-fix (round 7, A11y7 Low): a THIRD case -- a running Session reloading after a
+            // Conversation change -- used to fall into the same "available once running" text,
+            // which is wrong (it already is running) and disagreed with `MessageInput`'s own
+            // `/btw` toast for the identical situation; now matches that wording exactly.
             <p id={unavailableHintId} className="mt-1 text-xs text-muted-foreground">
-              {loadError ? 'Side chat history could not be loaded.' : 'Side chat is available once the Session is running.'}
+              {loadError
+                ? 'Side chat history could not be loaded.'
+                : sessionStatus === 'stopped'
+                  ? 'Side chat is available once the Session is running.'
+                  : 'Loading side chat history…'}
             </p>
           )}
           <div className="mt-2 flex justify-end gap-2">

@@ -39,11 +39,20 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   // Focus moves into the newly opened panel's own content -- but only for a genuine open (this
   // panel was not already one of the open tabs a moment ago), never for switching between two
   // already-open tabs (arrow keys or a direct tab click both keep focus on the tab bar, the
-  // standard ARIA tabs behaviour).
+  // standard ARIA tabs behaviour). Gate-fix (round 7, Code7/A11y7/Sec7 HIGH): also skipped when
+  // `openPanel` was called with `{ focus: false }` (`suppressNextContentFocus`, read fresh via
+  // `getState()` since this effect must not re-run just because that flag changed) -- round 6's
+  // own `focus:false` only suppressed `sideChatFocusRequestId` (the side-chat TEXTAREA'S own
+  // focus request), so this effect still stole focus into the pane's content wrapper for the
+  // common "/btw while !loaded, pane collapsed" case. The flag is always cleared on read, even
+  // when this is not a genuine open, so it never leaks into a LATER, unrelated real open.
   useEffect(() => {
     const prevIds = prevOpenPanelIdsRef.current
-    if (activePanelId && !prevIds.includes(activePanelId)) contentRef.current?.focus()
+    const isGenuineOpen = activePanelId !== null && !prevIds.includes(activePanelId)
     prevOpenPanelIdsRef.current = openPanelIds
+    const { suppressNextContentFocus } = useRightPaneStore.getState()
+    if (suppressNextContentFocus) useRightPaneStore.setState({ suppressNextContentFocus: false })
+    if (isGenuineOpen && !suppressNextContentFocus) contentRef.current?.focus()
   }, [openPanelIds, activePanelId])
 
   if (openPanelIds.length === 0) {

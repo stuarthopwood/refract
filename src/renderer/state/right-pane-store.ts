@@ -30,11 +30,23 @@ interface RightPaneState {
    * specific (not a generic per-panel mechanism) since FR-013 only asks for this panel's own
    * composer; the other three hosted panels have no composer to focus. */
   sideChatFocusRequestId: number
+  /** Gate-fix (round 7, Code7/A11y7/Sec7 HIGH): one-shot, set by `openPanel(id, { focus: false
+   * })` and consumed (always cleared, whether or not it was actually honoured) by
+   * `RightPaneShell`'s own "focus the newly opened panel's content" effect. That effect
+   * otherwise moves focus into the panel's `tabIndex=-1` content wrapper for ANY genuinely new
+   * open, regardless of `sideChatFocusRequestId` -- round 6's own `focus:false` only suppressed
+   * the side-chat TEXTAREA'S OWN focus request (`sideChatFocusRequestId`), so `/btw`'s `!loaded`
+   * path still stole focus out of the main composer whenever the pane was collapsed or the
+   * side-chat tab was not already open (the common first-`/btw`-of-run case) -- WCAG 2.4.3/
+   * 3.2.2, confirmed live round 7 (screenshot 05's own focus-visible outline). */
+  suppressNextContentFocus: boolean
   /** Opens the pane if collapsed; adds `id` if absent; makes it active (FR-005). Gate-fix
-   * (round 6, Code6/A11y6/Sec6 Medium): `options.focus` defaults `true`; pass `false` for
-   * `side-chat` to open (and load) the panel WITHOUT bumping `sideChatFocusRequestId` -- used
+   * (round 6, Code6/A11y6/Sec6 Medium; round 7, Code7/A11y7/Sec7 HIGH): `options.focus` defaults
+   * `true`; pass `false` for `side-chat` to open (and load) the panel WITHOUT bumping
+   * `sideChatFocusRequestId` OR moving focus into the panel's own content region at all -- used
    * when a typed `/btw <question>` must keep focus (and the draft) in the main composer while
-   * its history is still loading, instead of stealing focus into an empty side-chat textarea. */
+   * its history is still loading, instead of stealing focus into an empty side-chat textarea
+   * (or, before round 7's own fix, the panel's generic content wrapper instead). */
   openPanel(id: PanelId, options?: { focus?: boolean }): void
   /** Removes `id`; if it was active, activates the NEIGHBOUR left in its place -- the tab at the
    * same index in the remaining order, clamped to the new last index (gate remediation, round 1
@@ -56,6 +68,7 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   openPanelIds: [],
   activePanelId: null,
   sideChatFocusRequestId: 0,
+  suppressNextContentFocus: false,
   openPanel: (id, options) => {
     const { openPanelIds, sideChatFocusRequestId } = get()
     const focus = options?.focus ?? true
@@ -63,7 +76,8 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
       open: true,
       openPanelIds: openPanelIds.includes(id) ? openPanelIds : [...openPanelIds, id],
       activePanelId: id,
-      sideChatFocusRequestId: id === 'side-chat' && focus ? sideChatFocusRequestId + 1 : sideChatFocusRequestId
+      sideChatFocusRequestId: id === 'side-chat' && focus ? sideChatFocusRequestId + 1 : sideChatFocusRequestId,
+      suppressNextContentFocus: !focus
     })
   },
   closePanel: (id) => {

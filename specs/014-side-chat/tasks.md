@@ -160,7 +160,79 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 6 (gate-fix remediation, supersedes the round-5 account below)**: PR #668's
+**Checkpoint, round 7 (gate-fix remediation, supersedes the round-6 account below)**: PR #668's
+sixth gate round (Code7/A11y7 FAIL with Highs; Sec7/Verif7 PASS with Mediums/Lows) found two
+fresh defects in round 6's own fix, plus confirmed round 6's "focus stays in the main composer"
+claim was never actually true.
+
+- **HIGH (Code7) -- the panel could get stuck on "not loaded" forever.** A `loadHistory` call
+  still in flight when a Conversation change bumped the epoch correctly returned without a
+  `set` (round 6's own fix), but nothing then started a FRESH load for the Conversation now
+  current -- the panel's own load effect depends on `[sessionId, loaded, sessionStatus,
+  loadHistory]`, and `loaded` was already `false` (no change) while a Conversation switch never
+  touches `sessionStatus`, so Send/`/btw` stayed permanently refused as "still loading" until
+  the Session's live status happened to change on its own. **Fix**: the stale branch now kicks
+  off a fresh `get().loadHistory(sessionId)` when still `!loaded` -- that call captures its OWN
+  epoch, so this can never loop forever.
+- **HIGH (A11y7, also Code7/Sec7 Medium) -- `/btw`'s own "keep focus in the main composer"
+  fix never actually worked.** `openPanel('side-chat', { focus: false })` only suppressed
+  `sideChatFocusRequestId` (the side-chat TEXTAREA'S OWN focus request); `RightPaneShell`'s
+  separate, unconditional "focus the newly opened panel's content" effect still ran for ANY
+  genuinely new panel open, regardless of that flag -- exactly the common case (pane collapsed,
+  or the side-chat tab not already open) `/btw`'s own `!loaded` gate hits. Round 6's own
+  screenshot 05 already showed the tell (a focus-visible outline on the side-chat content
+  region), but report.json/the PR body/this tasks.md all claimed the fix worked anyway. **Fix**:
+  a new one-shot `suppressNextContentFocus` flag on `right-pane-store.ts`, set by
+  `openPanel(id, { focus: false })` and consumed (always cleared on read) by `RightPaneShell`'s
+  effect, which now skips `contentRef.focus()` when it is set -- re-verified live this round
+  with a real `document.activeElement` assertion (see below), unlike round 6's own claim.
+- **Medium (Code7/Verif7)**: `askSideChat` now captures `sideChatConversationEpoch` BEFORE
+  `await`ing the `btw` request, not after it resolves -- stamping with the epoch current once
+  the RESPONSE arrives (round 6's own code) could give a question asked in the Conversation just
+  left the NEW epoch if a switch landed while it was still in flight, defeating the defense in
+  depth for exactly the case it exists for; a continued topic's existing `recordId` entry is
+  re-stamped with the captured epoch too, before awaiting, matching this method's own doc
+  comment (and `tasks.md`'s prior, inaccurate "stamped at ask-time" claim -- now actually true).
+- **Medium (Code7/A11y7/Sec7)**: `ask`'s failure branch no longer shows a "Side question
+  failed" toast (or keeps the question as the NEW Conversation's own draft) when the request
+  settles stale -- the question belonged to the Conversation just left, so neither makes sense;
+  the caller's own success path (clearing its draft) runs instead, same as a stale SUCCESS.
+- **Low (Code7/Sec7)**: `SessionAgent.sideChatTopicEpoch` is pruned inside
+  `notifySideChatConversationChanged()` -- every entry stamped before the bump is deleted
+  (a topic belonging to the Conversation just left), instead of growing by one entry per side
+  question for the whole life of the agent.
+- **Low (A11y7)**: `SideChatPanel`'s own `!loaded` hint now has a third branch -- a running
+  Session reloading after a Conversation change showed "available once the Session is running"
+  (wrong: it already is running), which also disagreed with `MessageInput`'s own matching `/btw`
+  toast; now `loadError` / `stopped` / "Loading side chat history…", matching exactly.
+
+**Re-verified live** (`C:/Users/shopwood/refract-live-check-668-round7/`, 19 screenshots -- one
+disclosed pixel-identical pair, 11/15, both a fresh never-asked Conversation's own empty panel --
+`report.json`, `sha256.json`, real `omp 18.8.6`), a FRESH scratch worktree (`round7-fresh`, not
+`lucky-martin`, to avoid any pre-existing conversation ambiguity): `/btw` with the side-chat pane
+fully COLLAPSED beforehand (the exact condition round 6's fix missed) -- `document.activeElement`
+asserted via CDP immediately after the toast to be the MAIN composer's own textarea, not the
+side-chat content region; two rapid "New conversation" clicks (~110ms apart) and, separately,
+opening the panel for the very first time then switching Conversation ~52ms later -- BOTH races
+end with the panel loaded and Send enabled, confirmed by a fresh question succeeding each time
+(the round-7 Code7 HIGH fix); Stop, then open an EARLIER Conversation from history (not "New
+conversation" -- the other branch of the stopped-Session fix, untested in round 6 and wrongly
+described as untestable in round 6's own report.json) -- the panel correctly reloaded that
+Conversation's own row and correctly continued its existing topic (not a fresh one) once asked
+again. A raw `window.refract.sessions.list()` dump (sessionId + `currentConversation`) was
+captured for the switch-back assertion this round, closing round 6's own narrative-only gap.
+
+**Record-keeping**: #650 updated with what this round exercised versus what remains untested
+(screen reader/axe/`sideChatInterrupted`/Retry-on-error/btw-history-notice/raw-`btw_delta` carry
+over unchanged; the main/renderer epoch-drop defense-in-depth paths remain logic-verified only,
+confirmed again this round to be no-ops against the real OMP 18.8.6 ordering). No new decision
+needed for Stuart. The round-6 Checkpoint below is corrected in place (not rewritten) where its
+own "focus stays in the main composer" claim was false.
+
+<details>
+<summary>Checkpoint, round 6 (superseded by round 7 above -- kept for history, with one inline correction where it was false)</summary>
+
+**Checkpoint, round 6.** PR #668's
 fifth gate round (Code6/Sec6/A11y6/Verif6 all FAIL with Highs) found round 5's own fix reached
 `SessionAgent.startNewConversation`/`openConversation` but never `conversationSwitch.ts`'s
 `startStoppedSessionOnConversation` -- the ONLY Conversation-switch path available while
@@ -202,6 +274,14 @@ focus both stay in the main composer instead of stealing focus into an empty sid
 and picks its toast wording from state (`loadError`, a stopped Session, or a genuine in-flight
 load) instead of always claiming "still loading"; a bare `/btw` (no question) is now checked
 before the `!loaded` gate, so it no longer raises an error toast for just opening the panel.
+**Corrected round 7 (A11y7/Code7/Sec7 HIGH): the "focus both stay in the main composer" claim
+above was FALSE.** `openPanel`'s own `focus:false` only suppressed `sideChatFocusRequestId` (the
+side-chat TEXTAREA'S OWN focus request); `RightPaneShell`'s separate, unconditional "focus the
+newly opened panel's content" effect still moved focus out of the main composer whenever the
+pane was collapsed or the side-chat tab was not already open (the common first-`/btw`-of-run
+case) -- confirmed live by round 7's own CDP `document.activeElement` assertion, which this
+round-6 account never actually captured. See the round-7 Checkpoint above for the real fix
+(`suppressNextContentFocus`).
 `loadError` now clears the instant a NEW load attempt starts, not only on that attempt's own
 success, matching its own doc comment. `contracts/ipc.md`'s `SIDE_CHAT_CONVERSATION_CHANGED` row,
 spec.md item 6, data-model.md's `SideChatThreadState` section and its own "Clear thread" UI-action
@@ -232,6 +312,7 @@ Conversation's own topic was never left poisoned.
 **Record-keeping**: no new decision needed for Stuart this round (round 5's per-Conversation
 scope decision is unaffected); this round's fixes and docs corrections are recorded here and in
 the PR body only.
+</details>
 
 <details>
 <summary>Checkpoint, round 5 (superseded by round 6 above -- kept for history, not a current claim)</summary>
