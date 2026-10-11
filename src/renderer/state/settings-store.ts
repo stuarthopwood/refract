@@ -11,6 +11,7 @@ interface SettingsState {
   setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<void>
   setWatermarkEnabled(enabled: boolean): Promise<void>
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
+  setShowSampleData(enabled: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -22,7 +23,8 @@ export const DEFAULT_SETTINGS: Settings = {
   split: null,
   theme: 'dark',
   watermarkEnabled: true,
-  transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY
+  transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
+  showSampleData: false
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -62,6 +64,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       // unrelated content once hidden rows change the layout's height. Falls back to #485's own
       // default (the end) for every pane instead.
       useChatScrollStore.getState().clearAll()
+    } else {
+      notify(result.error)
+    }
+  },
+  setShowSampleData: async (enabled) => {
+    const result = await window.refract.settings.setShowSampleData(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
     } else {
       notify(result.error)
     }

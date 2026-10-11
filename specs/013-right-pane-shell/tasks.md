@@ -142,39 +142,39 @@ landed) exercise the tab bar, the launcher, and the Subagents regression bar end
 **Purpose**: the two placeholder panels and the one new persisted setting that switches their
 content — independent of Slice 2's files, can be built in parallel with it once Slice 1 lands.
 
-- [ ] T017 [P] Extend `src/shared/model.ts`'s `Settings` interface with `showSampleData: boolean`
+- [x] T017 [P] Extend `src/shared/model.ts`'s `Settings` interface with `showSampleData: boolean`
   (data-model.md).
-- [ ] T018 Extend `src/shared/ipc.ts`: add `IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA =
+- [x] T018 Extend `src/shared/ipc.ts`: add `IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA =
   'settings.setShowSampleData'` and `RefractApi.settings.setShowSampleData(enabled: boolean):
   Promise<Result<Settings>>` (contracts/ipc.md) (depends on T017).
-- [ ] T019 Extend `src/main/store/settings.ts`: default row gains `showSampleData: false`;
+- [x] T019 Extend `src/main/store/settings.ts`: default row gains `showSampleData: false`;
   `SettingsStore.open` treats a missing or non-boolean stored `showSampleData` as `false` in
   memory (same lazy-correction pattern as `watermarkEnabled`); add
   `setShowSampleData(enabled: boolean): Promise<Settings>` (depends on T017).
-- [ ] T020 Extend `src/main/ipc/settings.ts`: `registerSettings` gains the
+- [x] T020 Extend `src/main/ipc/settings.ts`: `registerSettings` gains the
   `SETTINGS_SET_SHOW_SAMPLE_DATA` handler, validating a boolean, calling
   `store.setShowSampleData`, broadcasting `settings:changed` (depends on T018, T019).
-- [ ] T021 [P] Extend `src/preload/index.ts`: expose `settings.setShowSampleData` (depends on
+- [x] T021 [P] Extend `src/preload/index.ts`: expose `settings.setShowSampleData` (depends on
   T018).
-- [ ] T022 [P] Extend `settings-store.ts`: `DEFAULT_SETTINGS.showSampleData = false`, add
+- [x] T022 [P] Extend `settings-store.ts`: `DEFAULT_SETTINGS.showSampleData = false`, add
   `setShowSampleData` action (same shape as `setWatermarkEnabled`) (depends on T018, T021).
-- [ ] T023 [P] Extend `view-store.ts`: `SettingsSectionId` gains `'right-pane'`; `openSettings`'s
+- [x] T023 [P] Extend `view-store.ts`: `SettingsSectionId` gains `'right-pane'`; `openSettings`'s
   validation switch gains the case (data-model.md) (no file dependency beyond T017 existing
   conceptually).
-- [ ] T024 Create `src/renderer/features/settings/RightPaneSection.tsx`: the "Show sample data"
-  switch plus a one-line description, mirroring `AppearanceSection.tsx`'s layout convention
-  (research.md decision 7) (depends on T022).
-- [ ] T025 Edit `SettingsScreen.tsx`: `SECTIONS` gains `{ id: 'right-pane', label: 'Right pane' }`;
+- [x] T024 Create `src/renderer/features/settings/RightPaneSection.tsx`: the "Show sample data"
+  switch plus a one-line description, mirroring `ChatDisplaySection.tsx`'s immediate-apply layout
+  convention (closer in shape than `AppearanceSection.tsx`'s Save/Cancel-previewed one;
+  research.md decision 7) (depends on T022).
+- [x] T025 Edit `SettingsScreen.tsx`: `SECTIONS` gains `{ id: 'right-pane', label: 'Right pane' }`;
   render `RightPaneSection` for it (depends on T023, T024).
-- [~] T026 [P] [US4] Create `src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx`:
-  reads `Settings.showSampleData`; `false` -> the three-part empty state (icon, one line, next
-  action — FR-018); `true` -> sample search/ask/agent-tools content, each element carrying a
-  visible "Sample data" label (FR-021) (depends on T022). **Empty-state branch only this PR; the
-  sample branch (`Settings.showSampleData`, FR-021) is PR3 (T017-T025).**
-- [~] T027 [P] [US4] Create
-  `src/renderer/features/right-pane/placeholders/AgentBuilderPanel.tsx`: same two-state shape,
-  naming Agent Builder and its own sample cloud-agent content (depends on T022). **Empty-state
-  branch only this PR, same split as T026.**
+- [x] T026 [P] [US4] [US5] Extend `src/renderer/features/right-pane/placeholders/
+  FdbKnowledgePanel.tsx`: reads `Settings.showSampleData`; `false` -> the three-part empty state
+  (icon, one line, next action — FR-018, unchanged from PR2); `true` -> sample recent-searches/
+  ask/agent-tools rows, each one carrying a visible "Sample data" badge (FR-021) (depends on
+  T022).
+- [x] T027 [P] [US4] [US5] Extend `src/renderer/features/right-pane/placeholders/
+  AgentBuilderPanel.tsx`: same two-state shape, naming Agent Builder and its own sample
+  cloud-agent rows, each carrying the same badge (depends on T022).
 - [x] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
   the two new components (no count, per FR-013) (depends on T001, T026, T027). **Prerequisite
   carried from PR1's gate (deferred, not optional)**: once this task makes `openPanelIds.length
@@ -205,6 +205,26 @@ gained roving-tabindex arrow-key navigation (ArrowUp/ArrowDown/Home/End) now tha
 buttons instead of one -- not called out as its own task, but the conventional ARIA toolbar
 pattern this phase's second real panel needs (there was nothing to rove between with only
 `subagents` registered).
+
+**PR3 implementation** (this PR; builds T017-T025, completes T026/T027's sample branch deferred
+by PR2's own decision above): `Settings.showSampleData` follows `watermarkEnabled` field-for-field
+(research.md decision 6), including its own raw/lazy-correction split in `SettingsStore` (missing
+or non-boolean on disk -> `false` in memory, same pattern `rawTheme`/`rawWatermarkEnabled` already
+use, so an unrelated setter's whole-row write never silently persists the correction). The new
+"Right pane" Settings section (`RightPaneSection.tsx`) mirrors `ChatDisplaySection.tsx`'s
+immediate-apply layout, not `AppearanceSection.tsx`'s Save/Cancel one -- this switch, like the
+transcript-display toggles, takes effect live with no Save step (FR-022). Both placeholders now
+read the flag directly via `useSettingsStore`, so an already-open tab shows the new state on
+return from Settings with no reopen needed (FR-022's own requirement) -- `App.tsx:499` swaps the
+whole chat layout out for `SettingsScreen` while Settings is open, so `RightPaneShell` and both
+panels DO unmount and remount; FR-022 is met because the open-panel/tab-order state lives in
+`right-pane-store`, not in either panel's own component state, so nothing has to be reopened.
+Sample content is inert by design (no `onClick`, no real search/ask/tool-call behaviour) rather
+than a fake-but-interactive control,
+since nothing real exists behind either panel yet and a convincingly-clickable dead control would
+itself read as the "disabled control with a reason" pattern FR-019 forbids; each sample row
+carries its own trailing `Badge` reading "Sample data" (FR-021/SC-006), reusing the existing
+`components/ui/badge.tsx` primitive (no new UI primitive, no new theme token).
 
 **Round-1 gate remediation (High, all three functional reviewers converged)**: the tab strip
 overflowed the pane's own width at its 320px default and its 240px minimum (every tab was
@@ -403,7 +423,7 @@ there is no tab strip to check a scrollbar against, since the pane is not there.
 entry added to spec.md ("Needs Stuart's decision") and a #650 item logging this for Stuart, rather
 than silently declaring SC-007 "Done" at 380px.
 
-**Checkpoint**: quickstart.md Story 4 steps 2 and 3 pass (both placeholders' empty states, live
+**Checkpoint (PR2)**: quickstart.md Story 4 steps 2 and 3 pass (both placeholders' empty states, live
 and screenshotted) — step 1 (confirming the Settings switch is off by default) cannot run, since
 the switch does not exist yet (PR3); step 4 (DevTools Network tab, no request from either
 placeholder) was verified by reading the components' source (both are static JSX with no hook, no
@@ -417,6 +437,48 @@ meets SC-007 at every pane width this spec supports (240/320/520px), with up to 
 and a real live count exercised, each keeping its own close button and live count per User Story
 2's own independent test; the 380px window width is a separate, flagged open question (above), not
 silently folded into "Done."
+
+**Checkpoint (PR3)**: two separate scratch runs produced this slice's evidence --
+`01-default-off-settings.png`, `02-default-off-fdb-empty.png`, `03-switch-on.png`,
+`05-on-agent-builder-sample.png`, `06-off-fdb-empty.png` and `07-off-agent-builder-empty.png` are
+from the original run (session "silent-stoat"); `04-on-fdb-sample.png` and
+`09-restart-fdb-sample.png` were retaken in a second, separate scratch run (session
+"gentle-falcon") after the sample strings were shortened, since those two were the only
+screenshots the text change affected.
+
+quickstart.md Story 4 step 1 (confirming "Show sample data" is off by default) now passes,
+live-verified -- a fresh scratch instance's own `window.refract.settings.get()` read
+`showSampleData: false` before any interaction, and the Settings > Right pane screenshot
+(`01-default-off-settings.png`) shows the switch unchecked; `02-default-off-fdb-empty.png` shows
+the FDB Knowledge panel's unchanged empty state at that same default. Story 5's scenarios 1-3 are
+live-verified: with both FDB Knowledge and Agent Builder already open as tabs, turning the switch
+on (`03-switch-on.png`) shows each panel's own sample rows on return from Settings
+(`04-on-fdb-sample.png`, `05-on-agent-builder-sample.png`), every row carrying its own visible
+"Sample data" badge; turning it back off returns both tabs to Story 4's empty state
+(`06-off-fdb-empty.png`, `07-off-agent-builder-empty.png`). `App.tsx:499` swaps the whole chat
+layout out for `SettingsScreen` while Settings is open, so `RightPaneShell` and both panels
+actually unmount and remount on this round trip -- FR-022 still holds because the open-tab/tab-
+order state lives in `right-pane-store`, not in either panel's own component state, so nothing has
+to be reopened; the earlier no-remount wording in this paragraph was inaccurate about the
+mechanism. Scenario 4 (restart) is live-verified for the Settings switch itself and for FDB
+Knowledge specifically, not for Agent Builder: the second scratch run ("gentle-falcon") performed
+its own complete, self-contained restart test for the current `04`/`09` pair -- with the switch
+left on, that run's own first process was killed (`taskkill`) and a new one relaunched against the
+same `--user-data-dir`; a fresh `window.refract.settings.get()` read against that new process
+confirmed `showSampleData: true` before any screenshot; `09-restart-fdb-sample.png` then shows a
+freshly-opened (never-before-mounted-this-session) FDB Knowledge panel rendering its sample rows
+immediately after that restart, confirming the persisted flag drives a brand-new mount's first
+render, not only a live toggle of an already-mounted one. Agent Builder was not reopened after
+either run's restart -- its own post-restart state is source-reasoned, not live-verified: it reads
+the exact same `useSettingsStore` subscription `FdbKnowledgePanel.tsx` does, with no per-panel
+persistence path of its own, so the same mechanism applies, but this has not been observed on
+screen. Scenario 5 (the switch and sample content removed once #391/#392 ship) is future work, not
+testable now. Step 4's "no network call" finding from PR2's own checkpoint still holds for the
+sample branch too -- `FdbKnowledgePanel.tsx`/`AgentBuilderPanel.tsx` read `Settings.showSampleData`
+from the existing `settings-store.ts` subscription and render a static, hard-coded sample array;
+neither branch adds a hook, an effect, or any call of any kind, confirmed by reading the
+components' own source (not by an actual live Network-tab check, the same honesty caveat PR2's
+own checkpoint recorded for Story 4).
 
 ### Right-pane store `closePanel` active-tab transitions (gate remediation, PR2 round 1)
 

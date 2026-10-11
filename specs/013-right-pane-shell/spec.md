@@ -310,8 +310,8 @@ each offered preset and that the drag handle still works unchanged alongside it.
   minimum width is a fixed token-based value, not touched by this spec; existing window minimum
   size constraints (`src/main`) are unchanged.
 - **A developer toggles "Show sample data" while a placeholder panel's tab is the active one.**
-  The open tab re-renders in place (User Story 5, Acceptance Scenario 1) — it does not close or
-  lose its place in the tab order.
+  On return from Settings the tab shows the new state without having been closed or losing its
+  place in the tab order (the panel remounts; tab state lives in `right-pane-store`).
 
 ## Requirements *(mandatory)*
 

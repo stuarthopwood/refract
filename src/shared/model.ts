@@ -110,6 +110,7 @@ export interface Settings {
   theme: ThemeId; // spec 007 FR-018: default 'dark'
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
+  showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
 }
 
 /** Issue #457: two independent view filters for the chat transcript, applied in the renderer
