@@ -8,6 +8,8 @@ import { useRightPaneStore, useSubagentPanelStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { PanelLauncher } from './PanelLauncher'
 import { PanelTabBar } from './PanelTabBar'
+import { WidthPresetControl } from './WidthPresetControl'
+import { WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 import { FdbKnowledgePanel } from './placeholders/FdbKnowledgePanel'
 import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
 import type { PanelId } from './panel-registry'
@@ -18,9 +20,13 @@ interface RightPaneShellProps {
    * content (each panel reads its own binding, e.g. `SubagentPanel` reads `subagent-store.ts`'s
    * `sessionId`). */
   sessionId: string | null
+  /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7) -- `App.tsx`'s own
+   * `ResizablePanel` ref, forwarded to `WidthPresetControl` in every state the pane can be open
+   * in, including the 0-panel launcher below. */
+  resize(widthPx: number): void
 }
 
-export function RightPaneShell({ sessionId }: RightPaneShellProps) {
+export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
   const activePanelId = useRightPaneStore((s) => s.activePanelId)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
@@ -40,7 +46,11 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   if (openPanelIds.length === 0) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <PanelLauncher sessionId={sessionId} />
+        <WindowControlsSpacerRow />
+        <WidthPresetControl resize={resize} />
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <PanelLauncher sessionId={sessionId} />
+        </div>
       </div>
     )
   }
@@ -49,7 +59,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
 
   return (
     <div id="right-pane-active-panel" className="flex h-full flex-col overflow-hidden">
-      <PanelTabBar sessionId={sessionId} />
+      <PanelTabBar sessionId={sessionId} resize={resize} />
       <div
         ref={contentRef}
         tabIndex={-1}

@@ -514,25 +514,107 @@ launcher fallback (unchanged, FR-024) runs as before.
 **Purpose**: the WCAG 2.5.7 alternative, then the cross-slice gate and live verification the
 assignment requires before a PR is called ready.
 
-- [ ] T029 [US6] Wire `WidthPresetControl.tsx` (T007) into `RightPaneShell.tsx`'s header, calling
+- [x] T029 [US6] Wire `WidthPresetControl.tsx` (T007) into `RightPaneShell.tsx`'s header, calling
   the `ResizablePanel` ref's `.resize()` through the same ref `App.tsx` already holds (research.md
-  decision 12, FR-025) (depends on T008, T009).
-- [ ] T030 [P] Run `pnpm typecheck` and `pnpm build`; fix any error before proceeding.
-- [ ] T031 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term in the
-  new Settings section or either placeholder.
-- [ ] T032 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
-  decision 13 — no new token expected).
-- [ ] T033 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
-- [ ] T034 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
+  decision 12, FR-025) (depends on T008, T009). Forwarded as a `resize(widthPx)` prop:
+  `App.tsx` -> `RightPaneShell` -> `PanelTabBar`/`WidthPresetControl` directly. Every header
+  variant (launcher, single-panel title row, two-tab bar) gives the control its own row, the same
+  fix this file already applied to the tab strip for the same 240px-floor overflow reason.
+
+  **Gate round 1 (Code1/Verif1, High)**: the 0-panel launcher state -- reached by closing the
+  last open tab (Stuart's 2026-10-07 decision keeps the pane open there) or by dragging the pane
+  open with nothing bound -- had the drag handle but no width-preset control; US6/FR-025/SC-008
+  all say "the pane is open", never "a panel is open". Fixed: `RightPaneShell.tsx`'s
+  `openPanelIds.length === 0` branch now renders the same `WindowControlsSpacerRow` +
+  `WidthPresetControl` pair the tab-bar variant uses, above `PanelLauncher`. DRY alongside it:
+  `WidthPresetControl.tsx` owns its own row wrapper (was duplicated at three call sites); the
+  decorative spacer row moved to a new shared `WindowControlsSpacerRow.tsx`. `PanelTabBar.tsx`'s
+  own Row 1 is unchanged and stays `aria-hidden`; the width control lives in a separate row that
+  was never `aria-hidden` (an earlier draft of this PR's body wrongly described Row 1 itself as
+  "no longer aria-hidden" -- corrected there and here).
+
+  **Gate round 1 (A11y1/Verif1, Medium) -> Gate round 2 (Code2/A11y2/Verif2, High, same finding)**:
+  round 1's fix -- `aria-pressed` plus an `aria-pressed:bg-muted aria-pressed:text-foreground
+  aria-pressed:border-foreground` utility on the `outline` variant -- never painted. The `outline`
+  variant's own `dark:border-input dark:bg-input/30` selectors are later in the built CSS and
+  always won; `IconRail.tsx`'s identical-looking utility only works there because it is on
+  `variant="ghost"`, which has no competing `dark:` background/border. Fixed with the existing
+  `ReviewDialog.tsx` precedent (its own verdict buttons): `variant={pressed ? 'default' :
+  'outline'}` plus `aria-pressed`, dropping the utility entirely. No new token.
+- [x] T030 [P] Run `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Both pass.
+- [x] T031 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term in the
+  new Settings section or either placeholder. 0 leaks across 371 files.
+- [x] T032 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
+  decision 13 — no new token expected). 313/313 pairs PASS, no new token (`WidthPresetControl`
+  swaps between the existing `default` and `outline` button variants, both already in every
+  existing pair, plus the `border-border` divider token, all verbatim).
+- [x] T033 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
+  0 violations across 107 files (the new `WindowControlsSpacerRow.tsx` included).
+- [x] T034 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`): every story's numbered steps, at both 380px and 1280px window widths, with
   screenshots of the rail, the launcher, a two-tab bar, closing the last panel back to the
   launcher, both placeholders with the switch off and on, and the window-controls corner clear at
-  both widths (depends on T009 through T028).
-- [ ] T035 Update `docs/PLAN.md` row C1 only: status, branch, PR number (minimal diff, this
-  story's own row) (depends on T034 passing).
+  both widths (depends on T009 through T028). Live-verified in a scratch Electron instance (own
+  `--user-data-dir`/CDP port, scratch repo/registry, never touching Stuart's live Sessions --
+  process exit confirmed by pid), one coherent run, 18 named screenshots, sha256-checked, 0
+  duplicates, under `C:/Users/shopwood/refract-live-check-538-pr4/`:
+
+  At **1280px** (`window.resizeTo()` confirmed as a genuine OS-level resize via
+  `navigator.windowControlsOverlay.getTitlebarAreaRect().width` reading 1143px, not an emulated
+  viewport): the rail alone, collapsed (`01`). Closing the last open tab to reach the **launcher
+  with the pane still open** (the gate round 1 fix's own target state), then activating all three
+  presets there, each time moving focus OFF the preset group first (`Escape` plus an explicit
+  `.blur()`, so the focus ring cannot be mistaken for the pressed style in the screenshot that
+  follows) and reading BOTH `document.getElementById('right-pane')`'s own
+  `getBoundingClientRect().width` and every preset button's own `aria-pressed` attribute plus its
+  computed `backgroundColor`/`borderColor`/`color` (`report.json`'s own `*-pixels-after-*` steps):
+  width exactly **240px (Min), 320px (Default), 520px (Max)** (`02-launcher-width-*`) every time,
+  with the ACTIVATED preset reading `aria-pressed="true"`, `backgroundColor: oklch(0.922 0 0)`,
+  `borderColor: rgba(0, 0, 0, 0)` (the `default` variant's own fill, no border) while the OTHER
+  TWO both read `aria-pressed="false"`, `backgroundColor: oklab(1 0 0 / 0.108)`, `borderColor:
+  oklch(1 0 0 / 0.36)` (the `outline` variant's own translucent fill and border) -- a real,
+  measured colour difference, not an assertion from eye. The identical nine-case check (all three
+  presets, read-pixels-after-each) repeated in the **single-panel title row** (`03-single-panel-
+  width-*`) and the **two-tab bar** (`04-tabbar-width-*`) -- 27 pixel-reads total across all three
+  header variants, every one matching this same pattern: exactly one button pressed, the matching
+  one, the other two never pressed. No overlap against the window-controls spacer or the tab
+  strip at any preset in any variant. Closing both tabs back to the launcher a second time (`05`).
+  The Settings "Right pane" switch, off by default
+  (`window.refract.settings.get().value.showSampleData` read `false`) with both **FDB Knowledge**
+  (`07`) and **Agent Builder** (`08`) showing their own empty state; switched on (`09`), both
+  showing labelled sample content (`10`, `11`).
+
+  **Still not conclusively verified** (re-confirmed this round, same finding as before): the drag
+  handle's behaviour immediately after a preset click -- a CDP-synthetic drag left the measured
+  width unchanged (520px before and after: `report.json`'s own
+  `dragHandleAfterPreset_INCONCLUSIVE_UNDER_CDP` step), consistent with this spec's own
+  already-documented round-5 finding (`onResize` fires only from a `ResizeObserver` callback a
+  CDP-attached renderer's `document.hidden: true` throttles). Not evidence either way about User
+  Story 6 scenario 2 itself.
+
+  At **380px**, the window-controls-corner geometry still measured correctly
+  (`titlebarArea.width` 243px, exactly 1143 - (1280-380)) but the right pane itself **could not be
+  opened at all** (`12`, measured width: **0px**): the session list's 220px `minSize`, the chat
+  panel's 360px `minSize`, the right pane's 240px `minSize` and the rail's fixed 40px together
+  need 640px before the pane can stay open, far more than 380px, so both the session list and the
+  right pane auto-collapse. This is the SAME pre-existing SC-007 380px edge case already flagged
+  to Stuart on issue #650 since PR2, not a new gap this task introduces or could fix.
+
+  Not live-verified in this pass (tracked on issue #650, same as every prior PR in this spec): a
+  real screen reader pass (NVDA/JAWS/VoiceOver) on the width-preset control or the restructured
+  header rows; an axe run.
+- [x] T035 Update `docs/PLAN.md` row C1 only: status, branch, PR number (minimal diff, this
+  story's own row) (depends on T034 passing). Done: status cell reads PR4 of 4, draft PR #665;
+  trailing narrative reflects the gate round 2 fix and round-3 pixel-verified evidence above.
 
 **Checkpoint**: every quickstart.md story passes at both widths; the four gate commands above
-exit 0; `docs/PLAN.md` row C1 reflects the real PR.
+exit 0; `docs/PLAN.md` row C1 reflects the real PR. Met at 1280px, including the gate round 1 fix
+(width presets now reachable from the launcher, not only from an open panel) and the gate round 2
+fix (the pressed preset is now a real, measured colour difference, not an assertion from eye). At
+380px the right pane itself cannot open given current minSizes (session list 220 + chat 360 +
+pane 240 + rail 40 = 640px vs the 380px window), so the two-tab-bar/width-preset-control stories
+could not be exercised there -- the same SC-007 edge case already flagged to Stuart on issue #650
+since PR2, not resolved by this task.
 
 ---
 
