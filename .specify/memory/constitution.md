@@ -16,9 +16,11 @@
   because background jobs can wake the agent after it yields), by restarting the process and
   reattaching the same saved session per Principle III (FINDINGS item 9).
 - Refract MUST NOT reimplement behaviour OMP exposes over RPC. It supplies natively only the
-  commands absent over RPC: `/plan`, `/fork`, `/resume`, `/new`, `/settings`, `/pause`,
-  `/plan-review`, and `/btw`. `/new` maps to `new_session`; `/resume` maps to the reattach rule
-  in Principle III.
+  commands absent over RPC: `/plan`, `/fork`, `/resume`, `/new`, `/settings`, `/pause`, and
+  `/plan-review`. `/new` maps to `new_session`; `/resume` maps to the reattach rule in
+  Principle III. `/btw` is NOT in this list (amended 2026-10-11, spec 014): OMP exposes it
+  natively over RPC (`btw`), so Refract supplies a client UI for the real command, not a
+  reimplementation of it -- see Principle II.
 
 Rationale: the transport spike (`docs/spike/FINDINGS.md`) selected rpc-ui because it keeps
 skills, extensions, MCP, approvals, and `ask` working. The SDK cannot surface approvals, and ACP
@@ -30,9 +32,14 @@ sessions do not survive a process restart.
   and fails with an opaque TypeError.
 - After `abort`, Refract MUST wait for `session_settled` (or `get_state` `isSettled: true`)
   before sending another prompt. The abort acknowledgement does not mean idle.
-- Refract MUST NEVER forward literal `/btw ...` text; OMP runs it as a normal, persisted turn.
-  Side chat MUST go through the bundled extension built on `ctx.runEphemeralTurn`
-  (`docs/spike/btw-ext.ts`).
+- Side chat (`/btw`) goes through OMP's native RPC (amended 2026-10-11, spec 014, FINDINGS item
+  14): `{type: "btw", question, recordId?}` runs one ephemeral turn over the current session
+  context with no tool use and never enters the main transcript; `btw_cancel` stops a running
+  one; `get_btw_history` lists a Session's own records, persisted by OMP across restart; answers
+  stream as `btw_delta` (unverified live, FINDINGS item 14 observed zero across all probe runs)
+  and settle at a terminal `btw_record` (`complete`/`cancelled`/`error`/`interrupted`). Refract
+  MUST NEVER forward literal `/btw ...` text as a prompt; it parses the composer's own
+  `/btw <question>` locally and issues the native request instead.
 - Tool approvals and `ask` both arrive as `extension_ui_request` with `method: "select"`. A
   title starting with `Allow tool:` is a tool approval (options `Approve` and `Deny`); every
   other `select` is an `ask` question. `ask` loses headers, previews, notes, and images over RPC.
@@ -83,9 +90,13 @@ sessions do not survive a process restart.
   and recorded in `docs/spike/FINDINGS.md`, or labelled unverified in the spec that relies on it.
 - Features MUST NOT be designed around a FINDINGS open item, such as the `branch` entry id rule
   or `/wt` behaviour, until a probe resolves it.
-- The supported OMP versions are 18.4.x and 18.5.x (verified on 18.4.4, 18.4.5, and 18.5.1).
-  Raising the minor or major version requires rerunning `docs/spike/resume-probe.mjs` and
-  rechecking the FINDINGS rows Refract relies on.
+- The minimum supported OMP version is 18.6.3 (amended 2026-10-11, spec 014, raised from
+  18.4.x/18.5.x; Stuart 2026-10-07, native `btw` RPC needs it). Verified live only on 18.8.0
+  (FINDINGS item 14 for `btw` specifically, item 49 for the broader probe batch): 18.6.3 and
+  18.7.x have no binary available on this machine to test directly -- Stuart accepted the
+  18.8.0-only verification as sufficient to set this minimum (2026-10-09, `docs/PLAN.md` row B5).
+  Raising the minor or major version further requires rerunning `docs/spike/resume-probe.mjs`
+  and rechecking the FINDINGS rows Refract relies on.
 
 ### V. Electron Security Baseline
 
@@ -103,8 +114,9 @@ sessions do not survive a process restart.
   one main-process module so other platforms can be added later.
 - Electron main and preload processes plus a Vite + React renderer, all in TypeScript with
   `strict: true`.
-- OMP runs as a child process over stdio, so the app needs no Bun. The side-chat extension ships
-  with the app and loads with `--extension <path>`.
+- OMP runs as a child process over stdio, so the app needs no Bun. No extension ships with the
+  app (the earlier side-chat extension, `docs/spike/btw-ext.ts`, was never shipped and is
+  superseded by the native `btw` RPC, amended 2026-10-11, spec 014; see Principle II).
 
 ## Development Workflow
 
@@ -124,4 +136,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 1.9.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-06
+**Version**: 2.0.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-11
