@@ -177,16 +177,22 @@ export interface SessionAgentEvents {
    * process starts. Harmless if fired on every OTHER exit path too (`reconcileInterrupted` is a
    * no-op when nothing is running). */
   sideChatInterrupted: (payload: { sessionId: string }) => void;
-  /** Gate-fix (round 5, Code5 HIGH): fired from `startNewConversation` (after `new_session`
-   * succeeds) and `openConversation` (after reattach is verified, skipped if the Conversation
-   * is unchanged) -- OMP's own `btw` topics are scoped to the OMP session FILE (a Refract
-   * Conversation, not a Refract Session: `RpcBtwController` reopens its own history store
-   * whenever `getSessionId()` changes). `side-chat-store.ts`'s own store is keyed by Refract
-   * Session and was never cleared on a Conversation change, so the panel kept showing the
-   * PREVIOUS Conversation's rows and the next question sent that Conversation's own topic id,
-   * which the new Conversation's side-chat store rejects with "Unknown /btw topic". The
-   * renderer clears the thread on this event so the panel's own effect reloads history fresh
-   * for the Conversation now current. */
+  /** Gate-fix (round 5, Code5 HIGH; round 6, Code6/Sec6/A11y6/Verif6 HIGH): fired from
+   * `startNewConversation` (after `new_session` succeeds), `openConversation` (after reattach is
+   * verified, skipped if the Conversation is unchanged) and `conversationSwitch.ts`'s
+   * `startStoppedSessionOnConversation` (round 6: the only path available while
+   * `status === 'stopped'`, which round 5 never wired up -- Stop, then New conversation/Open an
+   * earlier Conversation, left the previous Conversation's rows in place and the next question
+   * failed with "Unknown /btw topic" again) -- OMP's own `btw` topics are scoped to the OMP
+   * session FILE (a Refract Conversation, not a Refract Session: `RpcBtwController` reopens its
+   * own history store whenever `getSessionId()` changes). `side-chat-store.ts`'s own store is
+   * keyed by Refract Session and was never cleared on a Conversation change, so the panel kept
+   * showing the PREVIOUS Conversation's rows and the next question sent that Conversation's own
+   * topic id, which the new Conversation's side-chat store rejects with "Unknown /btw topic".
+   * The renderer clears the thread on this event so the panel's own effect reloads history
+   * fresh for the Conversation now current. Always fire this through
+   * `notifySideChatConversationChanged()`, never `this.emit('sideChatConversationChanged', ...)`
+   * directly -- that method also bumps `sideChatConversationEpoch`. */
   sideChatConversationChanged: (payload: { sessionId: string }) => void;
   /** Fired whenever `syncFromState` writes a registry patch (after the initial `get_state`, every
    * `session_settled`, a Conversation switch, or a mode-change restart) -- i.e. whenever
@@ -304,6 +310,20 @@ export class SessionAgent extends EventEmitter {
   private stateSynced = false;
   private lastContextUsage: { tokens: number; contextWindow: number; percent: number } | undefined;
   private lastTodoPhases: Array<{ name: string; tasks: Array<{ content: string; status: string }> }> | undefined;
+  /** Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH): bumped by
+   * `notifySideChatConversationChanged` alongside the event it fires. `askSideChat` stamps every
+   * topic (root) id it learns about with the epoch current at that moment; `onFrame`'s
+   * `btw_delta`/`btw_record` cases drop (never forward) a frame for a topic stamped with an
+   * OLDER epoch than the current one, instead of forwarding it into whichever Conversation's
+   * thread is now current. Defense in depth alongside OMP's own ordering: the bundled omp
+   * 18.8.6 `rpc-btw.ts`'s `RpcBtwController.close()` -- awaited by its RPC host before
+   * `new_session`/`switch_session`/`branch`/`fork` ever runs -- already cancels any running
+   * question and pushes its terminal `btw_record(cancelled)` frame synchronously, strictly
+   * before that command's own response, so this should never actually trigger in a single
+   * switch; kept in case a future OMP version changes that ordering, or two switches queue
+   * back-to-back. */
+  private sideChatConversationEpoch = 0;
+  private readonly sideChatTopicEpoch = new Map<string, number>();
   /** One `TranscriptItem[]` stream per subagent id, built the same way the main transcript is
    * (data-model.md): requested on demand via `chat.subagentSnapshot`, patched via
    * `subagent:patch` for whichever one `setVisibleSubagent` last named. Cleared per-id when its
@@ -976,6 +996,12 @@ export class SessionAgent extends EventEmitter {
     if (!thread) {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw succeeded but returned no record`);
     }
+    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH defense in depth): stamps the TOPIC's own
+    // root id (`thread.id`, never the latest turn's own flattened id -- same distinction
+    // `applyPatch`'s `btw_delta` case already relies on) with the epoch current right now, so a
+    // later `btw_delta`/`btw_record` frame for this exact topic is dropped by `onFrame` instead
+    // of forwarded, if a Conversation change happened in between.
+    this.sideChatTopicEpoch.set(thread.id, this.sideChatConversationEpoch);
     return { record: latestTurn(thread) };
   }
 
@@ -993,6 +1019,17 @@ export class SessionAgent extends EventEmitter {
     if (!res.success) {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw_cancel failed: ${res.error ?? 'unknown error'}`);
     }
+  }
+
+  /** Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH): the single place that signals a
+   * Conversation change to the renderer's side-chat store AND bumps `sideChatConversationEpoch`
+   * -- `startNewConversation`, `openConversation` and `conversationSwitch.ts`'s
+   * `startStoppedSessionOnConversation` (the stopped-Session path round 5 never wired up) all
+   * call this instead of emitting the event directly, so the epoch and the event can never go
+   * out of sync. */
+  notifySideChatConversationChanged(): void {
+    this.sideChatConversationEpoch++;
+    this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
   }
 
   /** `sideChat.getHistory` (contracts/ipc.md, FR-004): every side-chat record OMP has for this
@@ -1032,6 +1069,12 @@ export class SessionAgent extends EventEmitter {
     // to `undefined`) cannot pull the process out from under the later `get_state` call below --
     // every request in this method goes through this same reference, never `this.process` again.
     const proc = this.process;
+    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH, defense in depth): OMP's own
+    // `RpcBtwController.close()` already cancels a running side question before `new_session`
+    // itself runs (confirmed against the bundled omp 18.8.6 `rpc-btw.ts`), so this is normally a
+    // no-op -- issued anyway in case a future OMP version changes that ordering. Best-effort: a
+    // failure here must never block starting the new Conversation.
+    await this.cancelSideChat().catch(() => undefined);
     const res = await proc.request({ type: 'new_session', id: '' });
     if (!res.success) {
       throw new Error(`SessionAgent ${this.sessionId}: new_session failed: ${res.error ?? 'unknown error'}`);
@@ -1042,7 +1085,7 @@ export class SessionAgent extends EventEmitter {
     // the PREVIOUS Conversation and must be dropped before the next question runs, or OMP
     // rejects it with "Unknown /btw topic" (the topic id the renderer still holds no longer
     // exists in the NEW Conversation's own side-chat store).
-    this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
+    this.notifySideChatConversationChanged();
     try {
       await this.registry.updateSession(this.sessionId, { currentConversation: null, lastMessageCount: null });
     } catch (err) {
@@ -1099,6 +1142,10 @@ export class SessionAgent extends EventEmitter {
     const session = this.requireSession();
     const previousConversation = session.currentConversation;
 
+    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH, defense in depth): same reasoning as
+    // `startNewConversation`'s own call -- normally a no-op, since OMP's own
+    // `RpcBtwController.close()` already cancels before `switch_session` runs.
+    await this.cancelSideChat().catch(() => undefined);
     const switchRes = await this.process.request({ type: 'switch_session', id: '', sessionPath: file });
     const cancelled = (switchRes.data as SwitchSessionResponseData | undefined)?.cancelled;
     if (!switchRes.success || cancelled !== false) {
@@ -1124,7 +1171,7 @@ export class SessionAgent extends EventEmitter {
     // `file`. Skipped when `file` IS `previousConversation` (reopening the same Conversation --
     // its side-chat topics are still valid, nothing to drop).
     if (file !== previousConversation) {
-      this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
+      this.notifySideChatConversationChanged();
     }
 
     const state = stateRes.data as GetStateResponseData;
@@ -1474,6 +1521,13 @@ export class SessionAgent extends EventEmitter {
         // store's `applyPatch` matches it against whichever record has that `topicId` AND
         // `status: 'running'` (gate-fix round 4, Code4/Verif4 CRITICAL).
         const deltaFrame = frame as BtwDeltaFrame;
+        // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH, defense in depth): a topic never
+        // stamped by `askSideChat` (loaded from history, never asked through this process
+        // instance) is treated as current -- only a topic actually STAMPED with an OLDER epoch
+        // is dropped. See `sideChatTopicEpoch`'s own doc comment for why this should never
+        // actually trigger against the real OMP ordering.
+        const topicEpoch = this.sideChatTopicEpoch.get(deltaFrame.recordId) ?? this.sideChatConversationEpoch;
+        if (topicEpoch < this.sideChatConversationEpoch) return;
         this.emit('sideChatPatch', { sessionId: this.sessionId, delta: deltaFrame.delta, recordId: deltaFrame.recordId });
         return;
       }
@@ -1487,6 +1541,10 @@ export class SessionAgent extends EventEmitter {
         // only matters for malformed/unexpected local input, never a real OMP frame.
         const recordFrame = frame as BtwRecordFrame;
         if (!recordFrame.record) return;
+        // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH, defense in depth): same epoch guard
+        // as `btw_delta` above, keyed by the thread's own root id (`BtwHistoryThread.id`).
+        const topicEpoch = this.sideChatTopicEpoch.get(recordFrame.record.id) ?? this.sideChatConversationEpoch;
+        if (topicEpoch < this.sideChatConversationEpoch) return;
         this.emit('sideChatPatch', { sessionId: this.sessionId, record: latestTurn(recordFrame.record) });
         return;
       }

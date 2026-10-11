@@ -39,10 +39,15 @@ Principles I, II, IV.
    as this item originally said -- `get_btw_history`/`btw`/`btw_cancel` are all scoped to the OMP
    session FILE (the OMP process's own `getSessionId()`), which is a Refract Conversation, not
    the Refract Session as a whole. `RpcBtwController` reopens its own history store whenever that
-   file changes (`/new`, or opening a different past Conversation, both send `new_session` in the
-   SAME process) -- Refract's own renderer store is corrected to clear and reload on that signal
-   (`SIDE_CHAT_CONVERSATION_CHANGED`, contracts/ipc.md), not left keyed by Session with no
-   Conversation-change handling at all, as it originally was.
+   file changes (`/new` sends `new_session`; opening a different past Conversation sends
+   `switch_session`; both stay in the SAME process) -- Refract's own renderer store is corrected
+   to clear and reload on that signal (`SIDE_CHAT_CONVERSATION_CHANGED`, contracts/ipc.md), not
+   left keyed by Session with no Conversation-change handling at all, as it originally was.
+   **Corrected 2026-10-11 (round 6, Code6/Sec6/A11y6/Verif6 HIGH)**: round 5's fix reached
+   `startNewConversation`/`openConversation` but never the ONLY switch path available while
+   `status === 'stopped'` (`conversationSwitch.ts`'s `startStoppedSessionOnConversation`), so
+   Stop then New conversation/Open an earlier Conversation reproduced the same "Unknown /btw
+   topic" defect through another door; that path now emits the same signal.
 7. **Concurrency**: one `btw` request at a time per Session; OMP itself cancels a running one on
    Session switch, `new_session`, `fork`, `open_session`, or shutdown (issue://516, from rpc.md).
    Refract reflects that state; it does not implement its own single-flight guard beyond disabling

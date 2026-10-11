@@ -10,6 +10,24 @@ import type { SideChatRecord } from '../../shared/frames'
 // transcript, since a thread must survive its owning pane losing focus (Edge Cases: closing the
 // panel never cancels an in-flight question).
 
+// Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH): a Conversation-change race -- a `loadHistory`
+// or `ask` call still in flight when `clearThread` runs (a `sideChatConversationChanged` event,
+// or a rapid consecutive switch) -- must never resurrect the just-left Conversation's state.
+// Kept as a plain module-level map, OUTSIDE `SideChatSessionState`/`clearThread`'s own deleted
+// entry, so the epoch itself survives the delete; `loadHistory`/`ask` capture it before their one
+// `await` and skip their own `set` entirely if it changed underneath them.
+const epochBySession = new Map<string, number>()
+
+function bumpSideChatEpoch(sessionId: string): number {
+  const next = (epochBySession.get(sessionId) ?? 0) + 1
+  epochBySession.set(sessionId, next)
+  return next
+}
+
+function currentSideChatEpoch(sessionId: string): number {
+  return epochBySession.get(sessionId) ?? 0
+}
+
 interface SideChatSessionState {
   records: SideChatRecord[]
   /** The record id the NEXT question should carry as `recordId`, or undefined for a fresh topic
@@ -83,7 +101,22 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
   bySession: {},
 
   async loadHistory(sessionId) {
+    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH): captured before the one `await` below;
+    // if a Conversation change (`clearThread`) bumps it before this resolves, the fetched copy
+    // belongs to a Conversation that no longer exists in the store and must never be applied --
+    // see `epochBySession`'s own doc comment.
+    const epoch = currentSideChatEpoch(sessionId)
+    // Gate-fix (round 6, A11y6/Sec6 LOW): matches this field's own doc comment ("cleared
+    // whenever a load attempt starts again") -- previously only cleared on a SUCCESSFUL load,
+    // so a retry after a permanent failure kept showing the stale "could not be loaded" hint
+    // for the whole time the new attempt was still in flight.
+    set((state) => {
+      const existing = state.bySession[sessionId]
+      if (!existing?.loadError) return state
+      return { bySession: { ...state.bySession, [sessionId]: { ...existing, loadError: false } } }
+    })
     const result = await window.refract.sideChat.getHistory(sessionId)
+    if (epoch !== currentSideChatEpoch(sessionId)) return
     if (!result.ok) {
       // Gate-fix (round 2, Code2/Sec2 Medium): a Session whose process has not started yet
       // throws `agent-not-running` here -- that is NOT "this Session has no side-chat history",
@@ -160,34 +193,42 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
   async ask(sessionId, question) {
     const before = get().bySession[sessionId] ?? EMPTY_SESSION_STATE
     const recordId = before.activeTopicRecordId
+    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH): captured before the one `await` below --
+    // see `epochBySession`'s own doc comment. A side question still in flight when the
+    // Conversation changes must never resurrect the just-left Conversation's state once it
+    // settles.
+    const epoch = currentSideChatEpoch(sessionId)
     // FR-005: `running` becomes true the moment the request is sent, not only once this call
     // resolves -- an in-flight `ask` already means the panel must show "Thinking".
     set((state) => ({ bySession: { ...state.bySession, [sessionId]: { ...before, running: true } } }))
     const result = await window.refract.sideChat.ask(sessionId, question, recordId)
+    const stale = epoch !== currentSideChatEpoch(sessionId)
     if (!result.ok) {
-      set((state) => {
-        const current = state.bySession[sessionId] ?? before
-        return {
-          bySession: {
-            ...state.bySession,
-            [sessionId]: {
-              ...current,
-              running: computeRunning(current.records),
-              // Gate-fix (round 3, Verif3 HIGH safety net; narrowed round 4, Code4/Verif4
-              // MEDIUM): clearing on ANY failure also wiped the topic for a transient
-              // "still running"/`agent-not-running`/save-failure rejection, unrelated to the
-              // restart/wrong-id case this is meant for -- only a genuine "Unknown /btw topic"
-              // rejection (confirmed live, round 3: the exact OMP wording for a rejected
-              // `recordId`) means the id itself is actually bad; every other failure leaves the
-              // topic as-is so the SAME question (or Retry) can simply be sent again.
-              activeTopicRecordId:
-                current.activeTopicRecordId === recordId && /Unknown \/btw topic/.test(result.error.message)
-                  ? undefined
-                  : current.activeTopicRecordId
+      if (!stale) {
+        set((state) => {
+          const current = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
+          return {
+            bySession: {
+              ...state.bySession,
+              [sessionId]: {
+                ...current,
+                running: computeRunning(current.records),
+                // Gate-fix (round 3, Verif3 HIGH safety net; narrowed round 4, Code4/Verif4
+                // MEDIUM): clearing on ANY failure also wiped the topic for a transient
+                // "still running"/`agent-not-running`/save-failure rejection, unrelated to the
+                // restart/wrong-id case this is meant for -- only a genuine "Unknown /btw topic"
+                // rejection (confirmed live, round 3: the exact OMP wording for a rejected
+                // `recordId`) means the id itself is actually bad; every other failure leaves
+                // the topic as-is so the SAME question (or Retry) can simply be sent again.
+                activeTopicRecordId:
+                  current.activeTopicRecordId === recordId && /Unknown \/btw topic/.test(result.error.message)
+                    ? undefined
+                    : current.activeTopicRecordId
+              }
             }
           }
-        }
-      })
+        })
+      }
       // Gate-fix (round 4, Code4 LOW): strips OMP's own `btw failed: ` prefix too (not just the
       // `SessionAgent <uuid>: ` one), and renders the "Unknown /btw topic" rejection in plain
       // English -- a raw hex topic id in a toast means nothing to the developer.
@@ -196,6 +237,7 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       toast.error(`Side question failed: ${friendly}`)
       throw new Error(result.error.message)
     }
+    if (stale) return
     // Gate-fix (round 2, Code2/Sec2/Verif2 HIGH): the response now carries the record's OWN
     // status, not just its id -- a terminal `btw_record` for this same question can race this
     // call's own reply back over `SIDE_CHAT_PATCH` (`applyPatch`, below) and settle it FIRST; in
@@ -204,7 +246,7 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
     // array afterward, never hard-coded.
     const response = result.value.record
     set((state) => {
-      const current = state.bySession[sessionId] ?? before
+      const current = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
       const alreadyPatched = current.records.find((record) => record.id === response.id)
       const records = alreadyPatched ? current.records : [...current.records, response]
       return {
@@ -224,6 +266,10 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
   },
 
   clearThread(sessionId) {
+    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH): bumped BEFORE the delete below, so any
+    // `loadHistory`/`ask` call already in flight for this Session's just-left Conversation sees
+    // a changed epoch and skips its own `set` instead of resurrecting the deleted entry.
+    bumpSideChatEpoch(sessionId)
     set((state) => {
       const next = { ...state.bySession }
       delete next[sessionId]
@@ -267,6 +313,13 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       if (patch.record) {
         const record = patch.record
         const index = existing.records.findIndex((candidate) => candidate.id === record.id)
+        // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH, defense in depth): a record this
+        // Session's thread has never seen (`index === -1`), arriving while `!loaded` (history
+        // has not loaded for the CURRENT Conversation yet, most likely right after a
+        // Conversation change), belongs to the Conversation just left -- appending it here
+        // would leak it into the new Conversation's still-loading thread instead of waiting for
+        // `loadHistory`'s own authoritative fetch.
+        if (index === -1 && !existing.loaded) return state
         const records =
           index === -1 ? [...existing.records, record] : existing.records.map((candidate, i) => (i === index ? record : candidate))
         return {

@@ -160,7 +160,82 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 5 (gate-fix remediation, supersedes the round-4 account below)**: PR #668's
+**Checkpoint, round 6 (gate-fix remediation, supersedes the round-5 account below)**: PR #668's
+fifth gate round (Code6/Sec6/A11y6/Verif6 all FAIL with Highs) found round 5's own fix reached
+`SessionAgent.startNewConversation`/`openConversation` but never `conversationSwitch.ts`'s
+`startStoppedSessionOnConversation` -- the ONLY Conversation-switch path available while
+`status === 'stopped'` (`ConversationSwitcher.tsx`'s `canSwitch` allows New conversation/Open an
+earlier Conversation from a stopped Session too). Stop, then switch Conversation, reproduced the
+exact "Unknown /btw topic" defect round 5 claims to have fixed, through another door. Reviewers
+also DISAGREED about whether a side question still running when the Conversation changes can
+leak into the new Conversation (Code6/A11y6/Sec6: no, OMP's own `RpcBtwController.close()`
+cancels and settles it first; Verif6: yes, OMP only cancels lazily on the next `ask()` call) --
+resolved this round both by reading the bundled omp 18.8.6 source directly (readable,
+non-obfuscated, file-path-commented) and by a live race test (below): Code6/A11y6/Sec6 were
+right -- `close()` is awaited by the RPC host strictly BEFORE `new_session`/`switch_session`/
+`branch`/`fork` itself runs, and it cancels + synchronously pushes the terminal
+`btw_record(cancelled)` frame before that command's own response. Verif6's "still running;
+cancel it first" message lives in `ask()`'s own guard, which fires only for a SECOND `/btw` in
+the SAME unchanged Conversation, never during a switch.
+
+**Fixed**: `conversationSwitch.ts`'s `startStoppedSessionOnConversation` now reads the Session's
+PREVIOUS `currentConversation` before the registry write and, if the Conversation actually
+changed, calls a new `SessionAgent.notifySideChatConversationChanged()` -- the single place that
+both emits `sideChatConversationChanged` and bumps a new `sideChatConversationEpoch`, used by
+`startNewConversation`/`openConversation` too now. Three defense-in-depth layers added for the
+switch-while-running race (regardless of the empirical finding above, since OMP's own ordering
+could change in a future version): (1) `SessionAgent` issues a best-effort `cancelSideChat()`
+before `new_session`/`switch_session` in both conversation-change methods; (2) `SessionAgent`
+stamps every topic's root id with the epoch at ask-time (`sideChatTopicEpoch`) and `onFrame`'s
+`btw_delta`/`btw_record` cases drop a frame stamped with an older epoch instead of forwarding it;
+(3) the renderer's `side-chat-store.ts` gained a module-level `epochBySession` map (kept outside
+`clearThread`'s own deleted entry) that `loadHistory`/`ask` capture before their one `await` and
+skip their own `set` entirely if it changed, `?? before` fallbacks replaced with
+`?? EMPTY_SESSION_STATE`, and `applyPatch` ignores an unknown record id while `!loaded`.
+
+**Medium/Low fixes**: `SideChatPanel`'s seed effect now resets `seededSessionsRef` the instant
+`loaded` drops (a Conversation change), re-arming seeding for the reload instead of leaving the
+Session's id seeded forever and announcing a reloaded Conversation's last row as brand new
+(WCAG 4.1.3). `right-pane-store.ts`'s `openPanel` gained a `{ focus?: boolean }` option; `/btw`
+from the main composer now opens the panel with `focus: false` while `!loaded`, so the draft and
+focus both stay in the main composer instead of stealing focus into an empty side-chat textarea,
+and picks its toast wording from state (`loadError`, a stopped Session, or a genuine in-flight
+load) instead of always claiming "still loading"; a bare `/btw` (no question) is now checked
+before the `!loaded` gate, so it no longer raises an error toast for just opening the panel.
+`loadError` now clears the instant a NEW load attempt starts, not only on that attempt's own
+success, matching its own doc comment. `contracts/ipc.md`'s `SIDE_CHAT_CONVERSATION_CHANGED` row,
+spec.md item 6, data-model.md's `SideChatThreadState` section and its own "Clear thread" UI-action
+mention (no such action exists) all corrected; the PR body's "both send `new_session`" line
+corrected to "`new_session`/`switch_session`" (`openConversation` sends `switch_session`).
+
+**Re-verified live** (`C:/Users/shopwood/refract-live-check-668-round6/`, 22 screenshots -- one
+disclosed pixel-identical pair, 12/15, both an unchanged reload of the same Conversation A --
+`report.json`, `sha256.json`, real `omp 18.8.6`), one coherent run, through the REAL UI, with
+`sessionId`/`currentConversation` asserted via `window.refract.sessions.list()` at the key step
+(not DOM/screenshot alone, closing round 5's own evidence gap): asked Q1 in Conversation A
+(settled, `25`); sent a real main message so A has a history entry; clicked New conversation --
+the already-open panel self-cleared immediately; asked Q2 in B through the panel's own composer
+(settled, `63`); opened Conversation history and switched to A -- dialog closed, main pane showed
+A's own message, side-chat reloaded A's own Q1 row, `sessionId`/`currentConversation` asserted to
+match A exactly; created a second new Conversation (B2) with its own main message, asked via
+`/btw` from the composer this time (settled, `81`); switched to A again (pixel-identical to the
+first visit, disclosed) then REVERSED back to B2 (reloaded B2's own `81` row) -- a full round
+trip proven in both directions. Stopped the Session; clicked New conversation from the STOPPED
+state (the fix's own target path) -- the panel cleared immediately, mid-"Starting agent"; once
+idle, asked a question -- SUCCEEDED (`15`), not "Unknown /btw topic". Raced a switch against an
+in-flight question: sent a question, clicked New conversation ~74ms later (measured); the panel
+showed its own empty state immediately and STILL showed it 3s later (long past when that
+question would have settled either way) -- no leaked answer or cancelled record ever appeared in
+the new Conversation; a fresh question asked there afterward succeeded (`42`), confirming the new
+Conversation's own topic was never left poisoned.
+
+**Record-keeping**: no new decision needed for Stuart this round (round 5's per-Conversation
+scope decision is unaffected); this round's fixes and docs corrections are recorded here and in
+the PR body only.
+
+<details>
+<summary>Checkpoint, round 5 (superseded by round 6 above -- kept for history, not a current claim)</summary>
+
 fourth gate round (Code5 HIGH; Sec5/A11y5/Verif5 PASS with Mediums/Lows) found round 4's own
 critical fix was correct but incomplete: OMP scopes `btw` topics PER CONVERSATION (the OMP
 session file, `btw-history/sessions/<getSessionId()>`), not per Refract Session as spec.md/
@@ -218,6 +293,7 @@ corrected to per-Conversation scope; `contracts/ipc.md`'s "Non-IPC" section upda
 `future/open-questions.md` item 6 corrected (the safety net's own narrowed wording, and
 `leafId`'s now-known meaning, both left stale since round 4). A short decision-changed note
 posted on issues #1 and #516 (the per-Conversation scope correction).
+</details>
 
 <details>
 <summary>Checkpoint, round 4 (superseded by round 5 above -- kept for history, not a current claim)</summary>

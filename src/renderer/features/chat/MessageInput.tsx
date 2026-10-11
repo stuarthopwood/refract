@@ -523,23 +523,38 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         toast.error('A side question is already running for this Session.')
         return
       }
-      // Gate-fix (round 5, Code5 Medium): the panel's own Send button already refuses while
-      // `!loaded` -- this path did not, so `/btw` typed before `loadHistory` finishes (most
-      // likely right after a restart) ran `ask` with `activeTopicRecordId` still `undefined`,
-      // silently starting a FRESH topic instead of continuing the Session's real one. Opening
-      // the panel triggers its own `loadHistory` effect; the draft is kept (not cleared) so
-      // Enter/Send can simply be tried again once it resolves.
-      if (!useSideChatStore.getState().bySession[sessionId]?.loaded) {
-        useRightPaneStore.getState().openPanel('side-chat')
-        toast.error('Side chat is still loading its history. Try again in a moment.')
-        return
-      }
-      useRightPaneStore.getState().openPanel('side-chat')
+      // Gate-fix (round 6, Code6 LOW): a bare `/btw` only opens (and focuses) the panel -- moved
+      // above the `!loaded` gate below, which otherwise always refused it with an error toast
+      // even though it asks nothing and has nothing to load yet.
       if (slashInvocation.rest.length === 0) {
+        useRightPaneStore.getState().openPanel('side-chat')
         useDraftStore.getState().clear(sessionId)
         clearGhostState()
         return
       }
+      // Gate-fix (round 5, Code5 Medium; round 6, Code6/Sec6/A11y6/Verif6 Medium): the panel's
+      // own Send button already refuses while `!loaded` -- this path did not, so `/btw` typed
+      // before `loadHistory` finishes (the first one per Session per app run, and every one
+      // right after a Conversation change) ran `ask` with `activeTopicRecordId` still
+      // `undefined`, silently starting a FRESH topic instead of continuing the Session's real
+      // one. Opens the panel WITHOUT moving focus away from the main composer (the draft, and
+      // the retry, both stay here) -- `focus: false` leaves `sideChatFocusRequestId` untouched;
+      // the panel's own mount effect still fires its own `loadHistory`. Wording matches the
+      // actual cause instead of always claiming "still loading": `loadError` means a permanent
+      // failure that a retry will not fix either; a stopped Session means there is nothing
+      // running yet to load from.
+      if (!useSideChatStore.getState().bySession[sessionId]?.loaded) {
+        useRightPaneStore.getState().openPanel('side-chat', { focus: false })
+        const sideChatState = useSideChatStore.getState().bySession[sessionId]
+        const message = sideChatState?.loadError
+          ? 'Side chat history could not be loaded.'
+          : status === 'stopped'
+            ? 'Side chat is available once the Session is running.'
+            : 'Side chat is still loading its history. Try again in a moment.'
+        toast.error(message)
+        return
+      }
+      useRightPaneStore.getState().openPanel('side-chat')
       // Gate-fix (round 2, Code2/Sec2/Verif2 Medium): the draft (and its attachments) only
       // clears AFTER `ask` resolves -- the old code cleared it first, so a question over 10,000
       // characters, a Session with no live process, or any other RPC failure silently lost the

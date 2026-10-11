@@ -100,7 +100,19 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   // Session (never re-seeds on a later merge from a live `ask`/`applyPatch` update), and MUST be
   // declared before the announcement effect below so both run, in order, in the same commit.
   useEffect(() => {
-    if (!sessionId || !loaded || seededSessionsRef.current.has(sessionId)) return
+    if (!sessionId) return
+    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 Medium, WCAG 4.1.3): a Conversation change
+    // (`clearThread`) drops `loaded` back to `false` but left this Session's id in
+    // `seededSessionsRef` forever -- the seeding step above never ran again for the RELOADED
+    // Conversation's own history, so its terminal rows counted as "never seen" and the
+    // announcement effect (below) read the last one as if it had just arrived. Dropping the id
+    // here, the instant `loaded` goes false again, re-arms seeding for whichever Conversation's
+    // history loads next.
+    if (!loaded) {
+      seededSessionsRef.current.delete(sessionId)
+      return
+    }
+    if (seededSessionsRef.current.has(sessionId)) return
     seededSessionsRef.current.add(sessionId)
     records.forEach((record) => seenIdsRef.current.add(record.id))
   }, [sessionId, loaded, records])

@@ -37,11 +37,25 @@ export async function startStoppedSessionOnConversation(
       const session = registry.getSession(sessionId);
       const worktreeExists = session ? await fs.stat(session.worktreePath).then(() => true, () => false) : false;
       if (!worktreeExists) return;
+      const previousConversation = session?.currentConversation ?? null;
       try {
         await registry.updateSession(sessionId, { currentConversation: file, lastMessageCount: null });
       } catch (err) {
         prepareError = err;
         throw err;
+      }
+      // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH): round 5 only wired
+      // `sideChatConversationChanged` into `SessionAgent.startNewConversation`/`openConversation`
+      // -- this is the ONLY Conversation-switch path available while `status === 'stopped'`
+      // (`ConversationSwitcher.tsx` allows both New conversation and opening an earlier
+      // Conversation from a stopped Session), and it never emitted the event. A stopped Session
+      // kept the previous Conversation's side-chat rows and `activeTopicRecordId`, so the next
+      // question sent that Conversation's own topic id and OMP rejected it with "Unknown /btw
+      // topic" -- the exact defect round 5 claims to have fixed, reachable through another path.
+      // Skipped when `file` is the SAME Conversation being reattached (its side-chat topics are
+      // still valid), matching `openConversation`'s own `file !== previousConversation` guard.
+      if (file === null || file !== previousConversation) {
+        agent.notifySideChatConversationChanged();
       }
     });
   } catch (err) {

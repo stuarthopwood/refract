@@ -30,8 +30,12 @@ interface RightPaneState {
    * specific (not a generic per-panel mechanism) since FR-013 only asks for this panel's own
    * composer; the other three hosted panels have no composer to focus. */
   sideChatFocusRequestId: number
-  /** Opens the pane if collapsed; adds `id` if absent; makes it active (FR-005). */
-  openPanel(id: PanelId): void
+  /** Opens the pane if collapsed; adds `id` if absent; makes it active (FR-005). Gate-fix
+   * (round 6, Code6/A11y6/Sec6 Medium): `options.focus` defaults `true`; pass `false` for
+   * `side-chat` to open (and load) the panel WITHOUT bumping `sideChatFocusRequestId` -- used
+   * when a typed `/btw <question>` must keep focus (and the draft) in the main composer while
+   * its history is still loading, instead of stealing focus into an empty side-chat textarea. */
+  openPanel(id: PanelId, options?: { focus?: boolean }): void
   /** Removes `id`; if it was active, activates the NEIGHBOUR left in its place -- the tab at the
    * same index in the remaining order, clamped to the new last index (gate remediation, round 1
    * of PR2's own gate: three reviewers converged that "activate the last tab" desynced from
@@ -52,13 +56,14 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   openPanelIds: [],
   activePanelId: null,
   sideChatFocusRequestId: 0,
-  openPanel: (id) => {
+  openPanel: (id, options) => {
     const { openPanelIds, sideChatFocusRequestId } = get()
+    const focus = options?.focus ?? true
     set({
       open: true,
       openPanelIds: openPanelIds.includes(id) ? openPanelIds : [...openPanelIds, id],
       activePanelId: id,
-      sideChatFocusRequestId: id === 'side-chat' ? sideChatFocusRequestId + 1 : sideChatFocusRequestId
+      sideChatFocusRequestId: id === 'side-chat' && focus ? sideChatFocusRequestId + 1 : sideChatFocusRequestId
     })
   },
   closePanel: (id) => {

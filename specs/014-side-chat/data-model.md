@@ -122,11 +122,14 @@ Both join the existing `KnownFrame` union (`frames.ts:384`) alongside `MessageUp
 Mirrors `subagent-store.ts`'s own per-Session keying (research.md decision 6), not the main
 transcript's single-Session-at-a-time model, since a side-chat thread must survive the owning
 pane losing focus (Edge Cases: closing the panel never cancels an in-flight question). **Corrected
-2026-10-11 (round 5, Code5 HIGH)**: OMP's own `btw` topics are scoped to the Conversation (the OMP
-session file), not the Session as a whole (spec.md item 6) -- the store stays keyed by Session
-(`bySession`), but `clearThread` now runs whenever `SIDE_CHAT_CONVERSATION_CHANGED` fires for that
-Session, so a Conversation switch within the same Session always reloads a fresh thread instead of
-continuing to show the PREVIOUS Conversation's rows.
+2026-10-11 (round 5, Code5 HIGH; round 6, Code6/Sec6/A11y6/Verif6 HIGH)**: OMP's own `btw` topics
+are scoped to the Conversation (the OMP session file), not the Session as a whole (spec.md item
+6) -- the store stays keyed by Session (`bySession`), but `clearThread` now runs whenever
+`SIDE_CHAT_CONVERSATION_CHANGED` fires for that Session, so a Conversation switch within the same
+Session -- including the stopped-Session path (round 6: round 5 only wired up
+`startNewConversation`/`openConversation`, never `conversationSwitch.ts`'s
+`startStoppedSessionOnConversation`, the only switch path left while `status === 'stopped'`) --
+always reloads a fresh thread instead of continuing to show the PREVIOUS Conversation's rows.
 
 **Corrected 2026-10-11 (gate-fix round 2, Code2/Sec2/Verif2)**: `activeTopicRecordId` only moves
 when a record reaches `status: 'complete'` (an error or a cancelled record is never "the prior
@@ -169,6 +172,20 @@ the SAME turn. For an id present in both, the store's own existing copy now wins
 newer (`updatedAt`) or already terminal while the fetched copy is still `running`; otherwise the
 fetched copy (OMP's own authoritative history) wins, as before.
 
+**Corrected 2026-10-11 (round 6, Code6/Sec6/A11y6/Verif6 HIGH)**: a side question still in
+flight, or a `loadHistory` fetch still in flight, when the Conversation changes could resurrect
+the just-left Conversation's own state once it resolved (`?? before` fell back to the pre-clear
+entry). A module-level `epochBySession` map (outside `clearThread`'s own deleted entry) is bumped
+by `clearThread`; `loadHistory`/`ask` capture it before their one `await` and skip their own
+`set` entirely if it changed, and both now fall back to `EMPTY_SESSION_STATE`, never `before`.
+`applyPatch`'s record case also ignores an id it has never seen while `!loaded` (that record
+belongs to the Conversation just left). `SessionAgent` mirrors this with its own
+`sideChatConversationEpoch`/`sideChatTopicEpoch`, dropping a stale `btw_delta`/`btw_record`
+before it is ever forwarded -- all defense in depth: the bundled omp 18.8.6
+`RpcBtwController.close()` already cancels and settles any running question, synchronously,
+strictly before `new_session`/`switch_session`/`branch`/`fork` itself runs (confirmed against its
+own bundled source).
+
 ```ts
 interface SideChatThreadState {
   /** Keyed by Session id. Undefined until `get_btw_history` has been called at least once for
@@ -177,7 +194,7 @@ interface SideChatThreadState {
     records: SideChatRecord[];
     /** The TOPIC id the NEXT question should carry as `recordId`, or undefined for a fresh
      * topic (FR-003). Moves only when a record reaches `status: 'complete'` (its `topicId`, not
-     * its own `id` -- round 4); cleared by Clear thread. */
+     * its own `id` -- round 4); cleared by `clearThread`. */
     activeTopicRecordId: string | undefined;
     /** True while at least one record for this Session has `status: 'running'` (FR-005);
      * recomputed from `records` on every change, never hard-coded. */
@@ -189,7 +206,9 @@ interface SideChatThreadState {
     /** Round 5, A11y5 Low: `true` when `loadHistory` failed for a reason OTHER than
      * `agent-not-running` -- a genuine failure that will not resolve itself once the Session
      * starts, so the panel's own `!loaded` hint picks different wording than the ordinary
-     * "available once running" case. */
+     * "available once running" case. Round 6, A11y6/Sec6 Low: cleared the instant a NEW load
+     * attempt starts (not only on that attempt's own success), so a retry after a permanent
+     * failure does not keep showing the stale hint for the whole time it is in flight. */
     loadError: boolean;
   }>;
   loadHistory(sessionId: string): Promise<void>;
@@ -197,7 +216,9 @@ interface SideChatThreadState {
   cancel(sessionId: string): Promise<void>;
   /** Drops this Session's entry entirely (`loaded`/`loadError` both reset to `false`), so the
    * panel's own effect reloads history fresh. Called on `SIDE_CHAT_CONVERSATION_CHANGED` (round
-   * 5, Code5 HIGH) as well as any explicit "Clear thread" UI action. */
+   * 5, Code5 HIGH; round 6, Code6/Sec6/A11y6/Verif6 HIGH) -- there is no separate "Clear thread"
+   * UI action. Also bumps this Session's own epoch in the module-level `epochBySession` map
+   * (round 6; see the correction paragraph above `SideChatThreadState`'s own declaration). */
   clearThread(sessionId: string): void;
   /** Applies a BtwDeltaFrame (`delta` + `recordId` set, matched by `topicId` + `status:
    * 'running'`, round 4), a terminal BtwRecordFrame (`record` set), or a btw-history
