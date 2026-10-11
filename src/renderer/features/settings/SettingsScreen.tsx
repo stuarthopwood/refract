@@ -15,6 +15,7 @@ import type { SettingsSectionId } from '../../state/view-store'
 import { AppearanceSection } from './AppearanceSection'
 import { ChatDisplaySection } from './ChatDisplaySection'
 import { ModelRolesSection } from './ModelRolesSection'
+import { RightPaneSection } from './RightPaneSection'
 
 interface ReadoutToggleDescriptor {
   kind: ReadoutKind
@@ -46,7 +47,8 @@ const SECTIONS: SettingsSectionDescriptor[] = [
   { id: 'session-readout', label: 'Session readout' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'model-roles', label: 'Model roles' },
-  { id: 'chat', label: 'Chat' }
+  { id: 'chat', label: 'Chat' },
+  { id: 'right-pane', label: 'Right pane' }
 ]
 
 export function SettingsScreen() {
@@ -122,6 +124,8 @@ export function SettingsScreen() {
             <ModelRolesSection />
           ) : settingsSection === 'chat' ? (
             <ChatDisplaySection />
+          ) : settingsSection === 'right-pane' ? (
+            <RightPaneSection />
           ) : (
             <>
               <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">

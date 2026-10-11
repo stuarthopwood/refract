@@ -151,4 +151,19 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });
+
+  // Spec 013 contracts/ipc.md `settings.setShowSampleData` (FR-020 to FR-022): a non-boolean
+  // argument is the existing `invalid-argument` error code, the same catch-all
+  // `SETTINGS_SET_WATERMARK_ENABLED` above uses.
+  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, async (_event, enabled: unknown): Promise<Result<Settings>> => {
+    if (typeof enabled !== 'boolean') {
+      return {
+        ok: false,
+        error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA} expects a boolean enabled` },
+      };
+    }
+    const value = await manager.settings.setShowSampleData(enabled);
+    broadcastSettingsChanged(value, getWindow);
+    return { ok: true, value };
+  });
 }

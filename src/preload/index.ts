@@ -136,7 +136,8 @@ const refract: RefractApi = {
       request<Settings>(IPC_REQUESTS.SETTINGS_SET_READOUT_VISIBILITY, kind, visible),
     setSplit: (layout) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SPLIT, layout),
     setWatermarkEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, enabled),
-    setTranscriptDisplay: (field, visible) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, field, visible)
+    setTranscriptDisplay: (field, visible) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, field, visible),
+    setShowSampleData: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, enabled)
   },
 
   modelRoles: {
