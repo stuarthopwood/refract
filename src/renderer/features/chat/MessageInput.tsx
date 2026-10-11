@@ -505,17 +505,40 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // FR-007 (constitution II): `/btw` is Refract's own locally-handled native command, never
     // forwarded to OMP as a literal prompt (the defensive `NATIVE_RESERVED_COMMANDS` guard in
     // `chat.ts` would refuse it anyway if this ever slipped through) -- opens and focuses the
-    // Side chat panel for this Session (`openPanel`'s own effect in `RightPaneShell.tsx` moves
-    // focus into the panel the instant it becomes newly active) and, when `.rest` is non-empty,
-    // issues the side question itself through `useSideChatStore`, bypassing `chat.send` entirely.
+    // Side chat panel for this Session (`sideChatFocusRequestId`, bumped inside `openPanel`
+    // itself) and, when `.rest` is non-empty, issues the side question itself through
+    // `useSideChatStore`, bypassing `chat.send` entirely.
     if (slashInvocation?.name === 'btw') {
+      // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field at all
+      // (contracts/ipc.md) -- refusing instead of silently dropping the attachments avoids a
+      // developer discovering, after the fact, that a pasted screenshot never reached the model.
+      if (attachments.images.length > 0) {
+        toast.error("Side questions don't support image attachments. Remove them and try again.")
+        return
+      }
+      // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) instead of sending a
+      // second `btw` while one is still running -- spec Assumption 7's single-flight rule applies
+      // here exactly as it does to the panel's own Send button.
+      if (useSideChatStore.getState().bySession[sessionId]?.running) {
+        toast.error('A side question is already running for this Session.')
+        return
+      }
       useRightPaneStore.getState().openPanel('side-chat')
-      useDraftStore.getState().clear(sessionId)
-      clearGhostState()
-      if (slashInvocation.rest.length > 0) {
-        // `ask` already surfaces a failure via toast; this call site has no draft left to
-        // preserve (cleared above), so only the unhandled-rejection needs catching here.
-        useSideChatStore.getState().ask(sessionId, slashInvocation.rest).catch(() => {})
+      if (slashInvocation.rest.length === 0) {
+        useDraftStore.getState().clear(sessionId)
+        clearGhostState()
+        return
+      }
+      // Gate-fix (round 2, Code2/Sec2/Verif2 Medium): the draft (and its attachments) only
+      // clears AFTER `ask` resolves -- the old code cleared it first, so a question over 10,000
+      // characters, a Session with no live process, or any other RPC failure silently lost the
+      // typed text with nothing but a toast left behind.
+      try {
+        await useSideChatStore.getState().ask(sessionId, slashInvocation.rest)
+        useDraftStore.getState().clear(sessionId)
+        clearGhostState()
+      } catch {
+        // `ask` already surfaced the failure via toast; keep the draft so the question is not lost.
       }
       return
     }

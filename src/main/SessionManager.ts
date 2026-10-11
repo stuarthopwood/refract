@@ -24,7 +24,7 @@ export type ManagerEvent =
   | { type: 'readout'; payload: { sessionId: string; readout: SessionReadout } }
   | { type: 'subagents'; payload: { sessionId: string; subagents: SubagentSummary[] } }
   | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
-  | { type: 'sideChatPatch'; payload: { sessionId: string; delta?: string; record?: SideChatRecord } }
+  | { type: 'sideChatPatch'; payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord } }
   | { type: 'list-changed' };
 
 /** Issue #510 (quality gate 2026-10-08): caps how many Sessions' Conversation tails `summaries()`
@@ -132,8 +132,13 @@ export class SessionManager {
       if (!this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'subagentPatch', payload });
     });
+    // Gate-fix (round 2, Verif2 LOW): a terminal `btw_record` is ALWAYS forwarded, even for a
+    // Session hidden mid-request -- unlike `subagentPatch`/`readout`, losing a side chat's own
+    // completion to the visibility gate leaves the panel stuck on "Thinking" until a reload.
+    // Only `btw_delta` (no `record`) stays gated on visibility, matching every other live-stream
+    // patch's own discipline.
     agent.on('sideChatPatch', (payload) => {
-      if (!this.visibleSessionIds.has(payload.sessionId)) return;
+      if (!payload.record && !this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'sideChatPatch', payload });
     });
     // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and

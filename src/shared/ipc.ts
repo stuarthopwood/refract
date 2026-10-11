@@ -546,11 +546,14 @@ export interface RefractApi {
 
   sideChat: {
     /** Spec 014 contracts/ipc.md "Side chat": issues `{type:"btw", question, recordId?}` to that
-     * Session's OMP process. Returns the new record's own id immediately (the `running` record);
-     * the answer itself arrives over `onSideChatPatch`, not this call's own return value.
+     * Session's OMP process. Returns the new record's own whole shape immediately (gate-fix
+     * round 2: the bare id alone lost the status OMP returned, which is what left the panel
+     * stuck on "Thinking" when an error or an already-terminal record raced the invoke reply);
+     * the answer itself also arrives over `onSideChatPatch` as a terminal `btw_record`.
      * `recordId` omitted starts a fresh topic (FR-003). A blank `question` is rejected locally
-     * with `invalid-argument` before ever reaching OMP. */
-    ask(sessionId: string, question: string, recordId?: string): Promise<Result<{ recordId: string }>>;
+     * with `invalid-argument` before ever reaching OMP; the >10,000-character cap is enforced
+     * main-side only. */
+    ask(sessionId: string, question: string, recordId?: string): Promise<Result<{ record: SideChatRecord }>>;
     /** Issues `btw_cancel` for that Session's currently-running record, if any. A no-op (not an
      * error) if nothing is running -- mirrors `subagents.cancel`'s own idempotent shape. */
     cancel(sessionId: string): Promise<Result<void>>;
@@ -714,7 +717,7 @@ export interface RefractApi {
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
-  onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; record?: SideChatRecord }) => void): Unsubscribe;
+  onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }

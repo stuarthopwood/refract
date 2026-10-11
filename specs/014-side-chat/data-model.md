@@ -78,6 +78,16 @@ Mirrors `subagent-store.ts`'s own per-Session keying (research.md decision 6), n
 transcript's single-Session-at-a-time model, since a side-chat thread must survive the owning
 pane losing focus (Edge Cases: closing the panel never cancels an in-flight question).
 
+**Corrected 2026-10-11 (gate-fix round 2, Code2/Sec2/Verif2)**: `activeTopicRecordId` only moves
+when a record reaches `status: 'complete'` (an error or a cancelled record is never "the prior
+answer" FR-003 means to continue from); `running` is always RECOMPUTED from `records`, never set
+directly, so a terminal record arriving ahead of an in-flight `ask`'s own reply can never be
+clobbered back to `running: true`; `applyPatch`'s delta case now matches by `recordId` (carried
+on the patch itself), never "whichever record has status running"; a new `loaded` flag (below)
+replaces a per-component ref so FR-004's "once per Session per app run" actually holds across a
+remount, and a load that fails because the Session has no live process yet stays `false` so it
+retries once the Session starts.
+
 ```ts
 interface SideChatThreadState {
   /** Keyed by Session id. Undefined until `get_btw_history` has been called at least once for
@@ -85,19 +95,24 @@ interface SideChatThreadState {
   bySession: Record<string, {
     records: SideChatRecord[];
     /** The record id the NEXT question should carry as `recordId`, or undefined for a fresh
-     * topic (FR-003). Set to the latest record's own id after every send; cleared by Clear
+     * topic (FR-003). Moves only when a record reaches `status: 'complete'`; cleared by Clear
      * thread. */
     activeTopicRecordId: string | undefined;
-    /** True while a `btw` request for this Session has been sent and no terminal btw_record
-     * (complete/cancelled/error/interrupted) has arrived yet (FR-005). */
+    /** True while at least one record for this Session has `status: 'running'` (FR-005);
+     * recomputed from `records` on every change, never hard-coded. */
     running: boolean;
+    /** True once `loadHistory` has succeeded at least once for this Session this app run; a
+     * failed load (for example the Session has no live process yet) leaves this `false` so the
+     * panel's own effect retries once the Session starts. */
+    loaded: boolean;
   }>;
   loadHistory(sessionId: string): Promise<void>;
   ask(sessionId: string, question: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   clearThread(sessionId: string): void;
-  /** Applies a BtwDeltaFrame or BtwRecordFrame arriving over SIDE_CHAT_PATCH (main -> renderer). */
-  applyPatch(sessionId: string, patch: { delta?: string; record?: SideChatRecord }): void;
+  /** Applies a BtwDeltaFrame (`delta` + `recordId` set) or BtwRecordFrame (`record` set)
+   * arriving over SIDE_CHAT_PATCH (main -> renderer). */
+  applyPatch(sessionId: string, patch: { delta?: string; recordId?: string; record?: SideChatRecord }): void;
 }
 ```
 

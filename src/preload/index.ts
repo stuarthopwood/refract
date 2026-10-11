@@ -131,7 +131,7 @@ const refract: RefractApi = {
 
   sideChat: {
     ask: (sessionId, question, recordId?: string) =>
-      request<{ recordId: string }>(IPC_REQUESTS.SIDE_CHAT_ASK, sessionId, question, recordId),
+      request<{ record: SideChatRecord }>(IPC_REQUESTS.SIDE_CHAT_ASK, sessionId, question, recordId),
     cancel: (sessionId) => request<void>(IPC_REQUESTS.SIDE_CHAT_CANCEL, sessionId),
     getHistory: (sessionId) => request<SideChatRecord[]>(IPC_REQUESTS.SIDE_CHAT_GET_HISTORY, sessionId)
   },
@@ -227,7 +227,7 @@ const refract: RefractApi = {
   onSubagentPatch: (handler) =>
     on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler),
   onSideChatPatch: (handler) =>
-    on<{ sessionId: string; delta?: string; record?: SideChatRecord }>(IPC_EVENTS.SIDE_CHAT_PATCH, handler),
+    on<{ sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord }>(IPC_EVENTS.SIDE_CHAT_PATCH, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
 }

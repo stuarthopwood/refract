@@ -3,25 +3,24 @@
 // error classes (`AgentNotRunningError`/`PromptFailedError`): `askSideChat`/`cancelSideChat`/
 // `getSideChatHistory` all drive an already-attached process exactly like `chat.send`/`chat.stop`
 // do, never a Conversation reattach, so their default error code is `prompt-failed` too.
+// Gate-fix (round 2, Code2 Medium): reuses `chat.ts`'s own `mapChatError` instead of keeping a
+// word-for-word copy.
 
 import { ipcMain } from 'electron';
 import { IPC_REQUESTS } from '../../shared/ipc';
-import type { Result } from '../../shared/ipc';
 import type { SideChatRecord } from '../../shared/frames';
-import { AgentNotRunningError, PromptFailedError } from '../omp/errors';
 import { invalidArgument, notFound } from './util';
+import { mapChatError } from './chat';
 import type { SessionManager } from '../SessionManager';
 
 // No OMP-documented limit exists for `btw`'s `question` field (contracts/ipc.md has no stated
 // maximum). 10,000 characters comfortably covers any realistic side question while still
 // bounding a pathological paste before it ever reaches OMP (main-side validation, Main's remit).
 const SIDE_CHAT_MAX_QUESTION_LENGTH = 10_000;
-
-function mapSideChatError(err: unknown): Result<never> {
-  if (err instanceof AgentNotRunningError) return { ok: false, error: { code: err.code, message: err.message } };
-  if (err instanceof PromptFailedError) return { ok: false, error: { code: err.code, message: err.message } };
-  return { ok: false, error: { code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) } };
-}
+// `recordId` is OMP's own opaque record id (observed live as a short hex string, FINDINGS item
+// 14); 200 characters is a generous upper bound that still catches a malformed/oversized value
+// before it reaches OMP (gate-fix round 2, Sec2 LOW).
+const SIDE_CHAT_MAX_RECORD_ID_LENGTH = 200;
 
 export function registerSideChat(manager: SessionManager): void {
   // contracts/ipc.md "Error codes added": a blank `question` is rejected locally with
@@ -38,12 +37,15 @@ export function registerSideChat(manager: SessionManager): void {
     if (question.length > SIDE_CHAT_MAX_QUESTION_LENGTH) {
       return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_ASK}: question exceeds ${SIDE_CHAT_MAX_QUESTION_LENGTH} characters`);
     }
+    if (recordId !== undefined && (recordId.length === 0 || recordId.length > SIDE_CHAT_MAX_RECORD_ID_LENGTH)) {
+      return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_ASK}: recordId must be 1-${SIDE_CHAT_MAX_RECORD_ID_LENGTH} characters when given`);
+    }
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
     try {
       const result = await manager.getOrCreateAgent(sessionId).askSideChat(question, recordId);
       return { ok: true, value: result };
     } catch (err) {
-      return mapSideChatError(err);
+      return mapChatError(err);
     }
   });
 
@@ -57,12 +59,15 @@ export function registerSideChat(manager: SessionManager): void {
       await manager.getOrCreateAgent(sessionId).cancelSideChat();
       return { ok: true, value: undefined };
     } catch (err) {
-      return mapSideChatError(err);
+      return mapChatError(err);
     }
   });
 
   // contracts/ipc.md, FR-004: every side-chat record OMP has for this Session's saved session
-  // file. Called once per Session per app run by the renderer store, not polled.
+  // file. Called once per Session per app run by the renderer store, not polled. A Session with
+  // no live process yet still returns the `agent-not-running` error code (not a silent empty
+  // list) -- gate-fix round 2 (Code2/Sec2 Medium): the store reads this specific code to retry
+  // once the Session actually starts, instead of wrongly caching "no history" forever.
   ipcMain.handle(IPC_REQUESTS.SIDE_CHAT_GET_HISTORY, async (_event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') return invalidArgument(`${IPC_REQUESTS.SIDE_CHAT_GET_HISTORY} expects a string sessionId`);
     if (!manager.registry.getSession(sessionId)) return notFound(`Session not found: ${sessionId}`);
@@ -70,7 +75,7 @@ export function registerSideChat(manager: SessionManager): void {
       const records: SideChatRecord[] = await manager.getOrCreateAgent(sessionId).getSideChatHistory();
       return { ok: true, value: records };
     } catch (err) {
-      return mapSideChatError(err);
+      return mapChatError(err);
     }
   });
 }

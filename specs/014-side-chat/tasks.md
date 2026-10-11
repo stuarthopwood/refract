@@ -219,13 +219,31 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   3) -- open and focus the Side chat panel for this Session, and if `rest` is non-empty, call
   `useSideChatStore.getState().ask(sessionId, rest)` (FR-007). **Live-verified**: see the
   Checkpoint above.
-
+- [x] T021a [US5] Add a Retry action to an error record (FR-008, spec.md User Story 5 Scenario 3
+  -- missed in the original T017 pass, found by Verif2's round-2 gate review: FR-008 and the
+  spec's own acceptance scenario were neither built nor tracked). A blank question never reaches
+  OMP at all (rejected client-side in `side-chat.ts` before any record exists), so every
+  `status: "error"` record actually rendered here is, by construction, one OMP's own contract
+  allows resending -- Retry re-issues the same question text via `ask`, disabled while another
+  question is running.
 - [ ] T021 [P] Add a Copy action to a completed answer (FR-011, issue://466's existing pattern) and
   a Clear thread action (FR-003's own "omit `recordId`" reset, clearing only Refract's displayed
   history for that Session).
-- [ ] T022 [P] Add a polite live region announcing a completed answer once (FR-012), and focus
+- [x] T022 [P] Add a polite live region announcing a completed answer once (FR-012), and focus
   management: the panel's composer gains focus on open (rail, launcher, or `/btw`); focus returns
   to the triggering control on close (FR-013, same shared pattern spec 013's panels already use).
+  **Built in round-2 gate remediation** (A11y2 HIGH/Medium, not originally in Slice 1+2's own
+  scope, pulled forward alongside the other fixes): an always-mounted `role="status" aria-live=
+  "polite"` region, clear-first-then-set (mirrors `chatAreaAnnouncer.ts`), announcing once per
+  record transition out of `running`; `role="alert"` removed from historical error records so
+  opening a Session with past errors does not announce them assertively; a new `textareaRef` plus
+  `right-pane-store.ts`'s `sideChatFocusRequestId` (bumped on every `openPanel('side-chat')` call)
+  move focus into the composer on open via the rail, the launcher, or `/btw`, including a `/btw`
+  while the panel is already active; Cancel focuses the textarea before cancelling (its own
+  button unmounts the instant `running` clears) and `send()` refocuses it after the draft clears
+  (Send itself becomes `disabled` on an empty draft, which would otherwise drop focus to `body`).
+  Focus-returns-to-the-triggering-control-on-close is the PRE-EXISTING shared mechanism spec 013's
+  other three panels already use (`PanelTabBar.tsx`/`hosted-panel-actions.ts`), unchanged here.
 - [ ] T023 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term.
 - [ ] T024 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
   decision 7 -- no new token expected).

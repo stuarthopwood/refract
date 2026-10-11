@@ -22,6 +22,14 @@ interface RightPaneState {
   openPanelIds: PanelId[]
   /** Which open panel is shown; `null` only when `openPanelIds` is empty (the launcher). */
   activePanelId: PanelId | null
+  /** Gate-fix (round 2, A11y2 Medium, spec 014 FR-013): bumped every time `openPanel('side-chat')`
+   * runs, whether or not it was already the active panel -- `SideChatPanel` watches this id and
+   * moves focus into its own composer whenever it changes, covering the rail, the launcher, and
+   * `/btw` (all three funnel through this same `openPanel` call) including the "`/btw` while
+   * Side chat is already active" case a plain open-transition effect would miss. Side-chat-
+   * specific (not a generic per-panel mechanism) since FR-013 only asks for this panel's own
+   * composer; the other three hosted panels have no composer to focus. */
+  sideChatFocusRequestId: number
   /** Opens the pane if collapsed; adds `id` if absent; makes it active (FR-005). */
   openPanel(id: PanelId): void
   /** Removes `id`; if it was active, activates the NEIGHBOUR left in its place -- the tab at the
@@ -43,12 +51,14 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   widthPx: RIGHT_PANE_DEFAULT_WIDTH_PX,
   openPanelIds: [],
   activePanelId: null,
+  sideChatFocusRequestId: 0,
   openPanel: (id) => {
-    const { openPanelIds } = get()
+    const { openPanelIds, sideChatFocusRequestId } = get()
     set({
       open: true,
       openPanelIds: openPanelIds.includes(id) ? openPanelIds : [...openPanelIds, id],
-      activePanelId: id
+      activePanelId: id,
+      sideChatFocusRequestId: id === 'side-chat' ? sideChatFocusRequestId + 1 : sideChatFocusRequestId
     })
   },
   closePanel: (id) => {

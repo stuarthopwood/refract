@@ -144,11 +144,14 @@ export interface SessionAgentEvents {
   subagents: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void;
   /** Spec 004 `subagent:patch`: only for whichever subagent `setVisibleSubagent` last named. */
   subagentPatch: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void;
-  /** Spec 014 `side-chat:patch`: a `btw_delta` (`delta` set) or terminal `btw_record` (`record`
-   * set) for this Session's current side-chat question. No recordId at this level -- single-
-   * flight (one side question running per Session), so the renderer store always applies it to
-   * whichever record is currently `running`. */
-  sideChatPatch: (payload: { sessionId: string; delta?: string; record?: SideChatRecord }) => void;
+  /** Spec 014 `side-chat:patch`: a `btw_delta` (`delta` + `recordId` set, gate-fix round 2:
+   * `recordId` lets the store match the exact record a delta extends, never "whichever record
+   * happens to have status running" -- a stale running row left by a crashed process could
+   * otherwise receive another Session's text) or a terminal `btw_record` (`record` set, always
+   * forwarded regardless of visibility -- gate-fix round 2, Verif2 LOW: a Session hidden mid-
+   * request must not lose its own terminal answer; only `btw_delta` is still visibility-gated,
+   * in `SessionManager.ts`). */
+  sideChatPatch: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord }) => void;
   /** Fired whenever `syncFromState` writes a registry patch (after the initial `get_state`, every
    * `session_settled`, a Conversation switch, or a mode-change restart) -- i.e. whenever
    * `lastModel`/`lastThinkingLevel`/`currentConversation`/... may have changed. `SessionManager`
@@ -910,37 +913,44 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** `sideChat.ask` (contracts/ipc.md "Side chat", spec 014): issues `btw`, returning the new
-   * (`running`) record's own id immediately -- the answer itself arrives over `SIDE_CHAT_PATCH`
-   * as a terminal `btw_record` (`onFrame`'s `btw_record` case), never this call's own return
-   * value. `recordId` omitted starts a fresh topic (FR-003); set, it continues an existing one.
-   * An OMP-side failure case (one already running, unknown recordId, no model, history-save
-   * failure) is NOT thrown here -- it arrives as an ordinary `btw_record` with `status: "error"`
-   * (contracts/ipc.md "Error codes added"); only an RPC-level failure throws, mirroring `send`. */
-  async askSideChat(question: string, recordId?: string): Promise<{ recordId: string }> {
+   * (`running`) record's own whole shape immediately -- the answer itself arrives over
+   * `SIDE_CHAT_PATCH` as a terminal `btw_record` (`onFrame`'s `btw_record` case), never this
+   * call's own return value. `recordId` omitted starts a fresh topic (FR-003); set, it continues
+   * an existing one. An OMP-side failure case (one already running, unknown recordId, no model,
+   * history-save failure) is NOT thrown here -- it arrives as an ordinary `btw_record` with
+   * `status: "error"` (contracts/ipc.md "Error codes added"); only an RPC-level failure throws,
+   * mirroring `send`. Gate-fix (round 2, Code2/Sec2/Verif2 HIGH): a failed `btw` request MUST
+   * NEVER call `appendNotice` -- that writes into the MAIN transcript (constitution II, FR-010),
+   * which a side-chat failure must never touch; `side-chat.ts`'s own error mapping plus the
+   * store's toast are the only places a side-chat failure is ever shown. */
+  async askSideChat(question: string, recordId?: string): Promise<{ record: SideChatRecord }> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot ask a side question, no live process`);
     }
     const res = await this.process.request({ type: 'btw', id: '', question, ...(recordId ? { recordId } : {}) });
     if (!res.success) {
-      this.appendNotice(`btw failed: ${res.error ?? 'unknown error'}`, 'error');
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw failed: ${res.error ?? 'unknown error'}`);
     }
     const record = (res.data as BtwResponseData | undefined)?.record;
     if (!record) {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw succeeded but returned no record`);
     }
-    return { recordId: record.id };
+    return { record };
   }
 
   /** `sideChat.cancel` (contracts/ipc.md): issues `btw_cancel` for this Session's currently-
    * running side question, if any -- a no-op (not an error) if nothing is running, mirroring
    * `subagents.cancel`'s own idempotent shape. The cancelled record itself arrives over
-   * `SIDE_CHAT_PATCH` as an ordinary `btw_record` with `status: "cancelled"` (FR-006). */
+   * `SIDE_CHAT_PATCH` as an ordinary `btw_record` with `status: "cancelled"` (FR-006). Gate-fix
+   * (round 2, Code2/Sec2/Verif2 HIGH): an RPC-level failure now THROWS instead of calling
+   * `appendNotice` -- the old code's only way to surface a cancel failure was the main
+   * transcript (constitution II, FR-010 violation); throwing lets `side-chat.ts`'s error mapping
+   * and the store's own existing "Could not cancel the side question" toast report it instead. */
   async cancelSideChat(): Promise<void> {
     if (!this.process) return;
     const res = await this.process.request({ type: 'btw_cancel', id: '' });
     if (!res.success) {
-      this.appendNotice(`btw_cancel failed: ${res.error ?? 'unknown error'}`, 'error');
+      throw new PromptFailedError(`SessionAgent ${this.sessionId}: btw_cancel failed: ${res.error ?? 'unknown error'}`);
     }
   }
 
@@ -1380,7 +1390,7 @@ export class SessionAgent extends EventEmitter {
       }
       case 'btw_delta': {
         const deltaFrame = frame as BtwDeltaFrame;
-        this.emit('sideChatPatch', { sessionId: this.sessionId, delta: deltaFrame.textDelta });
+        this.emit('sideChatPatch', { sessionId: this.sessionId, delta: deltaFrame.textDelta, recordId: deltaFrame.recordId });
         return;
       }
       case 'btw_record': {

@@ -15,11 +15,16 @@ do not block the spec's P1/P2 stories.
 4. **`get_btw_history`'s pagination/limit behaviour for a very long thread.** Undocumented in the
    excerpts read for this spec (issue://516's summary of `omp://rpc.md`); revisit if a real long
    history is seen to misbehave.
-5. **`get_btw_history` after a restart for a Session that never sent a main composer message.**
-   Live-verified (2026-10-11, Slice 1+2 round, `tasks.md` T012): `SessionAgent.attachAndVerify`
-   only issues `switch_session` when `session.currentConversation` is set, so a Session used
-   ONLY for side-chat (never a single main message) has nothing for a restarted process to
-   reattach to, and `get_btw_history` legitimately returns empty -- confirmed NOT data loss (the
-   original `btw-history/entry-<id>.json` file is still on disk). A realistic Session (a main
-   message sent before or alongside the first side question) does not hit this. Revisit only if
-   Stuart reports hitting this with a real Session.
+5. **`get_btw_history` after a restart for a Session that never sent a main composer message:
+   history is not shown (SC-002 partially unmet for this case).** Live-verified (2026-10-11,
+   Slice 1+2 round, `tasks.md` T012): `SessionAgent.attachAndVerify` only issues `switch_session`
+   when `session.currentConversation` is set, so a Session used ONLY for side-chat (never a
+   single main message) has nothing for a restarted process to reattach to, and `get_btw_history`
+   returns empty -- from the app's perspective the history is gone, even though the on-disk
+   `btw-history/entry-<id>.json` file itself still exists and is not deleted (corrected 2026-10-11,
+   gate-fix round 2, Verif2 Medium: "confirmed NOT data loss" earlier overstated this -- the user
+   sees it as lost, the file is merely unreachable from the app without a conversation to switch
+   onto). Whether asking `/btw` before any main message is common enough to matter in practice is
+   untested; revisit if Stuart reports hitting this with a real Session, or fix by having
+   `SessionAgent` reattach to this Session's own side-chat context independent of
+   `currentConversation`.
