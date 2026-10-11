@@ -261,11 +261,13 @@ tab's live count is now `min-w-0 shrink truncate`, the same shrink priority as i
 floor is the same fixed ~54px (icon + its own internal gaps + the close-button reserve) regardless
 of whether it is showing a count, so three tabs' worst case (~166px) never depends on how many
 digits a live count happens to have, and stays far under the 224px available even at the 240px
-floor (58px of slack, not the near-zero margin a `shrink-0` count would have left). A live subagent
-count was not exercised (no real subagent was started in the scratch instance); instead, a
-temporary same-font, same-class DOM element holding "12 running" was measured live (68px), and the
-floor math above does not depend on that number regardless, since the count can now shrink away
-like the label can.
+floor (58px of slack, not the near-zero margin a `shrink-0` count would have left) *(superseded:
+round 4 found this whole-count-span design let a count shrink to illegibility, FR-012; round 6's
+"Tab-strip width geometry" section below has the current, exactly-measured floors and margin)*. A
+live subagent count was not exercised (no real subagent was started in the scratch instance);
+instead, a temporary same-font, same-class DOM element holding "12 running" was measured live
+(68px), and the floor math above does not depend on that number regardless, since the count can
+now shrink away like the label can.
 
 Also this round (carried over from the since-withdrawn round-2 push, still correct and still
 needed): `scrollIntoView` (round 1) scrolled every scrollable ancestor needed to bring the active
@@ -293,7 +295,7 @@ deleted by literal path too, and the PR body's wording is aligned with `06b`'s o
 method throughout (round 1's text inconsistently said "dragging" in one place and "keyboard-driven"
 in another).
 
-### Tab-strip width geometry (gate remediation, PR2 round 6, corrected from round 5)
+### Tab-strip width geometry (gate remediation, PR2 round 7, corrected from round 6)
 
 Proves the design fits at every pane width this spec supports (240px floor, 320px default, 520px
 maximum) with one, two or three panels open, **including a real live count** -- no scrollbar is
@@ -324,28 +326,83 @@ clipped the number itself, the one thing that must never visually disappear (FR-
 margin below is the real guarantee, and `overflow-x-auto` on the whole strip is the safety net if
 that margin is ever wrong.
 
-Required (worst case, label and the count's word both truncated to nothing) = `N * 56` (without a
-count: `pl-2` 8px + icon 14px + `gap-1` 4px + `pr-7` 28px, rounding for border/line-height) `+ (N -
-1) * 2` (the tablist's own `gap-0.5` between tabs) -- for N=3, no count: `56*3 + 2*2 = 172px`
-(corrected arithmetic -- round 5's own write-up said 168px, missing the inter-tab gaps). For the one
-tab showing a count, `+ 56` (its own bare floor, now identical to a plain tab's since the wrapper is
-gone) `+ 6` (the button's own `gap-1` to the number, 4px, plus ~2px of rounding) `+` that number's
-own digit width (`~7px` per digit at this font, `tabular-nums` keeping every digit the same width)
--- a two-digit running count's worst case for three tabs is `56*2 + 56 + 6 + 2*2 + 14` (two digits)
-`= 192px` (corrected arithmetic -- round 5's own write-up said 188px, a second addition error in a
-row on this same sum). The `+a -d` shape (never truncates, both numbers `shrink-0`, no separate
-word) is **not exercised live today** -- `usePanelCount` only ever produces `running` or `null`, so
-this is a forward-looking case for a future panel (data-model.md's own note, `docs/PLAN.md` row C5).
-If it were exercised with two-digit numbers on both sides (e.g. `+99 -99`, ~15 characters, roughly
-105px at this font), the worst case would be close to the 224px available at the 240px floor with
-very little slack left -- a case worth re-deriving properly if and when a panel actually produces it,
-not assumed safe by extrapolation from the `running` case.
+**Corrected from round 6** (Medium, Code6/A11y6/Verif6, arithmetic, a second repeat mistake):
+round 6 reused the `56px` plain-tab floor and `+6px` count-tab addition both rounds 4 and 5 had
+already used without re-deriving either from the real box model, producing two more wrong totals
+(the reviewers themselves also disagreed with each other, 194px vs 192px, both still estimates).
+Round 7 measured the real box model directly instead of estimating it: `getBoundingClientRect()`
+on every child of a tab at the 240px floor, subtracting each one's own measured width from the
+tab's own total to isolate the fixed (non-content) part exactly.
+
+**A plain tab's exact floor** (icon + its own one `gap-1` + the padding, label subtracted out):
+measured `79.015625px` total for the FDB Knowledge tab, label measured `25.015625px` ->
+`79.015625 - 25.015625 = 54.0px` exactly -- `pl-2` 8px + icon 14px + `gap-1` 4px + `pr-7` 28px =
+`54px`, confirmed to the pixel with no rounding needed. (Every round since round 4 used `56px`
+here, 2px over the real figure -- an estimate that was never re-verified against the actual CSS
+values, which are exact Tailwind constants with no ambiguity.)
+
+**The count tab's exact floor** (icon + its own THREE `gap-1`s -- icon-label, label-number,
+number-word, one for each of the tab's four children -- + the padding, label and word subtracted
+out, number's own digit width left in): measured `82.375px` total for the Subagents tab showing
+`running=12`, with its own label measured `4.828125px` and its own number ("12") measured
+`15.546875px`, its own word ("running") already shrunk to `0px` exactly at this width --
+`82.375 - 4.828125 - 15.546875 = 62.0px` exactly -- `pl-2` 8px + icon 14px + THREE `gap-1`s (12px,
+not the one or two some earlier rounds assumed) + `pr-7` 28px = `62px`, confirmed to the pixel. The
+word's own `gap-1` to its left is present in full (4px) even while the word itself renders at 0px
+width -- CSS `gap` spaces every flex item regardless of its own final size, confirmed directly by
+the measured rects (the number's right edge and the word's left edge are exactly 4px apart even
+though the word has zero width).
+
+Required (worst case, every label and every count-tab's own word fully collapsed to 0, a pessimistic
+bound that holds regardless of how long any panel's name or count ever gets) = `(N - 1) * 54`
+(plain tabs) `+ 62` (the one count-showing tab's own fixed floor) `+` that tab's number's own digit
+width `+ (N - 1) * 2` (the tablist's own `gap-0.5` between tabs). For N=3 with a two-digit `running`
+count: `54 + 54 + 62 + 15.546875 + 2*2 = 189.546875px` (round up to `190px` for a stated safety
+margin) -- against `224px` available at the 240px floor, `~34px` slack. This single, fully
+reconciled figure supersedes three different prior estimates (round 4: `166px`/`58px` slack, before
+the number/word split existed at all; round 6: `192px`/`32px`; this round's own gate's two
+disagreeing guesses, `194px`/`30px` and `192px`/`32px`) -- none of the earlier figures were wrong in
+spirit (all showed healthy slack), but none were measured to the pixel either.
+
+**The count tab's own live headroom specifically** (Code6/A11y6 asked for this, not just the
+aggregate bound): at this exact rendering, the Subagents tab's own floor (label fully collapsed,
+word already at 0, two-digit number) is `62 + 15.546875 = 77.546875px`; its actual measured width
+is `82.375px` -- `4.828125px` of headroom, which is exactly its own label's own current measured
+width (`4.828125px`) -- every byte of this tab's own slack is currently spent on that label's
+last sliver, not left over anywhere else. The other two tabs are in the same position (their own
+labels are not yet at 0 either); the aggregate `34px` figure above is the real safety guarantee
+(it holds even if every label's content were replaced with something long enough to force it to 0),
+not a description of what is actually on screen with today's three specific panel names.
+
+**Known limit, not fixed this round** (Code6/A11y6): the button's own `min-w-14` (56px) sits BELOW
+the count tab's own exact content floor (62px, before any digit width is even added) -- content
+already forces a count-showing tab wider than `min-w-14` ever would, so that minimum is dead weight
+for a count tab specifically (it still binds for a plain tab, whose 54px content floor IS below the
+56px minimum, adding 2px nobody asked for). Not a visible bug -- a tab is never narrower than its
+content requires regardless -- but worth a follow-up to tighten `min-w-14` to something
+content-aware (`min-w-[max(3.5rem,min-content)]` or similar) rather than a flat value that only
+partially matches what either tab shape actually needs. Recorded here as a follow-up note, not
+implemented in this PR.
+
+The `+a -d` shape (never truncates, no separate word, `shrink-0` throughout) remains **not
+exercised live today** -- `usePanelCount` only ever produces `running` or `null`, so this stays a
+forward-looking case for a future panel (data-model.md's own note, `docs/PLAN.md` row C5), not
+something this PR's own live checks cover. If it were ever exercised with two-digit numbers on both
+sides (e.g. `+99 -99`, 7 characters including the sign and the space), an honest ESTIMATE (not a
+live measurement -- the shape cannot render today) using this font's own measured digit width
+(`~7.77px` per tabular-nums digit) plus the narrower `+`/`-`/space characters gives roughly `~45-50px`
+for that text; the DOM shape here has no separate word (so only two `gap-1`s, icon-label and
+label-signpair, not three) -- floor ~= `54 + 54 + (8+14+4+~48+28=~102) + 2*2 = ~214px`, leaving only
+`~10px` of slack against the 224px available, far tighter than the `running` case. This remains an
+estimate flagged for its own live re-derivation if a panel ever actually produces this shape,
+exactly as round 6 already said -- not assumed safe by extrapolation from the `running` case's own,
+much more comfortable, margin.
 
 | Pane width | `available(widthPx)` (live-measured) | N=3, no count required | N=3, 2-digit `running` required | fits? |
 |---|---|---|---|---|
-| 240 (floor) | 224 | 172 | 192 | yes (32px slack) |
-| 320 (default) | 304 | 172 | 192 | yes |
-| 520 (maximum) | 504 | 172 | 192 | yes |
+| 240 (floor) | 224 | 162 (`54*3`) | 190 | yes (~34px slack) |
+| 320 (default) | 304 | 162 | 190 | yes |
+| 520 (maximum) | 504 | 162 | 190 | yes |
 
 N=1 never reaches this code at all (`openPanelIds.length === 1` renders the single title row
 branch above, not a tab bar). Live-verified at the 240px floor with three panels open **and a
@@ -357,10 +414,11 @@ already squeezed at 240px: `scrollWidth === clientWidth === 224` throughout (zer
 either digit count), the Subagents tab's own width grew as its neighbours shrank to compensate, and
 -- the actual regression this exercises -- every tab's own close button stayed inside that tab's
 own rect at every step, confirmed by a direct hit-test, not an assumption. The rendered result at
-the floor with `running=12`: icon, a truncated label ("S…", the word now correctly disappearing
-before the label does), and the full "12" -- confirmed both visually (screenshot) and via the tab's
-own computed accessible name (CDP `Accessibility.getPartialAXTree`), which reads the full
-"Subagents 12 running" regardless of what is visually truncated.
+the floor with `running=12`: icon, a narrow clipped sliver of the label (not a full ellipsis form --
+at under 5px wide there is no room for the dots to render either, just a thin fragment of the first
+letter), and the full "12" -- confirmed both visually (screenshot) and via the tab's own computed
+accessible name (CDP `Accessibility.getPartialAXTree`), which reads the full "Subagents 12 running"
+regardless of what is visually truncated.
 
 **Corrected from round 3** (Verif3/Code3/A11y3, High): round 3's `ResizeObserver` watched only the
 tablist container. Once the strip is already squeezed, the tablist's own outer width is pinned to
@@ -406,7 +464,7 @@ effect, no call of any kind), not by an actual live Network-tab check. Story 5 (
 and sample content) is out of scope for this checkpoint — PR3 builds T017-T025 and re-runs
 quickstart.md Story 5 against them. The now-three-panel rail/launcher/tab-bar paths from Slice 1/2
 pass with a real second and third panel exercising them for the first time, including round 1's
-focus/selection fixes and round 6's count-rendering/ResizeObserver/tooltip-describedby fixes above
+focus/selection fixes and round 7's exactly-measured count-rendering/ResizeObserver/tooltip-describedby fixes above
 -- the tab strip genuinely meets SC-007 at every pane width this spec supports (240/320/520px),
 with up to three panels open and a real live count exercised, each keeping its own close button and
 live count per User Story 2's own independent test; the 380px window width is a separate, flagged

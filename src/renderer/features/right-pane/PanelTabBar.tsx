@@ -37,21 +37,24 @@
 // (28px: `CLOSE_BUTTON_PX` 24 + its own 4px inset, the button's real drawn footprint, not an extra
 // margin on top of it). Round 4 gate remediation (High, Code3/A11y3/Verif3 converged): a tab's
 // live count has its NUMBER (`tabular-nums`, `shrink-0` -- never shrinks, so the figure itself
-// stays legible, FR-012) and its trailing WORD (`running`, `min-w-0 truncate` -- gives way before
-// the label does, round 5 corrected this priority: `shrink-[1000]` against the label's own
-// `shrink-[100]`, since a label collapsed to nothing with a meaningless word fragment left over,
-// round 4's own screenshots, is worse than the word disappearing first and the label truncating
-// normally with an ellipsis). Round 5 (Medium, Code4/Verif4): the word was `' running'` with a
-// leading space baked into the string -- CSS collapses a leading space at the start of an inline
-// box, so it never actually rendered; the word is now a bare `'running'` with a real `gap-1`
-// spacing it from the number instead. Every tab's floor is therefore ~56px without a count, ~62px
-// with one (the extra inner `gap-1`) plus the number's own digit width -- three tabs' worst case
-// with a two-digit running count is ~188px against 224px available at the 240px floor (36px
-// slack; see the recomputed geometry table in tasks.md). Live-verified with a REAL count change
-// (temporary local-only dev-store injection in the scratch instance only, reverted before each
-// push, never shipped): `running` set to 1 then 12 on the actual focused Session while the strip
-// was already squeezed at the 240px floor -- both digit counts rendered with zero overflow and
-// every tab's own close button stayed inside that tab's own rect.
+// stays legible, FR-012) and its trailing WORD (`shrink-[1000] min-w-0 truncate`, a direct flex
+// sibling of the label and the number, not wrapped with either -- round 5 tried wrapping it with
+// the number for spacing/colour, which broke the shrink priority below, round 6 fixed it) -- the
+// word gives way before the label does (`shrink-[1000]` against the label's own `shrink-[100]`),
+// since a label collapsed to nothing with a meaningless word fragment left over is worse than the
+// word disappearing first and the label truncating normally with an ellipsis. Every plain tab's
+// exact floor is `54px` (`pl-2` 8 + icon 14 + one `gap-1` 4 + `pr-7` 28, measured to the pixel,
+// no rounding); a count-showing tab's exact floor is `62px` (the same four terms, but THREE
+// `gap-1`s -- icon-label, label-number, number-word -- since the word is always a rendered sibling
+// even once it shrinks to 0 width, and CSS `gap` spaces every flex item regardless of its own
+// final size) plus that tab's number's own digit width. Three tabs' worst case with a two-digit
+// running count is `190px` against `224px` available at the 240px floor (`~34px` slack) -- see
+// tasks.md's "Tab-strip width geometry" for the full, pixel-exact derivation (round 7; rounds 4-6
+// each estimated a slightly different, never-pixel-verified total). Live-verified with a REAL count
+// change (temporary local-only dev-store injection in the scratch instance only, reverted before
+// each push, never shipped): `running` set to 1 then 12 on the actual focused Session while the
+// strip was already squeezed at the 240px floor -- both digit counts rendered with zero overflow
+// and every tab's own close button stayed inside that tab's own rect.
 //
 // Round 4 also fixed the bug that live count change was exposing: the `ResizeObserver` from round
 // 3 watched only the tablist container, which -- once the strip is already squeezed and the
