@@ -62,6 +62,13 @@ async function loadInitialGithubAccounts(): Promise<
 export function initStores(): void {
   window.refract.onSessionStatus((event) => {
     useSessionsStore.getState().applyStatus(event)
+    // Gate-fix (round 3, Code3/A11y3 Medium): the Session's agent process just exited -- any
+    // `running` side-chat record for it can never settle now (the only process that would have
+    // sent its terminal `btw_delta`/`btw_record` is gone), so it must never block Send/Retry/
+    // `/btw` forever, even once a fresh process starts for this same Session later.
+    if (event.status === 'stopped') {
+      useSideChatStore.getState().reconcileInterrupted(event.sessionId)
+    }
   })
   window.refract.onSessionListChanged(() => {
     void useSessionsStore.getState().refresh()
@@ -94,8 +101,12 @@ export function initStores(): void {
   window.refract.onSubagentPatch(({ sessionId, subagentId, ops }) => {
     useSubagentPanelStore.getState().applyPatch(sessionId, subagentId, ops)
   })
-  window.refract.onSideChatPatch(({ sessionId, delta, record }) => {
-    useSideChatStore.getState().applyPatch(sessionId, { delta, record })
+  // Gate-fix (round 3, Code3/Sec3 HIGH): `recordId` was dropped here, so `applyPatch`'s delta
+  // branch (which requires `patch.recordId !== undefined`) silently discarded every real
+  // `btw_delta` frame -- round 2's own "match by recordId" fix never did anything in practice
+  // because this callsite never forwarded the field the fix depended on.
+  window.refract.onSideChatPatch(({ sessionId, delta, recordId, record }) => {
+    useSideChatStore.getState().applyPatch(sessionId, { delta, recordId, record })
   })
   // Spec 005 (tasks.md T012): a Windows-notification click, or a restored split that dropped to
   // one surviving Session (main's `index.ts` validateSplitAtStartup), both reuse this one

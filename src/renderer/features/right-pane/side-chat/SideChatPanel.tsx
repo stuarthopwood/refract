@@ -62,6 +62,15 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prevStatusesRef = useRef<Record<string, SideChatRecord['status']>>({})
   const announceTimersRef = useRef<{ clear?: number; pending?: number }>({})
+  // Gate-fix (round 3, A11y3 Medium): a record that arrives ALREADY terminal -- `ask`'s own
+  // `alreadyPatched` race, or a fast model settling before this panel ever rendered it as
+  // `running` -- never passed through `prevStatusesRef`'s own "was running, now isn't"
+  // transition, so it was silently never announced. `seenIdsRef` tracks every record id this
+  // panel has ever observed (seeded once per Session from `loadHistory`'s own OLD rows below,
+  // so reopening a Session with history never spuriously announces it); any record not yet in
+  // it that arrives already-terminal is announced too, alongside the existing transition rule.
+  const seenIdsRef = useRef<Set<string>>(new Set())
+  const seededSessionsRef = useRef<Set<string>>(new Set())
   const satisfiedFocusRef = useRef(0)
   const records = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.records ?? EMPTY_RECORDS) : EMPTY_RECORDS))
   const running = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.running ?? false) : false))
@@ -81,6 +90,17 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     if (!sessionId || loaded) return
     void loadHistory(sessionId)
   }, [sessionId, loaded, sessionStatus, loadHistory])
+
+  // Gate-fix (round 3, A11y3 Medium): seeds `seenIdsRef` with this Session's OWN history rows
+  // the instant `loadHistory` resolves for it, so reopening a Session with old side-chat history
+  // never spuriously announces every one of those rows as if newly arrived -- runs once per
+  // Session (never re-seeds on a later merge from a live `ask`/`applyPatch` update), and MUST be
+  // declared before the announcement effect below so both run, in order, in the same commit.
+  useEffect(() => {
+    if (!sessionId || !loaded || seededSessionsRef.current.has(sessionId)) return
+    seededSessionsRef.current.add(sessionId)
+    records.forEach((record) => seenIdsRef.current.add(record.id))
+  }, [sessionId, loaded, records])
 
   // FR-013: focus moves into this composer whenever the rail, the launcher, or `/btw` names this
   // panel (`sideChatFocusRequestId` bumps on every `openPanel('side-chat')` call, including while
@@ -106,12 +126,22 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sideChatFocusRequestId, loaded])
 
-  // A11y (round 2, A11y2 HIGH, FR-012): announces once per record that settles from `running` to
-  // a final state, using the same clear-first-then-set shape as `chatAreaAnnouncer.ts` so a
-  // screen reader re-reads even two textually-identical announcements in a row.
+  // A11y (round 2, A11y2 HIGH, FR-012; round 3, A11y3 Medium): announces once per record that
+  // settles from `running` to a final state, using the same clear-first-then-set shape as
+  // `chatAreaAnnouncer.ts` so a screen reader re-reads even two textually-identical
+  // announcements in a row. ALSO announces a record that arrives already-terminal without ever
+  // being seen `running` first (`ask`'s own `alreadyPatched` race, or a fast model settling
+  // before this panel's own render ever caught it mid-flight) -- `seenIdsRef` (seeded above)
+  // distinguishes that case from an OLD history row the panel simply hasn't rendered yet.
   useEffect(() => {
     const prev = prevStatusesRef.current
-    const transitioned = records.find((record) => prev[record.id] === 'running' && record.status !== 'running')
+    let transitioned: SideChatRecord | undefined
+    for (const record of records) {
+      const wasRunning = prev[record.id] === 'running'
+      const neverSeen = !seenIdsRef.current.has(record.id)
+      if (record.status !== 'running' && (wasRunning || neverSeen)) transitioned = record
+      seenIdsRef.current.add(record.id)
+    }
     prevStatusesRef.current = Object.fromEntries(records.map((record) => [record.id, record.status]))
     if (!transitioned) return
     const text = announcementFor(transitioned.status, transitioned.error)
@@ -124,6 +154,17 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
       announceTimersRef.current.clear = setTimeout(() => setAnnouncement(''), 6000)
     }, 0)
   }, [records])
+
+  // Gate-fix (round 3, A11y3 Medium): clears both announcement timers on unmount -- without
+  // this, a pending/clear timer from the effect above could still fire `setAnnouncement` after
+  // the panel (and this component instance) is gone, a leaked timer with no visible effect but
+  // wasted work.
+  useEffect(() => {
+    return () => {
+      clearTimeout(announceTimersRef.current.pending)
+      clearTimeout(announceTimersRef.current.clear)
+    }
+  }, [])
 
   async function send(): Promise<void> {
     const question = draft.trim()
@@ -169,6 +210,10 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
 
   function handleRetry(question: string): void {
     if (!sessionId || running) return
+    // Gate-fix (round 3, A11y3 Medium): the Retry button `disabled={running}` below, so it
+    // disables the instant `running` flips true -- focus the textarea BEFORE issuing the retry,
+    // same pattern as `handleCancelClick`, so focus never drops to `<body>`.
+    textareaRef.current?.focus()
     void ask(sessionId, question).catch(() => {
       // `ask` already surfaces the failure via toast.
     })
@@ -249,11 +294,13 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                     <p className="text-sm text-muted-foreground">Interrupted.</p>
                   ) : (
                     // Spec 014: the answer is sanitised markdown through the same shared
-                    // Markdown/CodeBlock components the main transcript uses.
-                    <span>
+                    // Markdown/CodeBlock components the main transcript uses. Gate-fix (round 3,
+                    // A11y3 Low): `div`, not `span` -- `Markdown` renders block content
+                    // (paragraphs, lists, code blocks), invalid inside an inline `span`.
+                    <div>
                       <span className="sr-only">Answer: </span>
                       <Markdown id={record.id} text={record.answer ?? ''} />
-                    </span>
+                    </div>
                   )}
                 </div>
               ))}

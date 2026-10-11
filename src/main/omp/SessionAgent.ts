@@ -110,8 +110,10 @@ function isValidModelRef(model: unknown): model is { provider: string; id: strin
  * stable, position-derived `${root.id}.${index}` key -- safe as a React list key and for
  * `applyPatch`'s by-id match (a live patch only ever targets the single currently-`running`
  * record, never a past flattened row), but this synthetic id must never be sent back to OMP as a
- * `recordId` -- `root.leafId` (carried on the flattened root's own `leafId` field) is the one
- * `SideChatThreadState.loadHistory` may use for that. */
+ * `recordId`. Gate-fix (round 3, Code3/Verif3 HIGH): the flattened ROOT row's own `id` -- never
+ * `root.leafId` -- is the one `SideChatThreadState.loadHistory` must use for that (live-tested
+ * against a restarted omp process: `id` continued the topic, `leafId` was rejected every time
+ * with "Unknown /btw topic"). */
 function flattenBtwHistory(thread: BtwHistoryThread): SideChatRecord[] {
   const out: SideChatRecord[] = [];
   const visit = (node: BtwHistoryNode, id: string, leafId?: string): void => {

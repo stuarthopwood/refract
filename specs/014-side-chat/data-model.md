@@ -5,9 +5,16 @@
 **Corrected 2026-10-11 (Slice 1+2 live verification)**: a live `btw` call and a terminal
 `btw_record` both confirmed flat (`id`/`status`/`question`/`answer`/`createdAt`/`updatedAt` all
 observed); the original `recordId?` field below never existed on the wire and is removed --
-continuing a topic is done by passing a PRIOR record's own `id` (or a thread's own `leafId`, see
-`BtwHistoryThread` below) as the NEXT `btw` call's `recordId` parameter, not a field carried on
-the record itself.
+continuing a topic is done by passing a PRIOR record's own `id` as the NEXT `btw` call's
+`recordId` parameter, not a field carried on the record itself.
+
+**Corrected 2026-10-11 (round 3, Code3/Verif3 HIGH, live-tested against a restarted omp
+process)**: a thread's own `leafId` (`BtwHistoryThread.leafId`, below) is NOT a valid `recordId`
+-- sending it back is rejected every time with `"Unknown /btw topic"`, including immediately
+after a restart. Only a genuine root `id` continues a topic, and it continues correctly across a
+restart too (confirmed live: a completed topic's own `id`, sent as `recordId` after killing and
+relaunching the agent process, landed as a further follow-up of the same topic). What `leafId`
+itself denotes inside OMP's own model is unknown -- logged as an open question, never guessed.
 
 ```ts
 export interface SideChatRecord {
@@ -17,7 +24,9 @@ export interface SideChatRecord {
   answer?: string;
   createdAt?: number;
   updatedAt?: number;
-  /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`). */
+  /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`).
+   * NOT the id the next question should carry (round 3, Code3/Verif3 HIGH) -- that is this
+   * record's own `id`; `leafId` was rejected every time it was tried as `recordId`. */
   leafId?: string;
   /** [INFERENCE: from issue://516's own failure-case list -- blank question, one already
    * running, unknown recordId, no model, history-save failure.] */
@@ -32,7 +41,8 @@ It returns one entry per independent topic/thread, each a tree: a root node (the
 carrying `id`/`leafId`) plus a nested `followUps[]` whose entries carry no id of their own.
 `SessionAgent.flattenBtwHistory` turns each thread into the flat `SideChatRecord[]` the IPC
 contract and renderer actually consume (synthesizing a stable `${root.id}.${index}` key for a
-non-root row, never sent back to OMP as a `recordId`).
+non-root row, never sent back to OMP as a `recordId`). The root's own `id` -- never `leafId` --
+is what continues the topic (round 3, live-tested against a restart, see `SideChatRecord` above).
 
 ```ts
 export interface BtwHistoryNode {
@@ -87,6 +97,13 @@ on the patch itself), never "whichever record has status running"; a new `loaded
 replaces a per-component ref so FR-004's "once per Session per app run" actually holds across a
 remount, and a load that fails because the Session has no live process yet stays `false` so it
 retries once the Session starts.
+
+**Corrected 2026-10-11 (round 3, Code3/Verif3 HIGH)**: `loadHistory` seeds `activeTopicRecordId`
+from the last topic's root `id`, never its `leafId` (live-tested against a restarted omp
+process: `id` continued the topic correctly, `leafId` was rejected every time). A rejected
+`recordId` is now also a safety net, not only a restart-specific fix: if `ask` fails and the
+`recordId` it sent is still the current `activeTopicRecordId`, it is reset to `undefined` so the
+NEXT question starts a fresh topic (FR-003) instead of retrying the same rejected id forever.
 
 ```ts
 interface SideChatThreadState {

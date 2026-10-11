@@ -26,11 +26,16 @@ streamed, cancellable sub-conversation).
 |---|---|
 | `invalid-argument` (existing code, no new one needed) | A blank `question` passed to `sideChat.ask`, or a non-string `sessionId`/`question` -- the same catch-all every other request already uses for a malformed payload. |
 
-No new error code is added for OMP's own `btw` failure cases (one already running, unknown
-`recordId`, no model, history-save failure): each of those arrives as a `btw_record` with
+No new error code is added for an OMP-side `btw` failure that DOES arrive as a `btw_record` with
 `status: "error"` and its own `error` text (data-model.md), rendered in the panel (FR-008), not
-surfaced as an IPC-layer error -- the request to OMP itself still succeeded; it is the side
-question's own outcome that failed.
+surfaced as an IPC-layer error. **Corrected 2026-10-11 (round 3, Code3/Verif3 HIGH, live-tested)**:
+an unknown `recordId` and "one already running" are NOT examples of this -- both are confirmed
+live to fail at the RPC level instead (`sideChat.ask` resolves `{ ok: false, error: { code:
+'prompt-failed', message: '...btw failed: Unknown /btw topic: <id>' } }` / `'...A /btw question is
+still running; cancel it first'`), never a `status: "error"` record at all -- `mapChatError`'s own
+existing error-mapping path, surfaced by the store's toast, exactly like an `AgentNotRunningError`
+would be. Whether "no model" or "history-save failure" produce a `status: "error"` record or
+also an RPC-level failure remains `[INFERENCE: not live-tested this round]`.
 
 ## Non-IPC: the thread's own state
 

@@ -48,6 +48,12 @@ interface SideChatThreadState {
   /** Applies a `btw_delta` (`delta` + `recordId` set) or terminal `btw_record` (`record` set)
    * arriving over `onSideChatPatch`. */
   applyPatch(sessionId: string, patch: { delta?: string; recordId?: string; record?: SideChatRecord }): void
+  /** Gate-fix (round 3, Code3/A11y3 Medium): called when the Session leaves a live state (its
+   * agent process exited) -- a `running` record left as-is would block Send/Retry/`/btw`
+   * forever, since no terminal `btw_delta`/`btw_record` will ever arrive for it now (the
+   * process that would have sent one is gone). Marks any such record `interrupted` and
+   * recomputes `running`; a no-op if nothing was running. */
+  reconcileInterrupted(sessionId: string): void
 }
 
 function isRunningStatus(status: SideChatRecord['status']): boolean {
@@ -56,6 +62,12 @@ function isRunningStatus(status: SideChatRecord['status']): boolean {
 
 function computeRunning(records: SideChatRecord[]): boolean {
   return records.some((record) => isRunningStatus(record.status))
+}
+function stripInternalPrefix(message: string): string {
+  // Gate-fix (round 3, Sec3 LOW): `SessionAgent.ts`'s own thrown errors are prefixed
+  // `SessionAgent <uuid>: ...` for its OWN logs -- an internal implementation detail that must
+  // never leak into a user-facing toast.
+  return message.replace(/^SessionAgent [^:]+:\s*/, '')
 }
 
 export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
@@ -73,12 +85,18 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       return
     }
     const fetched = result.value
-    // Spec 014 (live correction, 2026-10-11): `get_btw_history` is one entry per independent
-    // topic, flattened root-first then its own follow-ups in order (`SessionAgent.
-    // flattenBtwHistory`) -- only a flattened ROOT row carries `leafId` (a non-root follow-up
-    // has no real OMP id of its own to continue from). The topic to continue is the LAST root in
-    // the list (the most recently started topic), never the last flattened row itself -- a
-    // follow-up's own synthetic `${root.id}.${index}` key must never be sent back as `recordId`.
+    // `get_btw_history` is one entry per independent topic, flattened root-first then its own
+    // follow-ups in order (`SessionAgent.flattenBtwHistory`); only a flattened ROOT row carries
+    // an `id` and `leafId` of its own (a non-root follow-up has no real OMP id to continue
+    // from). Gate-fix (round 3, Code3/Verif3 HIGH): `leafId` is NOT the continuation key --
+    // live-tested against a RESTARTED omp process (scratch verification, 2026-10-11) sending a
+    // completed thread's own `id` as `recordId` succeeded (`ok: true`, the new question landed
+    // as a third follow-up of the same topic); sending that same thread's `leafId` instead
+    // failed every time with "Unknown /btw topic". `BtwHistoryThread.leafId` tracks something
+    // else inside OMP's own model, never a value `btw`'s `recordId` accepts back. The topic to
+    // continue is the LAST root in the list (the most recently started topic), never the last
+    // flattened row itself -- a follow-up's own synthetic `${root.id}.${index}` key must never
+    // be sent back as `recordId` either (only a flattened ROOT row's own `id` is genuine).
     const lastRoot = [...fetched].reverse().find((record) => record.leafId !== undefined)
     set((state) => {
       const existing = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
@@ -94,7 +112,7 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
           ...state.bySession,
           [sessionId]: {
             records: merged,
-            activeTopicRecordId: existing.activeTopicRecordId ?? lastRoot?.leafId,
+            activeTopicRecordId: existing.activeTopicRecordId ?? lastRoot?.id,
             running: computeRunning(merged),
             loaded: true
           }
@@ -113,9 +131,24 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
     if (!result.ok) {
       set((state) => {
         const current = state.bySession[sessionId] ?? before
-        return { bySession: { ...state.bySession, [sessionId]: { ...current, running: computeRunning(current.records) } } }
+        return {
+          bySession: {
+            ...state.bySession,
+            [sessionId]: {
+              ...current,
+              running: computeRunning(current.records),
+              // Gate-fix (round 3, Verif3 HIGH safety net): a `recordId` that was just sent and
+              // rejected (for any reason -- not only the restart/leafId case this round fixed)
+              // must never be retried forever; if nothing else already changed it meanwhile,
+              // clear it so the NEXT question starts a fresh topic (Spec 014's own documented
+              // fallback) instead of looping on the same rejected id, which otherwise locked
+              // every later Send/Retry/`/btw` for this Session permanently.
+              activeTopicRecordId: current.activeTopicRecordId === recordId ? undefined : current.activeTopicRecordId
+            }
+          }
+        }
       })
-      toast.error(`Side question failed: ${result.error.message}`)
+      toast.error(`Side question failed: ${stripInternalPrefix(result.error.message)}`)
       throw new Error(result.error.message)
     }
     // Gate-fix (round 2, Code2/Sec2/Verif2 HIGH): the response now carries the record's OWN
@@ -141,7 +174,7 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
   async cancel(sessionId) {
     const result = await window.refract.sideChat.cancel(sessionId)
     if (!result.ok) {
-      toast.error(`Could not cancel the side question: ${result.error.message}`)
+      toast.error(`Could not cancel the side question: ${stripInternalPrefix(result.error.message)}`)
     }
   },
 
@@ -150,6 +183,24 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       const next = { ...state.bySession }
       delete next[sessionId]
       return { bySession: next }
+    })
+  },
+
+  reconcileInterrupted(sessionId) {
+    set((state) => {
+      const existing = state.bySession[sessionId]
+      if (!existing) return state
+      const hasRunning = existing.records.some((record) => record.status === 'running')
+      if (!hasRunning && !existing.running) return state
+      const records = existing.records.map((record) =>
+        record.status === 'running' ? { ...record, status: 'interrupted' as const } : record
+      )
+      return {
+        bySession: {
+          ...state.bySession,
+          [sessionId]: { ...existing, records, running: false }
+        }
+      }
     })
   },
 

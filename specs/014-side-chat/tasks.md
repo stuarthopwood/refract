@@ -136,9 +136,12 @@ starts mattering for real.
 - [x] T015 Create `src/renderer/state/side-chat-store.ts`: `SideChatThreadState` (data-model.md) --
   `loadHistory`, `ask`, `cancel`, `clearThread`, `applyPatch`, subscribed to `onSideChatPatch` once
   in `init-stores.ts` (mirrors every other event subscription's own central-wiring location, not
-  inside the store file itself) (depends on T014). `loadHistory` carries forward the last thread's
-  own `leafId` as `activeTopicRecordId` (the real continuation point OMP tracks internally), not a
-  flattened row's synthetic id.
+  inside the store file itself) (depends on T014). `loadHistory` carries forward the last
+  thread's own root `id` as `activeTopicRecordId` (corrected round 3, Code3/Verif3 HIGH: the
+  root's own `id`, never its `leafId`, is the real continuation point OMP tracks internally --
+  `leafId` was live-tested against a restarted omp process and rejected every time with "Unknown
+  /btw topic"; `id` continued the same topic correctly, restart included), not a flattened row's
+  synthetic id.
 - [x] T016 [P] Export `useSideChatStore` from `src/renderer/state/index.ts` (depends on T015).
 - [x] T017 Wire `SideChatPanel.tsx` to `useSideChatStore`: load history on first open per Session
   (FR-004), send through `ask`, show "Thinking" while `running` (FR-005), render the answer through

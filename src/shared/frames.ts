@@ -401,10 +401,14 @@ export interface RpcChunkFrame {
 /** Spec 014 (`btw` side chat): one question/answer node inside a `get_btw_history` topic thread.
  * Confirmed live (2026-10-11): `question`/`answer`/`status`/`createdAt`/`updatedAt` all present
  * on every node; a non-root node (`BtwHistoryThread.followUps[]`) carries no `id` of its own --
- * only the thread's own root exposes one (`BtwHistoryThread.id`), so OMP tracks continuation
- * internally via the root's own `leafId`, not a per-node id. `error`'s exact field name on an
- * `"error"`-status node is still `[INFERENCE: from issue://516's own failure-case list]` -- no
- * failing `btw` call was captured this pass. */
+ * only the thread's own root exposes one (`BtwHistoryThread.id`). Gate-fix (round 3,
+ * Code3/Verif3 HIGH): the ROOT's own `id` IS what `btw`'s `recordId` continues (live-tested
+ * against a restarted omp process: sending the root `id` back succeeded, landing a new
+ * follow-up on the same topic; `leafId` -- see `BtwHistoryThread` below -- was rejected every
+ * time with "Unknown /btw topic", confirming it tracks something else inside OMP's own model,
+ * never a value `recordId` accepts). `error`'s exact field name on an `"error"`-status node is
+ * still `[INFERENCE: from issue://516's own failure-case list]` -- no failing `btw` call was
+ * captured this pass. */
 export interface BtwHistoryNode {
   question: string;
   answer: string;
@@ -415,11 +419,14 @@ export interface BtwHistoryNode {
   followUps?: BtwHistoryNode[];
 }
 
-/** One `get_btw_history` array entry: a topic's root node, plus the two fields only a root
- * carries -- `id` (the value a fresh `btw` call's own `recordId` would reference to continue
- * this exact node) and `leafId` (the current tip of this thread after any `followUps`, the value
- * `SideChatThreadState.activeTopicRecordId` must carry forward once history has been loaded, per
- * the live capture: a two-follow-up thread's root `id` and `leafId` were two different strings). */
+/** One `get_btw_history` array entry: a topic's root node, plus two fields only a root carries
+ * -- `id` (the value a fresh `btw` call's own `recordId` must reference to continue this exact
+ * topic, confirmed live against a restarted omp process, round 3) and `leafId` (present on every
+ * root, two different strings from `id` once a thread has follow-ups, but NOT a value `recordId`
+ * ever accepts -- confirmed live, round 3: sending it back was rejected with "Unknown /btw
+ * topic" even though the exact same thread's own `id` succeeded moments later. What `leafId`
+ * actually denotes inside OMP's own model is `[INFERENCE: not yet determined -- still logged,
+ * never guessed, in open-questions.md]`). */
 export interface BtwHistoryThread extends BtwHistoryNode {
   id: string;
   leafId: string;
@@ -433,7 +440,8 @@ export interface BtwHistoryThread extends BtwHistoryNode {
  * `flattenBtwHistory` synthesizes a stable `${root.id}.${index}` key for it instead, which is
  * safe for React list keys and `applyPatch`'s by-id match (a live patch only ever targets the
  * single currently-`running` record, never a past flattened history row) but MUST NOT be sent
- * back to OMP as a `recordId` -- only a genuine root `id` or a thread's own `leafId` may be. */
+ * back to OMP as a `recordId` -- only a genuine root `id` continues a topic (round 3,
+ * confirmed live against a restart); `leafId` never does. */
 export interface SideChatRecord {
   id: string;
   status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
@@ -441,9 +449,11 @@ export interface SideChatRecord {
   answer?: string;
   createdAt?: number;
   updatedAt?: number;
-  /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`) --
-   * the id the NEXT question in this topic must carry as `recordId`, which may differ from this
-   * record's own `id` once the thread has follow-ups. */
+  /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`).
+   * Gate-fix (round 3, Code3/Verif3 HIGH): NOT the id the next question should carry -- that is
+   * this record's own `id` (confirmed live against a restarted omp process: `id` succeeded,
+   * `leafId` was rejected with "Unknown /btw topic" every time). What `leafId` itself denotes is
+   * `[INFERENCE: not yet determined -- logged, never guessed, in open-questions.md]`. */
   leafId?: string;
   /** [INFERENCE: from issue://516's own failure-case list -- blank question, one already
    * running, unknown recordId, no model, history-save failure.] */
