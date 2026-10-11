@@ -11,6 +11,16 @@ import { Textarea } from '@/components/ui/textarea'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
 import { useSideChatStore } from '@/state'
+import type { SideChatRecord } from '../../../../shared/frames'
+
+// Gate-fix (live verification, round 1): the zustand selector below used to fall back to a
+// freshly-created `[]` literal when `bySession[sessionId]` is absent -- a new array reference on
+// every render fails zustand's `useSyncExternalStore` equality check, which re-triggers the
+// subscription's render-phase update every single commit, an infinite loop (React error #185,
+// "Maximum update depth exceeded") that crashed this panel into its error boundary the instant
+// it opened for a Session with no side-chat history loaded yet. A single stable constant fixes
+// it: the same reference compares equal to itself across renders.
+const EMPTY_RECORDS: SideChatRecord[] = []
 
 interface SideChatPanelProps {
   /** The Session this thread follows -- side chat has no independent binding of its own (unlike
@@ -28,7 +38,7 @@ interface SideChatPanelProps {
 export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const [draft, setDraft] = useState('')
   const loadedSessionRef = useRef<string | null>(null)
-  const records = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.records ?? []) : []))
+  const records = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.records ?? EMPTY_RECORDS) : EMPTY_RECORDS))
   const running = useSideChatStore((s) => (sessionId ? (s.bySession[sessionId]?.running ?? false) : false))
   const loadHistory = useSideChatStore((s) => s.loadHistory)
   const cancel = useSideChatStore((s) => s.cancel)

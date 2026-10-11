@@ -29,6 +29,8 @@ import { clearStoppedOnRequestMarker, recordStoppedOnRequestMarker } from './sto
 import type {
   AvailableCommandsUpdateFrame,
   BtwDeltaFrame,
+  BtwHistoryNode,
+  BtwHistoryThread,
   BtwRecordFrame,
   BtwResponseData,
   ExtensionUiRequestFrame,
@@ -97,6 +99,36 @@ function isValidModelRef(model: unknown): model is { provider: string; id: strin
     id.length > 0 &&
     (name === undefined || typeof name === 'string')
   );
+}
+
+/** Spec 014 (`btw` side chat): turns one `get_btw_history` topic thread (`BtwHistoryThread`'s
+ * root node plus its nested `followUps[]`) into the flat, ordered `SideChatRecord[]` the IPC
+ * contract and renderer actually consume -- confirmed live (2026-10-11, scratch verification)
+ * that `get_btw_history` returns one entry per independent topic, each a tree, NOT a flat list of
+ * every individual question as `data-model.md` originally inferred. A non-root node carries no
+ * real id of its own (see `BtwHistoryNode`'s doc comment, `frames.ts`), so each is given a
+ * stable, position-derived `${root.id}.${index}` key -- safe as a React list key and for
+ * `applyPatch`'s by-id match (a live patch only ever targets the single currently-`running`
+ * record, never a past flattened row), but this synthetic id must never be sent back to OMP as a
+ * `recordId` -- `root.leafId` (carried on the flattened root's own `leafId` field) is the one
+ * `SideChatThreadState.loadHistory` may use for that. */
+function flattenBtwHistory(thread: BtwHistoryThread): SideChatRecord[] {
+  const out: SideChatRecord[] = [];
+  const visit = (node: BtwHistoryNode, id: string, leafId?: string): void => {
+    out.push({
+      id,
+      status: node.status,
+      question: node.question,
+      answer: node.answer,
+      createdAt: node.createdAt,
+      updatedAt: node.updatedAt,
+      error: node.error,
+      ...(leafId !== undefined ? { leafId } : {}),
+    });
+    node.followUps?.forEach((child, index) => visit(child, `${id}.${index}`));
+  };
+  visit(thread, thread.id, thread.leafId);
+  return out;
 }
 
 export interface SessionAgentEvents {
@@ -913,7 +945,9 @@ export class SessionAgent extends EventEmitter {
   }
 
   /** `sideChat.getHistory` (contracts/ipc.md, FR-004): every side-chat record OMP has for this
-   * Session's saved session file, in the order OMP returns them. */
+   * Session's saved session file, flattened from `get_btw_history`'s own nested per-topic shape
+   * (`BtwHistoryThread`/`BtwHistoryNode` -- confirmed live 2026-10-11, NOT a flat list of
+   * records as the original spec inferred) via `flattenBtwHistory`. */
   async getSideChatHistory(): Promise<SideChatRecord[]> {
     if (!this.process) {
       throw new AgentNotRunningError(`SessionAgent ${this.sessionId}: cannot read side chat history, no live process`);
@@ -922,7 +956,8 @@ export class SessionAgent extends EventEmitter {
     if (!res.success) {
       throw new PromptFailedError(`SessionAgent ${this.sessionId}: get_btw_history failed: ${res.error ?? 'unknown error'}`);
     }
-    return (res.data as GetBtwHistoryResponseData | undefined)?.records ?? [];
+    const threads = (res.data as GetBtwHistoryResponseData | undefined)?.records ?? [];
+    return threads.flatMap((thread) => flattenBtwHistory(thread));
   }
 
   /** `conversations.startNew` (contracts/omp-usage.md "New Conversation"): same process, same

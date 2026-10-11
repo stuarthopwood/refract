@@ -209,13 +209,21 @@ export interface PredictWordResponseData {
   suffix: string | null;
 }
 
-/** Spec 014 (`btw` side chat, FR-002 to FR-007): the `btw`/`get_btw_history` response payload. */
+/** Spec 014 (`btw` side chat, FR-002 to FR-007): the `btw` response payload -- a single, flat
+ * record (confirmed live: `res.data.record.{id,status}`, FINDINGS item 14). */
 export interface BtwResponseData {
   record: SideChatRecord;
 }
 
+/** `get_btw_history`'s response: ONE entry per independent topic/thread this Session has ever
+ * started (a fresh topic per Clear thread, data-model.md), NOT a flat list of every individual
+ * question -- confirmed live (2026-10-11, scratch verification, real `btw` round trips): each
+ * entry is `BtwHistoryThread` (the topic's root question, `id` + `leafId` only present here)
+ * with a nested `followUps[]` holding every later question in that same topic, which carries no
+ * `id` of its own at all -- `SessionAgent.flattenBtwHistory` turns this into the flat
+ * `SideChatRecord[]` the IPC contract (`sideChat.getHistory`) and the renderer actually consume. */
 export interface GetBtwHistoryResponseData {
-  records: SideChatRecord[];
+  records: BtwHistoryThread[];
 }
 
 // ---------------------------------------------------------------------------
@@ -390,19 +398,53 @@ export interface RpcChunkFrame {
   data: string; // base64
 }
 
-/** Spec 014 (`btw` side chat, data-model.md): OMP's own per-question record shape. `id`/`status`
- * (at least `"running"`) are confirmed live (FINDINGS item 14, `docs/spike/probe-batch-18.8.0.mjs`);
- * `answer`/`error`/`recordId` are `[INFERENCE: from issue://516's documented shape, not a raw
- * captured frame]` -- the probe's 20s watch window ended while the record was still `"running"`,
- * so a `"complete"`/`"error"` record was never directly observed. */
+/** Spec 014 (`btw` side chat): one question/answer node inside a `get_btw_history` topic thread.
+ * Confirmed live (2026-10-11): `question`/`answer`/`status`/`createdAt`/`updatedAt` all present
+ * on every node; a non-root node (`BtwHistoryThread.followUps[]`) carries no `id` of its own --
+ * only the thread's own root exposes one (`BtwHistoryThread.id`), so OMP tracks continuation
+ * internally via the root's own `leafId`, not a per-node id. `error`'s exact field name on an
+ * `"error"`-status node is still `[INFERENCE: from issue://516's own failure-case list]` -- no
+ * failing `btw` call was captured this pass. */
+export interface BtwHistoryNode {
+  question: string;
+  answer: string;
+  status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
+  createdAt: number;
+  updatedAt: number;
+  error?: string;
+  followUps?: BtwHistoryNode[];
+}
+
+/** One `get_btw_history` array entry: a topic's root node, plus the two fields only a root
+ * carries -- `id` (the value a fresh `btw` call's own `recordId` would reference to continue
+ * this exact node) and `leafId` (the current tip of this thread after any `followUps`, the value
+ * `SideChatThreadState.activeTopicRecordId` must carry forward once history has been loaded, per
+ * the live capture: a two-follow-up thread's root `id` and `leafId` were two different strings). */
+export interface BtwHistoryThread extends BtwHistoryNode {
+  id: string;
+  leafId: string;
+}
+
+/** Spec 014 (`btw` side chat, data-model.md): the FLAT per-question shape `SessionAgent` exposes
+ * over IPC for both a live `btw`/`btw_record` (`id`/`status` confirmed live, FINDINGS item 14)
+ * and a history node flattened from `BtwHistoryThread`/`BtwHistoryNode` by
+ * `SessionAgent.flattenBtwHistory` (`question`/`answer`/`status` confirmed live 2026-10-11). A
+ * flattened non-root node has no real OMP id of its own (see `BtwHistoryNode`'s doc comment) --
+ * `flattenBtwHistory` synthesizes a stable `${root.id}.${index}` key for it instead, which is
+ * safe for React list keys and `applyPatch`'s by-id match (a live patch only ever targets the
+ * single currently-`running` record, never a past flattened history row) but MUST NOT be sent
+ * back to OMP as a `recordId` -- only a genuine root `id` or a thread's own `leafId` may be. */
 export interface SideChatRecord {
   id: string;
   status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
   question: string;
-  /** [INFERENCE: not observed live -- see doc comment above.] */
   answer?: string;
-  /** Present when this record is a follow-up in an existing topic. [INFERENCE] */
-  recordId?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`) --
+   * the id the NEXT question in this topic must carry as `recordId`, which may differ from this
+   * record's own `id` once the thread has follow-ups. */
+  leafId?: string;
   /** [INFERENCE: from issue://516's own failure-case list -- blank question, one already
    * running, unknown recordId, no model, history-save failure.] */
   error?: string;

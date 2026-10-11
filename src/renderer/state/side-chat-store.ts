@@ -47,12 +47,19 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       return
     }
     const records = result.value
+    // Spec 014 (live correction, 2026-10-11): `get_btw_history` is one entry per independent
+    // topic, flattened root-first then its own follow-ups in order (`SessionAgent.
+    // flattenBtwHistory`) -- only a flattened ROOT row carries `leafId` (a non-root follow-up
+    // has no real OMP id of its own to continue from). The topic to continue is the LAST root in
+    // the list (the most recently started topic), never the last flattened row itself -- a
+    // follow-up's own synthetic `${root.id}.${index}` key must never be sent back as `recordId`.
+    const lastRoot = [...records].reverse().find((record) => record.leafId !== undefined)
     set((state) => ({
       bySession: {
         ...state.bySession,
         [sessionId]: {
           records,
-          activeTopicRecordId: records.at(-1)?.id,
+          activeTopicRecordId: lastRoot?.leafId,
           running: records.some((record) => isRunningStatus(record.status))
         }
       }
