@@ -60,19 +60,38 @@ touched here (that is Slice 3's own Checkpoint task, after the feature actually 
 yet -- independently verifiable (the icon appears, the panel opens, nothing crashes), same
 incremental-shippability spec 013's own Slice 1 used.
 
-- [ ] T005 Add `'side-chat'` to `PanelId` and a descriptor (`MessageCircleIcon`, `hasCount: false`)
+- [x] T005 Add `'side-chat'` to `PanelId` and a descriptor (`MessageCircleIcon`, `hasCount: false`)
   to `HOSTED_PANELS` in `src/renderer/features/right-pane/panel-registry.ts` (data-model.md,
-  research.md decision 5).
-- [ ] T006 Create `src/renderer/features/right-pane/side-chat/SideChatPanel.tsx`: an empty-thread
+  research.md decision 5). `MessageCircleIcon` is already used elsewhere in this codebase
+  (`FdbKnowledgePanel.tsx`'s own "Ask" sample row icon), confirming it reads correctly for a
+  conversational interaction.
+- [x] T006 Create `src/renderer/features/right-pane/side-chat/SideChatPanel.tsx`: an empty-thread
   state plus a composer (Enter sends, Shift+Enter newline, matching the main composer's own
-  behaviour per issue://1), no RPC call yet (stub `onSend` prop).
-- [ ] T007 Edit `RightPaneShell.tsx`: one more `activePanelId === 'side-chat'` branch rendering
+  behaviour per issue://1), no RPC call yet (stub `onSend` prop). Follows whichever Session the
+  chat pane currently shows, no independent binding of its own (unlike Subagents' rail-click
+  ambiguity).
+- [x] T007 Edit `RightPaneShell.tsx`: one more `activePanelId === 'side-chat'` branch rendering
   `SideChatPanel` (depends on T005, T006).
-- [ ] T008 [P] `pnpm typecheck` and `pnpm build`; fix any error before proceeding.
+- [x] T008 [P] `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Both pass;
+  vitest 376/376, check:indent 0 odd-indent (316 files), check:ui-text 0 leaks (371 files),
+  check:theme-contrast 313/313 no new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint**: the Side chat rail icon appears (fourth icon, after Agent Builder); clicking it
-opens an empty panel with a working composer that does nothing yet (stub). No regression to the
-other three panels (manual spot-check: Subagents/FDB Knowledge/Agent Builder still open and work).
+**Checkpoint**: live-verified in an isolated scratch Electron instance (own `--user-data-dir`/CDP
+port, scratch repo/registry with one seeded Session -- never touching Stuart's live Sessions;
+process exit confirmed by pid), 7 named screenshots, sha256-checked, 0 duplicates, under
+`C:/Users/shopwood/refract-live-check-1-516-shell/`. The Side chat rail icon appears (fourth
+icon, after Agent Builder); the launcher lists all four panels in order (Subagents, FDB
+Knowledge, Agent Builder, Side chat); opening it shows the empty-thread state and a composer.
+**A real finding, corrected before this checkpoint closed**: the first verification pass used a
+registry with no Session at all, so the composer's own `disabled={!sessionId}` left it inert the
+whole time -- Shift+Enter and plain Enter both produced an empty value because nothing was ever
+typed into a disabled field, not because of a real behaviour difference. Re-run with one seeded
+Session open: the composer is not disabled, Shift+Enter correctly inserts a newline
+(`"line one\nline two"`, measured via the textarea's own `.value`, not asserted from a screenshot
+alone), and a plain Enter correctly clears the draft (the stub `onSend` fires, no crash). The
+two-tab bar (Side chat + FDB Knowledge) and all-four-tab bar (adding Subagents and Agent Builder)
+both render correctly; closing all four returns to the same four-entry launcher. No regression to
+the other three panels.
 
 ---
 
