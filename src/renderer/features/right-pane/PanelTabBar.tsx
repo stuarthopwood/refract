@@ -49,12 +49,16 @@
 // `62px` (the same four terms, but THREE `gap-1`s -- icon-label, label-number, number-word --
 // since the word is always a rendered sibling even once it shrinks to 0 width, and CSS `gap`
 // spaces every flex item regardless of its own final size) plus that tab's number's own digit
-// width; `62px` already exceeds `min-w-14`, so it is the one case where content alone drives the
-// rendered width (see the "known limit" note in tasks.md). Three tabs' worst case with a two-digit
-// running count is `56 + 56 + 62 + 15.546875 + 2*2 = ~194px` against `224px` available at the
-// 240px floor (`~30px` slack) -- see tasks.md's "Tab-strip width geometry" for the full, pixel-
-// exact derivation (round 7). Live-verified with a REAL count change (temporary local-only
-// dev-store injection in the scratch instance only, reverted before each push, never shipped):
+// width. `min-w-14` is the only CSS-enforced floor for every tab; the count tab's `62px` + digit
+// width is what its own content NEEDS to avoid spilling its `shrink-0` number into the `pr-7`
+// close reserve, but the flex layout does not enforce that -- it holds today only because of how
+// flex shares space among today's three panel labels (measured `82.375px` live), not because of
+// any CSS minimum (see the "known limit" note in tasks.md). Three tabs' worst case with a
+// two-digit running count is `56 + 56 + 62 + 15.546875 + 2*2 = ~194px` against `224px` available
+// at the 240px floor (`~30px` slack) -- see tasks.md's "Tab-strip width geometry" for the full,
+// pixel-exact derivation (rounds 7-8). Live-verified with a REAL count change (temporary
+// local-only dev-store injection in the scratch instance only, reverted before each push, never
+// shipped):
 // `running` set to 1 then 12 on the actual focused Session while the strip was already squeezed
 // at the 240px floor -- both digit counts rendered with zero overflow and every tab's own close
 // button stayed inside that tab's own rect.
