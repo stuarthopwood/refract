@@ -52,6 +52,25 @@ this writing — cited by content, not by path on `main`).
   004 FR-017 to FR-020) into the shared shell as its first hosted panel; none of its session
   binding, streaming, or reconciliation logic changes.
 
+
+### Needs Stuart's decision (not yet resolved, found during PR2 round 3's gate)
+
+- **Q: SC-007 ("no horizontal scrollbar... at both a 380px and a 1280px window width") and the
+  "Narrow window (380px minimum)" edge case (below, User Scenarios) read as contradictory once the
+  tab strip exists.** The edge case's own text only says the chat pane's existing 360px `minSize`
+  "wins the squeeze" against the right pane's `ResizablePanel` the same way it does on `main` today
+  — it does not itself state what that squeeze actually produces at 380px. A real OS window resize
+  to 380px (PR2 round 4, native `SetWindowPos`/`GetWindowRect` on a scratch instance, not the
+  renderer-viewport override round 3 used) found the right pane collapses to 0 width there — there
+  is no tab strip to check for a scrollbar in the first place at that width, and the document-level
+  check that matters for SC-007 passed cleanly (`scrollWidth === clientWidth`). SC-007 was written
+  before PR2's tab strip existed and was verified against PR1's rail/launcher/single-title-row
+  states only. Options: (a) SC-007's 380px clause only ever meant the rail/launcher/single-panel
+  states, and the Narrow-window edge case already covers the tab-bar case correctly as observed
+  (nothing to fix); (b) SC-007 needs a tab-strip carve-out at 380px added explicitly, stating the
+  pane-collapse outcome as a spec-level guarantee rather than an observed side effect of existing
+  `ResizablePanel` mechanics. Tracked on issue #650 pending Stuart's call.
+
 ### Carved out, not blocking this spec (per the constitution's Incremental Enhancement rule)
 
 Four items `issue://538` itself and `docs/design/accessibility.md` list as still open are deferred
@@ -322,7 +341,11 @@ each offered preset and that the drag handle still works unchanged alongside it.
   Close button — no tab strip (issue://538 rule, supersedes any earlier always-tabs design).
 - **FR-008**: With two or more panels open, the pane header MUST show a tab bar following the ARIA
   tabs pattern: arrow keys move between tabs, Delete closes the focused tab, the active tab is
-  marked by more than colour alone, and each tab has its own close button.
+  marked by more than colour alone, and each tab has its own close button. The tab strip sits in
+  its own row below a row that reserves the window-controls corner alone (FR-011) — freeing the
+  tab strip from competing with that reservation for width, not a second header shown alongside
+  the first (the single-panel title row above is unaffected and still carries that reservation on
+  its own).
 - **FR-009**: Closing a panel MUST close only that panel. Closing the last open panel MUST leave
   the pane open and show the launcher list (User Story 2) — it MUST NOT collapse the pane
   (supersedes issue://394's original "closing the last tab closes the panel").
@@ -331,10 +354,13 @@ each offered preset and that the drag handle still works unchanged alongside it.
   icon, name, and (FR-012) its live count where it has one; activating a row (pointer, Enter, or
   Space) MUST open that panel.
 - **FR-011**: The pane header (tab bar or single title row) MUST reserve the window-controls
-  corner — the same `calc(100vw - env(titlebar-area-width, 100vw))` trailing spacer `ChatHeader`
-  uses today — whenever the pane is open; the right-most `ChatPane`'s own `reservesWindowControls`
-  prop MUST be `false` whenever the pane is open, so the corner is reserved exactly once at a
-  time, never by both headers and never by neither (fixes issue://394's reported bug).
+  corner whenever the pane is open — the caption-button cluster's width past the permanent icon
+  rail's own 40px column, which already sits under its near side (`calc(100vw -
+  env(titlebar-area-width, 100vw) - 2.5rem)`, clamped at 0; `ChatHeader`'s own spacer, which has no
+  rail beside it, keeps the plain `calc(100vw - env(titlebar-area-width, 100vw))`); the right-most
+  `ChatPane`'s own `reservesWindowControls` prop MUST be `false` whenever the pane is open, so the
+  corner is reserved exactly once at a time, never by both headers and never by neither (fixes
+  issue://394's reported bug).
 
 **Counts**
 
@@ -437,8 +463,8 @@ each offered preset and that the drag handle still works unchanged alongside it.
 - **SC-001**: A developer can open any of the three available panels from the rail in one click
   (or one Enter/Space press after Tab) from a collapsed pane.
 - **SC-002**: Opening a second panel while one is already open always produces a tab bar within the
-  same render; opening a third never produces a second row or a different pattern — the tab bar
-  scales to however many panels this spec and its successors register.
+  same render; opening a third never makes the tab strip wrap onto a further row — it stays the
+  one row FR-008 describes regardless of how many panels this spec and its successors register.
 - **SC-003**: Closing the last open panel never collapses the pane and never leaves it visually
   blank; the launcher list shows every time, in every one of the acceptance scenarios above.
 - **SC-004**: Every acceptance scenario for the Subagents panel (User Story 3) passes with the

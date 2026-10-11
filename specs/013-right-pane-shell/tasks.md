@@ -166,14 +166,16 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   (research.md decision 7) (depends on T022).
 - [ ] T025 Edit `SettingsScreen.tsx`: `SECTIONS` gains `{ id: 'right-pane', label: 'Right pane' }`;
   render `RightPaneSection` for it (depends on T023, T024).
-- [ ] T026 [P] [US4] Create `src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx`:
+- [~] T026 [P] [US4] Create `src/renderer/features/right-pane/placeholders/FdbKnowledgePanel.tsx`:
   reads `Settings.showSampleData`; `false` -> the three-part empty state (icon, one line, next
   action — FR-018); `true` -> sample search/ask/agent-tools content, each element carrying a
-  visible "Sample data" label (FR-021) (depends on T022).
-- [ ] T027 [P] [US4] Create
+  visible "Sample data" label (FR-021) (depends on T022). **Empty-state branch only this PR; the
+  sample branch (`Settings.showSampleData`, FR-021) is PR3 (T017-T025).**
+- [~] T027 [P] [US4] Create
   `src/renderer/features/right-pane/placeholders/AgentBuilderPanel.tsx`: same two-state shape,
-  naming Agent Builder and its own sample cloud-agent content (depends on T022).
-- [ ] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
+  naming Agent Builder and its own sample cloud-agent content (depends on T022). **Empty-state
+  branch only this PR, same split as T026.**
+- [x] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
   the two new components (no count, per FR-013) (depends on T001, T026, T027). **Prerequisite
   carried from PR1's gate (deferred, not optional)**: once this task makes `openPanelIds.length
   >= 2` reachable for the first time, `PanelTabBar.tsx`'s tab bar must be restructured so each
@@ -181,12 +183,267 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   sibling of the `role=tab` button inside a shared, non-semantic wrapper `<span>` -- harmless in
   practice per the pattern the W3C ARIA working group tested, w3c/aria#2322, but still flagged by
   axe-core's static `aria-required-children` rule) -- needs per-tab width measurement
-  (`ResizeObserver`) to keep a detached close button visually aligned, and must be verified
-  against a real screen reader now that the tab bar is reachable, not only against axe.
+  (`ResizeObserver`) to keep a detached close button visually aligned, and **must be verified
+  against a real screen reader now that the tab bar is reachable, not only against axe (this check
+  is NOT done -- open on issue #650, same as PR1's own backlog there)**.
 
-**Checkpoint**: quickstart.md Stories 4 and 5 pass in full — both placeholders show the honest
-empty state with the switch off, make no network call, and show clearly labelled sample content
-with it on; the switch persists across a restart.
+**Deviations from this phase's description, found while implementing PR2** (T017-T025 are NOT
+done in PR2 -- Stuart's own PR2/PR3 split, posted as a decision comment on issue://538 before
+implementation started): T026/T027 do not read `Settings.showSampleData` yet, since that field
+does not exist until T017-T022 land (PR3) -- both placeholders always render the honest
+empty-state branch only, unconditionally; the sample-content branch and its "Sample data" label
+(FR-021) are PR3's work, not built here. T028's carried prerequisite is done EXCEPT the real
+screen-reader verification its own text requires (round-1 gate finding, High: the first push of
+this PR marked it "done in full", which overclaimed that specific check -- corrected here):
+`PanelTabBar.tsx`'s tablist now contains only `role=tab` buttons; every close button is a DOM
+sibling in a separate overlay, positioned per tab via each tab button's own measured
+`offsetLeft`/`offsetWidth`/`offsetTop`/`offsetHeight`, recomputed by a `ResizeObserver` watching
+every tab button (a live count changing a tab's own width shifts every later tab too) and on
+`openPanelIds` changes -- **verified by direct DOM query (the tablist's own children are only
+`role=tab`), not by running axe, and not against a real screen reader**. `IconRail.tsx` also
+gained roving-tabindex arrow-key navigation (ArrowUp/ArrowDown/Home/End) now that it has three
+buttons instead of one -- not called out as its own task, but the conventional ARIA toolbar
+pattern this phase's second real panel needs (there was nothing to rove between with only
+`subagents` registered).
+
+**Round-1 gate remediation (High, all three functional reviewers converged)**: the tab strip
+overflowed the pane's own width at its 320px default and its 240px minimum (every tab was
+`shrink-0`, and the window-controls spacer reserved the rail's own 40px a second time) -- fixed by
+letting tabs shrink and truncate their label (`min-w-0 shrink` plus a truncating `<span>`), by
+subtracting the rail's width from the spacer, and by scrolling the active tab into view
+defensively. Focus rings on tabs and close buttons were clipped by the scrolling wrapper's own
+28px height (an outset `outline-offset-2` drew outside it) -- fixed by insetting the ring
+(`outline-offset-[-2px]`), matching `RightPaneShell.tsx`'s own content-focus convention. Closing a
+tab could leave keyboard focus on a tab OTHER than the one the store made active once three panels
+existed (`closeTab` computed its own neighbour index independently of `right-pane-store.ts`'s own
+choice, which activated the LAST remaining tab, not the neighbour) -- fixed in both places: the
+store's own `closePanel` now activates the neighbour (see the state table below), and `closeTab`
+reads that choice back from the store instead of recomputing it, with `closeHostedPanel`'s own
+rail/chip fallback suppressed (`skipFocusFallback`) whenever another panel remains so the two
+focus-restoration paths can't race.
+
+**Round-2 gate remediation, later withdrawn before push (Code2/Verif2 High, A11y2 same at
+Medium)**: round 1's `min-w-0 shrink` let a tab's own measured box (used to position its close
+button) shrink below content that does not shrink -- the icon, and the close button's own reserved
+space -- so at narrow widths with three panels open the close button could land ON TOP OF the
+icon: clicking a tab's icon closed it instead of selecting it (WCAG 2.5.8), and at the pane's
+320px default with three panels every tab's label clipped to near nothing with no Tooltip to
+recover the name (FR-026). A first redesign made every tab except the active one a fixed 28px
+icon-only square with no close button of its own -- this was caught and withdrawn before being
+pushed: spec 013's own User Story 2 independent test already says "each tab carries its own close
+button," and its acceptance scenarios describe counts on every tab regardless of which is active
+(FR-012/the "not active" edge case below) -- an icon-only, close-less inactive tab was never this
+spec's rule, not a trade-off Stuart needed to approve or decline.
+
+**Round-3 gate remediation (the design actually pushed)**: the real shortfall is structural, not
+fixable by trimming any one tab further -- the pane header's own top row must also reserve the
+window-controls corner (FR-011), and at the 240px floor with three panels that row has only
+~122-123px left for three tabs that each need an icon, a close button and a label, not enough even
+fully truncated. Fixed by moving the tab strip into its OWN row, below the row that reserves the
+window-controls corner (the single-panel title row is unaffected and still carries that
+reservation alone). Freed from competing with the caption-button spacer, the strip's available
+width is `pane width - 16px` (this row's own `px-2`, no spacer) instead of `pane width - 118px` --
+confirmed live: `clientWidth` 224px at the 240px floor, 304px at 320px, 504px at 520px, exactly
+`widthPx - 16` at all three. Every tab -- selected or not -- keeps its own icon, a truncating
+label, a truncating count and its own close button (restoring round 1's per-tab close, still a DOM
+sibling of the tablist via one absolutely-positioned overlay per open tab, so the tablist's own
+children stay limited to `role=tab` and axe's `aria-required-children` rule stays satisfied); every
+tab also carries its own Tooltip (full name plus count), used when a label visually truncates.
+Clicking a tab's own body selects it; clicking its own close button closes it directly, selected or
+not, with no select-first step -- live-verified: clicking an inactive tab's body selects it without
+closing anything, and clicking a different inactive tab's own close button closes exactly that one
+while the active tab and its content stay untouched. The close-button reserve was tightened from
+`pr-8` (32px, round 1/2) to `pr-7` (28px: `CLOSE_BUTTON_PX` 24 + its own 4px inset, the button's
+real drawn footprint, not an extra margin on top of it), tab padding from `px-2.5` to `px-2` and the
+inter-tab gap from `gap-1` to `gap-0.5`, and -- the key structural fix over round 2's math -- a
+tab's live count is now `min-w-0 shrink truncate`, the same shrink priority as its label, instead of
+`shrink-0` (never shrinks): with both willing to collapse to nothing under pressure, every tab's
+floor is the same fixed ~54px (icon + its own internal gaps + the close-button reserve) regardless
+of whether it is showing a count, so three tabs' worst case (~166px) never depends on how many
+digits a live count happens to have, and stays far under the 224px available even at the 240px
+floor (58px of slack, not the near-zero margin a `shrink-0` count would have left) *(superseded:
+round 4 found this whole-count-span design let a count shrink to illegibility, FR-012; the
+"Tab-strip width geometry" section below has the current, exactly-measured floors and margin)*. A
+live subagent count was not exercised (no real subagent was started in the scratch instance);
+instead, a temporary same-font, same-class DOM element holding "12 running" was measured live
+(68px), and the floor math above does not depend on that number regardless, since the count can
+now shrink away like the label can.
+
+Also this round (carried over from the since-withdrawn round-2 push, still correct and still
+needed): `scrollIntoView` (round 1) scrolled every scrollable ancestor needed to bring the active
+tab into view, including `RightPaneShell`'s own `overflow-hidden` region and the `ResizablePanel`
+itself, both still technically "scrollable containers" to the browser even though neither is meant
+to scroll -- replaced with a manual `scrollLeft` adjustment on the tab strip's own wrapper ref only,
+and the effect now returns early while the pane is collapsed. `closeTab`'s dead `remainingCount ===
+0` branch (this function only ever runs from the tab-bar render branch, which never renders with
+fewer than two open panels, so closing one here always leaves at least one behind) is deleted. The
+`[data-panel-close]` focus query is scoped to this component's own wrapper ref, not the whole
+document (Sec2, Low). The `hosted-panel-actions.ts` comment describing the round-1 focus race was
+corrected: the Subagents chip's own restore runs SYNCHRONOUSLY inside `closePanel`, not via a
+`requestAnimationFrame` the way the rail fallback does -- it was the chip restore firing before
+`closeTab`'s own deferred focus call that caused the flash, not a race between two
+`requestAnimationFrame` callbacks as the round-1 comment claimed.
+
+Two honesty corrections, both found by Verif2 hash-checking the evidence instead of trusting the
+round-1 PR body's own claims: `refract-live-check-538-pr2/07-fdb-knowledge-empty-state.png` was
+still byte-identical to `03-launcher.png` (sha256 `66da9e86…eddd`) despite the round-1 PR body
+saying it had been "retaken" -- it had not; a genuine new screenshot showing FDB Knowledge open
+alone is captured this round (confirmed by a differing sha256) and the stale file is deleted by
+literal path so it cannot be cited again. `06-after-drag-to-240.png` showed a pane of about 312px,
+not 240 (only `06b`, the keyboard-driven resize, actually reached the floor) -- the stale `06` is
+deleted by literal path too, and the PR body's wording is aligned with `06b`'s own keyboard-driven
+method throughout (round 1's text inconsistently said "dragging" in one place and "keyboard-driven"
+in another).
+
+### Tab-strip width geometry
+
+Measures that the tab strip fits at every pane width this spec supports (240px floor, 320px default,
+520px maximum) with up to three panels open, including a live count, with no scrollbar needed at
+any of them (`overflow-x-auto` on the wrapper is a pure safety net, not exercised by today's
+panel set). Available width is `widthPx - 16` (the row's own `px-2`), confirmed live:
+224/304/504px at 240/320/520px.
+
+**Corrected from round 4** (Code4/Verif4, Medium): the count's word was `' running'`, a leading
+space baked into the string, inside its own `white-space: nowrap` (`truncate`) span -- CSS collapses
+a leading space at the start of an inline box, so the space never actually rendered ("12running",
+screenshots showing "12r." once the word started truncating too). Fixed: `splitPanelCount`
+(`panel-registry.ts`) returns the word with no leading space; a real `gap-1` spaces it from the
+number instead.
+
+**Corrected from round 5** (High, Code5/Verif5): round 5 wrapped the number and word in their own
+`<span>` so it could space and colour them together -- but that wrapper span, not the word itself,
+was the thing competing against the label in the button's own flex layout. The wrapper's own
+(unset, default `1`) shrink factor lost to the label's `shrink-[100]` every time, so the label still
+collapsed first regardless of the word's own `shrink-[1000]` -- round 5's own screenshot showed the
+label gone and "12 r" surviving, the opposite of the intended order. Fixed by dropping the wrapper:
+the number and word are now direct children of the button's own flex row, spaced by its own
+`gap-1` like every other child, so the word's `shrink-[1000]` genuinely outcompetes the label's
+`shrink-[100]`. The running-state colour (`text-state-working`) moved onto each child directly.
+The `overflow-hidden` "guard" round 5 put on the (now-removed) wrapper is gone too -- it would have
+clipped the number itself, the one thing that must never visually disappear (FR-012); see
+"Measured facts" / "What CSS actually enforces" below for the current measured facts and what CSS
+actually enforces, with `overflow-x-auto` on the whole strip staying as the strip's own safety net.
+
+**Measured facts** (`getBoundingClientRect()` on every tab child at the 240px floor): a plain
+tab's rendered floor is `56px` (its `min-w-14` Tailwind class, not its own `54px` content need). A
+count tab's content need is `62px` plus its number's own digit width (measured `82.375px` live with
+`running=12`, `4.83px` above that need). Three tabs' total with a two-digit running count:
+`56 + 56 + 62 + 15.546875 + 2*2 = ~194px` against `224px` available at the 240px floor (`~30px`
+slack); the 320px/520px widths only grow the available space (304px/504px), so the same total fits
+there too. The no-count total for three plain tabs: `56*3 + 2*2 = 172px`.
+
+**What CSS actually enforces**: `min-w-14` (`56px`) is the ONLY CSS-enforced floor, for every tab,
+count tabs included -- an explicit `min-width` overrides the default `min-width: auto` protection a
+flex item would otherwise get from its own content. A count tab's own `62px` + digit-width need is
+NOT itself enforced; today's `82.375px` and the `~30px` strip-wide slack are both empirical, a
+result of how flex currently shares space among today's three specific panel labels, not something
+CSS assures for any future label or count. Re-derive if a panel's label lengthens materially or a
+count ever reaches 3+ digits.
+
+**The `+a -d` shape**, not exercised live today (`usePanelCount` only produces `running` or
+`null`): re-estimated at `~222px` for three tabs against `224px` available, `~2px` slack -- at the
+limit, not yet re-derived from a real render.
+
+**Known limit, not implemented**: `min-w-14`'s `56px` is below a count tab's own content need
+(`62px` + digits), so it does not protect that need: a squeezed count tab can still be pushed down
+to `56px`, spilling its number into the close reserve. For a plain tab it sits above the `54px`
+content need and is the rendered floor. A content-aware minimum
+(`min-w-[max(3.5rem,min-content)]` or similar) is a candidate hardening, tracked as a follow-up
+on issue #650, not built in this PR.
+
+N=1 never reaches this code at all (`openPanelIds.length === 1` renders the single title row
+branch above, not a tab bar). Live-verified at the 240px floor with three panels open **and a
+REAL live count**, not a synthetic estimate: a temporary, local-only dev-store injection
+(`window.__refractStores`, already gated `DEV`-only for other verification scripts; force-enabled
+for one throwaway build in the scratch instance only, reverted before each round's push, never
+committed) set the focused Session's `subagentCount.running` to 1, then to 12, while the strip was
+already squeezed at 240px: `scrollWidth === clientWidth === 224` throughout (zero overflow at
+either digit count), the Subagents tab's own width grew as its neighbours shrank to compensate, and
+-- the actual regression this exercises -- every tab's own close button stayed inside that tab's
+own rect at every step, confirmed by a direct hit-test, not an assumption. The rendered result at
+the floor with `running=12`: icon, a narrow clipped sliver of the label (not a full ellipsis form
+-- at under 5px wide there is no room for the dots to render either, just a thin
+fragment of the first letter), and the full "12" -- confirmed both visually (screenshot) and via
+the tab's own computed accessible name (CDP `Accessibility.getPartialAXTree`), which reads the full
+"Subagents 12 running" regardless of what is visually truncated.
+
+**Corrected from round 3** (Verif3/Code3/A11y3, High): round 3's `ResizeObserver` watched only the
+tablist container. Once the strip is already squeezed, the tablist's own outer width is pinned to
+its flex parent rather than driven by its children's natural size, so one tab's internal content
+changing length (a count's digit count) does not change the tablist's own border-box size and the
+single observer never fires -- confirmed by the live count-injection above: the tablist's total
+stayed exactly 224px both before and after the count changed, a change the old tablist-only
+observer would have missed entirely. Fixed: every open tab's own element is now observed too
+(`PanelTabBar.tsx`'s own comment), re-subscribed whenever `openPanelIds` changes.
+
+**Corrected from round 4** (Medium, Code4/A11y4/Verif4): round 4's `aria-hidden` on the tab's own
+`TooltipContent` did not stop the double announcement -- Radix sets `aria-describedby` on the
+TRIGGER whenever the tooltip is open (keyboard focus opens it), and a screen reader's accessible-
+description computation follows that reference into hidden content regardless; round 4's "confirmed
+absent" check was taken with the tooltip CLOSED, which never sets the attribute in the first place.
+Fixed at the actual source: `aria-describedby={undefined}` on the `TooltipTrigger` itself (Radix's
+`asChild` spreads the trigger's own props onto the child AFTER its internally-computed ones, so the
+explicit override wins) -- re-verified with the tooltip OPEN this time, not closed.
+
+**Corrected from round 3** (Verif3, High, honesty): round 3 claimed a renderer-viewport override to
+380px "drives the same `100vw`-based CSS calc... a real window resize would" -- not fully true, since
+`env(titlebar-area-width)` is set once by the real OS window and does not change with a viewport
+override alone. Round 4 did a REAL OS window resize instead (`SetWindowPos` on the scratch
+instance's own window, by its own process id, confirmed before/after via `GetWindowRect`: 1296px ->
+380px). Result: the right pane collapses to 0 width there -- an empirical observation, not a claim
+the spec's own "Narrow window" edge case text makes explicitly (it only states the chat pane's
+360px `minSize` "wins the squeeze" via the existing `ResizablePanel` mechanics, spec.md's wording
+corrected this round to not over-attribute the collapse outcome to that text); the document-level
+check that matters for SC-007 (`document.documentElement.scrollWidth === clientWidth`) passed
+cleanly (364/364). The pre-existing `ChatHeader` "New conversation" button overlapping the branch
+label at this width was also visible and is a separate, already-known issue, not introduced here.
+**Honesty note**: SC-007 ("no horizontal scrollbar... at both a 380px and a 1280px window width")
+and the "Narrow window" edge case read as contradictory once a tab strip exists at all -- at 380px
+there is no tab strip to check a scrollbar against, since the pane is not there. New Clarifications
+entry added to spec.md ("Needs Stuart's decision") and a #650 item logging this for Stuart, rather
+than silently declaring SC-007 "Done" at 380px.
+
+**Checkpoint**: quickstart.md Story 4 steps 2 and 3 pass (both placeholders' empty states, live
+and screenshotted) — step 1 (confirming the Settings switch is off by default) cannot run, since
+the switch does not exist yet (PR3); step 4 (DevTools Network tab, no request from either
+placeholder) was verified by reading the components' source (both are static JSX with no hook, no
+effect, no call of any kind), not by an actual live Network-tab check. Story 5 (the Settings switch
+and sample content) is out of scope for this checkpoint — PR3 builds T017-T025 and re-runs
+quickstart.md Story 5 against them. The now-three-panel rail/launcher/tab-bar paths from Slice 1/2
+pass with a real second and third panel exercising them for the first time, including round 1's
+focus/selection fixes and rounds 4-6's count-rendering/ResizeObserver/tooltip-describedby fixes
+(see "Tab-strip width geometry" above for the pixel-exact, `min-w-14`-correct figures) -- the tab strip genuinely
+meets SC-007 at every pane width this spec supports (240/320/520px), with up to three panels open
+and a real live count exercised, each keeping its own close button and live count per User Story
+2's own independent test; the 380px window width is a separate, flagged open question (above), not
+silently folded into "Done."
+
+### Right-pane store `closePanel` active-tab transitions (gate remediation, PR2 round 1)
+
+Round 1's High finding: `closePanel` activated the LAST remaining tab unconditionally, which
+desynced from `PanelTabBar.tsx`'s own (separately computed) focus target once three panels
+existed. Fixed: `closePanel` now activates the NEIGHBOUR at the closed tab's own index, clamped to
+the new last index -- the standard tabs-pattern rule ("select the tab now in the closed tab's old
+seat"), traced here cell by cell against the final code (`right-pane-store.ts`'s `closePanel`).
+
+| Event (`openPanelIds` before, closed id, `activePanelId` before) | `openPanelIds` after | `activePanelId` after | Why |
+|---|---|---|---|
+| `[A]`, close A, active A (the only panel) | `[]` | `null` | `nextIds.length === 0` |
+| `[A, B]`, close A, active A (closing the active FIRST of two) | `[B]` | `B` | `index=0`, `min(0, 0)=0` -> `nextIds[0]` |
+| `[A, B]`, close B, active B (closing the active LAST of two) | `[A]` | `A` | `index=1`, `min(1, 0)=0` -> `nextIds[0]` |
+| `[A, B, C]`, close A, active A (closing the active FIRST of three) | `[B, C]` | `B` | `index=0`, `min(0, 1)=0` -> `nextIds[0]` (the tab that slides into A's old seat) |
+| `[A, B, C]`, close B, active B (closing the active MIDDLE of three) | `[A, C]` | `C` | `index=1`, `min(1, 1)=1` -> `nextIds[1]` |
+| `[A, B, C]`, close C, active C (closing the active LAST of three) | `[A, B]` | `B` | `index=2`, `min(2, 1)=1` -> `nextIds[1]` (the new last tab) |
+| `[A, B, C]`, close A, active B (closing an INACTIVE tab) | `[B, C]` | `B` (unchanged) | `activePanelId !== id` -> the ternary's else branch, never recomputed |
+| `[A, B, C]`, close C, active A (closing an INACTIVE tab at the end) | `[A, B]` | `A` (unchanged) | same as above |
+
+`PanelTabBar.tsx`'s `closeTab` reads this same `activePanelId` back from the store after calling
+`closeHostedPanel` (a synchronous zustand `set()`, so the new value is already committed by the
+time `closeTab` reads it) and focuses that tab's own ref -- never a separately computed index, so
+the two can no longer disagree. When exactly one panel remains, the tablist itself unmounts into
+the single-panel title row; `closeTab` focuses that row's `[data-panel-close]` button instead
+(there is no tab ref left to focus). When none remain, `closeHostedPanel`'s own existing rail/chip/
+launcher fallback (unchanged, FR-024) runs as before.
 
 ---
 

@@ -8,6 +8,8 @@ import { useRightPaneStore, useSubagentPanelStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { PanelLauncher } from './PanelLauncher'
 import { PanelTabBar } from './PanelTabBar'
+import { FdbKnowledgePanel } from './placeholders/FdbKnowledgePanel'
+import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
@@ -62,6 +64,8 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
           ) : (
             <p className="p-4 text-sm text-muted-foreground">Open a Session to see its subagents.</p>
           ))}
+        {activePanelId === 'fdb-knowledge' && <FdbKnowledgePanel />}
+        {activePanelId === 'agent-builder' && <AgentBuilderPanel />}
       </div>
     </div>
   )
