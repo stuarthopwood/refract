@@ -221,9 +221,7 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
             <div aria-hidden className="shrink-0" style={WINDOW_CONTROLS_SPACER_STYLE} />
           </div>
         </div>
-        {/* Own row, below the title row -- the DRY wrapper `WidthPresetControl.tsx` now owns
-            itself, shared with the tab-bar variant below and the 0-panel launcher
-            (RightPaneShell.tsx). */}
+        {/* Own row, below the title row (`WidthPresetControl.tsx` owns its row wrapper). */}
         <WidthPresetControl resize={resize} />
       </div>
     )
@@ -280,17 +278,9 @@ export function PanelTabBar({ sessionId, resize }: PanelTabBarProps) {
 
   return (
     <div className="flex shrink-0 flex-col">
-      {/* Row 1: reserves the window-controls corner only (FR-011), nothing else -- stays
-          `aria-hidden` (see `WindowControlsSpacerRow.tsx`), unlike the width-preset row below it,
-          which hosts a real control and must not be. No title text here: the active tab's own
-          label already names the pane. */}
+      {/* Row 1: reserves the window-controls corner only (FR-011); stays `aria-hidden`. */}
       <WindowControlsSpacerRow />
-      {/* Row W: the width-preset control (FR-025, tasks.md T029) -- its own row, below Row 1, for
-          the same reason the tab strip below it got one (round-2 remediation, same file): packed
-          into Row 1 alongside the window-controls spacer, the three buttons would overflow the
-          240px pane floor by roughly 16-20px. `WidthPresetControl.tsx` owns its own row wrapper
-          now (DRY, shared with the single-panel variant above and the 0-panel launcher in
-          `RightPaneShell.tsx`). */}
+      {/* Row W: the width-preset control (FR-025), its own row above the tab strip. */}
       <WidthPresetControl resize={resize} />
       {/* Row 2: the tab strip, now with the whole pane width (less this row's own padding) to
           itself. */}
