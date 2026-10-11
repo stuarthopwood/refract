@@ -1,4 +1,4 @@
-import { BotIcon, HammerIcon, LibraryIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, HammerIcon, LibraryIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 
 // Spec 013 (data-model.md `HostedPanelDescriptor`/`PanelId`): the single source of which right
@@ -6,8 +6,9 @@ import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 // its own list. `HOSTED_PANELS` only lists a panel this build can actually render -- all three
 // land here once PR2 (spec 013 Slice 3, tasks T026-T028) registers `fdb-knowledge`/
 // `agent-builder` alongside PR1's `subagents`, so the rail and launcher never show an entry with
-// no content behind it.
-export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder'
+// no content behind it. `side-chat` (spec 014 T005) adds a fourth tenant the same way, no change
+// to the rail/tab-bar/launcher rendering logic itself (research.md decision 4).
+export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat'
 
 export interface HostedPanelDescriptor {
   id: PanelId
@@ -19,7 +20,11 @@ export interface HostedPanelDescriptor {
 export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   { id: 'subagents', name: 'Subagents', icon: BotIcon, hasCount: true },
   { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false },
-  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false }
+  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false },
+  // Spec 014 research.md decision 5: a single-bubble icon, distinct from the three above, chosen
+  // over MessagesSquareIcon (closer to "messaging app" than "one aside conversation"). No live
+  // count is asked for by either issue.
+  { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false }
 ]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {

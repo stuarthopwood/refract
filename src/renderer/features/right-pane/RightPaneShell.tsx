@@ -12,6 +12,7 @@ import { WidthPresetControl } from './WidthPresetControl'
 import { WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 import { FdbKnowledgePanel } from './placeholders/FdbKnowledgePanel'
 import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
+import { SideChatPanel } from './side-chat/SideChatPanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
@@ -76,6 +77,7 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
           ))}
         {activePanelId === 'fdb-knowledge' && <FdbKnowledgePanel />}
         {activePanelId === 'agent-builder' && <AgentBuilderPanel />}
+        {activePanelId === 'side-chat' && <SideChatPanel sessionId={sessionId} />}
       </div>
     </div>
   )
