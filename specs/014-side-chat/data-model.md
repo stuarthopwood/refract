@@ -199,11 +199,21 @@ status, whether that frame was itself forwarded or dropped -- a topic this agent
 to hear about needs no entry at ANY age, and one still awaiting its terminal frame is kept
 regardless of how many Conversation switches have happened since it was stamped. `onExit` also
 clears the whole map unconditionally on every process exit (a topic whose terminal frame never
-arrives before the process dies). This closes the late-frame window entirely for the ONE thing
-the guard protects against: a late frame from OMP for a topic of the Conversation just left. It
-remains a no-op against live frame ordering with the bundled omp 18.8.6 (confirmed: `close()`
-settles a running question before a switch ever runs) and is not live-verified; it protects only
-a hypothetical future OMP version that emits a late frame after a switch instead of before it.
+arrives before the process dies). This closes the late-frame window for EVERY STAMPED TOPIC
+UNTIL IT SETTLES (not "entirely" -- three residual gaps remain, all against the same hypothetical
+future OMP ordering this whole guard protects against, none live-verified): a fresh topic's OWN
+first frame, arriving before `askSideChat`'s own `btw` response stamps it, is unstamped and
+treated as current by design (round 6) -- the same behaviour any never-asked topic gets;
+`askSideChat`'s own post-await `set` is unconditional, so a `btw` response handled after a
+faster terminal frame for the SAME topic can re-add an inert, already-settled entry that nothing
+deletes again until the next `onExit` (harmless -- the frame that raced it was still handled
+correctly, the leftover entry is memory-only); and a process that has just exited can still have
+a few already-buffered stdout frames reach `onFrame` after `onExit`'s own clear, which are also
+treated as current (the renderer's own `!loaded` guard in `applyPatch` is the only thing still
+covering that narrow case). It remains a no-op against live frame ordering with the bundled omp
+18.8.6 (confirmed: `close()` settles a running question before a switch ever runs) and is not
+live-verified; it protects only a hypothetical future OMP version that emits a late frame after
+a switch instead of before it.
 
 ```ts
 interface SideChatThreadState {

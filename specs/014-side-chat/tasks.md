@@ -160,7 +160,57 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 9 (gate-fix remediation, supersedes the round-8 account below)**: PR #668's
+**Checkpoint, round 10 (comment/doc wording only, supersedes the round-9 account below -- NO code
+behaviour change: `git diff 9ddcecb..HEAD -- src` is comment lines only)**: PR #668's ninth gate
+round (Code10/Sec10/A11y10/Verif10 all PASS) found two wording-only issues in round 9's own
+account of its own fix -- the code itself was already correct, confirmed independently by all
+four reviewers tracing every case (running frame, terminal frame for a current/stale topic,
+re-stamped follow-up, `btw_delta`, `onExit` timing, epoch-bump sites) by hand.
+
+**Found (1)**: `right-pane-store.ts`'s own round-9 comment described the WRONG case. The code
+(`listsChange ? !focus : get().suppressNextContentFocus && !focus`, UNCHANGED this round) only
+preserves a pending `suppressNextContentFocus: true` across a SECOND, same-tick `{ focus: false
+}` open of the already-open, already-active panel -- a second `{ focus: true }` call correctly
+clears it (the caller explicitly asked for focus, so that intent wins over an earlier, still-
+pending suppression). The round-9 comment said the fixed case was a second `focus:true` open,
+backwards from what the formula actually does.
+
+**Found (2)**: round 9's own docs (`data-model.md`, this Checkpoint's prose, the PR body) claimed
+the settledness-based cleanup "closes the window entirely". That overclaims by three residual
+gaps, all against the SAME hypothetical future OMP ordering this whole guard protects against,
+none live-verified (the bundled omp 18.8.6 settles before a switch ever runs, so none of these
+are reachable today): (a) a fresh topic's own FIRST frame, arriving before `askSideChat`'s own
+`btw` response stamps it, is unstamped and treated as current by design (round 6's own original
+behaviour, unrelated to rounds 7-9) -- the same treatment any never-asked topic already gets;
+(b) `askSideChat`'s own post-await `set` (once the `btw` response itself resolves) is
+unconditional, so it can re-add an inert, already-settled entry if a terminal frame for the SAME
+topic arrives here first (a fast settle racing a slower `btw` response handler) -- an orphan
+nothing deletes again until the next `onExit`, harmless (the frame that raced it was still
+handled correctly; the leftover is memory-only); and (c) `OmpProcess` emits `exit` from the
+child's own `'exit'` event, so a few already-buffered stdout frames can in theory still reach
+`onFrame` after `onExit`'s own clear -- these would be treated as current, with the renderer's
+own `!loaded` guard in `applyPatch` the only thing left covering that narrow case. Round 9's own
+"can never race" claim about the re-stamp (gap (b) above) was also simply wrong.
+
+**Fixed**: reworded (NO logic touched) the `right-pane-store.ts` comment, the `SessionAgent.ts`
+`onFrame` `btw_record` comment, `data-model.md`'s own correction paragraph, and this Checkpoint
+itself (replacing the round-9 account's own two inaccuracies in place, same convention every
+prior round has used for a self-correction) plus the PR body, to say exactly what the code does:
+the guard closes the late-frame window for every STAMPED topic until it settles, not "entirely",
+with the three residual gaps above disclosed by name. `contracts/ipc.md` was checked and found
+to make no "entirely"-style claim needing correction.
+
+**Record-keeping**: no new #650 comment needed (this round touches no live-verification claims
+or checklist items, only the accuracy of a defense-in-depth mechanism's own documentation). No
+new decision needed for Stuart. Gates re-run, matching Main's own exact 3-gate list for this
+comment-only round: `pnpm typecheck` (both tsconfigs), `check:indent`, `check:ui-text` (run via
+a throwaway `pnpm build` solely to produce its own input, cleaned up after) -- all pass; vitest,
+`check:theme-contrast` and `check:drag-regions` were not re-run.
+
+<details>
+<summary>Checkpoint, round 9 (superseded by round 10 above -- kept for history, not a current claim)</summary>
+
+**Checkpoint, round 9.** PR #668's
 eighth gate round (Code9/Sec9/A11y9/Verif9 all PASS) found one unanimous Medium: round 8's "keep
 one generation" fix for `sideChatTopicEpoch` was wrong in EXACTLY the same way round 7's
 immediate prune was -- just with a bigger window.
@@ -183,14 +233,17 @@ entry once its LATEST TURN (via `latestTurn`, never the root's own possibly-stal
 follow-up) reaches a terminal status -- unconditionally, whether the frame itself is forwarded or
 dropped -- then returns early if `stale`. A topic with nothing left to hear about needs no entry
 at ANY age; one still awaiting its terminal frame is kept regardless of how many Conversation
-switches have happened since it was stamped, closing the window entirely for the ONE thing the
+switches have happened since it was stamped -- closing the window for EVERY STAMPED TOPIC UNTIL
+IT SETTLES (not "entirely": see the round-10 correction below for the three residual gaps, all
+against the same hypothetical future OMP ordering, none live-verified) -- for the ONE thing the
 guard protects: a late frame from OMP for a topic of the Conversation just left. `btw_delta`'s own
 case is unchanged (deltas are never terminal, so never delete on one). `onExit` also clears the
 whole map unconditionally on every process exit, so a topic whose terminal frame never arrives at
 all (the process dies mid-question) cannot linger forever either. A continued topic re-stamps a
-fresh entry at `askSideChat`'s own ask-time, before its own `await`, so this can never race a
-follow-up already in flight. Re-confirmed going A->B->A still forwards A's own topics again once
-back in A (correct -- those topics belong to the CURRENT Conversation by then).
+fresh entry at `askSideChat`'s own ask-time, before its own `await` -- though that method's OWN
+post-await `set` is unconditional too and can race a faster terminal frame for the same topic
+(see the round-10 correction below). Re-confirmed going A->B->A still forwards A's own topics
+again once back in A (correct -- those topics belong to the CURRENT Conversation by then).
 
 **Rewrote the rationale everywhere** (the `SessionAgent.ts` field/method comments,
 `data-model.md`, `contracts/ipc.md`, this Checkpoint's own round-8 account below, the PR body, a
@@ -216,6 +269,7 @@ rationale and Verif9's own minor finding about comment 6115046237 (it said "Corr
 claims" when only one of its two bullets was actually a correction, and "confirmed again this
 round" cited no new round-8 evidence -- both reworded). The round-8 Checkpoint below has its own
 wrong "Fixed" paragraph corrected in place, same convention as every prior round's self-correction.
+</details>
 
 <details>
 <summary>Checkpoint, round 8 (superseded by round 9 above -- kept for history, with one inline correction where it was wrong)</summary>

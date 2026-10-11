@@ -1590,15 +1590,21 @@ export class SessionAgent extends EventEmitter {
         const topicEpoch = this.sideChatTopicEpoch.get(topicId) ?? this.sideChatConversationEpoch;
         const stale = topicEpoch < this.sideChatConversationEpoch;
         const turn = latestTurn(recordFrame.record);
-        // Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium): bounds `sideChatTopicEpoch` by
-        // SETTLEDNESS instead of age (round 7/8's age-based pruning always left a "survives N
-        // switches then silently stops being protected" window) -- once this topic's own
-        // LATEST TURN (never the root's own possibly-stale status for a follow-up) reaches a
-        // terminal status, there is nothing left to arrive for it, so its entry is deleted
-        // here unconditionally, stale or not. A continued topic re-stamps a fresh entry at
-        // `askSideChat`'s own ask-time (before its own `await`), so this can never race a
-        // follow-up already in flight: by the time ITS terminal frame could arrive, the
-        // re-stamp has already happened.
+        // Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium; wording corrected round 10,
+        // Code10/Sec10 Low -- round 9's own "can never race" claim here was wrong): bounds
+        // `sideChatTopicEpoch` by SETTLEDNESS instead of age (round 7/8's age-based pruning
+        // always left a "survives N switches then silently stops being protected" window) --
+        // once a STAMPED topic's own LATEST TURN (never the root's own possibly-stale status
+        // for a follow-up) reaches a terminal status, there is nothing left to arrive for it,
+        // so its entry is deleted here unconditionally, stale or not. A continued topic
+        // re-stamps a fresh entry at `askSideChat`'s own ask-time, before its own `await` -- but
+        // that method's OWN post-await `set` (once the `btw` response itself resolves) is
+        // unconditional too, and CAN re-add an entry for a topic that already settled here
+        // FIRST, if a terminal frame for it arrives before the slower `btw` response handler
+        // does -- an orphan entry nothing will ever delete again (an already-settled topic gets
+        // no further frames), bounded only by the next `onExit` clearing the whole map. Harmless
+        // either way: the frame that raced it was still handled correctly (this delete already
+        // ran), the orphan is memory-only, and at most one entry per race.
         if (turn.status !== 'running') this.sideChatTopicEpoch.delete(topicId);
         if (stale) return;
         this.emit('sideChatPatch', { sessionId: this.sessionId, record: turn });
