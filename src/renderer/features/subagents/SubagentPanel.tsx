@@ -1,9 +1,10 @@
 // The Subagents panel (spec 004 FR-017 to FR-020): the right-side pane's first occupant,
 // opened by activating the Subagents chip. Lists the current turn's subagents; selecting one
 // shows its live stream (text and tool calls) through the same renderers the main transcript
-// uses (`groupToolItems`/`ToolGroupRow` for tool calls, `Markdown` for text).
-import { CheckCircle2Icon, LoaderCircleIcon, UnplugIcon, XCircleIcon, XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+// uses (`groupToolItems`/`ToolGroupRow` for tool calls, `Markdown` for text). Spec 013: its own
+// title row and Close button moved to the shared shell (`PanelTabBar.tsx`) -- this component now
+// renders only the subagent list and stream content, unchanged from `main` today.
+import { CheckCircle2Icon, LoaderCircleIcon, UnplugIcon, XCircleIcon } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSubagentPanelStore } from '@/state'
@@ -45,7 +46,6 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   const selectedId = useSubagentPanelStore((s) => s.selectedId)
   const selectSubagent = useSubagentPanelStore((s) => s.selectSubagent)
-  const closePanel = useSubagentPanelStore((s) => s.closePanel)
   const streams = useSubagentPanelStore((s) => s.streams)
   const selectedStream = selectedId ? (streams[selectedId] ?? []) : []
   const grouped = groupToolItems(selectedStream)
@@ -56,40 +56,8 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     // path, or its own tool rows) resolves against this Session's worktree too, instead of
     // silently falling back to plain unstyled text just because this is a different mount point.
     <LinkContext.Provider value={sessionId}>
-    <div id="subagent-panel" className="flex h-full flex-col overflow-hidden">
-      {/* Quality-gate remediation (gate2): same bug class as #500 -- this row had neither
-       * `drag-region` nor `no-drag-region`, so it sat inside `App.tsx`'s permanent drag strip
-       * exactly like the Pull requests view's header did -- this panel touches the window's right
-       * edge whenever it is open, so Close could be a dead click, or sit under the native
-       * minimise/maximise/close buttons, depending on where this strip's own carve-out happened to
-       * land. Matches `ChatHeader.tsx`'s pattern: `drag-region` on the row, `no-drag-region`
-       * wrapping Close, and a trailing corner spacer. (`check:drag-regions` could not actually
-       * catch this shape until gate2: the guard's only signal for an undeclared header was
-       * `border-b`, and #606 had already removed `border-b` from this project's own top-row
-       * header convention by the time this fix landed -- the guard now also recognises a row
-       * carrying both `h-10` and `shrink-0` together.) */}
-      <div className="drag-region flex h-10 shrink-0 items-center gap-2 px-3">
-        {/* Quality-gate remediation (cycle 2, Medium): at the panel's own `minSize={240}`
-         * (App.tsx), this label's default `min-width: auto` held its full content width, so the
-         * row couldn't compress enough and pushed Close (and the corner spacer) partly under the
-         * native window buttons -- the same conflict #500 removed, just at a narrower width.
-         * `min-w-0 truncate` lets the label give up width first. */}
-        <span className="min-w-0 truncate text-sm font-semibold">Subagents</span>
-        <div className="no-drag-region ml-auto flex shrink-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            aria-label="Close subagents panel"
-            onClick={() => closePanel()}
-          >
-            <XIcon aria-hidden className="size-4" />
-          </Button>
-          <div aria-hidden className="shrink-0" style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }} />
-        </div>
-      </div>
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* drag-regions-allow: renders below this panel's own h-10 drag-region header above, so it never touches App.tsx's strip despite the same shape. */}
+        {/* drag-regions-allow: renders inside the shell's own content area, below the shell's own h-10 drag-region header, so it never touches App.tsx's permanent drag strip despite the same shape. */}
         <ul className="flex shrink-0 flex-col gap-0.5 border-b px-3 py-2" aria-label="Current turn's subagents">
           {subagents.map((subagent) => (
             <li key={subagent.id}>
@@ -129,7 +97,6 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
           </div>
         </ScrollArea>
       </div>
-    </div>
     </LinkContext.Provider>
   )
 }

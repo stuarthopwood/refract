@@ -9,7 +9,7 @@ import { usePullRequestsStore, useRepositoriesStore, useViewStore } from '@/stat
 import { PullRequestList } from './PullRequestList'
 import { PullRequestDetail } from './PullRequestDetail'
 
-export function PullRequestsView() {
+export function PullRequestsView({ reservesWindowControls = true }: { reservesWindowControls?: boolean }) {
   const repositories = useRepositoriesStore((s) => s.repositories)
   const viewRepositoryId = useViewStore((s) => s.repositoryId)
   const openPullRequests = useViewStore((s) => s.openPullRequests)
@@ -33,10 +33,11 @@ export function PullRequestsView() {
           `App.tsx`'s permanent full-width drag strip covers these pixels by default, so the
           repository Select (with no override) was inside a drag region and never received its
           click. Matches `SettingsScreen.tsx`/`SessionList.tsx`'s drag/no-drag pattern, with a
-          corner spacer as in `ChatHeader.tsx`/`App.tsx`'s own strip -- this view touches the
-          window-controls corner whenever the Subagents panel is collapsed (the same as a single,
-          non-split `ChatPane`); when that panel is open it holds the corner instead, and this
-          spacer is simply unused space, the same as `ChatPane`'s own always-on spacer. */}
+          corner spacer as in `ChatHeader.tsx`/`App.tsx`'s own strip -- spec 013 gate remediation
+          (Medium): this view mounts the right-pane shell too (the chat panel's content swaps,
+          the session-list/right-pane panels stay), so `reservesWindowControls` must be `false`
+          whenever the right pane shell is the one holding that corner (FR-011, "exactly once"),
+          the same prop `ChatPane.tsx` takes. */}
       <div className="drag-region flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
         <h2 ref={headingRef} tabIndex={-1} className="shrink-0 text-sm font-semibold outline-none">
           Pull requests
@@ -73,11 +74,13 @@ export function PullRequestsView() {
             </SelectContent>
           </Select>
         )}
-        <div
-          aria-hidden
-          className="no-drag-region ml-auto shrink-0"
-          style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }}
-        />
+        {reservesWindowControls && (
+          <div
+            aria-hidden
+            className="no-drag-region ml-auto shrink-0"
+            style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }}
+          />
+        )}
       </div>
       {!repositoryId ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">

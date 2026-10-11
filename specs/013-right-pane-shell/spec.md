@@ -157,10 +157,11 @@ User Story 3 Acceptance Scenario 4 verbatim.
    the chip's own Session, exactly as `openPanel(sessionId)` does today.
 2. **Given** the Subagents panel is the shell's only open panel, **When** the developer closes it
    (chip-opened chat still running), **Then** closing behaves exactly as today: the chat pane's
-   size and scroll position are unchanged, and dragging the pane's own resize handle fully closed
-   still closes the panel the same way (App.tsx's existing `onResize` desync guard keeps working,
-   now against the shell's generalised pane state instead of the Subagents-only
-   `useSubagentPanelStore.open` boolean).
+   size and scroll position are unchanged; **When** the developer instead drags the pane's own
+   resize handle fully shut, **Then** the pane collapses (FR-003) but the panel stays open and
+   bound to its Session, its live stream paused, and dragging the handle back open restores it
+   live -- collapsing is a separate action from closing (data-model.md's collapsed-pane
+   invariant), not spec 004's old single-flag behaviour.
 3. **Given** the Subagents panel is open and selected on a subagent's live stream, **When** that
    subagent finishes, **Then** the panel updates in place without closing itself (spec 004 FR-020,
    unchanged).
@@ -168,9 +169,10 @@ User Story 3 Acceptance Scenario 4 verbatim.
    with no subagents, **Then** the panel's own per-turn reset (`resetForNewTurn`) still closes it
    exactly as it does on `main` today (spec 004 remediation note, `readout-store.ts`).
 5. **Given** the developer opens the Subagents panel via its own rail icon instead of the chip,
-   **Then** it binds to the currently focused chat pane's Session (the same fallback FR-008
-   already uses for an ambiguous click), matching the existing drag-to-open fallback rule in
-   `App.tsx`'s `onResize` handler.
+   **Then** it binds to the currently focused chat pane's Session (FR-005 via
+   `toggleHostedPanelFromRail`, the same fallback FR-008 already uses for an ambiguous click);
+   dragging the pane open with no panel bound shows the launcher instead (FR-009), never a
+   forced default panel.
 
 ---
 
@@ -392,9 +394,15 @@ each offered preset and that the drag handle still works unchanged alongside it.
 
 - **FR-023**: Every rail button MUST have a name (not icon-alone) reachable as an accessible name,
   and MUST expose `aria-pressed` reflecting whether its panel is currently open.
-- **FR-024**: Closing the shell's only open panel, or the pane itself, MUST return focus to the
-  rail button that opened it — mirroring the existing Subagents panel's own `restoreFocus` rule
-  (`subagent-store.ts`) generalised to every hosted panel.
+- **FR-024**: Closing the shell's only open panel MUST return focus to a working control: for
+  Subagents specifically, the existing Subagents panel's own `restoreFocus` rule
+  (`subagent-store.ts`) is unchanged (FR-015) and keeps first priority -- the chip when it is
+  rendered this turn. For every hosted panel (Subagents included, when the chip isn't rendered),
+  that panel's own rail button comes next (regardless of whether the rail, the chip or the
+  launcher originally opened it), and the launcher's first row only if the rail button itself
+  cannot be found. Collapsing the pane itself (dragging the handle shut) is a separate action
+  (FR-003) with no focus-return behaviour of its own -- focus simply stays wherever it already
+  was (typically the resize handle).
 - **FR-025**: The pane MUST offer a non-drag, single-pointer, keyboard-reachable alternative to
   resizing it by dragging the handle (WCAG 2.5.7; User Story 6), since issue://538 itself does not
   yet specify one and `docs/design/accessibility.md` records this as open until a spec supplies

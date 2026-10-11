@@ -356,9 +356,12 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   screen.
 - **FR-016**: The Settings screen MUST be fully operable by keyboard, with a visible focus
   indicator at every control.
-- **FR-017**: Activating the Subagents chip MUST open a right side panel listing the current
+- **FR-017**: Activating the Subagents chip MUST open the Subagents panel, listing the current
   turn's subagents, each with its name or task and its state (running, finished, failed, or
-  exited — issue #489).
+  exited — issue #489). **Amended by spec 013**: the panel opens through the shared right pane
+  shell (one permanent icon rail, one collapsible pane hosting every right-hand panel) rather
+  than a standalone right-hand region; this spec's own FR-018 to FR-020 (the panel's content and
+  behaviour) are unchanged.
 - **FR-018**: Selecting a subagent in that panel MUST show its live stream — what it is saying and
   which tools it is running — inside the panel.
 - **FR-019**: The subagent panel MUST be closeable, and closing it MUST leave the chat pane
@@ -383,8 +386,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   meaningful for the Session, and clickable only for Pull request and Subagents.
 - **Session readout settings**: the app-wide record of which readouts are shown or hidden, with
   the defaults in FR-013, persisted across restarts and applied to every open Session.
-- **Subagent panel**: the right side panel opened from the Subagents chip, listing the current
-  turn's subagents and showing the live stream of whichever one is selected.
+- **Subagent panel**: the panel opened from the Subagents chip, listing the current turn's
+  subagents and showing the live stream of whichever one is selected; hosted inside the shared
+  right pane shell (spec 013), not a standalone side region.
 - **Subagent entry**: one row in the subagent panel: a name or task, a state (running, finished,
   failed, or exited — a process confirmed gone with nothing known about its own work, issue
   #489), and, when selected, its stream of output and tool calls.

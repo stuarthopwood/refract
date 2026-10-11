@@ -584,9 +584,10 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // Session never re-triggers a sessions.open() call for it (the effect above only fires when
   // `sessionId` itself changes), so applySnapshot's own panel reset never runs -- MessageInput
   // and the chip row unmount here (the Empty state below) while `useSubagentPanelStore`'s
-  // `open`/`sessionId` silently keep pointing at a Session that no longer exists. Closing the
-  // panel whenever that exact Session vanishes mirrors an explicit Close click instead of
-  // leaving a stale, inaccessible panel open.
+  // `sessionId` silently keeps pointing at a Session that no longer exists. Closing the panel
+  // whenever that exact Session vanishes mirrors an explicit Close click instead of leaving a
+  // stale, inaccessible panel open (spec 013: `closePanel()` also keeps `right-pane-store.ts`'s
+  // `openPanelIds` in sync, so the shell drops it from the tab/launcher list too).
   useEffect(() => {
     if (session) return
     const panelState = useSubagentPanelStore.getState()

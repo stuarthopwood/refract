@@ -54,12 +54,15 @@ Requirement and story numbers refer to [spec.md](spec.md); data and protocol det
 4. Close the panel from the shell's header. Expect: the chat pane's width and scroll position are
    completely unchanged — compare before/after with the same window size and scroll offset.
 5. Drag the pane's resize handle fully shut while the Subagents panel is the only open panel.
-   Expect: the panel closes the same way the Close button would (no desync between the dragged
-   width and the shell's own `open`/`openPanelIds` state) — reopen by dragging and confirm it
-   does not show a blank panel.
+   Expect: the pane collapses (FR-003) but the Subagents panel stays open and bound to its
+   Session -- its live stream pauses while collapsed (nothing can see it at 0px wide); dragging
+   the handle back open restores the same panel, bound to the same Session, with the selected
+   subagent's stream live again (no desync between the dragged width and the shell's own
+   `open`/`widthPx`/`openPanelIds` state, and no blank panel).
 6. Open the Subagents panel via its rail icon (not the chip) while two chat panes are split.
-   Expect: it binds to the currently focused pane's Session, matching the existing drag-to-open
-   fallback already on `main`.
+   Expect: it binds to the currently focused pane's Session (FR-005 via
+   `toggleHostedPanelFromRail`, the same ambiguous-click fallback FR-008 uses). Dragging the pane
+   open with no panel bound instead shows the launcher (FR-009), never a forced default panel.
 7. Start a fresh turn with no subagents in the same Session while its panel is open. Expect: the
    panel closes on its own (the existing per-turn reset), exactly as today.
 

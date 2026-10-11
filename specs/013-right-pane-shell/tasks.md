@@ -40,40 +40,40 @@ file them before implementation starts if the team wants per-task tracking, titl
 every later task builds on. No user-visible behaviour change yet (the shell exists but nothing
 calls `togglePanelFromRail` until Slice 2).
 
-- [ ] T001 Create `src/renderer/features/right-pane/panel-registry.ts`: `HostedPanelDescriptor[]`
+- [x] T001 Create `src/renderer/features/right-pane/panel-registry.ts`: `HostedPanelDescriptor[]`
   and `PanelId` (data-model.md), with three entries (`subagents`, `fdb-knowledge`,
   `agent-builder`) and `getPanelCount(id, sessionId)` (research.md decision 8 for the icon
   choices: `BotIcon`, `LibraryIcon`, `HammerIcon`).
-- [ ] T002 Create `src/renderer/state/right-pane-store.ts`: `RightPaneState` (data-model.md) —
+- [x] T002 Create `src/renderer/state/right-pane-store.ts`: `RightPaneState` (data-model.md) —
   `open`, `widthPx`, `openPanelIds`, `activePanelId`, `openPanel`, `closePanel`,
   `togglePanelFromRail`, `setWidth`, `syncRenderedState` (depends on T001 for `PanelId`).
-- [ ] T003 [P] Export the new store from `src/renderer/state/index.ts` (depends on T002).
-- [ ] T004 [P] Create `src/renderer/features/right-pane/IconRail.tsx`: one button per
+- [x] T003 [P] Export the new store from `src/renderer/state/index.ts` (depends on T002).
+- [x] T004 [P] Create `src/renderer/features/right-pane/IconRail.tsx`: one button per
   `HostedPanelDescriptor`, `aria-pressed` bound to `openPanelIds.includes(id)`, full icon-only
   bundle (Tooltip/aria-label/Kbd/24px target, FR-023, FR-026), `onClick` calls
   `togglePanelFromRail(id)` (depends on T001, T002).
-- [ ] T005 [P] Create `src/renderer/features/right-pane/PanelLauncher.tsx`: centred list of every
+- [x] T005 [P] Create `src/renderer/features/right-pane/PanelLauncher.tsx`: centred list of every
   `HostedPanelDescriptor`, each row a button with icon, name, and `getPanelCount` where non-null
   (FR-010, FR-012); activating a row calls `openPanel(id)` (depends on T001, T002).
-- [ ] T006 Create `src/renderer/features/right-pane/PanelTabBar.tsx`: ARIA tabs pattern over
+- [x] T006 Create `src/renderer/features/right-pane/PanelTabBar.tsx`: ARIA tabs pattern over
   `openPanelIds` (arrow keys move focus, Delete closes the focused tab, each tab shows icon, name,
   live count, and its own close button), plus the single-panel title-row variant (FR-007, FR-008,
   FR-011's window-controls spacer) (depends on T001, T002).
-- [ ] T007 Create `src/renderer/features/right-pane/WidthPresetControl.tsx`: three buttons
+- [x] T007 Create `src/renderer/features/right-pane/WidthPresetControl.tsx`: three buttons
   (Min/Default/Max — 240/320/520px) calling a passed-in `resize(px)` callback (FR-025; the shell
   wires this to the `ResizablePanel` ref in T009) (depends on T002).
-- [ ] T008 Create `src/renderer/features/right-pane/RightPaneShell.tsx`: renders `PanelTabBar`
+- [x] T008 Create `src/renderer/features/right-pane/RightPaneShell.tsx`: renders `PanelTabBar`
   (0 open -> delegates header to `PanelLauncher` instead, 1 open -> title row, 2+ -> tabs) plus the
   active panel's content; mounts `IconRail` is NOT here (it sits beside the `ResizablePanelGroup`
   in `App.tsx`, not inside this pane's own content) (depends on T004, T005, T006, T007).
-- [ ] T009 Edit `App.tsx`: rename the `subagents` `ResizablePanel` to host `RightPaneShell`
+- [x] T009 Edit `App.tsx`: rename the `subagents` `ResizablePanel` to host `RightPaneShell`
   instead of the raw `SubagentPanel` conditional; generalise the existing `onResize` handler
   (lines 366-394 on `main` today) to read/write `right-pane-store.ts`'s `open`/`widthPx` via
   `syncRenderedState` instead of `useSubagentPanelStore.open` (research.md decision 2, FR-017);
   mount `IconRail` as a fixed sibling of the `ResizablePanelGroup`, always visible (FR-001);
   compute the right-most `ChatPane`'s `reservesWindowControls` prop as `!rightPaneOpen`
   (research.md decision 4, FR-011) (depends on T008).
-- [ ] T010 [P] Edit `ChatHeader.tsx`'s doc comment only (no behaviour change — its
+- [x] T010 [P] Edit `ChatHeader.tsx`'s doc comment only (no behaviour change — its
   `reservesWindowControls` prop already does the right thing once T009 passes the right value; the
   comment at lines 8-11 currently describes split-only reasoning and should name the right-pane
   case too) (depends on T009).
@@ -84,6 +84,16 @@ no crash; dragging the handle still collapses/reopens it; the window-controls co
 by the pane header while open and by `ChatHeader` while closed. Run quickstart.md Story 1 steps
 1-2 and 8 only (full Story 1 needs T011 below for a second panel to open).
 
+**Deviations from this phase's description, found during gate remediation**: T001's registry
+(`panel-registry.ts`) lists only the `subagents` entry this slice -- `fdb-knowledge`/
+`agent-builder` are appended once their own components exist (PR2/T028), so the rail/launcher
+never show an entry with no content behind it; the `PanelId` type still names all three. T002's
+`togglePanelFromRail` lives in `features/right-pane/hosted-panel-actions.ts` (`toggleHostedPanel
+FromRail`), not on the store itself, because opening/closing a panel also needs that panel's own
+binding/cleanup (`subagent-store.ts`), which the store deliberately never imports (research.md
+decision 3); `getPanelCount` is the reactive hook `usePanelCount` in `panel-registry.ts`, not a
+bare function, since rail/tab/launcher counts must re-render live.
+
 ---
 
 ## Slice 2 / Phase 2: Launcher and tabs, Subagents hosted (User Stories 1, 2, 3)
@@ -91,30 +101,35 @@ by the pane header while open and by `ChatHeader` while closed. Run quickstart.m
 **Purpose**: wire the Subagents panel in as the shell's first real hosted panel, retarget its
 existing chip, and this makes User Stories 1 and 2 fully exercisable (two real panels to open).
 
-- [ ] T011 [US3] Edit `subagent-store.ts`: keep every existing action
+- [x] T011 [US3] Edit `subagent-store.ts`: keep every existing action
   (`selectSubagent`/`applyPatch`/`reset`/`resetForNewTurn`) unchanged; repurpose `openPanel`/
   `closePanel` to be called BY the shell (via `right-pane-store.ts`'s `openPanel('subagents')`/
   `closePanel('subagents')`) rather than toggling their own `open` boolean as the source of truth
   — `sessionId` stays the field that says "which Session this panel's content is bound to"
-  (research.md decision 3, FR-015).
-- [ ] T012 [US3] Edit `SubagentPanel.tsx`: remove its own `h-10` title-row/Close-button header
+  (research.md decision 3, FR-015). Gate remediation added `suspend()`/`resume()`: dragging the
+  pane fully shut keeps the panel open and bound (FR-003), pausing only the live stream.
+- [x] T012 [US3] Edit `SubagentPanel.tsx`: remove its own `h-10` title-row/Close-button header
   (lines 55-66 on `main` today); the shell's `PanelTabBar`/title row now owns that chrome
   (research.md decision 5); keep the subagent list and stream content exactly unchanged (depends
   on T011).
-- [ ] T013 [US3] Edit `ReadoutChips.tsx`'s `SubagentsChip`: `onActivate` calls
-  `useRightPaneStore.getState().openPanel('subagents')` then binds the Session via
-  `subagent-store.ts`'s existing session-binding call, instead of
-  `useSubagentPanelStore.openPanel(sessionId)` directly (FR-016) (depends on T011).
-- [ ] T014 [US1] Register `subagents` in `panel-registry.ts` as rendering `SubagentPanel` (depends
+- [x] T013 [US3] Edit `ReadoutChips.tsx`'s `SubagentsChip`: `onActivate` calls
+  `openHostedPanel('subagents', sessionId)` (`features/right-pane/hosted-panel-actions.ts`), which
+  opens the pane via `right-pane-store.ts` and binds the Session via `subagent-store.ts`'s
+  existing `openPanel`, instead of `useSubagentPanelStore.openPanel(sessionId)` directly (FR-016)
+  (depends on T011).
+- [x] T014 [US1] Register `subagents` in `panel-registry.ts` as rendering `SubagentPanel` (depends
   on T001, T012).
-- [ ] T015 [US2] Verify the launcher (T005) shows the Subagents count (FR-013) correctly sourced
+- [x] T015 [US2] Verify the launcher (T005) shows the Subagents count (FR-013) correctly sourced
   from `readout-store.ts`'s `bySession[frontSessionId].readout.subagentCount.running` via
-  `getPanelCount` (depends on T001, T014).
-- [ ] T016 [US3] Re-verify `App.tsx`'s generalised `onResize` guard (T009) against every one of
+  `usePanelCount` (depends on T001, T014).
+- [x] T016 [US3] Re-verify `App.tsx`'s generalised `onResize` guard (T009) against every one of
   spec 004's own collapse-desync edge cases (drag-to-collapse while open, drag-to-open with no
   `frontSessionId`, drag-to-open with a focused Session) using the Subagents panel specifically,
   since it is the one hosted panel with real session-binding state to desync (depends on T009,
-  T011).
+  T011). Round 2 gate remediation revised the ruling: collapsing keeps every open panel bound
+  (FR-003), and a second round fixed the store's `open` flag surviving a non-chat view switch
+  too; dragging open with no open panels shows the launcher (FR-009), never a forced default
+  panel, whether or not a Session is focused.
 
 **Checkpoint**: quickstart.md Stories 1, 2, and 3 all pass in full — two real panels (Subagents
 plus any placeholder stub from Slice 3, or a temporary second registry entry if Slice 3 is not yet
@@ -159,7 +174,15 @@ content — independent of Slice 2's files, can be built in parallel with it onc
   `src/renderer/features/right-pane/placeholders/AgentBuilderPanel.tsx`: same two-state shape,
   naming Agent Builder and its own sample cloud-agent content (depends on T022).
 - [ ] T028 [US4] Register `fdb-knowledge` and `agent-builder` in `panel-registry.ts` as rendering
-  the two new components (no count, per FR-013) (depends on T001, T026, T027).
+  the two new components (no count, per FR-013) (depends on T001, T026, T027). **Prerequisite
+  carried from PR1's gate (deferred, not optional)**: once this task makes `openPanelIds.length
+  >= 2` reachable for the first time, `PanelTabBar.tsx`'s tab bar must be restructured so each
+  tab's close button sits fully outside `role="tablist"`'s own DOM subtree (today it is a DOM
+  sibling of the `role=tab` button inside a shared, non-semantic wrapper `<span>` -- harmless in
+  practice per the pattern the W3C ARIA working group tested, w3c/aria#2322, but still flagged by
+  axe-core's static `aria-required-children` rule) -- needs per-tab width measurement
+  (`ResizeObserver`) to keep a detached close button visually aligned, and must be verified
+  against a real screen reader now that the tab bar is reachable, not only against axe.
 
 **Checkpoint**: quickstart.md Stories 4 and 5 pass in full — both placeholders show the honest
 empty state with the switch off, make no network call, and show clearly labelled sample content
@@ -210,3 +233,38 @@ Once Slice 1 lands, Slice 2 and Slice 3 touch disjoint files (`subagent-store.ts
 `settings-store.ts`/`view-store.ts`/`SettingsScreen.tsx`/the two new placeholder files) and can be
 built by two parallel subagents, each finishing with their own slice's Checkpoint, before Slice 4
 runs the combined gate.
+
+## Subagents stream state table (gate remediation, rounds 4–5)
+
+Four gate rounds each found a new hole in the Subagents panel's suspend/resume state machine
+(round 3: a dead stream after a Settings round trip; round 4: a dead stream reopening through the
+rail after a drag-collapse). Round 5 traced this table cell by cell against the code and found it
+still undercounted `fetchSeq` on two round-trip rows (each is a `suspend()` **and** a `resume()`,
+not one call), was missing the collapsed-pane and remount-while-collapsed cases entirely, and
+overstated the launcher as reachable while the pane is collapsed (`RightPaneShell` is `inert` then,
+so only the rail and the Subagents chip — not the launcher — can reopen it). This revision is
+verified against the code as it stands after round 4's fixes (`openPanel`'s same-Session branch no
+longer touches `suspended`; `fetchSeq` only bumps on a real rebind; the `App.tsx` mount branch is
+gated on size, view AND the store's own `open` flag) with no further source changes.
+
+| Event | `suspended` after | `streams` after | `selectedId` after | main's `setVisibleSubagent` | `fetchSeq` |
+|---|---|---|---|---|---|
+| Open panel, Session S, no prior binding | `false` (if `suspended` was already stale-`true` with no session bound, `openPanel`'s same-ish branch here does not clear it directly — harmless: the next expand's `resume()` clears it, with `selectedId` still `null`, so there is nothing to re-fetch) | `{}` | `null` | not called yet | unchanged |
+| Select subagent A (first time) | `false` | `{A: [...]}` | `'A'` | `(S, A)` | unchanged |
+| Drag-collapse (A selected, streaming) | `true` | `{}` (cleared) | `'A'` (kept) | `(S, null)` | **+1** |
+| Drag-expand (same mount) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`) |
+| Reopen via rail/chip after a drag-collapse (same Session; the launcher is `inert` while collapsed and cannot be the one reopening it) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+1** (from `resume()`, NOT from `openPanel`) |
+| chat → Pull requests → chat (one mount, programmatic collapse/expand) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+2** (`suspend()` leaving chat, `resume()` returning to it) |
+| chat → Pull requests → Settings/Manage sessions → chat (remount, was suspended) | `false` | `{A: [...]}` (refetched) | `'A'` | `(S, A)` restored | **+2** (`suspend()` on the chat → Pull requests leg; the Settings → chat remount's mount branch calling `resume()`; no further event fires across the Pull requests → Settings leg itself, since the whole `ResizablePanelGroup` unmounts) |
+| chat → Settings/Manage sessions → chat directly (remount, never suspended) | `false` (unchanged) | `{A: [...+ any live patches]}` (never interrupted) | `'A'` | `(S, A)` (never stopped) | unchanged (`resume()` no-ops) |
+| Remount of a drag-collapsed pane (chat → Settings/Manage sessions → chat, pane left collapsed, `open: false`) | `true` (unchanged, already true) | `{}` (cleared again) | `'A'` (kept) | `(S, null)` (fired again, redundant but harmless) | **+1** (the mount branch's `resume()` is skipped since `paneStore.open` is `false`; the Panel still mounts at its non-zero `defaultSize` regardless, so the layout effect's own `handle.collapse()` fires a genuine second collapse transition on this remount, calling `suspend()` again) |
+| Rebind: open panel for a different Session T | `false` | `{}` | `null` | `(S, null)` then none for T until selected | **+1** |
+| New turn while collapsed (pane drag-collapsed, bound Session's turn restarts; `openPanelIds` still includes `'subagents'` — collapsing never removes it) | `false` (forced by the `closePanel` branch below, overwriting the suspended-`true` it had) | `{}` | `null` (this is a full `closePanel`, not a selection reset: `sessionId` clears too, and `'subagents'` is removed from `openPanelIds` — reopening afterward lands on the **launcher**, not the Subagents panel) | `(S, null)` (redundant with `suspend()`'s earlier call) | **+1** (via `resetForNewTurn`'s `closePanel` branch) |
+| New turn, no subagents, panel open (same `closePanel` branch as above — `resetForNewTurn` only checks `openPanelIds`, never the pane's collapsed/expanded state) | `false` | `{}` | `null` (`sessionId` also clears; `'subagents'` is removed from `openPanelIds`, so the next view shows the launcher, not a reset Subagents panel) | `(S, null)` | **+1** |
+| New turn, no subagents, panel not open (not in `openPanelIds`) | `false` | `{}` | `null` | unchanged | **+1** |
+| Archive/delete the bound Session | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
+| Explicit Close (title row/tab) | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
+| Reset (Session switch/recover, different Session) | `false` | `{}` | `null` (unbound) | `(S, null)` | **+1** |
+
+Not covered above because the resize handle is `disabled` outside the chat view (no drag is
+possible there): a manual drag while Pull requests or Settings/Manage sessions is showing.

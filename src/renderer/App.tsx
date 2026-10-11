@@ -14,8 +14,18 @@ import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { toast } from 'sonner'
 import { StatusBar } from '@/features/status-bar/StatusBar'
-import { useRepositoriesStore, useSessionsStore, useSplitStore, useSubagentPanelStore, useViewStore } from '@/state'
-import { SubagentPanel } from '@/features/subagents/SubagentPanel'
+import {
+  RIGHT_PANE_MAX_WIDTH_PX,
+  RIGHT_PANE_MIN_WIDTH_PX,
+  useRepositoriesStore,
+  useRightPaneStore,
+  useSessionsStore,
+  useSplitStore,
+  useViewStore
+} from '@/state'
+import { IconRail } from '@/features/right-pane/IconRail'
+import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
+import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
@@ -59,13 +69,22 @@ export function App() {
   const hasRepositories = useRepositoriesStore((state) => state.repositories.length > 0)
   const showReadiness = !ready || !hasRepositories
   const view = useViewStore((state) => state.view)
-  const panelOpen = useSubagentPanelStore((state) => state.open)
-  const panelSessionId = useSubagentPanelStore((state) => state.sessionId)
+  const rightPaneOpen = useRightPaneStore((state) => state.open)
+  // Gate remediation (Medium, round 2): the rail and pane are chat-view only (Stuart's
+  // decision). The store's own `open` flag genuinely survives a view switch (not just FR-003's
+  // collapse/restore semantics) -- the `onResize` handler below only persists a drag-collapse's
+  // `open: false` back to the store while `view === 'chat'`, so the programmatic collapse that
+  // fires when leaving the chat view (the layout effect's own `handle.collapse()` call) never
+  // overwrites it. The rendered pane and the right-most `ChatPane`'s `reservesWindowControls`
+  // still both treat the pane as closed outside the chat view (`paneShown` below), so
+  // `PullRequestsView`'s own header is the one reserving the window-controls corner there
+  // instead of double-reserving it (FR-011).
+  const paneShown = rightPaneOpen && view === 'chat'
   const sessions = useSessionsStore((state) => state.sessions)
   const paneSessionIds = useSplitStore((state) => state.paneSessionIds)
   const focusedIndex = useSplitStore((state) => state.focusedIndex)
   const dividerPercent = useSplitStore((state) => state.dividerPercent)
-  const subagentPanelRef = useRef<PanelImperativeHandle>(null)
+  const rightPaneRef = useRef<PanelImperativeHandle>(null)
   const focusMoveButtonRef = useRef<HTMLButtonElement>(null)
   // Round 3 (code-reviewer, Low): starting this at `+Infinity` made `canShowSplit` wrongly
   // assume a wide window before the chat panel's first real `onResize` measurement lands (e.g.
@@ -81,7 +100,7 @@ export function App() {
   // `aria-hidden` while collapsed -- out of the Tab order and screen-reader browse mode, exactly
   // like the always-mounted subagents Panel's own content further down, but never torn down.
   // Tracked via this Panel's own `onResize` (there is no dedicated open/close store for this
-  // one, unlike the subagents panel's `useSubagentPanelStore`).
+  // one, unlike the right pane's `useRightPaneStore`).
   const [navCollapsed, setNavCollapsed] = useState(false)
   // Quality-gate remediation (code-reviewer, round 2, High): the focus-move button's `left` was
   // reading the PERSISTED `dividerPercent`, which `onLayoutChanged` only updates once a drag or
@@ -425,24 +444,25 @@ export function App() {
     )
   }, [isSplit, canShowSplit, frontSessionId, paneSessionIds])
 
-  // Keeps the subagents Panel mounted at all times (collapsible/collapsedSize=0, same pattern
-  // as SessionList's own left-nav panel) rather than conditionally mounting/unmounting it --
+  // Keeps the right pane mounted at all times (collapsible/collapsedSize=0, same pattern as
+  // SessionList's own left-nav panel) rather than conditionally mounting/unmounting it --
   // react-resizable-panels recomputes every sibling's size whenever the set of mounted Panels
   // changes, which would move the chat pane's width on open/close and break FR-020's "Close
-  // restores the chat pane's size and scroll exactly as before". `useLayoutEffect` (not
-  // `useEffect`) so the imperative collapse()/expand() call commits before the browser paints,
-  // never flashing the panel at its expanded width first. Depends on `showReadiness`/`view`
-  // too, not just `panelOpen`: the `ResizablePanelGroup` (and so `subagentPanelRef`'s handle)
-  // only exists once the Readiness screen clears and `view` is `'chat'`/`'pull-requests'`/
-  // `'manage-sessions'`, and a `[panelOpen]`-only dependency list never ran this effect for
-  // that later first mount (caught live: the panel rendered at its full `defaultSize` instead
-  // of collapsed, the very regression this effect exists to prevent).
+  // restores the chat pane's size and scroll exactly as before" (spec 013: generalised from the
+  // Subagents-only panel to every hosted panel, same guard). `useLayoutEffect` (not `useEffect`)
+  // so the imperative collapse()/expand() call commits before the browser paints, never flashing
+  // the panel at its expanded width first. Depends on `showReadiness`/`view` too, not just
+  // `rightPaneOpen`: the `ResizablePanelGroup` (and so `rightPaneRef`'s handle) only exists once
+  // the Readiness screen clears and `view` is `'chat'`/`'pull-requests'`/`'manage-sessions'`, and
+  // a `[rightPaneOpen]`-only dependency list never ran this effect for that later first mount
+  // (caught live: the panel rendered at its full `defaultSize` instead of collapsed, the very
+  // regression this effect exists to prevent).
   useLayoutEffect(() => {
-    const handle = subagentPanelRef.current
+    const handle = rightPaneRef.current
     if (!handle) return
-    if (panelOpen && handle.isCollapsed()) handle.expand()
-    else if (!panelOpen && !handle.isCollapsed()) handle.collapse()
-  }, [panelOpen, showReadiness, view])
+    if (paneShown && handle.isCollapsed()) handle.expand()
+    else if (!paneShown && !handle.isCollapsed()) handle.collapse()
+  }, [paneShown, showReadiness, view])
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -485,7 +505,8 @@ export function App() {
             <ManageSessionsScreen />
           </ErrorBoundary>
         ) : (
-          <ResizablePanelGroup orientation="horizontal" className="h-full">
+          <div className="flex h-full overflow-hidden">
+          <ResizablePanelGroup orientation="horizontal" className="h-full flex-1 min-w-0">
             <ResizablePanel
               id="session-list"
               defaultSize={280}
@@ -517,7 +538,7 @@ export function App() {
                   // specs/003-pull-request-management: swaps only this panel's content (never
                   // the session-list panel or the subagent panel, both of which stay mounted --
                   // "Pull requests" is a left-nav entry, not a separate shell).
-                  <PullRequestsView />
+                  <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : paneSessionIds.length === 0 ? (
                   // Spec 012 (research.md decision 3): no pane open at all -- no composer exists
                   // in this branch, so the mark anchors to this div's own full box.
@@ -544,7 +565,7 @@ export function App() {
                   <ChatPane
                     sessionId={frontSessionId as string}
                     paneIndex={isSplit ? focusedIndex : 0}
-                    reservesWindowControls
+                    reservesWindowControls={!paneShown}
                     otherSession={otherSessionForNarrowCollapse}
                     showWatermark
                   />
@@ -609,64 +630,93 @@ export function App() {
                       <ErrorBoundary>
                         {/* Spec 012 (research.md decision 3, FR-008): the right-most pane's own
                             reading area, never paneA -- "one watermark, not one per pane". */}
-                        <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls showWatermark />
+                        <ChatPane sessionId={paneB} paneIndex={1} reservesWindowControls={!paneShown} showWatermark />
                       </ErrorBoundary>
                     </ResizablePanel>
                   </ResizablePanelGroup>
                 )}
               </ErrorBoundary>
             </ResizablePanel>
-            <ResizableHandle withHandle aria-label="Resize subagents panel" />
+            <ResizableHandle withHandle aria-label="Resize right pane" disabled={view !== 'chat'} />
             <ResizablePanel
-              id="subagents"
-              panelRef={subagentPanelRef}
-              defaultSize={320}
-              minSize={240}
-              maxSize={520}
+              id="right-pane"
+              panelRef={rightPaneRef}
+              defaultSize={useRightPaneStore.getState().widthPx}
+              minSize={RIGHT_PANE_MIN_WIDTH_PX}
+              maxSize={RIGHT_PANE_MAX_WIDTH_PX}
               collapsible
               collapsedSize={0}
               onResize={(size, _id, prevSize) => {
-                // High remediation (code-reviewer): the handle stays draggable even while
-                // "collapsed" (nothing else disables it), so dragging it directly -- rather than
-                // through the Subagents chip/Close button -- used to desync the real rendered
-                // size from `useSubagentPanelStore`'s own `open` boolean: dragging an open panel
-                // shut left `open: true` with no way back in (the chip's `openPanel` call is
-                // already `true`, so nothing re-triggers the layout effect above), and dragging a
-                // closed panel open showed an empty panel (`panelSessionId` still `null`). This
-                // keeps the store in sync with the panel's REAL rendered size on every resize,
-                // not just the state the store thinks it last commanded; `prevSize === undefined`
-                // is the initial mount, which the layout effect above already owns.
-                if (prevSize === undefined) return
+                // Spec 013 (research.md decision 2): generalised from the Subagents-only guard
+                // that used to live here -- the handle stays draggable even while "collapsed"
+                // (nothing else disables it), so dragging it directly (rather than through a rail
+                // icon, the launcher, or a panel's own Close control) must keep `right-pane-
+                // store.ts`'s `open`/`widthPx` in sync with the panel's REAL rendered size, not
+                // just the state the store last commanded. `prevSize === undefined` is the
+                // initial mount, which the layout effect above already owns EXCEPT for one gap
+                // (gate remediation, High, round 3): Settings/Manage sessions unmount the whole
+                // `ResizablePanelGroup`, so returning to chat with the pane previously left open
+                // (e.g. after a chat -> Pull requests -> Settings -> chat round trip) remounts
+                // this Panel already expanded (`defaultSize` is non-zero) -- the layout effect
+                // sees `paneShown` already true and the handle already not collapsed, so it
+                // never fires, and this is the ONLY resize event for that remount. Resuming here
+                // only when the rendered size is genuinely non-zero, the destination view is
+                // actually chat (never while merely passing through a remount that lands on Pull
+                // requests, which should stay paused and not spend an IPC round trip nobody can
+                // see), AND the store still thinks the pane is open (gate remediation, round 4,
+                // Medium): without this last check, remounting a pane the user had left COLLAPSED
+                // in chat view would still momentarily resume -- the layout effect's own
+                // `collapse()` call corrects it a moment later (same generation-guard machinery
+                // drops the now-stale fetch), but it would still cost a pointless subscribe/
+                // unsubscribe round trip the whole point of this gate is to avoid.
+                if (prevSize === undefined) {
+                  const paneStore = useRightPaneStore.getState()
+                  if (size.inPixels > 0 && useViewStore.getState().view === 'chat' && paneStore.open) {
+                    resumeHostedPanels(paneStore.openPanelIds)
+                  }
+                  return
+                }
                 const collapsed = size.inPixels <= 0
                 const wasCollapsed = prevSize.inPixels <= 0
-                if (collapsed === wasCollapsed) return
-                const panelState = useSubagentPanelStore.getState()
-                if (collapsed && panelState.open) panelState.closePanel({ restoreFocus: false })
-                // Spec 005 (tasks.md T031): dragging the panel open directly (not via a chip, see
-                // ReadoutChips.tsx's `SubagentsChip`) falls back to the FOCUSED pane's Session,
-                // the same default-target rule FR-008 already uses for an ambiguous row click --
-                // never the singular `visibleSessionId` this used to read (removed by T012).
-                else if (!collapsed && !panelState.open && frontSessionId) panelState.openPanel(frontSessionId)
-                // Low remediation (code-reviewer, spec 004 final confirmation pass): dragging the
-                // collapsed panel open while there is no Session shown at all (`frontSessionId`
-                // null, so the branch above cannot call `openPanel`) left it visually expanded with
-                // the store still `open: false` -- desynced again, the same root cause this whole
-                // handler exists to prevent. Forces the real rendered panel back closed instead of
-                // leaving that mismatch sitting there.
-                else if (!collapsed && !panelState.open && !frontSessionId) subagentPanelRef.current?.collapse()
+                if (collapsed === wasCollapsed) {
+                  if (!collapsed) useRightPaneStore.getState().setWidth(size.inPixels)
+                  return
+                }
+                const paneState = useRightPaneStore.getState()
+                if (collapsed) {
+                  // Gate remediation (Critical/High, round 1; Medium, round 2): FR-003 and
+                  // data-model.md's collapsed-pane invariant -- collapsing the pane is a separate
+                  // action from closing a panel. Every open panel and its Session binding survive
+                  // (including a programmatic collapse from leaving the chat view); only the live
+                  // stream pauses, since nothing can see it at 0px wide. The store's own `open`
+                  // flag is only overwritten by a GENUINE drag-collapse inside the chat view --
+                  // leaving the chat view also collapses the panel visually (via the layout
+                  // effect's `handle.collapse()`, which fires this same callback) but must not
+                  // persist `open: false`, or returning to chat would find the pane already
+                  // closed instead of restoring it.
+                  suspendHostedPanels(paneState.openPanelIds)
+                  if (useViewStore.getState().view === 'chat') {
+                    // `widthPx` keeps its last real value too (FR-003's "same width"), never 0.
+                    paneState.syncRenderedState(false, paneState.widthPx)
+                  }
+                } else {
+                  // FR-009: dragging the pane open with no panels bound (or returning to the chat
+                  // view) shows the launcher, same as closing the last open panel -- never a
+                  // forced default panel, never snapping back shut.
+                  paneState.syncRenderedState(true, size.inPixels)
+                  resumeHostedPanels(paneState.openPanelIds)
+                }
               }}
             >
-              {/* Critical remediation (a11y + test-reviewer, same root cause from two angles):
-                  gated on `panelOpen` too, not just `panelSessionId` -- collapsing this Panel to
-                  zero width never unmounts its content (react-resizable-panels sets no
-                  inert/hidden/display:none on a collapsed Panel), so the Close button and every
-                  subagent row button stayed in the Tab order and in screen-reader browse mode
-                  even while visually hidden. The `ResizablePanel` wrapper itself stays always
-                  mounted either way (FR-020's pixel-exact sizing fix still holds); only the
-                  content inside now actually unmounts when closed. */}
-              <ErrorBoundary>{panelOpen && panelSessionId && <SubagentPanel sessionId={panelSessionId} />}</ErrorBoundary>
+              <ErrorBoundary>
+                <div className="h-full" inert={!paneShown} aria-hidden={!paneShown || undefined}>
+                  <RightPaneShell sessionId={frontSessionId ?? null} />
+                </div>
+              </ErrorBoundary>
             </ResizablePanel>
           </ResizablePanelGroup>
+          {view === 'chat' && <IconRail sessionId={frontSessionId ?? null} />}
+          </div>
         )}
       </div>
       <StatusBar />
