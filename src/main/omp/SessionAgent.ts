@@ -320,8 +320,14 @@ export class SessionAgent extends EventEmitter {
    * `new_session`/`switch_session`/`branch`/`fork` ever runs -- already cancels any running
    * question and pushes its terminal `btw_record(cancelled)` frame synchronously, strictly
    * before that command's own response, so this should never actually trigger in a single
-   * switch; kept in case a future OMP version changes that ordering, or two switches queue
-   * back-to-back. */
+   * switch; kept in case a future OMP version changes that ordering. **Corrected round 9
+   * (Code9/Sec9/A11y9/Verif9 Medium): `sideChatTopicEpoch`'s own entries are bounded by
+   * SETTLEDNESS, not by age** -- round 7's immediate age-based prune and round 8's
+   * "keep one generation" fix were both wrong in the same way, each leaving a fixed number of
+   * Conversation switches after which a topic silently stopped being protected. `onFrame`'s own
+   * `btw_record` case now deletes an entry once that topic's LATEST TURN reaches a terminal
+   * status, regardless of how many Conversation switches have happened since it was stamped;
+   * `onExit` also clears the whole map unconditionally on every process exit. */
   private sideChatConversationEpoch = 0;
   private readonly sideChatTopicEpoch = new Map<string, number>();
   /** One `TranscriptItem[]` stream per subagent id, built the same way the main transcript is
@@ -1039,31 +1045,26 @@ export class SessionAgent extends EventEmitter {
    * out of sync. */
   notifySideChatConversationChanged(): void {
     this.sideChatConversationEpoch++;
-    // Gate-fix (round 7, Code7/Sec7 Low; round 8, Code8/Sec8/Verif8 HIGH/Medium -- the round-7
-    // version of this loop was WRONG): `sideChatTopicEpoch` otherwise grows by one entry per
-    // side question for the whole lifetime of this agent, so it needs SOME bound -- but
-    // deleting every entry stamped before THIS bump (round 7's own code) deleted the entries
-    // for the Conversation just being left too, including a topic whose `btw` response had
-    // ALREADY returned before the switch (the common case: `ask()` returns almost immediately
-    // with a `running` record, and the real answer streams later as `btw_delta`/`btw_record`).
-    // `onFrame` then found no entry for that topic and fell back to treating it as CURRENT
-    // (`?? this.sideChatConversationEpoch`, the same default an ever-unstamped topic gets),
-    // so its late frame was forwarded into the new Conversation instead of dropped -- exactly
-    // the round-6 leak this whole mechanism exists to block, reopened by round 7's own prune.
-    // Keeping one generation back (only deleting an entry stamped `< epoch - 1`, never
-    // `< epoch`) still bounds the map -- an entry survives at most one extra Conversation
-    // change past the one it belongs to -- while a topic from the Conversation JUST left stays
-    // correctly stamped through the one switch where a late frame for it could actually arrive.
-    // With the bundled omp 18.8.6, `RpcBtwController.close()` cancels and synchronously settles
-    // any running question before `new_session`/`switch_session` itself ever runs, so this
-    // guard (like `sideChatConversationEpoch`/`cancelSideChat()` itself) is a no-op against
-    // real live frame ordering today; it exists against a hypothetical future OMP version that
-    // settles a cancellation after the switch instead of before it. A topic from TWO OR MORE
-    // Conversations ago is no longer stamped at all and is treated as current by `onFrame` --
-    // acceptable, since no live code path ever sends `btw`/`btw_cancel` for a topic that old.
-    for (const [id, stampedEpoch] of this.sideChatTopicEpoch) {
-      if (stampedEpoch < this.sideChatConversationEpoch - 1) this.sideChatTopicEpoch.delete(id);
-    }
+    // Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium -- round 7's prune-by-age and round 8's
+    // "keep one generation" fix were BOTH wrong): `sideChatTopicEpoch` no longer needs pruning
+    // HERE at all. Age-based pruning (either version) always leaves a window: a topic survives
+    // some fixed number of Conversation switches, then is silently dropped from the map and
+    // `onFrame` starts treating its (still possibly in-flight) frames as belonging to the
+    // CURRENT Conversation again -- a late `btw_delta`/`btw_record` forwarded instead of
+    // dropped, reopening the exact round-6 leak this mechanism exists to block, just with a
+    // bigger "how late is late" window than round 7's immediate version had. The real bound is
+    // SETTLEDNESS, not age: `onFrame`'s own `btw_record` case now deletes a topic's entry once
+    // its LATEST TURN reaches a terminal status (see there) -- a topic this agent has nothing
+    // left to hear about for no longer needs an entry at ANY age, and one still awaiting its
+    // terminal frame is kept regardless of how many Conversation switches have happened since.
+    // `onExit` additionally clears the whole map on a process exit, so nothing survives into a
+    // different OMP process for the same Session. With the bundled omp 18.8.6,
+    // `RpcBtwController.close()` cancels and synchronously settles any running question before
+    // `new_session`/`switch_session` itself ever runs, so this whole guard (like
+    // `sideChatConversationEpoch`/`cancelSideChat()` itself) is a no-op against real live frame
+    // ordering today; it exists against a hypothetical future OMP version that settles (or
+    // emits a late frame for) a cancelled/still-running question AFTER a switch instead of
+    // strictly before it -- not live-verified.
     this.emit('sideChatConversationChanged', { sessionId: this.sessionId });
   }
 
@@ -1376,6 +1377,13 @@ export class SessionAgent extends EventEmitter {
   private async onExit(info: { code: number | null; requested: boolean }): Promise<void> {
     this.process = undefined;
     this.finalizeLiveItems();
+    // Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium): `sideChatTopicEpoch` is bounded by
+    // settledness, not by age (see `onFrame`'s own `btw_record` case) -- a topic whose terminal
+    // frame never arrives at all (the process dies mid-question) would otherwise sit in the map
+    // forever. Cleared unconditionally, before any early return below, since a NEW process for
+    // this Session always starts a brand-new `RpcBtwController` with its own history store
+    // (confirmed in `rpc-btw.ts`): nothing this map could still protect survives a restart.
+    this.sideChatTopicEpoch.clear();
     // Gate-fix (round 4, Sec4 Medium): emitted unconditionally, before the `restarting` early
     // return directly below -- see `SessionAgentEvents.sideChatInterrupted`'s own doc comment
     // for exactly which exit path this closes.
@@ -1578,9 +1586,22 @@ export class SessionAgent extends EventEmitter {
         if (!recordFrame.record) return;
         // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH, defense in depth): same epoch guard
         // as `btw_delta` above, keyed by the thread's own root id (`BtwHistoryThread.id`).
-        const topicEpoch = this.sideChatTopicEpoch.get(recordFrame.record.id) ?? this.sideChatConversationEpoch;
-        if (topicEpoch < this.sideChatConversationEpoch) return;
-        this.emit('sideChatPatch', { sessionId: this.sessionId, record: latestTurn(recordFrame.record) });
+        const topicId = recordFrame.record.id;
+        const topicEpoch = this.sideChatTopicEpoch.get(topicId) ?? this.sideChatConversationEpoch;
+        const stale = topicEpoch < this.sideChatConversationEpoch;
+        const turn = latestTurn(recordFrame.record);
+        // Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium): bounds `sideChatTopicEpoch` by
+        // SETTLEDNESS instead of age (round 7/8's age-based pruning always left a "survives N
+        // switches then silently stops being protected" window) -- once this topic's own
+        // LATEST TURN (never the root's own possibly-stale status for a follow-up) reaches a
+        // terminal status, there is nothing left to arrive for it, so its entry is deleted
+        // here unconditionally, stale or not. A continued topic re-stamps a fresh entry at
+        // `askSideChat`'s own ask-time (before its own `await`), so this can never race a
+        // follow-up already in flight: by the time ITS terminal frame could arrive, the
+        // re-stamp has already happened.
+        if (turn.status !== 'running') this.sideChatTopicEpoch.delete(topicId);
+        if (stale) return;
+        this.emit('sideChatPatch', { sessionId: this.sessionId, record: turn });
         return;
       }
       default: {

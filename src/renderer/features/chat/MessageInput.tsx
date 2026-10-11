@@ -544,7 +544,12 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       // failure that a retry will not fix either; a stopped Session means there is nothing
       // running yet to load from. Gate-fix (round 8, Code8/A11y8/Sec8/Verif8 Low): the loading
       // branch now uses the SAME `SIDE_CHAT_LOADING_HINT` constant `SideChatPanel.tsx`'s own
-      // hint does -- round 7 claimed the two already matched exactly; they never did.
+      // hint does -- round 7 claimed the two already matched exactly; they never did. Gate-fix
+      // (round 9, Code9/A11y9/Sec9 Low): sharing the constant verbatim dropped this toast's own
+      // "Try again in a moment." retry guidance (WCAG 3.3.3) -- the persistent hint under the
+      // textarea needs no call to action (it is always visible while `!loaded`), but THIS toast
+      // is a one-shot message the whole point of which is telling the user what to do next, so
+      // it appends its own suffix instead of being pulled into the shared constant.
       if (!useSideChatStore.getState().bySession[sessionId]?.loaded) {
         useRightPaneStore.getState().openPanel('side-chat', { focus: false })
         const sideChatState = useSideChatStore.getState().bySession[sessionId]
@@ -552,7 +557,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           ? 'Side chat history could not be loaded.'
           : status === 'stopped'
             ? 'Side chat is available once the Session is running.'
-            : SIDE_CHAT_LOADING_HINT
+            : `${SIDE_CHAT_LOADING_HINT} Try again in a moment.`
         toast.error(toastMessage)
         return
       }

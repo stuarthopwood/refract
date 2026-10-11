@@ -160,7 +160,67 @@ starts mattering for real.
   with `Spec 014:` wording, same information, no banned pattern), check:theme-contrast 313/313 no
   new token, check:drag-regions 0 violations (108 files).
 
-**Checkpoint, round 8 (gate-fix remediation, supersedes the round-7 account below)**: PR #668's
+**Checkpoint, round 9 (gate-fix remediation, supersedes the round-8 account below)**: PR #668's
+eighth gate round (Code9/Sec9/A11y9/Verif9 all PASS) found one unanimous Medium: round 8's "keep
+one generation" fix for `sideChatTopicEpoch` was wrong in EXACTLY the same way round 7's
+immediate prune was -- just with a bigger window.
+
+**Found**: a topic stamped at epoch `e` survives the FIRST Conversation switch (current becomes
+`e+1`; the prune only removes entries `< e`, so this one stays and its late frame is correctly
+dropped, `e < e+1`). A SECOND switch (current becomes `e+2`) prunes it (`e < (e+2)-1`), so
+`onFrame` falls back to treating it as current and FORWARDS its late frame -- the exact round-6/
+round-8 leak, just needing two switches instead of one to reopen it. The renderer only partly
+covers this: `applyPatch` drops an unknown record id while `!loaded`, but once the new
+Conversation's own history has loaded, a late terminal `btw_record` is appended to its thread
+(and, if `complete`, becomes its `activeTopicRecordId`). The round-8 docs' own stated reason
+("no live code path ever sends `btw`/`btw_cancel` for a topic that old") was also wrong on its
+own terms: the risk is a late INCOMING frame OMP emits, never an outgoing request Refract sends.
+
+**Fixed**: replaced age-based pruning with SETTLEDNESS-based cleanup. `notifySideChatConversation
+Changed()` no longer prunes `sideChatTopicEpoch` at all. `onFrame`'s own `btw_record` case now
+computes `stale = topicEpoch < sideChatConversationEpoch` as before, but ALSO deletes the topic's
+entry once its LATEST TURN (via `latestTurn`, never the root's own possibly-stale status for a
+follow-up) reaches a terminal status -- unconditionally, whether the frame itself is forwarded or
+dropped -- then returns early if `stale`. A topic with nothing left to hear about needs no entry
+at ANY age; one still awaiting its terminal frame is kept regardless of how many Conversation
+switches have happened since it was stamped, closing the window entirely for the ONE thing the
+guard protects: a late frame from OMP for a topic of the Conversation just left. `btw_delta`'s own
+case is unchanged (deltas are never terminal, so never delete on one). `onExit` also clears the
+whole map unconditionally on every process exit, so a topic whose terminal frame never arrives at
+all (the process dies mid-question) cannot linger forever either. A continued topic re-stamps a
+fresh entry at `askSideChat`'s own ask-time, before its own `await`, so this can never race a
+follow-up already in flight. Re-confirmed going A->B->A still forwards A's own topics again once
+back in A (correct -- those topics belong to the CURRENT Conversation by then).
+
+**Rewrote the rationale everywhere** (the `SessionAgent.ts` field/method comments,
+`data-model.md`, `contracts/ipc.md`, this Checkpoint's own round-8 account below, the PR body, a
+NEW #650 comment): the guard protects against a LATE FRAME from OMP for a topic of the
+Conversation just left, for as long as that topic remains unsettled -- not for "one generation"
+or any other switch count. With the bundled omp 18.8.6, `RpcBtwController.close()` settles any
+running question strictly before a switch ever runs, so this remains a no-op against live frame
+ordering today, not live-verified; it protects only a hypothetical future OMP version that emits
+a late frame after a switch instead of before it. Removed every "one generation"/"two or more
+Conversations ago"/"no live code path references one that old" sentence -- none of those were
+ever the right framing.
+
+**Also fixed** (A11y9/Code9/Sec9 Low, small/cheap): the `/btw` toast lost its "Try again in a
+moment." retry guidance when round 8 unified it with `SideChatPanel`'s own persistent hint --
+restored as a suffix the toast appends to the shared constant (the hint itself needs no call to
+action, since it stays visible the whole time `!loaded`). `right-pane-store.ts`'s `openPanel`
+now preserves a same-tick pending `suppressNextContentFocus: true` instead of letting a second
+call with unchanged open/active-panel lists silently overwrite it back to `false`
+(`listsChange ? !focus : previous && !focus`).
+
+**Record-keeping**: #650 given a new comment (old ones never edited) correcting the round-8
+rationale and Verif9's own minor finding about comment 6115046237 (it said "Correcting two
+claims" when only one of its two bullets was actually a correction, and "confirmed again this
+round" cited no new round-8 evidence -- both reworded). The round-8 Checkpoint below has its own
+wrong "Fixed" paragraph corrected in place, same convention as every prior round's self-correction.
+
+<details>
+<summary>Checkpoint, round 8 (superseded by round 9 above -- kept for history, with one inline correction where it was wrong)</summary>
+
+**Checkpoint, round 8.** PR #668's
 seventh gate round (Sec8/A11y8/Verif8 PASS with Mediums; Code8 FAIL High) found round 7's own
 `sideChatTopicEpoch` pruning (added as a Low fix, to bound its unbounded growth) actually
 DISABLED the frame-drop guard it sat right next to, for almost every case that guard exists to
@@ -188,6 +248,12 @@ Conversation just left plus the in-flight-ask window a switch can race; with the
 remains a no-op against live frame ordering today, protecting only against a hypothetical
 future OMP version; a topic from two-or-more Conversations ago is no longer stamped and is
 treated as current, which is fine since nothing live ever references one that old.
+**Corrected round 9 (Code9/Sec9/A11y9/Verif9 Medium): this "Fixed" account was WRONG in exactly
+the same way round 7's own was.** "Keep one generation" just moved the window from one switch to
+two; a SECOND Conversation switch still silently pruned the entry and reopened the leak, and "no
+live code path references one that old" was the wrong framing (the risk is a late INCOMING frame
+OMP emits, never an outgoing request Refract sends). See the round-9 Checkpoint above for the
+real fix (settledness-based cleanup in `onFrame`, not age-based pruning).
 
 **Also fixed** (A11y8/Sec8 Low, small/cheap): `SideChatPanel`'s hint and `MessageInput`'s
 matching `/btw` toast now share one `SIDE_CHAT_LOADING_HINT` constant -- round 7 claimed the two
@@ -215,6 +281,7 @@ was actually visible).
 **Record-keeping**: #650 given a new comment (the old round-7 one never edited); the round-7
 Checkpoint below has its own two wrong claims (the pruning description, and the evidence
 overclaim) corrected in place, the same convention round 7 used for round 6's false focus claim.
+</details>
 
 <details>
 <summary>Checkpoint, round 7 (superseded by round 8 above -- kept for history, with two inline corrections where it was wrong)</summary>
@@ -262,8 +329,8 @@ claim was never actually true.
   question for the whole life of the agent. **Corrected round 8 (Code8/Sec8/Verif8 HIGH/
   Medium): this was WRONG.** Deleting every entry for the Conversation just left broke the
   frame-drop guard for the main case it exists to catch (a topic whose `btw` response had
-  already returned before the switch) -- see the round-8 Checkpoint above for the real fix
-  (keep one generation back).
+  already returned before the switch) -- round 8's own "keep one generation" fix was ALSO wrong
+  in the same way; see the round-9 Checkpoint above for the real fix (settledness-based cleanup).
 - **Low (A11y7)**: `SideChatPanel`'s own `!loaded` hint now has a third branch -- a running
   Session reloading after a Conversation change showed "available once the Session is running"
   (wrong: it already is running), which also disagreed with `MessageInput`'s own matching `/btw`

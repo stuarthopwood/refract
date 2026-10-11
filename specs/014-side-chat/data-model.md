@@ -186,16 +186,24 @@ before it is ever forwarded -- all defense in depth: the bundled omp 18.8.6
 strictly before `new_session`/`switch_session`/`branch`/`fork` itself runs (confirmed against its
 own bundled source), so this guard is a no-op against live frame ordering today; it exists
 against a hypothetical future OMP version that settles a cancellation after the switch instead
-of before it. **Corrected 2026-10-11 (round 8, Code8/Sec8/Verif8 HIGH/Medium)**: round 7's own
-pruning of `sideChatTopicEpoch` (added to bound its size) deleted every entry for the
-Conversation just left immediately on the switch, which silently disabled the guard for the
-most common case (a topic whose `btw` response had already returned before the switch, with the
-real answer still streaming) -- `onFrame` then treated the now-unstamped topic as current and
-forwarded its late frame. Fixed to keep one generation back (`stampedEpoch < epoch - 1`, never
-`< epoch`): the guard holds for the Conversation just left plus the in-flight-request window a
-switch can race; a topic from TWO OR MORE Conversations ago is no longer stamped and is treated
-as current, which is acceptable since no live code path ever sends `btw`/`btw_cancel` for one
-that old.
+of before it. **Corrected 2026-10-11 (round 9, Code9/Sec9/A11y9/Verif9 Medium -- round 8's own
+fix was ALSO wrong, in the same way round 7's was)**: round 7's immediate age-based pruning and
+round 8's "keep one generation" fix both left a fixed-size window: a topic survives some number
+of Conversation switches, then is silently dropped from `sideChatTopicEpoch` and `onFrame` starts
+treating its (possibly still-unsettled) frames as belonging to the CURRENT Conversation again --
+a late `btw_delta`/`btw_record` forwarded instead of dropped, reopening the round-6 leak this
+mechanism exists to block, just with a bigger "how late is late" window each time. The real bound
+is SETTLEDNESS, not age: `onFrame`'s own `btw_record` case now deletes a topic's entry once its
+LATEST TURN (never the root's own possibly-stale status for a follow-up) reaches a terminal
+status, whether that frame was itself forwarded or dropped -- a topic this agent has nothing left
+to hear about needs no entry at ANY age, and one still awaiting its terminal frame is kept
+regardless of how many Conversation switches have happened since it was stamped. `onExit` also
+clears the whole map unconditionally on every process exit (a topic whose terminal frame never
+arrives before the process dies). This closes the late-frame window entirely for the ONE thing
+the guard protects against: a late frame from OMP for a topic of the Conversation just left. It
+remains a no-op against live frame ordering with the bundled omp 18.8.6 (confirmed: `close()`
+settles a running question before a switch ever runs) and is not live-verified; it protects only
+a hypothetical future OMP version that emits a late frame after a switch instead of before it.
 
 ```ts
 interface SideChatThreadState {

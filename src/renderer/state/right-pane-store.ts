@@ -72,6 +72,7 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   openPanel: (id, options) => {
     const { openPanelIds, activePanelId, sideChatFocusRequestId } = get()
     const focus = options?.focus ?? true
+    const listsChange = !openPanelIds.includes(id) || activePanelId !== id
     set({
       open: true,
       openPanelIds: openPanelIds.includes(id) ? openPanelIds : [...openPanelIds, id],
@@ -84,7 +85,15 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
       // changes, so that effect never re-runs to consume (and clear) the flag; it would then
       // sit `true` until the NEXT `openPanel`/`closePanel` call, which is harmless (every real
       // open still goes through one of those and resets it first) but was needlessly imprecise.
-      suppressNextContentFocus: !focus && (!openPanelIds.includes(id) || activePanelId !== id)
+      // Gate-fix (round 9, A11y9/Code9/Verif9 Low): when `listsChange` is false (this call
+      // can't make the consuming effect re-run), AND the previous call -- STILL pending in the
+      // same tick, before the effect has run -- already asked to suppress, keep that pending
+      // suppression instead of unconditionally overwriting it with THIS call's own `!focus`.
+      // Round 8's `!focus && listsChange` would silently drop a pending `true` suppression back
+      // to `false` if a second `focus:true` open of the SAME already-open-and-active panel
+      // landed before the effect consumed the first one -- a narrow, same-tick race, but a real
+      // one (discrete React events can batch more than one dispatched update before paint).
+      suppressNextContentFocus: listsChange ? !focus : get().suppressNextContentFocus && !focus
     })
   },
   closePanel: (id) => {
