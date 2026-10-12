@@ -243,7 +243,8 @@ interface SideChatThreadState {
     records: SideChatRecord[];
     /** The TOPIC id the NEXT question should carry as `recordId`, or undefined for a fresh
      * topic (FR-003). Moves only when a record reaches `status: 'complete'` (its `topicId`, not
-     * its own `id` -- round 4); cleared by `clearThread`. */
+     * its own `id` -- round 4); cleared by `clearThread` (a Conversation change) and by
+     * `clearDisplayedThread` (T021's own "Clear thread" UI action, below). */
     activeTopicRecordId: string | undefined;
     /** True while at least one record for this Session has `status: 'running'` (FR-005);
      * recomputed from `records` on every change, never hard-coded. */
@@ -265,10 +266,34 @@ interface SideChatThreadState {
   cancel(sessionId: string): Promise<void>;
   /** Drops this Session's entry entirely (`loaded`/`loadError` both reset to `false`), so the
    * panel's own effect reloads history fresh. Called on `SIDE_CHAT_CONVERSATION_CHANGED` (round
-   * 5, Code5 HIGH; round 6, Code6/Sec6/A11y6/Verif6 HIGH) -- there is no separate "Clear thread"
-   * UI action. Also bumps this Session's own epoch in the module-level `epochBySession` map
-   * (round 6; see the correction paragraph above `SideChatThreadState`'s own declaration). */
+   * 5, Code5 HIGH; round 6, Code6/Sec6/A11y6/Verif6 HIGH). Also bumps this Session's own epoch
+   * in the module-level `epochBySession` map (round 6; see the correction paragraph above
+   * `SideChatThreadState`'s own declaration). **Corrected T021 (Slice 3): this method's own doc
+   * comment used to say "there is no separate Clear thread UI action" -- true when rounds 5/6
+   * wrote it (Slice 3 had not shipped yet), false now. `clearDisplayedThread` below is that
+   * action; this method stays reserved for a genuine Conversation change.** */
   clearThread(sessionId: string): void;
+  /** T021 (FR-003's own "Clear thread" UI action, spec.md User Story 2 Scenario 2): clears
+   * `records` and `activeTopicRecordId` for this Session, starting a genuinely new topic for the
+   * NEXT question. Deliberately distinct from `clearThread` above: `loaded` stays `true` here,
+   * so the panel's own `!loaded` reload effect never re-fires and never refetches
+   * `get_btw_history` for the SAME Conversation -- a refetch would simply bring every cleared
+   * record straight back, since no delete RPC exists for `btw` history and OMP itself is never
+   * told anything was cleared. The cleared, empty view persists for the rest of this
+   * Conversation's lifetime this app run; only a genuine Conversation change (`clearThread`) or
+   * a full Refract restart ever shows the full history again -- and **after either of those
+   * reloads, `loadHistory` sets `activeTopicRecordId` back to the newest root's own id**
+   * (`existing.activeTopicRecordId ?? lastRoot`), so the next question after a reload continues
+   * the pre-Clear topic, not a fresh one; Clear thread's "fresh topic" effect lasts only until
+   * the next reload, by the same "nothing was actually deleted" reasoning as the history itself
+   * reappearing. **Also bumps `epochBySession`** (round 2, Code1 Medium): a terminal
+   * `btw_record` can settle (clearing `running` via `applyPatch`) before `ask`'s own `btw`
+   * request resolves, briefly re-enabling this action's own button while `ask` is still in
+   * flight for the topic being cleared; without the bump, `ask`'s eventual resolution is not
+   * `stale` and re-appends the reply's own `running` placeholder record, a stuck "Thinking" row.
+   * The bump never retriggers a reload (read only by `loadHistory`/`ask`'s own in-flight calls,
+   * never by the panel's `!loaded` effect) -- `loaded` itself stays `true` throughout. */
+  clearDisplayedThread(sessionId: string): void;
   /** Applies a BtwDeltaFrame (`delta` + `recordId` set, matched by `topicId` + `status:
    * 'running'`, round 4), a terminal BtwRecordFrame (`record` set), or a btw-history
    * save-failure notice (`notice` set, round 4, Code4 Medium -- routed to a toast, never the

@@ -881,7 +881,10 @@ and live verification the assignment requires before a PR is called ready.
 **T019 and T020 were pulled forward into the Slice 1+2 round above, per Main's own decision** (the
 composer-level `/btw` entry point is the natural way to actually exercise Slice 2's `ask`/`cancel`
 live, and Main's remediation instructions explicitly named it) -- both done and live-verified, see
-their own entries and the Checkpoint above. T021-T027 remain genuinely not started.
+their own entries and the Checkpoint above. **T021 and T023-T027 completed in PR #669 (T022
+shipped in #668, see its own entry below)** -- gate-fix (round 2, Code1 Low; corrected round 3,
+Main): this line used to say "remain genuinely not started", stale the moment the first [x] below
+landed; round 2's own fix over-attributed T022 to this PR when it actually shipped in #668.
 
 - [x] T019 [US4] Edit `src/shared/slash-commands.ts`: add `{ name: 'btw', description: 'Ask the
   agent a side question' }` to `NATIVE_BUILT_COMMANDS` (data-model.md); `btw` stays in
@@ -898,9 +901,72 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   `status: "error"` record actually rendered here is, by construction, one OMP's own contract
   allows resending -- Retry re-issues the same question text via `ask`, disabled while another
   question is running.
-- [ ] T021 [P] Add a Copy action to a completed answer (FR-011, issue://466's existing pattern) and
+- [x] T021 [P] Add a Copy action to a completed answer (FR-011, issue://466's existing pattern) and
   a Clear thread action (FR-003's own "omit `recordId`" reset, clearing only Refract's displayed
-  history for that Session).
+  history for that Session). **Copy**: reuses the shared `CopyButton` (`copy-button.tsx`, issue
+  #524) unchanged -- the same icon-only control, tooltip, "Copied" check-state swap, and its own
+  built-in polite announcement every other Copy site in this codebase already uses; rendered
+  beside a `status: 'complete'` answer only, hidden entirely for an empty one (the same "never
+  silently clear the clipboard" convention `CodeBlockHeader`/`Markdown.tsx` already follow). No
+  new dependency: `CopyButton` already existed. **Clear thread**: a NEW
+  `clearDisplayedThread(sessionId)` store method, deliberately distinct from the existing
+  `clearThread` (used only for a Conversation change, which also drops `loaded` back to `false`
+  and re-triggers a `get_btw_history` refetch) -- `clearDisplayedThread` clears `records`/
+  `activeTopicRecordId` but leaves `loaded` `true`, so the cleared view is not immediately undone
+  by a refetch bringing the SAME (never-deleted -- spec.md User Story 2 Scenario 2: no delete RPC
+  exists) history straight back; only a genuine Conversation change or a full Refract restart
+  ever shows it again. The button disables while `running` (clearing out from under an in-flight
+  answer would let it silently reappear once it settles -- `applyPatch` re-appends any record id
+  it has not seen while `loaded` stays `true`) or once `records.length` is already 0. Focuses the
+  textarea BEFORE clearing (same `handleCancelClick`/`handleRetry` pattern -- the button
+  disabling the instant `records` empties would otherwise drop focus to `<body>`), and announces
+  "Thread cleared." through the panel's existing live region (WCAG 4.1.3 -- a silent clear has no
+  other confirmation for a screen-reader user). `data-model.md`'s `clearThread` doc comment
+  corrected: it used to say "there is no separate Clear thread UI action", true when rounds 5/6
+  wrote it, false now that this task has shipped. **Gate round 2 (Code1 HIGH/Medium, PR #669)**:
+  (1) HIGH -- Cancel unmounting (cancelled, or the answer settling) slid Clear thread right into
+  Cancel's own screen position in a `justify-end` row, so a double-click on Cancel (or a click
+  landing just as the answer settled) could hit Clear thread by mistake and empty the whole
+  thread with no undo; fixed with `className="mr-auto"` on Clear thread, anchoring it on the
+  left regardless of whether Cancel renders -- Cancel unmounting now leaves an empty gap instead.
+  (2) Medium -- a terminal `btw_record` can settle (clearing `running`) before `ask`'s own `btw`
+  request resolves, briefly re-enabling Clear thread while `ask` is still in flight for the topic
+  being cleared; without an epoch bump, `ask`'s eventual resolution re-appends the reply's own
+  `running` placeholder record Clear just removed, a stuck "Thinking" row. Fixed:
+  `clearDisplayedThread` now calls `bumpSideChatEpoch` (like `clearThread` already does) and
+  writes `running: false` explicitly; does not retrigger a reload (`loaded` untouched, the epoch
+  is read only by in-flight `loadHistory`/`ask` calls). (3) Medium docs -- neither doc comment
+  said that after a reload (a Conversation change or a restart) `loadHistory` sets
+  `activeTopicRecordId` back to the newest root, so the next question after a reload continues
+  the pre-Clear topic, not a fresh one; added to both `data-model.md` and `side-chat-store.ts`'s
+  own `clearDisplayedThread` doc comment. (4) Low -- extracted the duplicated clear-first-then-set
+  announcement timer dance (shared by the settle-announcement effect and `handleClearThread`)
+  into one `announce(text)` helper in `SideChatPanel.tsx`. (5) Low -- added a `Tooltip` to Clear
+  thread. **Corrected round 3 (Main)**: a disabled native `<button>` has `pointer-events: none`
+  and cannot take focus, so this tooltip can never open while Clear thread is disabled -- it only
+  appears while the button is ENABLED, and explains that clearing is a temporary hide, not a
+  deletion; it does not state the reason for being disabled while `running` (Cancel sits next to
+  it as the obvious action there).
+  **Re-verified live** (fresh scratch instance, `C:/Users/shopwood/refract-live-check-669-
+  round2/`, 5 files + sha256.json, 0 duplicates): captured Cancel's own screen rect before
+  clicking it (`cx` 1142.9), clicked it, then queried `document.elementFromPoint` at that EXACT
+  same screen position afterward without moving the pointer -- it resolved to a plain `DIV` (the
+  row's own flex gap), not a button, confirming nothing clickable slides under the pointer where
+  Cancel used to be; Clear thread's own rect at that point measured `cx` 974.5, unchanged from
+  its pre-cancel position **visually** (compare `r2-01-running-before-cancel.png` vs
+  `r2-02-cancelled-pointer-left-at-old-cancel-pos.png`) -- only the AFTER-cancel rect was ever
+  recorded in `report.json`; no separate before-cancel measurement of Clear thread's own rect
+  exists to compare it against numerically, so "unchanged" here is a visual claim only, not a
+  numeric one. This confirms the `mr-auto` anchor holds. Separately, polling every
+  `[role="status"]` element (7 exist on the page; an earlier single-element query had read the
+  wrong one, which is why the first live check reported an empty string) for up to 2.5s after
+  clicking Clear thread captured the real text: `"Thread cleared."`, appearing within about 100ms
+  -- the previously-disclosed "not verified" gap for this specific assertion is now closed. **Not
+  measured live**: the action row's layout at the 240px Min pane-width preset -- estimated only
+  (approximately 223px of composer content width available, approximately 217px needed by Clear
+  thread + Cancel + Send combined, about 6px spare, so the row should not wrap) but never run
+  against the real built app at that width; see
+  [#650](https://github.com/stuarthopwood/refract/issues/650#issuecomment-6116003780).
 - [x] T022 [P] Add a polite live region announcing a completed answer once (FR-012), and focus
   management: the panel's composer gains focus on open (rail, launcher, or `/btw`); focus returns
   to the triggering control on close (FR-013, same shared pattern spec 013's panels already use).
@@ -916,19 +982,53 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   (Send itself becomes `disabled` on an empty draft, which would otherwise drop focus to `body`).
   Focus-returns-to-the-triggering-control-on-close is the PRE-EXISTING shared mechanism spec 013's
   other three panels already use (`PanelTabBar.tsx`/`hosted-panel-actions.ts`), unchanged here.
-- [ ] T023 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term.
-- [ ] T024 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
-  decision 7 -- no new token expected).
-- [ ] T025 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
-- [ ] T026 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
+- [x] T023 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term. **0
+  leaks found across 371 files** -- no fix needed.
+- [x] T024 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
+  decision 7 -- no new token expected). **All 313 pairs across 3 themes PASS**, no new token row:
+  T021's new controls (`CopyButton`, the "Clear thread" `Button`) both reuse existing tokens
+  already covered by this check.
+- [x] T025 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
+  **Present; 0 violations found across 108 files.** T021's new composer-row button sits inside
+  the composer's existing `no-drag-region` wrapper; no new header-shaped row was added.
+- [x] T026 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`, real signed-in OMP 18.6.3+ profile, never Stuart's live Sessions): every
   story's numbered steps, including a real live `btw` round trip, a restart-survival check
-  (quit/relaunch against the same worktree), and the `/btw` composer path.
-- [ ] T027 Update `docs/PLAN.md` row C2 only: status, branch, PR number (minimal diff, this story's
-  own row) (depends on T026 passing).
+  (quit/relaunch against the same worktree), and the `/btw` composer path. **Done for this
+  slice's diff** (gate-fix wording, round 2, Verif1 Low): Story 3 (restart survival) and Story 1
+  Scenario 4 (mid-stream overlap) rely on PR #668's own rounds 3-7, already live-verified there
+  and unchanged by this PR's Copy/Clear-thread-only diff, so not re-run here. **Live-verified**
+  (scratch clone under `C:/tmp/refract-side-chat-polish` -- never `C:/Repos/personal` -- own
+  `--user-data-dir`/CDP port 9341, torn down by pid-verified `taskkill`, deleted by literal path
+  afterward; real `omp 18.8.6`, real `github-copilot/Claude Sonnet 5.5`; one coherent run, 12
+  screenshots + `report.json` + `sha256.json` under
+  `C:/Users/shopwood/refract-live-check-668-polish/`, 0 duplicate hashes): a first side question
+  settled to a real answer ("4") with a Copy action that flipped to "Copied"; a follow-up ("Now
+  add 10 to that") correctly carried the first answer's own record id AND the model correctly
+  used the carried context (answered "14"); Clear thread correctly omitted `recordId` on the next
+  question (asserted via a temporary scratch-only main-process debug log of the exact `recordId`
+  argument each `sideChat.ask` IPC call received -- `[undefined, "<topicA>", undefined,
+  "<topicB>", "<topicB>"]` across the five questions sent this run, matching the expected
+  fresh/follow-up/fresh/follow-up/follow-up pattern exactly); Cancel reached a correctly-rendered
+  "Cancelled." with no stuck "Thinking"; `/btw` from the main composer opened and focused the
+  Side chat panel, sent the question, and never put the literal text in the main transcript
+  (asserted via a DOM check, not just visual inspection). **Not re-verified this round** (posted
+  to #650): Story 1 Scenario 4 (mid-stream overlap) and Story 3 (restart survival) -- both
+  pre-existing #668 behaviour, unchanged by this round's Copy/Clear-thread-only diff, so not
+  re-run; a real screen reader pass (standing limitation, every round). **Gate round 2** closed
+  the one gap this round's first pass left open: the Clear-thread announcement timing and the
+  Cancel-unmount layout-shift fix are both now live-verified (see T021's own round-2 entry above).
+- [x] T027 Update `docs/PLAN.md` row C2 only: status, branch, PR number (minimal diff, this story's
+  own row) (depends on T026 passing). **Done**: status cell names branch
+  `feat/1-516-side-chat-polish`, PR #668 (merged) and PR #669 (in review), and the still-open
+  SC-002 decision gate; the rest of the row's own text untouched. **Gate round 2 (Verif1 Low)**:
+  wording corrected to "implementation complete ... decision-blocked" (not "done"), matching
+  Main's own exact requested text, since SC-002 remains genuinely unresolved.
 
-**Checkpoint**: every quickstart.md story passes; the gate commands above exit 0; `docs/PLAN.md`
-row C2 reflects the real PR.
+**Checkpoint**: every quickstart.md story passes except SC-002 for a side-chat-only Session
+(Clarification 13, open decision request on #1/#516, no answer from Stuart yet -- not blocking
+per the constitution's Incremental Enhancement rule); the gate commands above exit 0;
+`docs/PLAN.md` row C2 reflects the real PR.
 
 ---
 

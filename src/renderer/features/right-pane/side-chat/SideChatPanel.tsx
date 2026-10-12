@@ -9,8 +9,10 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { MessageCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Textarea } from '@/components/ui/textarea'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
 import { SIDE_CHAT_LOADING_HINT, useRightPaneStore, useSessionsStore, useSideChatStore } from '@/state'
 import type { SideChatRecord } from '../../../../shared/frames'
@@ -81,6 +83,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const loadHistory = useSideChatStore((s) => s.loadHistory)
   const ask = useSideChatStore((s) => s.ask)
   const cancel = useSideChatStore((s) => s.cancel)
+  const clearDisplayedThread = useSideChatStore((s) => s.clearDisplayedThread)
   // Gate-fix (round 2, Code2/Sec2 Medium): retries `loadHistory` once the Session's own live
   // status changes (e.g. stopped -> idle) -- a load attempted before the agent started throws
   // `agent-not-running` and leaves `loaded` false specifically so this effect fires again.
@@ -141,6 +144,21 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     return () => clearTimeout(timer)
   }, [sideChatFocusRequestId])
 
+  // A11y: shared clear-first-then-set announcement helper (gate-fix, round 2, Code1 Low) -- the
+  // settle-announcement effect below and `handleClearThread` used to each keep their own copy of
+  // this exact timer dance (clear both pending timers, blank the region, defer the real text by
+  // one tick so a screen reader re-reads even two textually-identical announcements in a row,
+  // matching `chatAreaAnnouncer.ts`'s own shape); extracted so the two can never drift apart.
+  function announce(text: string): void {
+    clearTimeout(announceTimersRef.current.clear)
+    clearTimeout(announceTimersRef.current.pending)
+    setAnnouncement('')
+    announceTimersRef.current.pending = setTimeout(() => {
+      setAnnouncement(text)
+      announceTimersRef.current.clear = setTimeout(() => setAnnouncement(''), 6000)
+    }, 0)
+  }
+
   // A11y (round 2, A11y2 HIGH, FR-012; round 3, A11y3 Medium): announces once per record that
   // settles from `running` to a final state, using the same clear-first-then-set shape as
   // `chatAreaAnnouncer.ts` so a screen reader re-reads even two textually-identical
@@ -161,13 +179,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     if (!transitioned) return
     const text = announcementFor(transitioned.status, transitioned.error)
     if (!text) return
-    clearTimeout(announceTimersRef.current.clear)
-    clearTimeout(announceTimersRef.current.pending)
-    setAnnouncement('')
-    announceTimersRef.current.pending = setTimeout(() => {
-      setAnnouncement(text)
-      announceTimersRef.current.clear = setTimeout(() => setAnnouncement(''), 6000)
-    }, 0)
+    announce(text)
   }, [records])
 
   // Gate-fix (round 3, A11y3 Medium): clears both announcement timers on unmount -- without
@@ -265,6 +277,18 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     })
   }
 
+  function handleClearThread(): void {
+    if (!sessionId) return
+    // T021 (FR-003): starts a genuinely new topic for the NEXT question. This button disables
+    // the instant `records.length` drops to 0 below, which would otherwise drop focus to
+    // `<body>` the same way Send/Retry/Cancel already do -- refocus the textarea BEFORE
+    // clearing, same pattern as `handleCancelClick`/`handleRetry`.
+    textareaRef.current?.focus()
+    clearDisplayedThread(sessionId)
+    // A11y (WCAG 4.1.3): a silent clear has no visible confirmation for a screen-reader user.
+    announce('Thread cleared.')
+  }
+
   if (!sessionId) {
     return (
       <Empty className="h-full">
@@ -343,9 +367,17 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                     // Markdown/CodeBlock components the main transcript uses. Gate-fix (round 3,
                     // A11y3 Low): `div`, not `span` -- `Markdown` renders block content
                     // (paragraphs, lists, code blocks), invalid inside an inline `span`.
-                    <div>
-                      <span className="sr-only">Answer: </span>
-                      <Markdown id={record.id} text={record.answer ?? ''} />
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="sr-only">Answer: </span>
+                        <Markdown id={record.id} text={record.answer ?? ''} />
+                      </div>
+                      {/* FR-011 (T021, issue://466's existing pattern): hidden entirely for an
+                          empty answer, same convention `CodeBlockHeader`/`Markdown.tsx` already
+                          use, so Copy never silently clears the clipboard with nothing in it. */}
+                      {record.answer && (
+                        <CopyButton getText={() => record.answer ?? ''} label="Copy answer" announcement="Answer copied" className="shrink-0" />
+                      )}
                     </div>
                   )}
                 </div>
@@ -388,6 +420,40 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             </p>
           )}
           <div className="mt-2 flex justify-end gap-2">
+            {/* T021 (FR-003): starts a genuinely new topic for the next question. Disabled while
+                `running` (clearing out from under an in-flight answer would let it reappear once
+                it settles -- `applyPatch` re-appends any record id it has never seen while
+                `loaded` stays `true`) or with nothing displayed to clear. Gate-fix (round 2,
+                Code1 HIGH): `mr-auto` anchors this button on the LEFT regardless of whether
+                Cancel is rendered -- without it, Cancel unmounting (cancelled, or the answer
+                settling) slides Clear thread right into Cancel's own screen position, so a
+                double-click on Cancel (or a click landing just as the answer settles) could hit
+                Clear thread by mistake and empty the whole thread with no undo. Cancel
+                unmounting now leaves an empty gap instead -- nothing slides under the pointer. */}
+            {/* A11y (A11y1 Low). Corrected round 2 (Main): a disabled native `<button>` has
+                `pointer-events: none` and cannot take focus, so this tooltip can never open
+                while Clear thread is disabled -- it only ever appears while the button is
+                ENABLED, and explains that clearing is a temporary hide, not a deletion. The
+                reason for being disabled while `running` is not shown by this tooltip; Cancel
+                sits right next to it as the obvious action in that state. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mr-auto"
+                  disabled={running || records.length === 0}
+                  onClick={handleClearThread}
+                >
+                  Clear thread
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Hides this thread for now; the next question starts a fresh topic. History
+                returns after a restart or switching conversations.
+              </TooltipContent>
+            </Tooltip>
             {running && (
               // Spec 014: Cancel issues `btw_cancel` for the running request.
               <Button type="button" variant="outline" size="sm" onClick={handleCancelClick}>

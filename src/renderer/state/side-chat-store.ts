@@ -41,7 +41,8 @@ interface SideChatSessionState {
   /** The record id the NEXT question should carry as `recordId`, or undefined for a fresh topic
    * (FR-003). Gate-fix (round 2, Code2 Medium): only ever moves when a record reaches
    * `status: 'complete'` (`applyPatch`) -- an error or a cancelled record is never "the prior
-   * answer" FR-003 means to continue from. Cleared by `clearThread`. */
+   * answer" FR-003 means to continue from. Cleared by `clearThread` (a Conversation change) and
+   * by `clearDisplayedThread` (T021's own "Clear thread" UI action, below). */
   activeTopicRecordId: string | undefined
   /** True while at least one record for this Session has `status: 'running'` (FR-005).
    * Gate-fix (round 2, Code2/Sec2/Verif2 HIGH): recomputed from `records` on every change, never
@@ -78,6 +79,35 @@ interface SideChatThreadState {
   ask(sessionId: string, question: string): Promise<void>
   cancel(sessionId: string): Promise<void>
   clearThread(sessionId: string): void
+  /** T021 (FR-003's own "Clear thread" UI action): starts a genuinely new topic for this
+   * Session's NEXT question, and clears what this panel displays. Deliberately distinct from
+   * `clearThread` above (a Conversation change): that method also drops `loaded` back to
+   * `false`, which re-triggers `loadHistory`'s own effect and refetches `get_btw_history` --
+   * correct for a genuine Conversation switch (a different topic history entirely), but wrong
+   * here: no delete RPC exists for `btw` history (spec.md User Story 2 Scenario 2), so a
+   * refetch for the SAME Conversation would simply bring every cleared record straight back.
+   * `loaded` stays `true` here: the cleared, empty view persists for the rest of this
+   * Conversation's lifetime this app run (closing and reopening the panel, or switching to
+   * another panel and back, never refetches while `loaded` is already `true`); only a genuine
+   * Conversation change or a full Refract restart ever re-fetches, and both then show the FULL
+   * history again (unaffected by this action), since OMP itself was never told anything was
+   * cleared -- the panel's own `!loaded` reload effect is the ONLY path that can bring a
+   * cleared thread back, and it never fires while `loaded` stays `true`. **Also bumps
+   * `epochBySession` (gate-fix round 2, Code1 Medium)**: a terminal `btw_record` can settle
+   * (clearing `running` via `applyPatch`) before `ask`'s own `btw` request resolves, briefly
+   * enabling this button while `ask` is still in flight for the topic Clear is about to remove;
+   * without bumping the epoch, `ask`'s eventual resolution is not `stale` and re-appends the
+   * reply's own `running` placeholder, a stuck "Thinking" row nothing else clears. Bumping the
+   * epoch (same mechanism `clearThread` already uses) makes `ask`'s own `stale` check drop that
+   * late reply instead; it does NOT retrigger a reload -- the epoch is read only by
+   * `loadHistory`/`ask`'s own in-flight calls, never by the panel's `!loaded` effect, which
+   * `loaded` staying `true` keeps from firing at all. **After a reload** (a Conversation change
+   * or a full restart brings the full history back, as above): `loadHistory` sets
+   * `activeTopicRecordId` to the newest root's id (`existing.activeTopicRecordId ?? lastRoot`),
+   * so the NEXT question after reload continues the pre-Clear topic, not a fresh one -- Clear
+   * thread's "fresh topic" effect lasts only until the next reload, by the same "nothing was
+   * actually deleted" reasoning as the history itself reappearing. */
+  clearDisplayedThread(sessionId: string): void
   /** Applies a `btw_delta` (`delta` + `recordId` set), a terminal `btw_record` (`record` set),
    * or a btw-history save-failure notice (`notice` set, gate-fix round 4, Code4 Medium) arriving
    * over `onSideChatPatch`. */
@@ -300,6 +330,33 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       const next = { ...state.bySession }
       delete next[sessionId]
       return { bySession: next }
+    })
+  },
+
+  clearDisplayedThread(sessionId) {
+    // T021: the user-driven "Clear thread" UI action (spec.md User Story 2 Scenario 2).
+    // Gate-fix (round 2, Code1 Medium): bumps the epoch, like `clearThread` already does for a
+    // Conversation change -- the button's own `disabled={running || ...}` normally rules out an
+    // in-flight `ask`, but a terminal `btw_record` for the CURRENT topic can settle (clearing
+    // `running` via `applyPatch`) before `ask`'s own `btw` request resolves (the store's own
+    // `ask` doc comment already documents this ordering as possible), briefly re-enabling this
+    // button while `ask` is still awaiting. Without the epoch bump, `ask`'s eventual resolution
+    // is not `stale` and re-appends the reply's own `running` placeholder record Clear just
+    // removed -- a stuck "Thinking" row nothing else ever clears. `running: false` is written
+    // explicitly too (not just inferred from the now-empty `records`), matching every other
+    // writer of this field. Bumping the epoch here never retriggers a reload: it is read only by
+    // `loadHistory`/`ask`'s own in-flight calls, never by the panel's `!loaded` effect, and
+    // `loaded` itself is left untouched (still `true`). A no-op for a Session with no entry yet.
+    bumpSideChatEpoch(sessionId)
+    set((state) => {
+      const existing = state.bySession[sessionId]
+      if (!existing) return state
+      return {
+        bySession: {
+          ...state.bySession,
+          [sessionId]: { ...existing, records: [], activeTopicRecordId: undefined, running: false }
+        }
+      }
     })
   },
 
