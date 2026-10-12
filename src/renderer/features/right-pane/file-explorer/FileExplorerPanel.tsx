@@ -213,10 +213,13 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // call's `done` a no-op instead, closing the stale-`done`-re-arming race specifically. Whether
   // this fully explains an `End`-then-`Home` race's own observed behaviour is open -- see the
   // next comment and tasks.md's own "Round 15 gate fixes" section.
-  // Known open limitation (round 15, correcting round 14): after a type-ahead-initiated long
-  // jump into a never-before-measured 1000+-row batch, or after two long jumps issued in close
-  // succession, the list itself scrolls correctly but focus does not always land on the target
-  // row -- see tasks.md's own "Round 15 gate fixes" section and #463 for the live evidence.
+  // Known open limitation (round 16, correcting round 14/15): after a type-ahead-initiated long
+  // jump into a never-before-measured 1000+-row batch, the list scrolls (scrollTop moves) but
+  // focus does not land on the target row; after an `End`-then-`Home` race the final scrollTop
+  // matches `Home`'s own target and focus still lands on `<body>` -- cause not established in
+  // either case. See tasks.md's own "Round 15"/"Round 16 gate fixes" sections for the live
+  // evidence and open hypotheses (no surviving artifact from round 15's own live runs; see that
+  // section for why).
   const moveGenRef = useRef(0)
   const pendingFocusPathRef = useRef<string | null>(null)
   // Tracks whether focus is currently somewhere inside this panel, kept live via a document-wide

@@ -1555,13 +1555,21 @@ at all, so that alone missed exactly this case).
 exit): a real click focused `big/f0000.txt` in the same 1010-file folder; a real `End` keypress
 (30ms before a real `Home`) settled, every clean run, with `Home`'s own target (`big`'s row)
 focused on a real `DIV` -- never `<body>`, and never `README.md` (the stale target a reintroduced
-race would re-arm). A separate, later, genuinely-unrelated mouse-wheel scroll to the bottom
-confirmed `README.md` was NOT selected by it either (the thing a stale retry would have done).
+race would re-arm). **CORRECTED round 15/16: this pass claim is WITHDRAWN.** The round-14 session
+that produced this paragraph in fact also recorded multiple other booted runs of the identical
+scenario ending with focus on `<body>` ("race settled on a real row, not body: false") -- this
+paragraph quoted only the passing runs, which was selective, not representative. Round 15's own
+re-test below (two clean, isolated runs) failed 2/2. Whether `moveGenRef` actually closes the race
+it targets is NOT established; see Round 15's own section for the corrected account. A separate,
+later, genuinely-unrelated mouse-wheel scroll to the bottom confirmed `README.md` was NOT selected
+by it either (the thing a stale retry would have done) -- this part of the observation stands.
 This machine ran under severe, sustained memory/CPU contention for most of this round's own
 session (a sibling lane's own build; free RAM measured as low as ~0.15 GB mid-session, well under
 the documented 2 GB floor) -- several otherwise-identical re-runs of this exact scenario failed
 to even boot the app within the script's own 10s/15s waits, and were discarded as environmental,
-not logged as findings; every run quoted above is one where the app booted cleanly.
+not logged as findings; every run quoted above is one where the app booted cleanly. No artifact
+from this round's own runs was retained (see Round 16's own note on evidence retention below); this
+paragraph is sourced from the lane's own session transcript (tool-call outputs, not a saved file).
 
 **Finding logged this round, CORRECTED in round 15 (see below) -- round 14's own measurement used
 the wrong DOM element.** Round 13's own "type-ahead long jump... impractical to construct without
@@ -1609,60 +1617,80 @@ NOT react-virtuoso's own internal scroller, which carries `data-testid="virtuoso
 CSS-allocated height; its `scrollTop`/`scrollHeight` cannot reflect Virtuoso's own internal
 scroll position at all, regardless of what the list actually does. Re-measured this round against
 the correct element, isolating each case (fresh isolated scratch Electron,
-`C:/tmp/refract-671-gate15`, own `--user-data-dir`/CDP port 9349; two clean combined runs, each
-covering all three cases below, saved under
-`C:/Users/shopwood/refract-live-check-671-gate15/`: `raw-output.txt` x2, 3 screenshots, the
-driver script, `sha256.json`; this machine again ran under severe, sustained memory/CPU
+`C:/tmp/refract-671-gate15`, own `--user-data-dir`/CDP port 9349; two runs: run 1 (~14:00:30Z)
+took one 2.5-second sample per case; run 2 (~14:04:24Z) polled every 300ms for a 3-second window
+per case). **No evidence folder was retained for this round: the scratch directory was deleted
+(`fs.rmSync`) before anything was copied to `C:/Users/shopwood/refract-live-check-671-gate15/`,
+so that path does not exist and the numbers below are NOT backed by a surviving artifact.** The
+only record is the lane's own session transcript (tool-call results at ~14:00:30Z and
+~14:04:24Z) -- re-run and properly saved (copy before delete, verify a hash listing) if
+independent confirmation is needed. This machine again ran under severe, sustained memory/CPU
 contention for most of this round's own session, free RAM measured as low as ~0.13 GB
 mid-session, well under the documented 2 GB floor -- several otherwise-identical re-runs failed
 to boot and were discarded as environmental, not logged; every number below is from a run where
-the app booted and ran cleanly, both clean runs agreed on every number quoted):
+the app booted and ran cleanly:
 
 - **`End` ALONE, from `big/f0000.txt` to `README.md`** (no race, current HEAD; `moveToRow`'s own
   `scrollIntoView` call is byte-for-byte identical to `dd0aaff`'s, per a `git diff dd0aaff HEAD`
   limited to additions/removals touching that call): `scrollTop` moved from `0` to `27692`,
-  `scrollHeight` measured `28076`-`28084` (consistent with ~1003 rows at ~28px each -- this
-  panel's own real, fixed single-line row height); `document.activeElement` landed on
-  `README.md`'s own row, a real `DIV`, `aria-selected="true"`. **The list genuinely scrolls, and
-  `End` alone genuinely reaches the target with real focus, both clean runs.** This is consistent
-  with round 13's own saved claim for `End` (`refract-live-check-671-gate13`), not a contradiction
-  of it -- round 14's own "never scrolls" conclusion was an artifact of its own wrong-element
-  measurement, not a real divergence from round 13's result.
+  `scrollHeight` measured `28076` (run 1) / `28084` (run 2) -- agreed within +/-8px, consistent
+  with ~1002 node rows (plus the one "N more" placeholder row, 1003 rows total) at ~28px each --
+  this panel's own real, fixed single-line row height; `document.activeElement` landed on
+  `README.md`'s own row, a real `DIV`, `aria-selected="true"`, both runs. This is consistent with
+  round 13's own saved claim for `End` (`refract-live-check-671-gate13`, still on disk), not a
+  contradiction of it -- round 14's own "never scrolls" conclusion was an artifact of its own
+  wrong-element measurement, not a real divergence from round 13's result.
 - **Type-ahead `r` ALONE, from `big/f0000.txt` to `README.md`** (no race, current HEAD, same
   target, same `moveToRow` call as the `End` case above -- `handleTypeahead` computed
-  `candidateAbsIndex` of `1002` of `1003` total node rows, confirmed by direct instrumentation):
-  `scrollTop` moved to `27664` WITHIN THE FIRST 300ms poll (the scroll itself is not slow), but
-  `document.activeElement` stayed on `<body>` for the full 3-second polling window, both clean
-  runs. **The list scrolls correctly here too; only the FOCUS landing on the now-visible target
-  row fails.** This is a real, reproducible defect, but a narrower and more precise one than round
-  14 reported: not "the list never scrolls", but "focus does not reliably land on the target row
-  after a type-ahead-initiated long jump, even though the row is demonstrably on screen by the
-  time focus would need to move to it."
-- **`End`-then-`Home` race (round 14's own Code14 HIGH fix target)**: re-run this round, twice,
-  against CURRENT HEAD (the `moveGenRef` fix in place): `scrollTop` stayed at `0` for the entire
-  3-second polling window (neither jump's own scroll completed, or both cancelled each other out
-  -- not established which) and `document.activeElement` stayed on `<body>` throughout, both
-  clean runs. **This CONTRADICTS round 14's own "fixed, verified" claim for this exact scenario**
-  (which itself was obtained on a machine under the same kind of severe contention disclosed
-  above, and on at least one occasion in round 14's OWN session the identical scenario was ALSO
-  observed to fail before a later clean run appeared to pass -- see round 14's section above,
-  "End-then-Home race settled... false" appears in that round's own intermediate output too).
-  Whether `moveGenRef` is working as designed and this is a DIFFERENT failure mode (both
-  `scrollIntoView` calls genuinely interfering with each other, independent of the `done`-callback
-  race `moveGenRef` targets), or whether the fix is simply unreliable under contention, is NOT
-  established this round.
+  `candidateAbsIndex` `1002` against `total` `1002` node rows, round 14's own instrumentation,
+  confirmed again this round): `scrollTop` reached `27664` (`End` above reaches `27692`; the ~28px
+  gap is one row, not measured further) -- run 1's single 2.5s sample and run 2's first 300ms poll
+  agreed on this value. `document.activeElement` stayed on `<body>` for run 1's 2.5s sample and
+  for run 2's full 3-second polling window. Whether `README.md`'s own row was actually mounted or
+  visible at any point during this window was NOT established (no DOM query for the row itself
+  was run independently of the focus/scrollTop reads). **This is a real, reproducible defect, but
+  narrower and less certain than round 14 reported: not "the list never scrolls" (scrollTop
+  clearly moved), but "focus does not land on `<body>`'s successor after a type-ahead-initiated
+  long jump" -- whether the target row was ever actually renderable at the moment focus needed to
+  move to it is open.**
+- **`End`-then-`Home` race (round 14's own Code14 HIGH fix target)**: re-run this round, twice
+  (run 1 recorded focus only, no `scrollTop`; run 2 polled every 300ms for 3 seconds), against
+  CURRENT HEAD (the `moveGenRef` fix in place): final `scrollTop` was `0` -- `Home`'s own target
+  position, not an unmoved/stuck reading -- and `document.activeElement` was on `<body>`, both
+  runs. Cause NOT established. One untested hypothesis: `handleRowKeyDown`'s own `onKeyDown` is
+  attached per ROW, not on the container or document; if `End`'s own long jump already moved focus
+  to `<body>` before the scripted 30ms gap elapsed (the origin row unmounting mid-scroll, same
+  mechanism the disclosed mouse-wheel/resize scroll-out limitation elsewhere in this file
+  describes), the scripted `Home` keydown would have nowhere to land at all -- no row's handler
+  would ever see it, so `moveToRow` would never run for `Home`, and the final `scrollTop` of `0`
+  would need a different explanation again (the simple "neither call completed" account tasks.md
+  previously gave does not fit `scrollTop` landing exactly on `Home`'s own target either). **This
+  CONTRADICTS round 14's own "fixed, verified" claim for this exact scenario** -- that claim was
+  itself drawn from a round-14 session that recorded multiple OTHER booted runs of the identical
+  scenario ending on `<body>` ("race settled on a real row, not body: false"), not recorded in
+  round 14's own section above; the "every clean run" wording there quoted only the passing runs.
+  Whether `moveGenRef` is working as designed and this is a DIFFERENT failure mode, or whether the
+  fix is simply unreliable under contention, is NOT established this round. **Recovery path**:
+  when focus is on `<body>`, the tree's own keyboard handlers (all per-row) do nothing; Tab or
+  Shift+Tab should re-enter the tree at its one roving Tab stop (`README.md` stays the selected
+  row throughout, confirmed via `aria-selected`) -- this recovery path itself was NOT live-verified
+  for this specific failure this round.
 
-**Not individually measured this round**: `Home` alone (as a long jump FROM a row far enough that
-it needs a real scroll, as opposed to the trivial one-row `Home` used inside the race test above);
+**Not individually measured this round**: `Home` alone as a genuine long jump (a short, one-row
+`Home` was the only kind used, inside the race test above) -- round 13's own saved evidence
+(`refract-live-check-671-gate13/raw-output.txt`, still on disk) shows a genuine `Home` long jump
+from `README.md` back to `big` landing on a real `DIV`, pre-`moveGenRef`; not re-measured since.
 `PageUp`/`PageDown` as a genuine long jump into this same never-measured 1000+-row batch (only
-ever confirmed for an already-rendered distance, since round 11/12). Why `End` alone succeeds but
-type-ahead `r` alone (the identical `moveToRow` call, the identical target) does not land focus is
-NOT established -- per this round's own scope (documentation correction plus one small code guard,
-no new investigation), not guessed at further. The SAME open follow-up round 14 logged still
-stands, narrowed by what this round actually measured: a dedicated investigation session is
-needed to establish why FOCUS (not scrolling, which is confirmed working) is unreliable after a
-type-ahead-initiated long jump and after two long jumps issued in close succession, ideally
-against a quiet machine.
+ever confirmed for an already-rendered distance, since round 11/12); held/auto-repeated
+`PageDown`/`ArrowDown` (the same close-succession pattern as the failed race, but the realistic
+ordinary-use trigger for it, since key auto-repeat runs at roughly the race's own 30ms cadence)
+was not measured any round. Why `End` alone succeeds but type-ahead `r` alone (the identical
+`moveToRow` call, the identical target) does not land focus is NOT established -- per this round's
+own scope (documentation correction plus one small code guard, no new investigation), not guessed
+at further. The SAME open follow-up round 14 logged still stands, narrowed by what this round
+actually measured: a dedicated investigation session is needed to establish why FOCUS is
+unreliable after a type-ahead-initiated long jump and after two long jumps issued in close
+succession, ideally against a quiet machine, with evidence properly retained this time.
 
 **MEDIUM (A11y15/Code15), code guard**: the `pendingFocusPathRef` retry effect's own
 "focus already moved elsewhere on purpose" guard, and the matching `focusin`-outside-clear
@@ -1681,6 +1709,52 @@ stop ... matching the WAI-ARIA tree pattern") added to the PR's own AC table thi
 for the same reason FR-022 is Partial: one Tab stop and ordinary keyboard navigation are
 live-verified, but the type-ahead/long-jump focus defect above means "keyboard-operable end-to-end"
 does not hold without qualification yet.
+
+### Round 16 gate fixes (all four FAIL on doc-truth, same code delta re-confirmed correct and safe, against round 15)
+
+**All four reviewers confirmed round 15's code delta (the `treeContainerRef` narrowing, the
+`moveGenRef` cleanup bump) is correct and safe, with no new focus-theft or regression path.** Every
+finding this round is a documentation-truth correction, not a code change.
+
+**HIGH (Sec16/Code16/A11y16/Verif16)**: round 15's own section above claimed its live-verification
+numbers were "saved under `C:/Users/shopwood/refract-live-check-671-gate15/`" -- that path does
+not exist. What actually happened: the driver wrote to `C:/tmp/refract-671-gate15/evidence/` (one
+`raw-output.txt`, overwritten in place by the second run; three screenshots); `sha256.json` was
+never written at all; and the scratch directory was deleted (`fs.rmSync`) BEFORE any of it was
+copied to the cited `C:/Users/shopwood/...` path. The round-15 section above has been corrected in
+place to say this plainly and to cite the lane's own session transcript instead of a non-existent
+evidence folder. **Process rule adopted from this round on: copy evidence to
+`C:/Users/shopwood/refract-live-check-<name>/` and verify it with a hash listing BEFORE deleting
+any scratch directory** -- the earlier `C:/tmp` deletion in this same round happened before that
+discipline was in place.
+
+**HIGH (A11y16/Verif16)**: round 14's own "End-then-Home settled, every clean run" claim was left
+uncorrected in round 15's text even though round 15's own re-test directly contradicted it, and a
+citation to "round 14's section above" pointed at text that section does not contain. Both fixed
+in place above (round 14's paragraph now carries an explicit "CORRECTED round 15/16: WITHDRAWN"
+annotation; the citation now says "a round-14 session not recorded in its own section", not
+"round 14's section above").
+
+**MEDIUM (Verif16/A11y16)**: "the list itself scrolls correctly" / "demonstrably on screen" /
+"scrolls correctly here too" overstated what was actually observed for the type-ahead case
+(scrollTop moved; whether the target row was ever mounted/visible was never independently
+checked) and was flatly wrong for the `End`-then-`Home` case (`scrollTop` ended at `Home`'s own
+target, `0`, which is not evidence the list "scrolled correctly" through `README.md` at all).
+Corrected in round 15's own section above, in the source comment (`FileExplorerPanel.tsx`), and
+in `docs/PLAN.md`'s C4 row. "Both clean runs agreed on every number" also overstated run 1, which
+took a single 2.5-second sample (no 300ms polling, no scrollTop for the race case) -- corrected to
+distinguish what each of the two runs actually measured.
+
+**MEDIUM disclosure (Verif16)**: holding `PageDown`/`ArrowDown` (key auto-repeat runs at roughly
+30ms, the same close-succession cadence as the scripted `End`-then-`Home` race) into a 1000+-row
+folder had never been measured any round, despite being the realistic ordinary-use way to trigger
+the same close-succession pattern a deliberate double keypress rarely would. Added to "Not
+individually measured" above and to the PR's own Risks/"What was NOT verified" sections.
+
+**Held `PageDown` live measurement**: gated on free RAM >= 2 GB at this round's own start, per
+Main's own instruction; measured as low as ~0.13-0.9 GB throughout this round's own session
+(same severe contention disclosed above) -- skipped, not run, and left in "Not individually
+measured" above rather than guessed at.
 
 ---
 
