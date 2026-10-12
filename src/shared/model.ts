@@ -606,14 +606,18 @@ export type GitStatusMap = Record<string, GitStatusMark>;
 
 /** Spec 015 Slice 2 (data-model.md `FilePreview`, FR-012 to FR-015): the currently-selected
  * file's preview data. Replaced wholesale on every selection change; `kind: 'deleted'` when the
- * underlying file disappears while open (FR-021), never left showing stale content. */
-export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'binary' | 'too-large' | 'deleted';
+ * underlying file disappears while open (FR-021), never left showing stale content. `kind:
+ * 'read-error'` (PR #671 gate round 4 fix, Medium): a non-`ENOENT` failure reading an otherwise-
+ * present file (`EACCES`/`EBUSY`, e.g. an agent has it open for writing) is a DIFFERENT state
+ * from "it no longer exists" -- the earlier version mapped every read failure to `'deleted'`,
+ * which reads as "removed or renamed" even when the file is still sitting right there. */
+export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'binary' | 'too-large' | 'deleted' | 'read-error';
 
 export interface FilePreview {
   path: string;
   kind: FilePreviewKind;
-  /** Bytes on disk at read time; present for every kind except `'deleted'` -- shown alongside
-   * the "cannot preview" state for `'binary'`/`'too-large'` (FR-015, SC-001). */
+  /** Bytes on disk at read time; present for every kind except `'deleted'`/`'read-error'` --
+   * shown alongside the "cannot preview" state for `'binary'`/`'too-large'` (FR-015, SC-001). */
   size?: number;
   /** `kind: 'text'` (FR-012, the shared `CodeBlock`/Shiki) or `kind: 'markdown'` (FR-013, the
    * shared `Markdown` component by default, with a Source toggle that re-renders this same

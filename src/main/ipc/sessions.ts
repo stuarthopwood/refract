@@ -30,6 +30,7 @@ import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util
 import { attachSnapshotCore } from './attachSnapshot';
 import { resumeSessionCore, BUSY_MESSAGE } from './resumeSession';
 import type { SessionAgent } from '../omp/SessionAgent';
+import { stopFileExplorerWatcher } from './fileExplorer';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
  * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
@@ -195,6 +196,13 @@ export function registerSessions(manager: SessionManager): void {
       return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
     }
     resumingIds.add(id);
+    // PR #671 gate round 4 fix (Critical/Medium, Code4/Sec4): releases the file explorer's own
+    // watcher BEFORE anything below touches this Session -- an archived Session's panel is no
+    // longer reachable, so a watcher left running on it is a pure leak (a recursive
+    // `ReadDirectoryChangesW` handle with no caller left to ever read its patches), and archive
+    // is the first of the three worktree-adjacent operations this same fix applies to (delete,
+    // recreateWorktree are the other two, below).
+    stopFileExplorerWatcher(id);
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
@@ -263,6 +271,11 @@ export function registerSessions(manager: SessionManager): void {
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
+        // PR #671 gate round 4 fix (Critical): releases the watcher BEFORE the worktree folder
+        // is removed -- a watcher left running under a folder mid-deletion is exactly the
+        // deleted-root event flood `watchDirectory`'s own doc comment describes, and held the
+        // underlying handle open against the very folder this call is about to remove.
+        stopFileExplorerWatcher(id);
         // Issue #599 quality-gate fix: decide by `git worktree list --porcelain`, never
         // `fs.stat` -- an orphaned folder (left behind by a crash, a manual `git worktree
         // prune`, or hand cleanup) still exists on disk while git has already lost track of
@@ -299,6 +312,12 @@ export function registerSessions(manager: SessionManager): void {
       if (!(await branchExists(repository.path, session.branch))) {
         return { ok: false, error: { code: 'branch-missing', message: `Branch not found: ${session.branch}` } };
       }
+      // PR #671 gate round 4 fix (Critical, reproduced live): recreating a worktree while the
+      // file explorer's own watcher still held the previous folder's handle open failed with
+      // `EPERM` on the `mkdir` this ultimately does -- releasing it first is required, not
+      // optional, for this call to succeed at all when the panel was ever opened for this
+      // Session. The next `listDirectory` call (after this succeeds) starts a fresh watcher.
+      stopFileExplorerWatcher(id);
       await recreateWorktree(repository.path, session.worktreePath, session.branch);
       manager.notifyListChanged();
       return { ok: true, value: undefined };

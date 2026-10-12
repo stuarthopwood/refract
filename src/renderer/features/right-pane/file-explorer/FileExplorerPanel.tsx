@@ -78,6 +78,11 @@ interface MoreRow {
   depth: number
   count: number
   key: string
+  /** PR #671 gate round 4 fix (Medium, A11y4): the "N more" row is a real `role="treeitem"` now
+   * (see its own render site), so it needs its own `aria-posinset`/`aria-setsize` like any other
+   * sibling -- it always renders LAST among its own siblings, so `posinset` is always `setsize`. */
+  posinset: number
+  setsize: number
 }
 
 type FlatRow = NodeRow | MoreRow
@@ -88,22 +93,25 @@ type FlatRow = NodeRow | MoreRow
  * siblings for `aria-posinset`/`aria-setsize`, so a hidden row never shows up in either count.
  * Each folder's own "N more" row (its own `truncated` count) is appended immediately after that
  * folder's own listed children (and their own nested rows), at the same depth as those children
- * -- matching where the capped listing itself stops. */
+ * -- matching where the capped listing itself stops, and counts as one more sibling in
+ * `aria-setsize` (PR #671 gate round 4 fix, Medium, A11y4): it occupies a real position in the
+ * group even though it is not a `treeitem` a screen reader can activate. */
 function flattenVisible(root: ExpandableNode | null, showIgnored: boolean): FlatRow[] {
   if (!root?.children) return []
   const rows: FlatRow[] = []
   let nodeCounter = 0
   function walk(nodes: ExpandableNode[], depth: number, parentPath: string, truncatedHere: number | undefined): void {
     const visible = nodes.filter((node) => showIgnored || node.gitStatus !== 'ignored')
+    const siblingCount = visible.length + (truncatedHere ? 1 : 0)
     visible.forEach((node, i) => {
-      rows.push({ kind: 'node', node, depth, posinset: i + 1, setsize: visible.length, nodeIndex: nodeCounter })
+      rows.push({ kind: 'node', node, depth, posinset: i + 1, setsize: siblingCount, nodeIndex: nodeCounter })
       nodeCounter += 1
       if (node.kind === 'folder' && node.expanded && node.children) {
         walk(node.children, depth + 1, node.path, node.truncated)
       }
     })
     if (truncatedHere) {
-      rows.push({ kind: 'more', depth, count: truncatedHere, key: `more:${parentPath}` })
+      rows.push({ kind: 'more', depth, count: truncatedHere, key: `more:${parentPath}`, posinset: siblingCount, setsize: siblingCount })
     }
   }
   walk(root.children, 0, root.path, root.truncated)
@@ -170,15 +178,19 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     void loadDirectory(sessionId, '')
   }, [sessionId, loadDirectory])
 
-  // Reclaims focus onto the container ONLY when it is actually stranded -- never
-  // unconditionally, which would steal focus from somewhere the user deliberately moved it to
-  // (the sidebar row just clicked) even on a render where `hadFocusRef` never got a chance to
-  // update first. Keyed on `[sessionId, status]`, not just `sessionId`: a Retry (same Session,
-  // `status` flips `loading` -> `error` -> `ready`) unmounts the Retry button exactly the same
-  // way a Session switch unmounts a focused row, and needs the identical rescue (PR #671 gate
-  // fix, accessibility-auditor/code-reviewer MEDIUM, round 2). Slice 2: the same rescue now also
-  // covers a preview-pane toggle (Source/Wrap) unmounting when `preview.kind` changes, since both
-  // live under this one `containerRef`.
+  // PR #671 gate round 4 fix (High, A11y4): the EARLIER version of this comment claimed this
+  // effect also covered a preview-pane toggle (Source/Wrap) unmounting -- it does not, and never
+  // could, since this effect only re-runs on `[sessionId, status]`, neither of which changes when
+  // `preview.kind` does. Reclaims focus onto the container ONLY when it is actually stranded --
+  // never unconditionally, which would steal focus from somewhere the user deliberately moved it
+  // to (the sidebar row just clicked) even on a render where `hadFocusRef` never got a chance to
+  // update first. Keyed on `[sessionId, status]`: a Retry (same Session, `status` flips `loading`
+  // -> `error` -> `ready`) unmounts the Retry button exactly the same way a Session switch
+  // unmounts a focused row, and needs the identical rescue (PR #671 gate fix, accessibility-
+  // auditor/code-reviewer MEDIUM, round 2). The SEPARATE `focusout` listener below is the general
+  // rescue for everything ELSE that can unmount a focused control without `sessionId`/`status`
+  // changing at all -- a live-refresh patch removing/collapsing the focused row, an FR-021
+  // delete unmounting the preview toolbar/Wrap/Source button, or a virtualised row scrolling out.
   useEffect(() => {
     if (!hadFocusRef.current) return
     requestAnimationFrame(() => {
@@ -186,6 +198,35 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
       if (isFocusStranded(active, containerRef.current)) containerRef.current?.focus()
     })
   }, [sessionId, status])
+
+  // PR #671 gate round 4 fix (High, A11y4): a watcher patch removing/collapsing the focused tree
+  // row, an FR-021 delete unmounting the preview toolbar's own Wrap/Source/action buttons, or a
+  // virtualised row scrolling a focused element out of the DOM all drop focus to `<body>` with
+  // NEITHER `sessionId` NOR `status` changing -- the effect above never re-runs for any of them.
+  // A document-wide `focusin` listener (like `hadFocusRef`'s own) cannot catch this case: there is
+  // no NEW `focusin` event when an element is simply removed out from under focus. A `focusout`
+  // listener on the container itself does fire for that removal -- `relatedTarget === null` is
+  // the removed-element signature (a deliberate Tab/click away always sets a real
+  // `relatedTarget`) -- checked a frame later (the same `isFocusStranded` call the effect above
+  // uses) since the replacement content may not have painted yet. Prefers a real tabbable tree
+  // row (the roving-tabindex stop `tabbableAbsIndex`, below, keeps pointing at ONE at all times),
+  // falling back to the preview region, then the container itself.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    function handleFocusOut(event: FocusEvent): void {
+      if (event.relatedTarget !== null) return
+      requestAnimationFrame(() => {
+        if (!isFocusStranded(document.activeElement, containerRef.current)) return
+        const treeRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path][tabindex="0"]')
+        const previewRegion = containerRef.current?.querySelector<HTMLElement>('[role="region"]')
+        const target = treeRow ?? previewRegion ?? containerRef.current
+        target?.focus()
+      })
+    }
+    container.addEventListener('focusout', handleFocusOut)
+    return () => container.removeEventListener('focusout', handleFocusOut)
+  }, [])
 
   const rows = useMemo(() => flattenVisible(root, showIgnored), [root, showIgnored])
   const nodeAbsIndices = useMemo(() => {
@@ -200,6 +241,31 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     const found = nodeAbsIndices.findIndex((absIndex) => (rows[absIndex] as NodeRow).node.path === selectedPath)
     return found === -1 ? 0 : found
   }, [rows, nodeAbsIndices, selectedPath])
+  const selectedAbsIndex = nodeAbsIndices[selectedNodeIndex]
+  // PR #671 gate round 4 fix (High, A11y4): `react-virtuoso`'s own scroll container carries
+  // `tabIndex: 0` by default (confirmed against the installed package's own source), adding a
+  // SECOND tab stop inside `role="tree"` that FR-022/SC-006 forbid -- Tab from "Show ignored
+  // files" landed on an unnamed, roleless scroll box, with arrow keys there just scrolling it
+  // rather than running tree navigation. Passing `tabIndex={-1}` on `<Virtuoso>` below removes
+  // that stop; `renderedRange` (fed by `rangeChanged`) tracks which rows are CURRENTLY in the DOM
+  // at all, so the one real tree Tab stop can be recomputed as "the selected row, if Virtuoso has
+  // it rendered; otherwise the first rendered node row" -- without this, scrolling the selected
+  // row out of view (a mouse wheel, or remounting at the top after a panel switch, FR-025) left
+  // NO row anywhere with `tabIndex={0}`, so Tab skipped the tree entirely.
+  const [renderedRange, setRenderedRange] = useState<{ startIndex: number; endIndex: number }>({ startIndex: 0, endIndex: 0 })
+  const tabbableAbsIndex = useMemo(() => {
+    if (
+      selectedAbsIndex !== undefined &&
+      selectedAbsIndex >= renderedRange.startIndex &&
+      selectedAbsIndex <= renderedRange.endIndex
+    ) {
+      return selectedAbsIndex
+    }
+    for (let i = renderedRange.startIndex; i <= renderedRange.endIndex; i += 1) {
+      if (rows[i]?.kind === 'node') return i
+    }
+    return undefined
+  }, [selectedAbsIndex, renderedRange, rows])
 
   function activateRow(node: ExpandableNode): void {
     if (!sessionId) return
@@ -373,6 +439,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   return (
     <div
       ref={containerRef}
+      role="group"
       tabIndex={-1}
       aria-label="File explorer"
       className="flex h-full flex-col overflow-hidden p-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
@@ -439,10 +506,28 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                     ref={virtuosoRef}
                     style={{ height: '100%' }}
                     data={rows}
+                    tabIndex={-1}
+                    initialTopMostItemIndex={selectedAbsIndex ?? 0}
+                    rangeChanged={setRenderedRange}
                     computeItemKey={(_index, row) => (row.kind === 'node' ? row.node.path : row.key)}
                     itemContent={(absIndex, row) =>
                       row.kind === 'more' ? (
-                        <div style={{ paddingLeft: `${row.depth * 16 + 4}px` }} className="px-1 py-0.5 text-xs text-muted-foreground">
+                        // PR #671 gate round 4 fix (Medium, A11y4): a real `role="treeitem"` (not
+                        // a plain unreachable `<div>`) so a screen reader's own per-item browse
+                        // mode announces it; `aria-disabled` (never an activatable item) and
+                        // `tabIndex={-1}` keep it out of the roving-tabindex/keyboard sequence --
+                        // Up/Down/Home/End/type-ahead all skip "more" rows by construction
+                        // (`nodeAbsIndices` never includes one).
+                        <div
+                          role="treeitem"
+                          aria-disabled="true"
+                          aria-level={row.depth + 1}
+                          aria-setsize={row.setsize}
+                          aria-posinset={row.posinset}
+                          tabIndex={-1}
+                          style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
+                          className="px-1 py-0.5 text-xs text-muted-foreground"
+                        >
                           {row.count} more…
                         </div>
                       ) : (
@@ -450,6 +535,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                           row={row}
                           absIndex={absIndex}
                           selected={row.nodeIndex === selectedNodeIndex}
+                          tabbable={absIndex === tabbableAbsIndex}
                           onRowClick={selectAndActivate}
                           onRowFocus={(node) => sessionId && setSelectedPath(sessionId, node.path)}
                           onRowKeyDown={handleRowKeyDown}
@@ -463,7 +549,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                 </div>
               )}
             </ResizablePanel>
-            <ResizableHandle withHandle />
+            <ResizableHandle withHandle aria-label="Resize file tree and preview" />
             <ResizablePanel defaultSize="40%" minSize="15%">
               <FilePreviewPane
                 preview={preview}
@@ -484,6 +570,7 @@ function TreeNodeRow({
   row,
   absIndex,
   selected,
+  tabbable,
   onRowClick,
   onRowFocus,
   onRowKeyDown,
@@ -494,6 +581,12 @@ function TreeNodeRow({
   row: NodeRow
   absIndex: number
   selected: boolean
+  /** PR #671 gate round 4 fix (High, A11y4): the ONE roving-tabindex stop, computed by the
+   * parent from `rangeChanged` (`tabbableAbsIndex`) rather than always following `selected` --
+   * when the selected row has scrolled out of Virtuoso's own rendered window, `selected` would
+   * otherwise point at a row that does not exist in the DOM at all, leaving NO tree row
+   * reachable by Tab. */
+  tabbable: boolean
   onRowClick: (node: ExpandableNode) => void
   onRowFocus: (node: ExpandableNode) => void
   onRowKeyDown: (event: KeyboardEvent<HTMLDivElement>, row: NodeRow, absIndex: number) => void
@@ -510,6 +603,18 @@ function TreeNodeRow({
   // copy (main could not even resolve it).
   const canAct = node.kind !== 'cannot-access'
   const rowRef = useRef<HTMLDivElement>(null)
+  // PR #671 gate round 4 fix (Medium, A11y4): the row's own accessible name was being built from
+  // EVERY child in document order, including the kebab button's own `aria-label` ("More actions
+  // for X") and the transient "VS Code not found" status text -- a screen reader read the whole
+  // row as "staged.ts Added More actions for staged.ts". `aria-labelledby` scopes the row's name
+  // to exactly the name span and (when present) the status-mark span, leaving the kebab and any
+  // transient status text out of it (they still read their own separate accessible names/text
+  // when focused or announced directly). ids are built from the node's own path (stable, unique
+  // per row) rather than `useId()`, since the ids must be referenceable from a PLAIN STRING built
+  // before render, not from a ref.
+  const rowId = `fe-row-${node.path}`
+  const nameId = `${rowId}-name`
+  const markId = `${rowId}-mark`
   // FR-017: `{ opened: false }` is a normal result, not an IPC error (contracts/ipc.md), so this
   // shows inline rather than as a toast -- auto-clears after a few seconds or on the next
   // attempt, the same transient-but-non-toast treatment `ManageAccountsDialog.tsx`'s own
@@ -550,7 +655,12 @@ function TreeNodeRow({
       aria-posinset={row.posinset}
       aria-selected={selected}
       aria-expanded={isFolder ? expanded : undefined}
-      tabIndex={selected ? 0 : -1}
+      aria-labelledby={mark ? `${nameId} ${markId}` : nameId}
+      // PR #671 gate round 4 fix (Medium, A11y4): the kebab's own keyboard-only reveal (Shift+F10
+      // or the ContextMenu key -- nothing else makes either discoverable) is now at least
+      // advertised on the row itself.
+      aria-keyshortcuts={canAct ? 'Shift+F10' : undefined}
+      tabIndex={tabbable ? 0 : -1}
       data-tree-row-path={node.path}
       style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
       className="group no-drag-region flex w-full cursor-default items-center gap-1 rounded px-1 py-0.5 text-left text-sm outline-none hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
@@ -572,12 +682,12 @@ function TreeNodeRow({
       ) : (
         <FileIcon aria-hidden className="size-4 shrink-0" />
       )}
-      <span className="min-w-0 flex-1 truncate" title={node.name}>
+      <span id={nameId} className="min-w-0 flex-1 truncate" title={node.name}>
         {node.name}
         {node.kind === 'cannot-access' && <span className="sr-only"> (cannot access)</span>}
       </span>
       {mark && (
-        <span className="flex shrink-0 items-center">
+        <span id={markId} title={mark.label} className="flex shrink-0 items-center">
           <mark.Icon aria-hidden className={`size-3 ${mark.className}`} />
           <span className="sr-only">{mark.label}</span>
         </span>
@@ -594,7 +704,11 @@ function TreeNodeRow({
               type="button"
               tabIndex={-1}
               aria-label={`More actions for ${node.name}`}
-              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+              // PR #671 gate round 4 fix (Medium, A11y4): visible whenever this row is SELECTED
+              // (not hover/focus-within only, which read as hover-only on a touch device with no
+              // hover concept at all), and raised to a `size-6` (24px) target -- the previous
+              // ~18px (icon `size-3.5` plus `p-0.5`) sat under the 24px minimum.
+              className={`flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 ${selected ? 'opacity-100' : 'opacity-0'}`}
               // The whole row (not a separate open button, unlike `SessionList.tsx`) carries
               // `onClick`/`onRowClick` above -- without this, clicking the trigger would bubble
               // up and also select/activate the row underneath it.

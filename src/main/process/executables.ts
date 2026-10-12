@@ -74,6 +74,16 @@ export function taskkillPath(): string {
 
 let vsCodeExecutableCache: string | undefined;
 
+/** Clears the cached, previously-successful VS Code resolution (PR #671 gate round 4 fix,
+ * Medium): a spawn can still fail asynchronously AFTER this cache was populated (VS Code
+ * uninstalled or moved mid-run, `EACCES`, antivirus quarantine) -- without clearing it, every
+ * later `openInVSCode` call would keep returning the same now-stale path and keep failing the
+ * same way until a full app restart. Exported for `fileExplorer.ts`'s own `child.once('error',
+ * ...)` handler to call. */
+export function clearVSCodeExecutableCache(): void {
+  vsCodeExecutableCache = undefined;
+}
+
 /**
  * Resolves VS Code's `Code.exe` by checking fixed known install roots directly, never via
  * `resolveExecutable('code')`/PATH. `code`'s own PATH entry is a `bin/` folder containing

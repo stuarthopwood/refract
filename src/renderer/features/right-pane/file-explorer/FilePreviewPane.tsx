@@ -30,12 +30,11 @@ function fileName(path: string): string {
   return index === -1 ? path : path.slice(index + 1)
 }
 
-// T020: `CodeBlock` has no line-numbers option of its own (checked -- `code`/`lang`/`wrap`/
-// `copyText` only) -- a plain `CodeBlock` without line numbers is the accepted fallback (brief's
-// own judgment call), with this file's own wrap toggle next to it since `CodeBlock`'s `wrap` prop
-// has no toggle UI of its own either. Not exhaustive -- common source extensions only, matching
-// Shiki's own bundled grammar ids; an unrecognised extension (or none) falls back to `null`,
-// which `CodeBlock` already renders as plain, unhighlighted text rather than failing.
+// T020: `CodeBlock` gained an opt-in `lineNumbers` prop (PR #671 gate round 4 fix, High, FR-012)
+// specifically for this caller -- every other `CodeBlock` caller in the app keeps its own exact
+// rendering (`lineNumbers` defaults `false`). Not exhaustive -- common source extensions only,
+// matching Shiki's own bundled grammar ids; an unrecognised extension (or none) falls back to
+// `null`, which `CodeBlock` already renders as plain, unhighlighted text rather than failing.
 const EXTENSION_LANGUAGES: Record<string, string> = {
   ts: 'typescript',
   tsx: 'tsx',
@@ -99,13 +98,19 @@ const PREVIEW_KIND_LABELS: Record<'binary' | 'too-large', string> = {
 }
 
 export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onReveal, onCopyPath }: FilePreviewPaneProps) {
-  // Independent per selected preview, not per Session -- a Source toggle/wrap state left on from
-  // a previous file would be a surprising carry-over for the next one. Reset keyed on `preview?.
-  // path` below via a plain prop-driven remount would also work, but a local reset inside the two
-  // toggle handlers (never flipped true for a kind that cannot show it) is simpler here and
-  // avoids an extra `key` prop forcing the whole pane to remount on every selection.
   const [wrap, setWrap] = useState(false)
   const [showSource, setShowSource] = useState(false)
+  // PR #671 gate round 4 fix (Medium, Code4): the previous comment here CLAIMED a reset already
+  // happened ("a local reset inside the two toggle handlers") -- it did not; `useState(false)`
+  // only ever runs its initializer ONCE, on this component's first mount, so a Wrap/Source toggle
+  // left on from one file carried straight over to the next, regardless of file kind. An effect
+  // keyed on the selected file's own path resets both on every real selection change, without
+  // remounting the whole pane (which a `key={preview?.path}` approach would have forced, dropping
+  // focus on every single click).
+  useEffect(() => {
+    setWrap(false)
+    setShowSource(false)
+  }, [preview?.path])
   // Same transient, non-toast "VS Code not found" treatment `TreeNodeRow`'s own context menu
   // uses (FR-017) -- this call site is independent of that one's own state, since the two
   // triggers (a tree row's menu vs this toolbar) can fire for different files/moments.
@@ -118,10 +123,11 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
 
   const regionLabel = preview ? `Preview of ${fileName(preview.path)}` : 'File preview'
   // T025: offered for any EXISTING file (every kind except `'deleted'`, which has nothing left
-  // to open/reveal/copy) -- including `binary`/`too-large`, whose content cannot render here but
-  // whose path is still perfectly actionable. Hidden while a new selection is still loading, so
-  // these three actions never fire against a stale `preview.path` left over from the PREVIOUS
-  // selection mid-fetch.
+  // to open/reveal/copy) -- including `binary`/`too-large`/`read-error`, whose content cannot
+  // render here but whose path is still perfectly actionable. Hidden while a new selection is
+  // still loading, so these three actions never fire against a stale `preview.path` left over
+  // from the PREVIOUS selection mid-fetch.
+
   const showToolbar = !previewLoading && !!preview && preview.kind !== 'deleted'
 
   async function runOpenInVSCode(path: string): Promise<void> {
@@ -199,6 +205,21 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
+      ) : preview.kind === 'read-error' ? (
+        // PR #671 gate round 4 fix (Medium, Code4/Sec4): `readPreview`'s own TOCTOU fix (fs.open/
+        // stat/read on one handle) now distinguishes "gone" (ENOENT, handled by the `'deleted'`
+        // branch above) from "exists but couldn't be read" (EACCES/EBUSY -- an agent has it open
+        // for writing, a permissions problem) -- these need their own, different message: the
+        // file is still there, nothing was "removed or renamed".
+        <Empty className="h-full">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <TriangleAlertIcon aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>Couldn't read this file</EmptyTitle>
+            <EmptyDescription>It may be open in another program, or you may not have permission to read it.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : preview.kind === 'image' ? (
         <img
           src={`data:${preview.mimeType};base64,${preview.base64}`}
@@ -217,7 +238,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
             </Button>
           </div>
           {showSource ? (
-            <CodeBlock code={preview.content ?? ''} lang="markdown" wrap={wrap} />
+            <CodeBlock code={preview.content ?? ''} lang="markdown" wrap={wrap} lineNumbers />
           ) : (
             <Markdown text={preview.content ?? ''} id={preview.path} />
           )}
@@ -238,7 +259,7 @@ export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onRev
               Wrap
             </Button>
           </div>
-          <CodeBlock code={preview.content ?? ''} lang={guessLangFromPath(preview.path)} wrap={wrap} />
+          <CodeBlock code={preview.content ?? ''} lang={guessLangFromPath(preview.path)} wrap={wrap} lineNumbers />
         </div>
       )}
     </div>

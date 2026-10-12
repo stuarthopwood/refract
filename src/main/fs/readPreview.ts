@@ -5,6 +5,7 @@
 // ALREADY-validated, realpath'd absolute path; it never resolves or re-checks containment itself.
 
 import { promises as fs } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import type { FilePreview } from '../../shared/model';
 import { isBinary } from '../git/diffStat';
@@ -66,46 +67,111 @@ function sniffImageMimeType(buf: Buffer): string | null {
     return 'image/webp';
   }
   // BMP ("BM" magic) is intentionally last and narrowest: only two bytes of signature, the
-  // weakest of the five, so it is checked only after every more-specific format above has
-  // already failed to match.
-  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) {
-    return 'image/bmp';
+  // weakest of the five. PR #671 gate round 4 fix (Low, Sec4): a plain text file that happens to
+  // start with the two ASCII letters "BM" (not rare: "BMP format", "Bmw", any sentence starting
+  // with those letters) previously matched and rendered as a broken image. Also requires the
+  // 32-bit little-endian "DIB header size" field at bytes 14-17 to be one of BMP's own known
+  // header sizes (12/40/52/56/108/124 -- every BITMAPCOREHEADER/BITMAPINFOHEADER/V4/V5 variant
+  // Windows itself recognises) AND the little-endian "file size" field at bytes 2-5 to equal the
+  // buffer's own actual length -- two real structural facts a coincidental "BM"-prefixed text
+  // file essentially never satisfies by chance, checked only after every more-specific format
+  // above has already failed to match.
+  if (buf.length >= 18 && buf[0] === 0x42 && buf[1] === 0x4d) {
+    const fileSizeField = buf.readUInt32LE(2);
+    const headerSize = buf.readUInt32LE(14);
+    const KNOWN_DIB_HEADER_SIZES = new Set([12, 40, 52, 56, 108, 124]);
+    if (fileSizeField === buf.length && KNOWN_DIB_HEADER_SIZES.has(headerSize)) {
+      return 'image/bmp';
+    }
   }
   return null;
 }
 
+/** Reads at most `buf.length` bytes from `fh` into `buf`, looping until the buffer is full or EOF
+ * (a single `read()` call is not guaranteed to fill the whole buffer even for a regular file, so
+ * this never assumes one call is enough -- PR #671 gate round 4 fix). Returns the total bytes
+ * actually read. */
+async function readFully(fh: FileHandle, buf: Buffer): Promise<number> {
+  let total = 0;
+  while (total < buf.length) {
+    const { bytesRead } = await fh.read(buf, total, buf.length - total, null);
+    if (bytesRead === 0) break;
+    total += bytesRead;
+  }
+  return total;
+}
+
 /** Reads one already-contained, realpath'd file's preview data. `relativePath` is used only for
  * the returned `FilePreview.path` and to pick `'text'` vs `'markdown'` by extension -- never for
- * any filesystem call, which always uses `absolutePath`. */
+ * any filesystem call, which always uses `absolutePath`.
+ *
+ * PR #671 gate round 4 fix (Medium, Sec4/Code4, reproduced by reading): the previous version
+ * `fs.stat`'d the path, THEN reopened it with a SEPARATE `fs.readFile` call -- a file that grows,
+ * or is swapped for a symlink, between those two calls was read with NO size cap at all
+ * (`readFile` reads to EOF regardless of what `stat` reported moments earlier), and the window
+ * also extended `resolveNoFollow`'s own already-documented TOCTOU for a UNC-link swap one step
+ * further. Fixed by opening ONE file handle (`fs.open`) and doing every later check (`stat`,
+ * `read`) against that SAME handle -- the OS resolves the path exactly once, and nothing between
+ * the size check and the read can swap the underlying file out from under it. Also: a NON-`ENOENT`
+ * failure (`EACCES`/`EBUSY`, e.g. an agent has the file open for writing) now maps to `kind:
+ * 'read-error'`, not `'deleted'` -- those are different, user-visible states, and reporting a
+ * permission/busy failure as "removed or renamed" was simply wrong. */
 export async function readPreview(absolutePath: string, relativePath: string): Promise<FilePreview> {
-  let stat;
+  let fh: FileHandle;
   try {
-    stat = await fs.stat(absolutePath);
-  } catch {
-    return { path: relativePath, kind: 'deleted' };
+    fh = await fs.open(absolutePath, 'r');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    return { path: relativePath, kind: code === 'ENOENT' ? 'deleted' : 'read-error' };
   }
-  if (!stat.isFile()) {
-    return { path: relativePath, kind: 'deleted' };
-  }
-  if (stat.size > MAX_PREVIEW_BYTES) {
-    return { path: relativePath, kind: 'too-large', size: stat.size };
-  }
-
-  let buf: Buffer;
   try {
-    buf = await fs.readFile(absolutePath);
-  } catch {
-    return { path: relativePath, kind: 'deleted' };
-  }
+    let stat;
+    try {
+      stat = await fh.stat();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code;
+      return { path: relativePath, kind: code === 'ENOENT' ? 'deleted' : 'read-error' };
+    }
+    if (!stat.isFile()) {
+      return { path: relativePath, kind: 'deleted' };
+    }
+    if (stat.size > MAX_PREVIEW_BYTES) {
+      return { path: relativePath, kind: 'too-large', size: stat.size };
+    }
 
-  const imageMimeType = sniffImageMimeType(buf);
-  if (imageMimeType) {
-    return { path: relativePath, kind: 'image', size: stat.size, base64: buf.toString('base64'), mimeType: imageMimeType };
+    // Reads at most `MAX_PREVIEW_BYTES + 1` bytes from the SAME handle `stat()` just checked --
+    // a file that grew past the cap between the stat above and this read still hits the cap
+    // here (`bytesRead > MAX_PREVIEW_BYTES`), never an unbounded read.
+    const buf = Buffer.alloc(MAX_PREVIEW_BYTES + 1);
+    let bytesRead: number;
+    try {
+      bytesRead = await readFully(fh, buf);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code;
+      return { path: relativePath, kind: code === 'ENOENT' ? 'deleted' : 'read-error' };
+    }
+    if (bytesRead > MAX_PREVIEW_BYTES) {
+      return { path: relativePath, kind: 'too-large', size: stat.size };
+    }
+    const content = buf.subarray(0, bytesRead);
+
+    const imageMimeType = sniffImageMimeType(content);
+    if (imageMimeType) {
+      return {
+        path: relativePath,
+        kind: 'image',
+        size: bytesRead,
+        base64: content.toString('base64'),
+        mimeType: imageMimeType
+      };
+    }
+    if (isBinary(content)) {
+      return { path: relativePath, kind: 'binary', size: bytesRead };
+    }
+    const ext = path.extname(relativePath).toLowerCase();
+    const kind = MARKDOWN_EXTENSIONS.has(ext) ? 'markdown' : 'text';
+    return { path: relativePath, kind, size: bytesRead, content: content.toString('utf8') };
+  } finally {
+    await fh.close().catch(() => undefined);
   }
-  if (isBinary(buf)) {
-    return { path: relativePath, kind: 'binary', size: stat.size };
-  }
-  const ext = path.extname(relativePath).toLowerCase();
-  const kind = MARKDOWN_EXTENSIONS.has(ext) ? 'markdown' : 'text';
-  return { path: relativePath, kind, size: stat.size, content: buf.toString('utf8') };
 }

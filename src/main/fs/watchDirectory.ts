@@ -1,6 +1,6 @@
 import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
-import { posix as posixPath, sep } from 'node:path';
+import path, { posix as posixPath, sep } from 'node:path';
 
 /** Trailing-edge debounce window for `watchDirectory`'s own per-directory coalescing. Larger
  * than `PatchCoalescer`'s 50ms (`src/main/omp/patchCoalescer.ts`, which coalesces cheap in-memory
@@ -64,14 +64,35 @@ export interface DirectoryWatchHandle {
  * `ReadDirectoryChangesW` reports it, and every path handed to `onDirectoryChanged` is passed
  * through from `fs.watch`'s own event, never constructed or resolved further here -- the
  * caller's `resolveInWorktree`-backed `listDirectory` re-validates containment on every call.
+ *
+ * PR #671 gate round 4 fix (Critical, Code4/reproduced live): deleting the watched worktree ROOT
+ * out from under a running watch never emitted an `'error'` event on this platform -- instead
+ * `ReadDirectoryChangesW` fired roughly 120,000 `rename` events/second, each with `filename` set
+ * to the watched root's OWN absolute path (`\\?\C:\...`), spinning the main process indefinitely
+ * and holding the underlying handle open (`EPERM` on `mkdir` when a caller tried to recreate the
+ * same folder). Node's own `filename` argument is documented as relative to the watched
+ * directory, never absolute -- a filename that IS absolute is therefore itself the fatal signal,
+ * cheap to check per event (`path.isAbsolute`, no extra `fs` call), without needing to guess at
+ * the platform-specific flood shape. `onFatal` is called (at most once, idempotently) and the
+ * watcher is closed the instant this is detected, before any debounce/flush work runs for that
+ * event -- the caller (`fileExplorer.ts`'s `ensureWatcher`) drops its own cached handle so the
+ * NEXT `listDirectory` call starts a fresh watcher rather than staying silently dead forever. A
+ * genuine `'error'` event (a watch that fails well after a successful start, e.g. the underlying
+ * volume disappearing) is wired to the identical `onFatal` path. `watch()` itself still throws
+ * synchronously when the root does not exist at call time (unchanged) -- that case now returns
+ * `undefined` instead of a no-op handle, so `ensureWatcher` never caches a failed attempt and
+ * retries on the next `listDirectory` call instead of staying dead until an unrelated flush
+ * happens to find the Session gone.
  */
 export function watchDirectory(
   worktreeRoot: string,
   onDirectoryChanged: (relativePath: string) => void,
+  onFatal: () => void,
   debounceMs: number = WATCH_DEBOUNCE_MS
-): DirectoryWatchHandle {
+): DirectoryWatchHandle | undefined {
   const pendingDirectories = new Set<string>();
   let flushTimer: NodeJS.Timeout | undefined;
+  let stopped = false;
 
   const flush = (): void => {
     flushTimer = undefined;
@@ -95,27 +116,45 @@ export function watchDirectory(
     return parent === '.' ? '' : parent;
   };
 
+  const stop = (): void => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = undefined;
+    }
+    pendingDirectories.clear();
+    watcher?.close();
+  };
+
+  const fail = (): void => {
+    if (stopped) return;
+    stopped = true;
+    stop();
+    onFatal();
+  };
+
   let watcher: FSWatcher | undefined;
   try {
     watcher = watch(worktreeRoot, { recursive: true }, (_eventType, filename) => {
+      if (stopped) return;
+      // An ABSOLUTE `filename` is a fatal signal in itself (see this function's own doc comment
+      // above) -- the watched root is gone, and every further event from this same handle would
+      // be the same flood, so this closes it BEFORE queueing/flushing anything for this event.
+      if (typeof filename === 'string' && path.isAbsolute(filename)) {
+        fail();
+        return;
+      }
       const relativeDirectory = toRelativeDirectory(filename);
       if (relativeDirectory === '__ignore__') return;
       queueDirectory(relativeDirectory);
     });
   } catch {
-    // The worktree folder is gone or unreadable at watch-start time: nothing to watch. Returning
-    // a usable no-op handle (rather than throwing) keeps a missing/recreated worktree from
-    // crashing whatever is starting this Session's watcher.
+    // The worktree folder is gone or unreadable at watch-start time: nothing to watch, and
+    // nothing for `stop()` to tear down later either. `undefined` (not a no-op handle) tells the
+    // caller not to cache this attempt, so the next `listDirectory` call retries instead of
+    // staying silently un-watched forever (PR #671 gate round 4 fix, Critical).
+    return undefined;
   }
+  watcher.on('error', fail);
 
-  return {
-    stop(): void {
-      if (flushTimer) {
-        clearTimeout(flushTimer);
-        flushTimer = undefined;
-      }
-      pendingDirectories.clear();
-      watcher?.close();
-    }
-  };
+  return { stop };
 }

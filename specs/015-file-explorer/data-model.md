@@ -86,9 +86,11 @@ call (research.md decision 2): each returned XY/path pair maps to exactly one of
 `modified`/`added`/`untracked`/`deleted`/`ignored` (a plain working-tree diff, never a
 merge-base diff like `sessions.diffStat`'s own `diff-index`, since the explorer answers "what
 does the tree look like right now", not "what changed since Base" -- research.md decision 2's own
-distinction). An ignored path is included in this map only when the "show ignored files" toggle
-is on (FR-009); the reader itself always asks `--ignored=matching` so no second git process is
-spawned when the toggle flips.
+distinction).
+An ignored path is ALWAYS present in this map (the reader always asks `--ignored=matching`, so no
+second git process is ever spawned when the toggle flips) -- **corrected, PR #671 gate round 4**:
+the "show ignored files" toggle (FR-009) is a pure RENDERER-side row filter over the already-
+complete map/tree, never a main-side filter on the map's own contents.
 
 ## Renderer store: `file-explorer-store.ts`
 

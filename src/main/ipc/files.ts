@@ -297,15 +297,10 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
   return { ok: true, realPath: resolvedTarget };
 }
 
-/** Any path segment equal to `.git`, ASCII case-insensitively -- shared by both the lexical
- * (as-typed) and the realpath'd (post-resolution) checks `fileExplorer.ts`'s `resolveListTarget`/
- * `classifySymlinkEntry` run, and by `git/status.ts`'s own `.git`-as-a-status-key filter (FR-007).
- * Lives here, not in `fileExplorer.ts`, specifically so `git/status.ts` can import it without a
- * circular `ipc/fileExplorer.ts` <-> `git/status.ts` dependency (this module has no dependency on
- * either of them). PR #671 gate round 1 fix (code-reviewer/security-auditor MEDIUM). */
-export function containsGitSegment(value: string): boolean {
-  return value.split(/[\\/]/).some((segment) => segment.toLowerCase() === '.git');
-}
+// `containsGitSegment` moved to `../fs/paths` (PR #671 gate round 4 fix, Medium: a git-status
+// reader importing from this IPC-handler module had no cycle but backwards layering); this file
+// never called it itself and no longer imports it -- `fileExplorer.ts` and `git/status.ts` each
+// import it directly from `fs/paths` now.
 
 /** Shared by every caller of `resolveInWorktree` (this file's own `revealFile` handler and
  * `fileExplorer.ts`'s `listDirectory`) to map a `!ok` result to the same three error codes and

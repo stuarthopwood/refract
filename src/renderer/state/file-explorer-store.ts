@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { toast } from 'sonner'
-import type { FilePreview, FileTreeNode, GitStatusMap } from '../../shared/model'
+import type { FilePreview, FileTreeNode, GitStatusMap, GitStatusMark } from '../../shared/model'
 import type { Result } from '../../shared/ipc'
 
 /** Named per the "no `ReturnType<typeof fn>`" convention: mirrors `window.refract.fileExplorer.
@@ -104,13 +104,16 @@ interface FileExplorerStoreState {
    * above). A no-op if the node is not found or has no `children` yet (nothing to collapse). */
   toggleExpanded(sessionId: string, relativePath: string): void
   /** Fired by `FILE_EXPLORER_PATCH` (T013/T014): merges the affected directory's fresh `entries`
-   * into `root` as a full replacement of that one directory's own `children`, NEVER touching
-   * `expanded` on the patched node or any other node (FR-020, SC-003) -- a plain `withChildrenAt`
-   * call would force `expanded: true` on every patch, silently re-expanding a folder the user had
-   * deliberately collapsed. Also re-fetches `gitStatus` (T017, folded into this same cycle, no
-   * separate poll) and, per FR-021, flips `preview` straight to `{ path, kind: 'deleted' }`
-   * (no extra IPC round trip) when the currently-previewed file is a direct child of the patched
-   * directory and is no longer present in `entries`. */
+   * into `root` by PATH, preserving any surviving same-kind child's own `children`/`expanded`/
+   * `truncated`/`gitStatus` (FR-020, SC-003) -- PR #671 gate round 4 fix (Critical/High): a
+   * plain wholesale-replace (the original design) collapsed EVERY expanded descendant anywhere
+   * under the patched directory on every single patch. Also coalesces a fresh `gitStatus` fetch
+   * (T017, debounced, at most one in-flight plus one trailing per Session -- never one per
+   * patch) and, per FR-021, flips `preview` straight to `{ path, kind: 'deleted' }` (no extra IPC
+   * round trip) when the actually-PREVIEWED file (never merely the selected/focused row, which
+   * arrow-key navigation can change without ever calling `loadPreview`) is no longer reachable
+   * under the patched directory, whether as a direct child or because the patched directory is
+   * one of its own ancestor folders. */
   applyPatch(sessionId: string, patch: FileExplorerPatch): void
   /** FR-009: toggles the renderer-side "show ignored files" row filter (see
    * `FileExplorerSessionState.showIgnored`'s own doc comment). A no-op for an unknown Session. */
@@ -150,15 +153,31 @@ function withExpandedToggled(node: ExpandableNode, targetPath: string): Expandab
   return { ...node, children: nextChildren }
 }
 
-/** `applyPatch`'s own merge (FR-020, SC-003): replaces the patched node's `children` wholesale,
- * WITHOUT touching `expanded` on the patched node (a watcher event must never silently re-expand
- * a folder the user collapsed) or on any other node -- the one difference from `withChildrenAt`
- * above. `truncated` is reset to `undefined` rather than carried forward: the patch payload (see
- * `FileExplorerPatch`'s own doc comment) carries no fresh count of its own, and showing a stale
- * "N more" figure that may no longer match `entries.length` would be worse than showing none
- * until the next real `listDirectory` call refreshes it (judgment call -- flagged in the PR). */
+/** `applyPatch`'s own merge (FR-020, SC-003): for each fresh `entries[i]`, if an OLD child at
+ * the same `path` existed with the SAME `kind`, carries over that child's own `children`/
+ * `expanded`/`truncated`/`gitStatus` -- a NEW entry, or one whose `kind` changed (a file replaced
+ * by a folder of the same name or vice versa), comes in bare, since there is nothing of the old
+ * shape left to carry over. PR #671 gate round 4 fix (Critical/High, Sec4/Code4/A11y4/Verif4,
+ * reproduced live by all four reviewers): the previous version replaced `children` with the raw
+ * `entries` WHOLESALE, so a patch for ANY folder collapsed EVERY expanded descendant anywhere
+ * under it and dropped focus to `<body>` if the focused row was one of them. On Windows, editing
+ * a file inside `src` also changes `src`'s own directory mtime, which the watcher queues as a
+ * root-level ('') patch too (`watchDirectory.ts`'s own debounce groups both into one flush, but
+ * both still fire) -- a plain-replace design turned "any file edit anywhere" into "the whole
+ * tree collapses", exactly what the lane's own `09-preview-deleted-live.png` screenshot showed
+ * happening to the un-related `src` folder after a root-level delete. */
 function withPatchedChildren(node: ExpandableNode, targetPath: string, entries: FileTreeNode[]): ExpandableNode {
-  if (node.path === targetPath) return { ...node, children: entries, truncated: undefined }
+  if (node.path === targetPath) {
+    const oldByPath = new Map((node.children ?? []).map((child) => [child.path, child] as const))
+    const nextChildren: ExpandableNode[] = entries.map((entry) => {
+      const old = oldByPath.get(entry.path)
+      if (old && old.kind === entry.kind) {
+        return { ...entry, children: old.children, expanded: old.expanded, truncated: old.truncated, gitStatus: old.gitStatus }
+      }
+      return entry
+    })
+    return { ...node, children: nextChildren, truncated: undefined }
+  }
   if (!node.children) return node
   const nextChildren = node.children.map((child) => withPatchedChildren(child, targetPath, entries))
   if (nextChildren.every((child, i) => child === node.children![i])) return node
@@ -168,24 +187,59 @@ function withPatchedChildren(node: ExpandableNode, targetPath: string, entries: 
 /** `fileExplorer.getStatus`'s own doc comment (contracts/ipc.md): "the renderer merges this into
  * every currently-loaded node's `gitStatus`". Walks the whole tree, setting (or clearing) each
  * node's own `gitStatus` mark from `statusMap`; same "unchanged reference when nothing changed"
- * contract as the helpers above, so an unrelated render never re-runs off this alone. */
-function withGitStatusMerged(node: ExpandableNode, statusMap: GitStatusMap): ExpandableNode {
-  const mark = statusMap[node.path]
+ * contract as the helpers above, so an unrelated render never re-runs off this alone.
+ *
+ * `inheritedMark` (PR #671 gate round 4 fix, High, Sec4/Code4/Verif4, reproduced live): git's own
+ * `--ignored=matching` output marks an entirely ignored or untracked FOLDER exactly ONCE (`!!
+ * node_modules/`, `?? newdir/`) -- it never recurses into that folder's own contents to mark each
+ * file inside it separately, unlike a `modified`/`added`/`deleted` mark, which git ALWAYS reports
+ * per individual FILE (a folder is never reported that way in git's own porcelain output). A
+ * child with no explicit entry of its own therefore inherits the nearest ignored/untracked
+ * ancestor FOLDER's own resolved mark, so `node_modules/some/deep/file.ts` is marked (and hidden
+ * by the "show ignored files" toggle, FR-009) the same way `node_modules` itself is, once
+ * expanded -- without this, every file inside an ignored or untracked folder showed no mark and
+ * no hiding at all. A child's own EXPLICIT entry (e.g. a file force-added inside an otherwise-
+ * ignored folder) always wins over an inherited mark. */
+function withGitStatusMerged(node: ExpandableNode, statusMap: GitStatusMap, inheritedMark?: GitStatusMark): ExpandableNode {
+  const ownMark = statusMap[node.path]
+  const mark = ownMark ?? inheritedMark
   const selfChanged = mark !== node.gitStatus
   if (!node.children) return selfChanged ? { ...node, gitStatus: mark } : node
-  const nextChildren = node.children.map((child) => withGitStatusMerged(child, statusMap))
+  const childInherited = node.kind === 'folder' ? mark : undefined
+  const nextChildren = node.children.map((child) => withGitStatusMerged(child, statusMap, childInherited))
   const childrenChanged = nextChildren.some((child, i) => child !== node.children![i])
   if (!selfChanged && !childrenChanged) return node
   return { ...node, gitStatus: mark, children: nextChildren }
 }
 
 /** Relative-path parent (POSIX `/` separators, `FileTreeNode.path`'s own convention): `''` for a
- * top-level entry (its parent is the worktree root itself). Used only by `applyPatch`'s own
- * FR-021 check below, to tell whether the currently-previewed file is a DIRECT child of the
- * patched directory (the only case a patch's `entries` can tell us anything about its presence). */
+ * top-level entry (its parent is the worktree root itself). */
 function parentPath(path: string): string {
   const index = path.lastIndexOf('/')
   return index === -1 ? '' : path.slice(0, index)
+}
+
+/** FR-021: true when `previewPath` is no longer reachable given a patch for `patchedPath`'s own
+ * fresh `entries`. Two cases: `previewPath` is a DIRECT child of `patchedPath` and missing from
+ * `entries` outright; or `patchedPath` is a proper ANCESTOR folder of `previewPath` and the next
+ * path segment on the way down to it is missing from `entries` -- an ancestor folder disappearing
+ * is just as fatal to the previewed file as the file itself disappearing, and a patch for that
+ * ancestor (never for the file's own, now-gone, immediate parent directory, which no longer
+ * exists to be watched) is the only signal this store ever gets about it. PR #671 gate round 4
+ * fix (High, Code4): the previous version checked `existing.selectedPath` -- arrow-key navigation
+ * (`moveToRow`/`onRowFocus`) changes `selectedPath` WITHOUT ever calling `loadPreview`, so moving
+ * focus to a file that is then deleted wiped a completely different, still-open preview; and
+ * deleting the actually-previewed file AFTER focus had moved elsewhere left its stale content
+ * showing. Basing this on `preview.path` itself fixes both directions. */
+function isPathGoneUnderPatch(previewPath: string, patchedPath: string, entries: FileTreeNode[]): boolean {
+  if (parentPath(previewPath) === patchedPath) {
+    return !entries.some((entry) => entry.path === previewPath)
+  }
+  const prefix = patchedPath === '' ? '' : `${patchedPath}/`
+  if (previewPath === patchedPath || !previewPath.startsWith(prefix)) return false
+  const nextSegment = previewPath.slice(prefix.length).split('/')[0]!
+  const nextSegmentPath = patchedPath === '' ? nextSegment : `${patchedPath}/${nextSegment}`
+  return !entries.some((entry) => entry.path === nextSegmentPath)
 }
 
 /** T017: best-effort `fileExplorer.getStatus` fetch, merged into `gitStatus` and every loaded
@@ -215,6 +269,70 @@ async function fetchAndMergeStatus(
   })
 }
 
+// PR #671 gate round 4 fix (High, Sec4/Code4, reproduced live: 31/60 concurrent agent `git add`/
+// `commit` operations failed with "Unable to create '.git/index.lock': File exists" without this):
+// coalesces `fetchAndMergeStatus` to at most ONE in-flight call plus ONE trailing call per
+// Session, debounced by `STATUS_FETCH_DEBOUNCE_MS` -- a burst of several watcher patches arriving
+// in quick succession (the common case: an agent's own `pnpm install`/checkout touching many
+// directories at once) previously started its OWN independent `getStatus`/`git status` call per
+// patch, with no limit at all.
+const STATUS_FETCH_DEBOUNCE_MS = 500
+interface StatusFetchEntry {
+  inFlight: boolean
+  timer?: ReturnType<typeof setTimeout>
+}
+const statusFetchState = new Map<string, StatusFetchEntry>()
+
+function scheduleStatusFetch(
+  sessionId: string,
+  set: (fn: (state: FileExplorerStoreState) => Partial<FileExplorerStoreState>) => void
+): void {
+  let entry = statusFetchState.get(sessionId)
+  if (!entry) {
+    entry = { inFlight: false }
+    statusFetchState.set(sessionId, entry)
+  }
+  if (entry.timer) return // already debouncing one fetch for this Session; nothing more to queue
+  entry.timer = setTimeout(() => {
+    const current = statusFetchState.get(sessionId)!
+    current.timer = undefined
+    if (current.inFlight) {
+      // A fetch from an earlier debounce window is still running (a slow/huge repo) -- queue
+      // exactly one trailing fetch once it finishes, never a second concurrent one.
+      scheduleStatusFetch(sessionId, set)
+      return
+    }
+    current.inFlight = true
+    void fetchAndMergeStatus(sessionId, set).finally(() => {
+      current.inFlight = false
+    })
+  }, STATUS_FETCH_DEBOUNCE_MS)
+}
+
+/** DRY helper (PR #671 gate round 4 fix, Medium, Code4): the full `FileExplorerSessionState`
+ * object was written out four times across `loadDirectory`'s own branches, each repeating the
+ * same five carried-forward defaults. `patch` supplies the three fields each call site actually
+ * changes; everything else carries forward from `existing` (or its own first-time default). */
+function withSessionDefaults(
+  existing: FileExplorerSessionState | undefined,
+  patch: Pick<FileExplorerSessionState, 'root' | 'status' | 'error'>
+): FileExplorerSessionState {
+  return {
+    ...patch,
+    showIgnored: existing?.showIgnored ?? false,
+    selectedPath: existing?.selectedPath ?? null,
+    gitStatus: existing?.gitStatus ?? {},
+    preview: existing?.preview ?? null,
+    previewLoading: existing?.previewLoading ?? false
+  }
+}
+
+// PR #671 gate round 4 fix (Medium, Code4): a per-Session monotonic request sequence for
+// `loadPreview` -- clicking file A then quickly clicking file B used to let A's slower response
+// land AFTER B's and overwrite it, since neither request knew about the other. Only the response
+// matching the LATEST request for a Session is ever applied; an older one is silently dropped.
+const previewRequestSeq = new Map<string, number>()
+
 export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   bySession: {},
 
@@ -225,24 +343,16 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       // nothing to flip away from an implicit, permanent "not loaded yet". Slice 2: carries
       // forward whatever `showIgnored`/`selectedPath`/`gitStatus`/`preview` this Session already
       // had (a Retry is a root reload, not a reset of the user's own row filter/selection).
-      set((state) => {
-        const existing = state.bySession[sessionId]
-        return {
-          bySession: {
-            ...state.bySession,
-            [sessionId]: {
-              root: existing?.root ?? null,
-              status: 'loading',
-              error: null,
-              showIgnored: existing?.showIgnored ?? false,
-              selectedPath: existing?.selectedPath ?? null,
-              gitStatus: existing?.gitStatus ?? {},
-              preview: existing?.preview ?? null,
-              previewLoading: existing?.previewLoading ?? false
-            }
-          }
+      set((state) => ({
+        bySession: {
+          ...state.bySession,
+          [sessionId]: withSessionDefaults(state.bySession[sessionId], {
+            root: state.bySession[sessionId]?.root ?? null,
+            status: 'loading',
+            error: null
+          })
         }
-      })
+      }))
     }
     let result: ListDirectoryResult
     try {
@@ -253,24 +363,16 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       // handler's own `Promise.all`) used to leave `status: 'loading'` forever with an
       // unhandled rejection -- no error state, no Retry, nothing for the user to do.
       if (relativePath === '') {
-        set((state) => {
-          const existing = state.bySession[sessionId]
-          return {
-            bySession: {
-              ...state.bySession,
-              [sessionId]: {
-                root: existing?.root ?? null,
-                status: 'error',
-                error: `Couldn't load this Session's files`,
-                showIgnored: existing?.showIgnored ?? false,
-                selectedPath: existing?.selectedPath ?? null,
-                gitStatus: existing?.gitStatus ?? {},
-                preview: existing?.preview ?? null,
-                previewLoading: existing?.previewLoading ?? false
-              }
-            }
+        set((state) => ({
+          bySession: {
+            ...state.bySession,
+            [sessionId]: withSessionDefaults(state.bySession[sessionId], {
+              root: state.bySession[sessionId]?.root ?? null,
+              status: 'error',
+              error: `Couldn't load this Session's files`
+            })
           }
-        })
+        }))
         return
       }
       toast.error(`Couldn't load that folder`)
@@ -282,24 +384,16 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
         // left `loaded`/`status` claiming "still loading" forever (`contracts/ipc.md`'s
         // `worktree-missing`/`outside-worktree`/`file-missing` codes already carry a plain-
         // English message, reused verbatim here).
-        set((state) => {
-          const existing = state.bySession[sessionId]
-          return {
-            bySession: {
-              ...state.bySession,
-              [sessionId]: {
-                root: existing?.root ?? null,
-                status: 'error',
-                error: result.error.message,
-                showIgnored: existing?.showIgnored ?? false,
-                selectedPath: existing?.selectedPath ?? null,
-                gitStatus: existing?.gitStatus ?? {},
-                preview: existing?.preview ?? null,
-                previewLoading: existing?.previewLoading ?? false
-              }
-            }
+        set((state) => ({
+          bySession: {
+            ...state.bySession,
+            [sessionId]: withSessionDefaults(state.bySession[sessionId], {
+              root: state.bySession[sessionId]?.root ?? null,
+              status: 'error',
+              error: result.error.message
+            })
           }
-        })
+        }))
         return
       }
       // A non-root (folder-expand) failure has no dedicated per-row error state yet in Slice 1 --
@@ -322,16 +416,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
         return {
           bySession: {
             ...state.bySession,
-            [sessionId]: {
-              root,
-              status: 'ready',
-              error: null,
-              showIgnored: existing?.showIgnored ?? false,
-              selectedPath: existing?.selectedPath ?? null,
-              gitStatus: existing?.gitStatus ?? {},
-              preview: existing?.preview ?? null,
-              previewLoading: existing?.previewLoading ?? false
-            }
+            [sessionId]: withSessionDefaults(existing, { root, status: 'ready', error: null })
           }
         }
       }
@@ -340,9 +425,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       // newly-fetched children have never been through `withGitStatusMerged`, so a folder
       // expanded AFTER the root's own `fetchAndMergeStatus` already resolved would otherwise
       // show every new child with no status mark at all, even though `existing.gitStatus`
-      // already has the right answer for them (caught live: expanding `src` after the root load
-      // rendered `index.ts`/`staged.ts` with no mark, while root-level files already fetched at
-      // the same time correctly showed theirs). Applying the already-known map here needs no
+      // already has the right answer for them. Applying the already-known map here needs no
       // extra IPC round trip -- `fetchAndMergeStatus`'s own job is fetching a FRESH map, not
       // applying an existing one.
       const attached = withChildrenAt(existing.root, relativePath, result.value.entries, result.value.truncated)
@@ -352,7 +435,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
     })
     // T017: not awaited -- the tree itself just flipped to `'ready'` above and must never wait on
     // git status to show it.
-    if (relativePath === '') void fetchAndMergeStatus(sessionId, set)
+    if (relativePath === '') scheduleStatusFetch(sessionId, set)
   },
 
   toggleExpanded(sessionId, relativePath) {
@@ -370,26 +453,26 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       const existing = state.bySession[sessionId]
       if (!existing?.root) return state
       const root = withPatchedChildren(existing.root, patch.relativePath, patch.entries)
-      // FR-021: the previewed file is a DIRECT child of the patched directory and is no longer
-      // among its fresh entries -- flip straight to the "no longer exists" state, no extra round
-      // trip to `readPreview` (contracts/ipc.md's own `FILE_EXPLORER_PATCH` doc comment).
-      const selectedPath = existing.selectedPath
-      const stillPresent = selectedPath === null || patch.entries.some((entry) => entry.path === selectedPath)
-      const previewDeleted = selectedPath !== null && parentPath(selectedPath) === patch.relativePath && !stillPresent
-      if (root === existing.root && !previewDeleted) return state
+      // FR-021: based on the actually-PREVIEWED file's own path, not the row merely selected/
+      // focused (see `isPathGoneUnderPatch`'s own doc comment for why those differ) -- flips
+      // straight to the "no longer exists" state, no extra round trip to `readPreview`
+      // (contracts/ipc.md's own `FILE_EXPLORER_PATCH` doc comment).
+      const previewPath = existing.preview?.path ?? null
+      const previewGone = previewPath !== null && isPathGoneUnderPatch(previewPath, patch.relativePath, patch.entries)
+      if (root === existing.root && !previewGone) return state
       return {
         bySession: {
           ...state.bySession,
           [sessionId]: {
             ...existing,
             root,
-            preview: previewDeleted ? { path: selectedPath!, kind: 'deleted' } : existing.preview,
-            previewLoading: previewDeleted ? false : existing.previewLoading
+            preview: previewGone ? { path: previewPath!, kind: 'deleted' } : existing.preview,
+            previewLoading: previewGone ? false : existing.previewLoading
           }
         }
       }
     })
-    void fetchAndMergeStatus(sessionId, set)
+    scheduleStatusFetch(sessionId, set)
   },
 
   setShowIgnored(sessionId, value) {
@@ -409,6 +492,11 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   },
 
   async loadPreview(sessionId, relativePath) {
+    const seq = (previewRequestSeq.get(sessionId) ?? 0) + 1
+    previewRequestSeq.set(sessionId, seq)
+    // Still superseded-checked below rather than skipped outright: this flips `previewLoading`
+    // on immediately so the UI shows a loading state the instant a NEW selection is made, even
+    // while an older request is still technically in flight.
     set((state) => {
       const existing = state.bySession[sessionId]
       if (!existing) return state
@@ -418,6 +506,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
     try {
       result = await window.refract.fileExplorer.readPreview(sessionId, relativePath)
     } catch {
+      if (previewRequestSeq.get(sessionId) !== seq) return // superseded by a newer selection
       toast.error(`Couldn't preview that file`)
       set((state) => {
         const existing = state.bySession[sessionId]
@@ -426,6 +515,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       })
       return
     }
+    if (previewRequestSeq.get(sessionId) !== seq) return // superseded by a newer selection
     if (!result.ok) {
       toast.error(result.error.message)
       set((state) => {

@@ -3,19 +3,20 @@
 // (modified/added/untracked/deleted) -- the same question `git status` itself answers, and a
 // DIFFERENT question from `diffStat.ts`'s own `diff-index <merge-base>` (committed+uncommitted
 // changes since the Session's Base branch, for the details card's +/- counts). A single
-// `gitRaw(worktreePath, ['status', '--porcelain=v1', '-z', '--ignored=matching'])` call answers
-// BOTH the status-mark question (decision 2) and the ignore-handling question (decision 6):
+// `gitRaw` call (see `readGitStatus`'s own doc comment for the exact invocation) answers BOTH
+// the status-mark question (decision 2) and the ignore-handling question (decision 6):
 // `--ignored=matching` makes git's own authoritative ignore engine (nested `.gitignore` files,
 // negation patterns, `.git/info/exclude`) list every ignored path alongside the tracked/
 // untracked/modified ones in the SAME call, so the "show ignored files" toggle elsewhere just
 // stops filtering already-fetched entries rather than triggering a second git process or a
 // hand-rolled `.gitignore` parser. `-z` NUL-delimits entries with no C-style path quoting (same
 // reasoning `diffStat.ts` already documents for its own `ls-files -z`): non-ASCII/special-
-// character filenames and real leading/trailing spaces survive intact. Returns `null` on any
-// failure (missing worktree, git failure) so main never throws this into the renderer, matching
-// `diffStat.ts`'s own convention exactly.
+// character filenames and real leading/trailing spaces survive intact (PR #671 gate round 4,
+// Sec4: confirmed live against a real `sp ace é.txt` fixture, came through intact). Returns
+// `null` on any failure (missing worktree, git failure, timeout) so main never throws this into
+// the renderer, matching `diffStat.ts`'s own convention exactly.
 
-import { containsGitSegment } from '../ipc/files'
+import { containsGitSegment } from '../fs/paths'
 import type { GitStatusMap, GitStatusMark } from '../../shared/model'
 import { gitRaw } from './git'
 
@@ -38,7 +39,16 @@ function markFromCode(code: string): GitStatusMark {
 /** Parses `-z`-delimited `status --porcelain=v1` output into a `GitStatusMap`. Each entry is
  * `XY<space>path`; a renamed/copied entry additionally carries the renamed-FROM path as its own
  * extra NUL-terminated field right after -- `path` (the new path) is this map's key, and the
- * extra field is consumed and discarded without being treated as an entry of its own. */
+ * extra field is consumed and discarded without being treated as an entry of its own.
+ *
+ * PR #671 gate round 4 fix (High, Sec4/Code4/Verif4, reproduced live): git reports an ignored or
+ * untracked DIRECTORY with a trailing `/` (`!! node_modules/`, `?? newdir/`) -- `FileTreeNode.path`
+ * never carries one, so the map's own key never matched a tree node's path, and `node_modules`/
+ * `dist`-style folders stayed visible with "Show ignored files" off (FR-009), with no mark at all
+ * for an untracked folder (FR-010). Fixed by stripping exactly one trailing `/` before using the
+ * path as a key -- `withGitStatusMerged` (file-explorer-store.ts) is the other half of this fix,
+ * propagating a folder's own mark onto its descendants once expanded, since git's own output
+ * marks the folder ONCE, never every file inside it. */
 function parseStatus(stdout: string): GitStatusMap {
   const map: GitStatusMap = {}
   const tokens = stdout.split('\0')
@@ -48,7 +58,7 @@ function parseStatus(stdout: string): GitStatusMap {
     i++
     if (!entry) continue
     const code = entry.slice(0, 2)
-    const filePath = entry.slice(3)
+    const filePath = entry.slice(3).replace(/\/$/, '')
     if (code[0] === 'R' || code[1] === 'R') {
       i++ // renamed-from path: not a map key, the new `filePath` above is
     }
@@ -58,6 +68,39 @@ function parseStatus(stdout: string): GitStatusMap {
   return map
 }
 
+// PR #671 gate round 4 fix (High/Medium, Sec4/Code4): `--no-optional-locks` plus the matching
+// `GIT_OPTIONAL_LOCKS=0` env var (belt and suspenders -- the flag covers this invocation, the env
+// var covers any sub-process git itself spawns) stop `status` from taking `.git/index.lock` at
+// all, which the gate reproduced live breaking a concurrent agent `git add`/`commit` ("Unable to
+// create '.git/index.lock': File exists", 31/60 failures without the fix, 0/30 with it).
+// `core.fsmonitor=false`/`core.untrackedCache=false` stop a repo- or worktree-local config value
+// from running an external command or trusting a stale cache on every single status read (defence
+// in depth: an agent can already run code in this worktree, so this is not a privilege boundary,
+// but a malicious/misconfigured repo config should not get an extra, frequent execution hook for
+// free). `GIT_TERMINAL_PROMPT=0` stops a credential prompt from hanging the read forever.
+const STATUS_GIT_ARGS = [
+  '-c',
+  'core.fsmonitor=false',
+  '-c',
+  'core.untrackedCache=false',
+  '--no-optional-locks',
+  'status',
+  '--porcelain=v1',
+  '-z',
+  '--ignored=matching'
+]
+const STATUS_GIT_ENV = { GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' }
+// PR #671 gate round 4 fix (Medium, Verif4): a repo with enough untracked/ignored entries to
+// exceed Node's own default 1 MiB `maxBuffer` previously returned `null` (no marks, no error,
+// indistinguishable from "not a git repo") with no way to tell the two apart. 32 MiB comfortably
+// covers even a very large monorepo's own untracked/ignored listing.
+const STATUS_MAX_BUFFER_BYTES = 32 * 1024 * 1024
+// PR #671 gate round 4 fix (Medium, Code4): contracts/ipc.md already documented "null on ... a
+// timeout", which did not exist until now -- a hung `git status` (an interactive credential
+// prompt despite `GIT_TERMINAL_PROMPT=0`, a stuck fsmonitor despite the config override above,
+// or a pathological repository) would otherwise never resolve at all.
+const STATUS_TIMEOUT_MS = 10_000
+
 /** `readGitStatus` (tasks.md T016): the File explorer's shared git-status/ignore reader. One
  * `gitRaw` call (see top-of-file comment) answers both the status-mark and the ignore-handling
  * questions research.md decisions 2 and 6 describe. `gitRaw` itself never rejects, but the
@@ -66,7 +109,11 @@ function parseStatus(stdout: string): GitStatusMap {
  * matching `diffStat.ts`'s own "never throw" convention exactly. */
 export async function readGitStatus(worktreePath: string): Promise<GitStatusMap | null> {
   try {
-    const result = await gitRaw(worktreePath, ['status', '--porcelain=v1', '-z', '--ignored=matching'])
+    const result = await gitRaw(worktreePath, STATUS_GIT_ARGS, {
+      env: STATUS_GIT_ENV,
+      maxBuffer: STATUS_MAX_BUFFER_BYTES,
+      timeoutMs: STATUS_TIMEOUT_MS
+    })
     if (result.code !== 0) return null
     return parseStatus(result.stdout)
   } catch {

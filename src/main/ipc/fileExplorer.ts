@@ -14,9 +14,10 @@ import type { SessionManager } from '../SessionManager';
 import { readGitStatus } from '../git/status';
 import { type DirectoryWatchHandle, watchDirectory } from '../fs/watchDirectory';
 import { readPreview as readPreviewFile } from '../fs/readPreview';
-import { resolveVSCodeExecutable } from '../process/executables';
+import { clearVSCodeExecutableCache, resolveVSCodeExecutable } from '../process/executables';
+import { containsGitSegment } from '../fs/paths';
 import { invalidArgument, notFound } from './util';
-import { containsGitSegment, resolveErrorResult, resolveInWorktree, type ResolveInWorktreeResult } from './files';
+import { resolveErrorResult, resolveInWorktree, type ResolveInWorktreeResult } from './files';
 
 const MAX_SESSION_ID_LENGTH = 256;
 // Matches `files.ts`'s own `MAX_TOKEN_LENGTH` (a single path, not a whole prompt) -- kept as an
@@ -210,44 +211,121 @@ async function listDirectoryEntries(
   return { ok: true, value: { entries, truncated } };
 }
 
-export function registerFileExplorer(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
-  // One `fs.watch` per Session, started lazily the first time that Session's file explorer panel
-  // actually lists a directory (never eagerly for every open Session) -- research.md decision 5,
-  // tasks.md T013/T014. Keyed by sessionId rather than worktreePath so two Sessions that happened
-  // to share a worktree path would still each own their own watcher lifecycle.
-  const watchers = new Map<string, DirectoryWatchHandle>();
+/** One `fs.watch` per Session, started lazily the first time that Session's file explorer panel
+ * actually lists a directory (never eagerly for every open Session) -- research.md decision 5,
+ * tasks.md T013/T014. Keyed by sessionId rather than worktreePath so two Sessions that happened
+ * to share a worktree path would still each own their own watcher lifecycle. Module-level (not
+ * local to `registerFileExplorer`, PR #671 gate round 4 fix, Critical): `sessions.ts` needs to
+ * reach into this same map from a SEPARATE registration function (`stopFileExplorerWatcher`
+ * below) to release a Session's watcher before archive/delete/recreateWorktree ever touch its
+ * worktree folder -- the previous design only ever tore a watcher down from a LATER fs event
+ * finding the Session gone from the registry, which never fires at all for a deleted-root event
+ * flood (see `watchDirectory`'s own doc comment) and left the handle open under a folder a
+ * caller was about to `mkdir` back into existence (`EPERM`). */
+interface SessionWatchState {
+  handle: DirectoryWatchHandle;
+  /** Directories the renderer has actually fetched for this Session via a successful
+   * `listDirectory` call (`''` is the worktree root). A watcher patch for anything else is
+   * dropped before any `readdir`/classify/IPC-send work runs (PR #671 gate round 4 fix, High,
+   * Sec4/Code4, reproduced live): an agent's own `pnpm install`/checkout touching dozens of
+   * directories the panel never opened must not re-list and re-status all of them for nothing
+   * the renderer will ever render. */
+  loadedPaths: Set<string>;
+}
+const watchers = new Map<string, SessionWatchState>();
 
+// PR #671 gate round 4 fix (High, Sec4/Code4): bounds how many watcher-triggered re-lists run
+// concurrently ACROSS EVERY SESSION'S watcher at once -- an agent's own `pnpm install`/checkout
+// touching many directories in one burst must not fire dozens of concurrent `readdir`+classify
+// cycles (each with its own IPC send) at once, the same "never one thing after another, never
+// everything at once" reasoning `SYMLINK_CLASSIFY_CONCURRENCY` already uses for per-entry
+// classification within a single directory listing.
+const WATCHER_FLUSH_CONCURRENCY = 4;
+let activeFlushes = 0;
+const flushQueue: Array<() => void> = [];
+function runFlush(fn: () => Promise<void>): void {
+  const run = (): void => {
+    activeFlushes++;
+    fn().finally(() => {
+      activeFlushes--;
+      const next = flushQueue.shift();
+      if (next) next();
+    });
+  };
+  if (activeFlushes < WATCHER_FLUSH_CONCURRENCY) run();
+  else flushQueue.push(run);
+}
+
+/** Stops and discards a Session's watcher, if one exists. Exported so `sessions.ts` can call it
+ * before archive, delete, and `recreateWorktree` ever touch the worktree folder itself (PR #671
+ * gate round 4 fix, Critical) -- a watcher left running under a folder about to be deleted or
+ * recreated is exactly the deleted-root event flood `watchDirectory`'s own doc comment describes.
+ * Safe to call for a Session with no watcher (a no-op). Also called from this module's own
+ * `onFatal` callback below when a watcher self-detects it must stop (the deleted-root flood, or a
+ * genuine `'error'` event) -- the one difference is that path removes the Session's entry so the
+ * NEXT `listDirectory` call starts a fresh watcher, while this export is a plain teardown a
+ * caller uses right before it is ABOUT to touch the folder itself (recreateWorktree's own
+ * success re-establishes a watcher on its own next `listDirectory`, same as any other first
+ * open). */
+export function stopFileExplorerWatcher(sessionId: string): void {
+  watchers.get(sessionId)?.handle.stop();
+  watchers.delete(sessionId);
+}
+
+/** Stops and discards EVERY Session's watcher (PR #671 gate round 4 fix, Low/Medium, Verif4/Sec4:
+ * a watcher otherwise only ever stopped on an explicit archive/delete/recreateWorktree/self-
+ * detected-fatal path, never on app quit). Exported for `main/index.ts`'s own `before-quit`
+ * handler to call alongside its existing best-effort cleanup there. */
+export function stopAllFileExplorerWatchers(): void {
+  for (const sessionId of [...watchers.keys()]) stopFileExplorerWatcher(sessionId);
+}
+
+export function registerFileExplorer(manager: SessionManager, getWindow: () => BrowserWindow | undefined): void {
   function ensureWatcher(sessionId: string, worktreePath: string): void {
     if (watchers.has(sessionId)) return;
-    const handle = watchDirectory(worktreePath, (relativePath) => {
-      void (async () => {
-        // The Session may have been archived/deleted between the watcher firing and this flush --
-        // re-check the registry rather than trusting the closed-over `worktreePath` is still
-        // live, and tear this watcher down once its own Session is gone. There is no separate
-        // "Session removed" event this module subscribes to, so this flush is also the
-        // watcher's own eventual cleanup path.
-        const session = manager.registry.getSession(sessionId);
-        if (!session) {
-          watchers.get(sessionId)?.stop();
-          watchers.delete(sessionId);
-          return;
-        }
-        const result = await listDirectoryEntries(session.worktreePath, relativePath);
-        // A re-list failing (the changed directory itself was deleted in the same burst, say) is
-        // not an error to surface here -- the renderer only learns about THAT if/when it
-        // navigates there directly, the same as any other stale-path race `resolveListTarget`
-        // already handles per-request.
-        if (!result.ok) return;
-        const window = getWindow();
-        if (!window || window.isDestroyed()) return;
-        window.webContents.send(IPC_EVENTS.FILE_EXPLORER_PATCH, {
-          sessionId,
-          relativePath,
-          entries: result.value.entries
+    const handle = watchDirectory(
+      worktreePath,
+      (relativePath) => {
+        runFlush(async () => {
+          // The Session may have been archived/deleted between the watcher firing and this
+          // flush -- re-check the registry rather than trusting the closed-over `worktreePath`
+          // is still live.
+          const session = manager.registry.getSession(sessionId);
+          if (!session) {
+            stopFileExplorerWatcher(sessionId);
+            return;
+          }
+          const state = watchers.get(sessionId);
+          if (!state?.loadedPaths.has(relativePath)) return;
+          const result = await listDirectoryEntries(session.worktreePath, relativePath);
+          // A re-list failing (the changed directory itself was deleted in the same burst, say)
+          // is not an error to surface here -- the renderer only learns about THAT if/when it
+          // navigates there directly, the same as any other stale-path race `resolveListTarget`
+          // already handles per-request.
+          if (!result.ok) return;
+          const window = getWindow();
+          if (!window || window.isDestroyed()) return;
+          window.webContents.send(IPC_EVENTS.FILE_EXPLORER_PATCH, {
+            sessionId,
+            relativePath,
+            entries: result.value.entries
+          });
         });
-      })();
-    });
-    watchers.set(sessionId, handle);
+      },
+      () => {
+        // onFatal (PR #671 gate round 4 fix, Critical): the watched root was deleted or became
+        // unwatchable out from under a running watch. Drop the cached state so the NEXT
+        // `listDirectory` call (e.g. after `sessions.recreateWorktree` succeeds) starts a fresh
+        // watcher, rather than staying silently dead forever.
+        watchers.delete(sessionId);
+      }
+    );
+    // `watchDirectory` returns `undefined` when `watch()` itself threw synchronously (the
+    // worktree folder was already gone at watch-start time) -- do NOT cache anything in that
+    // case, so the next `listDirectory` call retries instead of staying permanently un-watched
+    // (PR #671 gate round 4 fix, Critical).
+    if (!handle) return;
+    watchers.set(sessionId, { handle, loadedPaths: new Set() });
   }
 
   ipcMain.handle(
@@ -269,7 +347,12 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       if (!session) return notFound(`This Session no longer exists`);
 
       ensureWatcher(sessionId, session.worktreePath);
-      return listDirectoryEntries(session.worktreePath, relativePath);
+      const result = await listDirectoryEntries(session.worktreePath, relativePath);
+      // Records this directory as one the renderer has actually fetched, so a later watcher
+      // patch for it is allowed through (PR #671 gate round 4 fix, High) -- recorded on success
+      // only, so a failed/escaping path never ends up "loaded".
+      if (result.ok) watchers.get(sessionId)?.loadedPaths.add(relativePath);
+      return result;
     }
   );
 
@@ -349,9 +432,40 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
 
       // `shell: false` (the default, stated explicitly) and an absolute-path args array -- never
       // a shell-interpolated command string, so a path containing `& | ^ %` cannot be read as a
-      // second command.
-      spawn(codeExePath, [resolved.realPath], { shell: false, windowsHide: false, detached: true, stdio: 'ignore' }).unref();
-      return { ok: true, value: { opened: true } };
+      // second command. `ELECTRON_RUN_AS_NODE`/`NODE_OPTIONS` are stripped from the child's own
+      // env (PR #671 gate round 4 fix, Medium): this process is itself an Electron process, and
+      // an inherited `ELECTRON_RUN_AS_NODE=1` would make the spawned `Code.exe` (which embeds its
+      // own Electron/Node runtime) try to run its first argument as a Node SCRIPT instead of
+      // opening it as a file, a real argument-confusion risk, not merely a stray env var.
+      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      delete childEnv['ELECTRON_RUN_AS_NODE'];
+      delete childEnv['NODE_OPTIONS'];
+      const child = spawn(codeExePath, [resolved.realPath], {
+        shell: false,
+        windowsHide: false,
+        detached: true,
+        stdio: 'ignore',
+        env: childEnv
+      });
+      // PR #671 gate round 4 fix (Medium, Code4/Verif4/Sec4): a bare `spawn(...).unref()` has no
+      // `'error'` listener -- a launch failure (a stale cached path whose target vanished after
+      // the resolver ran, `EACCES`, AV quarantine) previously raised an UNCAUGHT exception in
+      // main, after the handler had already returned `{ opened: true }` (the wrong FR-017 state).
+      // Waits for the first of `'spawn'`/`'error'` instead, clearing the now-proven-stale cache
+      // on error so the NEXT call re-resolves rather than repeating the same failure forever.
+      // Executor form (not `Promise.withResolvers()`): `Promise.withResolvers()` needs lib
+      // "ES2024"; `tsconfig.node.json` is pinned to "ES2023" (owned by another task) -- the same
+      // documented exception `OmpProcess.ts`'s own `start()` already carries.
+      const opened = await new Promise<boolean>((resolve) => {
+        child.once('spawn', () => resolve(true));
+        child.once('error', (err) => {
+          console.error('fileExplorer.openInVSCode: spawn failed', err);
+          clearVSCodeExecutableCache();
+          resolve(false);
+        });
+      });
+      child.unref();
+      return { ok: true, value: { opened } };
     }
   );
 

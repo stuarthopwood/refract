@@ -18,6 +18,7 @@ import { SettingsStore } from './store/settings'
 import { SessionManager } from './SessionManager'
 import { registerIpc } from './ipc/register'
 import { cleanupModelRolesScratchDir } from './omp/config'
+import { stopAllFileExplorerWatchers } from './ipc/fileExplorer'
 import { registerNotifications } from './notifications'
 import { startMemoryMonitor } from './memory'
 
@@ -355,6 +356,10 @@ if (!gotLock) {
     // call reaching `ensureScratchDir` between two passes and creating a fresh directory -- the
     // re-entrant second pass here is exactly what catches that one).
     void cleanupModelRolesScratchDir()
+    // PR #671 gate round 4 fix (Low/Medium, Verif4/Sec4): releases every Session's file-watcher
+    // handle on quit -- a watcher was otherwise only ever stopped by an explicit archive/delete/
+    // recreateWorktree call or its own fatal self-detection, never by the app actually closing.
+    stopAllFileExplorerWatchers()
     if (quitInFlight || !manager) return
     quitInFlight = true
     event.preventDefault()

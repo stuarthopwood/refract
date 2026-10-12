@@ -66,8 +66,20 @@ function sanitizedGitEnv(): NodeJS.ProcessEnv {
 /** Runs `git <args>` with no shell in `cwd`. Never rejects; callers branch on `.code`. Resolves
  * git's absolute path via `resolveExecutable` (security: Windows would otherwise search `cwd`
  * before PATH for a bare `"git"`, so a repository that commits its own `git.exe` could run
- * instead of the real one). */
-export async function gitRaw(cwd: string, args: string[], opts?: { signal?: AbortSignal }): Promise<GitRawResult> {
+ * instead of the real one). `opts.env` is merged on TOP of the sanitised base env (never replaces
+ * it), so a caller can add e.g. `GIT_OPTIONAL_LOCKS=0` without losing the `GIT_DIR`/`GIT_WORK_TREE`
+ * stripping above. `opts.timeoutMs` and `opts.maxBuffer` default to Node's own `execFile`
+ * defaults (no timeout, 1 MiB) when omitted -- existing callers (`diffStat.ts`) are unaffected;
+ * `status.ts` passes explicit values (PR #671 gate round 4 fix, Medium: a repo with enough
+ * untracked/ignored entries to exceed 1 MiB silently returned `null`, no marks, no error).
+ * Executor form (not `Promise.withResolvers()`): `Promise.withResolvers()` needs lib "ES2024";
+ * `tsconfig.node.json` is pinned to "ES2023" (owned by another task) -- the same documented
+ * exception `github/gh.ts`'s `ghRaw`/`OmpProcess.ts`'s `start()` already carry. */
+export async function gitRaw(
+  cwd: string,
+  args: string[],
+  opts?: { signal?: AbortSignal; timeoutMs?: number; maxBuffer?: number; env?: NodeJS.ProcessEnv }
+): Promise<GitRawResult> {
   let gitPath: string
   try {
     gitPath = await resolveExecutable('git')
@@ -78,7 +90,14 @@ export async function gitRaw(cwd: string, args: string[], opts?: { signal?: Abor
     execFile(
       gitPath,
       args,
-      { cwd, windowsHide: true, signal: opts?.signal, env: sanitizedGitEnv() },
+      {
+        cwd,
+        windowsHide: true,
+        signal: opts?.signal,
+        timeout: opts?.timeoutMs,
+        maxBuffer: opts?.maxBuffer,
+        env: { ...sanitizedGitEnv(), ...opts?.env }
+      },
       (error: ExecFileException | null, stdout, stderr) => {
         if (error === null) {
           resolve({ stdout, stderr, code: 0 })
