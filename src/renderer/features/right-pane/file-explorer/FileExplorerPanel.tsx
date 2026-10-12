@@ -282,8 +282,11 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // unmounts a focused row, and needs the identical rescue (PR #671 gate fix, accessibility-
   // auditor/code-reviewer MEDIUM, round 2). The SEPARATE `focusout` listener below is the general
   // rescue for everything ELSE that can unmount a focused control without `sessionId`/`status`
-  // changing at all -- a live-refresh patch removing/collapsing the focused row, an FR-021
-  // delete unmounting the preview toolbar/Wrap/Source button, or a virtualised row scrolling out.
+  // changing at all -- a live-refresh patch removing/collapsing the focused row, or an FR-021
+  // delete unmounting the preview toolbar/Wrap/Source button. Gate round 11 correction: a
+  // virtualised row merely scrolling out of view is NOT rescued by this listener (see the
+  // disclosed limitation in the effect below) -- it used to be, rounds 7-9, before round 10
+  // removed that path as its own worse accessibility regression.
   useEffect(() => {
     if (!hadFocusRef.current) return
     requestAnimationFrame(() => {
@@ -314,7 +317,9 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // NEITHER `sessionId` NOR `status` changing -- the effect above never re-runs for any of them.
   // A document-wide `focusin` listener (like `hadFocusRef`'s own) cannot catch this case: there is
   // no NEW `focusin` event when an element is simply removed out from under focus. A `focusout`
-  // listener on the container itself does fire for that removal.
+  // listener on the container itself fires for all three -- but, per round 11's own correction
+  // below, only the first two are actually rescued; the third (scroll-out) is a disclosed
+  // limitation, not silently dropped from this comment's own accounting.
   //
   // Gate round 5 fix (Code5 HIGH2, A11y5 HIGH): `relatedTarget === null` alone is NOT a reliable
   // "the focused element was removed" signal -- Chromium also reports `relatedTarget: null` for
@@ -372,18 +377,28 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   //
   // Accepted, disclosed limitation (not re-attempted this round, per round 9's own now-reverted
   // attempt): a focused+selected row that merely scrolls out of Virtuoso's rendered window drops
-  // focus to `<body>` and STAYS there -- arrow keys/Home/End/type-ahead do nothing until the
-  // user presses Tab or Shift+Tab, at which point the roving-tabindex mechanism (`rowsRef`,
-  // `tabbableAbsIndex`, recomputed via `rangeChanged` below to the first RENDERED row whenever
-  // the previously-tabbable one scrolls out) re-enters the tree at a real, present, fully
-  // keyboard-functional row -- standard behaviour for a virtualised widget, and the exact
-  // behaviour native scrollable listboxes with virtualisation (for example a long native
-  // `<select>` has no equivalent, but other virtualised ARIA trees/grids in the wild commonly
-  // share it) settle on when nothing else rescues. The row's own `aria-selected` is never
-  // touched by a scroll, only `document.activeElement` moves. A row genuinely gone (deleted on
-  // disk, an ancestor folder collapsed -- `!isConnected` AND absent from the CURRENT logical
-  // `rows` list, not merely virtualised away) still rescues immediately, below -- that case was
-  // never in question, only the scroll-only one.
+  // focus to `<body>` and STAYS there, with no action from the user -- a WCAG 2.4.3 Focus Order
+  // violation. Arrow keys, Home/End and type-ahead all stop working until the user presses Tab
+  // (if the row scrolled out ABOVE the rendered window) or Shift+Tab (if BELOW) -- Chromium's own
+  // sequential-focus-navigation starting point depends on which direction the lost element sat
+  // relative to the viewport [INFERENCE, probe-observed by a round-11 gate reviewer against a
+  // minimal scratch page, not this component]; pressing the OTHER key leaves the tree entirely
+  // (WCAG 2.1.1 Keyboard is met only through that one correct direction, not unconditionally).
+  // Re-entry via either key has NOT been live-verified against this actual component, by keyboard
+  // or by screen reader -- carried on the PR's own not-verified list. Once re-entered, the
+  // roving-tabindex mechanism (`rowsRef`, `tabbableAbsIndex`, recomputed via `rangeChanged` below
+  // to the first RENDERED row whenever the previously-tabbable one scrolls out) lands on a real,
+  // present, fully keyboard-functional row -- never the bare container. The row's own
+  // `aria-selected` is never touched by a scroll, only `document.activeElement` moves. A row
+  // genuinely gone (deleted on disk, an ancestor folder collapsed -- `!isConnected` AND absent
+  // from the CURRENT logical `rows` list, not merely virtualised away) still rescues immediately,
+  // below -- that case was never in question, only the scroll-only one. Real mitigations exist
+  // and are NOT built here: keep the focused row's own index always rendered (Virtuoso's
+  // `increaseViewportBy`, or re-`scrollIntoView` the focused index on every `rangeChanged`), or
+  // switch the tree to the `aria-activedescendant` pattern so DOM focus never leaves the
+  // `role="tree"` container even while the active row is virtualised away. This is an accepted
+  // limitation pending Stuart's own sign-off (recorded as an open question on #463), not a closed
+  // decision.
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -618,12 +633,45 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
         if (lastAbs !== undefined) moveToRow(rows[lastAbs] as NodeRow, lastAbs)
         break
       }
+      // Gate round 11 fix (A11y11 HIGH): PageUp/PageDown were unhandled, so their native default
+      // action scrolled Virtuoso's own scroller out from under the focused row with no tree
+      // navigation happening at all -- once the row left the rendered window, Virtuoso unmounted
+      // it, dropping focus to `<body>` with nothing to rescue it (the round-10 removal of the
+      // deferred rescue closed a worse bug but left this keyboard path, previously covered,
+      // unrescued). Moves by one page of NODE rows (folders/files only, matching every other
+      // keyboard move here, never counting a virtualised "N more" row), where a page is however
+      // many node-or-not rows are CURRENTLY rendered (`renderedRange`, fed by Virtuoso's own
+      // `rangeChanged`) -- the same notion of "a page" the user can actually see on screen,
+      // clamped to the first/last node row rather than wrapping or doing nothing past either end.
+      case 'PageDown': {
+        event.preventDefault()
+        const page = Math.max(1, renderedRange.endIndex - renderedRange.startIndex)
+        const targetNodeIndex = Math.min(nodeAbsIndices.length - 1, row.nodeIndex + page)
+        const targetAbs = nodeAbsIndices[targetNodeIndex]
+        if (targetAbs !== undefined) moveToRow(rows[targetAbs] as NodeRow, targetAbs)
+        break
+      }
+      case 'PageUp': {
+        event.preventDefault()
+        const page = Math.max(1, renderedRange.endIndex - renderedRange.startIndex)
+        const targetNodeIndex = Math.max(0, row.nodeIndex - page)
+        const targetAbs = nodeAbsIndices[targetNodeIndex]
+        if (targetAbs !== undefined) moveToRow(rows[targetAbs] as NodeRow, targetAbs)
+        break
+      }
       case 'Enter': {
         event.preventDefault()
         selectAndActivate(node)
         break
       }
       default: {
+        // Gate round 11 fix (A11y11 HIGH): Space's native default action is ALSO to scroll the
+        // nearest scrollable ancestor (Virtuoso's own scroller) exactly like PageUp/PageDown
+        // above -- prevented here, before falling through to type-ahead (where a literal space
+        // character is harmless: no file/folder name in this tree starts with one in practice,
+        // and if one ever did, matching it is still correct type-ahead behaviour, not a new
+        // select/activate binding the spec never asked for on this key).
+        if (event.key === ' ') event.preventDefault()
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
           handleTypeahead(event.key, row)
         }
@@ -731,6 +779,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                           aria-setsize={row.setsize}
                           aria-posinset={row.posinset}
                           tabIndex={-1}
+                          data-tree-more-row
                           style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
                           className="px-1 py-0.5 text-xs text-muted-foreground"
                         >

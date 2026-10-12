@@ -451,36 +451,36 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
           notifyFileExplorerReset(sessionId);
         }
       }
-      // Gate round 9 fix (Sec9 Low, round 10 corrected below): a SUBdirectory that no longer
-      // exists (`file-missing`, not the whole-tree `worktree-missing` above) is pruned from this
-      // Session's own parked-path map -- otherwise a folder deleted while the panel was
-      // unwatched gets silently re-flushed and silently fails again on every later
-      // `ensureWatching` restart, forever (bounded waste, not a correctness bug, but pointless
-      // work for a path nothing will ever show again; its own row already vanished via the
-      // PARENT folder's own patch, round 5's existing FR-021 path).
-      // Gate round 10 fix (Sec10/Code10/Verif10 Medium): `file-missing` is not only returned for
-      // a genuinely deleted path -- round 7 deliberately maps every non-ENOENT/ENOTDIR
-      // `realpath`/`lstat` failure (a transient EACCES/EBUSY/EMFILE, an antivirus scan, a brief
-      // Windows delete-pending window) to the same code, specifically so callers treat it as
-      // non-fatal. Pruning unconditionally on ANY `file-missing` therefore permanently dropped a
-      // folder that was only ever transiently unreadable -- a delete-then-recreate (a `git
-      // checkout`/stash, a build tool's rimraf+rebuild) could hit the gap and leave the folder
-      // expanded in the renderer with nothing in `loadedPathsBySession` ever patching it again
-      // until a full reset or reload. Re-confirms the path is ACTUALLY gone (`fs.lstat` itself
-      // throwing `ENOENT`/`ENOTDIR`) before pruning, and never prunes the root (`''`) from here
-      // at all -- a missing root is the `worktree-missing` branch's own job above, not this one.
-      if (result.error.code === 'file-missing' && relativePath !== '') {
-        try {
-          await fs.lstat(path.join(session.worktreePath, relativePath));
-          // Still exists on disk -- the `file-missing` result was transient; keep the path
-          // parked so the next flush/re-flush can still patch it once the hiccup clears.
-        } catch (lstatErr) {
-          const code = (lstatErr as NodeJS.ErrnoException)?.code;
-          if (code === 'ENOENT' || code === 'ENOTDIR') {
-            loadedPathsBySession.get(sessionId)?.delete(normalizePathKey(relativePath));
-          }
-        }
-      }
+      // Gate round 9 fix (Sec9 Low), round 10 fix (Sec10/Code10/Verif10 Medium), REMOVED round 11
+      // (Code11/Sec11/Verif11 Medium): a SUBdirectory that no longer exists (`file-missing`, not
+      // the whole-tree `worktree-missing` above) used to be pruned from this Session's own
+      // parked-path map here -- the stated motivation (round 9) was pure waste-reduction, never a
+      // correctness fix: a folder deleted while the panel was unwatched would otherwise be
+      // silently re-flushed and silently fail again on every later `ensureWatching` restart,
+      // forever (bounded waste, its own row already vanished via the PARENT folder's own patch,
+      // round 5's existing FR-021 path). Round 10 added an `fs.lstat` re-check before pruning,
+      // since round 7 deliberately maps every non-ENOENT/ENOTDIR `realpath`/`lstat` failure (a
+      // transient EACCES/EBUSY/EMFILE, an antivirus scan, a brief Windows delete-pending window)
+      // to this same `file-missing` code, specifically so callers treat it as non-fatal --
+      // pruning on every such transient hiccup was itself a correctness bug (round 10 fixed
+      // that one). But round 11 found the `lstat` check STILL broke a DIFFERENT real case: a
+      // genuine delete-then-recreate (a `git checkout`/stash, a build tool's rimraf+rebuild) can
+      // have THIS subfolder's own `lstat` legitimately throw `ENOENT` during the gap (correctly
+      // pruned, by round 10's own logic), while the PARENT folder's own flush only re-lists
+      // AFTER the recreate completes -- `withPatchedChildren` (the renderer's own patch-merge)
+      // then keeps this folder's stale `children`/`expanded` state from before the delete, and
+      // with the key gone from `loadedPathsBySession`, every LATER flush for it (including the
+      // recreate's own) is silently dropped by the membership check below, forever, with no
+      // automatic recovery short of a full reset/reload or a fresh expand-from-collapsed (which
+      // never re-fetches an already-`children !== undefined` folder either). No fix was safe to
+      // build this round without a second new mechanism (tracking parent-flush-driven pruning
+      // instead) -- removed the prune entirely rather than add one. The accepted trade-off: a
+      // folder genuinely deleted while its panel is unwatched stays parked in
+      // `loadedPathsBySession` for the rest of the Session's run (a few bytes per path, cleared
+      // on the next full reset/reload/delete/archive regardless) and gets one harmless, silently
+      // no-op re-flush attempt every time the watcher restarts -- bounded waste, never a
+      // correctness bug, the same Low severity round 9 itself originally rated this at before
+      // ever adding the prune.
       // Otherwise not an error to surface here -- the renderer only learns about a deleted
       // SUBdirectory if/when it navigates there directly, the same as any other stale-path race
       // `resolveListTarget` already handles per-request.
@@ -663,8 +663,13 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       // `listDirectory` that was already in flight when the Session was deleted could add this
       // entry back into `loadedPathsBySession` AFTER `forgetFileExplorerSession` already
       // cleared it on the successful delete path, leaking it for a Session that no longer
-      // exists.
-      if (result.ok && manager.registry.getSession(sessionId)) {
+      // exists. Gate round 11 fix (Sec11 Low): also excludes an ARCHIVED Session for the exact
+      // same reason -- a listing in flight when `sessions.archive` completes can otherwise
+      // re-park a path right after `notifyFileExplorerReset` already cleared it; bounded (the
+      // next restore's own reset clears it again), but closed at the source rather than relying
+      // on that second reset to clean up after it.
+      const resultSession = manager.registry.getSession(sessionId);
+      if (result.ok && resultSession && !resultSession.archivedAt) {
         let loaded = loadedPathsBySession.get(sessionId);
         if (!loaded) {
           loaded = new Map();

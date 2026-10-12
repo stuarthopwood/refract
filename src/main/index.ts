@@ -232,10 +232,21 @@ function createWindow(): void {
   // call `stopWatching` again until the Session is archived/deleted/recreated or the whole app
   // quits. `render-process-gone` covers a crash; `did-navigate` (main frame, a genuine
   // CROSS-document navigation that actually COMMITTED -- see round 10's own correction just
-  // below) covers a reload, including dev HMR's full-page fallback. Both are a hard reset of the
-  // renderer's entire in-memory state, so stopping every watcher unconditionally is correct --
-  // the renderer's own fresh mount re-calls `ensureWatching` for whichever Session(s) reopen a
-  // panel, same as any other first open.
+  // below) covers a reload, including dev HMR's full-page fallback, PROVIDED the reload itself
+  // commits -- round 11 correction (Code11/Sec11 Medium): `did-navigate` is never emitted for a
+  // navigation that commits to an ERROR page instead (Electron's own `IsErrorPage()` check) --
+  // a dev reload while the Vite server is down, or a `file://` reload with `index.html` itself
+  // missing, replaces the whole document (every panel, every bit of renderer state) but fires
+  // only `did-fail-provisional-load`/`did-fail-load`, never `did-navigate`, leaving every watcher
+  // and ancestor lock stranded alive with nothing to ever release them until the NEXT successful
+  // load. `did-fail-load` below closes that gap (`errorCode !== -3` excludes `ERR_ABORTED`, the
+  // code for a navigation cancelled by `will-navigate`/a new navigation superseding it mid-
+  // flight -- neither of those actually destroyed the document, so neither needs a reset). Both
+  // `render-process-gone` and `did-navigate`/`did-fail-load` are a hard reset of the renderer's
+  // entire in-memory state, so stopping every watcher unconditionally is correct -- the
+  // renderer's own fresh mount re-calls `ensureWatching` for whichever Session(s) reopen a panel,
+  // same as any other first open (moot for `did-fail-load`'s own error-page case, which shows no
+  // panel to reopen a watcher for in the first place, but harmless either way).
   //
   // Gate round 9 fix (Sec9/Code9/A11y9/Verif9 HIGH, round 10 superseded below): the round-8
   // version of this handler used the deprecated positional `isMainFrame` argument and ignored
@@ -271,6 +282,14 @@ function createWindow(): void {
   // re-flush folders the new renderer never opened.
   window.webContents.on('render-process-gone', () => resetAllFileExplorerWatchersAndState())
   window.webContents.on('did-navigate', () => resetAllFileExplorerWatchersAndState())
+  // Gate round 11 fix (Code11/Sec11 Medium): see the comment at this effect's own top -- closes
+  // the committed-error-page gap `did-navigate` itself cannot cover. `-3` is `ERR_ABORTED`
+  // (Chromium's net error code), fired for a navigation cancelled by `will-navigate`/superseded
+  // by a newer one mid-flight -- the OLD document was never actually replaced in either case, so
+  // neither needs a reset (and `did-navigate` already covers the one that DID replace it).
+  window.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, _validatedURL, isMainFrame) => {
+    if (isMainFrame && errorCode !== -3) resetAllFileExplorerWatchersAndState()
+  })
 
   // T037: SessionAgent's unread tracking needs real OS focus, not just "a window exists".
   window.on('focus', () => manager?.setWindowFocused(true))

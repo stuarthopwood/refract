@@ -1172,25 +1172,42 @@ exit, deleted by literal path afterward; raw CDP driver output piped directly to
 redirection, never hand-transcribed; evidence -- 2 screenshots, `raw-output.txt`, the two scratch
 scripts (`gate10-verify.js`, `setup-gate10.ps1`), `sha256.json` -- saved in
 `C:/Users/shopwood/refract-live-check-671-gate10/`, 6 files total):
-- **`did-navigate` red probe (the HIGH fix)**: opened a Session's panel (ancestor rename
-  confirmed blocked); a same-document `pushState`/`history.back()` round trip still left the
-  ancestor rename blocked (regression check on round 9's own fix, still holds); then a RENDERER-
-  initiated cross-document navigation (`window.location.href` assigned to a foreign `file://`
-  path from page JS, not a CDP-level `Page.navigate` -- the latter does not exercise
-  `will-navigate` the same way) was denied by `denyForeignNavigation`: `window.location.href`
-  unchanged before/after, the ancestor rename STILL blocked afterward, and a file written
-  externally after the attempt still patched into the tree (screenshot
+- **`did-navigate` red probe (the HIGH fix) -- CORRECTED, round 11 (Verif11 Medium): the denial
+  itself was never actually OBSERVED this round, only INFERRED.** The driver spawned Electron
+  with `stdio: 'ignore'`, discarding main's own `openExternalSafe` debug line
+  (`main: dropped an external open request with a disallowed protocol (file:)`) that would have
+  shown `will-navigate` genuinely firing -- `window.location.href` staying unchanged is also
+  consistent with no navigation attempt having started at all. Round 11 re-ran this exact probe
+  WITH main's stdout/stderr captured (`main-process-stdout.txt`) and the denial line IS present,
+  closing the gap; see the Round 11 section below. What this round's own narrative otherwise
+  still holds: opened a Session's panel (ancestor rename confirmed blocked); a same-document
+  `pushState`/`history.back()` round trip still left the ancestor rename blocked (regression
+  check on round 9's own fix, still holds); then a RENDERER-initiated cross-document navigation
+  (`window.location.href` assigned to a foreign `file://` path from page JS, not a CDP-level
+  `Page.navigate` -- the latter does not exercise `will-navigate` the same way) left
+  `window.location.href` unchanged before/after, the ancestor rename STILL blocked afterward, and
+  a file written externally after the attempt still patched into the tree (screenshot
   `A-did-navigate-red-probe.png`). An earlier attempt at this probe used CDP's `Page.navigate`
   directly, which bypassed `will-navigate` entirely and committed the navigation to a
   `chrome-error://` page -- a real false negative in the TEST, not the fix, caught by checking
-  `window.location.href` actually stayed put and corrected before trusting the result.
-- **Prune-on-transient-error fix (the Medium fix)**: expanded a `sub/` folder (recorded in
-  `loadedPathsBySession`), applied a genuine `icacls /deny (RX)` to it (confirmed as a REAL,
-  OS-level block via a direct Node `fs.readdirSync` sanity check inside the same run, which threw
-  `EPERM` -- not merely assumed), then wrote a file inside `sub/` while denied to fire the
-  watcher's own flush for it. After restoring the ACL, a SECOND file written into `sub/` still
-  patched into the tree -- `sub/` was never pruned from `loadedPathsBySession` despite the
-  transient `file-missing` result in between (screenshot `B-prune-transient-error.png`).
+  `window.location.href` actually stayed put (this earlier attempt's own raw output was not
+  retained, per Verif11's own LOW finding -- disclosed here rather than re-asserted as evidence).
+- **Prune-on-transient-error fix (the Medium fix) -- CORRECTED, round 11 (Verif11 Medium): the
+  "sanity check" cited the wrong syscall.** It used `fs.readdirSync`, which maps to
+  `invalid-argument` in this codebase's own `mapReaddirError`, never reaching the `file-missing`
+  code the prune branch actually keys on -- it was `fs.promises.realpath` throwing `EPERM`
+  (confirmed by a round-11 reviewer's own probe: `realpath` EPERM, `lstat`/`stat` OK, `readdir`
+  EPERM, write OK under the same ACL) that produced `resolveInWorktree`'s `file-missing` result.
+  The underlying claim (`sub/` was never pruned) still held at the time, but for the right
+  reason by the wrong cited evidence. Moot as of round 11 regardless: the `lstat`-gated prune this
+  bullet was testing has been REMOVED entirely (see the Round 11 section) -- nothing is ever
+  pruned from `loadedPathsBySession` on a `file-missing` result any more, so this specific
+  behaviour no longer needs re-proving each round. Original bullet, for the historical record:
+  expanded a `sub/` folder (recorded in `loadedPathsBySession`), applied a genuine
+  `icacls /deny (RX)` to it, then wrote a file inside `sub/` while denied to fire the watcher's
+  own flush for it. After restoring the ACL, a SECOND file written into `sub/` still patched into
+  the tree -- `sub/` was never pruned from `loadedPathsBySession` despite the transient
+  `file-missing` result in between (screenshot `B-prune-transient-error.png`).
 
 **Not verified this round**: the round-7/8/9 carried-over gaps (an app-side `getStatus()`
 call-count instrumentation during a concurrent git-lock stress burst; a genuinely slow/throttled
@@ -1201,9 +1218,134 @@ a live repro -- a renderer crash is far harder to trigger deterministically in a
 than a navigation); the deliberate-click-elsewhere focus-steal direction is now MOOT for the
 scroll-out case specifically (the mechanism that could have stolen focus back is gone), but still
 open for the `[sessionId, status]` effect's own rescue in principle (not re-examined this round,
-no evidence either way); the archive-race test's own watcher-release claim is narrowed per the
 Round 9 section's correction above -- a test isolating that specific claim (separate per-Session
-parent folders, a positive control) was not built this round.
+parent folders, a positive control) was not built this round. **Added per Verif11 Medium**: the
+`did-navigate` path firing on a committed reload or HMR full reload, and the renderer correctly
+re-ensuring afterwards, was not re-run this round (only the cancelled and same-document
+directions were) -- closed in the Round 11 section below. The real trigger scenario for the
+round-10 HIGH itself (an OS file actually dropped onto the window) was not reproduced; a
+`location.href` stand-in was used instead, and remains a stand-in as of round 11 too.
+
+### Round 11 gate fixes (A11y11 FAIL, Sec11/Code11/Verif11 PASS with Mediums, all against round 10)
+
+**HIGH (A11y11)**: `handleRowKeyDown` did not handle `PageUp`, `PageDown` or `Space`, so their
+native default action scrolled Virtuoso's own scroller out from under the focused row with no
+tree navigation happening at all -- once the row left the rendered window, Virtuoso unmounted it,
+dropping focus to `<body>` with nothing to rescue it (round 10's own removal of the deferred
+rescue closed a worse bug but left this keyboard path, previously covered by rounds 8/9's own
+rescue, unrescued). A WCAG 2.4.3 Focus Order violation, arguably 2.1.1 Keyboard, and in conflict
+with FR-025 ("MUST NOT lose the tree's current focus position"). Fixed: `PageDown`/`PageUp` each
+call `event.preventDefault()` and move by one page of NODE rows (`page = max(1, renderedRange.end
+- renderedRange.start)`, the same notion of "a page" the user can actually see on screen) to the
+clamped entry of `nodeAbsIndices[row.nodeIndex ± page]` via the existing `moveToRow`; `Space`'s
+own default action (also a scroll) is now prevented too, before falling through to type-ahead
+(where a literal space character is harmless -- no filename in this tree starts with one in
+practice, and matching one if it ever did is still correct type-ahead behaviour, not a new
+select/activate binding the spec never asked for on this key).
+
+**MEDIUM (Code11/Sec11)**: `did-navigate` itself never fires for a navigation that commits to an
+ERROR page (Electron's own `IsErrorPage()` check) -- a dev reload while the Vite server is down,
+or a `file://` reload with `index.html` itself missing, replaces the whole document (destroying
+every panel and all renderer state) but fires only `did-fail-provisional-load`/`did-fail-load`,
+never `did-navigate`, leaving every watcher and ancestor lock stranded alive with nothing left to
+ever release them until the NEXT successful load. The round-10 comment's "covers a reload"
+overstated this. Fixed: added `window.webContents.on('did-fail-load', (...) => { if (isMainFrame
+&& errorCode !== -3) resetAllFileExplorerWatchersAndState() })` -- `-3` is `ERR_ABORTED`, fired for
+a navigation cancelled by `will-navigate`/superseded by a newer one mid-flight, neither of which
+actually destroyed the old document (and the one that did is already `did-navigate`'s own job).
+
+**MEDIUM (Code11/Sec11/Verif11)**: the round-10 `lstat`-gated prune-on-`file-missing` still did
+not fix the delete-then-recreate case it claimed to -- a genuine `git checkout`/stash/rimraf gap
+can have the subfolder's own `lstat` legitimately throw `ENOENT` during the gap (correctly pruned
+by round 10's own logic), while the PARENT folder's flush only re-lists AFTER the recreate
+completes; the renderer's own `withPatchedChildren` then keeps this folder's stale
+`children`/`expanded` state, and with the key gone from `loadedPathsBySession`, every LATER flush
+for it (including the recreate's own) is silently dropped forever, with no automatic recovery
+short of a full reset/reload. No safe fix was available this round without adding a second new
+mechanism (parent-flush-driven pruning); **removed the prune entirely** instead of patching around
+it again. Accepted trade-off: a folder genuinely deleted while its panel is unwatched stays parked
+in `loadedPathsBySession` for the rest of the Session's run and gets one harmless, silently no-op
+re-flush attempt on every watcher restart -- bounded waste, the same Low severity round 9 itself
+originally rated this at before ever adding a prune. `tasks.md`'s round-10 claim (see the
+corrected bullet above) and the PR body are both reworded accordingly: this was never a
+delete-then-recreate fix, only a (now withdrawn) transient-error-vs-pruning distinction.
+
+**MEDIUM disclosure (A11y11/Code11/Verif11)**: rewrote the scroll-out accepted-limitation comment
+to state its actual WCAG cost (2.4.3 Focus Order violated outright; 2.1.1 Keyboard met only
+through re-entry, not unconditionally), to correct the "Tab or Shift+Tab re-enters" claim (it is
+ONE direction depending on which way the row scrolled out, Chromium's own sequential-focus
+starting point [INFERENCE, probe-observed against a minimal scratch page, not this component] --
+the other direction leaves the tree entirely, and NEITHER direction has been live-verified against
+this actual component, by keyboard or screen reader), to name real mitigations not built here
+(keep the focused row's own index always rendered via Virtuoso's `increaseViewportBy`/a
+`scrollIntoView` on every `rangeChanged`, or switch to the `aria-activedescendant` pattern so DOM
+focus never leaves the `role="tree"` container), and to say explicitly this is an accepted
+limitation pending Stuart's own sign-off, not a closed decision (recorded as an open question on
+#463 -- see below). Fixed the self-contradicting "native `<select>`" sentence in the same comment
+block, and two older comments (near the `[sessionId,status]` effect and the top of the `focusout`
+effect) that still listed "a virtualised row scrolling out" among the cases rescued -- it no
+longer is, since round 10.
+
+**LOW (A11y11)**: the virtualised "N more…" row (`tabIndex={-1}`, no `data-tree-row-path`) could
+still receive focus from a mouse click; when it then scrolled out, `handleFocusOut`'s own
+`lostRowPath` read `null` (the row carries no tree-row path), so the immediate rescue fired and
+hopped focus -- a narrow reopening of the round-9 scroll-noise behaviour for this one row type.
+Fixed: the row now carries `data-tree-more-row`, and `handleFocusOut` returns early (no rescue,
+same as any other scroll-out) when the lost element matches that marker.
+
+**LOW (Sec11)**: `LIST_DIRECTORY`'s success-path re-check (round 10's own Sec10 Low fix) checked
+only that the Session still exists, not that it is unarchived -- a listing in flight when
+`sessions.archive` completes could re-park a path right after `notifyFileExplorerReset` already
+cleared it (bounded; the next restore's own reset clears it again, but closed at the source now).
+
+**LOW**: the PR body's FR-010 section ("not blocking this PR") and `docs/PLAN.md`'s C4 row
+("decision-blocked") read as contradictory, though both are true under different scopes (merge vs.
+issue closure) -- reworded to "not blocking merge; blocks closing #463" in the PR body.
+
+**Round 11 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate11`, own
+`--user-data-dir`/CDP port 9345, pid-verified `taskkill` + a full `Win32_Process` scan confirming
+exit, deleted by literal path afterward; main process spawned WITH its stdout/stderr CAPTURED this
+round, closing Verif11's own evidence gap -- `main-process-stdout.txt`; evidence -- 1 screenshot,
+`raw-output.txt`, the captured main log, both scratch scripts, `sha256.json`, 6 files total --
+saved in `C:/Users/shopwood/refract-live-check-671-gate11/`):
+- **`did-navigate` regression, genuinely observed this time**: the same cancelled-cross-document-
+  navigation probe as round 10, with main's own stdout captured -- `main-process-stdout.txt`
+  contains the literal line `main: dropped an external open request with a disallowed protocol
+  (file:)`, directly confirming `will-navigate`/`denyForeignNavigation` actually fired this time,
+  not merely inferred from an unchanged URL. The ancestor rename stayed blocked throughout.
+- **`did-fail-load` fix, live-verified (the new Code11/Sec11 Medium fix)**: with a Session's panel
+  open and the ancestor rename confirmed blocked, a CDP-level `Page.navigate` to a nonexistent
+  `file://` path (bypassing `will-navigate`, same technique round 10 found as its own false-
+  negative trap, used HERE deliberately since a genuinely committed failed load is exactly what
+  this test needs) committed to a real `chrome-error://chromewebdata/` page -- confirmed via
+  `window.location.href` -- and `main-process-stdout.txt` shows Electron's own
+  `Failed to load URL: file:///...gate11-this-file-does-not-exist.txt with error:
+  ERR_FILE_NOT_FOUND` line. The ancestor rename, blocked immediately before, SUCCEEDED
+  immediately after -- `did-fail-load` genuinely reset the watcher.
+- **PageUp/PageDown/Space keyboard paging, live-verified with REAL CDP key events (the HIGH fix)**:
+  in an 80-file virtualised tree, a real mouse click focused `f000.txt`
+  (`document.activeElement`'s own `data-tree-row-path` confirmed). A real `PageDown`
+  (`Input.dispatchKeyEvent`, `rawKeyDown`/`keyUp`, no synthetic `.focus()` call anywhere in the
+  path) moved focus to `f013.txt` -- a real, different row, never `<body>`. A real `PageUp`
+  returned focus to `f000.txt`. A real `Space` (`rawKeyDown`/`char`/`keyUp`, matching a genuine
+  hardware press) left focus on `f000.txt` with the scroller's own `scrollTop` unchanged at `0` --
+  confirming `preventDefault()` actually stopped Space's own native scroll (screenshot
+  `C-keyboard-paging-after-space.png`).
+
+**Not verified this round**: every carried-over item from round 10's own list (an app-side
+`getStatus()` call-count instrumentation under a git-lock stress burst; a genuinely slow/throttled
+`shutdown()` for a wider archive race window; the real OS-file-drop trigger for the navigation
+fix, still only ever stood in for by a `location.href` assignment; the `render-process-gone`
+branch, source reading only). Tab/Shift+Tab re-entry into the tree after a row scrolls out was NOT
+live-verified against this actual component this round either (the direction-dependent claim in
+the disclosed-limitation comment remains a probe against a minimal scratch page, per A11y11's own
+report, not this tree) -- a real keyboard and screen-reader pass on this specific re-entry is
+still open, and is the one item most worth closing before Stuart is asked to sign off on the
+limitation. The window-shrink variant of the same scroll-out limitation (FR-025's own "resize
+MUST NOT lose focus" MUST, now marked Partial in the AC table) was not separately reproduced --
+[INFERENCE] from the same underlying mechanism (Virtuoso's rendered range changing), not probed.
+The archive-race watcher-release claim remains narrowed per the Round 9 section's own correction;
+still not re-isolated this round either.
 
 ---
 
