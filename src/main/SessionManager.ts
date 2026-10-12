@@ -7,6 +7,7 @@
 
 import { existsSync } from 'node:fs';
 import type { ApprovalMode, PendingRequest, SessionReadout, SubagentSummary } from '../shared/model';
+import type { SideChatRecord } from '../shared/frames';
 import type { SessionStatusEvent, SessionSummary, SlashCommand, TranscriptOp } from '../shared/ipc';
 import { SessionAgent } from './omp/SessionAgent';
 import { resolveTermination } from './omp/stoppedOnRequestMarker';
@@ -23,6 +24,9 @@ export type ManagerEvent =
   | { type: 'readout'; payload: { sessionId: string; readout: SessionReadout } }
   | { type: 'subagents'; payload: { sessionId: string; subagents: SubagentSummary[] } }
   | { type: 'subagentPatch'; payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] } }
+  | { type: 'sideChatPatch'; payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string } }
+  | { type: 'sideChatInterrupted'; payload: { sessionId: string } }
+  | { type: 'sideChatConversationChanged'; payload: { sessionId: string } }
   | { type: 'list-changed' };
 
 /** Issue #510 (quality gate 2026-10-08): caps how many Sessions' Conversation tails `summaries()`
@@ -129,6 +133,29 @@ export class SessionManager {
     agent.on('subagentPatch', (payload) => {
       if (!this.visibleSessionIds.has(payload.sessionId)) return;
       this.emit({ type: 'subagentPatch', payload });
+    });
+    // Gate-fix (round 2, Verif2 LOW): a terminal `btw_record` is ALWAYS forwarded, even for a
+    // Session hidden mid-request -- unlike `subagentPatch`/`readout`, losing a side chat's own
+    // completion to the visibility gate leaves the panel stuck on "Thinking" until a reload.
+    // Only `btw_delta` (no `record`) stays gated on visibility, matching every other live-stream
+    // patch's own discipline. Gate-fix (round 4, Code4 Medium): a `notice` (a btw-history save
+    // failure) is forwarded unconditionally too -- the question itself may have landed while the
+    // pane was hidden; the developer must still learn their answer did not save when they return.
+    agent.on('sideChatPatch', (payload) => {
+      if (!payload.record && !payload.notice && !this.visibleSessionIds.has(payload.sessionId)) return;
+      this.emit({ type: 'sideChatPatch', payload });
+    });
+    // Gate-fix (round 4, Sec4 Medium): unconditional, regardless of visibility -- this corrects
+    // state (a stuck `running` side-chat record) that must stay correct even while its own pane
+    // is not currently looked at.
+    agent.on('sideChatInterrupted', (payload) => {
+      this.emit({ type: 'sideChatInterrupted', payload });
+    });
+    // Gate-fix (round 5, Code5 HIGH): unconditional, regardless of visibility -- the Conversation
+    // just changed for this Session, so any side-chat topic/history the renderer is still
+    // showing (visible or not) belongs to the PREVIOUS Conversation and must be dropped.
+    agent.on('sideChatConversationChanged', (payload) => {
+      this.emit({ type: 'sideChatConversationChanged', payload });
     });
     // HIGH finding (issues #84/#85): `syncFromState` writes `lastModel`/`lastThinkingLevel` (and
     // `currentConversation`/...) to the registry on every settle, Conversation switch, and

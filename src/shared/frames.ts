@@ -209,6 +209,28 @@ export interface PredictWordResponseData {
   suffix: string | null;
 }
 
+/** Spec 014 (`btw` side chat, FR-002 to FR-007): the `btw` response payload. Gate-fix (round 4,
+ * Code4/Verif4 CRITICAL): a FOLLOW-UP question's own response is NOT a flat record -- it is the
+ * WHOLE topic tree under the ROOT's own id (confirmed live: a follow-up's response carries the
+ * root's own `question`/`answer`/`status`, with the new turn nested at `followUps[last]`), the
+ * exact same shape `get_btw_history` returns per topic. `record` is typed `BtwHistoryThread` to
+ * match; `SessionAgent.askSideChat` normalises it to the latest turn's own flat `SideChatRecord`
+ * (`SessionAgent.latestTurn`, reusing `flattenBtwHistory`) before it ever reaches the renderer. */
+export interface BtwResponseData {
+  record: BtwHistoryThread;
+}
+
+/** `get_btw_history`'s response: ONE entry per independent topic/thread this Session has ever
+ * started (a fresh topic per Clear thread, data-model.md), NOT a flat list of every individual
+ * question -- confirmed live (2026-10-11, scratch verification, real `btw` round trips): each
+ * entry is `BtwHistoryThread` (the topic's root question, `id` + `leafId` only present here)
+ * with a nested `followUps[]` holding every later question in that same topic, which carries no
+ * `id` of its own at all -- `SessionAgent.flattenBtwHistory` turns this into the flat
+ * `SideChatRecord[]` the IPC contract (`sideChat.getHistory`) and the renderer actually consume. */
+export interface GetBtwHistoryResponseData {
+  records: BtwHistoryThread[];
+}
+
 // ---------------------------------------------------------------------------
 // Frames Refract consumes
 // ---------------------------------------------------------------------------
@@ -359,10 +381,14 @@ export interface CommandOutputFrame {
   [key: string]: unknown;
 }
 
+/** Gate-fix (round 4, Code4 Medium): `source` is present (e.g. `'btw-history'`) when a side-chat
+ * history save fails -- `SessionAgent` routes that one case to the side-chat store as a toast
+ * instead of the main transcript (constitution II). Absent on an ordinary notice. */
 export interface NoticeFrame {
   type: 'notice';
   level: 'info' | 'warning' | 'error';
   message: string;
+  source?: string;
 }
 
 /**
@@ -379,6 +405,95 @@ export interface RpcChunkFrame {
   count: number;
   byteLength: number;
   data: string; // base64
+}
+
+/** Spec 014 (`btw` side chat): one question/answer node inside a `get_btw_history` topic thread.
+ * Confirmed live (2026-10-11): `question`/`answer`/`status`/`createdAt`/`updatedAt` all present
+ * on every node; a non-root node (`BtwHistoryThread.followUps[]`) carries no `id` of its own --
+ * only the thread's own root exposes one (`BtwHistoryThread.id`). Gate-fix (round 3,
+ * Code3/Verif3 HIGH): the ROOT's own `id` IS what `btw`'s `recordId` continues (live-tested
+ * against a restarted omp process: sending the root `id` back succeeded, landing a new
+ * follow-up on the same topic; `leafId` -- see `BtwHistoryThread` below -- was rejected every
+ * time with "Unknown /btw topic", confirming it tracks something else inside OMP's own model,
+ * never a value `recordId` accepts). `error`'s exact field name on an `"error"`-status node is
+ * still `[INFERENCE: from issue://516's own failure-case list]` -- no failing `btw` call was
+ * captured this pass. */
+export interface BtwHistoryNode {
+  question: string;
+  answer: string;
+  status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
+  createdAt: number;
+  updatedAt: number;
+  error?: string;
+  followUps?: BtwHistoryNode[];
+}
+
+/** One `get_btw_history` array entry: a topic's root node, plus two fields only a root carries
+ * -- `id` (the value a fresh `btw` call's own `recordId` must reference to continue this exact
+ * topic, confirmed live against a restarted omp process, round 3) and `leafId`. Gate-fix (round
+ * 4, Code4/Verif4 LOW): `leafId` is the MAIN session's own leaf entry id at the moment this
+ * topic was first started (OMP's `Hut(session, sessionManager.getLeafId(), record)`) -- not a
+ * btw-topic id at all, which is why it was rejected every time round 3 tried it as `recordId`.
+ * Not used by Refract for anything; kept only because `get_btw_history` reports it. */
+export interface BtwHistoryThread extends BtwHistoryNode {
+  id: string;
+  leafId: string;
+}
+
+/** Spec 014 (`btw` side chat, data-model.md): the FLAT per-question shape `SessionAgent` exposes
+ * over IPC for both a live `btw`/`btw_record` (normalised from OMP's own tree shape, see
+ * `BtwResponseData`'s doc comment) and a history node flattened from `BtwHistoryThread`/
+ * `BtwHistoryNode` by `SessionAgent.flattenBtwHistory`. A flattened non-root node has no real OMP
+ * id of its own (see `BtwHistoryNode`'s doc comment) -- `flattenBtwHistory` synthesizes a stable
+ * `${root.id}.${index}` key for it instead, which is safe for React list keys and `applyPatch`'s
+ * by-id match but MUST NOT be sent back to OMP as a `recordId` -- only `topicId` (the thread's
+ * own root `id`, confirmed live against a restart) continues a topic; `leafId` never does. */
+export interface SideChatRecord {
+  id: string;
+  status: 'running' | 'complete' | 'cancelled' | 'error' | 'interrupted';
+  question: string;
+  answer?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  /** Gate-fix (round 4, Code4/Verif4 CRITICAL): the id of the TOPIC this record belongs to --
+   * always the thread's own root `id`, present on every flattened record (root included, where
+   * it equals this record's own `id`). The value the NEXT question in this topic must carry as
+   * `recordId`; `applyPatch`'s delta branch also matches a `btw_delta` (whose own `recordId` is
+   * always the topic root, never the latest turn's flattened id) against whichever record has
+   * this `topicId` and `status: 'running'`. */
+  topicId?: string;
+  /** Present only when this record is a history thread's own root (`BtwHistoryThread.leafId`) --
+   * the main session's own leaf entry id at topic creation (see `BtwHistoryThread`'s doc
+   * comment), not a btw continuation value. Use `topicId` (or this record's own `id` when it IS
+   * the root) to continue a topic, never this field. */
+  leafId?: string;
+  /** Confirmed live (round 4, Code4 LOW): a blank question, one already running, an unknown
+   * `recordId`, no active model, and a history-save failure all throw inside OMP's own `ask()`
+   * -- every one of them is an RPC-level failure (`SessionAgent.askSideChat` throws,
+   * `sideChat.ask` resolves `{ ok: false }`), never a `status: 'error'` record with this field
+   * populated. Some OTHER in-flight failure (the model erroring out mid-answer) may still
+   * populate it; none has been observed live. */
+  error?: string;
+}
+
+export interface BtwDeltaFrame {
+  type: 'btw_delta';
+  recordId: string;
+  /** Gate-fix (round 4, Code4/Verif4 MEDIUM): confirmed live (omp 18.8.6's own bundled
+   * `rpc-btw.ts`) the wire field is `delta`, never `textDelta` -- the round-3 fix read a field
+   * that never existed, so every delta was silently dropped despite `recordId` finally being
+   * forwarded. `recordId` here is always the TOPIC's own root id (see `SideChatRecord.topicId`'s
+   * doc comment), never the latest turn's own flattened id. */
+  delta: string;
+}
+
+/** Gate-fix (round 4, Code4/Verif4 CRITICAL): the SAME whole-tree shape `BtwResponseData.record`
+ * carries (a follow-up's own terminal `btw_record` still carries the ROOT's id and text, with
+ * the new turn nested at `followUps[last]`) -- `SessionAgent`'s `btw_record` case normalises it
+ * with `latestTurn` before emitting `SIDE_CHAT_PATCH`, exactly like `askSideChat` does. */
+export interface BtwRecordFrame {
+  type: 'btw_record';
+  record: BtwHistoryThread;
 }
 
 export type KnownFrame =
@@ -399,7 +514,9 @@ export type KnownFrame =
   | AvailableCommandsUpdateFrame
   | CommandOutputFrame
   | NoticeFrame
-  | RpcChunkFrame;
+  | RpcChunkFrame
+  | BtwDeltaFrame
+  | BtwRecordFrame;
 
 /** Anything OMP sends whose `type` Refract does not recognise. Never throw on it. */
 export interface UnknownFrame {
@@ -428,6 +545,8 @@ const KNOWN_FRAME_TYPES: Record<KnownFrame['type'], true> = {
   command_output: true,
   notice: true,
   rpc_chunk: true,
+  btw_delta: true,
+  btw_record: true,
 };
 
 export function isKnownFrame(frame: Frame): frame is KnownFrame {
@@ -560,6 +679,25 @@ export interface PredictWordFeedbackCommand {
   accepted: boolean;
 }
 
+/** Spec 014 (`btw` side chat, contracts/ipc.md): starts a fresh topic (`recordId` omitted) or
+ * continues one (`recordId` set to a prior record's own id). */
+export interface BtwCommand {
+  type: 'btw';
+  id: string;
+  question: string;
+  recordId?: string;
+}
+
+export interface BtwCancelCommand {
+  type: 'btw_cancel';
+  id: string;
+}
+
+export interface GetBtwHistoryCommand {
+  type: 'get_btw_history';
+  id: string;
+}
+
 export type RpcCommand =
   | PromptCommand
   | AbortCommand
@@ -574,4 +712,7 @@ export type RpcCommand =
   | ExtensionUiResponseFrame
   | GetAvailableCommandsCommand
   | PredictWordCommand
-  | PredictWordFeedbackCommand;
+  | PredictWordFeedbackCommand
+  | BtwCommand
+  | BtwCancelCommand
+  | GetBtwHistoryCommand;

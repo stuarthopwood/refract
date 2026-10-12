@@ -29,11 +29,25 @@ Principles I, II, IV.
    context itself.
 5. **Tools**: `btw` runs with no tool use (OMP's own contract, issue://516). No approval dialog
    path exists for a side-chat turn.
-6. **Persistence**: `get_btw_history` is OMP's own sidecar, confirmed live to survive a process
-   restart (FINDINGS item 14: `btwHistoryHasOurRecord: true` after closing and reopening the
-   process onto the same session file). Refract reads it, stores nothing of its own for
-   durability. Per-Session (not per-Conversation): `get_btw_history` is scoped to the session file,
-   same scope `btw`/`btw_cancel` use.
+6. **Persistence**: `get_btw_history` is OMP's own sidecar. Live-tested (round 3, Code3/Verif3
+   HIGH, 2026-10-11): confirmed to survive a process restart, but ONLY for a Session that has a
+   real main Conversation (`SessionAgent.attachAndVerify` needs `currentConversation` set to
+   reattach at all) -- a Session used ONLY for side-chat, never a single main message, has
+   nothing to reattach to and `get_btw_history` returns empty after a restart (item 13 below;
+   `future/open-questions.md` item 5). Refract reads it either way, stores nothing of its own for
+   durability. **Corrected 2026-10-11 (round 5, Code5 HIGH)**: PER CONVERSATION, not per Session
+   as this item originally said -- `get_btw_history`/`btw`/`btw_cancel` are all scoped to the OMP
+   session FILE (the OMP process's own `getSessionId()`), which is a Refract Conversation, not
+   the Refract Session as a whole. `RpcBtwController` reopens its own history store whenever that
+   file changes (`/new` sends `new_session`; opening a different past Conversation sends
+   `switch_session`; both stay in the SAME process) -- Refract's own renderer store is corrected
+   to clear and reload on that signal (`SIDE_CHAT_CONVERSATION_CHANGED`, contracts/ipc.md), not
+   left keyed by Session with no Conversation-change handling at all, as it originally was.
+   **Corrected 2026-10-11 (round 6, Code6/Sec6/A11y6/Verif6 HIGH)**: round 5's fix reached
+   `startNewConversation`/`openConversation` but never the ONLY switch path available while
+   `status === 'stopped'` (`conversationSwitch.ts`'s `startStoppedSessionOnConversation`), so
+   Stop then New conversation/Open an earlier Conversation reproduced the same "Unknown /btw
+   topic" defect through another door; that path now emits the same signal.
 7. **Concurrency**: one `btw` request at a time per Session; OMP itself cancels a running one on
    Session switch, `new_session`, `fork`, `open_session`, or shutdown (issue://516, from rpc.md).
    Refract reflects that state; it does not implement its own single-flight guard beyond disabling
@@ -62,12 +76,33 @@ blocking)
     choice: not shown in the first slices; `get_state`'s `model` field is already read elsewhere
     in the app (readout chips) for the main turn, so this is a smaller follow-up once the shell
     ships, not a blocker.
+13. **SC-002 is unmet for side-chat-only Sessions (never sent a single main composer message) --
+    still open for Stuart's decision.** Live-tested (rounds 3 and 4, 2026-10-11): a Session's
+    side-chat history correctly survives a restart, and a follow-up question correctly continues
+    the NEWEST topic after that restart, WHEN the Session has a real main Conversation already
+    (`currentConversation` set) -- confirmed across five separate restarts total in this spec's
+    own scratch verification (three in round 3, two in round 4, the latter also confirming a
+    second, independently-seeded topic was correctly picked over an older one). For a Session
+    that has ONLY ever been used for side-chat questions, `get_btw_history` itself returns empty
+    after a restart (nothing for `SessionAgent` to reattach to, per item 6 above) -- its side-chat
+    history becomes invisible to Refract, though the underlying `btw-history/entry-<id>.json`
+    file is not deleted (`future/open-questions.md` item 5). Whether this narrow case (asking
+    `/btw` before ever sending a main message) needs its own fix is Stuart's call -- posted as a
+    decision request (round 4, Code4/Verif4/Sec4 HIGH, 2026-10-11) on
+    [issue #1](https://github.com/stuarthopwood/refract/issues/1#issuecomment-6113942112) and
+    [issue #516](https://github.com/stuarthopwood/refract/issues/516#issuecomment-6113943061);
+    the round's own not-live-verified checklist is on
+    [issue #650](https://github.com/stuarthopwood/refract/issues/650#issuecomment-6113945611).
+    Not blocking this spec's P1/P2 stories per the constitution's Incremental Enhancement rule
+    (conservative choice: ship as-is, carried forward as an open question, not guessed-fixed).
 
 ### Carved out, not blocking this spec (per the constitution's Incremental Enhancement rule)
 
 - The keyboard shortcut (item 10 above).
 - "Use as context" (item 11 above).
 - Model/cost display per answer (item 12 above).
+- SC-002 for side-chat-only Sessions, never met, ship as-is (item 13 above; `future/open-
+  questions.md` item 5).
 - Packaging/installer work: moot. The native RPC approach ships no extension file, so issue://1's
   original "packaging the extension" risk section no longer applies to this spec at all.
 
@@ -283,7 +318,11 @@ sense.
   returned message count for that Session (User Story 1, directly testable the same way FINDINGS
   item 14 already confirmed it for the RPC call itself).
 - **SC-002**: A Session's side-chat history, once asked, is still showing after a full Refract
-  restart against the same worktree, with zero new requests sent to reconstruct it (User Story 3).
+  restart against the same worktree, with zero new requests sent to reconstruct it (User Story
+  3). **Met for a Session that also has a real main Conversation** (live-tested round 3: a
+  follow-up continues the same topic correctly after the restart too); **unmet for a side-chat-
+  only Session** (Clarification item 13, `future/open-questions.md` item 5) -- carried forward as
+  an open question, not blocking.
 - **SC-003**: `/btw <question>` typed in the main composer results in zero `prompt` RPC requests
   containing the literal `/btw` text (User Story 4).
 - **SC-004**: 100% of error records (`status: "error"`) render with both an icon and text; zero

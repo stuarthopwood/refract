@@ -4,7 +4,7 @@
 // `ResizablePanel`'s content in `App.tsx`; the permanent icon rail is a separate sibling, not
 // rendered here.
 import { useEffect, useRef } from 'react'
-import { useRightPaneStore, useSubagentPanelStore } from '@/state'
+import { useRightPaneStore, useSideChatStore, useSubagentPanelStore } from '@/state'
 import { SubagentPanel } from '@/features/subagents/SubagentPanel'
 import { PanelLauncher } from './PanelLauncher'
 import { PanelTabBar } from './PanelTabBar'
@@ -12,13 +12,16 @@ import { WidthPresetControl } from './WidthPresetControl'
 import { WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 import { FdbKnowledgePanel } from './placeholders/FdbKnowledgePanel'
 import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
+import { SideChatPanel } from './side-chat/SideChatPanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
   /** The focused chat pane's Session -- passed down to the launcher/tab bar for opening a new
-   * panel and for a per-Session panel's live count; never used to render a hosted panel's own
-   * content (each panel reads its own binding, e.g. `SubagentPanel` reads `subagent-store.ts`'s
-   * `sessionId`). */
+   * panel and for a per-Session panel's live count. Most hosted panels read their own binding
+   * instead (e.g. `SubagentPanel` reads `subagent-store.ts`'s `sessionId`); `SideChatPanel` is
+   * the one exception (spec 014 T006/T007) and reads this prop directly, since a side-chat
+   * thread has no independent binding of its own (FR-005: it always follows whichever Session
+   * the chat pane currently shows). */
   sessionId: string | null
   /** The pane's non-drag resize alternative (spec 013 FR-025, WCAG 2.5.7) -- `App.tsx`'s own
    * `ResizablePanel` ref, forwarded to `WidthPresetControl` in every state the pane can be open
@@ -36,11 +39,20 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
   // Focus moves into the newly opened panel's own content -- but only for a genuine open (this
   // panel was not already one of the open tabs a moment ago), never for switching between two
   // already-open tabs (arrow keys or a direct tab click both keep focus on the tab bar, the
-  // standard ARIA tabs behaviour).
+  // standard ARIA tabs behaviour). Gate-fix (round 7, Code7/A11y7/Sec7 HIGH): also skipped when
+  // `openPanel` was called with `{ focus: false }` (`suppressNextContentFocus`, read fresh via
+  // `getState()` since this effect must not re-run just because that flag changed) -- round 6's
+  // own `focus:false` only suppressed `sideChatFocusRequestId` (the side-chat TEXTAREA'S own
+  // focus request), so this effect still stole focus into the pane's content wrapper for the
+  // common "/btw while !loaded, pane collapsed" case. The flag is always cleared on read, even
+  // when this is not a genuine open, so it never leaks into a LATER, unrelated real open.
   useEffect(() => {
     const prevIds = prevOpenPanelIdsRef.current
-    if (activePanelId && !prevIds.includes(activePanelId)) contentRef.current?.focus()
+    const isGenuineOpen = activePanelId !== null && !prevIds.includes(activePanelId)
     prevOpenPanelIdsRef.current = openPanelIds
+    const { suppressNextContentFocus } = useRightPaneStore.getState()
+    if (suppressNextContentFocus) useRightPaneStore.setState({ suppressNextContentFocus: false })
+    if (isGenuineOpen && !suppressNextContentFocus) contentRef.current?.focus()
   }, [openPanelIds, activePanelId])
 
   if (openPanelIds.length === 0) {
@@ -76,6 +88,15 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
           ))}
         {activePanelId === 'fdb-knowledge' && <FdbKnowledgePanel />}
         {activePanelId === 'agent-builder' && <AgentBuilderPanel />}
+        {activePanelId === 'side-chat' && (
+          <SideChatPanel
+            sessionId={sessionId}
+            onSend={async (question) => {
+              if (!sessionId) return
+              await useSideChatStore.getState().ask(sessionId, question)
+            }}
+          />
+        )}
       </div>
     </div>
   )

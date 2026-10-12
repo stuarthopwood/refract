@@ -38,15 +38,15 @@ const PROBE_READY_PROMPT_AFTER_MS = 30_000;
 const PROBE_READY_CEILING_MS = 60_000;
 const PROBE_START_DEADLINE_MS = PROBE_READY_CEILING_MS;
 
-// contracts/omp-usage.md's version rule: 18.4.x/18.5.x are specifically verified (FINDINGS
-// items 15 and 19 cover 18.4.4 and 18.4.5; item 29 covers 18.5.1, constitution Principle IV).
-// Any other 18.x.y passes too but surfaces a warning instead -- pinning exact minors re-broke
-// readiness on every omp release (18.6.1 tripped the old exact-minor allowlist; not probed for
-// incompatibilities, just not re-verified), so only a DIFFERENT MAJOR version is a hard failure
-// now. Stuart's 2026-10-05 decision: warn but allow, rather than re-probing every release.
-const OMP_VERSION_VERIFIED_RE = /^18\.(4|5)\.\d+$/;
-const OMP_VERSION_SAME_MAJOR_RE = /^18\.\d+\.\d+$/;
-const OMP_VERSION_RE = /(\d+\.\d+\.\d+)/;
+// contracts/omp-usage.md's version rule (amended 2026-10-11, spec 014, constitution Principle
+// IV): the minimum supported OMP version is 18.6.3 (raised from 18.4.x/18.5.x -- Stuart
+// 2026-10-07, the native `btw` RPC needs it). Only `omp` 18.8.0 was directly probed live
+// (FINDINGS item 49): any `18.6.3` or later `18.x.y` still passes, but surfaces a warning unless
+// its minor is the specifically re-probed one (18.8.x) -- a different MAJOR version, or any
+// MINOR/PATCH below 18.6.3, is a hard failure (contracts/omp-usage.md "Failure handling").
+const OMP_VERSION_VERIFIED_RE = /^18\.8\.\d+$/;
+const OMP_MINIMUM_VERSION = { major: 18, minor: 6, patch: 3 };
+const OMP_VERSION_RE = /(\d+)\.(\d+)\.(\d+)/;
 
 // contracts/ipc.md "Readiness": the fixed hint shown whenever the sign-in probe cannot confirm
 // that OMP's default model is actually usable, whatever the underlying reason.
@@ -73,19 +73,36 @@ async function checkOmp(): Promise<Check> {
   } catch (err) {
     return { ok: false, hint: `omp --version failed: ${err instanceof Error ? err.message : String(err)}` };
   }
-  const found = OMP_VERSION_RE.exec(stdout)?.[1] ?? stdout.trim();
+  const match = OMP_VERSION_RE.exec(stdout);
+  if (!match) {
+    const found = stdout.trim();
+    return { ok: false, found, hint: `Expected omp 18.x, found ${found}. Install a supported version and relaunch Refract.` };
+  }
+  const found = match[0];
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  if (major !== OMP_MINIMUM_VERSION.major) {
+    return { ok: false, found, hint: `Expected omp 18.x, found ${found}. Install a supported version and relaunch Refract.` };
+  }
+  const belowMinimum =
+    minor < OMP_MINIMUM_VERSION.minor || (minor === OMP_MINIMUM_VERSION.minor && patch < OMP_MINIMUM_VERSION.patch);
+  if (belowMinimum) {
+    return {
+      ok: false,
+      found,
+      hint: `omp ${found} is below the minimum supported version, 18.6.3. Install omp 18.6.3 or newer and relaunch Refract.`
+    };
+  }
   if (OMP_VERSION_VERIFIED_RE.test(found)) {
     return { ok: true, found };
   }
-  if (OMP_VERSION_SAME_MAJOR_RE.test(found)) {
-    return {
-      ok: true,
-      found,
-      warning: true,
-      hint: `omp ${found} is outside the specifically verified 18.4.x/18.5.x range; Refract has not been checked against it individually but is expected to keep working.`
-    };
-  }
-  return { ok: false, found, hint: `Expected omp 18.x, found ${found}. Install a supported version and relaunch Refract.` };
+  return {
+    ok: true,
+    found,
+    warning: true,
+    hint: `omp ${found} is at or above the minimum supported version (18.6.3) but outside the specifically re-probed 18.8.x range; Refract has not been checked against it individually but is expected to keep working.`
+  };
 }
 
 // contracts/ipc.md: `ompSignedIn` is ok when `get_state`'s current `model` (provider + id) also

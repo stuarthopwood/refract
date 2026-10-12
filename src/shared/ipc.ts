@@ -23,7 +23,7 @@ import type {
   TranscriptDisplaySettings,
   TranscriptItem,
 } from './model';
-import type { ImageContent, QueueKind, SlashCommandDescriptor } from './frames';
+import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
 import type {
   ChangedFile,
   FilterTab,
@@ -340,6 +340,9 @@ export const IPC_REQUESTS = {
   CHAT_PREDICT_WORD_FEEDBACK: 'chat.predictWordFeedback',
   CHAT_SET_VISIBLE_SUBAGENT: 'chat.setVisibleSubagent',
   CHAT_SUBAGENT_SNAPSHOT: 'chat.subagentSnapshot',
+  SIDE_CHAT_ASK: 'sideChat.ask',
+  SIDE_CHAT_CANCEL: 'sideChat.cancel',
+  SIDE_CHAT_GET_HISTORY: 'sideChat.getHistory',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
@@ -388,6 +391,9 @@ export const IPC_EVENTS = {
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   SUBAGENT_PATCH: 'subagent:patch',
+  SIDE_CHAT_PATCH: 'side-chat:patch',
+  SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
+  SIDE_CHAT_CONVERSATION_CHANGED: 'side-chat:conversation-changed',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
 } as const;
@@ -538,6 +544,24 @@ export interface RefractApi {
      * it, before patches arrive. Error `not-found` when the id does not match a `SubagentSummary`
      * of the current turn. */
     subagentSnapshot(sessionId: string, subagentId: string): Promise<Result<TranscriptItem[]>>;
+  };
+
+  sideChat: {
+    /** Spec 014 contracts/ipc.md "Side chat": issues `{type:"btw", question, recordId?}` to that
+     * Session's OMP process. Returns the new record's own whole shape immediately (gate-fix
+     * round 2: the bare id alone lost the status OMP returned, which is what left the panel
+     * stuck on "Thinking" when an error or an already-terminal record raced the invoke reply);
+     * the answer itself also arrives over `onSideChatPatch` as a terminal `btw_record`.
+     * `recordId` omitted starts a fresh topic (FR-003). A blank `question` is rejected locally
+     * with `invalid-argument` before ever reaching OMP; the >10,000-character cap is enforced
+     * main-side only. */
+    ask(sessionId: string, question: string, recordId?: string): Promise<Result<{ record: SideChatRecord }>>;
+    /** Issues `btw_cancel` for that Session's currently-running record, if any. A no-op (not an
+     * error) if nothing is running -- mirrors `subagents.cancel`'s own idempotent shape. */
+    cancel(sessionId: string): Promise<Result<void>>;
+    /** Issues `get_btw_history`; every record OMP has for that Session's saved session file, in
+     * the order OMP returns them. Called once per Session per app run (FR-004), not polled. */
+    getHistory(sessionId: string): Promise<Result<SideChatRecord[]>>;
   };
 
   settings: {
@@ -695,6 +719,18 @@ export interface RefractApi {
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
+  onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void): Unsubscribe;
+  /** Gate-fix (round 4, Sec4 Medium): fired whenever the Session's agent process exits, even an
+   * approval-mode restart that never reaches `status: 'stopped'` -- the store's own
+   * `reconcileInterrupted` marks any `running` side-chat record `interrupted` so it never blocks
+   * Send/Retry/`/btw` forever. */
+  onSideChatInterrupted(handler: (payload: { sessionId: string }) => void): Unsubscribe;
+  /** Gate-fix (round 5, Code5 HIGH): fired after `startNewConversation`/`openConversation`
+   * confirms the Session's Conversation actually changed -- OMP's own `btw` topics are scoped
+   * to the Conversation, not the Session, so the store's own `clearThread` must run here or the
+   * panel keeps showing the PREVIOUS Conversation's rows and the next question sends an id the
+   * new Conversation's side-chat store rejects. */
+  onSideChatConversationChanged(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }

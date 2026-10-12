@@ -18,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
-import { EMPTY_QUEUE, notify, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
+import { EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { filterSlashCommands, parseSlashQuery, SlashMenu, slashOptionId } from './SlashMenu'
@@ -502,6 +502,79 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // it back if `chat.send` fails below AND nothing newer has been recorded for this Session in
     // the meantime (`restoreIfAbsent`).
     const slashInvocation = parseSlashCommand(message)
+    // FR-007 (constitution II): `/btw` is Refract's own locally-handled native command, never
+    // forwarded to OMP as a literal prompt (the defensive `NATIVE_RESERVED_COMMANDS` guard in
+    // `chat.ts` would refuse it anyway if this ever slipped through) -- opens and focuses the
+    // Side chat panel for this Session (`sideChatFocusRequestId`, bumped inside `openPanel`
+    // itself) and, when `.rest` is non-empty, issues the side question itself through
+    // `useSideChatStore`, bypassing `chat.send` entirely.
+    if (slashInvocation?.name === 'btw') {
+      // Gate-fix (round 2, Code2/Sec2 Medium): `btw` carries no `images` field at all
+      // (contracts/ipc.md) -- refusing instead of silently dropping the attachments avoids a
+      // developer discovering, after the fact, that a pasted screenshot never reached the model.
+      if (attachments.images.length > 0) {
+        toast.error("Side questions don't support image attachments. Remove them and try again.")
+        return
+      }
+      // Gate-fix (round 2, Code2/Sec2 HIGH): refuses (keeping the draft) instead of sending a
+      // second `btw` while one is still running -- spec Assumption 7's single-flight rule applies
+      // here exactly as it does to the panel's own Send button.
+      if (useSideChatStore.getState().bySession[sessionId]?.running) {
+        toast.error('A side question is already running for this Session.')
+        return
+      }
+      // Gate-fix (round 6, Code6 LOW): a bare `/btw` only opens (and focuses) the panel -- moved
+      // above the `!loaded` gate below, which otherwise always refused it with an error toast
+      // even though it asks nothing and has nothing to load yet.
+      if (slashInvocation.rest.length === 0) {
+        useRightPaneStore.getState().openPanel('side-chat')
+        useDraftStore.getState().clear(sessionId)
+        clearGhostState()
+        return
+      }
+      // Gate-fix (round 5, Code5 Medium; round 6, Code6/Sec6/A11y6/Verif6 Medium): the panel's
+      // own Send button already refuses while `!loaded` -- this path did not, so `/btw` typed
+      // before `loadHistory` finishes (the first one per Session per app run, and every one
+      // right after a Conversation change) ran `ask` with `activeTopicRecordId` still
+      // `undefined`, silently starting a FRESH topic instead of continuing the Session's real
+      // one. Opens the panel WITHOUT moving focus away from the main composer (the draft, and
+      // the retry, both stay here) -- `focus: false` leaves `sideChatFocusRequestId` untouched;
+      // the panel's own mount effect still fires its own `loadHistory`. Wording matches the
+      // actual cause instead of always claiming "still loading": `loadError` means a permanent
+      // failure that a retry will not fix either; a stopped Session means there is nothing
+      // running yet to load from. Gate-fix (round 8, Code8/A11y8/Sec8/Verif8 Low): the loading
+      // branch now uses the SAME `SIDE_CHAT_LOADING_HINT` constant `SideChatPanel.tsx`'s own
+      // hint does -- round 7 claimed the two already matched exactly; they never did. Gate-fix
+      // (round 9, Code9/A11y9/Sec9 Low): sharing the constant verbatim dropped this toast's own
+      // "Try again in a moment." retry guidance (WCAG 3.3.3) -- the persistent hint under the
+      // textarea needs no call to action (it is always visible while `!loaded`), but THIS toast
+      // is a one-shot message the whole point of which is telling the user what to do next, so
+      // it appends its own suffix instead of being pulled into the shared constant.
+      if (!useSideChatStore.getState().bySession[sessionId]?.loaded) {
+        useRightPaneStore.getState().openPanel('side-chat', { focus: false })
+        const sideChatState = useSideChatStore.getState().bySession[sessionId]
+        const toastMessage = sideChatState?.loadError
+          ? 'Side chat history could not be loaded.'
+          : status === 'stopped'
+            ? 'Side chat is available once the Session is running.'
+            : `${SIDE_CHAT_LOADING_HINT} Try again in a moment.`
+        toast.error(toastMessage)
+        return
+      }
+      useRightPaneStore.getState().openPanel('side-chat')
+      // Gate-fix (round 2, Code2/Sec2/Verif2 Medium): the draft (and its attachments) only
+      // clears AFTER `ask` resolves -- the old code cleared it first, so a question over 10,000
+      // characters, a Session with no live process, or any other RPC failure silently lost the
+      // typed text with nothing but a toast left behind.
+      try {
+        await useSideChatStore.getState().ask(sessionId, slashInvocation.rest)
+        useDraftStore.getState().clear(sessionId)
+        clearGhostState()
+      } catch {
+        // `ask` already surfaced the failure via toast; keep the draft so the question is not lost.
+      }
+      return
+    }
     const isNewConversationCommand = slashInvocation?.name === 'new' && slashInvocation.rest === ''
     const previousScroll = isNewConversationCommand
       ? useChatScrollStore.getState().bySession[sessionId]

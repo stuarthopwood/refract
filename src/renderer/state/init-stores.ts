@@ -11,6 +11,7 @@ import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
+import { useSideChatStore } from './side-chat-store'
 import { useSplitStore } from './split-store'
 import { useThemeStore } from './theme-store'
 
@@ -61,6 +62,13 @@ async function loadInitialGithubAccounts(): Promise<
 export function initStores(): void {
   window.refract.onSessionStatus((event) => {
     useSessionsStore.getState().applyStatus(event)
+    // Gate-fix (round 3, Code3/A11y3 Medium): the Session's agent process just exited -- any
+    // `running` side-chat record for it can never settle now (the only process that would have
+    // sent its terminal `btw_delta`/`btw_record` is gone), so it must never block Send/Retry/
+    // `/btw` forever, even once a fresh process starts for this same Session later.
+    if (event.status === 'stopped') {
+      useSideChatStore.getState().reconcileInterrupted(event.sessionId)
+    }
   })
   window.refract.onSessionListChanged(() => {
     void useSessionsStore.getState().refresh()
@@ -92,6 +100,28 @@ export function initStores(): void {
   })
   window.refract.onSubagentPatch(({ sessionId, subagentId, ops }) => {
     useSubagentPanelStore.getState().applyPatch(sessionId, subagentId, ops)
+  })
+  // Gate-fix (round 3, Code3/Sec3 HIGH): `recordId` was dropped here, so `applyPatch`'s delta
+  // branch (which requires `patch.recordId !== undefined`) silently discarded every real
+  // `btw_delta` frame -- round 2's own "match by recordId" fix never did anything in practice
+  // because this callsite never forwarded the field the fix depended on.
+  window.refract.onSideChatPatch(({ sessionId, delta, recordId, record, notice }) => {
+    useSideChatStore.getState().applyPatch(sessionId, { delta, recordId, record, notice })
+  })
+  // Gate-fix (round 4, Sec4 Medium): covers the approval-mode-restart exit path that never
+  // reaches `status: 'stopped'` at all (see `SessionAgentEvents.sideChatInterrupted`'s own doc
+  // comment) -- the `onSessionStatus`-triggered reconcile above stays too, as a second,
+  // harmless (idempotent) trigger for every OTHER exit path.
+  window.refract.onSideChatInterrupted(({ sessionId }) => {
+    useSideChatStore.getState().reconcileInterrupted(sessionId)
+  })
+  // Gate-fix (round 5, Code5 HIGH): OMP's own `btw` topics are scoped to the Conversation (the
+  // OMP session file), not the Refract Session -- `clearThread` drops `loaded` so the panel's
+  // own effect re-runs `loadHistory` fresh for whichever Conversation is now current, instead
+  // of continuing to show the PREVIOUS Conversation's rows (and sending its topic id, which the
+  // new Conversation's own side-chat store rejects with "Unknown /btw topic").
+  window.refract.onSideChatConversationChanged(({ sessionId }) => {
+    useSideChatStore.getState().clearThread(sessionId)
   })
   // Spec 005 (tasks.md T012): a Windows-notification click, or a restored split that dropped to
   // one surviving Session (main's `index.ts` validateSplitAtStartup), both reuse this one

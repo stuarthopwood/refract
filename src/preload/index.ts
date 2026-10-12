@@ -22,7 +22,7 @@ import type {
   TranscriptOp,
   Unsubscribe
 } from '../shared/ipc'
-import type { ImageContent } from '../shared/frames'
+import type { ImageContent, SideChatRecord } from '../shared/frames'
 import type {
   CatalogKind,
   ConversationInfo,
@@ -129,6 +129,13 @@ const refract: RefractApi = {
       request<TranscriptItem[]>(IPC_REQUESTS.CHAT_SUBAGENT_SNAPSHOT, sessionId, subagentId)
   },
 
+  sideChat: {
+    ask: (sessionId, question, recordId?: string) =>
+      request<{ record: SideChatRecord }>(IPC_REQUESTS.SIDE_CHAT_ASK, sessionId, question, recordId),
+    cancel: (sessionId) => request<void>(IPC_REQUESTS.SIDE_CHAT_CANCEL, sessionId),
+    getHistory: (sessionId) => request<SideChatRecord[]>(IPC_REQUESTS.SIDE_CHAT_GET_HISTORY, sessionId)
+  },
+
   settings: {
     get: () => request<Settings>(IPC_REQUESTS.SETTINGS_GET),
     setApprovalMode: (mode) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_APPROVAL_MODE, mode),
@@ -219,6 +226,10 @@ const refract: RefractApi = {
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
   onSubagentPatch: (handler) =>
     on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler),
+  onSideChatPatch: (handler) =>
+    on<{ sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }>(IPC_EVENTS.SIDE_CHAT_PATCH, handler),
+  onSideChatInterrupted: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SIDE_CHAT_INTERRUPTED, handler),
+  onSideChatConversationChanged: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SIDE_CHAT_CONVERSATION_CHANGED, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
 }

@@ -28,8 +28,11 @@ import type { SessionManager } from '../SessionManager';
 
 /** `chat.send`/`chat.stop`/`chat.removeQueued`/`chat.sendNow` all drive an already-attached
  * process (never a Conversation reattach), so their default code is `prompt-failed`, not
- * `mapSessionThrown`'s `reattach-failed`. */
-function mapChatError(err: unknown): Result<never> {
+ * `mapSessionThrown`'s `reattach-failed`. Exported (gate-fix round 2, Code2 Medium) so
+ * `side-chat.ts` reuses this instead of keeping a word-for-word copy -- `askSideChat`/
+ * `cancelSideChat`/`getSideChatHistory` throw the exact same two error classes for the exact
+ * same reason (an already-attached process, never a reattach). */
+export function mapChatError(err: unknown): Result<never> {
   if (err instanceof AgentNotRunningError) return { ok: false, error: { code: err.code, message: err.message } };
   if (err instanceof PromptFailedError) return { ok: false, error: { code: err.code, message: err.message } };
   return { ok: false, error: { code: 'prompt-failed', message: err instanceof Error ? err.message : String(err) } };
