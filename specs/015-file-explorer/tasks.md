@@ -256,8 +256,9 @@ present via a literal string search, then every test below re-run against the co
 isolation proof RECORDED in `report.json`, not only
 prose: live `%APPDATA%\pinion\processes.json` mtime (`2026-10-11T08:42:12Z`) identical before and
 after every run across all three launches, `%APPDATA%\refract` absent both before and after,
-scratch `userdata\processes.json` mtime fresh each launch): 4 files (2 screenshots +
-`report.json` + `ui-report.json`) + `sha256.json` under
+scratch `userdata\processes.json` mtime fresh each launch): 6 files (3 screenshots +
+`report.json` + `ui-report.json` + `focus-switch-report.json`, the last two added by a fourth,
+focused scratch run for the session-switch focus check below) + `sha256.json` under
 `C:/Users/shopwood/refract-live-check-671-gatefix2/`, 0 duplicate hashes.
 
 - **Two-hop chain** (`chain-a` -> in-root `chain-b` -> `\\127.0.0.1\refract-none-<random>`,
@@ -307,6 +308,14 @@ scratch `userdata\processes.json` mtime fresh each launch): 4 files (2 screensho
   screenshot after the keypress shows the full real tree rendered again, and
   `document.activeElement` is a `<DIV>` (the panel's own container, never `<body>`) -- Retry
   never drops focus.
+- **Session-switch focus, verified separately** (same evidence folder, `03-after-session-
+  switch.png` + `focus-switch-report.json`, a fourth scratch instance,
+  `C:/tmp/refract-fx-focuscheck`, same teardown discipline): two Sessions created, the file
+  explorer opened on the first and a real folder row (`src`) given focus
+  (`document.activeElement` confirmed as that `<button>`), then switched to the second Session.
+  `document.activeElement` afterward is a connected `<DIV>` (the panel's own container, not
+  `<body>`) showing the second Session's own real tree -- the exact `[sessionId, status]`-keyed
+  reclaim effect this round's fix added, exercised by the OTHER trigger besides Retry.
 - **Three string-level escape attempts and the earlier round-1 fixtures** (outside junction,
   in-root junction, broken junction, outside symlink) were all re-run this round too, same
   results as before.
