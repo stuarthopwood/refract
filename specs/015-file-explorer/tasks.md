@@ -1471,7 +1471,10 @@ user has since moved to): at the top of every fresh `moveToRow` call (a newer ke
 an older, still-pending one); on any `pointerdown` anywhere in the document (the user acted on
 purpose); and on `sessionId` changing or the component unmounting. `Home`, `End`, type-ahead and
 `PageUp`/`PageDown` all route through the same `moveToRow`, so every long-jump keyboard path
-benefits from one fix, not four separate ones.
+benefits from one fix, not four separate ones. **CORRECTED round 15/16: this claim is WITHDRAWN
+for type-ahead and `End`-then-`Home` -- both strand focus on `<body>` at HEAD, failed 2/2 in
+round 15; see the Round 15/16 sections below. `Home`/`PageUp`/`PageDown` as genuine long jumps
+are not re-measured since this round.**
 
 **MEDIUM disclosure (Code13/Sec13/Verif13)**: wording-only corrections, no further behaviour
 change. `spec.md`'s scroll-out Clarification entry's self-contradicting "never scrolling the tree
@@ -1522,7 +1525,8 @@ direction has ever been live-verified, same `moveToRow` code path as the now-fix
 type-ahead long jump specifically (the current fixtures' filenames all share a common first
 letter, making a genuinely discriminating long-jump type-ahead test impractical to construct
 without new fixtures -- not built this round, though the fix applies to it structurally, same
-code path as `Home`/`End`/`PageUp`/`PageDown`).
+code path as `Home`/`End`/`PageUp`/`PageDown`). **CORRECTED round 15/16: a discriminating fixture
+WAS built and this claim is WITHDRAWN -- type-ahead fails 2/2 at HEAD; see Round 15/16 below.**
 
 ### Round 14 gate fixes (Sec14/Code14 PASS with Mediums; A11y14/Verif14 FAIL on a real HIGH plus a Medium finding, all against round 13)
 
@@ -1536,7 +1540,8 @@ interrupts before it settles, jumping back to `big`) let the OLDER (`End`'s) `do
 already succeeded and cleared it -- a later `rangeChanged` (even an unrelated one, e.g. a plain
 mouse-wheel scroll) could then steal focus back to the STALE target. Fixed: `moveGenRef`, bumped
 at the top of every `moveToRow` call and checked at the top of every `done`, makes a superseded
-call's `done` a no-op.
+call's `done` a no-op BY CONSTRUCTION. Whether this resolves the observed `End`-then-`Home`
+failure is NOT established -- it failed 2/2 in round 15's own re-test; see Round 15/16 below.
 
 **MEDIUM (A11y14/Verif14/Sec14)**: the `pendingFocusPathRef` retry effect (consumes a pending
 path once a LATER `rangeChanged` shows it in the DOM) focused blindly -- two guards added before
@@ -1586,8 +1591,8 @@ re-measurement (against `[data-testid="virtuoso-scroller"]`, Virtuoso's own real
 what it actually shows.
 
 **Not verified this round**: carried over from round 13's own list, unchanged, MINUS the
-type-ahead item above (verified this round, with the round-15 corrections below superseding what
-round 14 itself concluded from it): an app-side
+type-ahead item above (measured this round, with the wrong DOM element; see Round 15's own
+correction below for what it actually shows): an app-side
 `getStatus()` call-count instrumentation under a git-lock stress burst; a genuinely slow/
 throttled `shutdown()` for a wider archive race window; `did-navigate` firing on a committed,
 successful reload with correct re-ensuring afterward; the real OS-file-drop trigger for the
@@ -1603,10 +1608,10 @@ revert of the abandoned `scrollToIndex`/`defaultItemHeight`/frozen-`initialTopMo
 experiments) was confirmed correct by all four reviewers this round.** The two HIGHs were about
 documentation truth, not behaviour: round 14's own `384`/`384` scrollTop/scrollHeight reading was
 flagged as suspicious (an element that never scrolls because it never needed to is unremarkable;
-one holding ~1003 real rows reporting that is not), and the finding was never individually
-confirmed for `End`/`Home`/`PageUp`/`PageDown` on their own, only inferred from the (wrongly
-measured) type-ahead case and an `End`-then-`Home` race whose own round-14 "fixed, verified"
-claim round 15's own re-test below does not reproduce.
+one holding ~1002 node rows plus the "N more" row (1003 rows total) reporting that is not), and
+the finding was never individually confirmed for `End`/`Home`/`PageUp`/`PageDown` on their own,
+only inferred from the (wrongly measured) type-ahead case and an `End`-then-`Home` race whose own
+round-14 "fixed, verified" claim round 15's own re-test below does not reproduce.
 
 **HIGH (Code15/Verif15), doc-truth -- CORRECTED**: round 14's own live verification read
 `scrollTop`/`scrollHeight` from `document.querySelector('[role="tree"]')` -- this panel's OWN
@@ -1642,17 +1647,18 @@ the app booted and ran cleanly:
   wrong-element measurement, not a real divergence from round 13's result.
 - **Type-ahead `r` ALONE, from `big/f0000.txt` to `README.md`** (no race, current HEAD, same
   target, same `moveToRow` call as the `End` case above -- `handleTypeahead` computed
-  `candidateAbsIndex` `1002` against `total` `1002` node rows, round 14's own instrumentation,
-  confirmed again this round): `scrollTop` reached `27664` (`End` above reaches `27692`; the ~28px
+  `candidateAbsIndex` `1002` against `total` `1002` node rows per round 14's own instrumentation;
+  NOT re-instrumented or re-confirmed this round, since the code path is unchanged): `scrollTop`
+  reached `27664` (`End` above reaches `27692`; the ~28px
   gap is one row, not measured further) -- run 1's single 2.5s sample and run 2's first 300ms poll
   agreed on this value. `document.activeElement` stayed on `<body>` for run 1's 2.5s sample and
   for run 2's full 3-second polling window. Whether `README.md`'s own row was actually mounted or
   visible at any point during this window was NOT established (no DOM query for the row itself
   was run independently of the focus/scrollTop reads). **This is a real, reproducible defect, but
   narrower and less certain than round 14 reported: not "the list never scrolls" (scrollTop
-  clearly moved), but "focus does not land on `<body>`'s successor after a type-ahead-initiated
-  long jump" -- whether the target row was ever actually renderable at the moment focus needed to
-  move to it is open.**
+  clearly moved), but "focus stays on `<body>` and never lands on the target row (`README.md`)
+  after a type-ahead-initiated long jump" -- whether the target row was ever actually renderable
+  at the moment focus needed to move to it is open.**
 - **`End`-then-`Home` race (round 14's own Code14 HIGH fix target)**: re-run this round, twice
   (run 1 recorded focus only, no `scrollTop`; run 2 polled every 300ms for 3 seconds), against
   CURRENT HEAD (the `moveGenRef` fix in place): final `scrollTop` was `0` -- `Home`'s own target
@@ -1668,13 +1674,15 @@ the app booted and ran cleanly:
   CONTRADICTS round 14's own "fixed, verified" claim for this exact scenario** -- that claim was
   itself drawn from a round-14 session that recorded multiple OTHER booted runs of the identical
   scenario ending on `<body>` ("race settled on a real row, not body: false"), not recorded in
-  round 14's own section above; the "every clean run" wording there quoted only the passing runs.
+  round 14's original text (annotated in place round 16); the "every clean run" wording there
+  quoted only the passing runs.
   Whether `moveGenRef` is working as designed and this is a DIFFERENT failure mode, or whether the
   fix is simply unreliable under contention, is NOT established this round. **Recovery path**:
   when focus is on `<body>`, the tree's own keyboard handlers (all per-row) do nothing; Tab or
-  Shift+Tab should re-enter the tree at its one roving Tab stop (`README.md` stays the selected
-  row throughout, confirmed via `aria-selected`) -- this recovery path itself was NOT live-verified
-  for this specific failure this round.
+  Shift+Tab should re-enter the tree at its one roving Tab stop (which row holds `aria-selected`
+  after the race was NOT measured; the roving Tab stop is the selected row if Virtuoso has it
+  rendered, otherwise the first rendered node row, per `tabbableAbsIndex`) -- this recovery path
+  itself was NOT live-verified for this specific failure this round.
 
 **Not individually measured this round**: `Home` alone as a genuine long jump (a short, one-row
 `Home` was the only kind used, inside the race test above) -- round 13's own saved evidence
@@ -1755,6 +1763,57 @@ individually measured" above and to the PR's own Risks/"What was NOT verified" s
 Main's own instruction; measured as low as ~0.13-0.9 GB throughout this round's own session
 (same severe contention disclosed above) -- skipped, not run, and left in "Not individually
 measured" above rather than guessed at.
+
+### Round 17 gate fixes (Code17 PASS; Sec17/Verif17/A11y17 FAIL on doc-truth, against round 16)
+
+**Markdown/PR-body/GitHub-comment corrections only -- no source edits this round, confirmed by a
+`git diff` limited to `.md` files.**
+
+**HIGH (A11y17)**: the `End`-then-`Home` race's own "Recovery path" paragraph above (and the PR
+body's matching bullet) claimed `README.md` "stays the selected row throughout, confirmed via
+`aria-selected`" -- NEVER measured. The round-15 race samples read only
+`document.activeElement` (`{"path":null,"tag":"BODY","ariaSelected":null}` at every poll); no
+row's own `aria-selected` was ever queried independently. `moveToRow` also calls
+`setSelectedPath` BEFORE anything else (`FileExplorerPanel.tsx`), so a final `scrollTop` of `0`
+(matching `Home`'s own target) is at least as consistent with `Home`'s own call having run and
+selected `big`, not `README.md`, which directly conflicts with the invented claim. Corrected
+above to: "(which row holds `aria-selected` after the race was NOT measured; the roving Tab stop
+is the selected row if Virtuoso has it rendered, otherwise the first rendered node row, per
+`tabbableAbsIndex`)". This is the same class of truthfulness failure as rounds 15-16 -- every
+other "confirmed"/"verified" claim in the Round 14-16 text was re-checked this round against
+what was actually measured or quoted from a reviewer report; no further unbacked claim was found
+(the `candidateAbsIndex`/`total` instrumentation line was also corrected in place: it was round
+14's own, NOT re-confirmed in round 15, and now says so).
+
+**HIGH (Verif17)**: the PR body's AC table FR-022 row said, for type-ahead, "round 14 reported
+passes based on a measurement later found to be reading the wrong DOM element" -- round 14
+reported a FAILURE ("the list never actually scrolls at all for a long jump"), not a pass.
+Corrected to: "round 14 reported 'the list never scrolls', from a wrong-DOM-element measurement
+(scroll does move; focus is what fails)". The `End`-then-`Home` clause ("round 14 reported
+passes, selectively quoted") was already correct and is unchanged.
+
+**HIGH (Sec17/Verif17)**: issue #650's own latest comment (round 13, 2026-10-12, comment
+6124230943) still says "`Home`, `End`, type-ahead and `PageUp`/`PageDown` all share this one
+fix" -- a stale public "fixed" claim for the two defects rounds 14-16 found. Main has posted the
+correction directly: https://github.com/stuarthopwood/refract/issues/650#issuecomment-6126422523
+(not duplicated here). Referenced above at the two round-13 claims it corrects (lines ~1474,
+~1528-1529) and in the PR body.
+
+**MEDIUM/LOW wording**: the type-ahead bullet's garbled "focus does not land on `<body>`'s
+successor" corrected to "focus stays on `<body>` and never lands on the target row (`README.md`)
+after a type-ahead-initiated long jump". Round 14's own Not-verified list's "verified this round"
+corrected to "measured this round (with the wrong DOM element; see Round 15's own correction)".
+"~1003 real rows" corrected to "~1002 node rows plus the 'N more' row (1003 rows total)". The
+false "not recorded in round 14's section above" citation corrected to "not recorded in round
+14's original text (annotated in place round 16)". Round 14's own HIGH fix conclusion ("Fixed:
+`moveGenRef` ... makes a superseded call's `done` a no-op") reframed: it does so BY
+CONSTRUCTION; whether this resolves the observed `End`-then-`Home` failure is NOT established
+(failed 2/2 in round 15). PR title dropped "fixed" (rounds 15-16 fixed nothing in either open
+focus defect). PR body's "Round-15/16 findings... on #463" corrected to "Round 14-16 findings".
+`spec.md`'s own Clarifications section gained one line pointing to this file's Round 15/16/17
+sections and the FR-022/FR-025/SC-006 Partial status, alongside the existing scroll-out and
+FR-010 entries. RAM range (`~0.13-0.9 GB`) reconfirmed against the lane's own session transcript;
+unchanged.
 
 ---
 

@@ -100,6 +100,16 @@ choice listed in Clarifications below.
   focus never actually leaves the `role="tree"` container even while the active row is
   virtualised away. Stuart can ask for either as a follow-up, or accept the disclosed limitation
   as shipped.
+- **Q (PR #671 gate rounds 14-16, Code/A11y/Verif/Sec reviewers)**: a SEPARATE defect from the
+  mouse-wheel/resize scroll-out item above -- a type-ahead search, and a fast `End`-then-`Home`
+  keypress, can each leave keyboard focus stranded on `<body>` after a genuine long jump into a
+  1000+-row freshly-expanded folder, even though `End` pressed alone (the identical jump) lands
+  correctly. Full detail, live-verification numbers, and the doc-truth corrections made across
+  rounds 14-17 are in `tasks.md`'s own "Round 14/15/16/17 gate fixes" sections, not restated here.
+  Posted to issue #463; conservative choice taken for now (not blocking this PR, but FR-022,
+  FR-025 and SC-006 are marked Partial in the AC table rather than Done until this is resolved).
+  **A (pending)**: root cause not established for either case; needs a dedicated investigation
+  session, recommended as its own follow-up story/issue.
 
 ### Carved out, not blocking
 
