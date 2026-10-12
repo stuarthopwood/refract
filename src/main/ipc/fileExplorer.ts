@@ -237,13 +237,6 @@ async function listDirectoryEntries(
  * caller was about to `mkdir` back into existence (`EPERM`). */
 interface SessionWatchState {
   handle: DirectoryWatchHandle;
-  /** Directories the renderer has actually fetched for this Session via a successful
-   * `listDirectory` call (`''` is the worktree root). A watcher patch for anything else is
-   * dropped before any `readdir`/classify/IPC-send work runs (PR #671 gate round 4 fix, High,
-   * Sec4/Code4, reproduced live): an agent's own `pnpm install`/checkout touching dozens of
-   * directories the panel never opened must not re-list and re-status all of them for nothing
-   * the renderer will ever render. */
-  loadedPaths: Set<string>;
 }
 
 // Gate round 6 fix (Code6/Verif6 Low): `loadedPaths` itself compared case-SENSITIVELY while
@@ -258,6 +251,24 @@ function normalizePathKey(relativePath: string): string {
 }
 const watchers = new Map<string, SessionWatchState>();
 
+// Gate round 8 fix (Sec8/Code8/A11y8/Verif8 HIGH): directories the renderer has actually
+// fetched for this Session via a successful `listDirectory` call (`''` is the worktree root;
+// keyed by `normalizePathKey`, valued by the ORIGINAL-cased `relativePath` so it can be re-used
+// to re-list, not only to check membership). Previously lived INSIDE `SessionWatchState` and
+// was deleted wholesale by `stopFileExplorerWatcher` every time the watcher stopped -- round
+// 7's own `fileExplorer.stopWatching`/`ensureWatching` (panel unmount/remount) meant EVERY tab
+// switch, Session switch, or close/reopen reset this to empty, so `refreshDirectory`'s own
+// membership check below silently dropped every patch for every already-loaded directory,
+// including the root, for the rest of the run -- live refresh (FR-020) and previewed-file
+// deletion detection (FR-021) were both dead after the FIRST close/reopen. This map is now
+// independent of the watcher's own on/off lifecycle: `stopFileExplorerWatcher` never touches
+// it, so `FILE_EXPLORER_ENSURE_WATCHING` can re-flush every path still listed here once
+// watching resumes (see its own handler below), catching up on anything that changed while
+// unwatched. Cleared only by an actual reset (`notifyFileExplorerReset`, right below) -- an
+// archive/delete/recreate/fatal/worktree-missing event means the renderer is about to reload
+// from scratch anyway, so there is nothing left worth re-flushing.
+const loadedPathsBySession = new Map<string, Map<string, string>>();
+
 // Gate round 5 fix (Code5 HIGH1): the ONE module-scope reference to the window getter
 // `registerFileExplorer` receives -- `registerFileExplorer` is only ever instantiated once (at
 // app startup), so capturing it here lets `notifyFileExplorerReset` below be called from
@@ -271,8 +282,12 @@ let cachedGetWindow: (() => BrowserWindow | undefined) | undefined;
  * restore, and after an archive -- `stopFileExplorerWatcher` below only releases the WATCHER
  * (called pre-emptively, before those operations touch the worktree folder); this is the
  * separate signal that tells the renderer it is safe to reload, called once the operation that
- * actually changed the worktree has finished. */
+ * actually changed the worktree has finished. Gate round 8 fix: also drops this Session's
+ * `loadedPathsBySession` entry -- every call site here represents "this Session's explorer
+ * state is being thrown away and reloaded from scratch", so the parked path list is stale too;
+ * the renderer's own post-reset reload repopulates it via fresh `listDirectory` calls. */
 export function notifyFileExplorerReset(sessionId: string): void {
+  loadedPathsBySession.delete(sessionId);
   const window = cachedGetWindow?.();
   if (!window || window.isDestroyed()) return;
   window.webContents.send(IPC_EVENTS.FILE_EXPLORER_RESET, { sessionId });
@@ -285,13 +300,18 @@ export function notifyFileExplorerReset(sessionId: string): void {
 // actual listing -- if that `await` resolves DURING the window `sessions.ts` has the worktree
 // folder itself mid-operation (a `git worktree remove`/`add`, for recreate), the race recreates
 // a fresh watcher on a folder the operation is still touching, reopening round 4's own
-// EPERM-on-`mkdir` bug one call site later than the original fix closed it. Exported so
-// `sessions.ts` can mark a Session busy around its own archive/delete/recreateWorktree bodies,
-// cleared before (not after) the matching `notifyFileExplorerReset` call.
-const busySessionIds = new Set<string>();
+// EPERM-on-`mkdir` bug one call site later than the original fix closed it. Gate round 8 fix
+// (Sec8 Low): a plain `Set` let two concurrent busy-markers for the SAME Session (e.g. a delete
+// racing a recreate, both of which call this) step on each other -- the second caller's own
+// `false` cleared busy while the FIRST caller's own operation was still mid-flight, reopening
+// the exact race this marker exists to close. Reference-counted instead: `busy` only actually
+// clears once every caller that set it has also cleared it.
+const busySessionRefCounts = new Map<string, number>();
 export function setFileExplorerSessionBusy(sessionId: string, busy: boolean): void {
-  if (busy) busySessionIds.add(sessionId);
-  else busySessionIds.delete(sessionId);
+  const current = busySessionRefCounts.get(sessionId) ?? 0;
+  const next = busy ? current + 1 : Math.max(0, current - 1);
+  if (next === 0) busySessionRefCounts.delete(sessionId);
+  else busySessionRefCounts.set(sessionId, next);
 }
 
 // Gate round 5 fix (Code5 Medium): dedupes watcher-triggered re-lists by `sessionId` + directory
@@ -368,7 +388,11 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       return;
     }
     const state = watchers.get(sessionId);
-    if (!state?.loadedPaths.has(normalizePathKey(relativePath))) return;
+    // Gate round 8 fix (typecheck): `state` can be undefined if the watcher stopped between the
+    // event firing and this async flush actually running -- bail early rather than narrowing
+    // via the `loadedPathsBySession` check below, which no longer references `state` at all.
+    if (!state) return;
+    if (!loadedPathsBySession.get(sessionId)?.has(normalizePathKey(relativePath))) return;
     const result = await listDirectoryEntries(session.worktreePath, relativePath);
     if (!result.ok) {
       // Gate round 6 fix (Code6/A11y6/Verif6 Medium, re-probed independently four ways): round
@@ -405,6 +429,11 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       // `resolveListTarget` already handles per-request.
       return;
     }
+    // Gate round 8 fix (Code8 Low): a flush already in flight when `stopWatching` ran (the
+    // panel closed mid-flush) must not still deliver a patch afterward -- `state` was captured
+    // above, before the `await`, so this is the same handle-identity guard the `worktree-missing`
+    // branch above already uses, just applied to the success path too.
+    if (watchers.get(sessionId)?.handle !== state.handle) return;
     const window = getWindow();
     if (!window || window.isDestroyed()) return;
     window.webContents.send(IPC_EVENTS.FILE_EXPLORER_PATCH, {
@@ -452,7 +481,7 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
     if (manager.registry.getSession(sessionId)?.archivedAt) return;
     // Gate round 6 fix (Verif6 Low): never watches a Session `sessions.ts` has marked busy --
     // see `setFileExplorerSessionBusy`'s own doc comment for the exact race this closes.
-    if (busySessionIds.has(sessionId)) return;
+    if (busySessionRefCounts.has(sessionId)) return;
     const handle = watchDirectory(
       worktreePath,
       (relativePath) => scheduleDirectoryFlush(sessionId, relativePath),
@@ -477,7 +506,7 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
     // case, so the next `listDirectory` call retries instead of staying permanently un-watched
     // (PR #671 gate round 4 fix, Critical).
     if (!handle) return;
-    watchers.set(sessionId, { handle, loadedPaths: new Set() });
+    watchers.set(sessionId, { handle });
   }
 
   ipcMain.handle(
@@ -525,14 +554,39 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       // `worktree-missing` -- a direct, user-driven `listDirectory` call (e.g. the user
       // expanding a folder right after an external rename) hitting the same error left the
       // watcher running against a root that no longer resolves, with the renderer never told.
-      if (!result.ok && result.error.code === 'worktree-missing' && watchers.get(sessionId)?.handle === watchedHandle) {
+      // Gate round 8 fix (Sec8 HIGH): `watchedHandle` is `undefined` whenever `ensureWatcher`
+      // itself failed to start a watcher at all (the worktree folder was already gone --
+      // `watchDirectory` returns `undefined` synchronously, see `ensureWatcher`'s own comment
+      // above) -- the OLD guard compared `undefined === undefined`, which is true, so a
+      // Session with NO watcher and a genuinely missing worktree still ran stop+reset on every
+      // single call. The renderer's `resetSession` then drops the entry, its load-once effect
+      // fires again (no entry), and the cycle repeats with no debounce: a tight IPC+realpath
+      // loop that left the panel stuck on "loading" forever instead of ever showing the honest
+      // worktree-missing error + Retry/Recreate state. Only stop+reset when a watcher was
+      // ACTUALLY captured this call.
+      if (
+        !result.ok &&
+        result.error.code === 'worktree-missing' &&
+        watchedHandle !== undefined &&
+        watchers.get(sessionId)?.handle === watchedHandle
+      ) {
         stopFileExplorerWatcher(sessionId);
         notifyFileExplorerReset(sessionId);
       }
       // Records this directory as one the renderer has actually fetched, so a later watcher
       // patch for it is allowed through (PR #671 gate round 4 fix, High) -- recorded on success
-      // only, so a failed/escaping path never ends up "loaded".
-      if (result.ok) watchers.get(sessionId)?.loadedPaths.add(normalizePathKey(relativePath));
+      // only, so a failed/escaping path never ends up "loaded". Gate round 8 fix: lives in
+      // `loadedPathsBySession`, independent of the watcher's own handle, so it survives a
+      // stop/restart cycle (see that map's own doc comment above) -- keyed by the normalised
+      // path, valued by the original casing so `FILE_EXPLORER_ENSURE_WATCHING` can re-list it.
+      if (result.ok) {
+        let loaded = loadedPathsBySession.get(sessionId);
+        if (!loaded) {
+          loaded = new Map();
+          loadedPathsBySession.set(sessionId, loaded);
+        }
+        loaded.set(normalizePathKey(relativePath), relativePath);
+      }
       return result;
     }
   );
@@ -562,11 +616,27 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
 
   ipcMain.handle(IPC_REQUESTS.FILE_EXPLORER_ENSURE_WATCHING, async (_event, sessionId: unknown): Promise<Result<void>> => {
     // Counterpart to `stopWatching`: the renderer calls this when the FIRST `FileExplorerPanel`
-    // for a Session (re)mounts. Deliberately does NOT re-list any directory -- the renderer's
-    // own cached tree/expansion/scroll state (FR-025) survives a stop/restart cycle unchanged;
-    // only live-patch delivery resumes. `ensureWatcher` itself already refuses an archived or
-    // busy Session and is a no-op if a watcher is already running, so this is safe to call
-    // whenever a panel mounts without checking any of that twice here.
+    // for a Session (re)mounts. Does NOT re-list anything itself -- `ensureWatcher` only opens a
+    // fresh `fs.watch` handle, no `readdir` -- but when a fresh handle actually starts (not a
+    // no-op on an already-running watcher), it re-flushes every directory `loadedPathsBySession`
+    // still remembers the renderer having open. Gate round 8 fix (Sec8/Code8/A11y8/Verif8 HIGH):
+    // round 7's own comment here claimed "the renderer's own cached tree/expansion/scroll state
+    // survives a stop/restart cycle unchanged; only live-patch delivery resumes" -- true for
+    // expansion/scroll, FALSE for freshness: nothing else ever re-lists an already-loaded
+    // directory (the root-load effect is gated on `!hasSessionEntry`, and `toggleExpanded` never
+    // re-fetches an already-expanded folder), so every change made while the panel was
+    // closed/unwatched -- a file added, deleted, or edited, including the currently-previewed
+    // file -- was silently invisible for the rest of the run. Re-flushing each parked path here
+    // sends a `FILE_EXPLORER_PATCH` for it exactly as if the watcher had caught the change live;
+    // `applyPatch` (file-explorer-store.ts) already merges that in place via
+    // `withPatchedChildren` (expansion/selection/scroll untouched, FR-025), already flips a
+    // deleted previewed file straight to `kind: 'deleted'` via `isPathGoneUnderPatch` (FR-021),
+    // and already schedules a debounced `getStatus` refresh on every patch -- so this one
+    // re-flush catches up the tree, the preview, AND git status with no new renderer code and
+    // no separate IPC round trip for any of them. `ensureWatcher` itself already refuses an
+    // archived or busy Session and is a no-op if a watcher is already running (the ref-count's
+    // own "only the FIRST mount calls this" contract means that no-op case should be rare, but
+    // costs nothing extra to check for).
     if (typeof sessionId !== 'string') {
       return invalidArgument('fileExplorer.ensureWatching expects a string sessionId');
     }
@@ -575,7 +645,12 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
     }
     const session = manager.registry.getSession(sessionId);
     if (!session) return notFound(`This Session no longer exists`);
+    const hadWatcher = watchers.has(sessionId);
     ensureWatcher(sessionId, session.worktreePath);
+    if (!hadWatcher && watchers.has(sessionId)) {
+      const loaded = loadedPathsBySession.get(sessionId);
+      if (loaded) for (const relativePath of loaded.values()) scheduleDirectoryFlush(sessionId, relativePath);
+    }
     return { ok: true, value: undefined };
   });
 

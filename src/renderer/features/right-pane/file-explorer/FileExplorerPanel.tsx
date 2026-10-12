@@ -137,9 +137,14 @@ function joinWorktreePath(worktreePath: string, relativePath: string): string {
 // ACTIVE one (`activePanelId === 'file-explorer' && <FileExplorerPanel .../>`) -- switching to a
 // different tab, or closing the last open tab, genuinely unmounts it; switching to a DIFFERENT
 // Session while staying on this tab keeps the component mounted but changes `sessionId`. Module-
-// level (not component state) and keyed by `sessionId`, not by component instance, because a
-// split pane could in principle show the same Session's panel twice -- the watcher must survive
-// until the LAST such instance goes away, not the first one to unmount.
+// level (not component state) and keyed by `sessionId`, not by component instance -- strictly,
+// `App.tsx` renders only ONE `RightPaneShell`, so at most one `FileExplorerPanel` is ever
+// mounted for a given Session today; the ref-count exists for React StrictMode's own
+// mount-unmount-remount dev-time double-invoke (and HMR), not a real multi-instance case (Code8
+// Low correction -- a prior version of this comment wrongly cited a hypothetical split pane).
+// Ref-counting still keeps the stop/ensure ordering correct under that double-invoke: the first
+// mount's own `ensureWatching` and the immediate unmount's `stopWatching` net out to zero before
+// the real, lasting mount's own `ensureWatching` runs.
 const watcherRefCounts = new Map<string, number>()
 
 export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
@@ -207,18 +212,43 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // OLD Session's watcher is released and the NEW one's is (re)started either way. Does not
   // touch `bySession`/`resetSession` -- an actual tree reload only ever happens via
   // `FILE_EXPLORER_RESET` (watcher-fatal/archive/recreate/restore) or the "load once" effect
-  // above, neither of which this effect fires.
+  // above, neither of which this effect fires. Gate round 8 correction (Code8/Sec8/Verif8
+  // Medium): this component renders while its tab is the ACTIVE one, which INCLUDES while the
+  // right pane itself is collapsed (dragged shut) -- `RightPaneShell.tsx` keeps `activePanelId`
+  // unchanged on collapse, so the panel (and this effect, and the watcher it holds open) stays
+  // mounted, just invisible; the ancestor-folder lock continues while nothing is shown. This is
+  // the accurate scope of the fix -- "while a panel for this Session is actually mounted" never
+  // meant "only while visible". Round 8 also fixed the separate claim, previously here and in
+  // `fileExplorer.ts`'s own `ensureWatching` handler, that re-mounting "only resumes live-patch
+  // delivery" with the renderer's cache otherwise untouched -- `ensureWatching` now re-flushes
+  // every path this Session still has loaded, so a stop/restart cycle also catches up anything
+  // that changed while unwatched (see that handler's own doc comment for the full account).
   useEffect(() => {
     if (!sessionId) return
     const id = sessionId
     const count = (watcherRefCounts.get(id) ?? 0) + 1
     watcherRefCounts.set(id, count)
-    if (count === 1) void window.refract.fileExplorer.ensureWatching(id)
+    // Gate round 8 fix (Code8 Low): `void` alone drops a `{ ok: false }` IPC result silently --
+    // logged, not surfaced as a toast, since neither call has any user-facing recovery action
+    // (a failure here just means the watcher didn't (re)start; the NEXT mount/unmount retries).
+    if (count === 1) {
+      window.refract.fileExplorer
+        .ensureWatching(id)
+        .then((result) => {
+          if (!result.ok) console.warn('FileExplorerPanel: ensureWatching failed', result.error)
+        })
+        .catch((err) => console.warn('FileExplorerPanel: ensureWatching rejected', err))
+    }
     return () => {
       const remaining = (watcherRefCounts.get(id) ?? 1) - 1
       if (remaining <= 0) {
         watcherRefCounts.delete(id)
-        void window.refract.fileExplorer.stopWatching(id)
+        window.refract.fileExplorer
+          .stopWatching(id)
+          .then((result) => {
+            if (!result.ok) console.warn('FileExplorerPanel: stopWatching failed', result.error)
+          })
+          .catch((err) => console.warn('FileExplorerPanel: stopWatching rejected', err))
       } else {
         watcherRefCounts.set(id, remaining)
       }
@@ -281,6 +311,19 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // actual tabbable row (`tabbableAbsIndex` is recomputed via `rangeChanged` to the first
   // RENDERED row whenever the previously-tabbable one scrolls out of view, so that row is
   // always real, present, and fully keyboard-functional -- never the bare container).
+  //
+  // Gate round 8 fix (A11y8 Medium): that round-7 rescue moved SELECTION, not just focus --
+  // `onRowFocus` below calls `setSelectedPath` on every row focus event, including this
+  // PROGRAMMATIC one, so a row merely scrolled out from under a focused-but-not-selected row
+  // (clicking a row only focuses it; a later wheel-scroll never re-clicks anything) silently
+  // moved `aria-selected` and announced a new row the user never navigated to -- worse with
+  // every subsequent scroll, since the rescue re-fires each time the tabbable row changes.
+  // `rescueFocusRef` wraps the one synchronous `.focus()` call below (a native `focus` event
+  // fires synchronously inside `HTMLElement.focus()`, so setting/clearing this flag immediately
+  // around that one call reliably brackets just this rescue's own event, never a user's real
+  // Tab/click): `onRowFocus` skips `setSelectedPath` while it is set, so the rescue restores
+  // KEYBOARD position without also hijacking the user's own selection.
+  const rescueFocusRef = useRef(false)
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -295,9 +338,18 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
           if (!genuinelyGone) return
         }
         const treeRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path][tabindex="0"]')
+        // Gate round 8 fix (A11y8 Low): if the rendered range happens to hold no row with
+        // `tabindex="0"` (for example only a virtualised "more" row is currently in view, or
+        // `rows` is momentarily empty), fall back to the first rendered row of ANY tabindex
+        // before giving up to the preview region or the bare container -- landing on the
+        // container is the exact round-7 defect this round's own fix above removes everywhere
+        // ELSE it could happen; this closes the one remaining narrow path to it.
+        const anyRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path]')
         const previewRegion = containerRef.current?.querySelector<HTMLElement>('[role="region"]')
-        const target = treeRow ?? previewRegion ?? containerRef.current
+        const target = treeRow ?? anyRow ?? previewRegion ?? containerRef.current
+        rescueFocusRef.current = true
         target?.focus({ preventScroll: true })
+        rescueFocusRef.current = false
       })
     }
     container.addEventListener('focusout', handleFocusOut)
@@ -614,7 +666,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                           selected={row.nodeIndex === selectedNodeIndex}
                           tabbable={absIndex === tabbableAbsIndex}
                           onRowClick={selectAndActivate}
-                          onRowFocus={(node) => sessionId && setSelectedPath(sessionId, node.path)}
+                          onRowFocus={(node) => sessionId && !rescueFocusRef.current && setSelectedPath(sessionId, node.path)}
                           onRowKeyDown={handleRowKeyDown}
                           onOpenInVSCode={handleOpenInVSCode}
                           onReveal={handleReveal}

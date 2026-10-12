@@ -225,6 +225,21 @@ function createWindow(): void {
     pendingSplitSurvivorId = undefined
   })
 
+  // Gate round 8 fix (Sec8 Low): the renderer side of every file-explorer watcher's lifecycle
+  // lives in a module-level ref-count `Map` in `FileExplorerPanel.tsx` -- a renderer reload or
+  // crash resets that `Map` to empty, but main's own watchers (and the ancestor-folder lock each
+  // one holds) are a SEPARATE process and keep running regardless, with nothing left to ever
+  // call `stopWatching` again until the Session is archived/deleted/recreated or the whole app
+  // quits. `render-process-gone` covers a crash; `did-start-navigation` (main frame only, so an
+  // iframe/webview navigation elsewhere never fires this) covers a reload, including dev HMR's
+  // full-page fallback. Both are a hard reset of the renderer's entire in-memory state, so
+  // stopping every watcher unconditionally is correct -- the renderer's own fresh mount re-calls
+  // `ensureWatching` for whichever Session(s) reopen a panel, same as any other first open.
+  window.webContents.on('render-process-gone', () => stopAllFileExplorerWatchers())
+  window.webContents.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) stopAllFileExplorerWatchers()
+  })
+
   // T037: SessionAgent's unread tracking needs real OS focus, not just "a window exists".
   window.on('focus', () => manager?.setWindowFocused(true))
   window.on('blur', () => manager?.setWindowFocused(false))
