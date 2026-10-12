@@ -953,13 +953,20 @@ landed; round 2's own fix over-attributed T022 to this PR when it actually shipp
   same screen position afterward without moving the pointer -- it resolved to a plain `DIV` (the
   row's own flex gap), not a button, confirming nothing clickable slides under the pointer where
   Cancel used to be; Clear thread's own rect at that point measured `cx` 974.5, unchanged from
-  its pre-cancel position both numerically and visually (compare `r2-01-running-before-cancel.png`
-  vs `r2-02-cancelled-pointer-left-at-old-cancel-pos.png`), confirming the `mr-auto` anchor holds.
-  Separately, polling every
+  its pre-cancel position **visually** (compare `r2-01-running-before-cancel.png` vs
+  `r2-02-cancelled-pointer-left-at-old-cancel-pos.png`) -- only the AFTER-cancel rect was ever
+  recorded in `report.json`; no separate before-cancel measurement of Clear thread's own rect
+  exists to compare it against numerically, so "unchanged" here is a visual claim only, not a
+  numeric one. This confirms the `mr-auto` anchor holds. Separately, polling every
   `[role="status"]` element (7 exist on the page; an earlier single-element query had read the
   wrong one, which is why the first live check reported an empty string) for up to 2.5s after
   clicking Clear thread captured the real text: `"Thread cleared."`, appearing within about 100ms
-  -- the previously-disclosed "not verified" gap for this specific assertion is now closed.
+  -- the previously-disclosed "not verified" gap for this specific assertion is now closed. **Not
+  measured live**: the action row's layout at the 240px Min pane-width preset -- estimated only
+  (approximately 223px of composer content width available, approximately 217px needed by Clear
+  thread + Cancel + Send combined, about 6px spare, so the row should not wrap) but never run
+  against the real built app at that width; see
+  [#650](https://github.com/stuarthopwood/refract/issues/650#issuecomment-6116003780).
 - [x] T022 [P] Add a polite live region announcing a completed answer once (FR-012), and focus
   management: the panel's composer gains focus on open (rail, launcher, or `/btw`); focus returns
   to the triggering control on close (FR-013, same shared pattern spec 013's panels already use).
