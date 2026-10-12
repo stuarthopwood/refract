@@ -177,9 +177,14 @@ function withExpandedToggled(node: ExpandableNode, targetPath: string): Expandab
  * happening to the un-related `src` folder after a root-level delete. */
 function withPatchedChildren(node: ExpandableNode, targetPath: string, entries: FileTreeNode[], truncated: number): ExpandableNode {
   if (node.path === targetPath) {
-    const oldByPath = new Map((node.children ?? []).map((child) => [child.path, child] as const))
+    // Gate round 6 fix (Code6/Verif6 Low): keyed case-insensitively (NTFS's own convention,
+    // matching `isPathGoneUnderPatch`'s own round-5 fix) -- a case-only rename (`foo.ts` ->
+    // `FOO.ts`) previously missed this lookup entirely under a case-SENSITIVE `Map.get`, so the
+    // renamed entry came back bare, silently dropping its own `children`/`expanded`/`truncated`/
+    // `gitStatus` as if it were a brand-new file rather than the same one just renamed.
+    const oldByPath = new Map((node.children ?? []).map((child) => [child.path.toLowerCase(), child] as const))
     const nextChildren: ExpandableNode[] = entries.map((entry) => {
-      const old = oldByPath.get(entry.path)
+      const old = oldByPath.get(entry.path.toLowerCase())
       if (old && old.kind === entry.kind) {
         return { ...entry, children: old.children, expanded: old.expanded, truncated: old.truncated, gitStatus: old.gitStatus }
       }
@@ -362,10 +367,25 @@ function withSessionDefaults(
 // matching the LATEST request for a Session is ever applied; an older one is silently dropped.
 const previewRequestSeq = new Map<string, number>()
 
+// Gate round 6 fix (Sec6 Low): the SAME pattern for a root `loadDirectory('')` call -- a root
+// load already in flight when `resetSession` fires (`FILE_EXPLORER_RESET`, the watcher-fatal/
+// archive/restore/recreateWorktree lifecycle signal) could otherwise resolve AFTER the reset's
+// own fresh reload and overwrite it with a stale result (an old error, or an old now-outdated
+// ready tree). `resetSession` below bumps this same counter, so an older in-flight root load's
+// own outcome is recognised as superseded and dropped rather than applied.
+const rootLoadSeq = new Map<string, number>()
+
 export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   bySession: {},
 
   async loadDirectory(sessionId, relativePath) {
+    // Gate round 6 fix (Sec6 Low): captured BEFORE the first `await` below, same pattern
+    // `loadPreview`'s own `previewRequestSeq` already uses -- `resetSession` bumps the same
+    // counter, so a root load already in flight when a reset fires recognises itself as
+    // superseded once its response arrives, instead of overwriting the post-reset reload.
+    const rootSeq = relativePath === '' ? (rootLoadSeq.get(sessionId) ?? 0) + 1 : 0
+    if (relativePath === '') rootLoadSeq.set(sessionId, rootSeq)
+    const staleRootLoad = (): boolean => relativePath === '' && rootLoadSeq.get(sessionId) !== rootSeq
     if (relativePath === '') {
       // PR #671 gate fix: marks the Session `'loading'` up front (covers both the very first
       // open AND an explicit Retry after a previous `'error'`) -- the previous version had
@@ -392,6 +412,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       // handler's own `Promise.all`) used to leave `status: 'loading'` forever with an
       // unhandled rejection -- no error state, no Retry, nothing for the user to do.
       if (relativePath === '') {
+        if (staleRootLoad()) return
         set((state) => ({
           bySession: {
             ...state.bySession,
@@ -409,6 +430,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
     }
     if (!result.ok) {
       if (relativePath === '') {
+        if (staleRootLoad()) return
         // PR #671 gate fix: a persistent, retryable error state instead of a one-shot toast that
         // left `loaded`/`status` claiming "still loading" forever (`contracts/ipc.md`'s
         // `worktree-missing`/`outside-worktree`/`file-missing` codes already carry a plain-
@@ -431,6 +453,7 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       toast.error(result.error.message)
       return
     }
+    if (staleRootLoad()) return
     set((state) => {
       const existing = state.bySession[sessionId]
       if (relativePath === '') {
@@ -506,6 +529,11 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   },
 
   resetSession(sessionId) {
+    // Gate round 6 fix (Sec6 Low): bumps the root-load sequence FIRST -- an older root
+    // `loadDirectory('')` call already in flight (started before this reset) checks this same
+    // counter when its response finally arrives, recognises itself as superseded, and drops its
+    // own result instead of overwriting the fresh reload this reset is about to trigger.
+    rootLoadSeq.set(sessionId, (rootLoadSeq.get(sessionId) ?? 0) + 1)
     set((state) => {
       if (!(sessionId in state.bySession)) return state
       const bySession = { ...state.bySession }

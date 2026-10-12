@@ -46,6 +46,7 @@ possible path.
 | `invalid-argument` (existing code, no new one needed) | A non-string/oversized `sessionId`/`relativePath`, a path that is not a folder (`listDirectory`) or not a file (`readPreview`), or a permissions/other read failure -- `resolveErrorResult`'s own three codes above are reserved for the containment/existence questions specifically; everything else (a wrong argument shape, or an environment-level read failure with no containment question of its own) stays `invalid-argument`, this spec's share of spec 001's existing generic code. |
 | `not-found` (existing code, no new one needed) | An unknown `sessionId`. |
 | `clipboard-failed` (existing code, reused from `clipboard.writeText`) | `fileExplorer.copyPath`'s own main-side clipboard write fails. |
+| `session-archived` (new, gate round 6 fix) | `fileExplorer.listDirectory` refuses an archived Session (`archivedAt` set) rather than watching it -- an archived Session's panel can still be mounted, and watching it again on a reload would undo the "archive releases the watcher" fix (round 4). The renderer's existing root-error state renders this message verbatim, the honest "archived" state FR-010's own neighbouring Clarification work does not otherwise need a new UI for. |
 
 No new error code is added for "VS Code not found" (FR-017): that is the normal
 `{ opened: false }` result shape above, shown inline, never surfaced as an IPC-layer error.

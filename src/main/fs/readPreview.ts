@@ -144,7 +144,10 @@ export async function readPreview(absolutePath: string, relativePath: string): P
 
     // Reads at most `MAX_PREVIEW_BYTES + 1` bytes from the SAME handle `stat()` just checked --
     // a file that grew past the cap between the stat above and this read still hits the cap
-    // here (`bytesRead > MAX_PREVIEW_BYTES`), never an unbounded read.
+    // here (`bytesRead > MAX_PREVIEW_BYTES`), never an unbounded read. The buffer itself is
+    // sized from `stat.size`, not always `MAX_PREVIEW_BYTES`, though (gate round 6 fix, Sec6
+    // Low): growth BELOW the cap needs its own check, below -- `bytesRead > MAX_PREVIEW_BYTES`
+    // alone would miss it.
     const buf = Buffer.alloc(Math.min(stat.size, MAX_PREVIEW_BYTES) + 1);
     let bytesRead: number;
     try {
@@ -155,6 +158,18 @@ export async function readPreview(absolutePath: string, relativePath: string): P
     }
     if (bytesRead > MAX_PREVIEW_BYTES) {
       return { path: relativePath, kind: 'too-large', size: stat.size };
+    }
+    // Gate round 6 fix (Sec6 Low): the buffer was sized from `stat.size + 1`, not always
+    // `MAX_PREVIEW_BYTES + 1` -- if the file grew between the `stat()` above and this read
+    // (still under the overall cap), `readFully` fills the WHOLE buffer without ever reaching
+    // EOF, so `bytesRead` lands exactly on `stat.size + 1`: a silently truncated read, one byte
+    // short of whatever the file had actually grown to, which can split a multi-byte UTF-8
+    // character at that exact boundary. `bytesRead > stat.size` is only possible when more data
+    // was available than this buffer was ever sized to hold -- never a legitimate "read it all"
+    // outcome for an unchanged file, so this is read as a race, not partial content shown as if
+    // complete.
+    if (bytesRead > stat.size) {
+      return { path: relativePath, kind: 'read-error' };
     }
     const content = buf.subarray(0, bytesRead);
 

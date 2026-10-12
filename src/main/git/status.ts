@@ -90,6 +90,13 @@ function parseStatus(stdout: string): GitStatusMap {
 // accepted as a residual -- git's own filter mechanism is inherent to reading status in ANY repo
 // that defines one, not something this call's own flags can disable without also breaking the
 // status marks that depend on it (e.g. `.gitattributes`-driven text normalisation).
+//
+// Gate round 6 correction (Sec6 Low): `--ignore-submodules=all` is broader than "stops
+// recursion" alone -- it also suppresses the PARENT repo's own mark for a dirty submodule
+// FOLDER itself (uncommitted changes inside it, or the submodule pointing at a different commit
+// than the one actually committed in the parent), which would otherwise show as ` M` on that
+// folder's own row without this flag. Accepted alongside the residual above, same reasoning: no
+// FR in this spec distinguishes a submodule's own status from an ordinary folder's.
 const STATUS_GIT_ARGS = [
   '-c',
   'core.fsmonitor=false',

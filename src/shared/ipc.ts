@@ -90,7 +90,8 @@ export type IpcErrorCode =
   | 'stale'
   | 'not-mergeable'
   | 'checkout-failed'
-  | 'disabled';
+  | 'disabled'
+  | 'session-archived';
 
 export interface IpcError {
   code: IpcErrorCode;

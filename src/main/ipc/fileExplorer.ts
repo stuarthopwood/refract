@@ -232,6 +232,17 @@ interface SessionWatchState {
    * the renderer will ever render. */
   loadedPaths: Set<string>;
 }
+
+// Gate round 6 fix (Code6/Verif6 Low): `loadedPaths` itself compared case-SENSITIVELY while
+// `isPathGoneUnderPatch` (the renderer's own FR-021 check) was already made case-insensitive in
+// round 5 -- a case-only rename of an expanded folder (`src` -> `Src`, Windows/NTFS being
+// case-preserving-but-insensitive) recorded a loaded path under the OLD casing, so a watcher
+// patch keyed on the NEW casing (whatever `fs.watch` happens to report) never matched and the
+// live-refresh patch for it was silently dropped. Every `loadedPaths` read/write below goes
+// through this normaliser so the two always agree, matching NTFS's own convention.
+function normalizePathKey(relativePath: string): string {
+  return relativePath.toLowerCase();
+}
 const watchers = new Map<string, SessionWatchState>();
 
 // Gate round 5 fix (Code5 HIGH1): the ONE module-scope reference to the window getter
@@ -252,6 +263,22 @@ export function notifyFileExplorerReset(sessionId: string): void {
   const window = cachedGetWindow?.();
   if (!window || window.isDestroyed()) return;
   window.webContents.send(IPC_EVENTS.FILE_EXPLORER_RESET, { sessionId });
+}
+
+// Gate round 6 fix (Verif6 Low): a per-Session "busy" marker, checked by `ensureWatcher` below.
+// Closes a race `stopFileExplorerWatcher` alone did not: an in-flight `listDirectory` call,
+// started just BEFORE `sessions.ts` begins archiving/deleting/recreating a Session's worktree,
+// calls `ensureWatcher` synchronously at its own handler's very first line, then `await`s the
+// actual listing -- if that `await` resolves DURING the window `sessions.ts` has the worktree
+// folder itself mid-operation (a `git worktree remove`/`add`, for recreate), the race recreates
+// a fresh watcher on a folder the operation is still touching, reopening round 4's own
+// EPERM-on-`mkdir` bug one call site later than the original fix closed it. Exported so
+// `sessions.ts` can mark a Session busy around its own archive/delete/recreateWorktree bodies,
+// cleared before (not after) the matching `notifyFileExplorerReset` call.
+const busySessionIds = new Set<string>();
+export function setFileExplorerSessionBusy(sessionId: string, busy: boolean): void {
+  if (busy) busySessionIds.add(sessionId);
+  else busySessionIds.delete(sessionId);
 }
 
 // Gate round 5 fix (Code5 Medium): dedupes watcher-triggered re-lists by `sessionId` + directory
@@ -328,16 +355,24 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       return;
     }
     const state = watchers.get(sessionId);
-    if (!state?.loadedPaths.has(relativePath)) return;
+    if (!state?.loadedPaths.has(normalizePathKey(relativePath))) return;
     const result = await listDirectoryEntries(session.worktreePath, relativePath);
     if (!result.ok) {
-      // Gate round 5 fix (Sec5 Low): a watched root MOVED/renamed (not deleted) can leave
-      // `fs.watch`'s underlying handle silently following the rename on Windows -- `onFatal`
-      // never fires even though `session.worktreePath` no longer points at anything real. The
-      // very next root re-list failing `worktree-missing` is the cheap signal to treat the same
-      // as a fatal watcher error, reusing this existing error-code plumbing rather than a
-      // separate realpath/inode check.
-      if (relativePath === '' && result.error.code === 'worktree-missing') {
+      // Gate round 6 fix (Code6/A11y6/Verif6 Medium, re-probed independently four ways): round
+      // 5's own fix gated this on `relativePath === ''`, reasoning that only a ROOT re-list would
+      // ever observe `worktree-missing`. That reasoning was wrong -- a foreign rename of the
+      // watched root itself succeeds silently with ZERO watcher events (confirmed this round on
+      // both Node 26 and the Electron 44.5.1 runtime: the handle simply follows the moved
+      // folder), so the FIRST signal this app ever gets is the next flush for whatever SUBfolder
+      // happened to be mid-edit -- and `resolveListTarget` returns `worktree-missing` for ANY
+      // `relativePath` once `fs.realpath(worktreeRoot)` itself fails, not only for `''`. Gating
+      // on `relativePath === ''` meant that common case was silently dropped, leaving the
+      // renderer on a stale 'ready' tree forever. Any `relativePath` failing `worktree-missing`
+      // now means the same thing: the root is gone, stop watching it and tell the renderer.
+      // Residual, not fixed by this: a renamed root itself produces ZERO watcher events (the
+      // handle follows the move) -- detection is NEVER immediate, only on the next flush for
+      // whatever subfolder next changes, or the next explicit `listDirectory` call for any path.
+      if (result.error.code === 'worktree-missing') {
         stopFileExplorerWatcher(sessionId);
         notifyFileExplorerReset(sessionId);
       }
@@ -364,14 +399,36 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
     }
     inFlightDirectoryKeys.add(key);
     runFlush(async () => {
-      await refreshDirectory(sessionId, relativePath);
-      inFlightDirectoryKeys.delete(key);
-      if (dirtyDirectoryKeys.delete(key)) scheduleDirectoryFlush(sessionId, relativePath);
+      // Gate round 6 fix (Code6/Sec6/Verif6 Medium): `inFlightDirectoryKeys.delete(key)` and the
+      // dirty rerun used to run only on the HAPPY path -- a rejection from `refreshDirectory`
+      // (e.g. `webContents.send` throwing "Render frame was disposed" during a renderer reload,
+      // or a throw inside `listDirectoryEntries`) left the key permanently stuck "in flight",
+      // silently starving that one directory of every future live-refresh for the rest of the
+      // app's life, and raised an unhandled rejection through `runFlush`'s own `fn().finally`.
+      try {
+        await refreshDirectory(sessionId, relativePath);
+      } catch (err) {
+        console.error('fileExplorer: refreshDirectory failed', err);
+      } finally {
+        inFlightDirectoryKeys.delete(key);
+        if (dirtyDirectoryKeys.delete(key)) scheduleDirectoryFlush(sessionId, relativePath);
+      }
     });
   }
 
   function ensureWatcher(sessionId: string, worktreePath: string): void {
     if (watchers.has(sessionId)) return;
+    // Gate round 6 fix (Sec6/Code6/Verif6 Medium): never watches an ARCHIVED Session -- the
+    // reset this same round's own `FILE_EXPLORER_RESET` fires after archive makes a still-
+    // mounted panel reload, and without this check that reload's own `listDirectory` call would
+    // recreate a fresh recursive watcher on the Session archive was supposed to stop watching,
+    // undoing round 4's own leak fix. The `FILE_EXPLORER_LIST_DIRECTORY` handler below already
+    // refuses an archived Session before ever reaching this function; this is defence in depth
+    // for any other call site.
+    if (manager.registry.getSession(sessionId)?.archivedAt) return;
+    // Gate round 6 fix (Verif6 Low): never watches a Session `sessions.ts` has marked busy --
+    // see `setFileExplorerSessionBusy`'s own doc comment for the exact race this closes.
+    if (busySessionIds.has(sessionId)) return;
     const handle = watchDirectory(
       worktreePath,
       (relativePath) => scheduleDirectoryFlush(sessionId, relativePath),
@@ -416,13 +473,24 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       // PR #671 gate round 2 fix (a11y/code-reviewer MEDIUM): never the raw session id -- this
       // panel's own root-load error state renders the message verbatim via `role="alert"`.
       if (!session) return notFound(`This Session no longer exists`);
+      // Gate round 6 fix (Sec6/Code6/Verif6 Medium): an archived Session's panel can still be
+      // mounted (its own chat pane does not unmount just because `sessions.archive` ran), and
+      // this round's own `FILE_EXPLORER_RESET` reload would otherwise make that reload's
+      // `listDirectory` call recreate a fresh recursive watcher here -- undoing round 4's own
+      // "archive releases the watcher, a pure leak otherwise" fix the moment archive finishes.
+      // Refused honestly (never silently): the renderer's existing root-error state renders this
+      // message verbatim, the same "honest archived state" every other load failure already
+      // gets, no new UI needed.
+      if (session.archivedAt) {
+        return { ok: false, error: { code: 'session-archived', message: `This Session is archived` } };
+      }
 
       ensureWatcher(sessionId, session.worktreePath);
       const result = await listDirectoryEntries(session.worktreePath, relativePath);
       // Records this directory as one the renderer has actually fetched, so a later watcher
       // patch for it is allowed through (PR #671 gate round 4 fix, High) -- recorded on success
       // only, so a failed/escaping path never ends up "loaded".
-      if (result.ok) watchers.get(sessionId)?.loadedPaths.add(relativePath);
+      if (result.ok) watchers.get(sessionId)?.loadedPaths.add(normalizePathKey(relativePath));
       return result;
     }
   );

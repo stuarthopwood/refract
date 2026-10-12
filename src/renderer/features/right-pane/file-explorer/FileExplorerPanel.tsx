@@ -206,6 +206,15 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     requestAnimationFrame(() => {
       const active = document.activeElement
       if (isFocusStranded(active, containerRef.current)) containerRef.current?.focus()
+      // Gate round 6 fix (A11y6 Low): once `status` is `'ready'` again (including the reload
+      // `FILE_EXPLORER_RESET` triggers after a watcher-fatal/archive/restore/recreateWorktree
+      // event) and focus landed on the bare container -- either from the rescue just above, or
+      // from an earlier one in the same reload cycle -- upgrade it to the actual tabbable tree
+      // row, so a keyboard user lands somewhere useful instead of an unlabelled wrapper.
+      if (status === 'ready' && document.activeElement === containerRef.current) {
+        const treeRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path][tabindex="0"]')
+        treeRow?.focus({ preventScroll: true })
+      }
     })
   }, [sessionId, status])
 
@@ -243,9 +252,22 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
           const genuinelyGone =
             !lost.isConnected || lost.closest('[inert]') !== null || (lost as HTMLButtonElement).disabled === true
           if (!genuinelyGone) return
-          const lostRowPath = lost.getAttribute?.('data-tree-row-path')
+          // Gate round 6 fix (Code6 Low): `lost` is the row's own KEBAB BUTTON when that was the
+          // focused element, not the row itself -- `lost.getAttribute` directly returned `null`
+          // for it, so a kebab merely scrolled out of view (still logically present in `rows`)
+          // read as "genuinely removed" and stole focus wrongly. `closest` walks up to the row
+          // regardless of which of its own children actually had focus.
+          const lostRowPath = lost.closest('[data-tree-row-path]')?.getAttribute('data-tree-row-path') ?? null
           if (lostRowPath !== null && rowsRef.current.some((row) => row.kind === 'node' && row.node.path === lostRowPath)) {
-            return // scrolled out of the virtualised window, not actually removed -- leave focus alone
+            // Gate round 6 fix (A11y6 Medium): previously just `return`, leaving focus on
+            // `<body>` -- arrow keys, Home/End and type-ahead then did nothing until the user
+            // tabbed back into the tree from outside it (WCAG 2.4.3/2.1.1). The row itself is
+            // still logically present (merely virtualised out), so this is not the "deliberate
+            // click elsewhere" case the fix above protects -- moving focus to the container,
+            // which the widget's own roving-tabindex scheme already treats as inside the tree,
+            // keeps the keyboard interaction alive without stealing focus from anywhere new.
+            containerRef.current?.focus({ preventScroll: true })
+            return
           }
         }
         const treeRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path][tabindex="0"]')
