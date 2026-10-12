@@ -942,6 +942,17 @@ stale the moment the first [x] below landed.
   (shared by the settle-announcement effect and `handleClearThread`) into one `announce(text)`
   helper in `SideChatPanel.tsx`. (5) Low -- added a `Tooltip` to Clear thread explaining both why
   it disables (advisory, WCAG 3.3.2) and that it is a temporary hide, not a deletion.
+  **Re-verified live** (fresh scratch instance, `C:/Users/shopwood/refract-live-check-669-
+  round2/`, 5 files + sha256.json, 0 duplicates): captured Cancel's own screen rect before
+  clicking it (`cx` 1142.9), clicked it, then queried `document.elementFromPoint` at that EXACT
+  same screen position afterward without moving the pointer -- it resolved to a plain `DIV` (the
+  row's own flex gap), not a button, confirming nothing clickable slides under the pointer where
+  Cancel used to be; Clear thread's own rect at that point measured `cx` 974.5, unchanged from
+  its pre-cancel position, confirming the `mr-auto` anchor holds. Separately, polling every
+  `[role="status"]` element (7 exist on the page; an earlier single-element query had read the
+  wrong one, which is why the first live check reported an empty string) for up to 2.5s after
+  clicking Clear thread captured the real text: `"Thread cleared."`, appearing within about 100ms
+  -- the previously-disclosed "not verified" gap for this specific assertion is now closed.
 - [x] T022 [P] Add a polite live region announcing a completed answer once (FR-012), and focus
   management: the panel's composer gains focus on open (rail, launcher, or `/btw`); focus returns
   to the triggering control on close (FR-013, same shared pattern spec 013's panels already use).
@@ -988,15 +999,17 @@ stale the moment the first [x] below landed.
   "Cancelled." with no stuck "Thinking"; `/btw` from the main composer opened and focused the
   Side chat panel, sent the question, and never put the literal text in the main transcript
   (asserted via a DOM check, not just visual inspection). **Not re-verified this round** (posted
-  to #650): the live-region announcement timing for Clear thread specifically (code mirrors the
-  already-working settle-announcement pattern; the driver's one synchronous read landed before
-  the deliberate zero-delay `setTimeout`); Story 1 Scenario 4 (mid-stream overlap) and Story 3
-  (restart survival) -- both pre-existing #668 behaviour, unchanged by this round's Copy/Clear-
-  thread-only diff, so not re-run; a real screen reader pass (standing limitation, every round).
+  to #650): Story 1 Scenario 4 (mid-stream overlap) and Story 3 (restart survival) -- both
+  pre-existing #668 behaviour, unchanged by this round's Copy/Clear-thread-only diff, so not
+  re-run; a real screen reader pass (standing limitation, every round). **Gate round 2** closed
+  the one gap this round's first pass left open: the Clear-thread announcement timing and the
+  Cancel-unmount layout-shift fix are both now live-verified (see T021's own round-2 entry above).
 - [x] T027 Update `docs/PLAN.md` row C2 only: status, branch, PR number (minimal diff, this story's
-  own row) (depends on T026 passing). **Done**: status cell changed from `todo` to `in review`,
-  naming branch `feat/1-516-side-chat-polish`, PR #669, the #667/#668 merges, and the still-open
-  SC-002 decision gate for Refs-vs-Closes; the rest of the row's own text untouched.
+  own row) (depends on T026 passing). **Done**: status cell names branch
+  `feat/1-516-side-chat-polish`, PR #668 (merged) and PR #669 (in review), and the still-open
+  SC-002 decision gate; the rest of the row's own text untouched. **Gate round 2 (Verif1 Low)**:
+  wording corrected to "implementation complete ... decision-blocked" (not "done"), matching
+  Main's own exact requested text, since SC-002 remains genuinely unresolved.
 
 **Checkpoint**: every quickstart.md story passes except SC-002 for a side-chat-only Session
 (Clarification 13, open decision request on #1/#516, no answer from Stuart yet -- not blocking
