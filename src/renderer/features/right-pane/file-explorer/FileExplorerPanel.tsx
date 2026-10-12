@@ -3,12 +3,15 @@
 // with a real WAI-ARIA treeview (role="tree"/"treeitem", roving tabindex, full keyboard nav,
 // type-ahead, virtualised per the live tree's own flattened visible rows), adds git status marks
 // and a "show ignored files" toggle, and adds the bottom preview split (`FilePreviewPane.tsx`).
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleDashedIcon,
+  Code2Icon,
+  CopyIcon,
+  EllipsisVerticalIcon,
   EyeOffIcon,
   FileIcon,
   FileWarningIcon,
@@ -21,12 +24,15 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Switch } from '@/components/ui/switch'
 import { isFocusStranded } from '@/lib/focus'
-import { useFileExplorerStore } from '@/state'
+import { notify, useFileExplorerStore, useSessionsStore } from '@/state'
 import type { GitStatusMark } from '../../../../shared/model'
 import type { ExpandableNode } from '../../../state/file-explorer-store'
 import { FilePreviewPane } from './FilePreviewPane'
@@ -104,6 +110,17 @@ function flattenVisible(root: ExpandableNode | null, showIgnored: boolean): Flat
   return rows
 }
 
+/** Spec 015 Slice 3 (contracts/ipc.md `fileExplorer.copyPath`): joins `relativePath`'s own
+ * POSIX-`/`-separated segments (`FileTreeNode.path`'s convention) onto `worktreePath`'s own
+ * OS-native separator, for the renderer-side `navigator.clipboard.writeText` attempt only
+ * (`useWorktreeActions.ts`'s own clipboard-first pattern) -- never the security boundary
+ * itself, which stays server-side (`resolveInWorktree`, `fileExplorer.copyPath`'s own handler). */
+function joinWorktreePath(worktreePath: string, relativePath: string): string {
+  const separator = worktreePath.includes('\\') ? '\\' : '/'
+  const trimmedRoot = worktreePath.replace(/[\\/]+$/, '')
+  return `${trimmedRoot}${separator}${relativePath.split('/').join(separator)}`
+}
+
 export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const root = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.root ?? null) : null))
   const status = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.status ?? 'loading') : 'loading'))
@@ -117,6 +134,9 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const setShowIgnored = useFileExplorerStore((s) => s.setShowIgnored)
   const setSelectedPath = useFileExplorerStore((s) => s.setSelectedPath)
   const loadPreview = useFileExplorerStore((s) => s.loadPreview)
+  const worktreePath = useSessionsStore((s) =>
+    sessionId ? s.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
+  )
 
   const containerRef = useRef<HTMLDivElement>(null)
   const treeContainerRef = useRef<HTMLDivElement>(null)
@@ -202,6 +222,42 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     if (!sessionId) return
     setSelectedPath(sessionId, node.path)
     activateRow(node)
+  }
+
+  async function handleOpenInVSCode(path: string): Promise<boolean> {
+    if (!sessionId) return true
+    const result = await window.refract.fileExplorer.openInVSCode(sessionId, path)
+    if (!result.ok) {
+      notify(result.error)
+      return true
+    }
+    // `{ opened: false }` is a normal result (FR-017, contracts/ipc.md), never an IPC error --
+    // `TreeNodeRow` shows the "VS Code not found" state inline, never a toast.
+    return result.value.opened
+  }
+
+  async function handleReveal(path: string): Promise<void> {
+    if (!sessionId) return
+    const result = await window.refract.fileExplorer.reveal(sessionId, path)
+    if (!result.ok) notify(result.error)
+  }
+
+  // Mirrors `useWorktreeActions.ts`'s own clipboard-first-then-IPC-fallback pattern, scoped to
+  // one file's own absolute path instead of the whole worktree root.
+  async function handleCopyPath(path: string): Promise<void> {
+    if (!sessionId) return
+    if (worktreePath) {
+      try {
+        await navigator.clipboard.writeText(joinWorktreePath(worktreePath, path))
+        toast.success('Path copied')
+        return
+      } catch {
+        // fall through to the main-process clipboard channel
+      }
+    }
+    const result = await window.refract.fileExplorer.copyPath(sessionId, path)
+    if (result.ok) toast.success('Path copied')
+    else notify(result.error)
   }
 
   function moveToRow(row: NodeRow, absIndex: number): void {
@@ -397,6 +453,9 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                           onRowClick={selectAndActivate}
                           onRowFocus={(node) => sessionId && setSelectedPath(sessionId, node.path)}
                           onRowKeyDown={handleRowKeyDown}
+                          onOpenInVSCode={handleOpenInVSCode}
+                          onReveal={handleReveal}
+                          onCopyPath={handleCopyPath}
                         />
                       )
                     }
@@ -406,7 +465,13 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize="40%" minSize="15%">
-              <FilePreviewPane preview={preview} previewLoading={previewLoading} />
+              <FilePreviewPane
+                preview={preview}
+                previewLoading={previewLoading}
+                onOpenInVSCode={handleOpenInVSCode}
+                onReveal={handleReveal}
+                onCopyPath={handleCopyPath}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         </>
@@ -421,7 +486,10 @@ function TreeNodeRow({
   selected,
   onRowClick,
   onRowFocus,
-  onRowKeyDown
+  onRowKeyDown,
+  onOpenInVSCode,
+  onReveal,
+  onCopyPath
 }: {
   row: NodeRow
   absIndex: number
@@ -429,13 +497,53 @@ function TreeNodeRow({
   onRowClick: (node: ExpandableNode) => void
   onRowFocus: (node: ExpandableNode) => void
   onRowKeyDown: (event: KeyboardEvent<HTMLDivElement>, row: NodeRow, absIndex: number) => void
+  onOpenInVSCode: (path: string) => Promise<boolean>
+  onReveal: (path: string) => Promise<void>
+  onCopyPath: (path: string) => Promise<void>
 }) {
   const node = row.node
   const isFolder = node.kind === 'folder'
   const expanded = node.expanded === true
   const mark = node.gitStatus ? STATUS_MARKS[node.gitStatus] : null
-  return (
+  // T025: a file/folder row's own 3 actions (Open in VS Code, Reveal in File Explorer, Copy
+  // path) -- never offered for a `cannot-access` row, which has nothing safe to open/reveal/
+  // copy (main could not even resolve it).
+  const canAct = node.kind !== 'cannot-access'
+  const rowRef = useRef<HTMLDivElement>(null)
+  // FR-017: `{ opened: false }` is a normal result, not an IPC error (contracts/ipc.md), so this
+  // shows inline rather than as a toast -- auto-clears after a few seconds or on the next
+  // attempt, the same transient-but-non-toast treatment `ManageAccountsDialog.tsx`'s own
+  // "GitHub CLI not found" state uses.
+  const [vscodeNotFound, setVscodeNotFound] = useState(false)
+  useEffect(() => {
+    if (!vscodeNotFound) return
+    const timer = setTimeout(() => setVscodeNotFound(false), 5000)
+    return () => clearTimeout(timer)
+  }, [vscodeNotFound])
+
+  async function runOpenInVSCode(): Promise<void> {
+    const opened = await onOpenInVSCode(node.path)
+    setVscodeNotFound(!opened)
+  }
+
+  // Overrides Radix's own default close-auto-focus (which would return focus to whichever
+  // element triggered the menu -- the kebab button for `DropdownMenuContent`, invisible at rest
+  // since it only shows on hover/focus-within) -- this row is the roving-tabindex stop that
+  // must hold focus afterward, the same reasoning `SessionList.tsx`'s own override documents.
+  function handleMenuCloseAutoFocus(event: Event): void {
+    event.preventDefault()
+    rowRef.current?.focus()
+  }
+
+  const menuActions: Array<{ key: string; label: string; icon: LucideIcon; onSelect: () => void }> = [
+    { key: 'open-vscode', label: 'Open in VS Code', icon: Code2Icon, onSelect: () => void runOpenInVSCode() },
+    { key: 'reveal', label: 'Reveal in File Explorer', icon: FolderOpenIcon, onSelect: () => void onReveal(node.path) },
+    { key: 'copy-path', label: 'Copy path', icon: CopyIcon, onSelect: () => void onCopyPath(node.path) }
+  ]
+
+  const rowContent = (
     <div
+      ref={rowRef}
       role="treeitem"
       aria-level={row.depth + 1}
       aria-setsize={row.setsize}
@@ -445,7 +553,7 @@ function TreeNodeRow({
       tabIndex={selected ? 0 : -1}
       data-tree-row-path={node.path}
       style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
-      className="no-drag-region flex w-full cursor-default items-center gap-1 rounded px-1 py-0.5 text-left text-sm outline-none hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
+      className="group no-drag-region flex w-full cursor-default items-center gap-1 rounded px-1 py-0.5 text-left text-sm outline-none hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent aria-selected:text-accent-foreground forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]"
       onClick={() => onRowClick(node)}
       onFocus={() => onRowFocus(node)}
       onKeyDown={(event) => onRowKeyDown(event, row, absIndex)}
@@ -474,6 +582,53 @@ function TreeNodeRow({
           <span className="sr-only">{mark.label}</span>
         </span>
       )}
+      {vscodeNotFound && (
+        <span role="status" className="shrink-0 text-xs text-muted-foreground">
+          VS Code not found
+        </span>
+      )}
+      {canAct && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label={`More actions for ${node.name}`}
+              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100"
+              // The whole row (not a separate open button, unlike `SessionList.tsx`) carries
+              // `onClick`/`onRowClick` above -- without this, clicking the trigger would bubble
+              // up and also select/activate the row underneath it.
+              onClick={(event) => event.stopPropagation()}
+            >
+              <EllipsisVerticalIcon aria-hidden className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
+            {menuActions.map((action) => (
+              <DropdownMenuItem key={action.key} onSelect={action.onSelect}>
+                <action.icon aria-hidden className="size-3.5" />
+                {action.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
+  )
+
+  if (!canAct) return rowContent
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{rowContent}</ContextMenuTrigger>
+      <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+        {menuActions.map((action) => (
+          <ContextMenuItem key={action.key} onSelect={action.onSelect}>
+            <action.icon aria-hidden className="size-3.5" />
+            {action.label}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

@@ -1,9 +1,13 @@
-// Spec 015 Slice 2 (T020): the preview region for the File explorer's bottom split pane
-// (FR-012 to FR-015, FR-021, FR-023). Pure presentational component -- `FileExplorerPanel.tsx`
-// owns the Session/store wiring and passes `preview`/`previewLoading` straight through, the same
-// "dumb child, store lives in the parent" shape the rest of this panel already follows.
-import { useState } from 'react'
-import { FileIcon, FileWarningIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
+// Spec 015 Slice 2 (T020) / Slice 3 (T025): the preview region for the File explorer's bottom
+// split pane (FR-012 to FR-015, FR-021, FR-023), plus the preview-toolbar's own Open in VS Code/
+// Reveal in File Explorer/Copy path button group (T025) -- the same three actions
+// `TreeNodeRow`'s own context menu offers, duplicated here per tasks.md's own explicit wording
+// ("a preview-toolbar button group offering" the same three) rather than folded away as
+// redundant, since the preview pane is reachable without ever opening the tree row's menu.
+// `FileExplorerPanel.tsx` still owns the Session/store wiring and the three handler functions
+// themselves -- this stays a presentational component, just no longer prop-free for them.
+import { useEffect, useState } from 'react'
+import { Code2Icon, CopyIcon, FileIcon, FileWarningIcon, FolderOpenIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { CodeBlock, Markdown } from '@/features/chat/Markdown'
@@ -13,6 +17,9 @@ import type { FilePreview } from '../../../../shared/model'
 interface FilePreviewPaneProps {
   preview: FilePreview | null
   previewLoading: boolean
+  onOpenInVSCode: (path: string) => Promise<boolean>
+  onReveal: (path: string) => Promise<void>
+  onCopyPath: (path: string) => Promise<void>
 }
 
 /** Last path segment, `FileTreeNode.path`'s own POSIX-`/`-separated convention -- never a raw
@@ -91,7 +98,7 @@ const PREVIEW_KIND_LABELS: Record<'binary' | 'too-large', string> = {
   'too-large': 'File too large'
 }
 
-export function FilePreviewPane({ preview, previewLoading }: FilePreviewPaneProps) {
+export function FilePreviewPane({ preview, previewLoading, onOpenInVSCode, onReveal, onCopyPath }: FilePreviewPaneProps) {
   // Independent per selected preview, not per Session -- a Source toggle/wrap state left on from
   // a previous file would be a surprising carry-over for the next one. Reset keyed on `preview?.
   // path` below via a plain prop-driven remount would also work, but a local reset inside the two
@@ -99,8 +106,28 @@ export function FilePreviewPane({ preview, previewLoading }: FilePreviewPaneProp
   // avoids an extra `key` prop forcing the whole pane to remount on every selection.
   const [wrap, setWrap] = useState(false)
   const [showSource, setShowSource] = useState(false)
+  // Same transient, non-toast "VS Code not found" treatment `TreeNodeRow`'s own context menu
+  // uses (FR-017) -- this call site is independent of that one's own state, since the two
+  // triggers (a tree row's menu vs this toolbar) can fire for different files/moments.
+  const [vscodeNotFound, setVscodeNotFound] = useState(false)
+  useEffect(() => {
+    if (!vscodeNotFound) return
+    const timer = setTimeout(() => setVscodeNotFound(false), 5000)
+    return () => clearTimeout(timer)
+  }, [vscodeNotFound])
 
   const regionLabel = preview ? `Preview of ${fileName(preview.path)}` : 'File preview'
+  // T025: offered for any EXISTING file (every kind except `'deleted'`, which has nothing left
+  // to open/reveal/copy) -- including `binary`/`too-large`, whose content cannot render here but
+  // whose path is still perfectly actionable. Hidden while a new selection is still loading, so
+  // these three actions never fire against a stale `preview.path` left over from the PREVIOUS
+  // selection mid-fetch.
+  const showToolbar = !previewLoading && !!preview && preview.kind !== 'deleted'
+
+  async function runOpenInVSCode(path: string): Promise<void> {
+    const opened = await onOpenInVSCode(path)
+    setVscodeNotFound(!opened)
+  }
 
   // FR-023: always the one labelled, keyboard-scrollable region, reachable by Tab from the
   // tree, regardless of what is currently showing inside it -- `tabIndex={0}` rather than
@@ -114,6 +141,27 @@ export function FilePreviewPane({ preview, previewLoading }: FilePreviewPaneProp
       tabIndex={0}
       className="flex h-full flex-col overflow-y-auto p-2 outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
+      {showToolbar && preview && (
+        <div className="no-drag-region mb-2 flex shrink-0 flex-wrap items-center justify-end gap-1 border-b border-divider pb-2">
+          {vscodeNotFound && (
+            <span role="status" className="mr-auto text-xs text-muted-foreground">
+              VS Code not found
+            </span>
+          )}
+          <Button type="button" variant="outline" size="sm" onClick={() => void runOpenInVSCode(preview.path)}>
+            <Code2Icon aria-hidden className="size-3.5" />
+            Open in VS Code
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => void onReveal(preview.path)}>
+            <FolderOpenIcon aria-hidden className="size-3.5" />
+            Reveal
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => void onCopyPath(preview.path)}>
+            <CopyIcon aria-hidden className="size-3.5" />
+            Copy path
+          </Button>
+        </div>
+      )}
       {previewLoading ? (
         <p role="status" className="p-2 text-sm text-muted-foreground">
           Loading…
