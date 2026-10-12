@@ -990,6 +990,103 @@ archive-vs-`listDirectory` race window than the now-staggered 50ms gap). A real 
 pass on the scrolled-out-row rescue's own announcement behaviour (confirmed via DOM/`aria-selected`
 state only, as in every round so far).
 
+### Round 9 gate fixes (Sec9/Code9/A11y9/Verif9, all FAILed round 8)
+
+**HIGH (Sec9/Code9/A11y9/Verif9)**: `did-start-navigation` stopped every watcher on ANY
+main-frame navigation, including SAME-DOCUMENT ones -- Electron fires this event for
+fragment/`pushState`/`history` navigations too, not only real reloads. Chat Markdown renders GFM
+footnote anchors as plain in-page links with no `preventDefault` (`Markdown.tsx`), so a single
+footnote click silently killed live refresh for every open panel: every `FileExplorerPanel`
+instance stayed mounted (its own ref-count effect never re-runs, since `sessionId` does not
+change), so nothing ever called `ensureWatching` again to recover. Fixed: moved to the modern
+object-form `did-start-navigation` listener and added `!details.isSameDocument` -- only a genuine
+cross-document navigation (a real reload, HMR) now resets watchers. The same fix applies to
+`render-process-gone`, which now ALSO clears `loadedPathsBySession` via a new
+`resetAllFileExplorerWatchersAndState()` helper (a renderer crash/reload is a hard reset of ALL
+its state, not just the watcher map).
+
+**MEDIUM (Sec9)**: `ensureWatching` and the `LIST_DIRECTORY` restart path -- when a watcher
+cannot start (the worktree is genuinely missing, confirmed by resolving the root) but a Session
+had cached state from before the panel closed, a one-shot `FILE_EXPLORER_RESET` is now sent
+(naturally one-shot: the reset itself clears `loadedPathsBySession`, so there is nothing left to
+re-send on the next failed attempt).
+
+**MEDIUM (Code9/Verif9)**: `sessions.ts`'s `SESSIONS_DELETE` had its busy-marker increment sitting
+inside the inner `try`, AFTER `await shutdown()` -- if `shutdown()` itself threw, the outer
+`finally`'s unconditional decrement ran with no matching increment (clamped at zero, but still
+capable of clearing a CONCURRENT `recreateWorktree`'s own hold early). Moved
+`stopFileExplorerWatcher` + `setFileExplorerSessionBusy(true)` above the outer `try`, matching the
+pattern `archive`/`recreateWorktree` already use.
+
+**LOW**: `forgetFileExplorerSession(id)` added and called on the successful delete path
+(`loadedPathsBySession` previously leaked for a deleted Session's entire remaining app lifetime);
+`refreshDirectory` now prunes a parked path when it resolves `file-missing` (a deleted
+subdirectory no longer gets re-flushed forever); `contracts/ipc.md`/`shared/ipc.ts` corrected --
+both still said `ensureWatching` "deliberately does NOT re-list", stale since round 8's own
+re-flush fix, and the `stopWatching` doc comment's split-pane rationale (withdrawn round 8 in the
+renderer, never mirrored in the doc comment) is now consistent with the real, current renderer
+behaviour (exactly one mounted `FileExplorerPanel` per Session today).
+
+**A11y9 MEDIUM**: the `[sessionId, status]` effect's own "upgrade to tabbable row" focus call is
+now also wrapped in `rescueFocusRef` (it is a programmatic rescue too, previously able to hijack
+selection the same way round 8's main rescue could before its own fix). More significantly: the
+scrolled-out-row rescue no longer hops focus to a different row on EVERY virtualisation scroll
+tick -- continuous wheel-scrolling previously re-announced a new row to a screen reader on every
+single tick (WCAG 2.2.4/4.1.3 noise), never examined before now. A row still logically present in
+`rows` (merely virtualised out of Virtuoso's rendered window, not genuinely removed) now arms a
+ONE-SHOT deferred rescue, consumed on the user's own next real keypress instead of firing
+immediately; a row genuinely gone (deleted on disk, an ancestor folder collapsed) still rescues
+immediately, as before. The one synchronous `.focus()` call itself is now wrapped in
+`try`/`finally` so `rescueFocusRef` always clears even if `.focus()` throws.
+
+**Round 9 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate9`, own
+`--user-data-dir`/CDP port 9343, pid-verified `taskkill` + a full `Win32_Process` scan confirming
+exit, deleted by literal path afterward; raw CDP driver output piped directly to a file via shell
+redirection, never hand-transcribed; evidence -- 4 screenshots, `raw-output.txt`, the two scratch
+scripts (`gate9-verify.js`, `setup-gate9.ps1`), `sha256.json` -- saved in
+`C:/Users/shopwood/refract-live-check-671-gate9/`, 9 files total):
+- **Same-document navigation survives (the round-9 HIGH fix)**: opened a Session's panel
+  (confirmed the watcher genuinely running: an ancestor-folder rename was blocked), fired a real
+  `history.pushState`/`history.back()` round trip (the exact class of navigation a footnote click
+  causes), then confirmed the SAME ancestor rename was STILL blocked afterward (the watcher never
+  stopped) and that live refresh still delivered a patch for a file written externally after the
+  navigation (screenshot `A-same-document-nav-watcher-survives.png`).
+- **Scroll-focus deferred rescue (the A11y9 redesign)**: a real CDP click selected+focused a row
+  in an 80-file virtualised tree, then a real CDP mouse-wheel event pushed it out of the rendered
+  window. Immediately after (before any keypress): focus deliberately had NOT been hijacked yet
+  (`document.activeElement` was `<body>`, the natural post-removal blur target) -- confirming the
+  new no-scroll-noise design, not a regression. A single real CDP `keydown` then consumed the
+  one-shot deferred rescue: focus landed on a DIFFERENT real row (`f062.txt`), which was NOT
+  marked `aria-selected`, while the originally-clicked row's own `aria-selected="true"` was
+  unchanged throughout, including after scrolling back to it (screenshots
+  `B-scroll-focus-after-scroll-deferred.png`, `B-scroll-focus-after-deferred-rescue.png`,
+  `B-scroll-focus-scrolled-back.png`).
+- **`ensureWatching` one-shot reset still holds**: closed a Session's panel, renamed its worktree
+  away externally, reopened the panel: an honest "This Session's worktree folder no longer
+  exists" alert, no stale cached `root-file.txt` row left showing (screenshot
+  `C-ensurewatching-oneshot-reset.png`).
+- **Archive-race busy-marker fix, re-isolated per-Session (Code9/Verif9)**: the round-8 version of
+  this test renamed the SHARED ancestor folder common to all three scratch Sessions, which an
+  unrelated SIBLING Session's own still-open watcher (left running by an earlier test switching
+  the single globally-open pane away from it) independently locked for its entire test run,
+  regardless of what this Session's own archive/restore cycle did -- a self-inflicted confound in
+  the test itself, not evidence about the fix. Corrected to rename the Session-under-test's OWN
+  worktree folder only, with a short retry-with-backoff (Windows can take a moment to actually
+  release a just-closed recursive watch handle at the OS level, independent of any app-level bug):
+  10 staggered `archive(); sleep(50ms); listDirectory(); sleep(150ms); rename` iterations, **10/10
+  released cleanly**, `listDirectory` correctly returning `session-archived` every time (never
+  silently recreating a watcher mid-shutdown).
+
+**Not verified this round**: the round-7/8 carried-over gaps (an app-side `getStatus()`
+call-count instrumentation during a concurrent git-lock stress burst; the deliberate-click-
+elsewhere focus-steal direction; a genuinely slow/throttled `shutdown()` to force an even wider
+archive-vs-`listDirectory` race window). A real screen reader pass on the deferred-rescue's own
+announcement behaviour (confirmed via DOM/`aria-selected`/`document.activeElement` state only, as
+in every round so far). The `render-process-gone` branch of this round's own navigation fix (a
+renderer crash is far harder to trigger deterministically in a scratch instance than a same-
+document navigation; covered by reading the source and the existing crash-recovery tests, not a
+live repro this round).
+
 ---
 
 ## Slice 3 / Phase 3: Open in VS Code, remaining context-menu actions, polish, final verification
