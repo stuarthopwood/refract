@@ -29,7 +29,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerRepositories(manager, getWindow);
   registerSessions(manager);
   registerFilesIpc(manager);
-  registerFileExplorer(manager);
+  registerFileExplorer(manager, getWindow);
   registerPullRequests(manager);
   registerConversations(manager);
   registerChat(manager);

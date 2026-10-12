@@ -585,4 +585,44 @@ export interface FileTreeNode {
   /** Last path segment; the row's own label. */
   name: string;
   kind: FileTreeEntryKind;
+  /** Spec 015 Slice 2 (FR-010, FR-011, data-model.md `GitStatusMap`): the shared git-status/
+   * ignore reader's own mark for this path, merged in by the renderer from `fileExplorer.
+   * getStatus`'s own full-worktree map, not sent by `listDirectory` itself. `undefined` means
+   * clean/untracked-and-not-shown, never "unknown". `.git` itself is never a key in that map
+   * (FR-007), so this is never set for the (nonexistent) `.git` node either. */
+  gitStatus?: GitStatusMark;
+}
+
+/** Spec 015 Slice 2 (data-model.md `GitStatusMap`): one path's current mark against `git status`
+ * (not a merge-base diff like `sessions.diffStat`'s own `DiffStat` -- "what does the tree look
+ * like right now", research.md decision 2's own distinction). */
+export type GitStatusMark = 'modified' | 'added' | 'untracked' | 'deleted' | 'ignored';
+
+/** Spec 015 Slice 2 (data-model.md `GitStatusMap`): keyed by path, relative to the worktree
+ * root, matching `FileTreeNode.path`'s own convention. A path absent from this map is clean and
+ * not ignored; `.git` itself is never a key (FR-007). Built for reuse, as-is, by the future
+ * git-changes panel (#464, FR-011), not gated on that panel's own existence. */
+export type GitStatusMap = Record<string, GitStatusMark>;
+
+/** Spec 015 Slice 2 (data-model.md `FilePreview`, FR-012 to FR-015): the currently-selected
+ * file's preview data. Replaced wholesale on every selection change; `kind: 'deleted'` when the
+ * underlying file disappears while open (FR-021), never left showing stale content. */
+export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'binary' | 'too-large' | 'deleted';
+
+export interface FilePreview {
+  path: string;
+  kind: FilePreviewKind;
+  /** Bytes on disk at read time; present for every kind except `'deleted'` -- shown alongside
+   * the "cannot preview" state for `'binary'`/`'too-large'` (FR-015, SC-001). */
+  size?: number;
+  /** `kind: 'text'` (FR-012, the shared `CodeBlock`/Shiki) or `kind: 'markdown'` (FR-013, the
+   * shared `Markdown` component by default, with a Source toggle that re-renders this same
+   * string through `CodeBlock` instead). Absent for every other kind. */
+  content?: string;
+  /** `kind: 'image'` only (FR-014): base64 bytes, wrapped renderer-side into
+   * `data:${mimeType};base64,${base64}` -- the identical convention `attachments.ts`/
+   * `AttachmentStrip.tsx` already use for a pasted image's own `previewUrl` (research.md
+   * decision 4). Detected by magic bytes, never by file extension. */
+  base64?: string;
+  mimeType?: string;
 }

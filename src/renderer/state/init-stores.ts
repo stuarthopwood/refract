@@ -12,6 +12,7 @@ import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
+import { useFileExplorerStore } from './file-explorer-store'
 import { useSplitStore } from './split-store'
 import { useThemeStore } from './theme-store'
 
@@ -107,6 +108,11 @@ export function initStores(): void {
   // because this callsite never forwarded the field the fix depended on.
   window.refract.onSideChatPatch(({ sessionId, delta, recordId, record, notice }) => {
     useSideChatStore.getState().applyPatch(sessionId, { delta, recordId, record, notice })
+  })
+  // Spec 015 Slice 2 (T013/T014/T017): the file watcher's own per-directory patch, mirroring
+  // `onSideChatPatch`'s central-wiring location immediately above.
+  window.refract.onFileExplorerPatch(({ sessionId, relativePath, entries }) => {
+    useFileExplorerStore.getState().applyPatch(sessionId, { relativePath, entries })
   })
   // Gate-fix (round 4, Sec4 Medium): covers the approval-mode-restart exit path that never
   // reaches `status: 'stopped'` at all (see `SessionAgentEvents.sideChatInterrupted`'s own doc

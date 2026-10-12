@@ -5,9 +5,11 @@ import type {
   BranchEntry,
   ChatAnswer,
   DiffStat,
+  FilePreview,
   FileTreeNode,
   GitHubAccount,
   GitHubAddFlowProgress,
+  GitStatusMap,
   LowMemoryWarning,
   MergeInput,
   OmpProviderState,
@@ -139,7 +141,14 @@ const refract: RefractApi = {
 
   fileExplorer: {
     listDirectory: (sessionId, relativePath) =>
-      request<{ entries: FileTreeNode[] }>(IPC_REQUESTS.FILE_EXPLORER_LIST_DIRECTORY, sessionId, relativePath)
+      request<{ entries: FileTreeNode[]; truncated: number }>(IPC_REQUESTS.FILE_EXPLORER_LIST_DIRECTORY, sessionId, relativePath),
+    readPreview: (sessionId, relativePath) =>
+      request<{ preview: FilePreview }>(IPC_REQUESTS.FILE_EXPLORER_READ_PREVIEW, sessionId, relativePath),
+    getStatus: (sessionId) => request<{ status: GitStatusMap | null }>(IPC_REQUESTS.FILE_EXPLORER_GET_STATUS, sessionId),
+    openInVSCode: (sessionId, relativePath) =>
+      request<{ opened: boolean }>(IPC_REQUESTS.FILE_EXPLORER_OPEN_IN_VSCODE, sessionId, relativePath),
+    reveal: (sessionId, relativePath) => request<void>(IPC_REQUESTS.FILE_EXPLORER_REVEAL, sessionId, relativePath),
+    copyPath: (sessionId, relativePath) => request<void>(IPC_REQUESTS.FILE_EXPLORER_COPY_PATH, sessionId, relativePath)
   },
 
   settings: {
@@ -236,6 +245,8 @@ const refract: RefractApi = {
     on<{ sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }>(IPC_EVENTS.SIDE_CHAT_PATCH, handler),
   onSideChatInterrupted: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SIDE_CHAT_INTERRUPTED, handler),
   onSideChatConversationChanged: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SIDE_CHAT_CONVERSATION_CHANGED, handler),
+  onFileExplorerPatch: (handler) =>
+    on<{ sessionId: string; relativePath: string; entries: FileTreeNode[] }>(IPC_EVENTS.FILE_EXPLORER_PATCH, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
 }
