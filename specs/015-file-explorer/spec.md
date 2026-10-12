@@ -76,18 +76,20 @@ choice listed in Clarifications below.
   future reuse) but is never expected to render here. **A (pending)**: synthetic "ghost" rows for
   a deleted tracked file (so the mark has somewhere to render) are deferred, not built this round
   -- Stuart can overrule and ask for them in a follow-up.
-- **Q (PR #671 gate rounds 7-11, A11y/Code/Verif reviewers)**: FR-022's roving-tabindex tree is
+- **Q (PR #671 gate rounds 7-12, A11y/Code/Verif reviewers)**: FR-022's roving-tabindex tree is
   virtualised (`react-virtuoso`), and FR-025 says resizing/switching panels MUST NOT lose the
   tree's current focus position. When the focused (and possibly selected) row scrolls out of the
-  rendered window -- a mouse wheel, `PageUp`/`PageDown` (now rescued directly, round 11), or a
+  rendered window -- a mouse wheel, `PageUp`/`PageDown` (no longer a cause: handled as tree
+  navigation since round 11, never scrolling the tree in the first place), or a
   window-resize changing Virtuoso's rendered range -- rounds 7-9 each tried a rescue (hop focus to
   another rendered row), and each one introduced a worse defect of its own (moving selection the
   user never navigated to, re-firing on every scroll tick as screen-reader noise, or -- round 9's
   deferred version -- stealing focus back after the user had deliberately clicked elsewhere on
   purpose). Round 10 removed rescue-on-scroll-out entirely rather than ship a fourth attempt;
   focus now drops to `<body>` and stays there until the user tabs back in (Tab or Shift+Tab,
-  whichever direction the row left in, [INFERENCE] probe-observed against a minimal scratch page,
-  not live-verified against this actual tree by keyboard or screen reader as of round 11).
+  whichever direction the row left in, [INFERENCE] probe-observed against a minimal scratch page
+  -- pressing the OPPOSITE key instead leaves the tree entirely rather than re-entering it; not
+  live-verified against this actual tree by keyboard or screen reader as of round 12).
   Posted to issue #463 for Stuart's decision; conservative choice taken for now (not blocking this
   PR, but FR-025 is marked Partial in the AC table rather than Done until this is resolved): ship
   with the disclosed limitation rather than add a fourth rescue mechanism under gate pressure.

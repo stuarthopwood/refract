@@ -397,6 +397,15 @@ export function stopAllFileExplorerWatchers(): void {
  * resets the same way. */
 export function resetAllFileExplorerWatchersAndState(): void {
   stopAllFileExplorerWatchers();
+  // Gate round 12 fix (Sec12 Low): notifies each Session with parked state BEFORE clearing it --
+  // the expected case (a genuine renderer crash/reload) has nothing left to notify (the window's
+  // own `webContents.send` below is a silent no-op against a document that is already gone), but
+  // IF this fires for a reason that did NOT actually replace the document (for example a
+  // `did-fail-load` on an already-loaded page, for a LATER, unrelated resource -- see that
+  // listener's own comment in `main/index.ts`), this lets the SURVIVING renderer self-heal (its
+  // `FILE_EXPLORER_RESET` handler reloads the affected Session's tree) instead of silently going
+  // stale with nothing watching underneath it and no event ever telling it to recover.
+  for (const sessionId of [...loadedPathsBySession.keys()]) notifyFileExplorerReset(sessionId);
   loadedPathsBySession.clear();
 }
 
@@ -470,7 +479,7 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       // AFTER the recreate completes -- `withPatchedChildren` (the renderer's own patch-merge)
       // then keeps this folder's stale `children`/`expanded` state from before the delete, and
       // with the key gone from `loadedPathsBySession`, every LATER flush for it (including the
-      // recreate's own) is silently dropped by the membership check below, forever, with no
+      // recreate's own) is silently dropped by the membership check above, forever, with no
       // automatic recovery short of a full reset/reload or a fresh expand-from-collapsed (which
       // never re-fetches an already-`children !== undefined` folder either). No fix was safe to
       // build this round without a second new mechanism (tracking parent-flush-driven pruning

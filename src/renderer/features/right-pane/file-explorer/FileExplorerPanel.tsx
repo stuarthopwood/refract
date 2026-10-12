@@ -435,6 +435,19 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
             // the accepted, disclosed limitation above: no rescue, Tab/Shift+Tab re-enters.
             return
           }
+          // Gate round 12 fix (A11y12/Code12 HIGH/Medium): round 11's own `data-tree-more-row`
+          // marker was dead -- nothing ever read it, so a clicked-then-scrolled-out "N more" row
+          // still fell through to `performRescue()` below (that row carries no
+          // `data-tree-row-path` at all, so `lostRowPath` above is always `null` for it). Reads
+          // the row's own stable `key` (`more:${parentPath}`, see `flattenVisible` above) back off
+          // the element and checks it against the CURRENT `rows` list the exact same way the node
+          // case just above does -- still present means merely scrolled out (no rescue, same
+          // disclosed limitation); genuinely gone (its parent folder collapsed or the listing
+          // changed) still falls through to the rescue below.
+          const lostMoreKey = lost.closest('[data-tree-more-key]')?.getAttribute('data-tree-more-key') ?? null
+          if (lostMoreKey !== null && rowsRef.current.some((row) => row.kind === 'more' && row.key === lostMoreKey)) {
+            return
+          }
         }
         performRescue()
       })
@@ -771,7 +784,15 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                         // mode announces it; `aria-disabled` (never an activatable item) and
                         // `tabIndex={-1}` keep it out of the roving-tabindex/keyboard sequence --
                         // Up/Down/Home/End/type-ahead all skip "more" rows by construction
-                        // (`nodeAbsIndices` never includes one).
+                        // (`nodeAbsIndices` never includes one). Gate round 11 fix (A11y11 Low),
+                        // round 12 correction (A11y12/Code12 HIGH/Medium): round 11 added a plain
+                        // boolean `data-tree-more-row` marker here, but `handleFocusOut` never
+                        // actually read it back (dead code, the claimed fix did not exist) --
+                        // `data-tree-more-key` carries this row's own stable `key`
+                        // (`more:${parentPath}`) instead, which `handleFocusOut` now reads and
+                        // checks against the CURRENT `rows` list the same way a node row's own
+                        // path is checked, so a clicked-then-scrolled-out "more" row is correctly
+                        // treated as merely virtualised away, not rescued.
                         <div
                           role="treeitem"
                           aria-disabled="true"
@@ -779,7 +800,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                           aria-setsize={row.setsize}
                           aria-posinset={row.posinset}
                           tabIndex={-1}
-                          data-tree-more-row
+                          data-tree-more-key={row.key}
                           style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
                           className="px-1 py-0.5 text-xs text-muted-foreground"
                         >

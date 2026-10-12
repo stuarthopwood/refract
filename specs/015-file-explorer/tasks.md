@@ -1021,11 +1021,12 @@ pattern `archive`/`recreateWorktree` already use.
 **LOW**: `forgetFileExplorerSession(id)` added and called on the successful delete path
 (`loadedPathsBySession` previously leaked for a deleted Session's entire remaining app lifetime);
 `refreshDirectory` now prunes a parked path when it resolves `file-missing` (a deleted
-subdirectory no longer gets re-flushed forever); `contracts/ipc.md`/`shared/ipc.ts` corrected --
-both still said `ensureWatching` "deliberately does NOT re-list", stale since round 8's own
-re-flush fix, and the `stopWatching` doc comment's split-pane rationale (withdrawn round 8 in the
-renderer, never mirrored in the doc comment) is now consistent with the real, current renderer
-behaviour (exactly one mounted `FileExplorerPanel` per Session today).
+subdirectory no longer gets re-flushed forever) -- **superseded round 11: prune removed entirely,
+see the Round 11 section below**; `contracts/ipc.md`/`shared/ipc.ts` corrected -- both still said
+`ensureWatching` "deliberately does NOT re-list", stale since round 8's own re-flush fix, and the
+`stopWatching` doc comment's split-pane rationale (withdrawn round 8 in the renderer, never
+mirrored in the doc comment) is now consistent with the real, current renderer behaviour (exactly
+one mounted `FileExplorerPanel` per Session today).
 
 **A11y9 MEDIUM**: the `[sessionId, status]` effect's own "upgrade to tabbable row" focus call is
 now also wrapped in `rescueFocusRef` (it is a programmatic rescue too, previously able to hijack
@@ -1143,19 +1144,23 @@ roving-tabindex mechanism re-enters the tree at a real, present, fully keyboard-
 Standard behaviour for a virtualised widget. The row's own `aria-selected` is never touched by a
 scroll, only `document.activeElement` moves. Not verified with a real screen reader.
 
-**MEDIUM (Sec10/Code10/Verif10)**: pruning a parked path on `file-missing` (round 9's own Sec9 Low
-fix) fired on TRANSIENT errors too, not only a genuinely deleted path -- round 7 deliberately maps
+**MEDIUM (Sec10/Code10/Verif10) -- superseded round 11: prune removed entirely; this was never a
+delete-then-recreate fix, only a (now withdrawn) transient-error-vs-pruning distinction, see the
+Round 11 section below**: pruning a parked path on `file-missing` (round 9's own Sec9 Low fix)
+fired on TRANSIENT errors too, not only a genuinely deleted path -- round 7 deliberately maps
 every non-ENOENT/ENOTDIR `realpath`/`lstat` failure (a transient EACCES/EBUSY/EMFILE, an antivirus
 scan, a brief Windows delete-pending window) to the same `file-missing` code, specifically so
 callers treat it as non-fatal. Pruning unconditionally on ANY `file-missing` permanently dropped a
 folder that was only ever transiently unreadable -- a delete-then-recreate (a `git
 checkout`/stash, a build tool's rimraf+rebuild) could hit the gap and leave the folder expanded in
 the renderer with nothing in `loadedPathsBySession` ever patching it again until a full reset or
-reload. Fixed: `refreshDirectory`'s `file-missing` branch now re-confirms the path is ACTUALLY
-gone via `fs.lstat` before pruning, only treating `ENOENT`/`ENOTDIR` from that `lstat` as a
-genuine deletion; any other `lstat` outcome (including the folder still existing) leaves the
-parked path untouched. Never prunes the root (`''`) from this branch at all -- a missing root is
-the separate `worktree-missing` branch's own job.
+reload. Fixed (at the time, round 10): `refreshDirectory`'s `file-missing` branch re-confirmed the
+path was ACTUALLY gone via `fs.lstat` before pruning, only treating `ENOENT`/`ENOTDIR` from that
+`lstat` as a genuine deletion; any other `lstat` outcome (including the folder still existing)
+left the parked path untouched. Never pruned the root (`''`) from this branch at all. Round 11
+found this STILL did not fix the delete-then-recreate case named above (the subfolder's own
+`lstat` legitimately throws `ENOENT` during a genuine delete-then-recreate gap too, indistinguishable
+from a real deletion) -- removed the prune entirely rather than patch it a third time.
 
 **LOW**: `FILE_EXPLORER_LIST_DIRECTORY`'s success path now re-checks the Session still exists
 before recording a path as loaded -- a `listDirectory` already in flight when `sessions.delete`
@@ -1219,12 +1224,16 @@ than a navigation); the deliberate-click-elsewhere focus-steal direction is now 
 scroll-out case specifically (the mechanism that could have stolen focus back is gone), but still
 open for the `[sessionId, status]` effect's own rescue in principle (not re-examined this round,
 Round 9 section's correction above -- a test isolating that specific claim (separate per-Session
-parent folders, a positive control) was not built this round. **Added per Verif11 Medium**: the
-`did-navigate` path firing on a committed reload or HMR full reload, and the renderer correctly
-re-ensuring afterwards, was not re-run this round (only the cancelled and same-document
-directions were) -- closed in the Round 11 section below. The real trigger scenario for the
-round-10 HIGH itself (an OS file actually dropped onto the window) was not reproduced; a
-`location.href` stand-in was used instead, and remains a stand-in as of round 11 too.
+parent folders, a positive control) was not built this round. **Added per Verif11 Medium,
+corrected per Verif12 LOW: this was NOT actually closed in the Round 11 section -- that round's
+own Test A was the cancelled-navigation direction and Test B was the committed error-page
+direction; neither checked a committed, SUCCESSFUL reload/HMR full reload and the renderer
+correctly re-ensuring watching afterward.** The `did-navigate` path firing on a committed reload
+or HMR full reload, and the renderer correctly re-ensuring afterwards, is still NOT verified as
+of round 12 (Round 11's Test C navigated back to `index.html` via `Page.navigate` and did re-list
+the tree, but nothing checked that watching itself restarted after that reload). The real trigger
+scenario for the round-10 HIGH itself (an OS file actually dropped onto the window) was not
+reproduced in any round; a `location.href` stand-in was used instead, and remains a stand-in.
 
 ### Round 11 gate fixes (A11y11 FAIL, Sec11/Code11/Verif11 PASS with Mediums, all against round 10)
 
@@ -1328,7 +1337,11 @@ saved in `C:/Users/shopwood/refract-live-check-671-gate11/`):
   (`Input.dispatchKeyEvent`, `rawKeyDown`/`keyUp`, no synthetic `.focus()` call anywhere in the
   path) moved focus to `f013.txt` -- a real, different row, never `<body>`. A real `PageUp`
   returned focus to `f000.txt`. A real `Space` (`rawKeyDown`/`char`/`keyUp`, matching a genuine
-  hardware press) left focus on `f000.txt` with the scroller's own `scrollTop` unchanged at `0` --
+  hardware press) left focus on `f000.txt` with the scroller's own `scrollTop` measured at `0`
+  afterward -- round 11's own script did not separately record `scrollTop` immediately BEFORE the
+  Space keypress in that exact run (corrected per A11y12 LOW; round 12's own PageDown test, same
+  kind of freshly-opened, unscrolled tree, separately confirmed `scrollTop` starts at `0` before
+  any key is pressed, so `0` afterward is consistent with "never moved", not merely coincidental) --
   confirming `preventDefault()` actually stopped Space's own native scroll (screenshot
   `C-keyboard-paging-after-space.png`).
 
@@ -1345,7 +1358,75 @@ limitation. The window-shrink variant of the same scroll-out limitation (FR-025'
 MUST NOT lose focus" MUST, now marked Partial in the AC table) was not separately reproduced --
 [INFERENCE] from the same underlying mechanism (Virtuoso's rendered range changing), not probed.
 The archive-race watcher-release claim remains narrowed per the Round 9 section's own correction;
-still not re-isolated this round either.
+still not re-isolated this round either. **Also not verified (Verif12 LOW, missed when this list
+was first written)**: `did-navigate` itself firing on a committed, SUCCESSFUL reload or HMR full
+reload, with the renderer correctly re-ensuring watching afterward -- this round's own Test A
+only exercised the CANCELLED direction and Test B the committed ERROR-PAGE direction; neither is
+a successful reload.
+
+### Round 12 gate fixes (Sec12/A11y12/Verif12 PASS with Mediums; Code12 FAIL on one HIGH, all against round 11)
+
+**HIGH/MEDIUM (Code12, A11y12)**: round 11's own "N more" row LOW fix was claimed but not
+actually implemented -- `data-tree-more-row` was set on the row but nothing ever read it back,
+so a clicked-then-scrolled-out "more" row (which carries no `data-tree-row-path` at all) still
+fell through to the immediate rescue, the exact round-9 scroll-noise behaviour the round-11 claim
+said was fixed. Implemented for real this round: the row now carries `data-tree-more-key={row.key}`
+(its own stable key, `more:${parentPath}`) instead of the dead boolean marker;
+`handleFocusOut` reads it back via `lost.closest('[data-tree-more-key]')` and, if the row's own
+key is still present in the CURRENT `rows` list (merely virtualised away, not genuinely gone, the
+exact same check a node row already gets), returns without rescuing -- a genuinely-removed "more"
+row (its parent folder collapsed, or a live refresh changed the listing) still falls through to
+the rescue, unchanged.
+
+**MEDIUM (Code12/Sec12)**: the previous evidence for `PageDown` only ever exercised the
+ALREADY-RENDERED case (`f000` -> `f013`, both within Virtuoso's initial render window, so
+`moveToRow`'s own `scrollIntoView` `done` callback ran synchronously with no real scroll) --
+never the case that actually scrolls the tree. Re-verified this round with a SECOND `PageDown`
+from that same position (`f013` -> `f026`, genuinely outside the initial render window).
+
+**MEDIUM disclosure (Code12/Sec12/Verif12)**: several docs/wording corrections, none behavioural:
+the round-9 and round-10 prune bullets above now carry an explicit "superseded round 11" marker
+(they previously read as current behaviour, with only a separate verification-bullet correction
+pointing at them); the round-10 section's own claim that the committed-reload gap was "closed in
+the Round 11 section below" was false and is now corrected to "still not verified"; `
+fileExplorer.ts`'s stale "membership check below" comment (the check is actually above) fixed;
+`index.ts`'s `did-fail-load`/`-3` comment reworded to avoid asserting either of two gate
+reviewers' own disagreeing, unverified recollections of Electron's source as settled fact.
+
+**LOW (Sec12)**: `resetAllFileExplorerWatchersAndState` now calls `notifyFileExplorerReset(id)`
+for every Session with parked state BEFORE clearing the map, not just stopping watchers and
+clearing silently -- a self-heal for the narrow, as-yet-unconfirmed case where this fires without
+the document actually having been replaced (a `did-fail-load` for an unrelated, LATER resource on
+a page that is still showing, per Sec12's own [INFERENCE]): the surviving renderer gets told to
+reload its tree instead of silently going stale with nothing watching underneath it.
+
+**Round 12 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate12`, own
+`--user-data-dir`/CDP port 9346, pid-verified `taskkill` + a full `Win32_Process` scan confirming
+exit, deleted by literal path afterward; evidence -- 2 screenshots, `raw-output.txt`, both scratch
+scripts, `sha256.json`, 6 files total -- saved in
+`C:/Users/shopwood/refract-live-check-671-gate12/`), kept deliberately narrow to the two things
+this round actually changed, per Main's own instruction:
+- **Second-page `PageDown`, genuinely scrolled**: a real click focused `f000.txt` in an 80-file
+  tree; a first `PageDown` landed on `f013.txt` (confirmed still within the initial render,
+  `scrollTop` unchanged at `0` beforehand); a SECOND `PageDown` from there landed on `f026.txt`
+  with the scroller's own `scrollTop` now genuinely at `372` -- the real-scroll case Code12 found
+  was never exercised (screenshot `A-second-page-pagedown.png`).
+- **"N more" row scroll-out, not incorrectly rescued**: expanded a folder with 1010 files (the
+  1000-entry cap producing a real "10 more…" row); jumped keyboard focus to the last node row via
+  `End` (bringing the adjacent "more" row into Virtuoso's own rendered window, since it otherwise
+  sits far below the initial viewport); a real click focused the "more" row itself
+  (`document.activeElement` confirmed to carry `data-tree-more-key`); a real mouse-wheel scroll
+  UP (away from the bottom of the list, the only direction that can push the LAST row out of
+  view) removed it from the DOM -- `document.activeElement` afterward was `<body>`, NOT hijacked
+  to a different tree row, confirming the fix (screenshot `B-more-row-scroll-out.png`).
+
+**Not verified this round**: everything carried over from round 11's own list, unchanged (an
+app-side `getStatus()` call-count instrumentation under a git-lock stress burst; a genuinely
+slow/throttled `shutdown()` for a wider archive race window; `did-navigate` firing on a committed,
+successful reload with correct re-ensuring afterward; the real OS-file-drop trigger for the
+navigation fix; the `render-process-gone` branch; a real keyboard/screen-reader pass on
+Tab/Shift+Tab re-entry after a mouse-wheel scroll-out; the window-shrink variant of the same
+scroll-out limitation for FR-025; a test isolating the archive-race watcher-release claim).
 
 ---
 

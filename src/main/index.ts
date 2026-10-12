@@ -284,9 +284,12 @@ function createWindow(): void {
   window.webContents.on('did-navigate', () => resetAllFileExplorerWatchersAndState())
   // Gate round 11 fix (Code11/Sec11 Medium): see the comment at this effect's own top -- closes
   // the committed-error-page gap `did-navigate` itself cannot cover. `-3` is `ERR_ABORTED`
-  // (Chromium's net error code), fired for a navigation cancelled by `will-navigate`/superseded
-  // by a newer one mid-flight -- the OLD document was never actually replaced in either case, so
-  // neither needs a reset (and `did-navigate` already covers the one that DID replace it).
+  // (Chromium's net error code) -- kept excluded defensively: a navigation cancelled by
+  // `will-navigate`/superseded by a newer one mid-flight never actually replaces the currently
+  // loaded document, so it needs no reset either way, whether or not Electron itself already
+  // filters this exact code out of `did-fail-load` before this handler ever sees it (round 12
+  // gate reviewers' own recollection of Electron's source disagreed on this point, neither
+  // checked against a live copy this round -- the check costs nothing if redundant).
   window.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, _validatedURL, isMainFrame) => {
     if (isMainFrame && errorCode !== -3) resetAllFileExplorerWatchersAndState()
   })
