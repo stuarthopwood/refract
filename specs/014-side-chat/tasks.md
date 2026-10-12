@@ -881,7 +881,9 @@ and live verification the assignment requires before a PR is called ready.
 **T019 and T020 were pulled forward into the Slice 1+2 round above, per Main's own decision** (the
 composer-level `/btw` entry point is the natural way to actually exercise Slice 2's `ask`/`cancel`
 live, and Main's remediation instructions explicitly named it) -- both done and live-verified, see
-their own entries and the Checkpoint above. T021-T027 remain genuinely not started.
+their own entries and the Checkpoint above. **T021-T027 completed in PR #669 (see each entry
+below)** -- gate-fix (round 2, Code1 Low): this line used to say "remain genuinely not started",
+stale the moment the first [x] below landed.
 
 - [x] T019 [US4] Edit `src/shared/slash-commands.ts`: add `{ name: 'btw', description: 'Ask the
   agent a side question' }` to `NATIVE_BUILT_COMMANDS` (data-model.md); `btw` stays in
@@ -920,7 +922,26 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   "Thread cleared." through the panel's existing live region (WCAG 4.1.3 -- a silent clear has no
   other confirmation for a screen-reader user). `data-model.md`'s `clearThread` doc comment
   corrected: it used to say "there is no separate Clear thread UI action", true when rounds 5/6
-  wrote it, false now that this task has shipped.
+  wrote it, false now that this task has shipped. **Gate round 2 (Code1 HIGH/Medium, PR #669)**:
+  (1) HIGH -- Cancel unmounting (cancelled, or the answer settling) slid Clear thread right into
+  Cancel's own screen position in a `justify-end` row, so a double-click on Cancel (or a click
+  landing just as the answer settled) could hit Clear thread by mistake and empty the whole
+  thread with no undo; fixed with `className="mr-auto"` on Clear thread, anchoring it on the
+  left regardless of whether Cancel renders -- Cancel unmounting now leaves an empty gap instead.
+  (2) Medium -- a terminal `btw_record` can settle (clearing `running`) before `ask`'s own `btw`
+  request resolves, briefly re-enabling Clear thread while `ask` is still in flight for the topic
+  being cleared; without an epoch bump, `ask`'s eventual resolution re-appends the reply's own
+  `running` placeholder record Clear just removed, a stuck "Thinking" row. Fixed:
+  `clearDisplayedThread` now calls `bumpSideChatEpoch` (like `clearThread` already does) and
+  writes `running: false` explicitly; does not retrigger a reload (`loaded` untouched, the epoch
+  is read only by in-flight `loadHistory`/`ask` calls). (3) Medium docs -- neither doc comment
+  said that after a reload (a Conversation change or a restart) `loadHistory` sets
+  `activeTopicRecordId` back to the newest root, so the next question after a reload continues
+  the pre-Clear topic, not a fresh one; added to both `data-model.md` and this file's own store
+  doc comment. (4) Low -- extracted the duplicated clear-first-then-set announcement timer dance
+  (shared by the settle-announcement effect and `handleClearThread`) into one `announce(text)`
+  helper in `SideChatPanel.tsx`. (5) Low -- added a `Tooltip` to Clear thread explaining both why
+  it disables (advisory, WCAG 3.3.2) and that it is a temporary hide, not a deletion.
 - [x] T022 [P] Add a polite live region announcing a completed answer once (FR-012), and focus
   management: the panel's composer gains focus on open (rail, launcher, or `/btw`); focus returns
   to the triggering control on close (FR-013, same shared pattern spec 013's panels already use).
@@ -948,7 +969,10 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
 - [x] T026 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`, real signed-in OMP 18.6.3+ profile, never Stuart's live Sessions): every
   story's numbered steps, including a real live `btw` round trip, a restart-survival check
-  (quit/relaunch against the same worktree), and the `/btw` composer path. **Live-verified**
+  (quit/relaunch against the same worktree), and the `/btw` composer path. **Done for this
+  slice's diff** (gate-fix wording, round 2, Verif1 Low): Story 3 (restart survival) and Story 1
+  Scenario 4 (mid-stream overlap) rely on PR #668's own rounds 3-7, already live-verified there
+  and unchanged by this PR's Copy/Clear-thread-only diff, so not re-run here. **Live-verified**
   (scratch clone under `C:/tmp/refract-side-chat-polish` -- never `C:/Repos/personal` -- own
   `--user-data-dir`/CDP port 9341, torn down by pid-verified `taskkill`, deleted by literal path
   afterward; real `omp 18.8.6`, real `github-copilot/Claude Sonnet 5.5`; one coherent run, 12
@@ -974,8 +998,10 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   naming branch `feat/1-516-side-chat-polish`, PR #669, the #667/#668 merges, and the still-open
   SC-002 decision gate for Refs-vs-Closes; the rest of the row's own text untouched.
 
-**Checkpoint**: every quickstart.md story passes; the gate commands above exit 0; `docs/PLAN.md`
-row C2 reflects the real PR.
+**Checkpoint**: every quickstart.md story passes except SC-002 for a side-chat-only Session
+(Clarification 13, open decision request on #1/#516, no answer from Stuart yet -- not blocking
+per the constitution's Incremental Enhancement rule); the gate commands above exit 0;
+`docs/PLAN.md` row C2 reflects the real PR.
 
 ---
 

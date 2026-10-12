@@ -92,7 +92,21 @@ interface SideChatThreadState {
    * Conversation change or a full Refract restart ever re-fetches, and both then show the FULL
    * history again (unaffected by this action), since OMP itself was never told anything was
    * cleared -- the panel's own `!loaded` reload effect is the ONLY path that can bring a
-   * cleared thread back, and it never fires while `loaded` stays `true`. */
+   * cleared thread back, and it never fires while `loaded` stays `true`. **Also bumps
+   * `epochBySession` (gate-fix round 2, Code1 Medium)**: a terminal `btw_record` can settle
+   * (clearing `running` via `applyPatch`) before `ask`'s own `btw` request resolves, briefly
+   * enabling this button while `ask` is still in flight for the topic Clear is about to remove;
+   * without bumping the epoch, `ask`'s eventual resolution is not `stale` and re-appends the
+   * reply's own `running` placeholder, a stuck "Thinking" row nothing else clears. Bumping the
+   * epoch (same mechanism `clearThread` already uses) makes `ask`'s own `stale` check drop that
+   * late reply instead; it does NOT retrigger a reload -- the epoch is read only by
+   * `loadHistory`/`ask`'s own in-flight calls, never by the panel's `!loaded` effect, which
+   * `loaded` staying `true` keeps from firing at all. **After a reload** (a Conversation change
+   * or a full restart brings the full history back, as above): `loadHistory` sets
+   * `activeTopicRecordId` to the newest root's id (`existing.activeTopicRecordId ?? lastRoot`),
+   * so the NEXT question after reload continues the pre-Clear topic, not a fresh one -- Clear
+   * thread's "fresh topic" effect lasts only until the next reload, by the same "nothing was
+   * actually deleted" reasoning as the history itself reappearing. */
   clearDisplayedThread(sessionId: string): void
   /** Applies a `btw_delta` (`delta` + `recordId` set), a terminal `btw_record` (`record` set),
    * or a btw-history save-failure notice (`notice` set, gate-fix round 4, Code4 Medium) arriving
@@ -320,18 +334,27 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
   },
 
   clearDisplayedThread(sessionId) {
-    // T021: the user-driven "Clear thread" UI action (spec.md User Story 2 Scenario 2). Unlike
-    // `clearThread` above, this never bumps `epochBySession` and never deletes the session's own
-    // entry outright -- an in-flight `loadHistory`/`ask` for THIS Session is not racing a
-    // Conversation it is about to stop existing for, so neither needs to be told to abandon its
-    // own `set`. A no-op for a Session with no entry yet (nothing loaded, nothing to clear).
+    // T021: the user-driven "Clear thread" UI action (spec.md User Story 2 Scenario 2).
+    // Gate-fix (round 2, Code1 Medium): bumps the epoch, like `clearThread` already does for a
+    // Conversation change -- the button's own `disabled={running || ...}` normally rules out an
+    // in-flight `ask`, but a terminal `btw_record` for the CURRENT topic can settle (clearing
+    // `running` via `applyPatch`) before `ask`'s own `btw` request resolves (the store's own
+    // `ask` doc comment already documents this ordering as possible), briefly re-enabling this
+    // button while `ask` is still awaiting. Without the epoch bump, `ask`'s eventual resolution
+    // is not `stale` and re-appends the reply's own `running` placeholder record Clear just
+    // removed -- a stuck "Thinking" row nothing else ever clears. `running: false` is written
+    // explicitly too (not just inferred from the now-empty `records`), matching every other
+    // writer of this field. Bumping the epoch here never retriggers a reload: it is read only by
+    // `loadHistory`/`ask`'s own in-flight calls, never by the panel's `!loaded` effect, and
+    // `loaded` itself is left untouched (still `true`). A no-op for a Session with no entry yet.
+    bumpSideChatEpoch(sessionId)
     set((state) => {
       const existing = state.bySession[sessionId]
       if (!existing) return state
       return {
         bySession: {
           ...state.bySession,
-          [sessionId]: { ...existing, records: [], activeTopicRecordId: undefined }
+          [sessionId]: { ...existing, records: [], activeTopicRecordId: undefined, running: false }
         }
       }
     })

@@ -281,7 +281,18 @@ interface SideChatThreadState {
    * record straight back, since no delete RPC exists for `btw` history and OMP itself is never
    * told anything was cleared. The cleared, empty view persists for the rest of this
    * Conversation's lifetime this app run; only a genuine Conversation change (`clearThread`) or
-   * a full Refract restart ever shows the full history again. */
+   * a full Refract restart ever shows the full history again -- and **after either of those
+   * reloads, `loadHistory` sets `activeTopicRecordId` back to the newest root's own id**
+   * (`existing.activeTopicRecordId ?? lastRoot`), so the next question after a reload continues
+   * the pre-Clear topic, not a fresh one; Clear thread's "fresh topic" effect lasts only until
+   * the next reload, by the same "nothing was actually deleted" reasoning as the history itself
+   * reappearing. **Also bumps `epochBySession`** (round 2, Code1 Medium): a terminal
+   * `btw_record` can settle (clearing `running` via `applyPatch`) before `ask`'s own `btw`
+   * request resolves, briefly re-enabling this action's own button while `ask` is still in
+   * flight for the topic being cleared; without the bump, `ask`'s eventual resolution is not
+   * `stale` and re-appends the reply's own `running` placeholder record, a stuck "Thinking" row.
+   * The bump never retriggers a reload (read only by `loadHistory`/`ask`'s own in-flight calls,
+   * never by the panel's `!loaded` effect) -- `loaded` itself stays `true` throughout. */
   clearDisplayedThread(sessionId: string): void;
   /** Applies a BtwDeltaFrame (`delta` + `recordId` set, matched by `topicId` + `status:
    * 'running'`, round 4), a terminal BtwRecordFrame (`record` set), or a btw-history

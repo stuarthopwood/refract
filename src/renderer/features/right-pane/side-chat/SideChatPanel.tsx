@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Textarea } from '@/components/ui/textarea'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
 import { SIDE_CHAT_LOADING_HINT, useRightPaneStore, useSessionsStore, useSideChatStore } from '@/state'
 import type { SideChatRecord } from '../../../../shared/frames'
@@ -143,6 +144,21 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     return () => clearTimeout(timer)
   }, [sideChatFocusRequestId])
 
+  // A11y: shared clear-first-then-set announcement helper (gate-fix, round 2, Code1 Low) -- the
+  // settle-announcement effect below and `handleClearThread` used to each keep their own copy of
+  // this exact timer dance (clear both pending timers, blank the region, defer the real text by
+  // one tick so a screen reader re-reads even two textually-identical announcements in a row,
+  // matching `chatAreaAnnouncer.ts`'s own shape); extracted so the two can never drift apart.
+  function announce(text: string): void {
+    clearTimeout(announceTimersRef.current.clear)
+    clearTimeout(announceTimersRef.current.pending)
+    setAnnouncement('')
+    announceTimersRef.current.pending = setTimeout(() => {
+      setAnnouncement(text)
+      announceTimersRef.current.clear = setTimeout(() => setAnnouncement(''), 6000)
+    }, 0)
+  }
+
   // A11y (round 2, A11y2 HIGH, FR-012; round 3, A11y3 Medium): announces once per record that
   // settles from `running` to a final state, using the same clear-first-then-set shape as
   // `chatAreaAnnouncer.ts` so a screen reader re-reads even two textually-identical
@@ -163,13 +179,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     if (!transitioned) return
     const text = announcementFor(transitioned.status, transitioned.error)
     if (!text) return
-    clearTimeout(announceTimersRef.current.clear)
-    clearTimeout(announceTimersRef.current.pending)
-    setAnnouncement('')
-    announceTimersRef.current.pending = setTimeout(() => {
-      setAnnouncement(text)
-      announceTimersRef.current.clear = setTimeout(() => setAnnouncement(''), 6000)
-    }, 0)
+    announce(text)
   }, [records])
 
   // Gate-fix (round 3, A11y3 Medium): clears both announcement timers on unmount -- without
@@ -275,16 +285,8 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     // clearing, same pattern as `handleCancelClick`/`handleRetry`.
     textareaRef.current?.focus()
     clearDisplayedThread(sessionId)
-    // A11y (WCAG 4.1.3): a silent clear has no visible confirmation for a screen-reader user --
-    // reuses the same clear-first-then-set live-region shape the settle-announcement effect
-    // above uses, so a rapid Clear-then-ask never leaves two announcements racing each other.
-    clearTimeout(announceTimersRef.current.clear)
-    clearTimeout(announceTimersRef.current.pending)
-    setAnnouncement('')
-    announceTimersRef.current.pending = setTimeout(() => {
-      setAnnouncement('Thread cleared.')
-      announceTimersRef.current.clear = setTimeout(() => setAnnouncement(''), 6000)
-    }, 0)
+    // A11y (WCAG 4.1.3): a silent clear has no visible confirmation for a screen-reader user.
+    announce('Thread cleared.')
   }
 
   if (!sessionId) {
@@ -421,10 +423,35 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             {/* T021 (FR-003): starts a genuinely new topic for the next question. Disabled while
                 `running` (clearing out from under an in-flight answer would let it reappear once
                 it settles -- `applyPatch` re-appends any record id it has never seen while
-                `loaded` stays `true`) or with nothing displayed to clear. */}
-            <Button type="button" variant="ghost" size="sm" disabled={running || records.length === 0} onClick={handleClearThread}>
-              Clear thread
-            </Button>
+                `loaded` stays `true`) or with nothing displayed to clear. Gate-fix (round 2,
+                Code1 HIGH): `mr-auto` anchors this button on the LEFT regardless of whether
+                Cancel is rendered -- without it, Cancel unmounting (cancelled, or the answer
+                settling) slides Clear thread right into Cancel's own screen position, so a
+                double-click on Cancel (or a click landing just as the answer settles) could hit
+                Clear thread by mistake and empty the whole thread with no undo. Cancel
+                unmounting now leaves an empty gap instead -- nothing slides under the pointer. */}
+            {/* A11y (A11y1 Low): explains BOTH why the button is disabled while running (WCAG
+                3.3.2, advisory) and that clearing is a temporary hide, not a deletion (the "no
+                confirmation, no stated permanence" Low findings) -- one tooltip for both, since
+                the reason text is the same regardless of which disables it. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mr-auto"
+                  disabled={running || records.length === 0}
+                  onClick={handleClearThread}
+                >
+                  Clear thread
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Hides this thread for now; the next question starts a fresh topic. History
+                returns after a restart or switching conversations.
+              </TooltipContent>
+            </Tooltip>
             {running && (
               // Spec 014: Cancel issues `btw_cancel` for the running request.
               <Button type="button" variant="outline" size="sm" onClick={handleCancelClick}>
