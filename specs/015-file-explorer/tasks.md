@@ -1524,6 +1524,93 @@ letter, making a genuinely discriminating long-jump type-ahead test impractical 
 without new fixtures -- not built this round, though the fix applies to it structurally, same
 code path as `Home`/`End`/`PageUp`/`PageDown`).
 
+### Round 14 gate fixes (Sec14/Code14 PASS with Mediums; A11y14/Verif14 FAIL on a real HIGH plus a Medium finding, all against round 13)
+
+**HIGH (Code14)**: round 13's own `moveGenRef`-free design had a race round 14's reviewers
+found: `scrollIntoView`'s `done` subscribes to the SAME next `scrollingInProgress` true->false
+edge regardless of how many `moveToRow` calls are in flight, so a SUPERSEDED call's own `done`
+is never cancelled -- it still fires on that edge alongside (or before) the newest call's own
+`done`. A fast `End` then `Home` 30ms later (End starts a long jump toward `README.md`; Home
+interrupts before it settles, jumping back to `big`) let the OLDER (`End`'s) `done` re-arm
+`pendingFocusPathRef` with its own (still-unmounted) target AFTER the newer (`Home`'s) `done` had
+already succeeded and cleared it -- a later `rangeChanged` (even an unrelated one, e.g. a plain
+mouse-wheel scroll) could then steal focus back to the STALE target. Fixed: `moveGenRef`, bumped
+at the top of every `moveToRow` call and checked at the top of every `done`, makes a superseded
+call's `done` a no-op.
+
+**MEDIUM (A11y14/Verif14/Sec14)**: the `pendingFocusPathRef` retry effect (consumes a pending
+path once a LATER `rangeChanged` shows it in the DOM) focused blindly -- two guards added before
+ever calling `.focus()`: (1) the pending path's own row must still be a NODE row in the CURRENT
+`rows`; a live-refresh patch, a collapse, or a reset can remove the row entirely before it ever
+mounts, and a stale pending path for a row that no longer exists must never be chased. (2) focus
+must still actually be STRANDED (`<body>`, nothing, or already somewhere inside this panel) --
+if the user has since Tabbed or clicked into something OUTSIDE this panel on purpose (the
+composer, another pane), a later unrelated `rangeChanged` must never pull focus back out of
+wherever they deliberately moved it to. The existing `pointerdown`-clears-pending listener also
+gained a `focusin`-outside-the-panel clear (a keyboard Tab to the composer fires no `pointerdown`
+at all, so that alone missed exactly this case).
+
+**Round 14 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate14`, own
+`--user-data-dir`/CDP port 9348, pid-verified `taskkill` + a full `Win32_Process` scan confirming
+exit): a real click focused `big/f0000.txt` in the same 1010-file folder; a real `End` keypress
+(30ms before a real `Home`) settled, every clean run, with `Home`'s own target (`big`'s row)
+focused on a real `DIV` -- never `<body>`, and never `README.md` (the stale target a reintroduced
+race would re-arm). A separate, later, genuinely-unrelated mouse-wheel scroll to the bottom
+confirmed `README.md` was NOT selected by it either (the thing a stale retry would have done).
+This machine ran under severe, sustained memory/CPU contention for most of this round's own
+session (a sibling lane's own build; free RAM measured as low as ~0.15 GB mid-session, well under
+the documented 2 GB floor) -- several otherwise-identical re-runs of this exact scenario failed
+to even boot the app within the script's own 10s/15s waits, and were discarded as environmental,
+not logged as findings; every run quoted above is one where the app booted cleanly.
+
+**Finding, NOT fixed this round (Verif14/A11y14 Medium -- real-impact, confirmed pre-existing)**:
+round 13's own "type-ahead long jump... impractical to construct without new fixtures" note above
+was false to accept at face value -- a genuinely discriminating fixture is simple (the scratch
+worktree's own root `README.md`, sorting after `big/`'s entire 1010-file subtree, already gives
+every file in `big/` and `README.md` itself distinct, discriminating first letters) and building
+one surfaced a REAL, separate defect this round's own `moveGenRef` fix does not touch: a
+type-ahead search (or `End` alone, from a starting row far enough that the jump is not trivially
+within the already-rendered window) into a batch of 1000+ rows never before measured (`big`'s own
+children, all inserted in one go on first expand) never actually scrolls the list at all.
+Confirmed live, repeatedly, across many isolated clean runs: pressing `r` from `big/f0000.txt`
+(a forward type-ahead search that should land on `README.md`, the only node starting with `r`)
+left `scrollTop` and `scrollHeight` COMPLETELY UNCHANGED (`384`/`384`, matching only the ~14
+rows ever actually rendered) for a full 3-second wait -- `README.md`'s row never mounted, so the
+existing retry effect never got a `rangeChanged` to consume, and focus (confirmed via
+`document.activeElement` polled every 300ms) either stayed on the clicked row or fell to
+`<body>`, never reaching a real row. This directly CONTRADICTS round 13's own live-verification
+claim above ("a real `End` keypress landed on `README.md`... on a real `DIV`, never `<body>`") --
+re-tested this round, repeatedly, against the EXACT round-13 commit (`dd0aaff`, via a
+`git stash`/`stash pop` isolation so no round-14 code was in play), and the SAME failure
+reproduced identically, proving this is pre-existing in the already-shipped round-13 code, not
+something round 14 introduced. Tried and reverted this round, none of which changed the result:
+replacing `scrollIntoView` with the imperative `scrollToIndex` (both the bare-number and the
+documented `{ index, align }` object forms -- confirmed via `react-virtuoso`'s own source,
+`Zn()`'s normalization, that these two forms are byte-for-byte equivalent at runtime); deferring
+that call to the next animation frame; setting `defaultItemHeight` so unmeasured rows get a real
+size estimate instead of none; freezing `initialTopMostItemIndex` to its value at mount instead of
+live-binding it to `selectedAbsIndex`. Source-level investigation (`node_modules/react-virtuoso/
+dist/index.mjs`, package version `4.18.16`) traced the computation (`ce(pt, C.offsetTree, O)`,
+the offset-tree lookup for a target index) far enough to confirm the INPUT values passed by this
+panel are correct (a real, present `virtuosoRef.current`; a correct `absIndex`/`totalCount` --
+confirmed by logging `rows.length` and the computed `candidateAbsIndex` live: `1002`/`1003`,
+exactly `README.md`'s real position) without reaching a confirmed root cause inside Virtuoso's own
+offset/size-tree internals for why the resulting scroll position never grows past the
+already-rendered content's own height. Logged here as an OPEN FOLLOW-UP rather than guessed at
+further under this round's own time and (see above) machine-contention constraints -- needs a
+dedicated investigation session, ideally against a quiet machine and/or an isolated react-virtuoso
+repro outside this app, before attempting another fix.
+
+**Not verified this round**: carried over from round 13's own list, unchanged, MINUS the
+type-ahead item above (now verified, and found broken rather than confirmed working): an app-side
+`getStatus()` call-count instrumentation under a git-lock stress burst; a genuinely slow/
+throttled `shutdown()` for a wider archive race window; `did-navigate` firing on a committed,
+successful reload with correct re-ensuring afterward; the real OS-file-drop trigger for the
+navigation fix; the `render-process-gone` branch; a real keyboard/screen-reader pass on Tab/
+Shift+Tab re-entry after a MOUSE-WHEEL/resize scroll-out specifically; the window-shrink variant
+of the same scroll-out limitation for FR-025; a test isolating the archive-race watcher-release
+claim; a genuinely-scrolled `PageUp`.
+
 ---
 
 ## Slice 3 / Phase 3: Open in VS Code, remaining context-menu actions, polish, final verification

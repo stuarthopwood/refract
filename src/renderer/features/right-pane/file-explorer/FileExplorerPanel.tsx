@@ -202,11 +202,35 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // separate, disclosed mouse-wheel/resize scroll-out limitation elsewhere in this file, since no
   // further user action caused this one. Holds the target path moveToRow could not immediately
   // focus; retried by the `renderedRange` effect below once a LATER `rangeChanged` shows the row
-  // is actually in the DOM. Cleared (so a stale retry can never fire later, stealing focus from
-  // somewhere the user has since moved to): at the top of every fresh `moveToRow` call (a newer
-  // key move supersedes an older, still-pending one); on any `pointerdown` anywhere in the
-  // document (the user clicked something on purpose); and on `sessionId` changing or this
-  // component unmounting.
+  // is actually in the DOM.
+  // Gate round 14 fix (Code14 HIGH): react-virtuoso's own `scrollIntoView` subscribes each call's
+  // `done` to the SAME next `scrollingInProgress` true->false edge -- a SUPERSEDED call's `done`
+  // is never cancelled, so it still fires on that edge alongside (or before) the newest call's
+  // own `done`. A fast End-then-Home (or any two long jumps before the first one's own scroll
+  // settles) let the OLDER call's `done` re-arm this ref (its own target still unmounted) AFTER
+  // the newer call's `done` had already succeeded and cleared it -- `moveGenRef` below (bumped at
+  // the top of every `moveToRow` call, checked at the top of every `done`) makes a superseded
+  // call's `done` a no-op instead, closing the race. Verified live, repeatedly, under this
+  // machine's own severe memory/CPU contention during this round's own session: a real End then
+  // Home 30ms apart settled on `big` (Home's own target), never `<body>`, every clean run.
+  // Gate round 14 finding (Verif14/A11y14 Medium -- real-impact, NOT fixed by the above): the
+  // "type-ahead/Home/End fixture is impractical to test a genuine long jump" claim round 13 made
+  // (this exact file, prior revision) was false to build around, and building a real one (a
+  // 1010-file folder plus a root `README.md` sorting after it) exposed a SEPARATE, pre-existing
+  // defect this round's own fix does not touch: a type-ahead search (or `End` alone, from a
+  // starting row far enough that the jump is not trivially within the already-rendered window)
+  // into a batch of 1000+ rows never before measured (`big`'s own children, all inserted in one
+  // go on first expand) never actually scrolls at all -- confirmed live, repeatedly, across many
+  // isolated runs and several different `scrollIntoView`/`scrollToIndex` call shapes (including
+  // ones this round tried and reverted, since none of them changed the result): `scrollTop` stays
+  // at its pre-keypress value and `scrollHeight` never grows to account for the un-rendered rows,
+  // so the target row never mounts and `done`'s retry path never gets a `rangeChanged` to consume.
+  // This looks like a react-virtuoso (4.18.16) limitation specific to a huge batch insert AFTER
+  // initial mount (not a `moveGenRef`/retry-timing bug, and not fixed by setting
+  // `defaultItemHeight`, which this round also tried and reverted) -- logged as an OPEN
+  // QUESTION/follow-up rather than guessed at further; see this round's own PR body and
+  // `tasks.md` for the live evidence and exact repro steps.
+  const moveGenRef = useRef(0)
   const pendingFocusPathRef = useRef<string | null>(null)
   // Tracks whether focus is currently somewhere inside this panel, kept live via a document-wide
   // `focusin` listener -- NOT read at the moment `sessionId`/`status` changes: by the time this
@@ -520,9 +544,27 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // (`rangeChanged`), which fires again once a long `scrollIntoView` jump's target row actually
   // mounts. Looks the pending path up directly rather than trusting `tabbableAbsIndex`/any index
   // math, since a row's actual presence in the DOM is exactly what failed last time.
+  // Gate round 14 fix (A11y14/Verif14/Sec14 Medium): two guards added before ever focusing --
+  // (1) the pending path's own row must still be a NODE row in the CURRENT `rows` (`rowsRef`,
+  // kept live every render below); a live-refresh patch, a collapse, or a reset can remove the
+  // row entirely before it ever mounts, and a stale pending path for a row that no longer exists
+  // must never be chased. (2) focus must still actually be STRANDED (`<body>`, nothing, or
+  // already somewhere inside this panel) -- if the user has since Tabbed or clicked into
+  // something OUTSIDE this panel on purpose (the composer, another pane), a later unrelated
+  // `rangeChanged` (a live-refresh patch, an ordinary mouse-wheel scroll) must never pull focus
+  // back out of wherever they deliberately moved it to.
   useEffect(() => {
     const pendingPath = pendingFocusPathRef.current
     if (!pendingPath) return
+    if (!rowsRef.current.some((row) => row.kind === 'node' && row.node.path === pendingPath)) {
+      pendingFocusPathRef.current = null
+      return
+    }
+    const active = document.activeElement
+    if (active && active !== document.body && !containerRef.current?.contains(active)) {
+      pendingFocusPathRef.current = null
+      return
+    }
     const target = treeContainerRef.current?.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(pendingPath)}"]`)
     if (!target) return
     pendingFocusPathRef.current = null
@@ -532,13 +574,22 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // user just acted on purpose -- a pending retry from an EARLIER key move must never steal focus
   // back after that, the identical principle round 10's own HIGH fix already applies to the
   // (now-removed) deferred scroll-out rescue. Document-level, not container-scoped: the user may
-  // click outside this panel entirely (a chat message, empty space).
+  // click outside this panel entirely (a chat message, empty space). Gate round 14 fix (A11y14
+  // Medium): also clears on a `focusin` whose target lands OUTSIDE this panel (a keyboard Tab to
+  // the composer fires no `pointerdown` at all, so that alone missed exactly this case).
   useEffect(() => {
     function clearPendingFocus(): void {
       pendingFocusPathRef.current = null
     }
+    function clearPendingFocusIfOutside(event: FocusEvent): void {
+      if (!containerRef.current?.contains(event.target as Node | null)) clearPendingFocus()
+    }
     document.addEventListener('pointerdown', clearPendingFocus, true)
-    return () => document.removeEventListener('pointerdown', clearPendingFocus, true)
+    document.addEventListener('focusin', clearPendingFocusIfOutside, true)
+    return () => {
+      document.removeEventListener('pointerdown', clearPendingFocus, true)
+      document.removeEventListener('focusin', clearPendingFocusIfOutside, true)
+    }
   }, [])
   // Gate round 13 fix (A11y13/Verif13 HIGH): a pending retry targets a specific row PATH, which
   // only means anything for the Session that asked for it -- clears on every Session switch (the
@@ -615,11 +666,21 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     // Gate round 13 fix (A11y13/Verif13 HIGH): a fresh move always supersedes an earlier,
     // still-pending retry -- see `pendingFocusPathRef`'s own comment above.
     pendingFocusPathRef.current = null
+    // Gate round 14 fix (Code14 HIGH): bumped here, checked at the top of `done` below -- see
+    // `moveGenRef`'s own comment above `pendingFocusPathRef`'s declaration for why a superseded
+    // call's `done` must become a no-op.
+    const gen = ++moveGenRef.current
     virtuosoRef.current?.scrollIntoView({
       index: absIndex,
       done: () => {
+        if (gen !== moveGenRef.current) return
         const target = treeContainerRef.current?.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(row.node.path)}"]`)
         if (target) {
+          // Gate round 14 fix (Code14 HIGH): clears any stale pending path before focusing --
+          // belt-and-braces alongside the `gen` guard just above (this `done` is the CURRENT
+          // move by construction once that guard passes, so nothing should be pending here
+          // already, but clearing explicitly costs nothing and removes any doubt).
+          pendingFocusPathRef.current = null
           target.focus()
         } else {
           // Gate round 13 fix (A11y13/Verif13 HIGH): on a long jump (Home/End/type-ahead across
