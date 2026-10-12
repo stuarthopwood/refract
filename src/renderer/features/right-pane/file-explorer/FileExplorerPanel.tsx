@@ -129,6 +129,19 @@ function joinWorktreePath(worktreePath: string, relativePath: string): string {
   return `${trimmedRoot}${separator}${relativePath.split('/').join(separator)}`
 }
 
+// PR #671 gate round 7 fix (Sec7/Code7/A11y7/Verif7 real-impact fix): `ensureWatcher`
+// (`src/main/ipc/fileExplorer.ts`) opens a recursive directory watcher that blocks rename/move
+// of every ANCESTOR of the worktree root for as long as it runs -- previously, once the first
+// panel for a Session opened, nothing ever stopped it again until archive/delete/recreate/fatal/
+// app quit. `RightPaneShell.tsx` conditionally renders this component only while its tab is the
+// ACTIVE one (`activePanelId === 'file-explorer' && <FileExplorerPanel .../>`) -- switching to a
+// different tab, or closing the last open tab, genuinely unmounts it; switching to a DIFFERENT
+// Session while staying on this tab keeps the component mounted but changes `sessionId`. Module-
+// level (not component state) and keyed by `sessionId`, not by component instance, because a
+// split pane could in principle show the same Session's panel twice -- the watcher must survive
+// until the LAST such instance goes away, not the first one to unmount.
+const watcherRefCounts = new Map<string, number>()
+
 export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const root = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.root ?? null) : null))
   // Gate round 5 fix (Code5 HIGH1): a reactive selector, not an imperative `getState()` read --
@@ -155,10 +168,6 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const treeContainerRef = useRef<HTMLDivElement>(null)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
-  // Gate round 5 fix (Code5 HIGH2, A11y5 Medium): `handleFocusOut` below is attached once on
-  // mount and must always see the CURRENT visible rows, never a stale closure -- kept live by a
-  // plain assignment on every render (see the assignment right after `rows` itself is computed).
-  const rowsRef = useRef<FlatRow[]>([])
   // Type-ahead buffer (T012, FR-022): resets 500ms after the last keypress, same timeout
   // convention as a native `<select>`'s own type-ahead. A ref, not state -- it drives no render
   // of its own, only the NEXT keypress's search.
@@ -187,6 +196,34 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     if (!sessionId || hasSessionEntry) return
     void loadDirectory(sessionId, '')
   }, [sessionId, hasSessionEntry, loadDirectory])
+
+  // PR #671 gate round 7 fix (Sec7/Code7/A11y7/Verif7 real-impact fix): stops the Session's
+  // recursive watcher the instant this is the LAST mounted `FileExplorerPanel` instance for it
+  // (ref-counted via the module-level `watcherRefCounts` above), and restarts it (without a full
+  // reload, so the cached expansion/scroll state the `bySession` entry already holds survives
+  // untouched) when one mounts again. Keyed on `[sessionId]` alone, deliberately: this must
+  // re-run for a Session SWITCH while this tab stays active (the component instance survives,
+  // only the prop changes) exactly the same way it re-runs for a genuine mount/unmount, so the
+  // OLD Session's watcher is released and the NEW one's is (re)started either way. Does not
+  // touch `bySession`/`resetSession` -- an actual tree reload only ever happens via
+  // `FILE_EXPLORER_RESET` (watcher-fatal/archive/recreate/restore) or the "load once" effect
+  // above, neither of which this effect fires.
+  useEffect(() => {
+    if (!sessionId) return
+    const id = sessionId
+    const count = (watcherRefCounts.get(id) ?? 0) + 1
+    watcherRefCounts.set(id, count)
+    if (count === 1) void window.refract.fileExplorer.ensureWatching(id)
+    return () => {
+      const remaining = (watcherRefCounts.get(id) ?? 1) - 1
+      if (remaining <= 0) {
+        watcherRefCounts.delete(id)
+        void window.refract.fileExplorer.stopWatching(id)
+      } else {
+        watcherRefCounts.set(id, remaining)
+      }
+    }
+  }, [sessionId])
 
   // PR #671 gate round 4 fix (High, A11y4): the EARLIER version of this comment claimed this
   // effect also covered a preview-pane toggle (Source/Wrap) unmounting -- it does not, and never
@@ -234,12 +271,16 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // else on purpose. Captures `lost` (`event.target`) at focusout time, before anything unmounts,
   // and only rescues a frame later if `lost` is ACTUALLY gone/unusable (`!isConnected`, inside an
   // `[inert]` subtree, or `disabled`) -- never merely "focus moved to something non-focusable".
-  // A11y5 Medium, same fix: a row merely scrolled out of Virtuoso's rendered window is removed
-  // from the DOM too (`!isConnected` would otherwise read it as "gone"), but its own path is
-  // still present in the CURRENT `rows` -- that case is a virtualisation artefact, not a real
-  // removal, and must not steal focus either; `rowsRef` (kept live below, every render) is the
-  // up-to-date list this check needs, since this effect's own listener is attached once on mount
-  // and never re-created.
+  // Gate round 7 fix (A11y7/Code7/Verif7): round 6's own fix here (below) special-cased a row
+  // merely scrolled out of Virtuoso's rendered window (`!isConnected` reads it the same as a
+  // real removal) by parking focus on the bare container instead of stealing it -- but the
+  // container is a `role="group"` div with no `onKeyDown` of its own: arrows, Home/End and
+  // type-ahead did nothing there, and `Tab` from it reached the "Show ignored files" switch
+  // first in DOM order, never a tree row. Removed below; both cases (genuinely removed AND
+  // merely scrolled out) now use the SAME final rescue a few lines down, which focuses the
+  // actual tabbable row (`tabbableAbsIndex` is recomputed via `rangeChanged` to the first
+  // RENDERED row whenever the previously-tabbable one scrolls out of view, so that row is
+  // always real, present, and fully keyboard-functional -- never the bare container).
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -252,23 +293,6 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
           const genuinelyGone =
             !lost.isConnected || lost.closest('[inert]') !== null || (lost as HTMLButtonElement).disabled === true
           if (!genuinelyGone) return
-          // Gate round 6 fix (Code6 Low): `lost` is the row's own KEBAB BUTTON when that was the
-          // focused element, not the row itself -- `lost.getAttribute` directly returned `null`
-          // for it, so a kebab merely scrolled out of view (still logically present in `rows`)
-          // read as "genuinely removed" and stole focus wrongly. `closest` walks up to the row
-          // regardless of which of its own children actually had focus.
-          const lostRowPath = lost.closest('[data-tree-row-path]')?.getAttribute('data-tree-row-path') ?? null
-          if (lostRowPath !== null && rowsRef.current.some((row) => row.kind === 'node' && row.node.path === lostRowPath)) {
-            // Gate round 6 fix (A11y6 Medium): previously just `return`, leaving focus on
-            // `<body>` -- arrow keys, Home/End and type-ahead then did nothing until the user
-            // tabbed back into the tree from outside it (WCAG 2.4.3/2.1.1). The row itself is
-            // still logically present (merely virtualised out), so this is not the "deliberate
-            // click elsewhere" case the fix above protects -- moving focus to the container,
-            // which the widget's own roving-tabindex scheme already treats as inside the tree,
-            // keeps the keyboard interaction alive without stealing focus from anywhere new.
-            containerRef.current?.focus({ preventScroll: true })
-            return
-          }
         }
         const treeRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path][tabindex="0"]')
         const previewRegion = containerRef.current?.querySelector<HTMLElement>('[role="region"]')
@@ -281,9 +305,6 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   }, [])
 
   const rows = useMemo(() => flattenVisible(root, showIgnored), [root, showIgnored])
-  // Gate round 5 fix (Code5 HIGH2, A11y5 Medium): kept live every render so `handleFocusOut`
-  // above (attached once, on mount) always reads the CURRENT rows, never a stale closure.
-  rowsRef.current = rows
 
   const nodeAbsIndices = useMemo(() => {
     const indices: number[] = []

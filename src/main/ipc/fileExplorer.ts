@@ -45,8 +45,21 @@ async function resolveListTarget(worktreeRoot: string, relativePath: string): Pr
   let rootRealPath: string;
   try {
     rootRealPath = await fs.realpath(worktreeRoot);
-  } catch {
-    return { ok: false, reason: 'worktree-missing' };
+  } catch (err) {
+    // Gate round 7 fix (Sec7/Code7/A11y7/Verif7 Medium): a bare `catch` previously mapped EVERY
+    // `realpath` failure to `worktree-missing`, including a TRANSIENT one (EACCES/EBUSY/EMFILE --
+    // an antivirus scan, an indexer, a brief Windows delete-pending window) -- and since round 6,
+    // `worktree-missing` from ANY `relativePath` is now treated as FATAL by the watcher's own
+    // `refreshDirectory`, stopping it and resetting the whole tree (losing expansion/selection,
+    // announcing "no longer exists" via `role=alert`) for what might resolve itself on the very
+    // next read. Only `ENOENT`/`ENOTDIR` genuinely mean the worktree folder is gone; everything
+    // else reuses the existing, already-non-fatal `file-missing` code (the SAME code
+    // `mapReaddirError` below already returns for a stale-path race on a SUBdirectory, which
+    // `refreshDirectory` already treats as "not fatal, the renderer only learns about it if it
+    // navigates there directly") -- no new code needed, no new fatal path reopened.
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { ok: false, reason: 'worktree-missing' };
+    return { ok: false, reason: 'file-missing' };
   }
   if (relativePath === '') return { ok: true, realPath: rootRealPath };
 
@@ -373,8 +386,19 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       // handle follows the move) -- detection is NEVER immediate, only on the next flush for
       // whatever subfolder next changes, or the next explicit `listDirectory` call for any path.
       if (result.error.code === 'worktree-missing') {
-        stopFileExplorerWatcher(sessionId);
-        notifyFileExplorerReset(sessionId);
+        // Gate round 7 fix (Code7/Verif7 Low): `state` was already captured ABOVE, before the
+        // `await listDirectoryEntries` -- a slow in-flight flush from an OLDER watcher must
+        // never stop/reset a NEWER one a concurrent archive/delete/recreate already installed
+        // in its place while this flush was still pending. Compares by handle identity, exactly
+        // like `onFatal`'s own guard just below in `ensureWatcher`. Also guards the whole branch
+        // on the watcher STILL being registered at all (A11y7 Low dedup): a sibling concurrent
+        // flush for a different `relativePath` on the SAME session may have already run this
+        // same stop+notify an instant earlier, and notifying twice for one root-loss event is
+        // pure noise to the renderer.
+        if (watchers.get(sessionId)?.handle === state.handle) {
+          stopFileExplorerWatcher(sessionId);
+          notifyFileExplorerReset(sessionId);
+        }
       }
       // Otherwise not an error to surface here -- the renderer only learns about a deleted
       // SUBdirectory if/when it navigates there directly, the same as any other stale-path race
@@ -485,8 +509,26 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
         return { ok: false, error: { code: 'session-archived', message: `This Session is archived` } };
       }
 
+      // Gate round 7 fix (Sec7/A11y7 Low): `ensureWatcher` is idempotent (a no-op once a watcher
+      // already exists for this `sessionId`), so the handle is captured AFTER it runs, not
+      // before -- capturing before `ensureWatcher` would read `undefined` on every FIRST call
+      // for a Session (no watcher yet) and wrongly treat the watcher `ensureWatcher` itself just
+      // created as "already replaced" once the `await` below returns. Compared below, exactly
+      // like `refreshDirectory`'s own identity guard just above: a concurrent archive/delete/
+      // recreate finishing WHILE this call's own `listDirectoryEntries` is still pending must
+      // not have its fresh watcher torn back down by this call's now-stale view.
       ensureWatcher(sessionId, session.worktreePath);
+      const watchedHandle = watchers.get(sessionId)?.handle;
       const result = await listDirectoryEntries(session.worktreePath, relativePath);
+      // Gate round 7 fix (Sec7/Code7/A11y7/Verif7 Medium): previously only the WATCHER's own
+      // background flush (`refreshDirectory` above) stopped watching and reset the tree on
+      // `worktree-missing` -- a direct, user-driven `listDirectory` call (e.g. the user
+      // expanding a folder right after an external rename) hitting the same error left the
+      // watcher running against a root that no longer resolves, with the renderer never told.
+      if (!result.ok && result.error.code === 'worktree-missing' && watchers.get(sessionId)?.handle === watchedHandle) {
+        stopFileExplorerWatcher(sessionId);
+        notifyFileExplorerReset(sessionId);
+      }
       // Records this directory as one the renderer has actually fetched, so a later watcher
       // patch for it is allowed through (PR #671 gate round 4 fix, High) -- recorded on success
       // only, so a failed/escaping path never ends up "loaded".
@@ -494,6 +536,48 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       return result;
     }
   );
+
+  ipcMain.handle(IPC_REQUESTS.FILE_EXPLORER_STOP_WATCHING, async (_event, sessionId: unknown): Promise<Result<void>> => {
+    // PR #671 gate round 7 fix (Sec7/Code7/A11y7/Verif7 real-impact fix): the recursive watcher
+    // this file's own `ensureWatcher` opens holds an OS directory handle that blocks rename/move
+    // of every ancestor of the worktree root for as long as it runs (first panel open until
+    // archive/delete/recreate/fatal/app-quit stops it) -- this is a genuine, user-facing
+    // consequence of this panel ever having been opened this run, independent of the Session's
+    // own OMP agent process (which blocks only the worktree ROOT itself, released by
+    // `stopAgent`). The renderer calls this when the LAST open `FileExplorerPanel` for a
+    // Session unmounts (ref-counted per `sessionId` in `FileExplorerPanel.tsx`), so the lock is
+    // held only while a panel for this Session is actually mounted, not for the rest of the run.
+    if (typeof sessionId !== 'string') {
+      return invalidArgument('fileExplorer.stopWatching expects a string sessionId');
+    }
+    if (sessionId.length > MAX_SESSION_ID_LENGTH) {
+      return invalidArgument('fileExplorer.stopWatching rejected an oversized sessionId');
+    }
+    // Idempotent (`stopFileExplorerWatcher`'s own body is a no-op when nothing is watching this
+    // Session) -- never an error for a Session with no watcher, an already-archived/deleted
+    // Session, or a double-call from a ref-count edge case.
+    stopFileExplorerWatcher(sessionId);
+    return { ok: true, value: undefined };
+  });
+
+  ipcMain.handle(IPC_REQUESTS.FILE_EXPLORER_ENSURE_WATCHING, async (_event, sessionId: unknown): Promise<Result<void>> => {
+    // Counterpart to `stopWatching`: the renderer calls this when the FIRST `FileExplorerPanel`
+    // for a Session (re)mounts. Deliberately does NOT re-list any directory -- the renderer's
+    // own cached tree/expansion/scroll state (FR-025) survives a stop/restart cycle unchanged;
+    // only live-patch delivery resumes. `ensureWatcher` itself already refuses an archived or
+    // busy Session and is a no-op if a watcher is already running, so this is safe to call
+    // whenever a panel mounts without checking any of that twice here.
+    if (typeof sessionId !== 'string') {
+      return invalidArgument('fileExplorer.ensureWatching expects a string sessionId');
+    }
+    if (sessionId.length > MAX_SESSION_ID_LENGTH) {
+      return invalidArgument('fileExplorer.ensureWatching rejected an oversized sessionId');
+    }
+    const session = manager.registry.getSession(sessionId);
+    if (!session) return notFound(`This Session no longer exists`);
+    ensureWatcher(sessionId, session.worktreePath);
+    return { ok: true, value: undefined };
+  });
 
   ipcMain.handle(
     IPC_REQUESTS.FILE_EXPLORER_READ_PREVIEW,

@@ -148,7 +148,9 @@ const refract: RefractApi = {
     openInVSCode: (sessionId, relativePath) =>
       request<{ opened: boolean }>(IPC_REQUESTS.FILE_EXPLORER_OPEN_IN_VSCODE, sessionId, relativePath),
     reveal: (sessionId, relativePath) => request<void>(IPC_REQUESTS.FILE_EXPLORER_REVEAL, sessionId, relativePath),
-    copyPath: (sessionId, relativePath) => request<void>(IPC_REQUESTS.FILE_EXPLORER_COPY_PATH, sessionId, relativePath)
+    copyPath: (sessionId, relativePath) => request<void>(IPC_REQUESTS.FILE_EXPLORER_COPY_PATH, sessionId, relativePath),
+    stopWatching: (sessionId) => request<void>(IPC_REQUESTS.FILE_EXPLORER_STOP_WATCHING, sessionId),
+    ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.FILE_EXPLORER_ENSURE_WATCHING, sessionId)
   },
 
   settings: {

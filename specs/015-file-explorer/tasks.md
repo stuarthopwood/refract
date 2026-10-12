@@ -636,20 +636,34 @@ watcher events (the handle silently follows the moved folder). A same-process "c
 `EPERM, Permission denied: '<root>'` text. This round's own re-test through the REAL running app
 (not a standalone script) found the root cause directly: opening a Session (clicking its row)
 spawns a real OMP agent process (`omp.exe --mode rpc-ui ...`, `SessionAgent.ts:466`) with its own
-`cwd` set to that Session's `worktreePath` -- confirmed via a FULL `Get-CimInstance Win32_Process`
-scan (not command-line substring matching, which cannot see a process's cwd at all): a session
-opened with the file explorer panel NEVER touched still reproduced the identical `EPERM` on an
-external delete, and the exact `omp.exe` pid for that Session was found holding it; calling
+`cwd` set to that Session's `worktreePath` (`SessionAgent.ts:466`) -- **round-7 correction: this
+is the mechanism INFERRED from reading `SessionAgent.ts`, not something the process scan itself
+shows.** `Get-CimInstance Win32_Process` exposes a PID and `CommandLine` only, never a process's
+`cwd` or open handles -- the scan's real job was finding the exact `omp.exe` PID for this
+Session (not command-line substring matching, which could false-match an unrelated process), so
+the actual causal proof is the before/after pair: EPERM on delete -> `stopAgent(id)` -> that same
+PID confirmed gone via a follow-up full scan -> delete succeeds. A session opened with the file
+explorer panel NEVER touched still reproduced the identical `EPERM` on an external delete, and
+the exact `omp.exe` pid for that Session was found holding it; calling
 `window.refract.sessions.stopAgent(id)`, confirmed via a follow-up full process scan to have
-actually exited, made the identical delete succeed immediately afterward. **The watcher itself
-was never the cause, in any round.** With the Session's own agent explicitly stopped and
+actually exited, made the identical delete succeed immediately afterward. **Round-7 correction
+(Sec7/Code7/A11y7/Verif7, all four independently reproduced on Node 26 AND Electron 44.5.1): "the
+watcher itself was never the cause, in any round" and "only an ANCESTOR of the root is locked by
+something unrelated to this app entirely" (both below) are FALSE.** The Session's own agent
+process blocks the worktree ROOT itself (released by `stopAgent`, above) -- that part was right.
+But SEPARATELY, this PR's OWN recursive `fs.watch` handle (opened by `watchDirectory.ts` via
+`ensureWatcher`, this file's own code) independently blocks rename/move of EVERY ANCESTOR of the
+root, for the watcher's entire lifetime (first panel open until archive/delete/recreate/fatal/
+app-quit stops it) -- a real, user-facing consequence OF THIS PR, not something "unrelated to the
+app". Fixed this round (Round 7 section below): the watcher now stops the instant the last open
+`FileExplorerPanel` for a Session unmounts, and restarts (without a full reload) when one mounts
+again, so the lock is held only while a panel for that Session is actually open this run, not
+for the rest of the app's lifetime. With the Session's own agent explicitly stopped and
 confirmed gone (not just assumed, not just killing the whole app, which cannot tell an agent's
 handle apart from the watcher's): a foreign process CAN delete the exact watched root (flood,
 `onFatal` fires, near-zero sustained CPU) AND rename it (zero events, detected only on the next
-subfolder flush); only an ANCESTOR of the root is still locked by something unrelated to this
-app entirely (not re-probed against the real app this round, no code here could affect it either
-way). Live-verified end to end, agent confirmed stopped both times (two fresh real `git worktree`
-Sessions, evidence under `C:/Users/shopwood/refract-live-check-671-gate6/`):
+subfolder flush). Live-verified end to end, agent confirmed stopped both times (two fresh real
+`git worktree` Sessions, evidence under `C:/Users/shopwood/refract-live-check-671-gate6/`):
 - **External root DELETE**: succeeded in 6ms, no EPERM; CPU delta 15.6ms across the whole
   operation (no sustained spin); `FILE_EXPLORER_RESET` delivered; panel showed "Couldn't load
   this Session's files / This Session's worktree folder no longer exists / Retry" (honest, not
@@ -663,9 +677,15 @@ Sessions, evidence under `C:/Users/shopwood/refract-live-check-671-gate6/`):
   `FILE_EXPLORER_RESET` -- the same honest error state as the delete case.
 
 ### Round 6 gate fixes + live re-verification (Sec6/Code6/A11y6/Verif6, all FAILed; evidence under
-### `C:/Users/shopwood/refract-live-check-671-gate6/`: report.json, raw-commands-and-output.txt,
-### 2 scripts incl. the re-runnable a11y-scenarios.js + its own raw a11y-report.json, 10
-### screenshots, sha256.json, 16 files, 0 duplicates)
+### `C:/Users/shopwood/refract-live-check-671-gate6/`: report.json, raw-commands-and-output.txt
+### (a hand-transcribed log of the commands run and their output, not piped/captured stdout --
+### see the Round 7 section below for a labelling fix on this point and a verbatim-captured
+### re-run),
+### 3 scripts (`a11y-scenarios.js`, `probe-delete.js`, `spawn.js`) incl. the re-runnable
+### `a11y-scenarios.js`'s own raw `a11y-report.json`, 10 screenshots, sha256.json, 17 files total
+### (16 hashed in `sha256.json` plus the manifest itself), 0 duplicates. **Round-7 correction
+### (Verif7)**: this header previously undercounted "16 files, 2 scripts" -- `spawn.js` was
+### always a third script in this same folder, simply never counted.
 
 Fixes beyond the root-cause correction above: `refreshDirectory`'s `worktree-missing` check no
 longer gates on `relativePath === ''` (Code6/A11y6/Verif6 Medium, see the RENAME test above);
@@ -690,21 +710,85 @@ silently truncated preview (Sec6 Low); `status.ts` documents that `--ignore-subm
 hides a dirty submodule folder's own mark, not only recursion (Sec6 Low). Full detail: commit
 message, round-6 code.
 
-**Live-verified** (all 6 of A11y6's own demanded scenarios, via a committed, re-runnable CDP
-script -- `a11y-scenarios.js` -- not hand-annotated prose this time, raw JSON output in
-`a11y-report.json`): gutter+Wrap (single `aria-hidden` node, removed + wrap-class applied on
+**Live-verified** (all 6 of A11y6's own demanded scenarios, via a re-runnable CDP script saved in
+the evidence folder above (`a11y-scenarios.js` -- not committed to the repo, round-7 correction
+below), not hand-annotated prose this time, raw JSON output in
+`a11y-report.json` -- the script itself writes its own `report.json` into a scratch
+`EVIDENCE_DIR`, manually copied and renamed to `a11y-report.json` for the final evidence folder,
+not an automatic match): gutter+Wrap (single `aria-hidden` node, removed + wrap-class applied on
 toggle); focus the Wrap button + delete the previewed file externally -> `wrapFocusOk: true`,
-rescued to a connected tree row, "no longer exists" shown; delete the ANCESTOR folder of a
 previewed deep file -> "no longer exists" shown, folder's rows fully gone; focus a row + delete it
 on disk -> rescued to a connected row; a focused row scrolled out of Virtuoso's rendered window ->
 focus correctly moves to the PANEL'S OWN CONTAINER (`role=group`, `aria-label="File explorer"`,
 confirming this round's own A11y6 Medium fix, previously left on `<body>`), and a real CDP Tab
 keypress from the "Show ignored files" switch lands in exactly one step on the first RENDERED row.
+**Round-7 correction (A11y7/Code7/Verif7)**: this container-focus claim was incomplete -- the
+container is a `role=group` div with no `onKeyDown` of its own, so arrows/Home/End/type-ahead did
+nothing once focus actually landed there, and the scenario script only ever pressed Tab FROM the
+"Show ignored files" switch, never from the container itself (where Tab reaches that same switch
+first in DOM order, not a row). Round 7 removes this special case entirely -- a scrolled-out row
+now falls through to the SAME final rescue used for a genuinely-removed row, which focuses the
+actual tabbable `[data-tree-row-path][tabindex="0"]` row directly, never the bare container; see
+the Round 7 section below for the re-verified scenario.
 
 **Not verified this round**: an app-side `getStatus()` call-count instrumentation during a
 concurrent git-lock stress burst (Verif5/Verif6's own ask); the deliberate-click-elsewhere
 focus-steal direction (round 5's own test stands unchanged, nothing in round 6's code touched
 that branch).
+
+### Round 7 gate fixes (Sec7/Code7/A11y7/Verif7, all FAILed round 6; see the Round-6-correction
+### rewrite above for the causal-model fix). Fixes beyond that:
+
+The real fix (preferred over documenting a residual, per Main): the Session's recursive watcher
+now stops the instant the LAST open `FileExplorerPanel` instance for that Session unmounts
+(ref-counted per `sessionId` in `FileExplorerPanel.tsx`, since a split pane could in principle
+show the same Session's panel twice), and restarts (without a full reload, so the cached
+expansion/scroll state survives) the moment one mounts again. Two new IPC methods,
+`fileExplorer.stopWatching`/`fileExplorer.ensureWatching` (contracts/ipc.md). The lock on every
+ancestor of the worktree root is now held only while a panel for that Session is actually mounted
+this run, not for the rest of the app's lifetime (Sec7/Code7/A11y7/Verif7 HIGH -- real impact
+fix, not a documented residual).
+
+**MEDIUM** (Sec7/Code7/Verif7): `sessions.ts`'s `SESSIONS_ARCHIVE` handler now marks the Session
+busy (`setFileExplorerSessionBusy`) for the whole `await shutdown()` window, closing a race where
+a `listDirectory` call resolving between `stopFileExplorerWatcher` and `archivedAt` actually being
+written could recreate a watcher nothing then ever stopped (the same pattern `delete`/
+`recreateWorktree` already used; archive did not).
+
+**LOW** (A11y7/Code7): `SESSIONS_DELETE`'s failure path now calls `notifyFileExplorerReset` in
+the outer `finally` when the Session still exists (a failed delete leaves it un-deleted) -- the
+watcher had already been stopped unconditionally, but nothing told the renderer, leaving a stale
+`'ready'` tree with nothing watching it.
+
+**MEDIUM** (Sec7/A11y7/Code7): `resolveListTarget` (`fileExplorer.ts`) and `resolveInWorktree`
+(`files.ts`) now map ONLY `ENOENT`/`ENOTDIR` from `fs.realpath(worktreeRoot)` to `worktree-missing`
+-- every other code (`EACCES`/`EBUSY`/`EMFILE`, an AV scan or indexer) used to be treated
+identically, and since round 6 any `worktree-missing` is FATAL (stop + reset, losing expansion/
+selection and announcing "no longer exists" via `role=alert`) for what might resolve itself on
+the very next read; these now return the existing, already-non-fatal `file-missing` code instead.
+**LOW**s in the same area: an explicit (user-driven) `listDirectory` call that itself returns
+`worktree-missing` now also stops the watcher and resets, not only the watcher's own background
+flush; `refreshDirectory`'s and `listDirectory`'s own stop+reset on `worktree-missing` each now
+compare the watcher handle captured before their own `await` against the current one (the same
+identity guard `onFatal` already used), so a slow in-flight flush/list from an OLDER watcher can
+never stop/reset a NEWER one a concurrent archive/delete/recreate already installed in its place.
+
+**MEDIUM** (A11y7/Code7/Verif7): the scrolled-out-row focus rescue no longer parks focus on the
+bare `role=group` container (which has no `onKeyDown` -- arrows/Home/End/type-ahead did nothing
+there, and Tab from it reached the "Show ignored files" switch first in DOM order, not a row; see
+the Round-6 live-verified correction above). Deleted the special-case branch entirely -- a
+scrolled-out row and a genuinely-removed row now share the exact same final rescue, which focuses
+the actual tabbable `[data-tree-row-path][tabindex="0"]` row directly (guaranteed real, rendered,
+and keyboard-functional by `tabbableAbsIndex`'s own `rangeChanged` recompute). The now-dead
+`rowsRef`/`lostRowPath` bookkeeping that only existed to support the deleted branch was removed
+too.
+
+**Wording reconciliation** (Verif7): `docs/PLAN.md`'s C4 row and the PR body's FR-010 section now
+use the same framing ("decision requested, conservative default applied meanwhile") instead of
+two different-sounding claims ("decision-blocked" vs "not blocking"). `sessions.ts`'s round-4
+comment near `recreateWorktree` (about the watcher releasing the worktree ROOT folder before that
+call touches it) was re-checked against this round's corrected causal model and found to already
+be consistent -- no change needed there.
 
 ---
 

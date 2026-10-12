@@ -207,6 +207,13 @@ export function registerSessions(manager: SessionManager): void {
     // worktree-adjacent operations this same fix applies to (delete, recreateWorktree are the
     // other two, below).
     stopFileExplorerWatcher(id);
+    // Gate round 7 fix (Sec7/Code7/Verif7 Medium): `archivedAt` is only written AFTER
+    // `shutdown()` resolves below -- a `listDirectory` call arriving during that `await` window
+    // (the user expanding a folder, a Retry, a reset reload) passed the (not-yet-true)
+    // `archivedAt` check and `ensureWatcher` recreated a watcher nothing then ever stopped,
+    // leaking for the rest of the archived Session's life. `recreateWorktree`/delete already use
+    // this same busy marker; archive did not.
+    setFileExplorerSessionBusy(id, true);
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
@@ -218,6 +225,7 @@ export function registerSessions(manager: SessionManager): void {
       }
     } finally {
       resumingIds.delete(id);
+      setFileExplorerSessionBusy(id, false);
       // Gate-fix (round 5, Code5 HIGH1; round 6, Code6/Sec6/Verif6 Medium): moved from the
       // success-only branch to this OUTER finally -- `stopFileExplorerWatcher` above already
       // stopped the watcher unconditionally, so even a failed `shutdown()`/`updateSession()`
@@ -318,6 +326,12 @@ export function registerSessions(manager: SessionManager): void {
     } finally {
       resumingIds.delete(id);
       setFileExplorerSessionBusy(id, false);
+      // Gate round 7 fix (A11y7/Code7 Low): a failed delete (the catch above returning
+      // `mapStoreThrown`) left `stopFileExplorerWatcher` already run but no
+      // `notifyFileExplorerReset` -- the Session survives (not actually deleted), and its panel
+      // stayed on a stale 'ready' tree with nothing watching it. Only notifies when the Session
+      // still exists (a successful delete already removed it, nothing left to notify).
+      if (manager.registry.getSession(id)) notifyFileExplorerReset(id);
     }
   });
 

@@ -188,8 +188,15 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
   let resolvedRoot: string;
   try {
     resolvedRoot = await fs.realpath(worktreeRoot);
-  } catch {
-    return { ok: false, reason: 'worktree-missing' };
+  } catch (err) {
+    // Gate round 7 fix (Sec7/Code7/A11y7/Verif7 Medium, mirrors fileExplorer.ts's
+    // `resolveListTarget`): only `ENOENT`/`ENOTDIR` actually mean the worktree root is gone; a
+    // transient failure (EACCES/EBUSY/EMFILE -- AV scan, indexer, a brief delete-pending window)
+    // reused this same `worktree-missing` reason, which the file-explorer watcher treats as
+    // FATAL (stop + reset the whole tree) for what might resolve itself on the very next read.
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { ok: false, reason: 'worktree-missing' };
+    return { ok: false, reason: 'file-missing' };
   }
 
   // `candidate` is `path.resolve(resolvedRoot, token)` unconditionally (round 3 fix) --

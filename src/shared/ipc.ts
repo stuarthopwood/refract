@@ -361,6 +361,14 @@ export const IPC_REQUESTS = {
   FILE_EXPLORER_OPEN_IN_VSCODE: 'fileExplorer.openInVSCode',
   FILE_EXPLORER_REVEAL: 'fileExplorer.reveal',
   FILE_EXPLORER_COPY_PATH: 'fileExplorer.copyPath',
+  // PR #671 gate round 7 fix (Sec7/Code7/A11y7/Verif7): the explorer's own recursive watcher
+  // blocks rename/move of every ancestor of the worktree root for its whole lifetime once
+  // opened -- these let the renderer stop it the instant the LAST open `FileExplorerPanel` for
+  // a Session unmounts (ref-counted, since a split pane could in principle show the same
+  // Session's panel twice), and restart it (without a full reload, to keep the cached
+  // expansion/scroll state) the moment one mounts again.
+  FILE_EXPLORER_STOP_WATCHING: 'fileExplorer.stopWatching',
+  FILE_EXPLORER_ENSURE_WATCHING: 'fileExplorer.ensureWatching',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
@@ -635,6 +643,20 @@ export interface RefractApi {
      * fallback pattern) and only calls this when the sandboxed renderer refuses it. Error
      * `clipboard-failed` on a main-process clipboard write failure. */
     copyPath(sessionId: string, relativePath: string): Promise<Result<void>>;
+    /** PR #671 gate round 7 fix (Sec7/Code7/A11y7/Verif7): the recursive watcher `ensureWatcher`
+     * (`src/main/ipc/fileExplorer.ts`) opens an OS directory handle that blocks
+     * rename/move of every ancestor of the worktree root for as long as it runs. Stops the
+     * watcher for this Session outright -- call `ensureWatching` to resume it. The renderer
+     * calls this when the LAST open `FileExplorerPanel` for a Session unmounts (ref-counted per
+     * `sessionId`, in case a split pane ever shows the same Session twice), never on every
+     * unmount. A no-op (never errors) if nothing is currently watching this Session. */
+    stopWatching(sessionId: string): Promise<Result<void>>;
+    /** Counterpart to `stopWatching`: restarts the watch handle for this Session WITHOUT
+     * re-listing any directory -- the renderer's own cached expansion/scroll state (FR-025) is
+     * untouched, only live-patch delivery resumes. A no-op if the Session is archived or
+     * already being watched; same lazy-retry behaviour as `listDirectory`'s own `ensureWatcher`
+     * call if the worktree folder does not currently resolve. */
+    ensureWatching(sessionId: string): Promise<Result<void>>;
   };
 
   settings: {
