@@ -881,9 +881,10 @@ and live verification the assignment requires before a PR is called ready.
 **T019 and T020 were pulled forward into the Slice 1+2 round above, per Main's own decision** (the
 composer-level `/btw` entry point is the natural way to actually exercise Slice 2's `ask`/`cancel`
 live, and Main's remediation instructions explicitly named it) -- both done and live-verified, see
-their own entries and the Checkpoint above. **T021-T027 completed in PR #669 (see each entry
-below)** -- gate-fix (round 2, Code1 Low): this line used to say "remain genuinely not started",
-stale the moment the first [x] below landed.
+their own entries and the Checkpoint above. **T021 and T023-T027 completed in PR #669 (T022
+shipped in #668, see its own entry below)** -- gate-fix (round 2, Code1 Low; corrected round 3,
+Main): this line used to say "remain genuinely not started", stale the moment the first [x] below
+landed; round 2's own fix over-attributed T022 to this PR when it actually shipped in #668.
 
 - [x] T019 [US4] Edit `src/shared/slash-commands.ts`: add `{ name: 'btw', description: 'Ask the
   agent a side question' }` to `NATIVE_BUILT_COMMANDS` (data-model.md); `btw` stays in
@@ -937,18 +938,24 @@ stale the moment the first [x] below landed.
   is read only by in-flight `loadHistory`/`ask` calls). (3) Medium docs -- neither doc comment
   said that after a reload (a Conversation change or a restart) `loadHistory` sets
   `activeTopicRecordId` back to the newest root, so the next question after a reload continues
-  the pre-Clear topic, not a fresh one; added to both `data-model.md` and this file's own store
-  doc comment. (4) Low -- extracted the duplicated clear-first-then-set announcement timer dance
-  (shared by the settle-announcement effect and `handleClearThread`) into one `announce(text)`
-  helper in `SideChatPanel.tsx`. (5) Low -- added a `Tooltip` to Clear thread explaining both why
-  it disables (advisory, WCAG 3.3.2) and that it is a temporary hide, not a deletion.
+  the pre-Clear topic, not a fresh one; added to both `data-model.md` and `side-chat-store.ts`'s
+  own `clearDisplayedThread` doc comment. (4) Low -- extracted the duplicated clear-first-then-set
+  announcement timer dance (shared by the settle-announcement effect and `handleClearThread`)
+  into one `announce(text)` helper in `SideChatPanel.tsx`. (5) Low -- added a `Tooltip` to Clear
+  thread. **Corrected round 3 (Main)**: a disabled native `<button>` has `pointer-events: none`
+  and cannot take focus, so this tooltip can never open while Clear thread is disabled -- it only
+  appears while the button is ENABLED, and explains that clearing is a temporary hide, not a
+  deletion; it does not state the reason for being disabled while `running` (Cancel sits next to
+  it as the obvious action there).
   **Re-verified live** (fresh scratch instance, `C:/Users/shopwood/refract-live-check-669-
   round2/`, 5 files + sha256.json, 0 duplicates): captured Cancel's own screen rect before
   clicking it (`cx` 1142.9), clicked it, then queried `document.elementFromPoint` at that EXACT
   same screen position afterward without moving the pointer -- it resolved to a plain `DIV` (the
   row's own flex gap), not a button, confirming nothing clickable slides under the pointer where
   Cancel used to be; Clear thread's own rect at that point measured `cx` 974.5, unchanged from
-  its pre-cancel position, confirming the `mr-auto` anchor holds. Separately, polling every
+  its pre-cancel position both numerically and visually (compare `r2-01-running-before-cancel.png`
+  vs `r2-02-cancelled-pointer-left-at-old-cancel-pos.png`), confirming the `mr-auto` anchor holds.
+  Separately, polling every
   `[role="status"]` element (7 exist on the page; an earlier single-element query had read the
   wrong one, which is why the first live check reported an empty string) for up to 2.5s after
   clicking Clear thread captured the real text: `"Thread cleared."`, appearing within about 100ms

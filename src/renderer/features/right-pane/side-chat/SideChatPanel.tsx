@@ -430,10 +430,12 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                 double-click on Cancel (or a click landing just as the answer settles) could hit
                 Clear thread by mistake and empty the whole thread with no undo. Cancel
                 unmounting now leaves an empty gap instead -- nothing slides under the pointer. */}
-            {/* A11y (A11y1 Low): explains BOTH why the button is disabled while running (WCAG
-                3.3.2, advisory) and that clearing is a temporary hide, not a deletion (the "no
-                confirmation, no stated permanence" Low findings) -- one tooltip for both, since
-                the reason text is the same regardless of which disables it. */}
+            {/* A11y (A11y1 Low). Corrected round 2 (Main): a disabled native `<button>` has
+                `pointer-events: none` and cannot take focus, so this tooltip can never open
+                while Clear thread is disabled -- it only ever appears while the button is
+                ENABLED, and explains that clearing is a temporary hide, not a deletion. The
+                reason for being disabled while `running` is not shown by this tooltip; Cancel
+                sits right next to it as the obvious action in that state. */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
