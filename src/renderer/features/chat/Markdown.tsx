@@ -96,6 +96,10 @@ function CodeBlockHeader({ label, copyText }: { label: string; copyText: string 
   )
 }
 
+// PR #671 gate round 4 fix (Medium, Sec4): above this size, `CodeBlock` skips Shiki entirely
+// (treated the same as `lang: null`) rather than ever calling the synchronous, main-thread
+// `codeToHtml` -- see `CodeBlock`'s own effect for the measured cost this caps.
+const MAX_HIGHLIGHT_BYTES = 200 * 1024
 // The one shared code-block renderer (T083, FR-049/FR-050), exported for `ToolRow.tsx`'s
 // Arguments/Output blocks. Always full width (FR-049). Every block's header carries a Copy
 // button (#524), reversing this component's earlier "no copy button per FR-050/FR-042" rule.
@@ -103,6 +107,7 @@ export function CodeBlock({
   code,
   lang,
   wrap = false,
+  lineNumbers = false,
   copyText,
 }: {
   code: string
@@ -115,6 +120,19 @@ export function CodeBlock({
   // behavior: `lang === null` also covers ASCII diagrams, tables, and any non-JSON tool output, none
   // of which should wrap.
   wrap?: boolean
+  // PR #671 gate round 4 fix (High, Verif4, FR-012): opt-in line-number gutter -- `false` for
+  // every EXISTING caller (chat's own untagged fences, tool Arguments/Output, approval-card detail
+  // lines, subagent Prompt/Result all keep their exact current rendering, zero change). Only
+  // `FilePreviewPane.tsx`'s own text-file preview (Slice 2) passes `true`. Rendered as a separate
+  // gutter COLUMN (not a CSS-counter-on-Shiki's-own-`.line`-spans trick, which only the HIGHLIGHTED
+  // branch could use at all): one row per `code.split('\n')` entry, independent of whatever Shiki
+  // did internally, so the same gutter code covers the highlighted AND plain-text paths uniformly.
+  // Gutter numbers only line up one-per-SOURCE-line when each source line renders as exactly one
+  // VISUAL row -- true whenever `wrap` is off (the default), false once a long line wraps onto a
+  // second visual row. Rather than ship a misaligned gutter, `lineNumbers` is simply not rendered
+  // while `wrap` is also on; a huge file is still wrappable (the MAX_HIGHLIGHT_BYTES/Wrap fixes
+  // above), just without the gutter for as long as wrap stays on.
+  lineNumbers?: boolean
   // The text the Copy button puts on the clipboard, when it differs from the visible `code`
   // (#524): `ToolRow.tsx` passes the full Output/write value here while `code` itself is capped
   // to the visible "Show all" slice. Defaults to `code` for every other caller.
@@ -125,7 +143,13 @@ export function CodeBlock({
 
   React.useEffect(() => {
     setHtml(null)
-    if (!lang) return
+    // PR #671 gate round 4 fix (Medium, Sec4, reproduced live): `codeToHtml` runs SYNCHRONOUSLY
+    // on the renderer's one JS thread -- a real 2.1 MB TypeScript file took 10.7s and produced
+    // 21.8 MB of HTML, freezing the WHOLE renderer (chat included, not just this one block) for
+    // the duration. Above `MAX_HIGHLIGHT_BYTES`, `lang` is treated the same as `null`: the
+    // existing plain-`<pre>` fallback below is correct and instant, just unhighlighted -- a huge
+    // file is still readable and (with the wrap fix below) still wrappable, never a frozen UI.
+    if (!lang || code.length > MAX_HIGHLIGHT_BYTES) return
     let cancelled = false
     void (async () => {
       try {
@@ -155,37 +179,72 @@ export function CodeBlock({
   // outside it, so the outer wrapper's `overflow-hidden` (needed to clip the body to the header's
   // rounded corners) can never clip the ring off on the left/right/bottom.
   const scrollableClassName = 'overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
-  // Wrapping is opt-in via the `wrap` prop (T083 round 3): `lang === null` alone is not a safe
-  // proxy for "prose-shaped text" -- `inferOutputBlock` also returns it for any untagged markdown
-  // fence (ASCII diagrams, tables, shell output) and for any non-JSON tool Output, all of which
-  // must keep scrolling sideways like real code. Only the two callers that are actually prose (an
-  // approval card's detail lines, a subagent's Prompt/Result) pass `wrap`. `html` never gets set
-  // when `lang` is null (the effect above bails out before ever calling Shiki), so the wrap branch
-  // only ever applies to that falsy-`lang`, unhighlighted case.
+  // PR #671 gate round 4 fix (Medium, Sec4): `wrap` now applies regardless of `lang`/`html` --
+  // previously gated to `lang === null` on the theory that only untagged/prose content ever
+  // passed `wrap: true`, which held for every caller THEN (an approval card's detail lines, a
+  // subagent's Prompt/Result, both always `lang: null`) but broke `FilePreviewPane.tsx`'s own
+  // Wrap toggle (Slice 2), which passes a REAL guessed language for most source files -- Shiki
+  // highlighted them (`html` set), and the wrap class was never applied to that branch at all, so
+  // the button visibly did nothing. Every existing `wrap: true` caller still only ever has
+  // `lang: null` content, so this is a strict widening, not a behaviour change for them.
   const wrapClassName = 'whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+  const showLineNumbers = lineNumbers && !wrap
+  const lineCount = showLineNumbers ? code.split('\n').length : 0
+
+  // Gate round 5 fix (Code5 Medium): a single text node, not one `<div>` per line -- the
+  // previous version allocated 30-60k DOM nodes for a ~1 MiB file's own gutter alone (this
+  // component's own `MAX_HIGHLIGHT_BYTES`/Wrap-fix comment above already accepts files that
+  // large), with no virtualisation. `leading-[1.6]` matches the content column's own line
+  // height exactly (both the Shiki-highlighted and plain-text branches below already set it the
+  // same way), so each `\n`-joined number still lines up with its own source line.
+  const gutter = showLineNumbers ? (
+    <pre
+      aria-hidden
+      className="m-0 select-none border-r border-border bg-card py-3 pl-3 pr-2 text-right leading-[1.6] text-muted-foreground tabular-nums"
+    >
+      {Array.from({ length: lineCount }, (_, i) => i + 1).join('\n')}
+    </pre>
+  ) : null
 
   if (html) {
     // Shiki's own HTML output (highlighted spans only, no agent text interpreted as markup),
-    // per the constitution's markdown/sanitisation rule.
+    // per the constitution's markdown/sanitisation rule. The `[&>pre]:` arbitrary-variant
+    // selectors apply to the `<pre>` Shiki's own `dangerouslySetInnerHTML` output contains,
+    // since a plain class on this wrapping `<div>` cannot reach inside raw injected HTML.
     return (
       <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
         <CodeBlockHeader label={label} copyText={copyText ?? code} />
-        <div
-          tabIndex={0}
-          role="region"
-          aria-label={regionLabel}
-          className={cn(scrollableClassName, '[&>pre]:m-0 [&>pre]:p-3')}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        <div className="flex">
+          {gutter}
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label={regionLabel}
+            className={cn(
+              'min-w-0 flex-1',
+              wrap ? wrapClassName : scrollableClassName,
+              wrap ? '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:whitespace-pre-wrap [&>pre]:break-words' : '[&>pre]:m-0 [&>pre]:p-3 [&>pre]:leading-[1.6]'
+            )}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </div>
       </div>
     )
   }
   return (
     <div className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs">
       <CodeBlockHeader label={label} copyText={copyText ?? code} />
-      <pre tabIndex={0} role="region" aria-label={regionLabel} className={cn(wrap && lang === null ? wrapClassName : scrollableClassName, 'bg-card p-3')}>
-        <code>{code}</code>
-      </pre>
+      <div className="flex">
+        {gutter}
+        <pre
+          tabIndex={0}
+          role="region"
+          aria-label={regionLabel}
+          className={cn('min-w-0 flex-1', wrap ? wrapClassName : scrollableClassName, 'bg-card p-3 leading-[1.6]')}
+        >
+          <code>{code}</code>
+        </pre>
+      </div>
     </div>
   )
 }

@@ -137,3 +137,96 @@
     tree (the decision comment on #463, cited in spec.md's Clarifications) and switching back to a
     Session already visited should not require a fresh directory listing for the root the watcher
     already covers.
+
+11. **Path containment reuses `resolveInWorktree` (`src/main/ipc/files.ts`), discovered during
+    Slice 1 implementation -- NOT a new function, correcting this spec's own original plan.md
+    (which assumed a new helper needed writing).** Issue #610's own `sessions.revealFile` work
+    already built and hardened, through five documented quality-gate rounds, exactly the
+    containment check this spec needs: NUL bytes rejected; UNC and device paths (`\\?\`, `\\.\`,
+    `//host/share`) rejected by one leading-`//`-after-backslash-normalisation check; any colon
+    other than a single drive-letter prefix rejected (blocks both a drive-relative escape and an
+    NTFS alternate-data-stream name like `file:stream`); Windows reserved device names (`CON`,
+    `PRN`, `NUL`, `COM1`-`9`, `LPT1`-`9`, their Unicode superscript-digit variants, and
+    trailing-space/dot tricks) rejected per path segment; a LEXICAL containment pre-check against
+    both the realpath'd AND the unresolved worktree root (so a worktree reached through a
+    junction/8.3 short name still accepts a legitimate absolute token); then the REAL security
+    boundary -- `fs.realpath` on the resolved candidate, compared against the realpath'd root with
+    NO case-folding at all (a case-insensitive but still exact comparison: `fs.realpath` always
+    returns the canonical on-disk casing regardless of the token's own casing, confirmed by a
+    real-fs probe during that work, so folding here would re-open a Unicode-confusable bypass the
+    gate fixed). Reused UNCHANGED rather than a second implementation, per that function's own
+    doc comment ("kept exported so a future caller... can reuse the exact same containment rule").
+    One difference needed a thin wrapper, not a change to the shared function: `resolveInWorktree`
+    deliberately rejects a token resolving to the worktree ROOT itself (`file-missing` -- correct
+    for `revealFile`, which has no reason to reveal the whole worktree folder as a "file"), but
+    listing the root is this panel's own first, most common operation (FR-004) -- `fileExplorer.ts`'s
+    own `resolveListTarget` special-cases `relativePath === ''` to `fs.realpath` the worktree root
+    directly (the exact first step `resolveInWorktree` itself takes internally) and defers to the
+    unmodified function for every other value.
+
+    **Addendum (PR #671 gate round 1, security-auditor HIGH):** reuse initially stopped short at
+    `resolveListTarget`'s own root-vs-non-root resolution -- listing a folder still called
+    `fs.stat` directly on every symlink/junction DIRENT to learn its kind, which FOLLOWS the
+    link before any containment check runs at all. If such a link's target is a UNC path
+    (`\\attacker\share\x`), merely opening the panel made Windows attempt an outbound SMB/NTLM
+    authentication with no click from the user. Round 1's fix (`classifySymlinkEntry`'s own
+    `fs.readlink`-then-text-check) vetted only that one entry's FIRST hop before calling
+    `resolveInWorktree` on the target.
+
+    **Addendum 2 (PR #671 gate round 2, security-auditor/code-reviewer/verification/a11y HIGH,
+    reproduced live):** round 1's own fix was incomplete. A CHAIN of links (`a` -> in-root `b`,
+    `b` -> a UNC share) or a link sitting in a MIDDLE segment of a target's own path still reached
+    `resolveInWorktree`'s bare `fs.realpath(candidate)` unvetted on the SECOND hop, because only
+    the first hop's raw text had been checked. Fixed by moving the no-follow walk INSIDE
+    `resolveInWorktree` itself, not at the `fileExplorer.ts` call site: `resolveNoFollow`
+    (files.ts) walks a candidate one path segment at a time with `fs.lstat` (never `fs.stat`/
+    `fs.realpath`); for any segment that IS itself a link, `fs.readlink`s its raw target, runs the
+    SAME text-only checks a top-level token gets (`isUnsafeToken`: NUL bytes, UNC/device paths, a
+    stray colon, reserved names), checks lexical containment, and -- critically -- RESTARTS the
+    walk from the worktree root with the target's own relative segments prepended, rather than
+    trusting the target as a safe base to resolve further. This closes the middle-segment case
+    specifically: Windows resolves every component of a path string during an ordinary
+    `lstat`/`realpath`-equivalent call (reparse points are followed transparently for
+    INTERMEDIATE components too, not only a path's final one), so handing the OS a multi-
+    component path built from an unverified substitution would reopen the exact same hole one
+    level down. Capped at `MAX_LINK_HOPS` (32) link substitutions against a cycle (`a -> b -> a`).
+    `classifySymlinkEntry` now simply delegates an entry's own path straight to the hardened
+    `resolveInWorktree` -- no separate, narrower check of its own -- so listing, expand (which
+    already re-resolved through the same function) and `revealFile` all close together, from one
+    fix in one place.
+
+    **Correction to this slice's own "not verified live" disclosure:** the three string-level
+    escape attempts this slice's live check ran (`../../../../Windows/System32`, `C:\Windows`,
+    `\\?\C:\Windows`) were originally described as proving "the same `resolveInWorktree` boundary
+    a symlink would also hit". That is wrong: all three are rejected by TEXT-ONLY pre-checks
+    (the lexical containment check and the leading-`//` UNC check), neither of which a
+    symlink/junction escape would reach -- a symlink's own relative path, as a TOKEN, looks
+    perfectly ordinary; only the walk/realpath-based check (the actual security boundary) would
+    catch it. The round-1 live check's own follow-up claim ("resolved, live-verified with real
+    fixtures") was ALSO premature: its fixtures covered a single-hop escape only, never a chain or
+    a UNC target, which is exactly the gap round 2 found and reproduced live. Round 2's own live
+    check (tasks.md Slice 1 Checkpoint) adds a two-hop chain, a middle-segment link, a hop-cap
+    cycle, and genuine UNC targets (`\\127.0.0.1\refract-none-<random>`, never a real remote
+    host) to close that gap for real.
+
+    **Addendum 3 (PR #671 gate round 3, security-auditor/code-reviewer MEDIUM, reproduced live):**
+    round 2's own `resolveNoFollow` checked a link's target against the realpath'd `root` only,
+    not the Session's recorded, never-realpath'd `unresolvedRoot` -- when the worktree itself is
+    reached through a junction or an 8.3 short-name alias, an absolute link target written in
+    that ALIAS form (pnpm writes absolute junction targets from its own cwd) was rejected as
+    `outside-worktree`: a fail-closed regression for `revealFile`, and a false `cannot-access` in
+    the panel, not an escape, but the same false-negative class issue #610's own round-4 Verif3
+    fix already solved once for top-level TOKENS. Fixed by accepting a link's target under
+    EITHER root, while still always restarting the walk from the realpath'd `root`.
+
+    **Accepted residual risk, documented rather than claimed closed (PR #671 gate round 3,
+    security-auditor/verification LOW):** a TOCTOU window exists between `resolveNoFollow`'s own
+    last `fs.lstat` and the caller's final `fs.realpath` on the fully-walked path -- a link
+    swapped into an already-checked segment in that window could still be followed by that
+    `fs.realpath` call. The post-realpath containment check still rejects the RESULT (never an
+    escape), but a UNC-targeted swap could trigger an outbound SMB/NTLM attempt during that
+    window before the rejection lands. Exploiting this needs a process with write access to the
+    worktree while a listing is in flight -- the same local attacker who could already reach a
+    UNC path directly -- so this is accepted, not mitigated, for this spec's own threat model
+    (constitution V treats agent/tool output as untrusted, not the local filesystem as a
+    multi-tenant boundary against a co-resident writer).

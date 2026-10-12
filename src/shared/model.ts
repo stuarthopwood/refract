@@ -556,3 +556,77 @@ export interface ProfileCacheEntry {
   avatarDataUrl: string | null; // validated data:image/png|jpeg;base64,...; null = show initials
   fetchedAt: string; // ISO 8601; the moment this entry was last successfully refreshed
 }
+
+/** Spec 015 data-model.md: one row of the File explorer's tree (FR-004 to FR-007). Relative to
+ * the Session's own worktree root (never absolute, never escaping it -- `resolveInWorktree`,
+ * `src/main/ipc/files.ts`, enforces this main-side before any read). `.git` itself is never
+ * represented as a node (FR-007, checked on the path as typed AND on its realpath'd result, so
+ * neither a literal `.git`/`.GIT` segment nor the Windows 8.3 alias `GIT~1` can resolve to it).
+ * `kind: 'folder'`/`'file'` reflects the FOLLOWED type for a symlink/junction entry (so a
+ * symlinked folder still renders with a disclosure control) -- but ONLY once `resolveInWorktree`
+ * has independently proven EVERY hop of the link's target realpaths inside the worktree first.
+ * PR #671 gate round 1 fix (security-auditor HIGH) stopped a listing from `fs.stat`/`fs.realpath`-
+ * ing a link's RAW target before any check at all; round 2 (security-auditor/code-reviewer/
+ * verification/a11y HIGH, reproduced live) found that fix still vetted only the entry's own
+ * FIRST hop -- a chain (`a` -> in-root `b`, `b` -> a UNC share) or a link sitting in a MIDDLE
+ * path segment still reached `fs.realpath` unchecked on the SECOND hop, opening a zero-click
+ * outbound SMB/NTLM connection. `resolveInWorktree` now walks every hop itself, one path segment
+ * at a time, re-vetting any substituted link's own target before going on (`resolveNoFollow`,
+ * files.ts) -- no remaining call in this codebase resolves a chain of links in one native call.
+ * A link whose target escapes the worktree, is a UNC/device path, or is simply broken -- at ANY
+ * hop of however long a chain -- resolves to `kind: 'cannot-access'` instead -- the row this
+ * spec.md's own Edge Cases section calls a "cannot access" state. `gitStatus` arrives in Slice 2
+ * (data-model.md `GitStatusMark`); absent in Slice 1. */
+export type FileTreeEntryKind = 'file' | 'folder' | 'cannot-access';
+
+export interface FileTreeNode {
+  /** Relative to the worktree root, POSIX-style `/` separators regardless of platform (FR-004). */
+  path: string;
+  /** Last path segment; the row's own label. */
+  name: string;
+  kind: FileTreeEntryKind;
+  /** Spec 015 Slice 2 (FR-010, FR-011, data-model.md `GitStatusMap`): the shared git-status/
+   * ignore reader's own mark for this path, merged in by the renderer from `fileExplorer.
+   * getStatus`'s own full-worktree map, not sent by `listDirectory` itself. `undefined` means
+   * clean/untracked-and-not-shown, never "unknown". `.git` itself is never a key in that map
+   * (FR-007), so this is never set for the (nonexistent) `.git` node either. */
+  gitStatus?: GitStatusMark;
+}
+
+/** Spec 015 Slice 2 (data-model.md `GitStatusMap`): one path's current mark against `git status`
+ * (not a merge-base diff like `sessions.diffStat`'s own `DiffStat` -- "what does the tree look
+ * like right now", research.md decision 2's own distinction). */
+export type GitStatusMark = 'modified' | 'added' | 'untracked' | 'deleted' | 'ignored';
+
+/** Spec 015 Slice 2 (data-model.md `GitStatusMap`): keyed by path, relative to the worktree
+ * root, matching `FileTreeNode.path`'s own convention. A path absent from this map is clean and
+ * not ignored; `.git` itself is never a key (FR-007). Built for reuse, as-is, by the future
+ * git-changes panel (#464, FR-011), not gated on that panel's own existence. */
+export type GitStatusMap = Record<string, GitStatusMark>;
+
+/** Spec 015 Slice 2 (data-model.md `FilePreview`, FR-012 to FR-015): the currently-selected
+ * file's preview data. Replaced wholesale on every selection change; `kind: 'deleted'` when the
+ * underlying file disappears while open (FR-021), never left showing stale content. `kind:
+ * 'read-error'` (PR #671 gate round 4 fix, Medium): a non-`ENOENT` failure reading an otherwise-
+ * present file (`EACCES`/`EBUSY`, e.g. an agent has it open for writing) is a DIFFERENT state
+ * from "it no longer exists" -- the earlier version mapped every read failure to `'deleted'`,
+ * which reads as "removed or renamed" even when the file is still sitting right there. */
+export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'binary' | 'too-large' | 'deleted' | 'read-error';
+
+export interface FilePreview {
+  path: string;
+  kind: FilePreviewKind;
+  /** Bytes on disk at read time; present for every kind except `'deleted'`/`'read-error'` --
+   * shown alongside the "cannot preview" state for `'binary'`/`'too-large'` (FR-015, SC-001). */
+  size?: number;
+  /** `kind: 'text'` (FR-012, the shared `CodeBlock`/Shiki) or `kind: 'markdown'` (FR-013, the
+   * shared `Markdown` component by default, with a Source toggle that re-renders this same
+   * string through `CodeBlock` instead). Absent for every other kind. */
+  content?: string;
+  /** `kind: 'image'` only (FR-014): base64 bytes, wrapped renderer-side into
+   * `data:${mimeType};base64,${base64}` -- the identical convention `attachments.ts`/
+   * `AttachmentStrip.tsx` already use for a pasted image's own `previewUrl` (research.md
+   * decision 4). Detected by magic bytes, never by file extension. */
+  base64?: string;
+  mimeType?: string;
+}

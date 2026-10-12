@@ -18,6 +18,7 @@ import { SettingsStore } from './store/settings'
 import { SessionManager } from './SessionManager'
 import { registerIpc } from './ipc/register'
 import { cleanupModelRolesScratchDir } from './omp/config'
+import { resetAllFileExplorerWatchersAndState, stopAllFileExplorerWatchers } from './ipc/fileExplorer'
 import { registerNotifications } from './notifications'
 import { startMemoryMonitor } from './memory'
 
@@ -224,6 +225,75 @@ function createWindow(): void {
     pendingSplitSurvivorId = undefined
   })
 
+  // Gate round 8 fix (Sec8 Low): the renderer side of every file-explorer watcher's lifecycle
+  // lives in a module-level ref-count `Map` in `FileExplorerPanel.tsx` -- a renderer reload or
+  // crash resets that `Map` to empty, but main's own watchers (and the ancestor-folder lock each
+  // one holds) are a SEPARATE process and keep running regardless, with nothing left to ever
+  // call `stopWatching` again until the Session is archived/deleted/recreated or the whole app
+  // quits. `render-process-gone` covers a crash; `did-navigate` (main frame, a genuine
+  // CROSS-document navigation that actually COMMITTED -- see round 10's own correction just
+  // below) covers a reload, including dev HMR's full-page fallback, PROVIDED the reload itself
+  // commits -- round 11 correction (Code11/Sec11 Medium): `did-navigate` is never emitted for a
+  // navigation that commits to an ERROR page instead (Electron's own `IsErrorPage()` check) --
+  // a dev reload while the Vite server is down, or a `file://` reload with `index.html` itself
+  // missing, replaces the whole document (every panel, every bit of renderer state) but fires
+  // only `did-fail-provisional-load`/`did-fail-load`, never `did-navigate`, leaving every watcher
+  // and ancestor lock stranded alive with nothing to ever release them until the NEXT successful
+  // load. `did-fail-load` below closes that gap (`errorCode !== -3` excludes `ERR_ABORTED`, the
+  // code for a navigation cancelled by `will-navigate`/a new navigation superseding it mid-
+  // flight -- neither of those actually destroyed the document, so neither needs a reset). Both
+  // `render-process-gone` and `did-navigate`/`did-fail-load` are a hard reset of the renderer's
+  // entire in-memory state, so stopping every watcher unconditionally is correct -- the
+  // renderer's own fresh mount re-calls `ensureWatching` for whichever Session(s) reopen a panel,
+  // same as any other first open (moot for `did-fail-load`'s own error-page case, which shows no
+  // panel to reopen a watcher for in the first place, but harmless either way).
+  //
+  // Gate round 9 fix (Sec9/Code9/A11y9/Verif9 HIGH, round 10 superseded below): the round-8
+  // version of this handler used the deprecated positional `isMainFrame` argument and ignored
+  // same-document navigations entirely -- Electron fires `did-start-navigation` for an in-page
+  // (same-document) navigation too (a reference-fragment link, `pushState`/`replaceState`,
+  // same-page history), and this app's own chat Markdown renders GFM footnote references/
+  // back-links as plain `<a href="#user-content-fn...">` with no `preventDefault`
+  // (`Markdown.tsx`) -- a perfectly ordinary click on one stopped EVERY watcher while every panel
+  // stayed mounted, and since the renderer's own ref-count never changed (nothing unmounted),
+  // `ensureWatching` was never called again: live refresh (FR-020) and deleted-preview detection
+  // (FR-021) died silently for the rest of the run, the same class of regression round 8 itself
+  // fixed, reintroduced by a fix that was only rated Low. Round 9's own fix added
+  // `!details.isSameDocument` to `did-start-navigation`, which correctly let same-document
+  // navigations through -- but round 10 (Sec10/Code10/Verif10 HIGH) found `did-start-navigation`
+  // itself fires BEFORE Electron's own navigation throttles (`will-navigate`/
+  // `will-frame-navigate` below, which `denyForeignNavigation` can cancel): a renderer-started
+  // CROSS-document navigation that gets cancelled (an OS file dropped onto the window -- this
+  // renderer has no `drop`/`dragover` handler at all, so Electron's own default navigation
+  // kicks in -- or a dragged chat link) had ALREADY reset every watcher and cleared
+  // `loadedPathsBySession` before the cancellation ran, with the page never actually navigating
+  // away: every panel stayed mounted, nothing ever called `ensureWatching` again, and live
+  // refresh/deleted-preview detection died exactly the same way as the original round-9 HIGH, on
+  // a navigation that never even happened. Fixed: listens on `did-navigate` instead, which
+  // Electron only emits for a main-frame cross-document navigation that actually COMMITTED (a
+  // cancelled one never fires it at all, and an in-page/same-document one fires
+  // `did-navigate-in-page` instead, a separate event this handler never needs to filter for) --
+  // strictly simpler than the round-9 `did-start-navigation` + `isSameDocument` check it
+  // replaces, and immune to the cancelled-navigation false-positive by construction.
+  // Gate round 9 fix (Sec9/Code9/A11y9 Low): uses the combined reset (stops every watcher AND
+  // clears `loadedPathsBySession`) rather than `stopAllFileExplorerWatchers` alone -- a renderer
+  // crash/reload is a hard reset of ALL of its in-memory state, so the parked-path map a fresh
+  // renderer has no knowledge of must reset with it, or its first `ensureWatching` would
+  // re-flush folders the new renderer never opened.
+  window.webContents.on('render-process-gone', () => resetAllFileExplorerWatchersAndState())
+  window.webContents.on('did-navigate', () => resetAllFileExplorerWatchersAndState())
+  // Gate round 11 fix (Code11/Sec11 Medium): see the comment at this effect's own top -- closes
+  // the committed-error-page gap `did-navigate` itself cannot cover. `-3` is `ERR_ABORTED`
+  // (Chromium's net error code) -- kept excluded defensively: a navigation cancelled by
+  // `will-navigate`/superseded by a newer one mid-flight never actually replaces the currently
+  // loaded document, so it needs no reset either way, whether or not Electron itself already
+  // filters this exact code out of `did-fail-load` before this handler ever sees it (round 12
+  // gate reviewers' own recollection of Electron's source disagreed on this point, neither
+  // checked against a live copy this round -- the check costs nothing if redundant).
+  window.webContents.on('did-fail-load', (_event, errorCode, _errorDescription, _validatedURL, isMainFrame) => {
+    if (isMainFrame && errorCode !== -3) resetAllFileExplorerWatchersAndState()
+  })
+
   // T037: SessionAgent's unread tracking needs real OS focus, not just "a window exists".
   window.on('focus', () => manager?.setWindowFocused(true))
   window.on('blur', () => manager?.setWindowFocused(false))
@@ -355,6 +425,10 @@ if (!gotLock) {
     // call reaching `ensureScratchDir` between two passes and creating a fresh directory -- the
     // re-entrant second pass here is exactly what catches that one).
     void cleanupModelRolesScratchDir()
+    // PR #671 gate round 4 fix (Low/Medium, Verif4/Sec4): releases every Session's file-watcher
+    // handle on quit -- a watcher was otherwise only ever stopped by an explicit archive/delete/
+    // recreateWorktree call or its own fatal self-detection, never by the app actually closing.
+    stopAllFileExplorerWatchers()
     if (quitInFlight || !manager) return
     quitInFlight = true
     event.preventDefault()

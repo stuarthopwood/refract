@@ -72,6 +72,55 @@ export function taskkillPath(): string {
   return path.join(systemRoot, 'System32', 'taskkill.exe');
 }
 
+let vsCodeExecutableCache: string | undefined;
+
+/** Clears the cached, previously-successful VS Code resolution (PR #671 gate round 4 fix,
+ * Medium): a spawn can still fail asynchronously AFTER this cache was populated (VS Code
+ * uninstalled or moved mid-run, `EACCES`, antivirus quarantine) -- without clearing it, every
+ * later `openInVSCode` call would keep returning the same now-stale path and keep failing the
+ * same way until a full app restart. Exported for `fileExplorer.ts`'s own `child.once('error',
+ * ...)` handler to call. */
+export function clearVSCodeExecutableCache(): void {
+  vsCodeExecutableCache = undefined;
+}
+
+/**
+ * Resolves VS Code's `Code.exe` by checking fixed known install roots directly, never via
+ * `resolveExecutable('code')`/PATH. `code`'s own PATH entry is a `bin/` folder containing
+ * `code.cmd`, a batch wrapper, not `Code.exe` (which lives in the parent install directory) --
+ * resolving to `code.cmd` would recreate the exact problem issue://463 flags: Node's 2024
+ * BatchBadBinary fix means a `.cmd` cannot be spawned without `shell: true`, and `shell: true`
+ * risks argument injection via `& | ^ %` in a filename being passed as an argument
+ * (research.md decision 1). Checks, in order: the default one-click per-user install under
+ * `%LOCALAPPDATA%`, then the system installs under `%ProgramFiles%` and
+ * `%ProgramFiles(x86)%`. Returns `undefined` (never throws) when none exist -- VS Code's absence
+ * is an expected, normal state (FR-017's "VS Code not found" UI state), not an error condition a
+ * caller needs to catch.
+ *
+ * Caches only a successful resolution, in a separate module-level variable from `resolveExecutable`'s
+ * own PATH-search cache (that cache is keyed by bare name, not by "VS Code" specifically, and this
+ * resolver never touches PATH at all). A negative result is deliberately NOT cached: the check is
+ * three cheap `access()` calls, and caching "not found" forever would require a Refract restart
+ * after a user installs VS Code mid-session to ever pick up the new install.
+ */
+export async function resolveVSCodeExecutable(): Promise<string | undefined> {
+  if (vsCodeExecutableCache) return vsCodeExecutableCache;
+
+  const roots = [
+    process.env['LOCALAPPDATA'] ? path.join(process.env['LOCALAPPDATA'], 'Programs', 'Microsoft VS Code', 'Code.exe') : undefined,
+    process.env['ProgramFiles'] ? path.join(process.env['ProgramFiles'], 'Microsoft VS Code', 'Code.exe') : undefined,
+    process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)'], 'Microsoft VS Code', 'Code.exe') : undefined,
+  ];
+
+  for (const candidate of roots) {
+    if (candidate && (await fileExists(candidate))) {
+      vsCodeExecutableCache = candidate;
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 /** `pwsh` via PATH when installed, else the well-known Windows PowerShell 5.1 location. */
 export async function resolvePowerShell(): Promise<string> {
   try {

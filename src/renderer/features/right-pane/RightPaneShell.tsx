@@ -13,6 +13,7 @@ import { WindowControlsSpacerRow } from './WindowControlsSpacerRow'
 import { FdbKnowledgePanel } from './placeholders/FdbKnowledgePanel'
 import { AgentBuilderPanel } from './placeholders/AgentBuilderPanel'
 import { SideChatPanel } from './side-chat/SideChatPanel'
+import { FileExplorerPanel } from './file-explorer/FileExplorerPanel'
 import type { PanelId } from './panel-registry'
 
 interface RightPaneShellProps {
@@ -97,6 +98,7 @@ export function RightPaneShell({ sessionId, resize }: RightPaneShellProps) {
             }}
           />
         )}
+        {activePanelId === 'file-explorer' && <FileExplorerPanel sessionId={sessionId} />}
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { BotIcon, HammerIcon, LibraryIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, FolderTreeIcon, HammerIcon, LibraryIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 
 // Spec 013 (data-model.md `HostedPanelDescriptor`/`PanelId`): the single source of which right
@@ -6,9 +6,10 @@ import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 // its own list. `HOSTED_PANELS` only lists a panel this build can actually render -- all three
 // land here once PR2 (spec 013 Slice 3, tasks T026-T028) registers `fdb-knowledge`/
 // `agent-builder` alongside PR1's `subagents`, so the rail and launcher never show an entry with
-// no content behind it. `side-chat` (spec 014 T005) adds a fourth tenant the same way, no change
-// to the rail/tab-bar/launcher rendering logic itself (research.md decision 4).
-export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat'
+// no content behind it. `side-chat` (spec 014 T005) and `file-explorer` (spec 015 T006) each add
+// a tenant the same way, no change to the rail/tab-bar/launcher rendering logic itself
+// (research.md decision 4, spec 014; decision 9, spec 015).
+export type PanelId = 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer'
 
 export interface HostedPanelDescriptor {
   id: PanelId
@@ -24,7 +25,14 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   // Spec 014 research.md decision 5: a single-bubble icon, distinct from the three above, chosen
   // over MessagesSquareIcon (closer to "messaging app" than "one aside conversation"). No live
   // count is asked for by either issue.
-  { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false }
+  { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false },
+  // Spec 015 research.md decision 8: distinct from every icon already in use on a right-pane
+  // rail button or an existing file-system action (`FolderOpenIcon` already means "open the OS
+  // file explorer" elsewhere in this codebase, e.g. `AddRepositoryDialog.tsx`'s Browse button
+  // and this very panel's own Reveal in File Explorer action, Slice 3) -- the literal "a folder
+  // containing a nested tree" shape avoids conflating "open this panel" with that action. No
+  // live count is asked for by the issue.
+  { id: 'file-explorer', name: 'File explorer', icon: FolderTreeIcon, hasCount: false }
 ]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {

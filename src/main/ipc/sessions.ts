@@ -30,6 +30,7 @@ import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util
 import { attachSnapshotCore } from './attachSnapshot';
 import { resumeSessionCore, BUSY_MESSAGE } from './resumeSession';
 import type { SessionAgent } from '../omp/SessionAgent';
+import { forgetFileExplorerSession, notifyFileExplorerReset, setFileExplorerSessionBusy, stopFileExplorerWatcher } from './fileExplorer';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
  * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
@@ -195,6 +196,24 @@ export function registerSessions(manager: SessionManager): void {
       return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
     }
     resumingIds.add(id);
+    // PR #671 gate round 4 fix (Critical/Medium, Code4/Sec4): releases the file explorer's own
+    // watcher BEFORE anything below touches this Session -- a watcher left running on an
+    // archived Session is a pure leak (a recursive `ReadDirectoryChangesW` handle with no
+    // reason to keep running). Gate round 6 correction (Sec6 Low): the panel for an archived
+    // Session CAN still be mounted (its own chat pane does not unmount on archive) -- what
+    // actually keeps this a pure leak-free fix is `fileExplorer.ts`'s own `listDirectory`
+    // handler and `ensureWatcher` BOTH refusing to re-watch a Session once `archivedAt` is set,
+    // not simply assuming the panel becomes unreachable. Archive is the first of the three
+    // worktree-adjacent operations this same fix applies to (delete, recreateWorktree are the
+    // other two, below).
+    stopFileExplorerWatcher(id);
+    // Gate round 7 fix (Sec7/Code7/Verif7 Medium): `archivedAt` is only written AFTER
+    // `shutdown()` resolves below -- a `listDirectory` call arriving during that `await` window
+    // (the user expanding a folder, a Retry, a reset reload) passed the (not-yet-true)
+    // `archivedAt` check and `ensureWatcher` recreated a watcher nothing then ever stopped,
+    // leaking for the rest of the archived Session's life. `recreateWorktree`/delete already use
+    // this same busy marker; archive did not.
+    setFileExplorerSessionBusy(id, true);
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
@@ -206,6 +225,13 @@ export function registerSessions(manager: SessionManager): void {
       }
     } finally {
       resumingIds.delete(id);
+      setFileExplorerSessionBusy(id, false);
+      // Gate-fix (round 5, Code5 HIGH1; round 6, Code6/Sec6/Verif6 Medium): moved from the
+      // success-only branch to this OUTER finally -- `stopFileExplorerWatcher` above already
+      // stopped the watcher unconditionally, so even a failed `shutdown()`/`updateSession()`
+      // call left the renderer on a stale 'ready' tree with nothing watching underneath it
+      // unless told here too, not only on the happy path.
+      notifyFileExplorerReset(id);
     }
   });
 
@@ -215,6 +241,9 @@ export function registerSessions(manager: SessionManager): void {
     try {
       await manager.registry.updateSession(id, { archivedAt: null });
       manager.notifyListChanged();
+      // Gate-fix (round 5, Code5 HIGH1): tells the renderer to reload this Session's tree now
+      // that it is no longer archived -- cheap even when no panel is currently open for it.
+      notifyFileExplorerReset(id);
       return { ok: true, value: undefined };
     } catch (err) {
       return mapStoreThrown(err);
@@ -260,9 +289,27 @@ export function registerSessions(manager: SessionManager): void {
       return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
     }
     resumingIds.add(id);
+    // Gate round 9 fix (Code9/Verif9 Medium): `stopFileExplorerWatcher`/`setFileExplorerSessionBusy`
+    // used to sit AFTER `await shutdown()` below, inside the inner `try` -- if `shutdown()`
+    // itself threw, the OUTER `finally`'s own unconditional `setFileExplorerSessionBusy(id,
+    // false)` still ran, decrementing a count THIS call never incremented. The ref-count clamps
+    // at zero, but it could still release a CONCURRENT `recreateWorktree` call's own hold on the
+    // same Session early, reopening the exact EPERM-on-`mkdir` race the busy marker exists to
+    // close. Moved above the `await` so every path that reaches the outer `finally`'s decrement
+    // is guaranteed to have incremented first.
+    stopFileExplorerWatcher(id);
+    setFileExplorerSessionBusy(id, true);
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
+        // PR #671 gate round 4 fix (Critical), round 9 correction (Code9/Verif9 Medium): the
+        // watcher release and the busy marker this comment used to describe HERE both now
+        // happen earlier, above the outer `try` (see that comment at the top of this handler) --
+        // moved there so a thrown `shutdown()` cannot decrement the busy count without ever
+        // having incremented it. By the time `removeSessionWorktree` runs below, the watcher is
+        // already released and the Session is already marked busy for the whole operation, so an
+        // in-flight `listDirectory` resolving DURING this call cannot recreate a fresh watcher on
+        // the very folder being removed.
         // Issue #599 quality-gate fix: decide by `git worktree list --porcelain`, never
         // `fs.stat` -- an orphaned folder (left behind by a crash, a manual `git worktree
         // prune`, or hand cleanup) still exists on disk while git has already lost track of
@@ -279,6 +326,11 @@ export function registerSessions(manager: SessionManager): void {
         }
         await manager.registry.removeSession(id);
         manager.removeAgent(id);
+        // Gate round 9 fix (Sec9/Code9/A11y9 Low): a successful delete calls neither
+        // `notifyFileExplorerReset` (nothing is left listening for this Session's reset) nor
+        // anything else that clears `loadedPathsBySession` -- without this its entry leaked for
+        // the rest of the app's run.
+        forgetFileExplorerSession(id);
         manager.notifyListChanged();
         return { ok: true, value: undefined };
       } catch (err) {
@@ -286,6 +338,13 @@ export function registerSessions(manager: SessionManager): void {
       }
     } finally {
       resumingIds.delete(id);
+      setFileExplorerSessionBusy(id, false);
+      // Gate round 7 fix (A11y7/Code7 Low): a failed delete (the catch above returning
+      // `mapStoreThrown`) left `stopFileExplorerWatcher` already run but no
+      // `notifyFileExplorerReset` -- the Session survives (not actually deleted), and its panel
+      // stayed on a stale 'ready' tree with nothing watching it. Only notifies when the Session
+      // still exists (a successful delete already removed it, nothing left to notify).
+      if (manager.registry.getSession(id)) notifyFileExplorerReset(id);
     }
   });
 
@@ -299,9 +358,36 @@ export function registerSessions(manager: SessionManager): void {
       if (!(await branchExists(repository.path, session.branch))) {
         return { ok: false, error: { code: 'branch-missing', message: `Branch not found: ${session.branch}` } };
       }
-      await recreateWorktree(repository.path, session.worktreePath, session.branch);
-      manager.notifyListChanged();
-      return { ok: true, value: undefined };
+      // PR #671 gate round 4 fix (Critical, reproduced live): recreating a worktree while the
+      // file explorer's own watcher still held the previous folder's handle open failed with
+      // `EPERM` on the `mkdir` this ultimately does -- releasing it first is required, not
+      // optional, for this call to succeed at all when the panel was ever opened for this
+      // Session. The next `listDirectory` call (after this succeeds) starts a fresh watcher.
+      // Gate round 6 fix (Verif6 Low): also marks the Session busy for the whole operation --
+      // an in-flight `listDirectory` call resolving DURING `recreateWorktree` itself could
+      // otherwise call `ensureWatcher` and recreate a watcher mid-recreate, reopening the same
+      // EPERM class this fix was originally written to close.
+      stopFileExplorerWatcher(id);
+      setFileExplorerSessionBusy(id, true);
+      try {
+        await recreateWorktree(repository.path, session.worktreePath, session.branch);
+        manager.notifyListChanged();
+        // Gate-fix (round 5, Code5 HIGH1): the renderer's own panel kept showing the PRE-recreate
+        // tree forever otherwise -- `stopFileExplorerWatcher` above only dropped the watcher
+        // BEFORE this call touched the folder; this is the separate "safe to reload now" signal,
+        // sent only once `recreateWorktree` has actually succeeded.
+        setFileExplorerSessionBusy(id, false);
+        notifyFileExplorerReset(id);
+        return { ok: true, value: undefined };
+      } catch (err) {
+        // Gate round 6 fix (Code6/Verif6 Medium): `stopFileExplorerWatcher` above already ran
+        // unconditionally before this call touched the folder -- a failure here (a half-done
+        // recreate, EPERM, a git failure) must not leave the renderer on a stale 'ready' tree
+        // with nothing watching underneath it either; notify on this path too, not only success.
+        setFileExplorerSessionBusy(id, false);
+        notifyFileExplorerReset(id);
+        return mapStoreThrown(err);
+      }
     } catch (err) {
       return mapStoreThrown(err);
     }

@@ -94,14 +94,13 @@ src/shared/
 src/main/
 ├── fs/                                           # NEW directory
 │   ├── gitStatus.ts                              # NEW -- Slice 2: shared git-status/ignore reader, reuses git.ts's gitRaw (decisions 2, 6)
-│   ├── listDirectory.ts                          # NEW -- Slice 1: worktree-root-contained lazy directory listing (FR-001, FR-005, FR-006)
 │   ├── readPreview.ts                            # NEW -- Slice 2: preview reader, reuses diffStat.ts's isBinary()/BINARY_SNIFF_BYTES (FR-002/FR-003, decision 3)
 │   └── watchDirectory.ts                         # NEW -- Slice 2: fs.watch-based live-refresh watcher, debounced (FR-020, decision 5)
 ├── git/
 │   └── git.ts                                    # unchanged -- gitRaw() reused by gitStatus.ts, no edit
 ├── ipc/
 │   ├── register.ts                               # EDIT: registerFileExplorer(manager) wiring + forwardEvent FILE_EXPLORER_PATCH case
-│   └── fileExplorer.ts                           # NEW -- Slice 1: fileExplorer.listDirectory/getStatus handlers; Slice 2 adds readPreview + watcher wiring; Slice 3 adds openInVSCode/reveal/copyPath
+│   └── fileExplorer.ts                           # NEW -- Slice 1: fileExplorer.listDirectory handler, reusing `resolveInWorktree` (files.ts, issue #610, research.md decision 11) rather than a new `fs/` helper; Slice 2 adds getStatus + readPreview + watcher wiring; Slice 3 adds openInVSCode/reveal/copyPath
 └── process/
     └── executables.ts                            # EDIT -- Slice 3: adds resolveVSCodeExecutable() alongside the existing resolveExecutable()/resolvePowerShell()/taskkillPath() fixed-path resolvers (research.md decision 1), not a new file: same module, same "never trust a bare name or cwd" reasoning
 
@@ -128,9 +127,9 @@ src/renderer/
 ## Slices
 
 1. **Shell/hosting + IPC contract + one-shot directory listing.** Registers the `file-explorer`
-   panel (FR-026), wires `fileExplorer.listDirectory`/`fileExplorer.getStatus` end-to-end
-   (main → preload → renderer), and renders a non-interactive, non-live tree of the worktree root's
-   top-level entries (User Story 1, partial). No preview, no live refresh, no git marks yet.
+   panel (FR-026), wires `fileExplorer.listDirectory` end-to-end (main → preload → renderer),
+   and renders a non-interactive, non-live tree of the worktree root's top-level entries (User
+   Story 1, partial). No preview, no live refresh, no git marks/`getStatus` yet.
 2. **Tree UI + keyboard + live refresh + git status marks + preview.** Full WAI-ARIA treeview
    keyboard model (FR-022/FR-023), lazy expand/collapse (FR-005), the `fs.watch` live-refresh
    watcher with expansion-state preservation (FR-020, User Story 5), git status marks (FR-010,

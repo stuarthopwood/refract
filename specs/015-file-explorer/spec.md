@@ -45,11 +45,71 @@ choice listed in Clarifications below.
   Reveal in File Explorer, Copy path (all reuse existing patterns, e.g.
   `SessionDetailsCard.tsx`'s own Copy path/Open in file explorer buttons) -- NOT "Open with default
   app" this round (a fourth near-duplicate launcher path, its own follow-up).
+- **Q (Main, Slice 1)**: does the preview filter out secrets-shaped files (`.env`, credentials,
+  private keys) by name or content? -> **A**: no. The preview shows any file inside the Session's
+  worktree that the developer could already open directly in an editor -- the same files VS Code
+  itself would show, no secrets-aware filtering of `.env` or anything else by name or content.
+  Two things bound the risk this choice accepts: (1) nothing read for preview ever enters the
+  main transcript or OMP's own context (FR-027 below) -- previewing a secret shows it ON SCREEN
+  to the developer who is already in that worktree, it does not leak it to the agent or anywhere
+  OMP can see; (2) every read still goes through the exact same worktree-containment check as
+  every other read (FR-001) -- `resolveInWorktree`'s own `resolveNoFollow` walk (`src/main/ipc/
+  files.ts`) vets a path one segment at a time from the realpath'd root, re-checking any
+  symlink/junction's OWN target (however many hops deep) before ever calling `fs.realpath`/
+  `fs.stat` on it, so nothing outside the Session's own worktree is ever reached this way. (PR
+  #671 gate round 2 history: round 1's own fix vetted only a link's FIRST hop, so a chain --
+  `a` -> in-root `b`, `b` -> a UNC share -- or a link sitting in a middle path segment still
+  reached `fs.realpath` unvetted, reproduced live as a zero-click outbound SMB/NTLM connection;
+  fixed by walking every hop, not just the first.) This choice only ever exposes a file the
+  developer's own Session already has on disk, never a file from elsewhere on the machine.
 
 ### Needs Stuart's decision (not yet resolved; decision comment posted, conservative choice taken)
 
-- None remaining for this spec's own build scope -- every open item the decision comment raised
-  was itself resolved to a conservative choice (above) or carved out (below), not left pending.
+- **Q (PR #671 gate round 5, Code5/Main's own instruction)**: FR-010 currently lists `deleted` as
+  one of the git status marks tree rows show -- but a deleted TRACKED file structurally cannot
+  have a row at all (`listDirectory` lists via `readdir`, which has no entry for a path that no
+  longer exists, so there is nothing left to attach a `deleted` mark to; `getStatus`'s own
+  `GitStatusMap` still correctly reports `deleted` for such a path, just with no row in the tree
+  to show it on). Posted to issue #463 for Stuart's decision; conservative choice taken for now
+  (not blocking this PR): FR-010 is read as covering modified/added/untracked only for anything
+  rendered as a row, `deleted` stays a real, correct value in the underlying map (useful to #464's
+  future reuse) but is never expected to render here. **A (pending)**: synthetic "ghost" rows for
+  a deleted tracked file (so the mark has somewhere to render) are deferred, not built this round
+  -- Stuart can overrule and ask for them in a follow-up.
+- **Q (PR #671 gate rounds 7-13, A11y/Code/Verif reviewers)**: FR-022's roving-tabindex tree is
+  virtualised (`react-virtuoso`), and FR-025 says resizing/switching panels MUST NOT lose the
+  tree's current focus position. When the focused (and possibly selected) row scrolls out of the
+  rendered window -- a mouse wheel, `PageUp`/`PageDown` (no longer a cause since round 11: the
+  tree scrolls only to follow focus via `moveToRow`, so the focused row is never scrolled away by
+  keys), or a
+  window-resize changing Virtuoso's rendered range -- rounds 7-9 each tried a rescue (hop focus to
+  another rendered row), and each one introduced a worse defect of its own (moving selection the
+  user never navigated to, re-firing on every scroll tick as screen-reader noise, or -- round 9's
+  deferred version -- stealing focus back after the user had deliberately clicked elsewhere on
+  purpose). Round 10 removed rescue-on-scroll-out entirely rather than ship a fourth attempt;
+  focus now drops to `<body>` and stays there until the user tabs back in (Tab or Shift+Tab,
+  whichever direction the row left in, [INFERENCE] probe-observed against a minimal scratch page
+  -- pressing the OPPOSITE key instead leaves the tree entirely rather than re-entering it; not
+  live-verified against this actual tree by keyboard or screen reader as of round 13).
+  Posted to issue #463 for Stuart's decision; conservative choice taken for now (not blocking this
+  PR, but FR-025 is marked Partial in the AC table rather than Done until this is resolved): ship
+  with the disclosed limitation rather than add a fourth rescue mechanism under gate pressure.
+  **A (pending)**: two real mitigations exist and are NOT built -- keep the focused row's own
+  index always rendered (Virtuoso's `increaseViewportBy`, or a `scrollIntoView` on the focused
+  index on every `rangeChanged`), or switch the tree to the `aria-activedescendant` pattern so DOM
+  focus never actually leaves the `role="tree"` container even while the active row is
+  virtualised away. Stuart can ask for either as a follow-up, or accept the disclosed limitation
+  as shipped.
+- **Q (PR #671 gate rounds 14-16, Code/A11y/Verif/Sec reviewers)**: a SEPARATE defect from the
+  mouse-wheel/resize scroll-out item above -- a type-ahead search, and a fast `End`-then-`Home`
+  keypress, can each leave keyboard focus stranded on `<body>` after a genuine long jump into a
+  1000+-row freshly-expanded folder, even though `End` pressed alone (the identical jump) lands
+  correctly. Full detail, live-verification numbers, and the doc-truth corrections made across
+  rounds 14-17 are in `tasks.md`'s own "Round 14/15/16/17 gate fixes" sections, not restated here.
+  Posted to issue #463; conservative choice taken for now (not blocking this PR, but FR-022,
+  FR-025 and SC-006 are marked Partial in the AC table rather than Done until this is resolved).
+  **A (pending)**: root cause not established for either case; needs a dedicated investigation
+  session, recommended as its own follow-up story/issue.
 
 ### Carved out, not blocking
 
@@ -191,6 +251,20 @@ previously-expanded folder still expanded.
   target's contents as if they were inside the worktree, and any read attempt is rejected by the
   same path-containment check every other read goes through (FR-001) -- surfaced as a plain
   "cannot access" row state, not a silent skip that could let a developer believe a path is empty.
+- A worktree reached through OneDrive Files-On-Demand (or another cloud-sync provider using
+  reparse-point placeholders), a deduplicated file, or an `AppExecLink`: **corrected, PR #671
+  gate round 3** -- round 2's own note here claimed every one of these reports as a link the same
+  way a real symlink/junction does (`isSymbolicLink()`); that was [INFERENCE] and is WRONG,
+  contradicted by direct observation against a real OneDrive folder with four such placeholder
+  entries, all four of which Node's own `readdir({ withFileTypes: true })` reported as ordinary,
+  non-link entries (`isSymbolicLink()` false for every one). By default, a cloud-sync placeholder
+  hides its reparse attribute from an application that has not specifically opted in to seeing
+  it, so it lists and classifies as a normal file or folder -- it never reaches the no-follow
+  walk at all. The real, still-open question this raises for Slice 2 is different from a
+  containment one: reading such a placeholder's CONTENT (`readPreview`) can trigger the cloud
+  provider to "hydrate" (download) it on demand, an I/O-cost and privacy consideration T019 must
+  account for, not a path-escape one. [INFERENCE: the hydration behaviour itself was not
+  exercised, only the `isSymbolicLink()` reporting was.]
 - A file is deleted while its preview is open (User Story 5, Scenario 2).
 - A huge repository (many thousands of entries in one folder): the folder's own listing is capped
   per `research.md` decision 7, with a "N more" row past the cap rather than an unbounded render
@@ -300,6 +374,16 @@ previously-expanded folder still expanded.
 - **FR-026**: The system MUST register a new `file-explorer` panel in `panel-registry.ts`, hosted
   by spec 013's shell (rail icon, launcher entry, tab/title-row participation), alongside
   `subagents`/`fdb-knowledge`/`agent-builder`/`side-chat`, replacing none of them.
+
+**Content exposure (Clarification item, Main's own Slice 1 ask)**
+
+- **FR-027**: The system MUST NOT filter preview content by file name or content for
+  secrets-shaped files (`.env`, credentials, private keys, or any other pattern) -- any file
+  inside the Session's worktree the developer could already open directly in an editor MUST be
+  previewable the same way (Clarification item 5 above). Nothing read for a directory listing,
+  preview, or git status MUST ever be forwarded into the main transcript or any OMP RPC request
+  (constitution II/V) -- a preview is shown on screen to the developer alone, never surfaced to
+  the agent or anywhere OMP can see it.
 
 ### Key Entities
 

@@ -12,6 +12,7 @@ import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
+import { useFileExplorerStore } from './file-explorer-store'
 import { useSplitStore } from './split-store'
 import { useThemeStore } from './theme-store'
 
@@ -107,6 +108,18 @@ export function initStores(): void {
   // because this callsite never forwarded the field the fix depended on.
   window.refract.onSideChatPatch(({ sessionId, delta, recordId, record, notice }) => {
     useSideChatStore.getState().applyPatch(sessionId, { delta, recordId, record, notice })
+  })
+  // Spec 015 Slice 2 (T013/T014/T017): the file watcher's own per-directory patch, mirroring
+  // `onSideChatPatch`'s central-wiring location immediately above.
+  window.refract.onFileExplorerPatch(({ sessionId, relativePath, entries, truncated }) => {
+    useFileExplorerStore.getState().applyPatch(sessionId, { relativePath, entries, truncated })
+  })
+  // Gate-fix (round 5, Code5 HIGH1): the watcher-fatal/recreate-worktree/restore/archive
+  // lifecycle reset (contracts/ipc.md `FILE_EXPLORER_RESET`) -- drops the Session's stale
+  // `bySession` entry so the panel's own root-load effect re-fires instead of showing a stale
+  // tree with nothing watching underneath it forever.
+  window.refract.onFileExplorerReset(({ sessionId }) => {
+    useFileExplorerStore.getState().resetSession(sessionId)
   })
   // Gate-fix (round 4, Sec4 Medium): covers the approval-mode-restart exit path that never
   // reaches `status: 'stopped'` at all (see `SessionAgentEvents.sideChatInterrupted`'s own doc

@@ -178,3 +178,36 @@ export function focusRepositoryGroupOrReadiness(preferredRepositoryId?: string):
   }
   tick()
 }
+
+/** A focused element the user can no longer usefully interact with: missing, `<body>` (the UA's
+ * own fallback once nothing is explicitly focused), disconnected from the document, OR disabled
+ * AND inside `root`. Gate-fixes a11y High finding (`ChatPane.tsx` cycle 9): every stranded-focus
+ * check used to test only the first three, which missed a real case -- a Cancel that WINS during
+ * a mode-change `restart()` from `idle` sends two separate status events (`startProgress`
+ * cleared first, while `status` is still `idle`; `stopped`/`start-failed` moments later once
+ * `proc.stop()` finishes), the first moving focus onto the still-enabled textarea, which the
+ * SECOND event then disables. Chromium may not blur a focused element when it becomes
+ * `disabled` (it can remain `document.activeElement`, still inert, depending on the Chromium
+ * version), so a check that only looked for `<body>`/disconnected saw a perfectly
+ * normal-looking, connected element and left focus stuck on a control the user can no longer
+ * type into or tab away from.
+ *
+ * Gate-fixes a11y Medium finding (`ChatPane.tsx` cycle 10): the `:disabled` clause only counts a
+ * disabled element as stranded when it is INSIDE `root` -- each call site's own pane/panel
+ * container. Without that scope, a disabled control elsewhere in the window (a dialog's Save
+ * button, or the other split pane's own RequestCard Approve/Deny button while `disabled={busy}`)
+ * also counted as stranded, so one pane's banner resolving pulled focus out of that other
+ * control.
+ *
+ * Exported here (PR #671 gate round 3 fix, code-reviewer MEDIUM) rather than kept as
+ * `ChatPane.tsx`'s own module-local copy: `FileExplorerPanel.tsx` needed the exact same test for
+ * its own focus-sink, and a second independently-drifting copy is exactly the DRY problem this
+ * file's other helpers already avoid. */
+export function isFocusStranded(active: Element | null, root: HTMLElement | null): boolean {
+  return (
+    !active ||
+    active === document.body ||
+    !active.isConnected ||
+    (active instanceof HTMLElement && active.matches(':disabled') && !!root?.contains(active))
+  )
+}

@@ -12,10 +12,17 @@ import { gitRaw } from './git'
 const MAX_FILES = 200
 const MAX_FILE_BYTES = 1024 * 1024
 const TIMEOUT_MS = 3000
-/** Only the first slice of a file is checked for a NUL byte (git's own binary heuristic). */
+/** Only the first slice of a file is checked for a NUL byte (git's own binary heuristic).
+ * `readPreview.ts`'s own preview reader (spec 015 Slice 2) calls `isBinary` directly against its
+ * own, separately-capped read (`MAX_PREVIEW_BYTES`, 1 MiB -- NOT this 8000-byte figure) rather
+ * than reimplementing the NUL-byte scan itself; `isBinary` is the one shared check, this constant
+ * is private to it (PR #671 gate round 4 fix, Medium, Code4: previously exported with no caller
+ * outside this file, and its own doc comment incorrectly implied `readPreview.ts` reads only an
+ * 8000-byte "header" from disk -- it reads up to its own much larger cap and hands the WHOLE
+ * result to `isBinary`, which then only SCANS this file's own first 8000 bytes of it in memory). */
 const BINARY_SNIFF_BYTES = 8000
 
-function isBinary(buf: Buffer): boolean {
+export function isBinary(buf: Buffer): boolean {
   const len = Math.min(buf.length, BINARY_SNIFF_BYTES)
   for (let i = 0; i < len; i++) {
     if (buf[i] === 0) return true
