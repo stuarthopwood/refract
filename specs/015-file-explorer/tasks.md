@@ -624,25 +624,87 @@ by literal path afterward; isolation: live `%APPDATA%\pinion\processes.json` mti
   effect (previously a one-shot `getState()` read that never re-fired) re-triggered
   `loadDirectory('')` on its own.
 
-**New finding, reconciles the previous round's contradictory claims about deleting a watched
-root**: three independent, carefully isolated tests this round (confirmed free of any
-confounding process via `Get-CimInstance Win32_Process` -- no stray agent, no `git.exe`, cwd
-always outside the scratch tree) -- a plain `fs.rmSync` on the exact watched root, a recursive
-`fs.rmSync` on the watched root's own PARENT, and a `Rename-Item` on that same parent -- ALL
-failed (`EPERM`/"Access ... denied") while the app's `recursive: true` watch was active, and the
-IDENTICAL delete succeeded immediately once the watching process was killed (pid-verified
-`taskkill`). Ordinary files/subfolders WITHIN the watched tree still delete/rename completely
-normally (reconfirmed repeatedly this round). This supersedes BOTH the original withdrawn claim
-("Windows blocks foreign deletion," too broad/certain) AND this round's own earlier assumption
-that it was fully disproven: the lock is real, but scoped specifically to the exact watched root
-and its ancestors, under `recursive: true`, not to the tree's contents. Practical effect: the
-`onFatal` flood-detection path (round 4's main achievement) is not reachable via an ordinary
-external delete tool at all on Windows -- only via a same-process delete (round 4's own module-
-level probe) or whenever this app's own code legitimately stops the watcher first
-(`recreateWorktree`/archive/restore, this round's own fix). Not re-tested this round: a true
-`git worktree`-backed Session exercising `recreateWorktree`'s own IPC call end-to-end (a
-main-checkout-as-worktree shortcut was used instead, time budget) and an app-side `getStatus`
-call-count instrumentation during a stress burst (Verif5's own ask, not attempted this round).
+**Round-6 correction (Sec6/Code6/A11y6/Verif6, all four independently reproduced, superseding the
+paragraph immediately above)**: round 5's own "new finding" above was ITSELF confounded, the same
+class of error as round 5's own correction of round 4. Four independent probes this round (two
+runtimes: Node 26.10.0 and the Electron 44.5.1 runtime), none touching the real app, found:
+deleting the exact watched root succeeds (a 110k-143k absolute-filename event flood followed, on
+both `fs.rmSync` and `cmd rd /s /q`); a recursive delete of the root's own PARENT also succeeds;
+renaming the root's PARENT fails `EPERM`; renaming the ROOT ITSELF succeeds too, but with ZERO
+watcher events (the handle silently follows the moved folder). A same-process "confound" probe
+(a plain child process with cwd set to the root, no watcher at all) reproduced round 5's exact
+`EPERM, Permission denied: '<root>'` text. This round's own re-test through the REAL running app
+(not a standalone script) found the root cause directly: opening a Session (clicking its row)
+spawns a real OMP agent process (`omp.exe --mode rpc-ui ...`, `SessionAgent.ts:466`) with its own
+`cwd` set to that Session's `worktreePath` -- confirmed via a FULL `Get-CimInstance Win32_Process`
+scan (not command-line substring matching, which cannot see a process's cwd at all): a session
+opened with the file explorer panel NEVER touched still reproduced the identical `EPERM` on an
+external delete, and the exact `omp.exe` pid for that Session was found holding it; calling
+`window.refract.sessions.stopAgent(id)`, confirmed via a follow-up full process scan to have
+actually exited, made the identical delete succeed immediately afterward. **The watcher itself
+was never the cause, in any round.** With the Session's own agent explicitly stopped and
+confirmed gone (not just assumed, not just killing the whole app, which cannot tell an agent's
+handle apart from the watcher's): a foreign process CAN delete the exact watched root (flood,
+`onFatal` fires, near-zero sustained CPU) AND rename it (zero events, detected only on the next
+subfolder flush); only an ANCESTOR of the root is still locked by something unrelated to this
+app entirely (not re-probed against the real app this round, no code here could affect it either
+way). Live-verified end to end, agent confirmed stopped both times (two fresh real `git worktree`
+Sessions, evidence under `C:/Users/shopwood/refract-live-check-671-gate6/`):
+- **External root DELETE**: succeeded in 6ms, no EPERM; CPU delta 15.6ms across the whole
+  operation (no sustained spin); `FILE_EXPLORER_RESET` delivered; panel showed "Couldn't load
+  this Session's files / This Session's worktree folder no longer exists / Retry" (honest, not
+  stale); `sessions.recreateWorktree` then succeeded and the panel recovered AUTOMATICALLY with
+  zero manual interaction.
+- **External root RENAME**: succeeded; confirmed ZERO watcher events from the rename alone (tree
+  stayed stale); writing a new file inside the MOVED folder's own already-loaded `sub` subfolder
+  (the watcher's handle transparently follows the move) fired a real watcher event for `sub`,
+  which this round's own `fileExplorer.ts` fix (any `relativePath` failing `worktree-missing` is
+  now fatal, not only `''`) correctly caught, stopping the watcher and firing
+  `FILE_EXPLORER_RESET` -- the same honest error state as the delete case.
+
+### Round 6 gate fixes + live re-verification (Sec6/Code6/A11y6/Verif6, all FAILed; evidence under
+### `C:/Users/shopwood/refract-live-check-671-gate6/`: report.json, raw-commands-and-output.txt,
+### 2 scripts incl. the re-runnable a11y-scenarios.js + its own raw a11y-report.json, 10
+### screenshots, sha256.json, 16 files, 0 duplicates)
+
+Fixes beyond the root-cause correction above: `refreshDirectory`'s `worktree-missing` check no
+longer gates on `relativePath === ''` (Code6/A11y6/Verif6 Medium, see the RENAME test above);
+`scheduleDirectoryFlush` wraps `refreshDirectory` in `try`/`finally` so a rejection cannot pin a
+key in-flight forever (Code6/Sec6/Verif6 Medium); a new `session-archived` error code --
+`listDirectory` refuses an archived Session outright and `ensureWatcher` refuses to (re-)watch
+one, closing the exact race round 5's own `FILE_EXPLORER_RESET` fix reopened (a still-mounted
+archived panel's reload recreated a fresh watcher, undoing round 4's leak fix) (Sec6/Code6/Verif6
+Medium); `sessions.ts` archive now notifies on its own failure path too (moved to the outer
+`finally`), and `recreateWorktree` notifies on its own catch path as well as success
+(Code6/Verif6 Medium); a new `setFileExplorerSessionBusy` marker closes a race where an in-flight
+`listDirectory` call could recreate a watcher mid-delete/mid-recreate (Verif6 Low); a focused row
+scrolling out of Virtuoso's window now focuses the panel's own container instead of leaving focus
+on `<body>` (A11y6 Medium), and upgrades to the tabbable tree row once `status` is `'ready'` again
+(A11y6 Low); `handleFocusOut`'s lost-row lookup now walks up via `closest()` so a row's own kebab
+button losing focus is not misread as the row itself being removed (Code6 Low); case-insensitive
+keys added where still missing: `loadedPaths`, `withPatchedChildren`'s `oldByPath` (Code6/Verif6
+Low); a per-Session root-load sequence (`rootLoadSeq`), bumped by `resetSession`, drops a stale
+in-flight root response landing after a reset (Sec6 Low); `readPreview.ts`'s `bytesRead >
+stat.size` (growth below the cap, not just past it) now returns `read-error` instead of a
+silently truncated preview (Sec6 Low); `status.ts` documents that `--ignore-submodules=all` also
+hides a dirty submodule folder's own mark, not only recursion (Sec6 Low). Full detail: commit
+message, round-6 code.
+
+**Live-verified** (all 6 of A11y6's own demanded scenarios, via a committed, re-runnable CDP
+script -- `a11y-scenarios.js` -- not hand-annotated prose this time, raw JSON output in
+`a11y-report.json`): gutter+Wrap (single `aria-hidden` node, removed + wrap-class applied on
+toggle); focus the Wrap button + delete the previewed file externally -> `wrapFocusOk: true`,
+rescued to a connected tree row, "no longer exists" shown; delete the ANCESTOR folder of a
+previewed deep file -> "no longer exists" shown, folder's rows fully gone; focus a row + delete it
+on disk -> rescued to a connected row; a focused row scrolled out of Virtuoso's rendered window ->
+focus correctly moves to the PANEL'S OWN CONTAINER (`role=group`, `aria-label="File explorer"`,
+confirming this round's own A11y6 Medium fix, previously left on `<body>`), and a real CDP Tab
+keypress from the "Show ignored files" switch lands in exactly one step on the first RENDERED row.
+
+**Not verified this round**: an app-side `getStatus()` call-count instrumentation during a
+concurrent git-lock stress burst (Verif5/Verif6's own ask); the deliberate-click-elsewhere
+focus-steal direction (round 5's own test stands unchanged, nothing in round 6's code touched
+that branch).
 
 ---
 
