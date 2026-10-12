@@ -3,7 +3,7 @@
 // with a real WAI-ARIA treeview (role="tree"/"treeitem", roving tabindex, full keyboard nav,
 // type-ahead, virtualised per the live tree's own flattened visible rows), adds git status marks
 // and a "show ignored files" toggle, and adds the bottom preview split (`FilePreviewPane.tsx`).
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
   ChevronDownIcon,
@@ -131,6 +131,12 @@ function joinWorktreePath(worktreePath: string, relativePath: string): string {
 
 export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const root = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.root ?? null) : null))
+  // Gate round 5 fix (Code5 HIGH1): a reactive selector, not an imperative `getState()` read --
+  // the latter only ever ran once per `sessionId` change, so `resetSession` (fired from
+  // `FILE_EXPLORER_RESET`) deleting this Session's entry had nothing to re-trigger the effect
+  // below with. Subscribing to presence itself means the effect's own dependency array sees the
+  // `true -> false` transition and re-runs, exactly like a brand-new Session's first mount.
+  const hasSessionEntry = useFileExplorerStore((s) => (sessionId ? sessionId in s.bySession : false))
   const status = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.status ?? 'loading') : 'loading'))
   const error = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.error ?? null) : null))
   const showIgnored = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.showIgnored ?? false) : false))
@@ -149,6 +155,10 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const treeContainerRef = useRef<HTMLDivElement>(null)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
+  // Gate round 5 fix (Code5 HIGH2, A11y5 Medium): `handleFocusOut` below is attached once on
+  // mount and must always see the CURRENT visible rows, never a stale closure -- kept live by a
+  // plain assignment on every render (see the assignment right after `rows` itself is computed).
+  const rowsRef = useRef<FlatRow[]>([])
   // Type-ahead buffer (T012, FR-022): resets 500ms after the last keypress, same timeout
   // convention as a native `<select>`'s own type-ahead. A ref, not state -- it drives no render
   // of its own, only the NEXT keypress's search.
@@ -174,9 +184,9 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // once a Session has EITHER succeeded or failed once, this effect never fires again for it;
   // a failed load's own Retry button (below) is the only way to try again.
   useEffect(() => {
-    if (!sessionId || useFileExplorerStore.getState().bySession[sessionId]) return
+    if (!sessionId || hasSessionEntry) return
     void loadDirectory(sessionId, '')
-  }, [sessionId, loadDirectory])
+  }, [sessionId, hasSessionEntry, loadDirectory])
 
   // PR #671 gate round 4 fix (High, A11y4): the EARLIER version of this comment claimed this
   // effect also covered a preview-pane toggle (Source/Wrap) unmounting -- it does not, and never
@@ -205,23 +215,43 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // NEITHER `sessionId` NOR `status` changing -- the effect above never re-runs for any of them.
   // A document-wide `focusin` listener (like `hadFocusRef`'s own) cannot catch this case: there is
   // no NEW `focusin` event when an element is simply removed out from under focus. A `focusout`
-  // listener on the container itself does fire for that removal -- `relatedTarget === null` is
-  // the removed-element signature (a deliberate Tab/click away always sets a real
-  // `relatedTarget`) -- checked a frame later (the same `isFocusStranded` call the effect above
-  // uses) since the replacement content may not have painted yet. Prefers a real tabbable tree
-  // row (the roving-tabindex stop `tabbableAbsIndex`, below, keeps pointing at ONE at all times),
-  // falling back to the preview region, then the container itself.
+  // listener on the container itself does fire for that removal.
+  //
+  // Gate round 5 fix (Code5 HIGH2, A11y5 HIGH): `relatedTarget === null` alone is NOT a reliable
+  // "the focused element was removed" signal -- Chromium also reports `relatedTarget: null` for
+  // a perfectly deliberate click on any NON-focusable area (a chat message, the panel's own
+  // header label, empty space), which blurs to `<body>` the exact same way. The previous version
+  // rescued focus in BOTH cases, stealing it back from a user who had just clicked somewhere
+  // else on purpose. Captures `lost` (`event.target`) at focusout time, before anything unmounts,
+  // and only rescues a frame later if `lost` is ACTUALLY gone/unusable (`!isConnected`, inside an
+  // `[inert]` subtree, or `disabled`) -- never merely "focus moved to something non-focusable".
+  // A11y5 Medium, same fix: a row merely scrolled out of Virtuoso's rendered window is removed
+  // from the DOM too (`!isConnected` would otherwise read it as "gone"), but its own path is
+  // still present in the CURRENT `rows` -- that case is a virtualisation artefact, not a real
+  // removal, and must not steal focus either; `rowsRef` (kept live below, every render) is the
+  // up-to-date list this check needs, since this effect's own listener is attached once on mount
+  // and never re-created.
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
     function handleFocusOut(event: FocusEvent): void {
       if (event.relatedTarget !== null) return
+      const lost = event.target as Element | null
       requestAnimationFrame(() => {
         if (!isFocusStranded(document.activeElement, containerRef.current)) return
+        if (lost) {
+          const genuinelyGone =
+            !lost.isConnected || lost.closest('[inert]') !== null || (lost as HTMLButtonElement).disabled === true
+          if (!genuinelyGone) return
+          const lostRowPath = lost.getAttribute?.('data-tree-row-path')
+          if (lostRowPath !== null && rowsRef.current.some((row) => row.kind === 'node' && row.node.path === lostRowPath)) {
+            return // scrolled out of the virtualised window, not actually removed -- leave focus alone
+          }
+        }
         const treeRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path][tabindex="0"]')
         const previewRegion = containerRef.current?.querySelector<HTMLElement>('[role="region"]')
         const target = treeRow ?? previewRegion ?? containerRef.current
-        target?.focus()
+        target?.focus({ preventScroll: true })
       })
     }
     container.addEventListener('focusout', handleFocusOut)
@@ -229,6 +259,10 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   }, [])
 
   const rows = useMemo(() => flattenVisible(root, showIgnored), [root, showIgnored])
+  // Gate round 5 fix (Code5 HIGH2, A11y5 Medium): kept live every render so `handleFocusOut`
+  // above (attached once, on mount) always reads the CURRENT rows, never a stale closure.
+  rowsRef.current = rows
+
   const nodeAbsIndices = useMemo(() => {
     const indices: number[] = []
     rows.forEach((row, i) => {
@@ -609,12 +643,19 @@ function TreeNodeRow({
   // row as "staged.ts Added More actions for staged.ts". `aria-labelledby` scopes the row's name
   // to exactly the name span and (when present) the status-mark span, leaving the kebab and any
   // transient status text out of it (they still read their own separate accessible names/text
-  // when focused or announced directly). ids are built from the node's own path (stable, unique
-  // per row) rather than `useId()`, since the ids must be referenceable from a PLAIN STRING built
-  // before render, not from a ref.
-  const rowId = `fe-row-${node.path}`
-  const nameId = `${rowId}-name`
-  const markId = `${rowId}-mark`
+  // when focused or announced directly).
+  //
+  // Gate round 5 fix (Code5 Low, re-flagged A11y5 Medium): ids built from the node's own PATH
+  // (as this comment used to justify, "stable, unique per row") break `aria-labelledby` the
+  // instant a path contains a space -- `aria-labelledby` is a whitespace-SEPARATED id list, so
+  // `fe-row-my file.ts-name` reads as two separate (nonexistent) ids, not one. `useId()` is
+  // perfectly referenceable here despite being generated at render time: it is read in THIS SAME
+  // render's JSX below, never serialised or passed across a render boundary, so there is no
+  // "needs a plain string before render" constraint it fails to meet -- the original worry this
+  // comment raised does not actually apply to this call site.
+  const rowIdBase = useId()
+  const nameId = `${rowIdBase}-name`
+  const markId = `${rowIdBase}-mark`
   // FR-017: `{ opened: false }` is a normal result, not an IPC error (contracts/ipc.md), so this
   // shows inline rather than as a toast -- auto-clears after a few seconds or on the next
   // attempt, the same transient-but-non-toast treatment `ManageAccountsDialog.tsx`'s own

@@ -111,8 +111,15 @@ export function initStores(): void {
   })
   // Spec 015 Slice 2 (T013/T014/T017): the file watcher's own per-directory patch, mirroring
   // `onSideChatPatch`'s central-wiring location immediately above.
-  window.refract.onFileExplorerPatch(({ sessionId, relativePath, entries }) => {
-    useFileExplorerStore.getState().applyPatch(sessionId, { relativePath, entries })
+  window.refract.onFileExplorerPatch(({ sessionId, relativePath, entries, truncated }) => {
+    useFileExplorerStore.getState().applyPatch(sessionId, { relativePath, entries, truncated })
+  })
+  // Gate-fix (round 5, Code5 HIGH1): the watcher-fatal/recreate-worktree/restore/archive
+  // lifecycle reset (contracts/ipc.md `FILE_EXPLORER_RESET`) -- drops the Session's stale
+  // `bySession` entry so the panel's own root-load effect re-fires instead of showing a stale
+  // tree with nothing watching underneath it forever.
+  window.refract.onFileExplorerReset(({ sessionId }) => {
+    useFileExplorerStore.getState().resetSession(sessionId)
   })
   // Gate-fix (round 4, Sec4 Medium): covers the approval-mode-restart exit path that never
   // reaches `status: 'stopped'` at all (see `SessionAgentEvents.sideChatInterrupted`'s own doc

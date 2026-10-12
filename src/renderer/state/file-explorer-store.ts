@@ -41,11 +41,13 @@ export interface ExpandableNode extends FileTreeNode {
 /** One `FILE_EXPLORER_PATCH` event's payload, sans `sessionId` (contracts/ipc.md "File
  * explorer"): the affected directory's own fresh listing, already re-listed/capped/classified/
  * sorted server-side -- `applyPatch` below merges `entries` into that directory's `children` as
- * a full replacement, never diffed, and carries no `truncated` count of its own (the watcher's
- * event payload is intentionally smaller than `listDirectory`'s own response shape). */
+ * a full replacement, never diffed. `truncated` (gate-fix round 5, Code5 Medium) is that fresh
+ * listing's own truncation count, carried into the merged node -- previously discarded on every
+ * patch, so a >1000-entry folder's "N more" row vanished after its first live edit. */
 export interface FileExplorerPatch {
   relativePath: string
   entries: FileTreeNode[]
+  truncated: number
 }
 
 interface FileExplorerSessionState {
@@ -126,6 +128,13 @@ interface FileExplorerStoreState {
    * a thrown rejection, which clear `preview` to `null` (with a toast) rather than ever leaving
    * `previewLoading` stuck `true`. A no-op for an unknown Session. */
   loadPreview(sessionId: string, relativePath: string): Promise<void>
+  /** Gate-fix (round 5, Code5 HIGH1): fired on `FILE_EXPLORER_RESET` (the watcher-fatal/
+   * recreate-worktree/restore/archive lifecycle signal, contracts/ipc.md) -- drops the
+   * Session's entire `bySession[sessionId]` entry so the panel's own "load root once per
+   * Session, gated on `bySession` absence" effect naturally re-fires `loadDirectory(sessionId,
+   * '')`, re-establishing a fresh watcher instead of leaving a stale tree showing forever with
+   * nothing watching underneath it. A no-op for an unknown Session. */
+  resetSession(sessionId: string): void
 }
 
 /** Walks `node`'s own subtree, replacing the node whose `path` matches `targetPath` with a copy
@@ -166,7 +175,7 @@ function withExpandedToggled(node: ExpandableNode, targetPath: string): Expandab
  * both still fire) -- a plain-replace design turned "any file edit anywhere" into "the whole
  * tree collapses", exactly what the lane's own `09-preview-deleted-live.png` screenshot showed
  * happening to the un-related `src` folder after a root-level delete. */
-function withPatchedChildren(node: ExpandableNode, targetPath: string, entries: FileTreeNode[]): ExpandableNode {
+function withPatchedChildren(node: ExpandableNode, targetPath: string, entries: FileTreeNode[], truncated: number): ExpandableNode {
   if (node.path === targetPath) {
     const oldByPath = new Map((node.children ?? []).map((child) => [child.path, child] as const))
     const nextChildren: ExpandableNode[] = entries.map((entry) => {
@@ -176,10 +185,13 @@ function withPatchedChildren(node: ExpandableNode, targetPath: string, entries: 
       }
       return entry
     })
-    return { ...node, children: nextChildren, truncated: undefined }
+    // Gate round 5 fix (Code5 Medium): carries the patch's own `truncated` count forward
+    // instead of always resetting it to `undefined` -- the "N more" row otherwise disappeared
+    // from a >1000-entry folder after its first live edit.
+    return { ...node, children: nextChildren, truncated }
   }
   if (!node.children) return node
-  const nextChildren = node.children.map((child) => withPatchedChildren(child, targetPath, entries))
+  const nextChildren = node.children.map((child) => withPatchedChildren(child, targetPath, entries, truncated))
   if (nextChildren.every((child, i) => child === node.children![i])) return node
   return { ...node, children: nextChildren }
 }
@@ -205,7 +217,13 @@ function withGitStatusMerged(node: ExpandableNode, statusMap: GitStatusMap, inhe
   const mark = ownMark ?? inheritedMark
   const selfChanged = mark !== node.gitStatus
   if (!node.children) return selfChanged ? { ...node, gitStatus: mark } : node
-  const childInherited = node.kind === 'folder' ? mark : undefined
+  // Gate round 5 fix (Code5 Low): a folder's own mark inherits to its children ONLY when it is
+  // `'ignored'`/`'untracked'` -- those are the two marks git's own porcelain output genuinely
+  // reports once per FOLDER rather than per file (this function's own doc comment above). Any
+  // other mark (e.g. `modified`, reported for a SUBMODULE as a single ` M sub` row) previously
+  // propagated to every descendant too, wrongly marking an entire submodule's contents
+  // "modified" from one summary row that says nothing about any individual file inside it.
+  const childInherited = node.kind === 'folder' && (mark === 'ignored' || mark === 'untracked') ? mark : undefined
   const nextChildren = node.children.map((child) => withGitStatusMerged(child, statusMap, childInherited))
   const childrenChanged = nextChildren.some((child, i) => child !== node.children![i])
   if (!selfChanged && !childrenChanged) return node
@@ -231,15 +249,26 @@ function parentPath(path: string): string {
  * focus to a file that is then deleted wiped a completely different, still-open preview; and
  * deleting the actually-previewed file AFTER focus had moved elsewhere left its stale content
  * showing. Basing this on `preview.path` itself fixes both directions. */
-function isPathGoneUnderPatch(previewPath: string, patchedPath: string, entries: FileTreeNode[]): boolean {
+function isPathGoneUnderPatch(previewPath: string, patchedPath: string, entries: FileTreeNode[], truncated: number): boolean {
+  // Gate round 5 fix (Code5 Low): when the fresh listing is itself truncated, "missing from
+  // `entries`" proves nothing -- an entry can be absent simply because the cap pushed it past
+  // `MAX_ENTRIES_PER_DIRECTORY`, not because it was deleted. Never declares the preview gone in
+  // that case; a later, untruncated patch (or `loadPreview`'s own re-check on next navigation)
+  // still catches a genuine deletion.
+  if (truncated > 0) return false
+  // Gate round 5 fix (Code5 Low): case-insensitive compare (NTFS/Windows convention, matching
+  // `sortEntries`'s own `sensitivity: 'base'` comparison elsewhere in this codebase) -- a
+  // case-only rename (`foo.ts` -> `Foo.ts`) previously read as "the old path is gone", wrongly
+  // flipping a live preview to the `'deleted'` state for a file that still exists.
+  const samePath = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase()
   if (parentPath(previewPath) === patchedPath) {
-    return !entries.some((entry) => entry.path === previewPath)
+    return !entries.some((entry) => samePath(entry.path, previewPath))
   }
   const prefix = patchedPath === '' ? '' : `${patchedPath}/`
   if (previewPath === patchedPath || !previewPath.startsWith(prefix)) return false
   const nextSegment = previewPath.slice(prefix.length).split('/')[0]!
   const nextSegmentPath = patchedPath === '' ? nextSegment : `${patchedPath}/${nextSegment}`
-  return !entries.some((entry) => entry.path === nextSegmentPath)
+  return !entries.some((entry) => samePath(entry.path, nextSegmentPath))
 }
 
 /** T017: best-effort `fileExplorer.getStatus` fetch, merged into `gitStatus` and every loaded
@@ -452,13 +481,14 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
     set((state) => {
       const existing = state.bySession[sessionId]
       if (!existing?.root) return state
-      const root = withPatchedChildren(existing.root, patch.relativePath, patch.entries)
+      const root = withPatchedChildren(existing.root, patch.relativePath, patch.entries, patch.truncated)
       // FR-021: based on the actually-PREVIEWED file's own path, not the row merely selected/
       // focused (see `isPathGoneUnderPatch`'s own doc comment for why those differ) -- flips
       // straight to the "no longer exists" state, no extra round trip to `readPreview`
       // (contracts/ipc.md's own `FILE_EXPLORER_PATCH` doc comment).
       const previewPath = existing.preview?.path ?? null
-      const previewGone = previewPath !== null && isPathGoneUnderPatch(previewPath, patch.relativePath, patch.entries)
+      const previewGone =
+        previewPath !== null && isPathGoneUnderPatch(previewPath, patch.relativePath, patch.entries, patch.truncated)
       if (root === existing.root && !previewGone) return state
       return {
         bySession: {
@@ -473,6 +503,15 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
       }
     })
     scheduleStatusFetch(sessionId, set)
+  },
+
+  resetSession(sessionId) {
+    set((state) => {
+      if (!(sessionId in state.bySession)) return state
+      const bySession = { ...state.bySession }
+      delete bySession[sessionId]
+      return { bySession }
+    })
   },
 
   setShowIgnored(sessionId, value) {

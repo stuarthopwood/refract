@@ -191,17 +191,19 @@ export function CodeBlock({
   const showLineNumbers = lineNumbers && !wrap
   const lineCount = showLineNumbers ? code.split('\n').length : 0
 
+  // Gate round 5 fix (Code5 Medium): a single text node, not one `<div>` per line -- the
+  // previous version allocated 30-60k DOM nodes for a ~1 MiB file's own gutter alone (this
+  // component's own `MAX_HIGHLIGHT_BYTES`/Wrap-fix comment above already accepts files that
+  // large), with no virtualisation. `leading-[1.6]` matches the content column's own line
+  // height exactly (both the Shiki-highlighted and plain-text branches below already set it the
+  // same way), so each `\n`-joined number still lines up with its own source line.
   const gutter = showLineNumbers ? (
-    <div
+    <pre
       aria-hidden
-      className="select-none border-r border-border bg-card py-3 pl-3 pr-2 text-right text-muted-foreground tabular-nums"
+      className="m-0 select-none border-r border-border bg-card py-3 pl-3 pr-2 text-right leading-[1.6] text-muted-foreground tabular-nums"
     >
-      {Array.from({ length: lineCount }, (_, i) => (
-        <div key={i} className="leading-[1.6]">
-          {i + 1}
-        </div>
-      ))}
-    </div>
+      {Array.from({ length: lineCount }, (_, i) => i + 1).join('\n')}
+    </pre>
   ) : null
 
   if (html) {

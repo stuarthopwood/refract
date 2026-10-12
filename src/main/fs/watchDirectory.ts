@@ -107,16 +107,23 @@ export function watchDirectory(
     flushTimer = setTimeout(flush, debounceMs);
   };
 
-  const toRelativeDirectory = (filename: string | Buffer | null): string => {
+  const toRelativeDirectory = (filename: string | Buffer | null): string | null => {
     if (filename === null) return '';
     const text = typeof filename === 'string' ? filename : filename.toString();
     const normalized = text.split(sep).join('/');
-    if (normalized.toLowerCase().split('/').includes('.git')) return '__ignore__';
+    // `null` (gate-fix round 5, Sec5 Low), not a `'__ignore__'` string sentinel: a real folder
+    // literally named `__ignore__` would otherwise collide with the "skip, it's under .git"
+    // signal below and never queue its own changes.
+    if (normalized.toLowerCase().split('/').includes('.git')) return null;
     const parent = posixPath.dirname(normalized);
     return parent === '.' ? '' : parent;
   };
 
   const stop = (): void => {
+    // Gate-fix round 5 (Sec5 + Verif5 Low, independently flagged): only `fail()` used to set
+    // `stopped`, so a callback already in flight when the CALLER explicitly calls `stop()` could
+    // still run `queueDirectory` after the caller believes watching has ended.
+    stopped = true;
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = undefined;
@@ -127,7 +134,6 @@ export function watchDirectory(
 
   const fail = (): void => {
     if (stopped) return;
-    stopped = true;
     stop();
     onFatal();
   };
@@ -144,7 +150,7 @@ export function watchDirectory(
         return;
       }
       const relativeDirectory = toRelativeDirectory(filename);
-      if (relativeDirectory === '__ignore__') return;
+      if (relativeDirectory === null) return;
       queueDirectory(relativeDirectory);
     });
   } catch {

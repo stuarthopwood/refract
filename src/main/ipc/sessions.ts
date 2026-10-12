@@ -30,7 +30,7 @@ import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util
 import { attachSnapshotCore } from './attachSnapshot';
 import { resumeSessionCore, BUSY_MESSAGE } from './resumeSession';
 import type { SessionAgent } from '../omp/SessionAgent';
-import { stopFileExplorerWatcher } from './fileExplorer';
+import { notifyFileExplorerReset, stopFileExplorerWatcher } from './fileExplorer';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
  * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
@@ -208,6 +208,11 @@ export function registerSessions(manager: SessionManager): void {
       try {
         await manager.registry.updateSession(id, { archivedAt: new Date().toISOString() });
         manager.notifyListChanged();
+        // Gate-fix (round 5, Code5 HIGH1): `stopFileExplorerWatcher` above only released the
+        // WATCHER, pre-emptively, before this handler touched anything -- this is the separate
+        // signal telling the renderer it is safe to reload, sent once archiving itself has
+        // actually finished.
+        notifyFileExplorerReset(id);
         return { ok: true, value: undefined };
       } catch (err) {
         return mapStoreThrown(err);
@@ -223,6 +228,9 @@ export function registerSessions(manager: SessionManager): void {
     try {
       await manager.registry.updateSession(id, { archivedAt: null });
       manager.notifyListChanged();
+      // Gate-fix (round 5, Code5 HIGH1): tells the renderer to reload this Session's tree now
+      // that it is no longer archived -- cheap even when no panel is currently open for it.
+      notifyFileExplorerReset(id);
       return { ok: true, value: undefined };
     } catch (err) {
       return mapStoreThrown(err);
@@ -320,6 +328,11 @@ export function registerSessions(manager: SessionManager): void {
       stopFileExplorerWatcher(id);
       await recreateWorktree(repository.path, session.worktreePath, session.branch);
       manager.notifyListChanged();
+      // Gate-fix (round 5, Code5 HIGH1): the renderer's own panel kept showing the PRE-recreate
+      // tree forever otherwise -- `stopFileExplorerWatcher` above only dropped the watcher
+      // BEFORE this call touched the folder; this is the separate "safe to reload now" signal,
+      // sent only once `recreateWorktree` has actually succeeded.
+      notifyFileExplorerReset(id);
       return { ok: true, value: undefined };
     } catch (err) {
       return mapStoreThrown(err);

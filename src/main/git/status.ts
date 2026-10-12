@@ -78,6 +78,18 @@ function parseStatus(stdout: string): GitStatusMap {
 // in depth: an agent can already run code in this worktree, so this is not a privilege boundary,
 // but a malicious/misconfigured repo config should not get an extra, frequent execution hook for
 // free). `GIT_TERMINAL_PROMPT=0` stops a credential prompt from hanging the read forever.
+//
+// Gate round 5 correction (Sec5 Medium): the paragraph above is NOT a claim that this call has
+// no repo-config-controlled execution hook at all -- it only covers fsmonitor/untracked-cache.
+// Reproduced live: a repo-local `filter.<driver>.clean` (and git-lfs's own clean/smudge filter,
+// which is exactly such a driver) still runs on every `status` call regardless of the flags
+// above (15 filter invocations across 3 status calls), and a worktree with submodules spawns one
+// recursive git child PER submodule. `--ignore-submodules=all` below stops the submodule
+// recursion specifically (no FR in this spec distinguishes submodule-internal status marks, so
+// skipping them changes no required behaviour); the clean/smudge-filter execution hook itself is
+// accepted as a residual -- git's own filter mechanism is inherent to reading status in ANY repo
+// that defines one, not something this call's own flags can disable without also breaking the
+// status marks that depend on it (e.g. `.gitattributes`-driven text normalisation).
 const STATUS_GIT_ARGS = [
   '-c',
   'core.fsmonitor=false',
@@ -87,7 +99,8 @@ const STATUS_GIT_ARGS = [
   'status',
   '--porcelain=v1',
   '-z',
-  '--ignored=matching'
+  '--ignored=matching',
+  '--ignore-submodules=all'
 ]
 const STATUS_GIT_ENV = { GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' }
 // PR #671 gate round 4 fix (Medium, Verif4): a repo with enough untracked/ignored entries to

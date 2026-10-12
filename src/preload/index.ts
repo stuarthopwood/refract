@@ -246,7 +246,8 @@ const refract: RefractApi = {
   onSideChatInterrupted: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SIDE_CHAT_INTERRUPTED, handler),
   onSideChatConversationChanged: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SIDE_CHAT_CONVERSATION_CHANGED, handler),
   onFileExplorerPatch: (handler) =>
-    on<{ sessionId: string; relativePath: string; entries: FileTreeNode[] }>(IPC_EVENTS.FILE_EXPLORER_PATCH, handler),
+    on<{ sessionId: string; relativePath: string; entries: FileTreeNode[]; truncated: number }>(IPC_EVENTS.FILE_EXPLORER_PATCH, handler),
+  onFileExplorerReset: (handler) => on<{ sessionId: string }>(IPC_EVENTS.FILE_EXPLORER_RESET, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler)
 }

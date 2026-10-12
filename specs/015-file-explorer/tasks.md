@@ -423,14 +423,19 @@ and previews every file type the spec promises.
   thrown error. **Corrected during implementation**: the shared `CodeBlock` has no line-numbers
   option of its own (`code`/`lang`/`wrap`/`copyText` props only, checked against its actual
   source) -- a plain `CodeBlock` with this pane's own Wrap toggle is the accepted fallback, no new
-  line-numbered variant built.
+  line-numbered variant built. **Round 4 superseded this note**: `CodeBlock` gained an opt-in
+  `lineNumbers` prop (FR-012, Verif4) specifically for this caller -- the sentence above describes
+  only Slice 2's own first pass, not the shipped Slice 2/3 result; kept here unedited as a record
+  of what changed, not as current fact.
 - [X] T021 [P] Run the full gate (`pnpm typecheck`, `pnpm build`, `check:indent`, `check:ui-text`,
   `check:theme-contrast`, `check:drag-regions`); fix any error before proceeding.
 
 **Checkpoint**: live-verified in a fresh isolated scratch Electron instance (own `--user-data-dir`/
 CDP port, never Stuart's live Sessions), named screenshots, sha256-checked, 0 duplicates. Keyboard
 navigation exercised end-to-end (arrow keys, Home/End, Enter) with exactly one Tab stop for the
-whole tree; a modified/added/untracked/deleted file each show a distinct status mark; the
+whole tree; a modified/added/untracked file each show a distinct status mark in the tree (a
+`deleted` mark exists in `getStatus`'s own map but can never attach to a rendered ROW -- a deleted
+tracked file has no `readdir` entry left to put a mark on; see the round-5 correction below);
 `.gitignore` toggle reveals/hides ignored rows without ever revealing `.git`; a text file, a
 markdown file (both renders), an image, and a binary/oversized file each preview correctly; a live
 edit outside Refract (a real file add/modify/delete in the worktree) updates the tree in place
@@ -442,9 +447,16 @@ own `--user-data-dir`/CDP port 9341, torn down by pid-verified `taskkill` and de
 path afterward; isolation proof: live `%APPDATA%\pinion\processes.json` mtime unchanged across the
 run, `%APPDATA%\refract` absent): 10 screenshots under
 `C:/Users/shopwood/refract-live-check-671-slice23/`. A real git worktree with a modified, a staged
-(added), an untracked, and a deleted file, plus an `.gitignore`-matched ignored file, each showed
-its own distinct status mark (icon + `sr-only` text) both via direct `window.refract.fileExplorer.
-getStatus`/`listDirectory` IPC calls and in the rendered tree; the "Show ignored files" toggle
+(added), an untracked file, plus an `.gitignore`-matched ignored file, each showed its own
+distinct status mark (icon + `sr-only` text) both via direct `window.refract.fileExplorer.
+getStatus`/`listDirectory` IPC calls and in the rendered tree; a deleted tracked file's own
+`deleted` mark was likewise confirmed via the direct `getStatus` IPC call, but (round-5
+correction, Main's own explicit instruction) the original sentence here wrongly also claimed it
+showed "in the rendered tree" -- that is structurally impossible: `listDirectory` lists via
+`readdir`, which has no entry at all for a path that no longer exists, so there is no row for any
+mark to attach to. FR-010's `deleted` mark is therefore never rendered in Slices 1-3; a decision
+on #463 proposes amending FR-010 to say so explicitly (conservative default, synthetic
+deleted-rows deferred). The "Show ignored files" toggle
 revealed/hid the ignored row live. Keyboard navigation driven by REAL CDP `Input.dispatchKeyEvent`
 (not programmatic `.click()`): ArrowUp/Down between visible rows, Home/End to the first/last visible
 row (including a toggled-on ignored row), type-ahead jump, ArrowLeft (file -> parent; expanded
@@ -515,30 +527,43 @@ all 4 viewed.
   `aria-label="Resize file tree and preview"`) -> the preview region -> out of the panel entirely
   into the icon rail's own buttons. No second tree stop anywhere in the sequence -- screenshot
   `03-tab-order-walk-state.png`.
-- **Deleted-root watcher fix, genuinely verified (Code4's own Critical, the one case neither bash
-  `rm -rf` nor PowerShell `Remove-Item` could reproduce from an EXTERNAL process against the real
-  running app -- Windows' `ReadDirectoryChangesW` handle on the watched root blocks a foreign
-  process from deleting or renaming it; both tools failed live with "the process cannot access the
-  file", confirming this is a genuine Windows file-sharing constraint, not a gap in the test)**: a
-  same-process Node probe imported the REAL, unmodified `watchDirectory.ts` (Node 26 type-
-  stripping; a `.mjs` copy with only type ANNOTATIONS stripped, matching round 3's own established
-  probe technique, since this package's own `"type": "commonjs"` blocks a direct ESM import of a
-  `.ts` file) and deleted the watched root from WITHIN that same process (which Windows does
-  permit). Measured results: `eventCount: 0` throughout 6 samples over 3 seconds after the delete
-  (the fatal-detection fired on the absolute-path signal of the very FIRST event, before anything
-  was ever queued), `fatalFired: true`, `cpuUserMs: 0` / `cpuSystemMs: 15` over that whole window
-  (no spin, nothing resembling the original ~120,000 events/s flood), and a FRESH `watchDirectory()`
-  call against the recreated root succeeded and correctly delivered exactly one event for a
-  trigger file written into it afterward. Full raw JSON in `report.json`.
+- **Deleted-root watcher fix, module-level verified (Code4's own Critical)**: a same-process Node
+  probe imported the REAL, unmodified `watchDirectory.ts` (Node 26 type-stripping; a `.mjs` copy
+  with only type ANNOTATIONS stripped, matching round 3's own established probe technique, since
+  this package's own `"type": "commonjs"` blocks a direct ESM import of a `.ts` file) and deleted
+  the watched root from WITHIN that same process. Measured results: `eventCount: 0` throughout 6
+  samples over 3 seconds after the delete (the fatal-detection fired on the absolute-path signal
+  of the very FIRST event, before anything was ever queued), `fatalFired: true`, `cpuUserMs: 0` /
+  `cpuSystemMs: 15` over that whole window (no spin, nothing resembling the original ~120,000
+  events/s flood), and a FRESH `watchDirectory()` call against the recreated root succeeded and
+  correctly delivered exactly one event for a trigger file written into it afterward.
+  **Round-5 correction (Main's own explicit instruction, Sec5/Verif5 both independently
+  reproduced)**: the original version of this bullet claimed bash `rm -rf`/PowerShell
+  `Remove-Item` both failing live against the real running app proved "Windows'
+  `ReadDirectoryChangesW` handle on the watched root blocks a foreign process from deleting or
+  renaming it, a genuine Windows file-sharing constraint" -- this is FALSE. Sec5 and Verif5 each
+  independently ran their OWN cross-process delete against a plain `fs.watch`'d directory and
+  succeeded every time (Verif5's own probe: a foreign delete succeeded and produced 321,821 rename
+  events in 3 seconds). Whatever blocked the original attempt was a different handle entirely
+  (most likely a real OMP agent process auto-started for that hand-seeded Session, holding the
+  worktree as its own process CWD -- Windows locks a directory that is any process's CWD against
+  external deletion, unrelated to `fs.watch`). The claim is withdrawn; "Full raw JSON in
+  `report.json`" also overstated what that file actually contained for this specific probe. See
+  this round's own fresh evidence (below) for the actual app-level end-to-end re-test, with a
+  saved probe script and raw JSON this time.
 - **Git-lock concurrency fix, genuinely verified under real contention (Sec4/Code4's own explicit
   ask)**: 40 iterations of `git add -A && git commit` ran in a tight loop against the SAME repo the
-  real running app's own file-explorer watcher was actively watching, concurrently with a 45-file
-  burst write across three directories (`src/`, `src/nested/`, `src/nested/deep/`) to fire the
-  app's own coalesced `getStatus` calls, PLUS a direct `getStatus` IPC call issued mid-stress (which
-  itself returned `{ok:true}` with a real status map in 182ms). Result: **0 failures, 0 lock
-  contentions, out of 40/40** -- against the gate's own reported baseline of 31/60 failures
-  without the fix. The tree remained fully responsive and correctly listed all 40 new files
-  afterward -- screenshot `04-tree-healthy-after-concurrent-stress.png`.
+  real running app's own file-explorer watcher was actively watching, each iteration adding one new
+  root-level `stress-N.txt` file (`stress-0.txt` through `stress-39.txt`, 40 files total) --
+  concurrently with a SEPARATE 45-file burst write across three directories (`src/`, `src/nested/`,
+  `src/nested/deep/`, 15 files each) to independently fire the app's own coalesced `getStatus`
+  calls, PLUS a direct `getStatus` IPC call issued mid-stress (which itself returned `{ok:true}`
+  with a real status map in 182ms). Result: **0 failures, 0 lock contentions, out of 40/40** --
+  against the gate's own reported baseline of 31/60 failures without the fix. The tree remained
+  fully responsive and correctly listed all 40 of the git-lock script's own new root-level
+  `stress-*.txt` files afterward (the separate 45-file burst across the three subdirectories also
+  appeared correctly, just not all visible in the one screenshot below without scrolling/
+  expanding) -- screenshot `04-tree-healthy-after-concurrent-stress.png`.
 - **Re-confirmed with the round-4 fixes in place**: `openInVSCode` (`{opened:true}`, 11 real
   `Code.exe` processes confirmed via `Get-Process`, now with `ELECTRON_RUN_AS_NODE`/`NODE_OPTIONS`
   stripped from the child's env), `reveal` (`{ok:true}`), `copyPath` (`{ok:true}`, the real OS

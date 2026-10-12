@@ -412,6 +412,7 @@ export const IPC_EVENTS = {
   SIDE_CHAT_INTERRUPTED: 'side-chat:interrupted',
   SIDE_CHAT_CONVERSATION_CHANGED: 'side-chat:conversation-changed',
   FILE_EXPLORER_PATCH: 'file-explorer:patch',
+  FILE_EXPLORER_RESET: 'file-explorer:reset',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
 } as const;
@@ -807,8 +808,21 @@ export interface RefractApi {
    * `src/main/fs/watchDirectory.ts`) reports a change, debounced and coalesced to one re-list of
    * the single affected directory (`relativePath`) -- never a full tree rebuild. The renderer
    * merges `entries` into `root` at `relativePath`, preserving `expandedPaths` (FR-020); dropped
-   * if `relativePath` has never been fetched (not yet expanded). */
-  onFileExplorerPatch(handler: (payload: { sessionId: string; relativePath: string; entries: FileTreeNode[] }) => void): Unsubscribe;
+   * if `relativePath` has never been fetched (not yet expanded). `truncated` (gate-fix round 5,
+   * Code5 Medium) is the directory's own truncation count from the fresh listing -- the store
+   * must carry it into the merged node instead of discarding it, or a >1000-entry folder's "N
+   * more" row disappears after the folder's first live edit. */
+  onFileExplorerPatch(
+    handler: (payload: { sessionId: string; relativePath: string; entries: FileTreeNode[]; truncated: number }) => void
+  ): Unsubscribe;
+  /** Gate-fix (round 5, Code5 HIGH1): fired when a Session's file watcher hits a fatal error
+   * (watched root deleted/moved out from under it, `watchDirectory.ts`'s `onFatal`) or when
+   * `sessions.ts` drops/replaces the watcher after `recreateWorktree` succeeds, an archive, or a
+   * restore. The renderer's file-explorer store must drop its entire `bySession[sessionId]`
+   * entry so the panel's "load root once per Session" effect naturally re-fires and a fresh
+   * watcher is re-established on the next `listDirectory('')` -- without this the panel keeps
+   * showing a stale tree forever with no watcher running underneath it. */
+  onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }

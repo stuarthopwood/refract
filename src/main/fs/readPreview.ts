@@ -132,8 +132,11 @@ export async function readPreview(absolutePath: string, relativePath: string): P
       const code = (err as NodeJS.ErrnoException | undefined)?.code;
       return { path: relativePath, kind: code === 'ENOENT' ? 'deleted' : 'read-error' };
     }
+    // Gate round 5 fix (Sec5 Low): a non-regular-file target (a directory, a FIFO/device node)
+    // is `'read-error'`, not `'deleted'` -- `'deleted'` is reserved for ENOENT specifically, and
+    // the path manifestly still exists here (`stat()` just succeeded against it).
     if (!stat.isFile()) {
-      return { path: relativePath, kind: 'deleted' };
+      return { path: relativePath, kind: 'read-error' };
     }
     if (stat.size > MAX_PREVIEW_BYTES) {
       return { path: relativePath, kind: 'too-large', size: stat.size };
@@ -142,7 +145,7 @@ export async function readPreview(absolutePath: string, relativePath: string): P
     // Reads at most `MAX_PREVIEW_BYTES + 1` bytes from the SAME handle `stat()` just checked --
     // a file that grew past the cap between the stat above and this read still hits the cap
     // here (`bytesRead > MAX_PREVIEW_BYTES`), never an unbounded read.
-    const buf = Buffer.alloc(MAX_PREVIEW_BYTES + 1);
+    const buf = Buffer.alloc(Math.min(stat.size, MAX_PREVIEW_BYTES) + 1);
     let bytesRead: number;
     try {
       bytesRead = await readFully(fh, buf);
