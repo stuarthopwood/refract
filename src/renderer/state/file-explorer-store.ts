@@ -98,7 +98,30 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
         }
       }))
     }
-    const result = await window.refract.fileExplorer.listDirectory(sessionId, relativePath)
+    let result: Awaited<ReturnType<typeof window.refract.fileExplorer.listDirectory>>
+    try {
+      result = await window.refract.fileExplorer.listDirectory(sessionId, relativePath)
+    } catch {
+      // PR #671 gate fix (code-reviewer LOW, round 2): an IPC invoke that REJECTS outright
+      // (rather than resolving to `{ ok: false }`, e.g. a thrown exception inside the main
+      // handler's own `Promise.all`) used to leave `status: 'loading'` forever with an
+      // unhandled rejection -- no error state, no Retry, nothing for the user to do.
+      if (relativePath === '') {
+        set((state) => ({
+          bySession: {
+            ...state.bySession,
+            [sessionId]: {
+              root: state.bySession[sessionId]?.root ?? null,
+              status: 'error',
+              error: `Couldn't load this Session's files`
+            }
+          }
+        }))
+        return
+      }
+      toast.error(`Couldn't load that folder`)
+      return
+    }
     if (!result.ok) {
       if (relativePath === '') {
         // PR #671 gate fix: a persistent, retryable error state instead of a one-shot toast that

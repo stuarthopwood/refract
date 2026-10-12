@@ -67,30 +67,47 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   checked on the `relativePath` as typed AND again on its realpath'd result relative to the root
   (catches the Windows 8.3 alias `GIT~1`, which only reads as `.git` after `fs.realpath` expands
   it), ASCII case-insensitively either way (`containsGitSegment`, shared so Slice 2's
-  `readPreview` reuses it rather than a second copy).
+  `readPreview` reuses it rather than a second copy). **PR #671 gate round 2 fix (HIGH,
+  reproduced live)**: `resolveInWorktree` itself gained a no-follow, one-segment-at-a-time walk
+  (`resolveNoFollow`) in place of its own bare `fs.realpath(candidate)` call -- round 1's fix at
+  the `fileExplorer.ts` call site only vetted a link's first hop, so a chain or a middle-segment
+  link still reached an unvetted `fs.realpath` through `resolveInWorktree`'s OWN existing code.
+  Fixing it inside `resolveInWorktree` itself (not a second, competing implementation) closes the
+  gap for every caller at once -- `fileExplorer.ts`'s listing/expand AND `revealFile` -- see
+  T004's own entry below for the mechanism.
 - [x] T004 [P] Add `fileExplorer.listDirectory(sessionId, relativePath)` to `src/main/ipc/`: a new
   `src/main/ipc/fileExplorer.ts` (mirrors `side-chat.ts`'s own validation/error-mapping shape) that
   resolves the Session's `worktreePath` from the registry (never the renderer, constitution V),
   calls `resolveListTarget` (T003), lists that directory's immediate children only (folders before
   files, alphabetical case-insensitive within each group per FR-006), one level deep (lazy-load,
   FR-005) -- no recursion, no git status yet (Slice 2). `.git` itself always excluded
-  case-insensitively (FR-007). **PR #671 gate fix round (security-auditor HIGH)**: a
+  case-insensitively (FR-007). **PR #671 gate round 1 fix (security-auditor HIGH)**: a
   symlink/junction dirent's own `kind` is classified WITHOUT ever `fs.stat`/`fs.realpath`-ing an
   unvetted target -- the original version called `fs.stat` on every such entry unconditionally,
   which follows the link; a target that is a UNC path would make Windows attempt an outbound
-  SMB/NTLM authentication just from opening the panel, no click required, the exact zero-click
-  leak `resolveInWorktree`'s own doc comment says must never be reachable.
-  `classifySymlinkEntry` instead reads the link's own stored target text with `fs.readlink`
-  (never follows), rejects it as `kind: 'cannot-access'` outright if that raw text is a UNC/device
-  path, and only then calls `resolveInWorktree` (reused again, on the target) + `fs.stat` for a
-  target that check has independently proven stays inside the worktree -- a target that fails
-  either check resolves to `kind: 'cannot-access'` (spec.md Edge Cases' own "cannot access" row
-  state) rather than being followed. Classification runs with bounded concurrency
-  (`SYMLINK_CLASSIFY_CONCURRENCY`, matching `repositories.ts`'s own `remotesBounded` worker-pool
-  shape), never one `readlink`/`stat` after another. Readdir failures (ENOENT/ENOTDIR/EACCES/
-  EPERM/other) map to plain-English messages, never `err.message` or the resolved path itself
-  (`mapReaddirError`). The repeated inline error-mapping block shared with `files.ts`'s own
-  `revealFile` handler is now one exported `resolveErrorResult` in `files.ts`, used by both.
+  SMB/NTLM authentication just from opening the panel, no click required.
+  **Round 1's own fix was incomplete, found and reproduced live in round 2 (security-auditor/
+  code-reviewer/verification/a11y HIGH)**: it vetted only a link's FIRST hop (its own raw
+  `readlink` target text), then handed that text to `resolveInWorktree`, whose `fs.realpath`
+  followed the REST of a link CHAIN (`a` -> in-root `b`, `b` -> `\\attacker\share`) -- or a link
+  sitting in a MIDDLE segment of the target's own path -- before the containment check ever ran,
+  a zero-click outbound SMB/NTLM connection. Fixed by moving the no-follow walk INTO
+  `resolveInWorktree` itself (`resolveNoFollow`, files.ts): it walks a candidate one path segment
+  at a time with `fs.lstat`, and for any segment that is itself a link, `fs.readlink`s it,
+  text-checks the raw target (UNC/device, containment) and RESTARTS the walk from the worktree
+  root with the target's own relative segments prepended, rather than trusting it as a safe base
+  -- the exact fix a middle-segment link needs, since Windows resolves every component of a path
+  string during an ordinary `lstat`/`realpath`-equivalent call, not only the final one.
+  `classifySymlinkEntry` now simply delegates the entry's own path to `resolveInWorktree`
+  directly (no separate, narrower check of its own) and additionally classifies `'cannot-access'`
+  when the resolved target lands under a `.git` segment. Classification runs with bounded
+  concurrency (`SYMLINK_CLASSIFY_CONCURRENCY`, matching `repositories.ts`'s own `remotesBounded`
+  worker-pool shape), never one `readlink`/`stat` after another. Readdir failures (ENOENT/ENOTDIR/
+  EACCES/EPERM/other) map to plain-English messages, never `err.message` or the resolved path
+  itself (`mapReaddirError`). The repeated inline error-mapping block shared with `files.ts`'s own
+  `revealFile` handler is one exported `resolveErrorResult` in `files.ts`, used by both -- its own
+  `worktree-missing` message no longer embeds the absolute path either (round 2 fix, the panel's
+  error state rendered it verbatim via `role="alert"`).
 - [x] T005 [P] Add `IPC_REQUESTS.FILE_EXPLORER_LIST_DIRECTORY` (and a comment reserving the
   Slice-2/3 request names in `contracts/ipc.md`, so the shared `src/shared/ipc.ts` naming
   convention stays visible from this slice's own commit, even though the later requests
@@ -153,6 +170,11 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   transient leak found and fixed first -- a dev comment's own task-ID reference survived
   minification immediately next to a JSX `/* @__PURE__ */` annotation; reworded, not a bundler
   config change); check:theme-contrast 313/313; check:drag-regions 0/109; build pass.
+  **Re-run again after the PR #671 gate round 2 fix** (same file counts; one clean rebuild
+  confirmed the fix was actually bundled, after a build run against a stale `out/` gave
+  misleading live-verification results mid-round -- see the round-2 checkpoint note below):
+  typecheck pass (both tsconfigs); vitest 376/376; check:indent 0/321; check:ui-text 0/371;
+  check:theme-contrast 313/313; check:drag-regions 0/109; build pass.
 
 **Checkpoint**: live-verified (scratch clone under `C:/tmp/refract-file-explorer-s1` -- never
 `C:/Repos/personal` -- own `--user-data-dir`/CDP port 9343, torn down by pid-verified `taskkill`,
@@ -169,7 +191,7 @@ text search, not just a glance); clicking `src` lazily fetches and shows its rea
 visible in the screenshot timing). Path-containment against three string-level escape attempts
 (`../../../../Windows/System32`, `C:\Windows`, `\\?\C:\Windows`) all rejected `outside-worktree`.
 
-**PR #671 gate-fix round, live-verified with REAL fixtures** (scratch clone under
+**PR #671 gate round 1 fix, live-verified with REAL fixtures** (scratch clone under
 `C:/tmp/refract-fx-gatefix`, own `--user-data-dir`/CDP ports 9351-9352, pid-verified `taskkill`
 each run, deleted by literal path afterward; isolation proof: live `%APPDATA%\pinion\
 processes.json` mtime unchanged across the run, `%APPDATA%\refract` absent, scratch `userdata\
@@ -199,6 +221,96 @@ directly exercised by the real fixtures above, not merely inferred from issue #6
 history. `.git` as a direct listing TARGET (`listDirectory(sessionId, '.git')` and `'.GIT'`) also
 reconfirmed rejected `outside-worktree` this round.
 
+**PR #671 gate round 2 (HIGH, reproduced live by all four reviewers): round 1's fix was
+incomplete.** `classifySymlinkEntry` only vetted a link's FIRST hop; a chain (`a -> b`, `b ->
+UNC`) or a link in a MIDDLE path segment still reached `resolveInWorktree`'s bare
+`fs.realpath(candidate)` unvetted on the second hop -- a zero-click outbound SMB/NTLM connection.
+Fixed by moving the no-follow walk INSIDE `resolveInWorktree` itself (`resolveNoFollow`,
+files.ts): walks a candidate one path segment at a time with `fs.lstat`; any segment that is
+itself a link has its raw `readlink` target text-checked (`isUnsafeToken`, the same checks a
+top-level token gets) and, if safe, the walk RESTARTS from the worktree root with the target's
+own relative segments prepended -- never trusting a substituted target as a safe base to resolve
+further, since Windows follows reparse points transparently for intermediate path components too,
+not only a path's final one. Capped at `MAX_LINK_HOPS` (32) against a cycle. `classifySymlinkEntry`
+now simply delegates to the hardened `resolveInWorktree` (no separate, narrower check of its own)
+and additionally classifies `'cannot-access'` for an in-root target under a `.git` segment.
+`resolveErrorResult`'s `worktree-missing` message no longer embeds the absolute worktree path
+(the panel's own error state rendered it verbatim via `role="alert"`); the handler's own
+`notFound` message no longer embeds the raw session id either. The focus-sink now copies
+`ChatPane.tsx`'s own `chatHadFocusRef`/`isFocusStranded` pattern exactly (a document-wide
+`focusin` listener, reclaim only when focus is genuinely stranded, keyed on `[sessionId, status]`
+so a Retry gets the same rescue a Session switch does); `handleRetry` focuses the container
+BEFORE the fetch starts, so the Retry button's own unmount never drops focus to `<body>` even for
+one frame. `file-explorer-store.ts`'s IPC invoke is now wrapped in try/catch so a rejected
+Promise cannot leave `status: 'loading'` stuck forever.
+
+**Live-verified with REAL fixtures** (scratch clone under `C:/tmp/refract-fx-gatefix2`, own
+`--user-data-dir`/CDP ports 9361-9364 across three focused runs, pid-verified `taskkill` each
+time, deleted by literal path afterward -- an EARLIER run against a stale `out/` build (predating
+these round-2 source changes) gave misleading results first: `chain-a` resolved `file-missing`
+instead of `outside-worktree`, the root listing took 4106 ms, and the SMB connection count
+increased by one -- all three signs the OLD, unfixed code had genuinely attempted to realpath
+through the chain into the nonexistent UNC share. Caught by checking `out/main/index.js`'s own
+timestamp against the source files' last edit, a clean rebuild (`out/` deleted first) confirmed
+present via a literal string search, then every test below re-run against the correct build;
+isolation proof RECORDED in `report.json`, not only
+prose: live `%APPDATA%\pinion\processes.json` mtime (`2026-10-11T08:42:12Z`) identical before and
+after every run across all three launches, `%APPDATA%\refract` absent both before and after,
+scratch `userdata\processes.json` mtime fresh each launch): 4 files (2 screenshots +
+`report.json` + `ui-report.json`) + `sha256.json` under
+`C:/Users/shopwood/refract-live-check-671-gatefix2/`, 0 duplicate hashes.
+
+- **Two-hop chain** (`chain-a` -> in-root `chain-b` -> `\\127.0.0.1\refract-none-<random>`,
+  never a real remote host): root listing classifies BOTH `chain-a` and `chain-b` as
+  `kind: "cannot-access"`. `listDirectory(sessionId, 'chain-a')` (the realpath-stage escape,
+  listing INTO the chain's own first link) returns `outside-worktree` in 4 ms.
+- **Middle-segment link** (`mid-b` -> UNC; `mid-a2`'s own raw target is the relative text
+  `mid-b\System32`, i.e. a link sits PART-WAY along the path, not at its end): classified
+  `cannot-access`; `listDirectory(sessionId, 'mid-a2')` returns `outside-worktree` in 3 ms.
+- **Hop-cap cycle** (`cycle-a` -> `cycle-b` -> `cycle-a`): classified `cannot-access`;
+  `listDirectory(sessionId, 'cycle-a')` returns `outside-worktree` in 14 ms -- rejected via the
+  32-hop cap, not a hang.
+- **Two in-root hops ending outside** (`multihop-a` -> in-root `multihop-b` -> in-root
+  `multihop-c` -> UNC): classified `cannot-access`; `listDirectory(sessionId, 'multihop-a')`
+  returns `outside-worktree` in 3 ms.
+- **In-root chain ending in-root** (`inroot-chain-a` -> in-root `inroot-chain-b` -> `src`, a real
+  folder): classified `kind: "folder"`; `listDirectory(sessionId, 'inroot-chain-a')` returns
+  `ok: true` with `src`'s own 4 real children -- confirms the fix does not break a legitimate
+  multi-hop in-root link.
+- **Invalid DNS hostname** (`invalid-host-link` -> `\\pinion-probe-nohost-<random>.invalid\s`):
+  classified `cannot-access`; `listDirectory` into it returns `outside-worktree` in 3 ms -- no
+  DNS resolution attempted (the raw UNC-shaped text is rejected before any lookup).
+- **No outbound connection attempted, stated honestly**: `Get-NetTCPConnection -RemotePort 445`
+  count was IDENTICAL before and after the root listing that classifies all of the above (both
+  readings: 1, an unrelated pre-existing baseline connection on this shared dev machine, not
+  created by this test). This is suggestive, not conclusive proof of zero packets -- the stronger
+  evidence is the root listing's own elapsed time (37 ms for 16 new link entries, including two
+  multi-hop chains and a 32-hop-capped cycle) and each individual escape attempt's elapsed time
+  (2-14 ms) -- far too fast for even one local SMB share-not-found round trip, let alone a DNS
+  lookup against an unresolvable hostname, both of which measurably slowed an EARLIER run of this
+  same test against a stale pre-fix build (root listing 4106 ms; an SMB connection count that DID
+  increase by one during that run) -- that earlier, slower, connection-incrementing run is the
+  fix's own regression baseline, confirming the vulnerability these fixtures target is real and
+  reproducible, not merely theoretical.
+- **`sub/.git` and the Windows 8.3 alias `GIT~1`** (confirmed enabled on this volume via `dir /x
+  /a`, showing `.git` <-> `GIT~1`): `listDirectory(sessionId, 'sub/.git')`,
+  `listDirectory(sessionId, 'GIT~1')` and `listDirectory(sessionId, 'sub/GIT~1')` all three
+  return `outside-worktree`, live-verified (not merely asserted from reading the code).
+- **Forced `worktree-missing` live**: the Session's real worktree folder renamed away, then the
+  file explorer panel opened -- screenshot shows the panel's own `Empty` error state ("Couldn't
+  load this Session's files" / "This Session's worktree folder no longer exists", NO absolute
+  path, unlike the separate, pre-existing, UNCHANGED `ChatPane.tsx` worktree-missing banner
+  alongside it, which still shows the path by its own established, separately-reviewed
+  convention) with a Retry button. Retry explicitly focused (`document.activeElement` confirmed
+  equal to the button) before a REAL keyboard `Enter` (`Input.dispatchKeyEvent`) was dispatched;
+  the worktree was restored just before that keypress so the retry genuinely succeeds. A second
+  screenshot after the keypress shows the full real tree rendered again, and
+  `document.activeElement` is a `<DIV>` (the panel's own container, never `<body>`) -- Retry
+  never drops focus.
+- **Three string-level escape attempts and the earlier round-1 fixtures** (outside junction,
+  in-root junction, broken junction, outside symlink) were all re-run this round too, same
+  results as before.
+
 ---
 
 ## Slice 2 / Phase 2: Tree UI, keyboard, live refresh, git status, preview (User Stories 1-3, 5)
@@ -213,7 +325,12 @@ and previews every file type the spec promises.
   up/down between visible rows), Home/End, type-ahead, Enter opens that row's preview (FR-022).
   Virtualise each expanded folder's own children list via `react-virtuoso` (already a pinned
   dependency, research.md decision 7), capped per folder with a "N more" row past the cap (Edge
-  Cases: a huge repository).
+  Cases: a huge repository). **The cap MUST be enforced in MAIN too** (`fileExplorer.ts`'s
+  `listDirectory`, before any per-entry `readlink`/classification work runs), not only by renderer
+  virtualisation (PR #671 gate round 2 fix, security-auditor/code-reviewer LOW): a folder with
+  very many entries otherwise sends every one of them over IPC and classifies every symlink among
+  them, with no upper bound, before the renderer ever gets a chance to cap what it renders. Return
+  `{ entries, truncated: number }` so the renderer's own "N more" row has a real count to show.
 - [ ] T013 [P] Add a file-system watcher in main (`fs.watch({ recursive: true })`, research.md
   decision 5): debounced, treats every `rename` event as "re-list this event's own directory," not
   "this exact path was deleted" (Node's own documented Windows ambiguity). Emits

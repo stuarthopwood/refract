@@ -564,14 +564,19 @@ export interface ProfileCacheEntry {
  * neither a literal `.git`/`.GIT` segment nor the Windows 8.3 alias `GIT~1` can resolve to it).
  * `kind: 'folder'`/`'file'` reflects the FOLLOWED type for a symlink/junction entry (so a
  * symlinked folder still renders with a disclosure control) -- but ONLY once `resolveInWorktree`
- * has independently proven the link's target realpaths inside the worktree first (PR #671 gate
- * fix, security-auditor HIGH: a listing must never `fs.stat`/`fs.realpath` a link's target before
- * that check, since a target that is a UNC path would make Windows attempt an outbound SMB/NTLM
- * authentication just from opening the panel, no click required). A link whose target escapes
- * the worktree, is a UNC/device path, or is simply broken resolves to `kind: 'cannot-access'`
- * instead -- the row this spec.md's own Edge Cases section calls a "cannot access" state --
- * without ever following it. `gitStatus` arrives in Slice 2 (data-model.md `GitStatusMark`);
- * absent in Slice 1. */
+ * has independently proven EVERY hop of the link's target realpaths inside the worktree first.
+ * PR #671 gate round 1 fix (security-auditor HIGH) stopped a listing from `fs.stat`/`fs.realpath`-
+ * ing a link's RAW target before any check at all; round 2 (security-auditor/code-reviewer/
+ * verification/a11y HIGH, reproduced live) found that fix still vetted only the entry's own
+ * FIRST hop -- a chain (`a` -> in-root `b`, `b` -> a UNC share) or a link sitting in a MIDDLE
+ * path segment still reached `fs.realpath` unchecked on the SECOND hop, opening a zero-click
+ * outbound SMB/NTLM connection. `resolveInWorktree` now walks every hop itself, one path segment
+ * at a time, re-vetting any substituted link's own target before going on (`resolveNoFollow`,
+ * files.ts) -- no remaining call in this codebase resolves a chain of links in one native call.
+ * A link whose target escapes the worktree, is a UNC/device path, or is simply broken -- at ANY
+ * hop of however long a chain -- resolves to `kind: 'cannot-access'` instead -- the row this
+ * spec.md's own Edge Cases section calls a "cannot access" state. `gitStatus` arrives in Slice 2
+ * (data-model.md `GitStatusMark`); absent in Slice 1. */
 export type FileTreeEntryKind = 'file' | 'folder' | 'cannot-access';
 
 export interface FileTreeNode {

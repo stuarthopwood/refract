@@ -17,6 +17,25 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { useFileExplorerStore } from '@/state'
 import type { ExpandableNode } from '../../../state/file-explorer-store'
 
+/** A focused element the user can no longer usefully interact with: gone from the document,
+ * parked on `<body>` (the browser's own fallback once a focused node is removed), or a
+ * now-disabled control still sitting inside `root`. Copied verbatim from `ChatPane.tsx`'s own
+ * `isFocusStranded` (PR #671 gate fix, accessibility-auditor/code-reviewer MEDIUM, round 2: the
+ * previous round's own comment CLAIMED this pattern but did not actually use it -- a plain
+ * `onFocus`/`onBlur` pair instead, which never sees a blur for a node removed out from under it,
+ * and which unconditionally reclaimed focus on every Session change even when focus had
+ * deliberately moved elsewhere, e.g. the sidebar row just clicked). One shared definition would
+ * belong in `lib/focus.ts` if a second caller ever needs it; not extracted there yet since this
+ * is still the only one outside `ChatPane.tsx` itself. */
+function isFocusStranded(active: Element | null, root: HTMLElement | null): boolean {
+  return (
+    !active ||
+    active === document.body ||
+    !active.isConnected ||
+    (active instanceof HTMLElement && active.matches(':disabled') && !!root?.contains(active))
+  )
+}
+
 interface FileExplorerPanelProps {
   /** The Session this tree follows -- no independent binding of its own (FR-004), the same
    * pattern spec 013's Subagents panel and spec 014's Side chat already use: it always reflects
@@ -32,14 +51,21 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const toggleExpanded = useFileExplorerStore((s) => s.toggleExpanded)
 
   const containerRef = useRef<HTMLDivElement>(null)
-  // PR #671 gate fix (accessibility-auditor MEDIUM): when the focused Session changes to one not
-  // loaded yet, the `<ul>` holding the focused row unmounts (replaced by the loading/error/empty
-  // state) and the browser drops focus to `<body>` the instant that happens -- synchronously,
-  // before any effect below can observe where focus WAS. `hadFocusRef` is instead kept current
-  // by the container's own `onFocus`/`onBlur` throughout the PRECEDING render, the same "no click
-  // to capture 'had focus' at" pattern `ChatPane.tsx`'s own `chatHadFocusRef` already uses.
+  // Tracks whether focus is currently somewhere inside this panel, kept live via a document-wide
+  // `focusin` listener -- NOT read at the moment `sessionId`/`status` changes: by the time this
+  // component re-renders for a Session switch or a Retry, the row/button that had focus may
+  // already be mid-unmount, and a removed element's forced blur reads as `<body>`, not this
+  // panel. Copies `ChatPane.tsx`'s own `chatHadFocusRef` pattern exactly (PR #671 gate fix,
+  // accessibility-auditor/code-reviewer MEDIUM, round 2).
   const hadFocusRef = useRef(false)
-  const prevSessionIdRef = useRef(sessionId)
+  useEffect(() => {
+    const updateFocusFlag = () => {
+      hadFocusRef.current = !!containerRef.current?.contains(document.activeElement)
+    }
+    updateFocusFlag()
+    document.addEventListener('focusin', updateFocusFlag)
+    return () => document.removeEventListener('focusin', updateFocusFlag)
+  }, [])
 
   // FR-004/FR-005: the root listing, once per Session per app run (mirrors side-chat's own
   // `loadHistory`-on-first-open effect, spec 014). Only the very first attempt is automatic --
@@ -50,13 +76,20 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     void loadDirectory(sessionId, '')
   }, [sessionId, loadDirectory])
 
+  // Reclaims focus onto the container ONLY when it is actually stranded -- never
+  // unconditionally, which would steal focus from somewhere the user deliberately moved it to
+  // (the sidebar row just clicked) even on a render where `hadFocusRef` never got a chance to
+  // update first. Keyed on `[sessionId, status]`, not just `sessionId`: a Retry (same Session,
+  // `status` flips `loading` -> `error` -> `ready`) unmounts the Retry button exactly the same
+  // way a Session switch unmounts a focused row, and needs the identical rescue (PR #671 gate
+  // fix, accessibility-auditor/code-reviewer MEDIUM, round 2).
   useEffect(() => {
-    if (prevSessionIdRef.current !== sessionId) {
-      if (hadFocusRef.current) containerRef.current?.focus()
-      hadFocusRef.current = false
-      prevSessionIdRef.current = sessionId
-    }
-  }, [sessionId])
+    if (!hadFocusRef.current) return
+    requestAnimationFrame(() => {
+      const active = document.activeElement
+      if (isFocusStranded(active, containerRef.current)) containerRef.current?.focus()
+    })
+  }, [sessionId, status])
 
   if (!sessionId) {
     return (
@@ -86,6 +119,12 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
 
   function handleRetry(): void {
     if (!sessionId) return
+    // PR #671 gate fix (code-reviewer MEDIUM, round 2): focuses the container BEFORE the fetch
+    // starts, not after -- the Retry button just clicked is about to unmount the instant
+    // `status` flips to `'loading'` (`loadDirectory`'s own synchronous `set` call, before its
+    // first `await`), and waiting for the reclaim effect above means one extra animation frame
+    // where focus already reads as `<body>` to anything checking synchronously.
+    containerRef.current?.focus()
     void loadDirectory(sessionId, '')
   }
 
@@ -93,12 +132,6 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     <div
       ref={containerRef}
       tabIndex={-1}
-      onFocus={() => {
-        hadFocusRef.current = true
-      }}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hadFocusRef.current = false
-      }}
       className="flex h-full flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {status === 'loading' ? (

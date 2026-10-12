@@ -164,22 +164,36 @@
     directly (the exact first step `resolveInWorktree` itself takes internally) and defers to the
     unmodified function for every other value.
 
-    **Addendum (PR #671 gate fix, security-auditor HIGH):** reuse initially stopped short at
+    **Addendum (PR #671 gate round 1, security-auditor HIGH):** reuse initially stopped short at
     `resolveListTarget`'s own root-vs-non-root resolution -- listing a folder still called
     `fs.stat` directly on every symlink/junction DIRENT to learn its kind, which FOLLOWS the
     link before any containment check runs at all. If such a link's target is a UNC path
     (`\\attacker\share\x`), merely opening the panel made Windows attempt an outbound SMB/NTLM
-    authentication with no click from the user -- exactly the zero-click leak this function's own
-    doc comment says must never be reachable, just reached from a NEW call site this spec added
-    rather than from `resolveInWorktree` itself. Fixed in `fileExplorer.ts`'s new
-    `classifySymlinkEntry`: `fs.readlink` reads the link's own stored target text WITHOUT
-    following it (always safe); only once that raw text is checked, lexically, to be neither a
-    UNC/device path nor something `resolveInWorktree` itself would reject, is `resolveInWorktree`
-    (on the target, reused again) and then `fs.stat` safe to call. A target that fails either
-    check resolves to `kind: 'cannot-access'` (spec.md Edge Cases' own "cannot access" row state)
-    rather than being followed. Classification now runs with bounded concurrency (matching
-    `repositories.ts`'s own `remotesBounded` worker-pool shape), never one `readlink`/`stat` after
-    another.
+    authentication with no click from the user. Round 1's fix (`classifySymlinkEntry`'s own
+    `fs.readlink`-then-text-check) vetted only that one entry's FIRST hop before calling
+    `resolveInWorktree` on the target.
+
+    **Addendum 2 (PR #671 gate round 2, security-auditor/code-reviewer/verification/a11y HIGH,
+    reproduced live):** round 1's own fix was incomplete. A CHAIN of links (`a` -> in-root `b`,
+    `b` -> a UNC share) or a link sitting in a MIDDLE segment of a target's own path still reached
+    `resolveInWorktree`'s bare `fs.realpath(candidate)` unvetted on the SECOND hop, because only
+    the first hop's raw text had been checked. Fixed by moving the no-follow walk INSIDE
+    `resolveInWorktree` itself, not at the `fileExplorer.ts` call site: `resolveNoFollow`
+    (files.ts) walks a candidate one path segment at a time with `fs.lstat` (never `fs.stat`/
+    `fs.realpath`); for any segment that IS itself a link, `fs.readlink`s its raw target, runs the
+    SAME text-only checks a top-level token gets (`isUnsafeToken`: NUL bytes, UNC/device paths, a
+    stray colon, reserved names), checks lexical containment, and -- critically -- RESTARTS the
+    walk from the worktree root with the target's own relative segments prepended, rather than
+    trusting the target as a safe base to resolve further. This closes the middle-segment case
+    specifically: Windows resolves every component of a path string during an ordinary
+    `lstat`/`realpath`-equivalent call (reparse points are followed transparently for
+    INTERMEDIATE components too, not only a path's final one), so handing the OS a multi-
+    component path built from an unverified substitution would reopen the exact same hole one
+    level down. Capped at `MAX_LINK_HOPS` (32) link substitutions against a cycle (`a -> b -> a`).
+    `classifySymlinkEntry` now simply delegates an entry's own path straight to the hardened
+    `resolveInWorktree` -- no separate, narrower check of its own -- so listing, expand (which
+    already re-resolved through the same function) and `revealFile` all close together, from one
+    fix in one place.
 
     **Correction to this slice's own "not verified live" disclosure:** the three string-level
     escape attempts this slice's live check ran (`../../../../Windows/System32`, `C:\Windows`,
@@ -187,13 +201,10 @@
     a symlink would also hit". That is wrong: all three are rejected by TEXT-ONLY pre-checks
     (the lexical containment check and the leading-`//` UNC check), neither of which a
     symlink/junction escape would reach -- a symlink's own relative path, as a TOKEN, looks
-    perfectly ordinary; only the FINAL `fs.realpath`-based check (the actual security boundary)
-    would catch it. That check is exercised by issue #610's own quality-gate history (round 5,
-    `Sec5`, "re-confirmed with a fresh probe"), unchanged since, not by this slice's own three
-    attempts. **Update (same PR #671 gate-fix round):** a real `mklink /J` junction fixture
-    (both an escaping target and an in-root target), a real `mklink /D` directory symlink, and a
-    dangling junction were all created in a scratch worktree and exercised directly against the
-    live `fileExplorer.listDirectory` IPC method (tasks.md Slice 1 Checkpoint) -- the
-    `fs.realpath`-based security boundary this correction describes is no longer only inferred
-    from issue #610's own history, it is now independently confirmed for this spec's own new
-    call site too.
+    perfectly ordinary; only the walk/realpath-based check (the actual security boundary) would
+    catch it. The round-1 live check's own follow-up claim ("resolved, live-verified with real
+    fixtures") was ALSO premature: its fixtures covered a single-hop escape only, never a chain or
+    a UNC target, which is exactly the gap round 2 found and reproduced live. Round 2's own live
+    check (tasks.md Slice 1 Checkpoint) adds a two-hop chain, a middle-segment link, a hop-cap
+    cycle, and genuine UNC targets (`\\127.0.0.1\refract-none-<random>`, never a real remote
+    host) to close that gap for real.

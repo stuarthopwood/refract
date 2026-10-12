@@ -53,10 +53,15 @@ choice listed in Clarifications below.
   main transcript or OMP's own context (FR-027 below) -- previewing a secret shows it ON SCREEN
   to the developer who is already in that worktree, it does not leak it to the agent or anywhere
   OMP can see; (2) every read still goes through the exact same worktree-containment check as
-  every other read (FR-001), including never following a symlink/junction out of the worktree --
-  nothing outside the Session's own worktree is ever reachable, so this choice only ever exposes
-  a file the developer's own Session already has on disk, never a file from elsewhere on the
-  machine.
+  every other read (FR-001) -- `resolveInWorktree`'s own `resolveNoFollow` walk (`src/main/ipc/
+  files.ts`) vets a path one segment at a time from the realpath'd root, re-checking any
+  symlink/junction's OWN target (however many hops deep) before ever calling `fs.realpath`/
+  `fs.stat` on it, so nothing outside the Session's own worktree is ever reached this way. (PR
+  #671 gate round 2 history: round 1's own fix vetted only a link's FIRST hop, so a chain --
+  `a` -> in-root `b`, `b` -> a UNC share -- or a link sitting in a middle path segment still
+  reached `fs.realpath` unvetted, reproduced live as a zero-click outbound SMB/NTLM connection;
+  fixed by walking every hop, not just the first.) This choice only ever exposes a file the
+  developer's own Session already has on disk, never a file from elsewhere on the machine.
 
 ### Needs Stuart's decision (not yet resolved; decision comment posted, conservative choice taken)
 
@@ -203,6 +208,14 @@ previously-expanded folder still expanded.
   target's contents as if they were inside the worktree, and any read attempt is rejected by the
   same path-containment check every other read goes through (FR-001) -- surfaced as a plain
   "cannot access" row state, not a silent skip that could let a developer believe a path is empty.
+- A worktree reached through OneDrive Files-On-Demand (or another cloud-sync provider using
+  reparse-point placeholders), a deduplicated file, or an `AppExecLink`: Windows reports every one
+  of these as a link the same way a real symlink/junction is reported (`isSymbolicLink()`), and
+  `fs.readlink` fails on a reparse tag that is not an actual symlink/junction -- the row fails
+  CLOSED as "cannot access" rather than being followed, the same as a genuine escaping link.
+  [INFERENCE, PR #671 gate round 2: not observed against a real OneDrive placeholder.] A real
+  file under such a worktree would show as "cannot access" too, not just an escaping one --
+  tracked as a known limitation, not a crash or a silent skip.
 - A file is deleted while its preview is open (User Story 5, Scenario 2).
 - A huge repository (many thousands of entries in one folder): the folder's own listing is capped
   per `research.md` decision 7, with a "N more" row past the cap rather than an unbounded render

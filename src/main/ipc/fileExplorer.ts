@@ -22,7 +22,7 @@ const MAX_RELATIVE_PATH_LENGTH = 4096;
  * (as-typed) and the realpath'd (post-resolution) checks below, and exported so Slice 2's
  * `readPreview` reuses the exact same rule rather than a second, drifting copy (PR #671 gate,
  * code-reviewer/security-auditor MEDIUM). */
-function containsGitSegment(value: string): boolean {
+export function containsGitSegment(value: string): boolean {
   return value.split(/[\\/]/).some((segment) => segment.toLowerCase() === '.git');
 }
 
@@ -79,35 +79,30 @@ function mapReaddirError(err: unknown): Result<never> {
   return invalidArgument(`Could not read that folder`);
 }
 
-/** Classifies ONE symlink/junction dirent's `kind` WITHOUT ever following it to a target that
- * has not first been proven safe (PR #671 gate fix, security-auditor HIGH). The previous version
- * called `fs.stat` on every such entry unconditionally, which follows the link -- if its target
- * is a UNC path (`\\attacker\share\x`), merely opening this panel made Windows attempt an
- * outbound SMB/NTLM authentication with NO click from the user, the exact zero-click leak
- * `resolveInWorktree`'s own doc comment says must never be reachable.
+/** Classifies ONE symlink/junction dirent's `kind` by reusing the SAME hardened, never-follow-an-
+ * unvetted-link resolver every other path in this codebase goes through (`resolveInWorktree`,
+ * issue #610) -- not a separate, first-hop-only check. PR #671 gate round 2 fix (security-
+ * auditor/code-reviewer/verification/a11y HIGH): an earlier version here vetted only the entry's
+ * OWN raw `readlink` target text, then handed that text to `resolveInWorktree`, whose
+ * `fs.realpath` followed the REST of a link CHAIN (`a -> b`, `b -> \\attacker\share`) -- or a
+ * link sitting in a MIDDLE segment of the target's own path -- before the containment check ever
+ * ran, a zero-click outbound SMB/NTLM connection reproduced live. `resolveInWorktree` now walks
+ * every hop itself (`resolveNoFollow`, files.ts), so passing it the entry's own path is
+ * sufficient: a target that escapes, is UNC/device-shaped, or sits behind a chain of links into
+ * any of those, resolves to `kind: 'cannot-access'` without ever following it.
  *
- * `fs.readlink` reads the link's OWN stored target text without ever following it -- always safe
- * to call. Only once that raw text has been checked, lexically, to be neither a UNC/device path
- * nor one `resolveInWorktree` itself rejects, is it safe to resolve and `fs.stat` the target to
- * learn whether it is a folder or a file. A target that fails either check resolves to
- * `'cannot-access'` -- spec.md's Edge Cases own "cannot access" row state -- never followed. */
-async function classifySymlinkEntry(worktreeRoot: string, entryAbsPath: string): Promise<FileTreeEntryKind> {
-  let rawTarget: string;
-  try {
-    rawTarget = await fs.readlink(entryAbsPath);
-  } catch {
-    return 'cannot-access'; // A broken link: nothing to follow, never stat'd.
-  }
-  // Checked on the raw, unfollowed target text, before anything that could reach a UNC host.
-  if (rawTarget.replace(/\\/g, '/').startsWith('//')) return 'cannot-access';
-  const targetToken = path.isAbsolute(rawTarget) ? rawTarget : path.resolve(path.dirname(entryAbsPath), rawTarget);
-  // Reuses the exact same hardened containment check every other path in this codebase goes
-  // through (issue #610) -- including its own UNC/device-path rejection, which runs on
-  // `targetToken` before any filesystem call follows it, and its final realpath-based check,
-  // which is safe to reach here precisely BECAUSE the raw-text check above already ruled out a
-  // UNC/device target.
-  const resolved = await resolveInWorktree(worktreeRoot, targetToken);
+ * A target that resolves INSIDE the worktree but under a `.git` segment (a link into the
+ * repository's own internals) is also `'cannot-access'`, not `'folder'`/`'file'` (PR #671 gate
+ * round 2 fix, LOW): `.git` itself is never represented as a node (FR-007), and classifying it
+ * as an ordinary folder would render it with a disclosure control that then fails on expand. */
+async function classifySymlinkEntry(
+  worktreeRoot: string,
+  rootRealPath: string,
+  entryAbsPath: string
+): Promise<FileTreeEntryKind> {
+  const resolved = await resolveInWorktree(worktreeRoot, entryAbsPath);
   if (!resolved.ok) return 'cannot-access';
+  if (containsGitSegment(path.relative(rootRealPath, resolved.realPath))) return 'cannot-access';
   const stat = await fs.stat(resolved.realPath).catch(() => null);
   return stat?.isDirectory() ? 'folder' : 'file';
 }
@@ -143,12 +138,22 @@ export function registerFileExplorer(manager: SessionManager): void {
       // a path of its own for the root, only ever a session id plus a worktree-relative path
       // `resolveInWorktree`/`resolveListTarget` independently prove stays inside it.
       const session = manager.registry.getSession(sessionId);
-      if (!session) return notFound(`Session not found: ${sessionId}`);
+      // PR #671 gate round 2 fix (a11y/code-reviewer MEDIUM): never the raw session id -- this
+      // panel's own root-load error state renders the message verbatim via `role="alert"`.
+      if (!session) return notFound(`This Session no longer exists`);
       const { worktreePath } = session;
 
       const resolved = await resolveListTarget(worktreePath, relativePath);
-      if (!resolved.ok) return resolveErrorResult(worktreePath, resolved.reason, 'folder');
+      if (!resolved.ok) return resolveErrorResult(resolved.reason, 'folder');
       const { realPath } = resolved;
+
+      // Computed once per request, never per entry: `classifySymlinkEntry` needs the WORKTREE
+      // root's own realpath (not just the listed directory's, which may be a subfolder) to test
+      // whether a link's target lands under `.git`. `worktreePath` is main-controlled (the
+      // registry's own Session record), never attacker-influenced, so this is the same kind of
+      // trusted realpath `resolveListTarget`/`resolveInWorktree` already do internally -- not a
+      // second containment check.
+      const rootRealPath = await fs.realpath(worktreePath).catch(() => realPath);
 
       let dirents: Dirent[];
       try {
@@ -173,7 +178,7 @@ export function registerFileExplorer(manager: SessionManager): void {
           const i = nextIndex++;
           const dirent = dirents[i]!;
           kinds[i] = dirent.isSymbolicLink()
-            ? await classifySymlinkEntry(worktreePath, path.join(realPath, dirent.name))
+            ? await classifySymlinkEntry(worktreePath, rootRealPath, path.join(realPath, dirent.name))
             : dirent.isDirectory()
               ? 'folder'
               : 'file';
