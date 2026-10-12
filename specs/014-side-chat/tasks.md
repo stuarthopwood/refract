@@ -969,8 +969,10 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   the deliberate zero-delay `setTimeout`); Story 1 Scenario 4 (mid-stream overlap) and Story 3
   (restart survival) -- both pre-existing #668 behaviour, unchanged by this round's Copy/Clear-
   thread-only diff, so not re-run; a real screen reader pass (standing limitation, every round).
-- [ ] T027 Update `docs/PLAN.md` row C2 only: status, branch, PR number (minimal diff, this story's
-  own row) (depends on T026 passing).
+- [x] T027 Update `docs/PLAN.md` row C2 only: status, branch, PR number (minimal diff, this story's
+  own row) (depends on T026 passing). **Done**: status cell changed from `todo` to `in review`,
+  naming branch `feat/1-516-side-chat-polish`, PR #669, the #667/#668 merges, and the still-open
+  SC-002 decision gate for Refs-vs-Closes; the rest of the row's own text untouched.
 
 **Checkpoint**: every quickstart.md story passes; the gate commands above exit 0; `docs/PLAN.md`
 row C2 reflects the real PR.
