@@ -171,6 +171,26 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
   return { ok: true, realPath: resolvedTarget };
 }
 
+/** Shared by every caller of `resolveInWorktree` (this file's own `revealFile` handler and
+ * `fileExplorer.ts`'s `listDirectory`) to map a `!ok` result to the same three error codes and
+ * plain-English messages -- never the resolved/unresolved path itself (constitution V: never
+ * leak a real filesystem path into a message a screen reader or log could surface). `noun`
+ * lets each call site say "file" or "folder" without a second, drifting copy of this mapping
+ * (DRY fix, PR #671 gate, code-reviewer). */
+export function resolveErrorResult(
+  worktreePath: string,
+  reason: Exclude<ResolveInWorktreeResult, { ok: true }>['reason'],
+  noun: 'file' | 'folder'
+): Result<never> {
+  if (reason === 'worktree-missing') {
+    return { ok: false, error: { code: 'worktree-missing', message: `Worktree missing: ${worktreePath}` } };
+  }
+  if (reason === 'file-missing') {
+    return { ok: false, error: { code: 'file-missing', message: `Couldn't find that ${noun} in this Session's worktree` } };
+  }
+  return { ok: false, error: { code: 'outside-worktree', message: `That path is outside this Session's worktree` } };
+}
+
 export function registerFilesIpc(manager: SessionManager): void {
   ipcMain.handle(
     IPC_REQUESTS.SESSIONS_REVEAL_FILE,
@@ -185,15 +205,7 @@ export function registerFilesIpc(manager: SessionManager): void {
       if (!session) return notFound(`Session not found: ${sessionId}`);
 
       const resolved = await resolveInWorktree(session.worktreePath, token);
-      if (!resolved.ok) {
-        if (resolved.reason === 'worktree-missing') {
-          return { ok: false, error: { code: 'worktree-missing', message: `Worktree missing: ${session.worktreePath}` } };
-        }
-        if (resolved.reason === 'file-missing') {
-          return { ok: false, error: { code: 'file-missing', message: `Couldn't find that file in this Session's worktree` } };
-        }
-        return { ok: false, error: { code: 'outside-worktree', message: `That path is outside this Session's worktree` } };
-      }
+      if (!resolved.ok) return resolveErrorResult(session.worktreePath, resolved.reason, 'file');
 
       // Never logs the resolved path itself, the same convention `openExternalSafe` follows.
       shell.showItemInFolder(resolved.realPath);

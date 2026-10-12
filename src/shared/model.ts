@@ -560,13 +560,19 @@ export interface ProfileCacheEntry {
 /** Spec 015 data-model.md: one row of the File explorer's tree (FR-004 to FR-007). Relative to
  * the Session's own worktree root (never absolute, never escaping it -- `resolveInWorktree`,
  * `src/main/ipc/files.ts`, enforces this main-side before any read). `.git` itself is never
- * represented as a node (FR-007); `kind` reflects the FOLLOWED type for a symlink/junction entry
- * (so a symlinked folder still renders with a disclosure control), not the link's own raw dirent
- * type -- containment of whatever it actually points to is only checked when that specific entry
- * is itself expanded or previewed, never at listing time (listing one directory never follows
- * every child symlink to validate it). `gitStatus` arrives in Slice 2 (data-model.md
- * `GitStatusMark`); absent in Slice 1. */
-export type FileTreeEntryKind = 'file' | 'folder';
+ * represented as a node (FR-007, checked on the path as typed AND on its realpath'd result, so
+ * neither a literal `.git`/`.GIT` segment nor the Windows 8.3 alias `GIT~1` can resolve to it).
+ * `kind: 'folder'`/`'file'` reflects the FOLLOWED type for a symlink/junction entry (so a
+ * symlinked folder still renders with a disclosure control) -- but ONLY once `resolveInWorktree`
+ * has independently proven the link's target realpaths inside the worktree first (PR #671 gate
+ * fix, security-auditor HIGH: a listing must never `fs.stat`/`fs.realpath` a link's target before
+ * that check, since a target that is a UNC path would make Windows attempt an outbound SMB/NTLM
+ * authentication just from opening the panel, no click required). A link whose target escapes
+ * the worktree, is a UNC/device path, or is simply broken resolves to `kind: 'cannot-access'`
+ * instead -- the row this spec.md's own Edge Cases section calls a "cannot access" state --
+ * without ever following it. `gitStatus` arrives in Slice 2 (data-model.md `GitStatusMark`);
+ * absent in Slice 1. */
+export type FileTreeEntryKind = 'file' | 'folder' | 'cannot-access';
 
 export interface FileTreeNode {
   /** Relative to the worktree root, POSIX-style `/` separators regardless of platform (FR-004). */

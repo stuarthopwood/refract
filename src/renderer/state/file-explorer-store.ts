@@ -10,32 +10,50 @@ import type { FileTreeNode } from '../../shared/model'
 // not single-Session-at-a-time, since a split's two panes each show their own focused Session's
 // tree (the decision comment on #463).
 
-/** Slice 1 only: the tree's own shape (`root`), loading/error flags. Expansion/selection state,
+/** The tree's own per-node view-state shape: `FileTreeNode` plus the renderer-only `children`/
+ * `expanded` fields (T007's own in-tree design, data-model.md). Recursive ON PURPOSE -- Slice 1
+ * originally repeated `FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean }` (NOT
+ * actually recursive: a node two levels deep lost those fields' own typing, only the top level
+ * ever had them) about six times across this file and `FileExplorerPanel.tsx`; this is the one,
+ * correctly-recursive source of truth both now import instead (PR #671 gate fix, code-reviewer
+ * MEDIUM). */
+export interface ExpandableNode extends FileTreeNode {
+  children?: ExpandableNode[]
+  expanded?: boolean
+}
+
+/** Slice 1 only: the tree's own shape (`root`), loading/error state. Expansion/selection state,
  * the git-status map, and the preview selection all arrive in Slice 2 -- this interface grows
  * then, not before, so an unused field never sits here half-wired. */
 interface FileExplorerSessionState {
   /** `null` until the root listing's first response arrives (FR-005, FR-004). A synthetic node:
    * `path: ''`, `kind: 'folder'` -- never rendered as a row itself, only its own `children` are
    * (the worktree root has no meaningful "name" of its own to show as a tree row). */
-  root: (FileTreeNode & { children?: FileTreeNode[] }) | null
-  /** True once the root listing has succeeded at least once for this Session this app run
-   * (mirrors `side-chat-store.ts`'s own `loaded` field and its own reasoning: a failed load must
-   * retry once the Session starts, never be cached as "there is nothing here"). */
-  loaded: boolean
+  root: ExpandableNode | null
+  /** PR #671 gate fix (code-reviewer HIGH; accessibility-auditor/test-reviewer MEDIUM): replaces
+   * the old boolean-only `loaded` flag, which had no way to represent "the root listing failed"
+   * -- the panel showed "Loading…" forever, since nothing ever flipped it to anything else.
+   * `'loading'` until the FIRST root-listing response for this Session this app run settles;
+   * `'error'` once that response fails (stays `'error'`, with the SAME `root` it had before --
+   * `null` the first time -- until the user's own Retry succeeds); `'ready'` once it succeeds. */
+  status: 'loading' | 'error' | 'ready'
+  /** Set alongside `status: 'error'`; the already-plain-English IPC error message, rendered
+   * directly in the panel's error state (never a toast -- a toast closes itself, which would
+   * leave the panel's own persistent state claiming nothing is wrong). `null` otherwise. */
+  error: string | null
 }
-
-const EMPTY_SESSION_STATE: FileExplorerSessionState = { root: null, loaded: false }
 
 interface FileExplorerStoreState {
   bySession: Record<string, FileExplorerSessionState>
   /** Fetches one directory's immediate children (FR-005). `relativePath` `''` is the worktree
-   * root (sets `root` itself); any other value must already be a node somewhere in the current
-   * `root` tree (fetched by an earlier call or present in `root`'s own listing) -- if the tree
-   * does not yet contain it, the fetch still runs but the result has nowhere to attach and is
-   * silently dropped (this can only happen from a stale call racing a Session switch, the same
-   * class of race `side-chat-store.ts`'s own epoch guard exists for; Slice 1 has no epoch guard
-   * yet since nothing here is async-racy enough to need one -- a single in-flight `loadDirectory`
-   * per directory, never overlapping itself). */
+   * root (sets `root` itself, and is the only call that touches `status`/`error` -- see their own
+   * doc comments); any other value must already be a node somewhere in the current `root` tree
+   * (fetched by an earlier call or present in `root`'s own listing) -- if the tree does not yet
+   * contain it, the fetch still runs but the result has nowhere to attach and is silently dropped
+   * (this can only happen from a stale call racing a Session switch, the same class of race
+   * `side-chat-store.ts`'s own epoch guard exists for; Slice 1 has no epoch guard yet since
+   * nothing here is async-racy enough to need one -- a single in-flight `loadDirectory` per
+   * directory, never overlapping itself). */
   loadDirectory(sessionId: string, relativePath: string): Promise<void>
   /** Flips an ALREADY-fetched folder's own `expanded` flag with no fetch (collapsing a folder
    * must never re-read it -- only expanding one for the first time does, via `loadDirectory`
@@ -47,11 +65,7 @@ interface FileExplorerStoreState {
  * carrying `children` set and `expanded: true`. Returns `node` unchanged (same reference) when no
  * match exists anywhere under it, so an unrelated branch's object identity is preserved across an
  * unrelated directory's own fetch (cheap to extend with memoised rendering later, Slice 2). */
-function withChildrenAt(
-  node: FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean },
-  targetPath: string,
-  children: FileTreeNode[]
-): FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean } {
+function withChildrenAt(node: ExpandableNode, targetPath: string, children: FileTreeNode[]): ExpandableNode {
   if (node.path === targetPath) return { ...node, children, expanded: true }
   if (!node.children) return node
   const nextChildren = node.children.map((child) => withChildrenAt(child, targetPath, children))
@@ -61,10 +75,7 @@ function withChildrenAt(
 
 /** Companion to `withChildrenAt`: flips `expanded` on the node at `targetPath` in place, without
  * touching `children`. Same "unchanged reference when nothing matched" contract. */
-function withExpandedToggled(
-  node: FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean },
-  targetPath: string
-): FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean } {
+function withExpandedToggled(node: ExpandableNode, targetPath: string): ExpandableNode {
   if (node.path === targetPath) return node.children ? { ...node, expanded: !node.expanded } : node
   if (!node.children) return node
   const nextChildren = node.children.map((child) => withExpandedToggled(child, targetPath))
@@ -76,29 +87,51 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   bySession: {},
 
   async loadDirectory(sessionId, relativePath) {
+    if (relativePath === '') {
+      // PR #671 gate fix: marks the Session `'loading'` up front (covers both the very first
+      // open AND an explicit Retry after a previous `'error'`) -- the previous version had
+      // nothing to flip away from an implicit, permanent "not loaded yet".
+      set((state) => ({
+        bySession: {
+          ...state.bySession,
+          [sessionId]: { root: state.bySession[sessionId]?.root ?? null, status: 'loading', error: null }
+        }
+      }))
+    }
     const result = await window.refract.fileExplorer.listDirectory(sessionId, relativePath)
     if (!result.ok) {
-      // Gate-fix precedent (side-chat, round 2): `agent-not-running`-shaped failures are not
-      // this spec's own error vocabulary (file reads do not require a live agent at all -- the
-      // worktree exists whether or not OMP is running), so every failure here is a genuine one,
-      // always worth a toast. `worktree-missing`/`outside-worktree`/`file-missing` are this
-      // spec's own typed codes (contracts/ipc.md); their message is already plain English.
+      if (relativePath === '') {
+        // PR #671 gate fix: a persistent, retryable error state instead of a one-shot toast that
+        // left `loaded`/`status` claiming "still loading" forever (`contracts/ipc.md`'s
+        // `worktree-missing`/`outside-worktree`/`file-missing` codes already carry a plain-
+        // English message, reused verbatim here).
+        set((state) => ({
+          bySession: {
+            ...state.bySession,
+            [sessionId]: { root: state.bySession[sessionId]?.root ?? null, status: 'error', error: result.error.message }
+          }
+        }))
+        return
+      }
+      // A non-root (folder-expand) failure has no dedicated per-row error state yet in Slice 1 --
+      // Slice 2's tree pattern (T012) is where that lands. A toast remains better than silence
+      // for that one case (gate-fix precedent, side-chat round 2).
       toast.error(result.error.message)
       return
     }
     set((state) => {
-      const existing = state.bySession[sessionId] ?? EMPTY_SESSION_STATE
+      const existing = state.bySession[sessionId]
       if (relativePath === '') {
-        const root: FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean } = {
+        const root: ExpandableNode = {
           path: '',
           name: '',
           kind: 'folder',
           children: result.value.entries,
           expanded: true
         }
-        return { bySession: { ...state.bySession, [sessionId]: { root, loaded: true } } }
+        return { bySession: { ...state.bySession, [sessionId]: { root, status: 'ready', error: null } } }
       }
-      if (!existing.root) return state // stale call, nothing to attach to (see loadDirectory's own doc comment)
+      if (!existing?.root) return state // stale call, nothing to attach to (see loadDirectory's own doc comment)
       const root = withChildrenAt(existing.root, relativePath, result.value.entries)
       if (root === existing.root) return state
       return { bySession: { ...state.bySession, [sessionId]: { ...existing, root } } }

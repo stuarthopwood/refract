@@ -163,3 +163,37 @@
     own `resolveListTarget` special-cases `relativePath === ''` to `fs.realpath` the worktree root
     directly (the exact first step `resolveInWorktree` itself takes internally) and defers to the
     unmodified function for every other value.
+
+    **Addendum (PR #671 gate fix, security-auditor HIGH):** reuse initially stopped short at
+    `resolveListTarget`'s own root-vs-non-root resolution -- listing a folder still called
+    `fs.stat` directly on every symlink/junction DIRENT to learn its kind, which FOLLOWS the
+    link before any containment check runs at all. If such a link's target is a UNC path
+    (`\\attacker\share\x`), merely opening the panel made Windows attempt an outbound SMB/NTLM
+    authentication with no click from the user -- exactly the zero-click leak this function's own
+    doc comment says must never be reachable, just reached from a NEW call site this spec added
+    rather than from `resolveInWorktree` itself. Fixed in `fileExplorer.ts`'s new
+    `classifySymlinkEntry`: `fs.readlink` reads the link's own stored target text WITHOUT
+    following it (always safe); only once that raw text is checked, lexically, to be neither a
+    UNC/device path nor something `resolveInWorktree` itself would reject, is `resolveInWorktree`
+    (on the target, reused again) and then `fs.stat` safe to call. A target that fails either
+    check resolves to `kind: 'cannot-access'` (spec.md Edge Cases' own "cannot access" row state)
+    rather than being followed. Classification now runs with bounded concurrency (matching
+    `repositories.ts`'s own `remotesBounded` worker-pool shape), never one `readlink`/`stat` after
+    another.
+
+    **Correction to this slice's own "not verified live" disclosure:** the three string-level
+    escape attempts this slice's live check ran (`../../../../Windows/System32`, `C:\Windows`,
+    `\\?\C:\Windows`) were originally described as proving "the same `resolveInWorktree` boundary
+    a symlink would also hit". That is wrong: all three are rejected by TEXT-ONLY pre-checks
+    (the lexical containment check and the leading-`//` UNC check), neither of which a
+    symlink/junction escape would reach -- a symlink's own relative path, as a TOKEN, looks
+    perfectly ordinary; only the FINAL `fs.realpath`-based check (the actual security boundary)
+    would catch it. That check is exercised by issue #610's own quality-gate history (round 5,
+    `Sec5`, "re-confirmed with a fresh probe"), unchanged since, not by this slice's own three
+    attempts. **Update (same PR #671 gate-fix round):** a real `mklink /J` junction fixture
+    (both an escaping target and an in-root target), a real `mklink /D` directory symlink, and a
+    dangling junction were all created in a scratch worktree and exercised directly against the
+    live `fileExplorer.listDirectory` IPC method (tasks.md Slice 1 Checkpoint) -- the
+    `fs.realpath`-based security boundary this correction describes is no longer only inferred
+    from issue #610's own history, it is now independently confirmed for this spec's own new
+    call site too.

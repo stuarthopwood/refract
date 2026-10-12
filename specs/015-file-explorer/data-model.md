@@ -10,7 +10,10 @@ One row's data: a lazily-expanded tree node rooted at the focused chat pane's Se
 which folders are expanded (spec.md Key Entities).
 
 ```ts
-export type FileTreeEntryKind = 'file' | 'folder'
+/** `'cannot-access'`: a symlink/junction entry whose own target fails the same path-containment
+ * check every read goes through (FR-001) -- spec.md Edge Cases' "cannot access" row state,
+ * never followed to find out what it actually is. */
+export type FileTreeEntryKind = 'file' | 'folder' | 'cannot-access'
 
 /** Mirrors `GitStatusMap`'s own per-path value (below); a node's own current mark, refreshed
  * alongside the tree's live-refresh cycle (FR-020) and the shared git-status reader
@@ -95,25 +98,51 @@ is -- `fileExplorer.listDirectory`/`getStatus` are this spec's own source of tru
 not already held in memory.
 
 ```ts
+/** The tree's own per-node view-state shape: `FileTreeNode` (above) plus the renderer-only
+ * `children`/`expanded` fields, RECURSIVELY -- `file-explorer-store.ts`'s single source of truth
+ * for both, exported from there (PR #671 gate fix, code-reviewer MEDIUM: six repeated,
+ * non-recursive inline intersections replaced with this one named type). */
+export interface ExpandableNode extends FileTreeNode {
+  children?: ExpandableNode[]
+  expanded?: boolean
+}
+
 export interface FileExplorerSessionState {
   /** The Session's worktree-rooted tree, built up lazily as folders expand (FR-005). `null`
-   * until the root listing's first response arrives. */
-  root: FileTreeNode | null
-  /** Mirrors `FileTreeNode.expanded`, tracked separately so a live-refresh re-list (FR-020) can
-   * restore it onto freshly-fetched children without the main process needing to know about
-   * renderer-only UI state. Keyed by path. */
-  expandedPaths: Set<string>
+   * until the root listing's first response arrives. An `ExpandableNode` -- `FileTreeNode` plus
+   * `children?: ExpandableNode[]`/`expanded?: boolean`, RECURSIVELY -- not a separate
+   * `expandedPaths: Set<string>` sidecar: T007 (Slice 1 implementation) found that a sidecar
+   * would need a second, parallel lookup kept in sync with whatever shape the tree itself takes,
+   * whereas mutating the tree node in place (structural sharing, so an unrelated branch's object
+   * identity survives an unrelated directory's own fetch) is the simpler, single-source-of-truth
+   * shape -- corrects this document's own original flat-Set design (PR #671 gate fix,
+   * code-reviewer/verification MEDIUM). Survives a live-refresh re-list (FR-020, SC-003) and a
+   * pane resize/panel switch (FR-025), same as before. */
+  root: ExpandableNode | null
+  /** Slice 1 (PR #671 gate fix, code-reviewer HIGH; accessibility-auditor/verification MEDIUM):
+   * `'loading'` until the FIRST root-listing response for this Session this app run settles;
+   * `'error'` once that response fails (stays `'error'`, with whatever `root` it already had --
+   * `null` the first time -- until the user's own Retry succeeds); `'ready'` once it succeeds.
+   * Replaces an original boolean-only `loaded` design that had no way to represent "the root
+   * listing failed" -- the panel showed "Loading…" forever, since nothing ever flipped it to
+   * anything else. */
+  status: 'loading' | 'error' | 'ready'
+  /** Set alongside `status: 'error'`; the already-plain-English IPC error message, rendered
+   * directly in the panel's own error state. `null` otherwise. Slice 1. */
+  error: string | null
   /** FR-009: off by default, synced to main on every `fileExplorer.listDirectory` call so
-   * ignored entries are included/excluded in what the reader returns. */
+   * ignored entries are included/excluded in what the reader returns. Slice 2. */
   showIgnored: boolean
   /** The row currently selected/focused, for roving-tabindex (FR-022) and resize/panel-switch
-   * focus retention (FR-025). `null` when nothing is selected yet. */
+   * focus retention (FR-025). `null` when nothing is selected yet. Slice 2. */
   selectedPath: string | null
-  /** `GitStatusMap`, refreshed alongside the tree's own live-refresh cycle (FR-010/FR-020). */
+  /** `GitStatusMap`, refreshed alongside the tree's own live-refresh cycle (FR-010/FR-020).
+   * Slice 2. */
   gitStatus: GitStatusMap
+  /** Slice 2. */
   preview: FilePreview | null
   /** True while `fileExplorer.readPreview` is in flight for `preview`'s path, so the preview
-   * region can show a loading state rather than stale or empty content. */
+   * region can show a loading state rather than stale or empty content. Slice 2. */
   previewLoading: boolean
 }
 

@@ -2,13 +2,20 @@
 // shell plus a real, lazily-loaded listing of the Session's own worktree -- no keyboard/ARIA tree
 // pattern yet (Slice 2, FR-022), no preview, no git status marks, no Open in VS Code. A plain,
 // click-to-expand nested list, same incremental-shippability spec 013/014's own Slice 1s used.
-import { useEffect } from 'react'
-import { ChevronDownIcon, ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { useEffect, useRef } from 'react'
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  FileIcon,
+  FileWarningIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  TriangleAlertIcon
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { useFileExplorerStore } from '@/state'
-import type { FileTreeNode } from '../../../../shared/model'
-
-type ExpandableNode = FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean }
+import type { ExpandableNode } from '../../../state/file-explorer-store'
 
 interface FileExplorerPanelProps {
   /** The Session this tree follows -- no independent binding of its own (FR-004), the same
@@ -19,16 +26,37 @@ interface FileExplorerPanelProps {
 
 export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const root = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.root ?? null) : null))
-  const loaded = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.loaded ?? false) : false))
+  const status = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.status ?? 'loading') : 'loading'))
+  const error = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.error ?? null) : null))
   const loadDirectory = useFileExplorerStore((s) => s.loadDirectory)
   const toggleExpanded = useFileExplorerStore((s) => s.toggleExpanded)
 
+  const containerRef = useRef<HTMLDivElement>(null)
+  // PR #671 gate fix (accessibility-auditor MEDIUM): when the focused Session changes to one not
+  // loaded yet, the `<ul>` holding the focused row unmounts (replaced by the loading/error/empty
+  // state) and the browser drops focus to `<body>` the instant that happens -- synchronously,
+  // before any effect below can observe where focus WAS. `hadFocusRef` is instead kept current
+  // by the container's own `onFocus`/`onBlur` throughout the PRECEDING render, the same "no click
+  // to capture 'had focus' at" pattern `ChatPane.tsx`'s own `chatHadFocusRef` already uses.
+  const hadFocusRef = useRef(false)
+  const prevSessionIdRef = useRef(sessionId)
+
   // FR-004/FR-005: the root listing, once per Session per app run (mirrors side-chat's own
-  // `loadHistory`-on-first-open effect, spec 014).
+  // `loadHistory`-on-first-open effect, spec 014). Only the very first attempt is automatic --
+  // once a Session has EITHER succeeded or failed once, this effect never fires again for it;
+  // a failed load's own Retry button (below) is the only way to try again.
   useEffect(() => {
-    if (!sessionId || loaded) return
+    if (!sessionId || useFileExplorerStore.getState().bySession[sessionId]) return
     void loadDirectory(sessionId, '')
-  }, [sessionId, loaded, loadDirectory])
+  }, [sessionId, loadDirectory])
+
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      if (hadFocusRef.current) containerRef.current?.focus()
+      hadFocusRef.current = false
+      prevSessionIdRef.current = sessionId
+    }
+  }, [sessionId])
 
   if (!sessionId) {
     return (
@@ -56,10 +84,42 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     toggleExpanded(sessionId, node.path)
   }
 
+  function handleRetry(): void {
+    if (!sessionId) return
+    void loadDirectory(sessionId, '')
+  }
+
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-2">
-      {!loaded ? (
-        <p className="p-2 text-sm text-muted-foreground">Loading…</p>
+    <div
+      ref={containerRef}
+      tabIndex={-1}
+      onFocus={() => {
+        hadFocusRef.current = true
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) hadFocusRef.current = false
+      }}
+      className="flex h-full flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+    >
+      {status === 'loading' ? (
+        <p role="status" className="p-2 text-sm text-muted-foreground">
+          Loading…
+        </p>
+      ) : status === 'error' ? (
+        <Empty className="h-full">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <TriangleAlertIcon aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>Couldn't load this Session's files</EmptyTitle>
+            <EmptyDescription role="alert">{error}</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" onClick={handleRetry}>
+              Retry
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : !root?.children || root.children.length === 0 ? (
         <Empty className="h-full">
           <EmptyHeader>
@@ -91,27 +151,50 @@ function TreeRow({
 }) {
   const isFolder = node.kind === 'folder'
   const expanded = node.expanded === true
+  const rowClassName = 'flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-sm'
   return (
     <li>
-      <button
-        type="button"
-        className="no-drag-region flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-sm hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-        style={{ paddingLeft: `${depth * 16 + 4}px` }}
-        onClick={() => isFolder && onToggle(node)}
-        disabled={!isFolder}
-      >
-        {isFolder ? (
-          expanded ? <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" /> : <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
-        ) : (
+      {isFolder ? (
+        <button
+          type="button"
+          className={`no-drag-region ${rowClassName} hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring`}
+          style={{ paddingLeft: `${depth * 16 + 4}px` }}
+          onClick={() => onToggle(node)}
+        >
+          {expanded ? (
+            <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
+          ) : (
+            <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
+          )}
+          {expanded ? (
+            <FolderOpenIcon aria-hidden className="size-4 shrink-0" />
+          ) : (
+            <FolderIcon aria-hidden className="size-4 shrink-0" />
+          )}
+          <span className="truncate" title={node.name}>
+            {node.name}
+          </span>
+        </button>
+      ) : (
+        // PR #671 gate fix (accessibility-auditor MEDIUM): a file (or `cannot-access`) row is NOT
+        // a `<button disabled>` -- a screen reader in browse mode read every one of those as
+        // "button, unavailable/dimmed", announcing a broken control rather than a plain row with
+        // nothing to activate. A non-interactive `<span>`, no `disabled` attribute and no hover
+        // background, matches what it actually is. A later slice turns this into an unselected
+        // `treeitem`, replacing this element rather than adding roles on top of it.
+        <span className={rowClassName} style={{ paddingLeft: `${depth * 16 + 4}px` }}>
           <span className="inline-block size-3.5 shrink-0" aria-hidden />
-        )}
-        {isFolder ? (
-          expanded ? <FolderOpenIcon aria-hidden className="size-4 shrink-0" /> : <FolderIcon aria-hidden className="size-4 shrink-0" />
-        ) : (
-          <FileIcon aria-hidden className="size-4 shrink-0" />
-        )}
-        <span className="truncate">{node.name}</span>
-      </button>
+          {node.kind === 'cannot-access' ? (
+            <FileWarningIcon aria-hidden className="size-4 shrink-0" />
+          ) : (
+            <FileIcon aria-hidden className="size-4 shrink-0" />
+          )}
+          <span className="truncate" title={node.name}>
+            {node.name}
+            {node.kind === 'cannot-access' && <span className="sr-only"> (cannot access)</span>}
+          </span>
+        </span>
+      )}
       {isFolder && expanded && node.children && (
         <ul className="flex flex-col gap-0.5">
           {node.children.map((child) => (

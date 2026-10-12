@@ -60,18 +60,37 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   Added a thin `resolveListTarget` wrapper in `fileExplorer.ts` (T004) that special-cases
   `relativePath === ''` (lists the worktree root itself, which the shared function deliberately
   refuses as `file-missing` -- correct for its own `revealFile` call site, wrong for this one)
-  and defers to the unmodified shared function for every other value. `plan.md`/`research.md`
-  updated to match (decision 11); no new containment implementation was written.
+  and defers to the unmodified shared function for every other value. `plan.md`/`research.md`/
+  `data-model.md`/`contracts/ipc.md` updated to match (decision 11); no new containment
+  implementation was written. **PR #671 gate fix round (security-auditor/code-reviewer MEDIUM)**:
+  `resolveListTarget` also rejects `.git` as a listing TARGET, not just as a listed ROW --
+  checked on the `relativePath` as typed AND again on its realpath'd result relative to the root
+  (catches the Windows 8.3 alias `GIT~1`, which only reads as `.git` after `fs.realpath` expands
+  it), ASCII case-insensitively either way (`containsGitSegment`, shared so Slice 2's
+  `readPreview` reuses it rather than a second copy).
 - [x] T004 [P] Add `fileExplorer.listDirectory(sessionId, relativePath)` to `src/main/ipc/`: a new
   `src/main/ipc/fileExplorer.ts` (mirrors `side-chat.ts`'s own validation/error-mapping shape) that
   resolves the Session's `worktreePath` from the registry (never the renderer, constitution V),
   calls `resolveListTarget` (T003), lists that directory's immediate children only (folders before
   files, alphabetical case-insensitive within each group per FR-006), one level deep (lazy-load,
-  FR-005) -- no recursion, no git status yet (Slice 2). `.git` itself always excluded (FR-007). A
-  symlink/junction entry's own `kind` is resolved via one extra `fs.stat` per such entry (follows
-  the link so a symlinked folder still renders with a disclosure control); containment of
-  whatever it actually points to is checked lazily, only when that entry is itself later expanded
-  or previewed, never at listing time.
+  FR-005) -- no recursion, no git status yet (Slice 2). `.git` itself always excluded
+  case-insensitively (FR-007). **PR #671 gate fix round (security-auditor HIGH)**: a
+  symlink/junction dirent's own `kind` is classified WITHOUT ever `fs.stat`/`fs.realpath`-ing an
+  unvetted target -- the original version called `fs.stat` on every such entry unconditionally,
+  which follows the link; a target that is a UNC path would make Windows attempt an outbound
+  SMB/NTLM authentication just from opening the panel, no click required, the exact zero-click
+  leak `resolveInWorktree`'s own doc comment says must never be reachable.
+  `classifySymlinkEntry` instead reads the link's own stored target text with `fs.readlink`
+  (never follows), rejects it as `kind: 'cannot-access'` outright if that raw text is a UNC/device
+  path, and only then calls `resolveInWorktree` (reused again, on the target) + `fs.stat` for a
+  target that check has independently proven stays inside the worktree -- a target that fails
+  either check resolves to `kind: 'cannot-access'` (spec.md Edge Cases' own "cannot access" row
+  state) rather than being followed. Classification runs with bounded concurrency
+  (`SYMLINK_CLASSIFY_CONCURRENCY`, matching `repositories.ts`'s own `remotesBounded` worker-pool
+  shape), never one `readlink`/`stat` after another. Readdir failures (ENOENT/ENOTDIR/EACCES/
+  EPERM/other) map to plain-English messages, never `err.message` or the resolved path itself
+  (`mapReaddirError`). The repeated inline error-mapping block shared with `files.ts`'s own
+  `revealFile` handler is now one exported `resolveErrorResult` in `files.ts`, used by both.
 - [x] T005 [P] Add `IPC_REQUESTS.FILE_EXPLORER_LIST_DIRECTORY` (and a comment reserving the
   Slice-2/3 request names in `contracts/ipc.md`, so the shared `src/shared/ipc.ts` naming
   convention stays visible from this slice's own commit, even though the later requests
@@ -83,16 +102,24 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   `src/renderer/features/right-pane/panel-registry.ts` (FR-026).
 - [x] T007 Create `src/renderer/state/file-explorer-store.ts`: per-Session keying (research.md
   decision 10, mirrors `side-chat-store.ts`). **Differs from this task's own original plan**: a
-  recursive `root: FileTreeNode | null` tree (matching data-model.md's own recursive
-  `children?`/`expanded?` shape) rather than a flat `expanded: Set<string>` sidecar -- a sidecar
-  would need a second, parallel lookup structure kept in sync with whatever shape the tree itself
-  takes; mutating the tree node in place (`withChildrenAt`/`withExpandedToggled`, structural
-  sharing so an unrelated branch's object identity survives an unrelated directory's own fetch)
-  is the simpler, single-source-of-truth shape for a tree that does not yet need Slice 2's own
-  virtualisation/windowing concerns. `loadDirectory(sessionId, relativePath)` fetches and expands;
-  a separate `toggleExpanded(sessionId, relativePath)` flips an already-fetched folder's own
-  `expanded` flag with NO re-fetch (collapsing a folder must never re-read it -- only expanding
-  one for the first time does). No preview/status/patch handling yet (Slice 2).
+  recursive `root: ExpandableNode | null` tree (`FileTreeNode` plus `children?: ExpandableNode[]`/
+  `expanded?: boolean`, RECURSIVELY -- matching data-model.md's own corrected design, below)
+  rather than a flat `expanded: Set<string>` sidecar -- a sidecar would need a second, parallel
+  lookup structure kept in sync with whatever shape the tree itself takes; mutating the tree node
+  in place (`withChildrenAt`/`withExpandedToggled`, structural sharing so an unrelated branch's
+  object identity survives an unrelated directory's own fetch) is the simpler, single-source-of-
+  truth shape for a tree that does not yet need Slice 2's own virtualisation/windowing concerns.
+  `loadDirectory(sessionId, relativePath)` fetches and expands; a separate
+  `toggleExpanded(sessionId, relativePath)` flips an already-fetched folder's own `expanded` flag
+  with NO re-fetch (collapsing a folder must never re-read it -- only expanding one for the first
+  time does). No preview/patch handling yet (Slice 2). **PR #671 gate fix round**:
+  `ExpandableNode` is now one exported, genuinely recursive type (`code-reviewer MEDIUM`: the
+  original six repeated `FileTreeNode & { children?: FileTreeNode[]; expanded?: boolean }`
+  inline intersections were NOT recursive -- a node two levels deep lost those fields' own
+  typing). `root`/`error` grow a `status: 'loading' | 'error' | 'ready'` and `error: string |
+  null` pair (`code-reviewer HIGH`; `accessibility-auditor`/`test-reviewer MEDIUM`): the original
+  boolean-only `loaded` field had no way to represent "the root listing failed", so a failed load
+  left the panel showing "Loading…" forever with no retry.
 - [x] T008 [P] Export `useFileExplorerStore` from `src/renderer/state/index.ts` (all four spots:
   import, re-export, the dev-only `RefractDevStores` interface, and its own object literal --
   matching every other store's own four-spot pattern in this file).
@@ -101,6 +128,19 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   Slice 2, FR-022) wired to `useFileExplorerStore`, fetching the root on first open per Session
   (mirrors side-chat's own `loadHistory`-on-first-open effect) and lazily fetching a folder's
   children on click-to-expand (`loadDirectory` the first time, `toggleExpanded` thereafter).
+  **PR #671 gate fix round**: a `status: 'error'` state renders an `Empty` with the IPC error
+  message and a Retry button calling `loadDirectory(sessionId, '')` again (`code-reviewer HIGH`);
+  "Loading…" carries `role="status"` and shows only while `status === 'loading'`. A file (or
+  `cannot-access`) row is a non-interactive `<span>`, never a `<button disabled>`
+  (`accessibility-auditor MEDIUM`: a disabled button reads to a screen reader as "button,
+  unavailable", announcing a broken control rather than a plain row). The panel's own scroll
+  container is a focus sink (`tabIndex={-1}`, the same `focus-visible:outline-2` convention
+  `SessionList.tsx`/`RightPaneShell.tsx` already use): when the focused row unmounts on a Session
+  switch, the browser drops focus to `<body>` synchronously, before any effect can observe where
+  it was, so a `hadFocusRef` set by the container's own `onFocus`/`onBlur` (the same "no click to
+  capture 'had focus' at" pattern `ChatPane.tsx`'s own `chatHadFocusRef` uses) is checked by the
+  next render's effect to decide whether to reclaim focus onto the container (`accessibility-
+  auditor MEDIUM`).
 - [x] T010 Edit `RightPaneShell.tsx`: one more `activePanelId === 'file-explorer'` branch rendering
   `FileExplorerPanel` (depends on T006, T009).
 - [x] T011 [P] `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Run
@@ -108,6 +148,11 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   slice. **Results**: typecheck pass (both tsconfigs); vitest 376/376 (no new tests, AGENTS.md
   #605); check:indent 0 odd-indent (321 files); check:ui-text 0 leaks (371 files); check:theme-
   contrast 313/313 (no new token); check:drag-regions 0 violations (109 files); build pass.
+  **Re-run after the PR #671 gate fix round** (same file counts, no new files this round):
+  typecheck pass (both tsconfigs); vitest 376/376; check:indent 0/321; check:ui-text 0/371 (one
+  transient leak found and fixed first -- a dev comment's own task-ID reference survived
+  minification immediately next to a JSX `/* @__PURE__ */` annotation; reworded, not a bundler
+  config change); check:theme-contrast 313/313; check:drag-regions 0/109; build pass.
 
 **Checkpoint**: live-verified (scratch clone under `C:/tmp/refract-file-explorer-s1` -- never
 `C:/Repos/personal` -- own `--user-data-dir`/CDP port 9343, torn down by pid-verified `taskkill`,
@@ -121,16 +166,38 @@ before files (`.github`, `.omp`, `.specify`, `build`, `docs`, `node_modules`, `o
 text search, not just a glance); clicking `src` lazily fetches and shows its real children
 (`main`, `preload`, `renderer`, `shared`); clicking it again collapses with no second fetch
 (`toggleExpanded`, confirmed by the UI correctly hiding the children with no new IPC round trip
-visible in the screenshot timing). Path-containment proved directly against the real IPC method
-(no UI surface ever sends an escaping path itself, so this exercises the boundary the same way
-issue #610's own gate rounds did): three distinct escape attempts --
-`../../../../Windows/System32` (relative traversal), `C:\Windows` (absolute, another location),
-and `\\?\C:\Windows` (a Windows device path) -- were ALL rejected `outside-worktree`, none
-reached the file system. **Not live-verified this slice**: a REAL symlink/junction escaping the
-worktree (no such fixture was created in the scratch repo; the three escape attempts above prove
-the same `resolveInWorktree` boundary a symlink would also hit, per research.md decision 11's own
-citation of issue #610's gate history already proving the symlink case specifically) -- disclosed
-on issue #650, not claimed as directly tested here.
+visible in the screenshot timing). Path-containment against three string-level escape attempts
+(`../../../../Windows/System32`, `C:\Windows`, `\\?\C:\Windows`) all rejected `outside-worktree`.
+
+**PR #671 gate-fix round, live-verified with REAL fixtures** (scratch clone under
+`C:/tmp/refract-fx-gatefix`, own `--user-data-dir`/CDP ports 9351-9352, pid-verified `taskkill`
+each run, deleted by literal path afterward; isolation proof: live `%APPDATA%\pinion\
+processes.json` mtime unchanged across the run, `%APPDATA%\refract` absent, scratch `userdata\
+processes.json` mtime fresh): 3 files (2 screenshots + `report.json`) + `sha256.json` under
+`C:/Users/shopwood/refract-live-check-671-gatefix/`, 0 duplicate hashes. A real `mklink /J`
+junction to an OUTSIDE folder (a sibling scratch folder, never touched: confirmed by the entry
+resolving to `kind: "cannot-access"` rather than following it to find out), a real `mklink /J`
+junction to an IN-ROOT folder (`src`, resolving to `kind: "folder"`, its own real children
+(`main`/`preload`/`renderer`/`shared`) listed correctly when expanded), a real `mklink /D`
+directory SYMLINK to the same outside folder (Developer Mode was enabled on this machine, so
+creation needed no elevation; also `kind: "cannot-access"`), and a dangling junction (its target
+folder deleted after linking: also `kind: "cannot-access"`) were all exercised directly against
+the real `fileExplorer.listDirectory` IPC method (`window.refract.fileExplorer.listDirectory`
+via `Runtime.evaluate`) and via the rendered UI (screenshot confirms the escaping/broken entries
+render with `FileWarningIcon` and no disclosure chevron -- non-expandable, matching the in-root
+junction and every ordinary folder/file around them, which render unaffected). The
+**realpath-stage escape** Main asked for directly -- `listDirectory(sessionId,
+'escape-outside-junction')` and `listDirectory(sessionId, 'escape-outside-symlink')`, i.e. asking
+to LIST INTO the escaping link itself, not just see it as a row -- both returned
+`outside-worktree`, never reaching the target; `listDirectory(sessionId,
+'escape-inroot-junction')` returned the in-root junction's real children, `ok: true`. Reworded
+disclosure (Verif1/A11y1/Code1 gate finding, all now corrected): the three STRING-level escape
+attempts above (reconfirmed this round, same results) only ever exercise `resolveInWorktree`'s
+TEXT-ONLY pre-checks (lexical containment, the leading-`//` UNC check) -- they do NOT reach the
+`fs.realpath`-based check a symlink/junction escape actually hits; that check is now independently,
+directly exercised by the real fixtures above, not merely inferred from issue #610's own gate
+history. `.git` as a direct listing TARGET (`listDirectory(sessionId, '.git')` and `'.GIT'`) also
+reconfirmed rejected `outside-worktree` this round.
 
 ---
 
