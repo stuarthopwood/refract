@@ -945,10 +945,30 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
 - [x] T025 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
   **Present; 0 violations found across 108 files.** T021's new composer-row button sits inside
   the composer's existing `no-drag-region` wrapper; no new header-shaped row was added.
-- [ ] T026 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
+- [x] T026 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`, real signed-in OMP 18.6.3+ profile, never Stuart's live Sessions): every
   story's numbered steps, including a real live `btw` round trip, a restart-survival check
-  (quit/relaunch against the same worktree), and the `/btw` composer path.
+  (quit/relaunch against the same worktree), and the `/btw` composer path. **Live-verified**
+  (scratch clone under `C:/tmp/refract-side-chat-polish` -- never `C:/Repos/personal` -- own
+  `--user-data-dir`/CDP port 9341, torn down by pid-verified `taskkill`, deleted by literal path
+  afterward; real `omp 18.8.6`, real `github-copilot/Claude Sonnet 5.5`; one coherent run, 12
+  screenshots + `report.json` + `sha256.json` under
+  `C:/Users/shopwood/refract-live-check-668-polish/`, 0 duplicate hashes): a first side question
+  settled to a real answer ("4") with a Copy action that flipped to "Copied"; a follow-up ("Now
+  add 10 to that") correctly carried the first answer's own record id AND the model correctly
+  used the carried context (answered "14"); Clear thread correctly omitted `recordId` on the next
+  question (asserted via a temporary scratch-only main-process debug log of the exact `recordId`
+  argument each `sideChat.ask` IPC call received -- `[undefined, "<topicA>", undefined,
+  "<topicB>", "<topicB>"]` across the five questions sent this run, matching the expected
+  fresh/follow-up/fresh/follow-up/follow-up pattern exactly); Cancel reached a correctly-rendered
+  "Cancelled." with no stuck "Thinking"; `/btw` from the main composer opened and focused the
+  Side chat panel, sent the question, and never put the literal text in the main transcript
+  (asserted via a DOM check, not just visual inspection). **Not re-verified this round** (posted
+  to #650): the live-region announcement timing for Clear thread specifically (code mirrors the
+  already-working settle-announcement pattern; the driver's one synchronous read landed before
+  the deliberate zero-delay `setTimeout`); Story 1 Scenario 4 (mid-stream overlap) and Story 3
+  (restart survival) -- both pre-existing #668 behaviour, unchanged by this round's Copy/Clear-
+  thread-only diff, so not re-run; a real screen reader pass (standing limitation, every round).
 - [ ] T027 Update `docs/PLAN.md` row C2 only: status, branch, PR number (minimal diff, this story's
   own row) (depends on T026 passing).
 
