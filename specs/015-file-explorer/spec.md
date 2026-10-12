@@ -45,6 +45,18 @@ choice listed in Clarifications below.
   Reveal in File Explorer, Copy path (all reuse existing patterns, e.g.
   `SessionDetailsCard.tsx`'s own Copy path/Open in file explorer buttons) -- NOT "Open with default
   app" this round (a fourth near-duplicate launcher path, its own follow-up).
+- **Q (Main, Slice 1)**: does the preview filter out secrets-shaped files (`.env`, credentials,
+  private keys) by name or content? -> **A**: no. The preview shows any file inside the Session's
+  worktree that the developer could already open directly in an editor -- the same files VS Code
+  itself would show, no secrets-aware filtering of `.env` or anything else by name or content.
+  Two things bound the risk this choice accepts: (1) nothing read for preview ever enters the
+  main transcript or OMP's own context (FR-027 below) -- previewing a secret shows it ON SCREEN
+  to the developer who is already in that worktree, it does not leak it to the agent or anywhere
+  OMP can see; (2) every read still goes through the exact same worktree-containment check as
+  every other read (FR-001), including never following a symlink/junction out of the worktree --
+  nothing outside the Session's own worktree is ever reachable, so this choice only ever exposes
+  a file the developer's own Session already has on disk, never a file from elsewhere on the
+  machine.
 
 ### Needs Stuart's decision (not yet resolved; decision comment posted, conservative choice taken)
 
@@ -300,6 +312,16 @@ previously-expanded folder still expanded.
 - **FR-026**: The system MUST register a new `file-explorer` panel in `panel-registry.ts`, hosted
   by spec 013's shell (rail icon, launcher entry, tab/title-row participation), alongside
   `subagents`/`fdb-knowledge`/`agent-builder`/`side-chat`, replacing none of them.
+
+**Content exposure (Clarification item, Main's own Slice 1 ask)**
+
+- **FR-027**: The system MUST NOT filter preview content by file name or content for
+  secrets-shaped files (`.env`, credentials, private keys, or any other pattern) -- any file
+  inside the Session's worktree the developer could already open directly in an editor MUST be
+  previewable the same way (Clarification item 5 above). Nothing read for a directory listing,
+  preview, or git status MUST ever be forwarded into the main transcript or any OMP RPC request
+  (constitution II/V) -- a preview is shown on screen to the developer alone, never surfaced to
+  the agent or anywhere OMP can see it.
 
 ### Key Entities
 

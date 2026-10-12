@@ -53,38 +53,61 @@ lazily-loaded tree -- no keyboard/ARIA polish, no preview, no git status, no VS 
 Independently verifiable (the icon appears, the panel opens, a real folder expands to its real
 children), same incremental-shippability spec 013/014's own Slice 1s used.
 
-- [ ] T003 Add a `resolveInWorktree(worktreePath, relativePath)` helper (new or alongside
-  `src/main/process/executables.ts`'s own containment reasoning): resolves a relative path against
-  the worktree root, rejects (throws a typed error) anything that escapes it once symlinks/
-  junctions are followed (`fs.realpath`), per FR-001. Every later main-process file-explorer
-  reader calls this before touching disk.
-- [ ] T004 [P] Add `fileExplorer.listDirectory(sessionId, relativePath?)` to `src/main/ipc/`: a new
+- [x] T003 Reuse `resolveInWorktree` (`src/main/ipc/files.ts`, issue #610) -- **corrected during
+  implementation**: this spec's own `plan.md`/`research.md` originally assumed a NEW helper was
+  needed; `resolveInWorktree` already exists, already hardened through 5 documented quality-gate
+  rounds for the exact same containment problem (research.md decision 11, added this round).
+  Added a thin `resolveListTarget` wrapper in `fileExplorer.ts` (T004) that special-cases
+  `relativePath === ''` (lists the worktree root itself, which the shared function deliberately
+  refuses as `file-missing` -- correct for its own `revealFile` call site, wrong for this one)
+  and defers to the unmodified shared function for every other value. `plan.md`/`research.md`
+  updated to match (decision 11); no new containment implementation was written.
+- [x] T004 [P] Add `fileExplorer.listDirectory(sessionId, relativePath)` to `src/main/ipc/`: a new
   `src/main/ipc/fileExplorer.ts` (mirrors `side-chat.ts`'s own validation/error-mapping shape) that
   resolves the Session's `worktreePath` from the registry (never the renderer, constitution V),
-  calls `resolveInWorktree` (T003), lists that directory's immediate children only (folders before
-  files, alphabetical within each group per FR-006), one level deep (lazy-load, FR-005) -- no
-  recursion, no git status yet (Slice 2).
-- [ ] T005 [P] Add `IPC_REQUESTS.FILE_EXPLORER_LIST_DIRECTORY` (and the Slice-2/3 request names
-  already reserved in contracts/ipc.md, so the shared `src/shared/ipc.ts` enum/type additions land
-  once, not per slice) plus `RefractApi.fileExplorer.listDirectory` to `src/preload/index.ts`.
-- [ ] T006 [P] Add `'file-explorer'` to `PanelId` and a descriptor (`FolderTreeIcon`, `hasCount:
+  calls `resolveListTarget` (T003), lists that directory's immediate children only (folders before
+  files, alphabetical case-insensitive within each group per FR-006), one level deep (lazy-load,
+  FR-005) -- no recursion, no git status yet (Slice 2). `.git` itself always excluded (FR-007). A
+  symlink/junction entry's own `kind` is resolved via one extra `fs.stat` per such entry (follows
+  the link so a symlinked folder still renders with a disclosure control); containment of
+  whatever it actually points to is checked lazily, only when that entry is itself later expanded
+  or previewed, never at listing time.
+- [x] T005 [P] Add `IPC_REQUESTS.FILE_EXPLORER_LIST_DIRECTORY` (and a comment reserving the
+  Slice-2/3 request names in `contracts/ipc.md`, so the shared `src/shared/ipc.ts` naming
+  convention stays visible from this slice's own commit, even though the later requests
+  themselves land with their own slice) plus `RefractApi.fileExplorer.listDirectory` and the
+  `FileTreeNode` type (`src/shared/model.ts`, matching `DiffStat`'s own placement precedent, not
+  `frames.ts` which is OMP-wire-frame-shaped data only) to `src/preload/index.ts`.
+- [x] T006 [P] Add `'file-explorer'` to `PanelId` and a descriptor (`FolderTreeIcon`, `hasCount:
   false`, research.md decision 8) to `HOSTED_PANELS` in
   `src/renderer/features/right-pane/panel-registry.ts` (FR-026).
-- [ ] T007 Create `src/renderer/state/file-explorer-store.ts`: per-Session keying (research.md
-  decision 10, mirrors `side-chat-store.ts`), `loadDirectory(sessionId, relativePath?)` calling
-  T004/T005, an `expanded: Set<string>` of currently-expanded relative paths per Session, no
-  preview/status/patch handling yet (Slice 2).
-- [ ] T008 [P] Export `useFileExplorerStore` from `src/renderer/state/index.ts`.
-- [ ] T009 Create `src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx`: an
+- [x] T007 Create `src/renderer/state/file-explorer-store.ts`: per-Session keying (research.md
+  decision 10, mirrors `side-chat-store.ts`). **Differs from this task's own original plan**: a
+  recursive `root: FileTreeNode | null` tree (matching data-model.md's own recursive
+  `children?`/`expanded?` shape) rather than a flat `expanded: Set<string>` sidecar -- a sidecar
+  would need a second, parallel lookup structure kept in sync with whatever shape the tree itself
+  takes; mutating the tree node in place (`withChildrenAt`/`withExpandedToggled`, structural
+  sharing so an unrelated branch's object identity survives an unrelated directory's own fetch)
+  is the simpler, single-source-of-truth shape for a tree that does not yet need Slice 2's own
+  virtualisation/windowing concerns. `loadDirectory(sessionId, relativePath)` fetches and expands;
+  a separate `toggleExpanded(sessionId, relativePath)` flips an already-fetched folder's own
+  `expanded` flag with NO re-fetch (collapsing a folder must never re-read it -- only expanding
+  one for the first time does). No preview/status/patch handling yet (Slice 2).
+- [x] T008 [P] Export `useFileExplorerStore` from `src/renderer/state/index.ts` (all four spots:
+  import, re-export, the dev-only `RefractDevStores` interface, and its own object literal --
+  matching every other store's own four-spot pattern in this file).
+- [x] T009 Create `src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx`: an
   empty-worktree/loading state plus a plain nested list (not yet the WAI-ARIA tree pattern --
   Slice 2, FR-022) wired to `useFileExplorerStore`, fetching the root on first open per Session
   (mirrors side-chat's own `loadHistory`-on-first-open effect) and lazily fetching a folder's
-  children on click-to-expand.
-- [ ] T010 Edit `RightPaneShell.tsx`: one more `activePanelId === 'file-explorer'` branch rendering
+  children on click-to-expand (`loadDirectory` the first time, `toggleExpanded` thereafter).
+- [x] T010 Edit `RightPaneShell.tsx`: one more `activePanelId === 'file-explorer'` branch rendering
   `FileExplorerPanel` (depends on T006, T009).
-- [ ] T011 [P] `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Run
+- [x] T011 [P] `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Run
   `check:indent`, `check:ui-text`, `check:theme-contrast`, `check:drag-regions` once for the whole
-  slice.
+  slice. **Results**: typecheck pass (both tsconfigs); vitest 376/376 (no new tests, AGENTS.md
+  #605); check:indent 0 odd-indent (321 files); check:ui-text 0 leaks (371 files); check:theme-
+  contrast 313/313 (no new token); check:drag-regions 0 violations (109 files); build pass.
 
 **Checkpoint**: live-verified in an isolated scratch Electron instance (own `--user-data-dir`/CDP
 port, scratch repo/registry with one seeded Session pointed at a real directory tree -- never

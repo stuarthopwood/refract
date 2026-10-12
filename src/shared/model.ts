@@ -556,3 +556,22 @@ export interface ProfileCacheEntry {
   avatarDataUrl: string | null; // validated data:image/png|jpeg;base64,...; null = show initials
   fetchedAt: string; // ISO 8601; the moment this entry was last successfully refreshed
 }
+
+/** Spec 015 data-model.md: one row of the File explorer's tree (FR-004 to FR-007). Relative to
+ * the Session's own worktree root (never absolute, never escaping it -- `resolveInWorktree`,
+ * `src/main/ipc/files.ts`, enforces this main-side before any read). `.git` itself is never
+ * represented as a node (FR-007); `kind` reflects the FOLLOWED type for a symlink/junction entry
+ * (so a symlinked folder still renders with a disclosure control), not the link's own raw dirent
+ * type -- containment of whatever it actually points to is only checked when that specific entry
+ * is itself expanded or previewed, never at listing time (listing one directory never follows
+ * every child symlink to validate it). `gitStatus` arrives in Slice 2 (data-model.md
+ * `GitStatusMark`); absent in Slice 1. */
+export type FileTreeEntryKind = 'file' | 'folder';
+
+export interface FileTreeNode {
+  /** Relative to the worktree root, POSIX-style `/` separators regardless of platform (FR-004). */
+  path: string;
+  /** Last path segment; the row's own label. */
+  name: string;
+  kind: FileTreeEntryKind;
+}

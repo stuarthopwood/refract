@@ -7,6 +7,7 @@ import type {
   CatalogKind,
   ConversationInfo,
   DiffStat,
+  FileTreeNode,
   ModelCatalogEntry,
   ModelRoleId,
   PendingRequest,
@@ -146,6 +147,12 @@ export interface SessionSummary extends Session {
  * `SessionReadout.changes` also needs it) and re-exported here so every existing import from
  * `../../shared/ipc` keeps working unchanged. */
 export type { DiffStat } from './model';
+
+/** Spec 015 data-model.md: defined in `./model` (not `./frames`, which is OMP-wire-frame-shaped
+ * data only) and re-exported here, the same reasoning `DiffStat` above already uses, so preload
+ * can import it from `../../shared/ipc` alongside every other IPC-facing type instead of a
+ * second import source. */
+export type { FileTreeNode } from './model';
 
 /** The renderer-facing copy of main's in-memory SessionRuntime (data-model.md). */
 export interface SessionRuntimeView {
@@ -343,6 +350,9 @@ export const IPC_REQUESTS = {
   SIDE_CHAT_ASK: 'sideChat.ask',
   SIDE_CHAT_CANCEL: 'sideChat.cancel',
   SIDE_CHAT_GET_HISTORY: 'sideChat.getHistory',
+  // Spec 015 contracts/ipc.md "File explorer" (T005): listDirectory is Slice 1; readPreview,
+  // getStatus, openInVSCode, reveal, copyPath land in Slices 2-3 (their own commits).
+  FILE_EXPLORER_LIST_DIRECTORY: 'fileExplorer.listDirectory',
   SETTINGS_GET: 'settings.get',
   SETTINGS_SET_APPROVAL_MODE: 'settings.setApprovalMode',
   SETTINGS_SET_READOUT_VISIBILITY: 'settings.setReadoutVisibility',
@@ -562,6 +572,20 @@ export interface RefractApi {
     /** Issues `get_btw_history`; every record OMP has for that Session's saved session file, in
      * the order OMP returns them. Called once per Session per app run (FR-004), not polled. */
     getHistory(sessionId: string): Promise<Result<SideChatRecord[]>>;
+  };
+
+  fileExplorer: {
+    /** Spec 015 contracts/ipc.md "File explorer" (FR-001, FR-004 to FR-007, T004/T005): lists
+     * one directory's immediate children only (lazy-load, FR-005 -- never recurses), folders
+     * before files then alphabetical within each group (FR-006). `relativePath` `''` lists the
+     * worktree root itself (FR-004); any other value is resolved against that Session's
+     * worktree root through `resolveInWorktree` (`src/main/ipc/files.ts`, issue #610's own
+     * already-hardened containment check, reused unchanged here rather than a second
+     * implementation) and MUST stay inside it after resolving symlinks/junctions, or the call
+     * fails `outside-worktree` rather than reading outside it. `.git` itself is never returned
+     * as an entry (FR-007). No git-status/ignore filtering yet (Slice 2, FR-009/FR-010/FR-011)
+     * -- every entry on disk is returned as-is this slice. */
+    listDirectory(sessionId: string, relativePath: string): Promise<Result<{ entries: FileTreeNode[] }>>;
   };
 
   settings: {

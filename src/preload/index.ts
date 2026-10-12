@@ -5,6 +5,7 @@ import type {
   BranchEntry,
   ChatAnswer,
   DiffStat,
+  FileTreeNode,
   GitHubAccount,
   GitHubAddFlowProgress,
   LowMemoryWarning,
@@ -134,6 +135,11 @@ const refract: RefractApi = {
       request<{ record: SideChatRecord }>(IPC_REQUESTS.SIDE_CHAT_ASK, sessionId, question, recordId),
     cancel: (sessionId) => request<void>(IPC_REQUESTS.SIDE_CHAT_CANCEL, sessionId),
     getHistory: (sessionId) => request<SideChatRecord[]>(IPC_REQUESTS.SIDE_CHAT_GET_HISTORY, sessionId)
+  },
+
+  fileExplorer: {
+    listDirectory: (sessionId, relativePath) =>
+      request<{ entries: FileTreeNode[] }>(IPC_REQUESTS.FILE_EXPLORER_LIST_DIRECTORY, sessionId, relativePath)
   },
 
   settings: {

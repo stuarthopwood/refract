@@ -137,3 +137,29 @@
     tree (the decision comment on #463, cited in spec.md's Clarifications) and switching back to a
     Session already visited should not require a fresh directory listing for the root the watcher
     already covers.
+
+11. **Path containment reuses `resolveInWorktree` (`src/main/ipc/files.ts`), discovered during
+    Slice 1 implementation -- NOT a new function, correcting this spec's own original plan.md
+    (which assumed a new helper needed writing).** Issue #610's own `sessions.revealFile` work
+    already built and hardened, through five documented quality-gate rounds, exactly the
+    containment check this spec needs: NUL bytes rejected; UNC and device paths (`\\?\`, `\\.\`,
+    `//host/share`) rejected by one leading-`//`-after-backslash-normalisation check; any colon
+    other than a single drive-letter prefix rejected (blocks both a drive-relative escape and an
+    NTFS alternate-data-stream name like `file:stream`); Windows reserved device names (`CON`,
+    `PRN`, `NUL`, `COM1`-`9`, `LPT1`-`9`, their Unicode superscript-digit variants, and
+    trailing-space/dot tricks) rejected per path segment; a LEXICAL containment pre-check against
+    both the realpath'd AND the unresolved worktree root (so a worktree reached through a
+    junction/8.3 short name still accepts a legitimate absolute token); then the REAL security
+    boundary -- `fs.realpath` on the resolved candidate, compared against the realpath'd root with
+    NO case-folding at all (a case-insensitive but still exact comparison: `fs.realpath` always
+    returns the canonical on-disk casing regardless of the token's own casing, confirmed by a
+    real-fs probe during that work, so folding here would re-open a Unicode-confusable bypass the
+    gate fixed). Reused UNCHANGED rather than a second implementation, per that function's own
+    doc comment ("kept exported so a future caller... can reuse the exact same containment rule").
+    One difference needed a thin wrapper, not a change to the shared function: `resolveInWorktree`
+    deliberately rejects a token resolving to the worktree ROOT itself (`file-missing` -- correct
+    for `revealFile`, which has no reason to reveal the whole worktree folder as a "file"), but
+    listing the root is this panel's own first, most common operation (FR-004) -- `fileExplorer.ts`'s
+    own `resolveListTarget` special-cases `relativePath === ''` to `fs.realpath` the worktree root
+    directly (the exact first step `resolveInWorktree` itself takes internally) and defers to the
+    unmodified function for every other value.

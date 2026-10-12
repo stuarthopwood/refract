@@ -11,6 +11,7 @@ import { registerAccounts } from './accounts';
 import { registerChat } from './chat';
 import { registerClipboard } from './clipboard';
 import { registerConversations } from './conversations';
+import { registerFileExplorer } from './fileExplorer';
 import { registerFilesIpc } from './files';
 import { registerModelRoles } from './modelRoles';
 import { registerReadiness } from './readiness';
@@ -28,6 +29,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerRepositories(manager, getWindow);
   registerSessions(manager);
   registerFilesIpc(manager);
+  registerFileExplorer(manager);
   registerPullRequests(manager);
   registerConversations(manager);
   registerChat(manager);
