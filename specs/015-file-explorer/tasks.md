@@ -1447,22 +1447,26 @@ navigation fix; the `render-process-gone` branch; a real keyboard/screen-reader 
 Tab/Shift+Tab re-entry after a mouse-wheel scroll-out; the window-shrink variant of the same
 scroll-out limitation for FR-025; a test isolating the archive-race watcher-release claim).
 
-> **AUTHORITATIVE STATUS (round 18; supersedes every round-by-round claim below)**: the
-> round-by-round narrative from here through Round 17 accumulated several truthfulness errors
+> **AUTHORITATIVE STATUS (round 19; supersedes every round-by-round claim below)**: the
+> round-by-round narrative from here through Round 18 accumulated several truthfulness errors
 > (wrong measurements, selective quoting, invented claims) that were corrected in later rounds --
-> read it for history, not as the current truth. What is actually known, as of round 18:
+> read it for history, not as the current truth. What is actually known, as of round 19:
 > (a) a mouse-wheel/resize scroll-out drops focus to `<body>`; Tab/Shift+Tab re-enters, direction-
 > dependent; not live-verified with a keyboard or screen reader. (b) a type-ahead long jump into a
 > 1000+-row folder: observed in lane sessions, at round-14 code (`a9bbc6c`), NOT re-measured on
-> the final head, to move scroll but leave focus on `<body>`; cause not established. (c) `End`
-> pressed ~30ms before `Home`: observed to leave focus on `<body>`, 2/2 in round 15, at round-14
-> code; round 14's own "passes every clean run" claim was selective (some round-14 runs also
-> failed); cause not established. (d) held `PageDown`/`ArrowDown` auto-repeat: not measured any
-> round. (e) no artifact survives for the rounds-14/15 live runs; the lane's own session
-> transcript is the only record (`gate4`-`gate13` evidence folders DO exist on disk).
-> `refract-live-check-671-gate13/raw-output.txt` shows `End` alone and `Home` alone both
-> succeeding on the 1010-file fixture, pre-`moveGenRef`. (f) FR-010's `deleted` git-status mark
-> decision is pending. FR-022/FR-025/SC-006 are Partial in the PR's AC table for (b)/(c)/(d).
+> the final head, to move the list's scroll position (`scrollTop` moved to `27664` vs `End`'s
+> `27692`; whether the target row mounted was NOT established) but leave focus on `<body>`; cause
+> not established. (c) `End` pressed ~30ms before `Home`: observed to leave focus on `<body>`,
+> 2/2 in round 15, at round-14 code; round 14's own "passes every clean run" claim was selective
+> (some round-14 runs also failed); cause not established. (d) held `PageDown`/`ArrowDown`
+> auto-repeat: not measured any round. (e) no artifact survives for the rounds-14/15 live runs;
+> the lane's own session transcript is the only record (`gate4`-`gate13` evidence folders DO
+> exist on disk). `refract-live-check-671-gate13/raw-output.txt` shows `End` alone and `Home`
+> alone both succeeding on the 1010-file fixture, pre-`moveGenRef`. (f) FR-010's `deleted`
+> git-status mark decision is pending. FR-010 is Partial for (f); FR-022 and SC-006 for (b)/(c);
+> FR-025 for (a) plus (b)/(c); (d) is unmeasured (listed under NOT verified). Round 15's own
+> `treeContainerRef` guard change (`b811dfa`) has never been live-run at all, for any of (b)/(c)
+> or the already-working `End`-alone/preview-pane-Tab paths.
 
 ### Round 13 gate fixes (Sec13/Code13 PASS with Mediums; A11y13/Verif13 FAIL on one real HIGH, all against round 12)
 
@@ -1493,7 +1497,8 @@ for type-ahead and `End`-then-`Home` -- both strand focus on `<body>` at round-1
 round 15's `treeContainerRef` guard change landed after these runs and was not re-measured),
 failed 2/2 in round 15; see the Round 15/16 sections below. `Home`/`PageUp`/`PageDown` as genuine
 long jumps are not re-measured since this round. Public correction:
-https://github.com/stuarthopwood/refract/issues/650#issuecomment-6126422523.**
+https://github.com/stuarthopwood/refract/issues/650#issuecomment-6126422523
+(amended: https://github.com/stuarthopwood/refract/issues/650#issuecomment-6126835541).**
 
 **MEDIUM disclosure (Code13/Sec13/Verif13)**: wording-only corrections, no further behaviour
 change. `spec.md`'s scroll-out Clarification entry's self-contradicting "never scrolling the tree
@@ -1548,7 +1553,8 @@ without new fixtures -- not built this round, though the fix applies to it struc
 code path as `Home`/`End`/`PageUp`/`PageDown`). **CORRECTED round 15/16: a discriminating fixture
 WAS built and this claim is WITHDRAWN -- type-ahead fails 2/2 at round-14 code (`a9bbc6c`); see
 Round 15/16 below. Public correction:
-https://github.com/stuarthopwood/refract/issues/650#issuecomment-6126422523.**
+https://github.com/stuarthopwood/refract/issues/650#issuecomment-6126422523
+(amended: https://github.com/stuarthopwood/refract/issues/650#issuecomment-6126835541).**
 
 ### Round 14 gate fixes (Sec14/Code14 PASS with Mediums; A11y14/Verif14 FAIL on a real HIGH plus a Medium finding, all against round 13)
 
@@ -1882,6 +1888,25 @@ Posted a short follow-up comment on #650 (not a new correction, an amendment to 
 the round-15 failures were observed at round-14 code `a9bbc6c`, not the final head; not
 re-measured since.
 
+### Round 19 gate fixes (PASS with Mediums against round 18; Main verifies and merges after this)
+
+**No Critical/High findings.** Four Medium wording-precision fixes, all PR-body/doc/comment:
+limitation (b) in the PR body repeated the round-16-corrected "scrolls correctly" overclaim --
+fixed to name the actual numbers (`scrollTop` `27664` vs `End`'s `27692`; row-mount not
+established) and made to match the AUTHORITATIVE STATUS box above word-for-word; the FR-022 row
+and limitation (c)'s "`End` pressed alone live-verified working" gained its own code-version
+qualifier (gate13, round-13 code; lane transcript, round-14 code `a9bbc6c`; not re-run on the
+final head), matching how (b) and (c) are already qualified; "What was NOT verified live" gained
+round 15's own `treeContainerRef` guard change (`b811dfa`), never live-run at all for any path,
+including Tab-into-preview-after-a-long-jump; the box's own "Partial for (b)/(c)/(d)" line was
+imprecise against the PR's actual AC table and is now spelled out per-FR. `docs/PLAN.md`'s C4 row
+and a new #463 comment both now point to `tasks.md` for full history (the collapse in round 18
+moved it out of the PR body, which only the #650 comments had been updated to reflect). Both
+round-13 CORRECTED markers above now also cite the #650 amendment
+(comment 6126835541), not only the original correction. T026's own "resizing ... never loses the
+tree's focus position" is annotated CORRECTED in place (Slice 3, below) rather than left as a
+stale Done claim against FR-025's own Partial status.
+
 ---
 
 ## Slice 3 / Phase 3: Open in VS Code, remaining context-menu actions, polish, final verification
@@ -1919,7 +1944,8 @@ cross-slice gate plus live verification the assignment requires before a PR is c
   tree's focus position or expansion state (FR-025, same shared mechanism spec 013's other panels
   already use); `prefers-reduced-motion`/forced-colors checked for any new transition or token;
   `outline-none` never paired without a `focus-visible:outline-*` replacement anywhere touched this
-  slice.
+  slice. **CORRECTED (round 10/18)**: not true for a resize that scrolls the focused row out of
+  the rendered window; see limitation (a) in the AUTHORITATIVE STATUS box above. FR-025 is Partial.
 - [X] T027 [P] Run the full gate (`pnpm typecheck`, `pnpm build`, existing `vitest`, `check:indent`,
   `check:ui-text`, `check:theme-contrast`, `check:drag-regions`); fix any error before proceeding.
   **Results**: typecheck pass (both tsconfigs); vitest 376/376 (no new tests, AGENTS.md #605);
