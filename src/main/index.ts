@@ -18,7 +18,7 @@ import { SettingsStore } from './store/settings'
 import { SessionManager } from './SessionManager'
 import { registerIpc } from './ipc/register'
 import { cleanupModelRolesScratchDir } from './omp/config'
-import { stopAllFileExplorerWatchers } from './ipc/fileExplorer'
+import { resetAllFileExplorerWatchersAndState, stopAllFileExplorerWatchers } from './ipc/fileExplorer'
 import { registerNotifications } from './notifications'
 import { startMemoryMonitor } from './memory'
 
@@ -230,14 +230,35 @@ function createWindow(): void {
   // crash resets that `Map` to empty, but main's own watchers (and the ancestor-folder lock each
   // one holds) are a SEPARATE process and keep running regardless, with nothing left to ever
   // call `stopWatching` again until the Session is archived/deleted/recreated or the whole app
-  // quits. `render-process-gone` covers a crash; `did-start-navigation` (main frame only, so an
-  // iframe/webview navigation elsewhere never fires this) covers a reload, including dev HMR's
-  // full-page fallback. Both are a hard reset of the renderer's entire in-memory state, so
-  // stopping every watcher unconditionally is correct -- the renderer's own fresh mount re-calls
-  // `ensureWatching` for whichever Session(s) reopen a panel, same as any other first open.
-  window.webContents.on('render-process-gone', () => stopAllFileExplorerWatchers())
-  window.webContents.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) stopAllFileExplorerWatchers()
+  // quits. `render-process-gone` covers a crash; `did-start-navigation` (main frame, a genuine
+  // CROSS-document navigation only -- see round 9's own correction just below -- covers a reload,
+  // including dev HMR's full-page fallback. Both are a hard reset of the renderer's entire
+  // in-memory state, so stopping every watcher unconditionally is correct -- the renderer's own
+  // fresh mount re-calls `ensureWatching` for whichever Session(s) reopen a panel, same as any
+  // other first open.
+  //
+  // Gate round 9 fix (Sec9/Code9/A11y9/Verif9 HIGH): the round-8 version of this handler used
+  // the deprecated positional `isMainFrame` argument and ignored same-document navigations
+  // entirely -- Electron fires `did-start-navigation` for an in-page (same-document) navigation
+  // too (a reference-fragment link, `pushState`/`replaceState`, same-page history), and this
+  // app's own chat Markdown renders GFM footnote references/back-links as plain
+  // `<a href="#user-content-fn...">` with no `preventDefault` (`Markdown.tsx`) -- a perfectly
+  // ordinary click on one stopped EVERY watcher while every panel stayed mounted, and since the
+  // renderer's own ref-count never changed (nothing unmounted), `ensureWatching` was never
+  // called again: live refresh (FR-020) and deleted-preview detection (FR-021) died silently for
+  // the rest of the run, the same class of regression round 8 itself fixed, reintroduced by a
+  // fix that was only rated Low. The modern object-form listener carries `isSameDocument`
+  // directly (the deprecated positional form's equivalent field, `isInPlace`, is undocumented by
+  // name in current Electron types) -- only a genuine CROSS-document navigation of the main
+  // frame (a real reload, not a same-page link) now stops every watcher.
+  // Gate round 9 fix (Sec9/Code9/A11y9 Low): uses the combined reset (stops every watcher AND
+  // clears `loadedPathsBySession`) rather than `stopAllFileExplorerWatchers` alone -- a renderer
+  // crash/reload is a hard reset of ALL of its in-memory state, so the parked-path map a fresh
+  // renderer has no knowledge of must reset with it, or its first `ensureWatching` would
+  // re-flush folders the new renderer never opened.
+  window.webContents.on('render-process-gone', () => resetAllFileExplorerWatchersAndState())
+  window.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) resetAllFileExplorerWatchersAndState()
   })
 
   // T037: SessionAgent's unread tracking needs real OS focus, not just "a window exists".

@@ -648,14 +648,21 @@ export interface RefractApi {
      * rename/move of every ancestor of the worktree root for as long as it runs. Stops the
      * watcher for this Session outright -- call `ensureWatching` to resume it. The renderer
      * calls this when the LAST open `FileExplorerPanel` for a Session unmounts (ref-counted per
-     * `sessionId`, in case a split pane ever shows the same Session twice), never on every
-     * unmount. A no-op (never errors) if nothing is currently watching this Session. */
+     * `sessionId` -- round 9 correction: today this is exactly one mounted instance per
+     * Session, `App.tsx` renders only one `RightPaneShell`; the ref-count exists for React
+     * StrictMode's own dev-time double mount/unmount/remount, not a real multi-instance case).
+     * A no-op (never errors) if nothing is currently watching this Session. */
     stopWatching(sessionId: string): Promise<Result<void>>;
-    /** Counterpart to `stopWatching`: restarts the watch handle for this Session WITHOUT
-     * re-listing any directory -- the renderer's own cached expansion/scroll state (FR-025) is
-     * untouched, only live-patch delivery resumes. A no-op if the Session is archived or
-     * already being watched; same lazy-retry behaviour as `listDirectory`'s own `ensureWatcher`
-     * call if the worktree folder does not currently resolve. */
+    /** Counterpart to `stopWatching`. Round 9 correction (Sec9/Code9/Verif9 Medium): this used
+     * to say "restarts the watch handle WITHOUT re-listing any directory" -- round 8 changed
+     * that: when a watch handle actually (re)starts, every directory the renderer still has
+     * loaded is re-flushed through the existing bounded/deduped patch queue, so changes made
+     * while unwatched (including a previewed file's own deletion, FR-021) are caught up via an
+     * ordinary patch, not a reset. The renderer's own cached expansion/scroll state (FR-025)
+     * survives untouched either way. A no-op if the Session is archived or already being
+     * watched; if the worktree folder does not currently resolve AND this Session had cached
+     * state from before, a one-shot reset is sent instead of leaving a stale tree marked ready
+     * with nothing watching under it. */
     ensureWatching(sessionId: string): Promise<Result<void>>;
   };
 

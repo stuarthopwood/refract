@@ -30,7 +30,7 @@ import { buildSnapshot, invalidArgument, mapStoreThrown, notFound } from './util
 import { attachSnapshotCore } from './attachSnapshot';
 import { resumeSessionCore, BUSY_MESSAGE } from './resumeSession';
 import type { SessionAgent } from '../omp/SessionAgent';
-import { notifyFileExplorerReset, setFileExplorerSessionBusy, stopFileExplorerWatcher } from './fileExplorer';
+import { forgetFileExplorerSession, notifyFileExplorerReset, setFileExplorerSessionBusy, stopFileExplorerWatcher } from './fileExplorer';
 
 /** Security: a Session's `sessionDir` is learned from OMP's own `get_state`, but the registry
  * is just a JSON file -- a corrupted or hand-edited one must never make `sessions.delete`
@@ -289,6 +289,16 @@ export function registerSessions(manager: SessionManager): void {
       return { ok: false, error: { code: 'invalid-argument', message: BUSY_MESSAGE } };
     }
     resumingIds.add(id);
+    // Gate round 9 fix (Code9/Verif9 Medium): `stopFileExplorerWatcher`/`setFileExplorerSessionBusy`
+    // used to sit AFTER `await shutdown()` below, inside the inner `try` -- if `shutdown()`
+    // itself threw, the OUTER `finally`'s own unconditional `setFileExplorerSessionBusy(id,
+    // false)` still ran, decrementing a count THIS call never incremented. The ref-count clamps
+    // at zero, but it could still release a CONCURRENT `recreateWorktree` call's own hold on the
+    // same Session early, reopening the exact EPERM-on-`mkdir` race the busy marker exists to
+    // close. Moved above the `await` so every path that reaches the outer `finally`'s decrement
+    // is guaranteed to have incremented first.
+    stopFileExplorerWatcher(id);
+    setFileExplorerSessionBusy(id, true);
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
@@ -300,8 +310,6 @@ export function registerSessions(manager: SessionManager): void {
         // an in-flight `listDirectory` call resolving DURING `removeSessionWorktree` could
         // otherwise call `ensureWatcher` and recreate a fresh watcher on the very folder this
         // call is still removing, reopening the same EPERM class one call site later.
-        stopFileExplorerWatcher(id);
-        setFileExplorerSessionBusy(id, true);
         // Issue #599 quality-gate fix: decide by `git worktree list --porcelain`, never
         // `fs.stat` -- an orphaned folder (left behind by a crash, a manual `git worktree
         // prune`, or hand cleanup) still exists on disk while git has already lost track of
@@ -318,6 +326,11 @@ export function registerSessions(manager: SessionManager): void {
         }
         await manager.registry.removeSession(id);
         manager.removeAgent(id);
+        // Gate round 9 fix (Sec9/Code9/A11y9 Low): a successful delete calls neither
+        // `notifyFileExplorerReset` (nothing is left listening for this Session's reset) nor
+        // anything else that clears `loadedPathsBySession` -- without this its entry leaked for
+        // the rest of the app's run.
+        forgetFileExplorerSession(id);
         manager.notifyListChanged();
         return { ok: true, value: undefined };
       } catch (err) {
