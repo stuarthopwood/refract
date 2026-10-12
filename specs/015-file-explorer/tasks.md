@@ -457,7 +457,16 @@ previewed correctly; a path-escape attempt (`../../../../Windows/System32`) and 
 listing attempt both still rejected `outside-worktree`. **Live file-watcher refresh, genuinely
 live**: creating `src/livecreated.ts` on disk emitted two real `FILE_EXPLORER_PATCH` events over
 IPC (the `src` directory and the root, both re-listed server-side) with every previously-expanded
-folder still expanded. **FR-021, genuinely live**: deleting the currently-previewed `src/index.ts`
+folder still expanded. **Correction (PR #671 gate round 4, Sec4/Code4/A11y4/Verif4, all four
+independently reproduced live): this specific claim was WRONG, a false generalisation from a
+single-level test case.** `withPatchedChildren` actually replaced a patched directory's `children`
+WHOLESALE, so a patch for ANY folder collapsed every expanded DESCENDANT under it; this round's
+own single root-level patch (only one level deep) never happened to exercise a nested case, so it
+passed by accident. The screenshot cited two paragraphs below (`09-preview-deleted-live.png`) is
+itself the disproof: it shows `src` collapsed immediately after a live delete, directly
+contradicting this sentence. Fixed and RE-verified live with a genuinely nested case this round --
+see the round-4 evidence paragraph below. **FR-021, genuinely live**: deleting the currently-
+previewed `src/index.ts`
 from disk flipped the preview to "This file no longer exists" with no extra IPC call, confirmed via
 DOM inspection and a screenshot. **A real bug was found and fixed live**: expanding a folder AFTER
 the root's own git-status fetch resolved showed its children with no status mark at all, even
@@ -474,6 +483,70 @@ kebab-menu DOM buttons themselves end-to-end (the underlying IPC calls and the b
 rendering were each confirmed separately, not the full click-through); the "VS Code not found"
 state (VS Code is installed on this machine, so the absent-install path could not be exercised);
 dragging the tree/preview resizable split handle; `prefers-reduced-motion`/forced-colors emulation.
+**Closed this round by Sec4's own probe (c)**: non-ASCII/embedded-space paths through the
+`-z`-based git invocation -- `sp ace é.txt` came through intact.
+
+**PR #671 gate round 4 re-verification** (fresh isolated scratch Electron, two instances:
+`C:/tmp/refract-463-gate4`, own `--user-data-dir`/CDP port 9342 each, pid-verified `taskkill`
+each time, deleted by literal path afterward -- a restart mid-session, same scratch parent, was
+needed to add a second registry session for the delete-root test, since `registry.json` is only
+read at startup; isolation proof unchanged across both: live `%APPDATA%\pinion\processes.json`
+mtime identical before and after, `%APPDATA%\refract` absent throughout): 4 screenshots + `report.
+json` + `sha256.json` under `C:/Users/shopwood/refract-live-check-671-gate4/`, 0 duplicate hashes,
+all 4 viewed.
+
+- **FR-009/FR-010 folder marks, genuinely live**: a real `.gitignore`-matched `node_modules/`
+  folder (containing `pkg/`) and a real untracked `newdir/` folder (containing `inner.txt`) each
+  showed their own correct mark; `node_modules` was correctly HIDDEN by default (`showIgnored:
+  false`) and correctly appeared once the toggle was flipped; once expanded, `node_modules/pkg`
+  showed `Ignored` and `newdir/inner.txt` showed `Untracked` -- the descendant-inheritance half of
+  the fix, confirmed live, not just the top-level folder's own mark.
+- **Nested expansion AND focus survive a live patch, genuinely live (the exact case round 2-3's
+  own claim above got wrong)**: `src` -> `src/nested` -> `src/nested/deep` expanded three levels
+  deep, `src/nested/deep/c.ts` given real keyboard focus (`document.activeElement` confirmed),
+  then BOTH a root-level file (`root.md`) and the deeply-nested file itself (`c.ts`) edited live on
+  disk in the SAME burst. After: all three folders still `aria-expanded="true"`, `c.ts` still
+  focused, both edited files correctly showing a fresh `Modified` mark -- screenshot `02-nested-
+  expansion-and-focus-preserved-after-patch.png`.
+- **Tab-order walk, genuinely live (A11y4's own explicit ask)**: starting from the "Show ignored
+  files" switch, a sequence of 6 real `Input.dispatchKeyEvent` Tab presses was recorded via
+  `document.activeElement` at each step: switch -> exactly ONE `role="treeitem"` stop (the
+  previously-focused `c.ts` row) -> the resize handle (`role="separator"`, now correctly labelled
+  `aria-label="Resize file tree and preview"`) -> the preview region -> out of the panel entirely
+  into the icon rail's own buttons. No second tree stop anywhere in the sequence -- screenshot
+  `03-tab-order-walk-state.png`.
+- **Deleted-root watcher fix, genuinely verified (Code4's own Critical, the one case neither bash
+  `rm -rf` nor PowerShell `Remove-Item` could reproduce from an EXTERNAL process against the real
+  running app -- Windows' `ReadDirectoryChangesW` handle on the watched root blocks a foreign
+  process from deleting or renaming it; both tools failed live with "the process cannot access the
+  file", confirming this is a genuine Windows file-sharing constraint, not a gap in the test)**: a
+  same-process Node probe imported the REAL, unmodified `watchDirectory.ts` (Node 26 type-
+  stripping; a `.mjs` copy with only type ANNOTATIONS stripped, matching round 3's own established
+  probe technique, since this package's own `"type": "commonjs"` blocks a direct ESM import of a
+  `.ts` file) and deleted the watched root from WITHIN that same process (which Windows does
+  permit). Measured results: `eventCount: 0` throughout 6 samples over 3 seconds after the delete
+  (the fatal-detection fired on the absolute-path signal of the very FIRST event, before anything
+  was ever queued), `fatalFired: true`, `cpuUserMs: 0` / `cpuSystemMs: 15` over that whole window
+  (no spin, nothing resembling the original ~120,000 events/s flood), and a FRESH `watchDirectory()`
+  call against the recreated root succeeded and correctly delivered exactly one event for a
+  trigger file written into it afterward. Full raw JSON in `report.json`.
+- **Git-lock concurrency fix, genuinely verified under real contention (Sec4/Code4's own explicit
+  ask)**: 40 iterations of `git add -A && git commit` ran in a tight loop against the SAME repo the
+  real running app's own file-explorer watcher was actively watching, concurrently with a 45-file
+  burst write across three directories (`src/`, `src/nested/`, `src/nested/deep/`) to fire the
+  app's own coalesced `getStatus` calls, PLUS a direct `getStatus` IPC call issued mid-stress (which
+  itself returned `{ok:true}` with a real status map in 182ms). Result: **0 failures, 0 lock
+  contentions, out of 40/40** -- against the gate's own reported baseline of 31/60 failures
+  without the fix. The tree remained fully responsive and correctly listed all 40 new files
+  afterward -- screenshot `04-tree-healthy-after-concurrent-stress.png`.
+- **Re-confirmed with the round-4 fixes in place**: `openInVSCode` (`{opened:true}`, 11 real
+  `Code.exe` processes confirmed via `Get-Process`, now with `ELECTRON_RUN_AS_NODE`/`NODE_OPTIONS`
+  stripped from the child's env), `reveal` (`{ok:true}`), `copyPath` (`{ok:true}`, the real OS
+  clipboard independently read back via `Get-Clipboard` and matched exactly), a path-escape attempt
+  and a direct `.git` listing attempt (both still `outside-worktree`).
+- **Still not verified this round** (unchanged from the list above): the "VS Code not found"
+  state, the preview-toolbar/kebab DOM click-through, the resizable split drag,
+  `prefers-reduced-motion`/forced-colors emulation.
 
 ---
 
