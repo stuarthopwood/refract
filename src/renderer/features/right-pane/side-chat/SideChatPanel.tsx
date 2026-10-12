@@ -9,6 +9,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { MessageCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Textarea } from '@/components/ui/textarea'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { LinkContext, Markdown } from '@/features/chat/Markdown'
@@ -81,6 +82,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const loadHistory = useSideChatStore((s) => s.loadHistory)
   const ask = useSideChatStore((s) => s.ask)
   const cancel = useSideChatStore((s) => s.cancel)
+  const clearDisplayedThread = useSideChatStore((s) => s.clearDisplayedThread)
   // Gate-fix (round 2, Code2/Sec2 Medium): retries `loadHistory` once the Session's own live
   // status changes (e.g. stopped -> idle) -- a load attempted before the agent started throws
   // `agent-not-running` and leaves `loaded` false specifically so this effect fires again.
@@ -265,6 +267,26 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
     })
   }
 
+  function handleClearThread(): void {
+    if (!sessionId) return
+    // T021 (FR-003): starts a genuinely new topic for the NEXT question. This button disables
+    // the instant `records.length` drops to 0 below, which would otherwise drop focus to
+    // `<body>` the same way Send/Retry/Cancel already do -- refocus the textarea BEFORE
+    // clearing, same pattern as `handleCancelClick`/`handleRetry`.
+    textareaRef.current?.focus()
+    clearDisplayedThread(sessionId)
+    // A11y (WCAG 4.1.3): a silent clear has no visible confirmation for a screen-reader user --
+    // reuses the same clear-first-then-set live-region shape the settle-announcement effect
+    // above uses, so a rapid Clear-then-ask never leaves two announcements racing each other.
+    clearTimeout(announceTimersRef.current.clear)
+    clearTimeout(announceTimersRef.current.pending)
+    setAnnouncement('')
+    announceTimersRef.current.pending = setTimeout(() => {
+      setAnnouncement('Thread cleared.')
+      announceTimersRef.current.clear = setTimeout(() => setAnnouncement(''), 6000)
+    }, 0)
+  }
+
   if (!sessionId) {
     return (
       <Empty className="h-full">
@@ -343,9 +365,17 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
                     // Markdown/CodeBlock components the main transcript uses. Gate-fix (round 3,
                     // A11y3 Low): `div`, not `span` -- `Markdown` renders block content
                     // (paragraphs, lists, code blocks), invalid inside an inline `span`.
-                    <div>
-                      <span className="sr-only">Answer: </span>
-                      <Markdown id={record.id} text={record.answer ?? ''} />
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="sr-only">Answer: </span>
+                        <Markdown id={record.id} text={record.answer ?? ''} />
+                      </div>
+                      {/* FR-011 (T021, issue://466's existing pattern): hidden entirely for an
+                          empty answer, same convention `CodeBlockHeader`/`Markdown.tsx` already
+                          use, so Copy never silently clears the clipboard with nothing in it. */}
+                      {record.answer && (
+                        <CopyButton getText={() => record.answer ?? ''} label="Copy answer" announcement="Answer copied" className="shrink-0" />
+                      )}
                     </div>
                   )}
                 </div>
@@ -388,6 +418,13 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
             </p>
           )}
           <div className="mt-2 flex justify-end gap-2">
+            {/* T021 (FR-003): starts a genuinely new topic for the next question. Disabled while
+                `running` (clearing out from under an in-flight answer would let it reappear once
+                it settles -- `applyPatch` re-appends any record id it has never seen while
+                `loaded` stays `true`) or with nothing displayed to clear. */}
+            <Button type="button" variant="ghost" size="sm" disabled={running || records.length === 0} onClick={handleClearThread}>
+              Clear thread
+            </Button>
             {running && (
               // Spec 014: Cancel issues `btw_cancel` for the running request.
               <Button type="button" variant="outline" size="sm" onClick={handleCancelClick}>

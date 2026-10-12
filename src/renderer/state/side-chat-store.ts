@@ -41,7 +41,8 @@ interface SideChatSessionState {
   /** The record id the NEXT question should carry as `recordId`, or undefined for a fresh topic
    * (FR-003). Gate-fix (round 2, Code2 Medium): only ever moves when a record reaches
    * `status: 'complete'` (`applyPatch`) -- an error or a cancelled record is never "the prior
-   * answer" FR-003 means to continue from. Cleared by `clearThread`. */
+   * answer" FR-003 means to continue from. Cleared by `clearThread` (a Conversation change) and
+   * by `clearDisplayedThread` (T021's own "Clear thread" UI action, below). */
   activeTopicRecordId: string | undefined
   /** True while at least one record for this Session has `status: 'running'` (FR-005).
    * Gate-fix (round 2, Code2/Sec2/Verif2 HIGH): recomputed from `records` on every change, never
@@ -78,6 +79,21 @@ interface SideChatThreadState {
   ask(sessionId: string, question: string): Promise<void>
   cancel(sessionId: string): Promise<void>
   clearThread(sessionId: string): void
+  /** T021 (FR-003's own "Clear thread" UI action): starts a genuinely new topic for this
+   * Session's NEXT question, and clears what this panel displays. Deliberately distinct from
+   * `clearThread` above (a Conversation change): that method also drops `loaded` back to
+   * `false`, which re-triggers `loadHistory`'s own effect and refetches `get_btw_history` --
+   * correct for a genuine Conversation switch (a different topic history entirely), but wrong
+   * here: no delete RPC exists for `btw` history (spec.md User Story 2 Scenario 2), so a
+   * refetch for the SAME Conversation would simply bring every cleared record straight back.
+   * `loaded` stays `true` here: the cleared, empty view persists for the rest of this
+   * Conversation's lifetime this app run (closing and reopening the panel, or switching to
+   * another panel and back, never refetches while `loaded` is already `true`); only a genuine
+   * Conversation change or a full Refract restart ever re-fetches, and both then show the FULL
+   * history again (unaffected by this action), since OMP itself was never told anything was
+   * cleared -- the panel's own `!loaded` reload effect is the ONLY path that can bring a
+   * cleared thread back, and it never fires while `loaded` stays `true`. */
+  clearDisplayedThread(sessionId: string): void
   /** Applies a `btw_delta` (`delta` + `recordId` set), a terminal `btw_record` (`record` set),
    * or a btw-history save-failure notice (`notice` set, gate-fix round 4, Code4 Medium) arriving
    * over `onSideChatPatch`. */
@@ -300,6 +316,24 @@ export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
       const next = { ...state.bySession }
       delete next[sessionId]
       return { bySession: next }
+    })
+  },
+
+  clearDisplayedThread(sessionId) {
+    // T021: the user-driven "Clear thread" UI action (spec.md User Story 2 Scenario 2). Unlike
+    // `clearThread` above, this never bumps `epochBySession` and never deletes the session's own
+    // entry outright -- an in-flight `loadHistory`/`ask` for THIS Session is not racing a
+    // Conversation it is about to stop existing for, so neither needs to be told to abandon its
+    // own `set`. A no-op for a Session with no entry yet (nothing loaded, nothing to clear).
+    set((state) => {
+      const existing = state.bySession[sessionId]
+      if (!existing) return state
+      return {
+        bySession: {
+          ...state.bySession,
+          [sessionId]: { ...existing, records: [], activeTopicRecordId: undefined }
+        }
+      }
     })
   },
 

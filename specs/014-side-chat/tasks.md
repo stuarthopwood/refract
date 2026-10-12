@@ -898,9 +898,29 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   `status: "error"` record actually rendered here is, by construction, one OMP's own contract
   allows resending -- Retry re-issues the same question text via `ask`, disabled while another
   question is running.
-- [ ] T021 [P] Add a Copy action to a completed answer (FR-011, issue://466's existing pattern) and
+- [x] T021 [P] Add a Copy action to a completed answer (FR-011, issue://466's existing pattern) and
   a Clear thread action (FR-003's own "omit `recordId`" reset, clearing only Refract's displayed
-  history for that Session).
+  history for that Session). **Copy**: reuses the shared `CopyButton` (`copy-button.tsx`, issue
+  #524) unchanged -- the same icon-only control, tooltip, "Copied" check-state swap, and its own
+  built-in polite announcement every other Copy site in this codebase already uses; rendered
+  beside a `status: 'complete'` answer only, hidden entirely for an empty one (the same "never
+  silently clear the clipboard" convention `CodeBlockHeader`/`Markdown.tsx` already follow). No
+  new dependency: `CopyButton` already existed. **Clear thread**: a NEW
+  `clearDisplayedThread(sessionId)` store method, deliberately distinct from the existing
+  `clearThread` (used only for a Conversation change, which also drops `loaded` back to `false`
+  and re-triggers a `get_btw_history` refetch) -- `clearDisplayedThread` clears `records`/
+  `activeTopicRecordId` but leaves `loaded` `true`, so the cleared view is not immediately undone
+  by a refetch bringing the SAME (never-deleted -- spec.md User Story 2 Scenario 2: no delete RPC
+  exists) history straight back; only a genuine Conversation change or a full Refract restart
+  ever shows it again. The button disables while `running` (clearing out from under an in-flight
+  answer would let it silently reappear once it settles -- `applyPatch` re-appends any record id
+  it has not seen while `loaded` stays `true`) or once `records.length` is already 0. Focuses the
+  textarea BEFORE clearing (same `handleCancelClick`/`handleRetry` pattern -- the button
+  disabling the instant `records` empties would otherwise drop focus to `<body>`), and announces
+  "Thread cleared." through the panel's existing live region (WCAG 4.1.3 -- a silent clear has no
+  other confirmation for a screen-reader user). `data-model.md`'s `clearThread` doc comment
+  corrected: it used to say "there is no separate Clear thread UI action", true when rounds 5/6
+  wrote it, false now that this task has shipped.
 - [x] T022 [P] Add a polite live region announcing a completed answer once (FR-012), and focus
   management: the panel's composer gains focus on open (rail, launcher, or `/btw`); focus returns
   to the triggering control on close (FR-013, same shared pattern spec 013's panels already use).
@@ -916,10 +936,15 @@ their own entries and the Checkpoint above. T021-T027 remain genuinely not start
   (Send itself becomes `disabled` on an empty draft, which would otherwise drop focus to `body`).
   Focus-returns-to-the-triggering-control-on-close is the PRE-EXISTING shared mechanism spec 013's
   other three panels already use (`PanelTabBar.tsx`/`hosted-panel-actions.ts`), unchanged here.
-- [ ] T023 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term.
-- [ ] T024 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
-  decision 7 -- no new token expected).
-- [ ] T025 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
+- [x] T023 [P] Run `pnpm check:ui-text` against the built bundle; fix any leaked spec term. **0
+  leaks found across 371 files** -- no fix needed.
+- [x] T024 [P] Run `pnpm check:theme-contrast`; confirm no new `token missing` row (research.md
+  decision 7 -- no new token expected). **All 313 pairs across 3 themes PASS**, no new token row:
+  T021's new controls (`CopyButton`, the "Clear thread" `Button`) both reuse existing tokens
+  already covered by this check.
+- [x] T025 [P] Run `pnpm check:drag-regions` if present on the implementation branch's base.
+  **Present; 0 violations found across 108 files.** T021's new composer-row button sits inside
+  the composer's existing `no-drag-region` wrapper; no new header-shaped row was added.
 - [ ] T026 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`, real signed-in OMP 18.6.3+ profile, never Stuart's live Sessions): every
   story's numbered steps, including a real live `btw` round trip, a restart-survival check
