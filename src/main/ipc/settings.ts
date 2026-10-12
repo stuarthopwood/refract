@@ -166,4 +166,18 @@ export function registerSettings(manager: SessionManager, getWindow: () => Brows
     broadcastSettingsChanged(value, getWindow);
     return { ok: true, value };
   });
+
+  // #514 contracts/ipc.md `settings.setDetectImagePathsOnPaste`: the same catch-all
+  // `SETTINGS_SET_SHOW_SAMPLE_DATA` above uses.
+  ipcMain.handle(IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE, async (_event, enabled: unknown): Promise<Result<Settings>> => {
+    if (typeof enabled !== 'boolean') {
+      return {
+        ok: false,
+        error: { code: 'invalid-argument', message: `${IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE} expects a boolean enabled` },
+      };
+    }
+    const value = await manager.settings.setDetectImagePathsOnPaste(enabled);
+    broadcastSettingsChanged(value, getWindow);
+    return { ok: true, value };
+  });
 }

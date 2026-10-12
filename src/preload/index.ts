@@ -1,7 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { IPC_EVENTS, IPC_REQUESTS, THEME_BOOTSTRAP_CHANNEL } from '../shared/ipc'
 import type {
+  AttachmentImageFile,
   BranchEntry,
   ChatAnswer,
   DiffStat,
@@ -103,6 +104,11 @@ const refract: RefractApi = {
     revealFile: (sessionId, path) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_FILE, sessionId, path)
   },
 
+  attachments: {
+    readImageFile: (sessionId, path) => request<AttachmentImageFile>(IPC_REQUESTS.ATTACHMENTS_READ_IMAGE_FILE, sessionId, path),
+    getPathForFile: (file) => webUtils.getPathForFile(file)
+  },
+
   clipboard: {
     writeText: (text) => request<void>(IPC_REQUESTS.CLIPBOARD_WRITE_TEXT, text)
   },
@@ -161,7 +167,8 @@ const refract: RefractApi = {
     setSplit: (layout) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SPLIT, layout),
     setWatermarkEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, enabled),
     setTranscriptDisplay: (field, visible) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, field, visible),
-    setShowSampleData: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, enabled)
+    setShowSampleData: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, enabled),
+    setDetectImagePathsOnPaste: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE, enabled)
   },
 
   modelRoles: {

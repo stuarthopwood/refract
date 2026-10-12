@@ -8,6 +8,7 @@ import type { BrowserWindow, Menu } from 'electron';
 import { IPC_EVENTS } from '../../shared/ipc';
 import type { ManagerEvent, SessionManager } from '../SessionManager';
 import { registerAccounts } from './accounts';
+import { registerAttachmentsIpc } from './attachments';
 import { registerChat } from './chat';
 import { registerClipboard } from './clipboard';
 import { registerConversations } from './conversations';
@@ -29,6 +30,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerRepositories(manager, getWindow);
   registerSessions(manager);
   registerFilesIpc(manager);
+  registerAttachmentsIpc(manager);
   registerFileExplorer(manager, getWindow);
   registerPullRequests(manager);
   registerConversations(manager);

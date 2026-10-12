@@ -26,7 +26,7 @@ import type {
   TranscriptDisplaySettings,
   TranscriptItem,
 } from './model';
-import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames';
+import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor, SupportedImageMimeType } from './frames';
 import type {
   ChangedFile,
   FilterTab,
@@ -112,6 +112,15 @@ export interface Check {
    * the developer without blocking them (e.g. an omp version newer than any specifically
    * verified one). Never set alongside `ok: false` -- a hard failure always blocks instead. */
   warning?: boolean;
+}
+
+/** #514/#432: `attachments.readImageFile`'s success payload -- the exact fields
+ * `PendingImageAttachment` (renderer `attachments.ts`) needs to build the same thumbnail/preview
+ * UI a pasted clipboard image already gets; deliberately no path or other file metadata. */
+export interface AttachmentImageFile {
+  mimeType: SupportedImageMimeType;
+  base64: string;
+  byteLength: number;
 }
 
 export interface Readiness {
@@ -336,6 +345,7 @@ export const IPC_REQUESTS = {
   SESSIONS_DIFF_STAT: 'sessions.diffStat',
   SESSIONS_REVEAL_WORKTREE: 'sessions.revealWorktree',
   SESSIONS_REVEAL_FILE: 'sessions.revealFile',
+  ATTACHMENTS_READ_IMAGE_FILE: 'attachments.readImageFile',
   CLIPBOARD_WRITE_TEXT: 'clipboard.writeText',
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
@@ -376,6 +386,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_WATERMARK_ENABLED: 'settings.setWatermarkEnabled',
   SETTINGS_SET_TRANSCRIPT_DISPLAY: 'settings.setTranscriptDisplay',
   SETTINGS_SET_SHOW_SAMPLE_DATA: 'settings.setShowSampleData',
+  SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -515,6 +526,32 @@ export interface RefractApi {
      * not resolve, after following symlinks, to the worktree itself or a real descendant of it.
      * `'outside-worktree'`/`'file-missing'`/`'worktree-missing'` are typed errors, not thrown. */
     revealFile(sessionId: string, path: string): Promise<Result<void>>;
+  };
+
+  attachments: {
+    /** #514/#432: the one shared main-process image-file reader both features use. `path` is
+     * either an absolute OS path (Explorer "Copy as path", a screenshot tool, `webUtils.
+     * getPathForFile` on a dropped `File`) or a path relative to this Session's own worktree;
+     * this is a USER-initiated read (a paste, a confirmed typed path, or a drag-drop), never
+     * agent/tool/model-authored text -- an absolute token is NOT required to stay inside the
+     * worktree (unlike `sessions.revealFile`/the file explorer), matching the trust level the
+     * existing repository folder-picker already grants a user's own absolute path choice. Rejects
+     * UNC/device paths, resolves symlinks/junctions via `realpath`, requires a regular file,
+     * identifies the type purely by its magic bytes (never the extension, FR-003's own rule),
+     * and enforces the same byte-size and pixel caps `buildImageAttachment` (renderer) checks for
+     * a pasted clipboard image -- constitution V: the renderer's own check is never trusted
+     * alone. Never returns the resolved path or any other file metadata to the renderer. */
+    readImageFile(sessionId: string, path: string): Promise<Result<AttachmentImageFile>>;
+    /** #432: the renderer-safe replacement for the removed `File.path` (Electron's own
+     * `webUtils.getPathForFile`), bridged here rather than imported directly from `electron` in
+     * a renderer `.tsx` file -- `electron.d.ts` carries its own `/// <reference types="node" />`,
+     * which (once any renderer file imports from `'electron'`) pulls Node's ambient `setTimeout`
+     * overload into the WHOLE `tsconfig.web.json` program, silently breaking every other file's
+     * own `setTimeout(...): number` (DOM lib) return type -- confirmed by a real typecheck run
+     * during this feature's own development. Synchronous, no IPC round trip: `webUtils` reads a
+     * `File` object's own already-resolved path locally in the renderer process (no main-process
+     * involvement, no new attack surface) -- this is simply where its one call site lives. */
+    getPathForFile(file: File): string;
   };
 
   clipboard: {
@@ -694,6 +731,11 @@ export interface RefractApi {
      * returns this call's own written value, the same race-safety pattern as
      * `setApprovalMode`/`setWatermarkEnabled` above. Pushes `settings:changed`, no new event. */
     setShowSampleData(enabled: boolean): Promise<Result<Settings>>;
+    /** #514 (contracts/ipc.md): persists the whole `Settings` row and returns this call's own
+     * written value, the same race-safety pattern as every other setter here. Pushes
+     * `settings:changed`, no new event. Turns OFF path-based image-attach detection on paste
+     * entirely when `false`; pasting a clipboard image directly is never affected. */
+    setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI

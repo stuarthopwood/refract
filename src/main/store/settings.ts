@@ -48,7 +48,7 @@ export class SettingsStore {
 
   static async open(dir: string): Promise<SettingsStore> {
     const file = path.join(dir, 'settings.json')
-    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark', watermarkEnabled: true, transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY, showSampleData: false }))
+    const data = await readJsonFile<Settings>(file, () => ({ version: 1, approvalMode: 'ask', sessionReadout: DEFAULT_SESSION_READOUT, split: null, theme: 'dark', watermarkEnabled: true, transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY, showSampleData: false, detectImagePathsOnPaste: true }))
     // Spec 004 data-model.md "Migration": an existing settings.json written before this spec has
     // no `sessionReadout` key at all; this is a field-level merge under an otherwise-valid parsed
     // object, distinct from the full-default fallback `readJsonFile` already applies on a missing
@@ -122,6 +122,13 @@ export class SettingsStore {
     const rawShowSampleData = typeof data.showSampleData === 'boolean' ? data.showSampleData : undefined
     if (typeof data.showSampleData !== 'boolean') {
       data.showSampleData = false
+    }
+    // #514 data-model: an existing settings.json written before this issue has no
+    // `detectImagePathsOnPaste` key at all (or a non-boolean value) -- the same plain
+    // lazy-in-memory-correction pattern `transcriptDisplay` above already uses (no raw-tracking
+    // dance needed: a plain immediate-apply toggle, not a Save/Cancel-previewed field).
+    if (typeof data.detectImagePathsOnPaste !== 'boolean') {
+      data.detectImagePathsOnPaste = true
     }
     return new SettingsStore(file, data, rawTheme, rawWatermarkEnabled, rawShowSampleData)
   }
@@ -258,6 +265,15 @@ export class SettingsStore {
   async setShowSampleData(enabled: boolean): Promise<Settings> {
     this.rawShowSampleData = enabled
     const next = { ...this.data, showSampleData: enabled }
+    return this.persistWhole(next)
+  }
+
+  /** `settings.setDetectImagePathsOnPaste(enabled)` (#514, contracts/ipc.md): persists the whole
+   * row via `persistWhole`, the same race-safety pattern as every setter above (returns this
+   * call's own written value, never a possibly-superseded shared read). No raw/lazy-correction
+   * tracking needed -- the same plain-boolean migration shape `setTranscriptDisplay` above uses. */
+  async setDetectImagePathsOnPaste(enabled: boolean): Promise<Settings> {
+    const next = { ...this.data, detectImagePathsOnPaste: enabled }
     return this.persistWhole(next)
   }
 }

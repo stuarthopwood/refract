@@ -34,7 +34,11 @@ const RESERVED_NAME_RE = /^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(COM|LPT)[1-9\u00b9
  * link's own first-hop target text, so a SECOND link in the chain (`a -> b`, `b ->
  * \\attacker\share`) reached `fs.realpath` unchecked and opened an outbound SMB/NTLM connection
  * with no click. */
-function isUnsafeToken(value: string): boolean {
+/** #514/#432 (exported for the shared attachment-path reader in `attachments.ts`): every TEXT-
+ * ONLY rejection shape a path token must fail before any filesystem call ever touches it, same as
+ * this module's own doc comment above describes -- the single source of truth so a path-based
+ * image attach can never apply a narrower set of checks than `resolveInWorktree` does. */
+export function isUnsafeToken(value: string): boolean {
   if (value.includes('\0')) return true;
   if (value.replace(/\\/g, '/').startsWith('//')) return true;
   const colonIndex = value.indexOf(':');

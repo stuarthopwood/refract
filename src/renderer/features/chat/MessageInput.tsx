@@ -36,11 +36,15 @@ import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import {
   buildChipLabel,
   buildImageAttachment,
+  buildImagePathAttachment,
   EMPTY_ATTACHMENTS,
+  extractImagePathCandidates,
   findChipOccurrences,
   findClipboardImageItem,
   formatByteSize,
+  isImagePathOnlyText,
   isLargePaste,
+  MAX_PATH_ATTACHMENTS_PER_MESSAGE,
   pruneDanglingChips,
   substituteChips,
   toImageContent
@@ -96,6 +100,9 @@ interface MessageInputProps {
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
+  // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
+  // clipboard image itself is never affected by this).
+  const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
   // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
   // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
   // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
@@ -141,24 +148,18 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // reach a screen-reader user, who only ever hears the textarea's own plain-text value. Separate
   // live region from the slash-menu one below so an attachment event is never swallowed by (or
   // swallows) an unrelated "No matching commands" announcement.
-  const [attachmentAnnouncement, setAttachmentAnnouncement] = useState<{ seq: number; message: string } | null>(
-    null
+  // #514/#432: now held in `useDraftStore` (per session), not local state -- ChatPane.tsx's own
+  // drag-and-drop handler (#432) needs to announce through this EXACT same live region, and it
+  // lives outside this component. The sequence-number re-render trick (a repeated identical
+  // message, e.g. pasting the same image twice, must still force a fresh DOM node) now lives in
+  // the store's own `announceAttachment` action instead of a local ref.
+  const attachmentAnnouncement = useDraftStore((s) => s.bySession[sessionId]?.attachmentAnnouncement ?? null)
+  const announceAttachment = useCallback(
+    (message: string) => {
+      useDraftStore.getState().announceAttachment(sessionId, message)
+    },
+    [sessionId]
   )
-  const announceSeqRef = useRef(0)
-  // Medium fix (a11y, #598): a repeated identical announcement (e.g. pasting the same image
-  // twice, or two Removes in a row that both announce "Queued message removed.") must still
-  // re-render the live region even though the message text is unchanged. The previous
-  // `null`-then-value "clear and reset" dance relied on the clear actually committing as its
-  // own render before the real value landed -- which React 18/19's automatic batching does not
-  // guarantee outside a discrete event (e.g. after an `await`, as `handleRemoveQueued` calls
-  // this): both updates can land in the SAME commit, in which case the DOM's text node never
-  // changes at all and the announcement is silently swallowed. A monotonically-increasing
-  // sequence number, keyed onto the rendered node's identity below, forces a genuinely new node
-  // every call, independent of whether the message text repeats.
-  const announceAttachment = useCallback((message: string) => {
-    announceSeqRef.current += 1
-    setAttachmentAnnouncement({ seq: announceSeqRef.current, message })
-  }, [])
   const attachmentsStatusId = `${sessionId}-attachments-status`
   const attachmentsSummaryId = `${sessionId}-attachments-summary`
   // Issue #533: sr-only accessible description for the composer's empty-state hint overlay --
@@ -989,6 +990,74 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
 
     const pastedText = data.getData('text/plain')
+
+    // #514: paste-time image-path detection, shares the main-process reader with #432's
+    // drag-and-drop. Runs on EVERY paste with no clipboard image (even a short one, well under
+    // the FR-011 chip threshold below) -- a pasted path is typically only a few dozen characters.
+    if (detectImagePathsOnPaste) {
+      const pathCandidates = extractImagePathCandidates(pastedText)
+      if (pathCandidates.length > 0) {
+        if (isImagePathOnlyText(pastedText)) {
+          // #514 point 3: nothing else in the paste -- the path text is replaced by the
+          // attachment(s), the box stays clean. Any candidate that fails to resolve (missing,
+          // not an image, too large) falls back to its own raw text instead of vanishing.
+          event.preventDefault()
+          const capped = pathCandidates.slice(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE)
+          const unresolved = pathCandidates.slice(MAX_PATH_ATTACHMENTS_PER_MESSAGE)
+          let attachedCount = 0
+          for (const token of capped) {
+            const result = await buildImagePathAttachment(sessionId, token)
+            if (result.ok) {
+              useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+              attachedCount++
+            } else {
+              unresolved.push(token)
+            }
+          }
+          if (attachedCount > 0) {
+            announceAttachment(attachedCount === 1 ? 'Image attached from a file path.' : `${attachedCount} images attached from file paths.`)
+          }
+          if (unresolved.length > 0) {
+            const target = event.currentTarget
+            const start = target.selectionStart
+            const end = target.selectionEnd
+            const fallbackText = unresolved.join('\n')
+            const nextText = text.slice(0, start) + fallbackText + text.slice(end)
+            useDraftStore.getState().setText(sessionId, nextText)
+            notify({
+              code: 'invalid-argument',
+              message:
+                pathCandidates.length > capped.length
+                  ? `Only the first ${MAX_PATH_ATTACHMENTS_PER_MESSAGE} images were attached; the rest were left as text.`
+                  : unresolved.length === 1
+                    ? 'That file could not be attached as an image; left as text.'
+                    : `${unresolved.length} files could not be attached as images; left as text.`
+            })
+          }
+          return
+        }
+        // Mixed paste (#514 point 3): the path stays exactly where it was pasted below (never
+        // prevented) -- each candidate is resolved in the background and attached silently if it
+        // turns out to be a real image, with no interruption to typing or the normal paste.
+        const capped = pathCandidates.slice(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE)
+        void (async () => {
+          let attachedCount = 0
+          for (const token of capped) {
+            const result = await buildImagePathAttachment(sessionId, token)
+            if (result.ok) {
+              useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+              attachedCount++
+            }
+          }
+          if (attachedCount > 0) {
+            announceAttachment(
+              attachedCount === 1 ? 'Image attached from a file path in your message.' : `${attachedCount} images attached from file paths in your message.`
+            )
+          }
+        })()
+      }
+    }
+
     if (!isLargePaste(pastedText)) return // FR-010: at or under the threshold, paste as normal
 
     // FR-011: collapse it into a pending text chip, replacing the raw text at the paste position

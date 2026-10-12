@@ -3,7 +3,8 @@
 // Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
+import type { DragEvent as ReactDragEvent } from 'react'
+import { AlertTriangleIcon, ImageIcon, MessageSquareIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -16,6 +17,7 @@ import {
   notify,
   useChatScrollStore,
   useCommandsStore,
+  useDraftStore,
   usePendingRequestsStore,
   useQueueStore,
   useReadoutStore,
@@ -25,6 +27,7 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import { buildImagePathAttachment, MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
 import { canResumeSession, resumeSession } from './resume'
 import { applySnapshot } from './applySnapshot'
 import { closeChatPane } from './closeChatPane'
@@ -839,6 +842,86 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     prevSessionIdRef.current = sessionId
   }
 
+  // #432: drag-and-drop image attach, the whole chat pane is the drop target (this Session's own
+  // decision comment on the issue, 2026-10-07/12). `dragDepthRef` counts nested dragenter/
+  // dragleave pairs (every descendant element fires its own, per the DOM drag-and-drop spec) so
+  // the overlay only clears once the pointer has genuinely left the pane, not a child boundary.
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false)
+  const dragDepthRef = useRef(0)
+  // Mirrors MessageInput.tsx's own `disabled` (no Session accepting input): a drop while the
+  // agent is stopped (and this Session HAS been started before -- `not-started` still accepts a
+  // first message, exactly like the composer itself) is refused with a notice, never silently
+  // swallowed (#432's own requirement).
+  const composerDisabled = session.status === 'stopped' && effectiveStopReason !== 'not-started'
+
+  function hasFilesPayload(event: ReactDragEvent): boolean {
+    return Array.from(event.dataTransfer.types).includes('Files')
+  }
+  function handlePaneDragEnter(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    event.preventDefault()
+    dragDepthRef.current += 1
+    setIsDraggingFiles(true)
+  }
+  function handlePaneDragOver(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    event.preventDefault() // required for `onDrop` to ever fire
+    event.dataTransfer.dropEffect = composerDisabled ? 'none' : 'copy'
+  }
+  function handlePaneDragLeave(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setIsDraggingFiles(false)
+  }
+  async function handlePaneDrop(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    event.preventDefault()
+    dragDepthRef.current = 0
+    setIsDraggingFiles(false)
+    if (composerDisabled) {
+      notify({ code: 'disabled', message: 'This session is not accepting input right now; nothing was attached.' })
+      return
+    }
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length === 0) return
+    const capped = files.slice(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE)
+    let attachedCount = 0
+    let failedCount = 0
+    for (const file of capped) {
+      let filePath: string
+      try {
+        filePath = window.refract.attachments.getPathForFile(file)
+      } catch {
+        failedCount++
+        continue
+      }
+      const result = await buildImagePathAttachment(sessionId, filePath)
+      if (result.ok) {
+        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+        attachedCount++
+      } else {
+        failedCount++
+      }
+    }
+    if (attachedCount > 0) {
+      useDraftStore
+        .getState()
+        .announceAttachment(sessionId, attachedCount === 1 ? 'Image attached from a dropped file.' : `${attachedCount} images attached from dropped files.`)
+    }
+    const skipped = failedCount + (files.length - capped.length)
+    if (skipped > 0) {
+      notify({
+        code: 'invalid-argument',
+        message:
+          files.length > capped.length
+            ? `Only the first ${MAX_PATH_ATTACHMENTS_PER_MESSAGE} images were attached; the rest were skipped.`
+            : skipped === 1
+              ? 'One file could not be attached as an image.'
+              : `${skipped} files could not be attached as images.`
+      })
+    }
+  }
+
   async function handleRecover() {
     const recoveringFor = sessionId
     const focusedAtStart = document.activeElement
@@ -1086,8 +1169,25 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       data-session-pane={sessionId}
       onMouseDownCapture={handleFocusPane}
       onFocusCapture={handleFocusPane}
+      onDragEnter={handlePaneDragEnter}
+      onDragOver={handlePaneDragOver}
+      onDragLeave={handlePaneDragLeave}
+      onDrop={(event) => void handlePaneDrop(event)}
       className="relative flex h-full flex-col overflow-hidden"
     >
+      {/* #432: visible drop-target overlay while a file drag is over this pane -- text, not
+          colour alone (WCAG 1.4.1); `aria-hidden`, since nothing here needs an accessible name
+          (drag-and-drop has no keyboard/screen-reader path of its own, paste remains the full
+          equivalent). Removed on leave, drop, or (natively, no handler needed) Esc. */}
+      {isDraggingFiles && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ring bg-background/90 text-sm font-medium text-foreground"
+        >
+          <ImageIcon className="size-4" aria-hidden />
+          {composerDisabled ? 'This session is not accepting input right now' : 'Drop images to attach'}
+        </div>
+      )}
       {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
           SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
           "Focused" text badge so the marker is never colour alone. */}

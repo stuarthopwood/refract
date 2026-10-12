@@ -6,6 +6,7 @@ import type { ImageContent, SupportedImageMimeType } from '../../../shared/frame
 import {
   LARGE_PASTE_CHIP_THRESHOLD,
   MAX_IMAGE_INPUT_BYTES,
+  MAX_IMAGE_PIXELS,
   matchesImageSignature,
   SUPPORTED_IMAGE_MIME_TYPES
 } from '../../../shared/images'
@@ -67,12 +68,13 @@ function base64FromDataUrl(dataUrl: string): string {
 /** Re-encodes anything that isn't already PNG/JPEG/GIF/WebP to PNG via an off-screen canvas
  * (FR-002; research.md Decision 7): Refract never relies on OMP's own fallback/conversion for an
  * unsupported source format. Throws on a paste that cannot even be decoded as an image (corrupt
- * data, an unsupported binary format) -- the caller turns that into the Edge Cases' inline error. */
-// Low remediation: a compressed "decompression bomb" (tiny file, enormous pixel count) could
-// otherwise allocate a canvas/bitmap far larger than anything the post-re-encode size check below
-// would catch, hanging or crashing the renderer before that check ever runs. 40 MP is comfortably
-// larger than any real clipboard paste while still bounding worst-case canvas memory.
-const MAX_IMAGE_PIXELS = 40_000_000
+ * data, an unsupported binary format) -- the caller turns that into the Edge Cases' inline error.
+ * Low remediation: a compressed "decompression bomb" (tiny file, enormous pixel count) could
+ * otherwise allocate a canvas/bitmap far larger than anything the post-re-encode size check below
+ * would catch, hanging or crashing the renderer before that check ever runs. `MAX_IMAGE_PIXELS`
+ * (shared/images.ts, moved there for #514/#432 so the main process's own path-based reader can
+ * enforce the identical cap) is comfortably larger than any real clipboard paste while still
+ * bounding worst-case canvas memory. */
 
 async function reencodeToPng(blob: Blob): Promise<Blob> {
   const bitmap = await createImageBitmap(blob)
@@ -155,6 +157,124 @@ export async function buildImageAttachment(file: File): Promise<ImageAttachResul
 /** FR-006: the wire-level shape sent as one entry of the outgoing command's `images` array. */
 export function toImageContent(attachment: PendingImageAttachment): ImageContent {
   return { type: 'image', data: attachment.base64, mimeType: attachment.mimeType }
+}
+
+// ---------------------------------------------------------------------------
+// Path-based image attachment (#514 paste-path detection, #432 drag-and-drop): both share the
+// one main-process reader (`attachments.readImageFile`); this section is the renderer-side half
+// -- deciding WHICH pasted/typed tokens are worth a round trip to main, and mapping the IPC
+// result onto the exact same `PendingImageAttachment` shape `buildImageAttachment` produces, so
+// every downstream piece (strip, remove, preview, announce) is shared, not duplicated.
+// ---------------------------------------------------------------------------
+
+const IMAGE_PATH_EXTENSION_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif)$/i
+
+/** Cheap, pre-IPC heuristic only -- the real decision is always `attachments.readImageFile`'s own
+ * stat + magic-byte check. This only decides which pasted/typed tokens are even worth a round
+ * trip to main, so an ordinary paste containing something that merely looks slash-shaped (a
+ * sentence, a code snippet) is never sent to main at all. A token is a candidate image path if it
+ * has an image-shaped extension AND looks like a path: an absolute Windows drive path, a
+ * `file://` URL, or any token containing a path separator (#514: "an absolute Windows path...
+ * a file:/// URL... a path relative to the Session's worktree... forward-slash Windows paths"). */
+function looksLikeImagePathToken(token: string): boolean {
+  if (!IMAGE_PATH_EXTENSION_RE.test(token)) return false
+  if (/^file:\/\//i.test(token)) return true
+  if (/^[A-Za-z]:[\\/]/.test(token)) return true
+  return token.includes('/') || token.includes('\\')
+}
+
+/** Strips a surrounding pair of double quotes (Explorer's own "Copy as path" always quotes) and
+ * converts a `file://` URL to a plain path string; `attachments.readImageFile`'s own path
+ * validation is the authority on whether the result is actually usable. */
+function normalizeImagePathToken(token: string): string {
+  let value = token.trim()
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1)
+  if (/^file:\/\//i.test(value)) {
+    try {
+      let pathname = decodeURIComponent(new URL(value).pathname)
+      // A `file:///C:/...` URL's pathname keeps a leading slash before the drive letter.
+      if (/^\/[A-Za-z]:/.test(pathname)) pathname = pathname.slice(1)
+      value = pathname
+    } catch {
+      // Leave `value` as the raw `file://...` string; the IPC call's own validation rejects it
+      // cleanly (an unsafe/malformed token), rather than this function guessing further.
+    }
+  }
+  return value
+}
+
+/** Splits `text` into line- and quote-separated candidate tokens (#514: "several paths, one per
+ * line or separated by spaces (when each is quoted or exists)"). Deliberately never splits an
+ * UNQUOTED line on spaces -- a real Windows path containing a space is always quoted by the
+ * tools that produce one (Explorer's "Copy as path"), so a prose sentence that merely contains a
+ * slash is never torn into nonsense fragments. Returns only tokens that already pass the cheap
+ * `looksLikeImagePathToken` pre-filter, normalized and ready for `attachments.readImageFile`. */
+export function extractImagePathCandidates(text: string): string[] {
+  const candidates: string[] = []
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '')
+    if (quoted.length > 0) {
+      candidates.push(...quoted)
+    } else {
+      candidates.push(line)
+    }
+  }
+  return candidates.filter(looksLikeImagePathToken).map(normalizeImagePathToken)
+}
+
+/** True when `text`, once trimmed, is NOTHING BUT image-path-looking tokens (#514 point 3: the
+ * path text is only ever replaced by the attachment -- never left as a label -- when there is
+ * nothing else in the paste; a mixed paste always keeps its own text untouched instead). */
+export function isImagePathOnlyText(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  const lines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return false
+  return lines.every((line) => {
+    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '')
+    const tokens = quoted.length > 0 ? quoted : [line]
+    return tokens.every(looksLikeImagePathToken)
+  })
+}
+
+/** #514 point 3: a sensible bound on how many image paths one paste/drop can attach at once,
+ * independent of the existing clipboard-image flow (which has no count cap -- FR-005). Bounds
+ * the worst case of a long list of paths stalling the main-process reader; anything past this is
+ * left as plain text (paste) or silently skipped (drop) with a quiet notice, the same style as an
+ * oversized image. */
+export const MAX_PATH_ATTACHMENTS_PER_MESSAGE = 10
+
+export type ImagePathAttachResult =
+  | { ok: true; attachment: PendingImageAttachment }
+  | { ok: false; reason: 'not-found' | 'unsupported-type' | 'too-large' }
+
+/** Calls the shared main-process reader (#514/#432) and maps its `Result` onto the exact same
+ * `PendingImageAttachment` shape a pasted clipboard image produces (`buildImageAttachment`
+ * above), so both paths share every downstream UI piece. */
+export async function buildImagePathAttachment(sessionId: string, filePath: string): Promise<ImagePathAttachResult> {
+  const result = await window.refract.attachments.readImageFile(sessionId, filePath)
+  if (!result.ok) {
+    const reason =
+      result.error.code === 'image-too-large' ? 'too-large' : result.error.code === 'unsupported-image-type' ? 'unsupported-type' : 'not-found'
+    return { ok: false, reason }
+  }
+  const { mimeType, base64, byteLength } = result.value
+  return {
+    ok: true,
+    attachment: {
+      kind: 'image',
+      id: crypto.randomUUID(),
+      mimeType,
+      base64,
+      byteLength,
+      previewUrl: `data:${mimeType};base64,${base64}`
+    }
+  }
 }
 
 export function formatByteSize(bytes: number): string {
