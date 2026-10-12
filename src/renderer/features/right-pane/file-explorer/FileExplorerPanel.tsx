@@ -210,26 +210,13 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // settles) let the OLDER call's `done` re-arm this ref (its own target still unmounted) AFTER
   // the newer call's `done` had already succeeded and cleared it -- `moveGenRef` below (bumped at
   // the top of every `moveToRow` call, checked at the top of every `done`) makes a superseded
-  // call's `done` a no-op instead, closing the race. Verified live, repeatedly, under this
-  // machine's own severe memory/CPU contention during this round's own session: a real End then
-  // Home 30ms apart settled on `big` (Home's own target), never `<body>`, every clean run.
-  // Gate round 14 finding (Verif14/A11y14 Medium -- real-impact, NOT fixed by the above): the
-  // "type-ahead/Home/End fixture is impractical to test a genuine long jump" claim round 13 made
-  // (this exact file, prior revision) was false to build around, and building a real one (a
-  // 1010-file folder plus a root `README.md` sorting after it) exposed a SEPARATE, pre-existing
-  // defect this round's own fix does not touch: a type-ahead search (or `End` alone, from a
-  // starting row far enough that the jump is not trivially within the already-rendered window)
-  // into a batch of 1000+ rows never before measured (`big`'s own children, all inserted in one
-  // go on first expand) never actually scrolls at all -- confirmed live, repeatedly, across many
-  // isolated runs and several different `scrollIntoView`/`scrollToIndex` call shapes (including
-  // ones this round tried and reverted, since none of them changed the result): `scrollTop` stays
-  // at its pre-keypress value and `scrollHeight` never grows to account for the un-rendered rows,
-  // so the target row never mounts and `done`'s retry path never gets a `rangeChanged` to consume.
-  // This looks like a react-virtuoso (4.18.16) limitation specific to a huge batch insert AFTER
-  // initial mount (not a `moveGenRef`/retry-timing bug, and not fixed by setting
-  // `defaultItemHeight`, which this round also tried and reverted) -- logged as an OPEN
-  // QUESTION/follow-up rather than guessed at further; see this round's own PR body and
-  // `tasks.md` for the live evidence and exact repro steps.
+  // call's `done` a no-op instead, closing the stale-`done`-re-arming race specifically. Whether
+  // this fully explains an `End`-then-`Home` race's own observed behaviour is open -- see the
+  // next comment and tasks.md's own "Round 15 gate fixes" section.
+  // Known open limitation (round 15, correcting round 14): after a type-ahead-initiated long
+  // jump into a never-before-measured 1000+-row batch, or after two long jumps issued in close
+  // succession, the list itself scrolls correctly but focus does not always land on the target
+  // row -- see tasks.md's own "Round 15 gate fixes" section and #463 for the live evidence.
   const moveGenRef = useRef(0)
   const pendingFocusPathRef = useRef<string | null>(null)
   // Tracks whether focus is currently somewhere inside this panel, kept live via a document-wide
@@ -561,7 +548,13 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
       return
     }
     const active = document.activeElement
-    if (active && active !== document.body && !containerRef.current?.contains(active)) {
+    // Gate round 15 fix (A11y15/Code15 Medium): narrowed to `treeContainerRef` (the tree itself),
+    // not `containerRef` (the whole panel, which also covers the preview pane, the "Show ignored
+    // files" switch, and the toolbar) -- a Tab INTO the preview pane or the switch is still
+    // "moved on purpose" and must clear the pending retry exactly like moving outside the panel
+    // entirely; `containerRef` wrongly treated that as "still in the tree", so a later unrelated
+    // `rangeChanged` could pull focus back out of the preview pane the user had just Tabbed into.
+    if (active && active !== document.body && !treeContainerRef.current?.contains(active)) {
       pendingFocusPathRef.current = null
       return
     }
@@ -576,13 +569,16 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // (now-removed) deferred scroll-out rescue. Document-level, not container-scoped: the user may
   // click outside this panel entirely (a chat message, empty space). Gate round 14 fix (A11y14
   // Medium): also clears on a `focusin` whose target lands OUTSIDE this panel (a keyboard Tab to
-  // the composer fires no `pointerdown` at all, so that alone missed exactly this case).
+  // the composer fires no `pointerdown` at all, so that alone missed exactly this case). Gate
+  // round 15 fix (A11y15/Code15 Medium): "outside" means outside `treeContainerRef` (the tree
+  // itself), not `containerRef` (the whole panel) -- see the retry effect's own matching comment
+  // above for why a Tab into the preview pane or the "Show ignored files" switch must count too.
   useEffect(() => {
     function clearPendingFocus(): void {
       pendingFocusPathRef.current = null
     }
     function clearPendingFocusIfOutside(event: FocusEvent): void {
-      if (!containerRef.current?.contains(event.target as Node | null)) clearPendingFocus()
+      if (!treeContainerRef.current?.contains(event.target as Node | null)) clearPendingFocus()
     }
     document.addEventListener('pointerdown', clearPendingFocus, true)
     document.addEventListener('focusin', clearPendingFocusIfOutside, true)
@@ -594,10 +590,15 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // Gate round 13 fix (A11y13/Verif13 HIGH): a pending retry targets a specific row PATH, which
   // only means anything for the Session that asked for it -- clears on every Session switch (the
   // cleanup below) and on unmount, so a retry queued for one Session's tree can never fire against
-  // a different Session's (or no) tree mounted after it.
+  // a different Session's (or no) tree mounted after it. Gate round 15 fix (Sec15 LOW): also
+  // bumps `moveGenRef` -- a `scrollIntoView` call started just before a Session switch can still
+  // have its own `done` fire afterward, against whatever tree is mounted by then; bumping here
+  // makes that stale `done` a no-op, same guard `moveToRow` already uses for a superseded call
+  // within the SAME Session.
   useEffect(() => {
     return () => {
       pendingFocusPathRef.current = null
+      moveGenRef.current += 1
     }
   }, [sessionId])
 
