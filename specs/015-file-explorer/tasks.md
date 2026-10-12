@@ -1388,37 +1388,56 @@ from that same position (`f013` -> `f026`, genuinely outside the initial render 
 the round-9 and round-10 prune bullets above now carry an explicit "superseded round 11" marker
 (they previously read as current behaviour, with only a separate verification-bullet correction
 pointing at them); the round-10 section's own claim that the committed-reload gap was "closed in
-the Round 11 section below" was false and is now corrected to "still not verified"; `
-fileExplorer.ts`'s stale "membership check below" comment (the check is actually above) fixed;
+the Round 11 section below" was false and is now corrected to "still not verified";
+`fileExplorer.ts`'s stale "membership check below" comment (the check is actually above) fixed;
 `index.ts`'s `did-fail-load`/`-3` comment reworded to avoid asserting either of two gate
 reviewers' own disagreeing, unverified recollections of Electron's source as settled fact.
 
 **LOW (Sec12)**: `resetAllFileExplorerWatchersAndState` now calls `notifyFileExplorerReset(id)`
 for every Session with parked state BEFORE clearing the map, not just stopping watchers and
 clearing silently -- a self-heal for the narrow, as-yet-unconfirmed case where this fires without
-the document actually having been replaced (a `did-fail-load` for an unrelated, LATER resource on
-a page that is still showing, per Sec12's own [INFERENCE]): the surviving renderer gets told to
-reload its tree instead of silently going stale with nothing watching underneath it.
+the document actually having been replaced (round 13 correction: the original `did-fail-load`
+"for a LATER, unrelated resource" example here was itself wrong, since the listener already
+filters on `isMainFrame` -- see the Round 13 section below for the corrected account): the
+surviving renderer gets told to reload its tree instead of silently going stale with nothing
+watching underneath it.
 
 **Round 12 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate12`, own
-`--user-data-dir`/CDP port 9346, pid-verified `taskkill` + a full `Win32_Process` scan confirming
-exit, deleted by literal path afterward; evidence -- 2 screenshots, `raw-output.txt`, both scratch
+`--user-data-dir`/CDP port 9346; evidence -- 2 screenshots, `raw-output.txt`, both scratch
 scripts, `sha256.json`, 6 files total -- saved in
 `C:/Users/shopwood/refract-live-check-671-gate12/`), kept deliberately narrow to the two things
-this round actually changed, per Main's own instruction:
+this round actually changed, per Main's own instruction. **Teardown claim corrected, round 13
+(Code13/Verif13 LOW): this round's raw output shows the graceful `taskkill` did NOT exit the
+process within 3s (the post-kill scan still found the pid); a `/F` forced kill was then issued,
+with no re-scan logged afterward in THIS round's own script to confirm it actually worked -- "a
+full `Win32_Process` scan confirming exit" overstated what this round's own evidence shows. (The
+process was independently confirmed gone by the time round 13 started; round 13's own driver
+script adds a post-`/F` re-scan so this is never ambiguous again.)**
 - **Second-page `PageDown`, genuinely scrolled**: a real click focused `f000.txt` in an 80-file
-  tree; a first `PageDown` landed on `f013.txt` (confirmed still within the initial render,
-  `scrollTop` unchanged at `0` beforehand); a SECOND `PageDown` from there landed on `f026.txt`
-  with the scroller's own `scrollTop` now genuinely at `372` -- the real-scroll case Code12 found
-  was never exercised (screenshot `A-second-page-pagedown.png`).
+  tree; a first `PageDown` landed on `f013.txt` (`scrollTop` was only recorded BEFORE any key
+  press, not separately confirmed again after this first one -- the "confirmed still within the
+  initial render" wording in an earlier draft of this bullet overstated that); a SECOND
+  `PageDown` from there landed on `f026.txt` with the scroller's own `scrollTop` now genuinely at
+  `372` -- the real-scroll case Code12 found was never exercised (screenshot
+  `A-second-page-pagedown.png`). **`PageUp` itself was only ever exercised within the
+  already-rendered window (round 11, `f013` -> `f000`) -- the genuinely-scrolled `PageUp`
+  direction (symmetric code path, same `moveToRow`) was never separately live-verified,
+  corrected per Code13/Verif13 Medium.**
 - **"N more" row scroll-out, not incorrectly rescued**: expanded a folder with 1010 files (the
-  1000-entry cap producing a real "10 more…" row); jumped keyboard focus to the last node row via
-  `End` (bringing the adjacent "more" row into Virtuoso's own rendered window, since it otherwise
-  sits far below the initial viewport); a real click focused the "more" row itself
-  (`document.activeElement` confirmed to carry `data-tree-more-key`); a real mouse-wheel scroll
-  UP (away from the bottom of the list, the only direction that can push the LAST row out of
-  view) removed it from the DOM -- `document.activeElement` afterward was `<body>`, NOT hijacked
-  to a different tree row, confirming the fix (screenshot `B-more-row-scroll-out.png`).
+  1000-entry cap producing a real "10 more…" row, positioned NEAR THE BOTTOM of the folder's own
+  listing, not literally the tree's last row -- `README.md` at the worktree root sorts after it;
+  wording corrected per Verif13 LOW); **the claim that `End` "jumped keyboard focus to the last
+  node row" was FALSE, found by round 13's own gate reviewers reading this round's own raw
+  output: `state after End ... {"activePath":null,"moreRowCount":1}` -- the list DID scroll (the
+  more row rendered), but focus landed on NO tree row at all, stranded on `<body>`, exactly the
+  long-jump focus-loss bug Round 13 below fixes. The rest of this bullet's own claim still
+  holds, since the "more" row was reached and focused by a SEPARATE real click, not by the broken
+  `End` jump**: a real click focused the "more" row itself (`document.activeElement` confirmed to
+  carry `data-tree-more-key`); a real mouse-wheel scroll UP (away from the bottom of the list, the
+  only direction that can push a row near the bottom out of view) removed it from the DOM --
+  `document.activeElement` afterward was `<body>`, NOT hijacked to a different tree row,
+  confirming the "more"-row rescue fix specifically (screenshot `B-more-row-scroll-out.png`) --
+  independent of the separate `End` bug corrected above.
 
 **Not verified this round**: everything carried over from round 11's own list, unchanged (an
 app-side `getStatus()` call-count instrumentation under a git-lock stress burst; a genuinely
@@ -1427,6 +1446,83 @@ successful reload with correct re-ensuring afterward; the real OS-file-drop trig
 navigation fix; the `render-process-gone` branch; a real keyboard/screen-reader pass on
 Tab/Shift+Tab re-entry after a mouse-wheel scroll-out; the window-shrink variant of the same
 scroll-out limitation for FR-025; a test isolating the archive-race watcher-release claim).
+
+### Round 13 gate fixes (Sec13/Code13 PASS with Mediums; A11y13/Verif13 FAIL on one real HIGH, all against round 12)
+
+**HIGH (A11y13/Verif13)**: round 12's own live-verification claimed `End` on the 1010-file
+folder "jumped keyboard focus to the last node row" -- false, found by this round's gate
+reviewers reading round 12's OWN raw output: `state after End ... {"activePath":null,
+"moreRowCount":1}`. The list genuinely scrolled (the "more" row rendered), but focus landed on
+NO tree row at all, stranded on `<body>` after a key the TREE ITSELF handles -- a real,
+previously-undisclosed WCAG 2.4.3/2.1.1 defect, not the separate, already-disclosed mouse-wheel/
+resize scroll-out limitation (no further user action caused this one; the tree's own keyboard
+navigation did). Root cause: `moveToRow`'s `virtuosoRef.current.scrollIntoView({ done })` callback
+can fire once SCROLLING itself settles, which on a long jump (hundreds of rows, Virtuoso's own
+estimated-then-measured row heights) can happen BEFORE the target row has actually mounted in the
+DOM -- the `done` callback's own `querySelector(...)?.focus()` then silently finds nothing and
+does nothing. Since the SOURCE row (the one focus left) is merely virtualised away, not genuinely
+removed, `handleFocusOut` correctly does NOT rescue it either (that is the OTHER, intentional
+disclosed limitation) -- the two defects compounded into a total loss of keyboard focus. Fixed:
+added `pendingFocusPathRef`, which `moveToRow` sets to the target row's own path when `done`
+finds nothing; a new effect watching `renderedRange` (Virtuoso's own `rangeChanged`) retries the
+same `querySelector`+`focus()` the moment a LATER range change shows the row is actually in the
+DOM. The pending retry is cleared (so it can never fire later and steal focus from somewhere the
+user has since moved to): at the top of every fresh `moveToRow` call (a newer key move supersedes
+an older, still-pending one); on any `pointerdown` anywhere in the document (the user acted on
+purpose); and on `sessionId` changing or the component unmounting. `Home`, `End`, type-ahead and
+`PageUp`/`PageDown` all route through the same `moveToRow`, so every long-jump keyboard path
+benefits from one fix, not four separate ones.
+
+**MEDIUM disclosure (Code13/Sec13/Verif13)**: wording-only corrections, no further behaviour
+change. `spec.md`'s scroll-out Clarification entry's self-contradicting "never scrolling the tree
+in the first place" (describing `PageUp`/`PageDown`) replaced with an accurate account: the tree
+DOES scroll for `PageUp`/`PageDown` (confirmed live, round 12: `scrollTop` genuinely moved to
+`372`), it just scrolls ONLY to follow the user's own focus move via `moveToRow`, so the focused
+row itself is never scrolled away by those keys (the thing that actually matters for FR-022/
+FR-025). `fileExplorer.ts`'s `resetAllFileExplorerWatchersAndState` doc comment reworded to drop
+an unreachable example (a `did-fail-load` "for a LATER, unrelated resource" cannot happen, since
+the listener already filters on `isMainFrame`) and an inaccurate "silent no-op" claim (Electron
+actually logs an IPC-send-failed warning on a disposed frame, never throws) -- replaced with a
+plain, accurate account of what the `send` call reaches in each real case. The PR's own
+FR-022/"Scroll-out focus limitation" wording now says `PageDown` is live-verified for BOTH the
+already-rendered and genuinely-scrolled cases, while `PageUp` is live-verified only for the
+already-rendered case (same `moveToRow` code path, not separately re-tested scrolled, since
+round 13's own fix already covers it structurally and the round-12 evidence never claimed
+otherwise once corrected above).
+
+**Round 13 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate13`, own
+`--user-data-dir`/CDP port 9347, pid-verified `taskkill` + a full `Win32_Process` scan confirming
+exit (this round's own script adds a SECOND, post-`/F` confirming scan specifically to close the
+round-12 teardown-evidence gap above -- not needed this run, since the graceful `taskkill` alone
+succeeded), deleted by literal path afterward; evidence -- 2 screenshots, `raw-output.txt`, both
+scratch scripts, `sha256.json`, 6 files total -- saved in
+`C:/Users/shopwood/refract-live-check-671-gate13/`):
+- **`End`/`Home` long-jump focus retry, with real assertions this time (the HIGH fix)**: a real
+  click focused `big/f0000.txt` in the same 1010-file (1000-entry-capped) folder round 12 used. A
+  real `End` keypress landed on `README.md` -- the TRUE last node row in the WHOLE flattened tree
+  (the scratch worktree's own root-level `README.md` file sorts after `big/`'s entire expanded
+  subtree, folders-before-files, FR-006; an earlier run of this exact script asserted the wrong
+  expected row, `big/f0999.txt`, which is merely the last row INSIDE `big/`, and was corrected
+  before trusting the result), on a real `DIV`, never `<body>`. A real `Home` keypress landed on
+  `big` itself -- the TRUE first node row (the folder row; `nodeAbsIndices` includes every node
+  row, folders included, not just its first child) -- also a real `DIV`, never `<body>`. Both
+  screenshots (`end-long-jump-focus.png`, `home-long-jump-focus.png`) show a real row visibly
+  focused, not a blank/unfocused tree.
+
+**Not verified this round**: everything carried over from round 12's own list, unchanged (an
+app-side `getStatus()` call-count instrumentation under a git-lock stress burst; a genuinely
+slow/throttled `shutdown()` for a wider archive race window; `did-navigate` firing on a committed,
+successful reload with correct re-ensuring afterward; the real OS-file-drop trigger for the
+navigation fix; the `render-process-gone` branch; a real keyboard/screen-reader pass on
+Tab/Shift+Tab re-entry after a MOUSE-WHEEL/resize scroll-out specifically (the disclosed
+limitation this round did NOT touch -- only the separate keyboard long-jump bug was fixed); the
+window-shrink variant of the same scroll-out limitation for FR-025; a test isolating the
+archive-race watcher-release claim; a genuinely-scrolled `PageUp` (only the already-rendered
+direction has ever been live-verified, same `moveToRow` code path as the now-fixed `End`); a
+type-ahead long jump specifically (the current fixtures' filenames all share a common first
+letter, making a genuinely discriminating long-jump type-ahead test impractical to construct
+without new fixtures -- not built this round, though the fix applies to it structurally, same
+code path as `Home`/`End`/`PageUp`/`PageDown`).
 
 ---
 

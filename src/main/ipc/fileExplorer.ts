@@ -397,14 +397,17 @@ export function stopAllFileExplorerWatchers(): void {
  * resets the same way. */
 export function resetAllFileExplorerWatchersAndState(): void {
   stopAllFileExplorerWatchers();
-  // Gate round 12 fix (Sec12 Low): notifies each Session with parked state BEFORE clearing it --
-  // the expected case (a genuine renderer crash/reload) has nothing left to notify (the window's
-  // own `webContents.send` below is a silent no-op against a document that is already gone), but
-  // IF this fires for a reason that did NOT actually replace the document (for example a
-  // `did-fail-load` on an already-loaded page, for a LATER, unrelated resource -- see that
-  // listener's own comment in `main/index.ts`), this lets the SURVIVING renderer self-heal (its
-  // `FILE_EXPLORER_RESET` handler reloads the affected Session's tree) instead of silently going
-  // stale with nothing watching underneath it and no event ever telling it to recover.
+  // Gate round 12 fix (Sec12 Low), round 13 wording correction (A11y13/Code13/Sec13): notifies
+  // each Session with parked state BEFORE clearing it, not just clearing silently. On a genuine
+  // renderer crash/reload (`render-process-gone`, `did-navigate`) this `send` is delivered to the
+  // FRESH document, where `resetSession` no-ops for a Session id it has no entry for yet (the new
+  // mount's own "load once" effect fires on its own, independent of this); covers any main-frame
+  // failure that leaves the OLD document showing instead (a `did-fail-load` the main-frame gate
+  // still passes), which lets that SURVIVING renderer self-heal (its own `FILE_EXPLORER_RESET`
+  // handler reloads the affected Session's tree) instead of silently going stale with nothing
+  // watching underneath it. `loadedPathsBySession.clear()` below is therefore mostly a safety
+  // net by this point (every key notified above already deletes itself) -- kept rather than
+  // removed, since it costs nothing and guards against this function's own future changes.
   for (const sessionId of [...loadedPathsBySession.keys()]) notifyFileExplorerReset(sessionId);
   loadedPathsBySession.clear();
 }

@@ -193,6 +193,21 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // convention as a native `<select>`'s own type-ahead. A ref, not state -- it drives no render
   // of its own, only the NEXT keypress's search.
   const typeaheadRef = useRef<{ buffer: string; timer: ReturnType<typeof setTimeout> | undefined }>({ buffer: '', timer: undefined })
+  // Gate round 13 fix (A11y13/Verif13 HIGH): `moveToRow` below asks Virtuoso to scroll to a row
+  // and focuses it in the `scrollIntoView` `done` callback -- correct for a SHORT jump, but on a
+  // LONG one (`End`/`Home`/type-ahead across hundreds of rows, estimated row heights not yet
+  // measured) `done` can fire once scrolling itself settles, before the target row has actually
+  // mounted in the DOM. The `querySelector(...)?.focus()` call then silently finds nothing and
+  // does nothing, stranding focus on `<body>` after a key the TREE ITSELF handles -- not the
+  // separate, disclosed mouse-wheel/resize scroll-out limitation elsewhere in this file, since no
+  // further user action caused this one. Holds the target path moveToRow could not immediately
+  // focus; retried by the `renderedRange` effect below once a LATER `rangeChanged` shows the row
+  // is actually in the DOM. Cleared (so a stale retry can never fire later, stealing focus from
+  // somewhere the user has since moved to): at the top of every fresh `moveToRow` call (a newer
+  // key move supersedes an older, still-pending one); on any `pointerdown` anywhere in the
+  // document (the user clicked something on purpose); and on `sessionId` changing or this
+  // component unmounting.
+  const pendingFocusPathRef = useRef<string | null>(null)
   // Tracks whether focus is currently somewhere inside this panel, kept live via a document-wide
   // `focusin` listener -- NOT read at the moment `sessionId`/`status` changes: by the time this
   // component re-renders for a Session switch or a Retry, the row/button that had focus may
@@ -500,6 +515,40 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     }
     return undefined
   }, [selectedAbsIndex, renderedRange, rows])
+  // Gate round 13 fix (A11y13/Verif13 HIGH): the retry side of `pendingFocusPathRef` (see that
+  // ref's own comment above) -- re-runs every time Virtuoso reports a new rendered range
+  // (`rangeChanged`), which fires again once a long `scrollIntoView` jump's target row actually
+  // mounts. Looks the pending path up directly rather than trusting `tabbableAbsIndex`/any index
+  // math, since a row's actual presence in the DOM is exactly what failed last time.
+  useEffect(() => {
+    const pendingPath = pendingFocusPathRef.current
+    if (!pendingPath) return
+    const target = treeContainerRef.current?.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(pendingPath)}"]`)
+    if (!target) return
+    pendingFocusPathRef.current = null
+    target.focus({ preventScroll: true })
+  }, [renderedRange])
+  // Gate round 13 fix (A11y13/Verif13 HIGH): a `pointerdown` anywhere in the document means the
+  // user just acted on purpose -- a pending retry from an EARLIER key move must never steal focus
+  // back after that, the identical principle round 10's own HIGH fix already applies to the
+  // (now-removed) deferred scroll-out rescue. Document-level, not container-scoped: the user may
+  // click outside this panel entirely (a chat message, empty space).
+  useEffect(() => {
+    function clearPendingFocus(): void {
+      pendingFocusPathRef.current = null
+    }
+    document.addEventListener('pointerdown', clearPendingFocus, true)
+    return () => document.removeEventListener('pointerdown', clearPendingFocus, true)
+  }, [])
+  // Gate round 13 fix (A11y13/Verif13 HIGH): a pending retry targets a specific row PATH, which
+  // only means anything for the Session that asked for it -- clears on every Session switch (the
+  // cleanup below) and on unmount, so a retry queued for one Session's tree can never fire against
+  // a different Session's (or no) tree mounted after it.
+  useEffect(() => {
+    return () => {
+      pendingFocusPathRef.current = null
+    }
+  }, [sessionId])
 
   function activateRow(node: ExpandableNode): void {
     if (!sessionId) return
@@ -563,10 +612,24 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   function moveToRow(row: NodeRow, absIndex: number): void {
     if (!sessionId) return
     setSelectedPath(sessionId, row.node.path)
+    // Gate round 13 fix (A11y13/Verif13 HIGH): a fresh move always supersedes an earlier,
+    // still-pending retry -- see `pendingFocusPathRef`'s own comment above.
+    pendingFocusPathRef.current = null
     virtuosoRef.current?.scrollIntoView({
       index: absIndex,
       done: () => {
-        treeContainerRef.current?.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(row.node.path)}"]`)?.focus()
+        const target = treeContainerRef.current?.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(row.node.path)}"]`)
+        if (target) {
+          target.focus()
+        } else {
+          // Gate round 13 fix (A11y13/Verif13 HIGH): on a long jump (Home/End/type-ahead across
+          // hundreds of rows), Virtuoso's `done` can fire once SCROLLING itself settles, before
+          // the target row has actually mounted (estimated row heights, not yet measured) --
+          // `querySelector` finds nothing here and focus would otherwise silently strand on
+          // `<body>`. Queues a retry the `renderedRange` effect above consumes the moment a LATER
+          // `rangeChanged` shows this row is actually in the DOM.
+          pendingFocusPathRef.current = row.node.path
+        }
       }
     })
   }
