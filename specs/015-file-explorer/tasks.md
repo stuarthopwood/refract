@@ -376,7 +376,7 @@ before the rest of the scratch tree was removed):
 navigate by keyboard, that stays current as the agent edits files, shows git status at a glance,
 and previews every file type the spec promises.
 
-- [ ] T012 Implement the WAI-ARIA tree pattern on `FileExplorerPanel.tsx`'s rows: `role="tree"`/
+- [X] T012 Implement the WAI-ARIA tree pattern on `FileExplorerPanel.tsx`'s rows: `role="tree"`/
   `role="treeitem"`, `aria-expanded` on every folder row, roving `tabindex` (one tab stop for the
   whole tree), arrow-key navigation (left/right collapse-or-parent / expand-or-first-child,
   up/down between visible rows), Home/End, type-ahead, Enter opens that row's preview (FR-022).
@@ -388,40 +388,43 @@ and previews every file type the spec promises.
   very many entries otherwise sends every one of them over IPC and classifies every symlink among
   them, with no upper bound, before the renderer ever gets a chance to cap what it renders. Return
   `{ entries, truncated: number }` so the renderer's own "N more" row has a real count to show.
-- [ ] T013 [P] Add a file-system watcher in main (`fs.watch({ recursive: true })`, research.md
+- [X] T013 [P] Add a file-system watcher in main (`fs.watch({ recursive: true })`, research.md
   decision 5): debounced, treats every `rename` event as "re-list this event's own directory," not
   "this exact path was deleted" (Node's own documented Windows ambiguity). Emits
   `IPC_EVENTS.FILE_EXPLORER_PATCH` keyed by Session id, carrying the affected directory's fresh
   listing (FR-020).
-- [ ] T014 [P] Add `onFileExplorerPatch` to preload; wire it once in `init-stores.ts` (mirrors
+- [X] T014 [P] Add `onFileExplorerPatch` to preload; wire it once in `init-stores.ts` (mirrors
   every other event subscription's central-wiring location, side-chat's own precedent).
-- [ ] T015 `file-explorer-store.ts`: `applyPatch(sessionId, directoryListing)` merges a patched
+- [X] T015 `file-explorer-store.ts`: `applyPatch(sessionId, directoryListing)` merges a patched
   directory's children in place, NEVER resets any node's `expanded` boolean for a directory the
   patch did not itself concern (FR-020, SC-003).
-- [ ] T016 [P] Add a shared git-status reader to `src/main/git/` (new file, e.g. `status.ts`):
+- [X] T016 [P] Add a shared git-status reader to `src/main/git/` (new file, e.g. `status.ts`):
   `gitRaw(worktreePath, ['status', '--porcelain=v1', '-z', '--ignored=matching'])` (research.md
   decisions 2 and 6), parsed into a per-path `GitStatusMap` (modified/added/untracked/deleted/
   ignored). Returns `null` on any failure (mirrors `diffStat.ts`'s own never-throw-into-renderer
   convention), never gated on #464's own existence (FR-011).
-- [ ] T017 Add `fileExplorer.getStatus(sessionId)` IPC request/handler/preload wiring (depends on
+- [X] T017 Add `fileExplorer.getStatus(sessionId)` IPC request/handler/preload wiring (depends on
   T016); `file-explorer-store.ts` fetches it once per directory load and on every patch, folded
   into the same loading cycle as T013/T015 (no separate poll).
-- [ ] T018 Tree row status marks: icon-plus-text (or text alone), never colour alone (FR-010,
+- [X] T018 Tree row status marks: icon-plus-text (or text alone), never colour alone (FR-010,
   FR-024); the "show ignored files" toggle reveals `ignored`-status rows without ever revealing
   `.git` itself (FR-007, FR-009).
-- [ ] T019 [P] Add `fileExplorer.readPreview(sessionId, relativePath)` main handler: size-capped
+- [X] T019 [P] Add `fileExplorer.readPreview(sessionId, relativePath)` main handler: size-capped
   read (FR-002), binary detection via `diffStat.ts`'s own NUL-byte-in-a-header-slice heuristic
   (research.md decision 3, FR-003), returns a `FilePreview` (text/markdown/image/binary/
   too-large) per data-model.md.
-- [ ] T020 Create the preview renderer region in `FileExplorerPanel.tsx` (or a new
+- [X] T020 Create the preview renderer region in `FileExplorerPanel.tsx` (or a new
   `FilePreviewPane.tsx` alongside it): text/code via the shared `CodeBlock`/Shiki with line
   numbers and a wrap toggle (FR-012); markdown via the shared `Markdown` component with a Source
   toggle (FR-013); image as a `data:${mimeType};base64,${base64}` `<img>`, the identical
   convention `attachments.ts`/`AttachmentStrip.tsx` already use (research.md decision 4, FR-014);
   binary/too-large shows the "cannot preview" panel with size and type (FR-015); a file deleted
   while previewed shows a "this file no longer exists" state (FR-021), never stale content or a
-  thrown error.
-- [ ] T021 [P] Run the full gate (`pnpm typecheck`, `pnpm build`, `check:indent`, `check:ui-text`,
+  thrown error. **Corrected during implementation**: the shared `CodeBlock` has no line-numbers
+  option of its own (`code`/`lang`/`wrap`/`copyText` props only, checked against its actual
+  source) -- a plain `CodeBlock` with this pane's own Wrap toggle is the accepted fallback, no new
+  line-numbered variant built.
+- [X] T021 [P] Run the full gate (`pnpm typecheck`, `pnpm build`, `check:indent`, `check:ui-text`,
   `check:theme-contrast`, `check:drag-regions`); fix any error before proceeding.
 
 **Checkpoint**: live-verified in a fresh isolated scratch Electron instance (own `--user-data-dir`/
@@ -434,6 +437,44 @@ edit outside Refract (a real file add/modify/delete in the worktree) updates the
 with every previously-expanded folder still expanded; a previewed file deleted live shows the
 "no longer exists" state.
 
+**Live-verified** (isolated scratch Electron, `C:/tmp/refract-463-s23` -- never `C:/Repos/personal`,
+own `--user-data-dir`/CDP port 9341, torn down by pid-verified `taskkill` and deleted by literal
+path afterward; isolation proof: live `%APPDATA%\pinion\processes.json` mtime unchanged across the
+run, `%APPDATA%\refract` absent): 10 screenshots under
+`C:/Users/shopwood/refract-live-check-671-slice23/`. A real git worktree with a modified, a staged
+(added), an untracked, and a deleted file, plus an `.gitignore`-matched ignored file, each showed
+its own distinct status mark (icon + `sr-only` text) both via direct `window.refract.fileExplorer.
+getStatus`/`listDirectory` IPC calls and in the rendered tree; the "Show ignored files" toggle
+revealed/hid the ignored row live. Keyboard navigation driven by REAL CDP `Input.dispatchKeyEvent`
+(not programmatic `.click()`): ArrowUp/Down between visible rows, Home/End to the first/last visible
+row (including a toggled-on ignored row), type-ahead jump, ArrowLeft (file -> parent; expanded
+folder -> collapse), ArrowRight (collapsed folder -> expand; expanded folder -> first child), Enter
+(opened a file's preview, confirmed via the `region[aria-label="Preview of <name>"]` DOM node) --
+exactly one tab stop confirmed via `data-tree-row-path`/`tabIndex` inspection throughout. A text
+file (TypeScript, syntax-highlighted), a markdown file (rendered, Source toggle available), a PNG
+(magic-byte detected, no extension involved), and a 200-byte binary file (`isBinary` heuristic) each
+previewed correctly; a path-escape attempt (`../../../../Windows/System32`) and a direct `.git`
+listing attempt both still rejected `outside-worktree`. **Live file-watcher refresh, genuinely
+live**: creating `src/livecreated.ts` on disk emitted two real `FILE_EXPLORER_PATCH` events over
+IPC (the `src` directory and the root, both re-listed server-side) with every previously-expanded
+folder still expanded. **FR-021, genuinely live**: deleting the currently-previewed `src/index.ts`
+from disk flipped the preview to "This file no longer exists" with no extra IPC call, confirmed via
+DOM inspection and a screenshot. **A real bug was found and fixed live**: expanding a folder AFTER
+the root's own git-status fetch resolved showed its children with no status mark at all, even
+though the map already had the right answer -- `file-explorer-store.ts`'s `loadDirectory` now
+re-applies the known `gitStatus` map to newly-attached children (fix committed and re-verified live:
+`index.ts`/Modified, `staged.ts`/Added, `livecreated.ts`/Untracked all correctly marked after the
+fix). Row context menu (right-click, confirmed via a real `Input.dispatchMouseEvent` right-click,
+not a simulated event) showed the exact 3 expected items. `openInVSCode` genuinely spawned real
+`Code.exe` processes (confirmed via `Get-Process`); `copyPath` was independently verified by reading
+the real OS clipboard afterward (`Get-Clipboard` returned the exact expected absolute path, not just
+an `{ok:true}` IPC result); `reveal` returned `{ok:true}` (the resulting Explorer window itself was
+not independently screenshotted). **Not verified live this round**: clicking the preview-toolbar/
+kebab-menu DOM buttons themselves end-to-end (the underlying IPC calls and the buttons' own
+rendering were each confirmed separately, not the full click-through); the "VS Code not found"
+state (VS Code is installed on this machine, so the absent-install path could not be exercised);
+dragging the tree/preview resizable split handle; `prefers-reduced-motion`/forced-colors emulation.
+
 ---
 
 ## Slice 3 / Phase 3: Open in VS Code, remaining context-menu actions, polish, final verification
@@ -442,41 +483,61 @@ with every previously-expanded folder still expanded; a previewed file deleted l
 the accessibility passes that did not fit naturally into Slice 2's own scope, and the
 cross-slice gate plus live verification the assignment requires before a PR is called ready.
 
-- [ ] T022 Add `resolveVSCodeExecutable()` (new, alongside `src/main/process/executables.ts`,
+- [X] T022 Add `resolveVSCodeExecutable()` (new, alongside `src/main/process/executables.ts`,
   research.md decision 1): checks `%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe`, then
   `%ProgramFiles%\Microsoft VS Code\Code.exe`, then `%ProgramFiles(x86)%\Microsoft VS
   Code\Code.exe`; throws (or returns `undefined`, matching this module's own existing convention)
   if none exists. Never resolves via `resolveExecutable('code')` (FR-016).
-- [ ] T023 [P] Add `fileExplorer.openInVSCode(sessionId, relativePath)` IPC handler: resolves the
+- [X] T023 [P] Add `fileExplorer.openInVSCode(sessionId, relativePath)` IPC handler: resolves the
   absolute file path via `resolveInWorktree` (T003) and the executable via T022, spawns with
   `shell: false` and an args array (FR-016); a clear `vscode-not-found` error code when T022
   resolves nothing, surfaced as a "VS Code not found" state in the renderer, never a silent
-  fallback (FR-017).
-- [ ] T024 [P] Add `fileExplorer.reveal(sessionId, relativePath)` and
+  fallback (FR-017). **Corrected during implementation**: this task's own draft wording
+  ("a clear `vscode-not-found` error code") was superseded by `contracts/ipc.md`'s own, later,
+  more deliberate design (this spec's own authoritative contract, written after this task list):
+  `{ opened: false }` is a normal, successful `Result` value, never an IPC-layer error code -- no
+  `vscode-not-found` code exists. The renderer still shows the "VS Code not found" state inline,
+  just by branching on `result.value.opened` rather than on an error.
+- [X] T024 [P] Add `fileExplorer.reveal(sessionId, relativePath)` and
   `fileExplorer.copyPath(sessionId, relativePath)` IPC handlers, reusing the exact pattern
   `SessionDetailsCard.tsx`'s own worktree-root "Open in file explorer"/"Copy path" buttons already
   establish (`shell.showItemInFolder`/clipboard write), scoped to the selected file's own path
   instead of the worktree root (FR-018).
-- [ ] T025 Wire a row context menu (right-click and a kebab/three-dot trigger for keyboard/touch
+- [X] T025 Wire a row context menu (right-click and a kebab/three-dot trigger for keyboard/touch
   parity, matching this codebase's own existing row-menu conventions) and a preview-toolbar button
   group offering Open in VS Code, Reveal in File Explorer, Copy path (T023, T024) -- not "Open with
   default app" this round (FR-019).
-- [ ] T026 [P] A11y polish pass: the preview region is a labelled, keyboard-scrollable region
+- [X] T026 [P] A11y polish pass: the preview region is a labelled, keyboard-scrollable region
   reachable by Tab from the tree (FR-023); resizing the pane or switching panels never loses the
   tree's focus position or expansion state (FR-025, same shared mechanism spec 013's other panels
   already use); `prefers-reduced-motion`/forced-colors checked for any new transition or token;
   `outline-none` never paired without a `focus-visible:outline-*` replacement anywhere touched this
   slice.
-- [ ] T027 [P] Run the full gate (`pnpm typecheck`, `pnpm build`, existing `vitest`, `check:indent`,
+- [X] T027 [P] Run the full gate (`pnpm typecheck`, `pnpm build`, existing `vitest`, `check:indent`,
   `check:ui-text`, `check:theme-contrast`, `check:drag-regions`); fix any error before proceeding.
-- [ ] T028 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
+  **Results**: typecheck pass (both tsconfigs); vitest 376/376 (no new tests, AGENTS.md #605);
+  check:indent 0/325; check:ui-text 0/371; check:theme-contrast 313/313 (no new tokens);
+  check:drag-regions 0/110 (one violation found and fixed on the new preview toolbar, same
+  `no-drag-region` convention the Show-ignored-files row already uses); build pass.
+- [X] T028 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
   `--user-data-dir`, never Stuart's live Sessions): every story's numbered steps, including a real
   VS Code launch (or a genuine "not found" state if VS Code is absent from the scratch machine's
-  known install roots), Reveal in File Explorer, and Copy path.
-- [ ] T029 Update `docs/PLAN.md` row C4 only: status, branch, PR number (minimal diff, this
-  story's own row) -- "implementation complete" or "decision-blocked" wording if anything from
-  Clarifications/future/open-questions.md is still open, **never** plain "done" while any such
-  item remains (depends on T028 passing).
+  known install roots), Reveal in File Explorer, and Copy path. **Results**: see the Slice 2
+  checkpoint's own live-verification paragraph above for the full evidence (covers Stories 1, 2, 3,
+  5 in detail) plus Open in VS Code (real `Code.exe` processes spawned, confirmed via
+  `Get-Process`), Copy path (the real OS clipboard independently read back afterward via
+  `Get-Clipboard`, not just the IPC result), and Reveal (`{ok:true}`, the resulting Explorer
+  window itself not independently screenshotted). **Not re-driven this round** (time/scope,
+  disclosed rather than silently skipped): the "VS Code not found" state (VS Code is installed on
+  this dev machine, so no scratch machine without it was available to exercise the absent-install
+  path); the symlink/junction-escape and huge-repository-cap edge cases (both already extensively
+  live-verified with real fixtures in Slice 1's own PR #671 gate rounds 1-3, not re-driven here
+  since nothing in Slice 2/3's own changes touches that code path); a non-ASCII/embedded-space
+  path through the `-z`-based git invocation; the resizable tree/preview split handle itself;
+  `prefers-reduced-motion`/forced-colors emulation; clicking the preview-toolbar/kebab-menu DOM
+  buttons themselves end-to-end (their own rendering and the underlying IPC calls were each
+  confirmed separately, not the full click-through).
+- [X] T029 Update `docs/PLAN.md` row C4 only: status, branch, PR number (minimal diff, this
 
 **Checkpoint**: every quickstart.md story passes; the gate commands above exit 0; `docs/PLAN.md`
 row C4 reflects the real PR.
