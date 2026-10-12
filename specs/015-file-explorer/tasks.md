@@ -790,6 +790,50 @@ comment near `recreateWorktree` (about the watcher releasing the worktree ROOT f
 call touches it) was re-checked against this round's corrected causal model and found to already
 be consistent -- no change needed there.
 
+**Live-verified** (fresh scratch Electron instance per `verify-refract-ui-via-cdp-scratch-instance`,
+`C:/tmp/refract-671-gate7` -- never touching Stuart's live Sessions; isolated `--user-data-dir`,
+CDP port 9341; evidence copied to `C:/Users/shopwood/refract-live-check-671-gate7/`: 4
+screenshots, a genuinely piped `raw-output.txt` (`node gate7-verify.js > raw-output.txt 2>&1`,
+not hand-transcribed -- the round-6 complaint this round fixes), the driver script itself
+(`gate7-verify.js`, saved in the evidence folder only, never committed to the repo), sha256.json,
+7 files total, 1 script, 0 duplicates; the Session's own agent confirmed stopped via a full
+`Get-CimInstance Win32_Process` scan before every ancestor-rename attempt, isolating the
+watcher's own effect from the agent's):
+- **(a) panel CLOSED -> ancestor rename succeeds**: opened the file-explorer panel (rail button
+  `aria-pressed` false -> true, root listed), clicked the SAME rail button again
+  (`aria-pressed` true -> false, confirmed via DOM query; `[aria-label="File explorer"]` confirmed
+  gone from the DOM, a genuine unmount, not just a visual collapse), waited for the
+  `stopWatching` IPC round-trip, then renamed the worktree's own parent folder externally:
+  succeeded immediately. This is the "real fix" (item 2) working as intended.
+- **(b) panel OPEN -> ancestor rename still blocked**: same fixture, panel open and root listed,
+  same external rename attempt: `Access to the path '...\pinion-worktrees\repo' is denied.` --
+  documents the residual honestly (the watcher locks every ancestor for as long as a panel for
+  that Session is open this run), exactly as the corrected causal model above states.
+- **(c) archive racing a `listDirectory`**: 15 iterations, each firing
+  `Promise.all([fileExplorer.listDirectory(id, ''), sessions.archive(id)])` concurrently from the
+  same tick, then immediately attempting the external ancestor rename, then `sessions.restore(id)`
+  for the next iteration: **15/15 released the watcher cleanly, 0 leaks** -- the busy-marker fix
+  holds under stress.
+- **(d) a transient (non-ENOENT/ENOTDIR) realpath error does not reset/wipe state**: expanded
+  `src`, selected `root-file.txt` (previewed, showing "hello"), recorded `window.__resetEvents`
+  length (30) and the expanded/selected DOM state, then ran `icacls <worktree> /deny
+  <user>:(RX)` (a real, if brief, permission denial -- the closest practical simulation of an
+  AV/indexer-style transient lock available without deeper OS tooling) immediately followed by a
+  `listDirectory` call landing during the deny window, then `icacls /remove:d` to restore
+  permissions. Afterward: `window.__resetEvents.length` unchanged (30, no `FILE_EXPLORER_RESET`
+  fired), `src` still expanded, `root-file.txt` still selected and previewed, no `role="alert"`
+  text anywhere -- the fix holds.
+
+**Not verified this round**: a genuinely slow/throttled main-process `shutdown()` to force a
+WIDER archive-vs-listDirectory race window than the 15-iteration stress test's own natural IPC
+timing produced (every iteration happened to land cleanly; the busy-marker fix's own code path
+was read and traced, not instrumented to CONFIRM it was the specific line that fired on any one
+iteration, only that the observable outcome -- no leak -- held every time). A genuinely OS-level
+transient `EBUSY`/`EMFILE` on `fs.realpath` itself (as opposed to the `icacls`-deny simulation
+above, which produces `EACCES`/`UnauthorizedAccess` -- a different errno, but the SAME non-fatal
+code path in `resolveListTarget`/`resolveInWorktree` handles every non-ENOENT/ENOTDIR code
+identically, so this is still a genuine test of the fix, just not of that exact errno).
+
 ---
 
 ## Slice 3 / Phase 3: Open in VS Code, remaining context-menu actions, polish, final verification
