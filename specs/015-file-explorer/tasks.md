@@ -812,8 +812,12 @@ watcher's own effect from the agent's):
 - **(c) archive racing a `listDirectory`**: 15 iterations, each firing
   `Promise.all([fileExplorer.listDirectory(id, ''), sessions.archive(id)])` concurrently from the
   same tick, then immediately attempting the external ancestor rename, then `sessions.restore(id)`
-  for the next iteration: **15/15 released the watcher cleanly, 0 leaks** -- the busy-marker fix
-  holds under stress.
+  for the next iteration: 15/15 released the watcher cleanly, 0 leaks. **Round-8 correction
+  (Code8/Verif8 Medium)**: this overclaimed "the busy-marker fix holds under stress" --
+  `Promise.all` dispatches both calls in the same tick, so `listDirectory`'s own `ensureWatcher`
+  ran and returned BEFORE `archive`'s `await shutdown()` ever started; the busy-marker window
+  this fix exists to close was never actually entered. Re-run properly staggered in the Round 8
+  section below.
 - **(d) a transient (non-ENOENT/ENOTDIR) realpath error does not reset/wipe state**: expanded
   `src`, selected `root-file.txt` (previewed, showing "hello"), recorded `window.__resetEvents`
   length (30) and the expanded/selected DOM state, then ran `icacls <worktree> /deny
@@ -822,7 +826,16 @@ watcher's own effect from the agent's):
   `listDirectory` call landing during the deny window, then `icacls /remove:d` to restore
   permissions. Afterward: `window.__resetEvents.length` unchanged (30, no `FILE_EXPLORER_RESET`
   fired), `src` still expanded, `root-file.txt` still selected and previewed, no `role="alert"`
-  text anywhere -- the fix holds.
+  text anywhere -- the fix holds. **Round-8 correction (Code8/Sec8/Verif8 Medium)**: the
+  `listDirectory` call itself was NEVER actually observed resolving during the deny window --
+  `JSON.stringify(window.refract.fileExplorer.listDirectory(...))` stringifies a pending
+  `Promise` object (`{}`), not its eventual result, and the `icacls` restore ran synchronously
+  right after, racing (or outright preceding) the real IPC round trip. The state-preservation
+  evidence above (no reset, expansion/selection unchanged) is still genuine -- that was read
+  straight from the DOM, unaffected by the stringify bug -- but "the fix holds" for the
+  `listDirectory` call's OWN result code was unproven. Also: `icacls /deny ...:(RX)` on Windows
+  produces `EPERM`, not the `EACCES`/`UnauthorizedAccess` this round guessed -- re-run properly
+  awaited in the Round 8 section below, which also captures the real result code this time.
 
 **Not verified this round**: a genuinely slow/throttled main-process `shutdown()` to force a
 WIDER archive-vs-listDirectory race window than the 15-iteration stress test's own natural IPC
@@ -830,9 +843,152 @@ timing produced (every iteration happened to land cleanly; the busy-marker fix's
 was read and traced, not instrumented to CONFIRM it was the specific line that fired on any one
 iteration, only that the observable outcome -- no leak -- held every time). A genuinely OS-level
 transient `EBUSY`/`EMFILE` on `fs.realpath` itself (as opposed to the `icacls`-deny simulation
-above, which produces `EACCES`/`UnauthorizedAccess` -- a different errno, but the SAME non-fatal
-code path in `resolveListTarget`/`resolveInWorktree` handles every non-ENOENT/ENOTDIR code
-identically, so this is still a genuine test of the fix, just not of that exact errno).
+above, which the Round 8 section below confirms actually produces `EPERM` -- a different errno,
+but the SAME non-fatal code path in `resolveListTarget`/`resolveInWorktree` handles every
+non-ENOENT/ENOTDIR code identically, so this is still a genuine test of the fix, just not of
+that exact errno).
+
+### Round 8 gate fixes (Sec8/Code8/A11y8/Verif8, all FAILed round 7; round 7's own "real fix" --
+### stop the watcher on panel unmount -- introduced two regressions, caught by all four
+### reviewers independently)
+
+**HIGH**: `stopFileExplorerWatcher`/`FILE_EXPLORER_ENSURE_WATCHING` deleted and recreated
+`loadedPaths` on every stop/restart cycle -- so after the FIRST panel close+reopen, tab switch,
+or Session A->B->A switch while the tab stayed open, `refreshDirectory`'s own membership check
+silently dropped every watcher patch for every directory the renderer had already loaded,
+INCLUDING the root. FR-020 (live refresh) was dead for the rest of the run past that first
+cycle, and FR-021 (previewed-file-deleted detection) along with it, since both depend on the
+same patch delivery. Round 7's own `tasks.md`/PR claims that FR-020 was "Done, live-verified"
+and that the stop/restart cycle only affected "live-patch delivery" with the cache otherwise
+untouched were both wrong -- the round-7 evidence never actually reopened a panel and changed a
+file, so this was never caught. Fixed: `loadedPaths` now lives in its own `loadedPathsBySession`
+map, independent of the watcher handle's own on/off lifecycle -- `stopFileExplorerWatcher` never
+touches it, and it is cleared only by an actual reset (`notifyFileExplorerReset`, which already
+means the renderer is reloading from scratch anyway). `FILE_EXPLORER_ENSURE_WATCHING` now
+re-flushes `scheduleDirectoryFlush` for every path still parked there once a watcher actually
+(re)starts -- the EXISTING `applyPatch`/`withPatchedChildren`/`isPathGoneUnderPatch`/
+`scheduleStatusFetch` machinery (file-explorer-store.ts) then catches up the tree, the preview,
+AND git status with no new renderer code at all.
+
+**HIGH**: the `listDirectory` worktree-missing guard compared `watchers.get(id)?.handle ===
+watchedHandle`, which is `undefined === undefined` (true) whenever `ensureWatcher` itself failed
+to start a watcher at all (the worktree folder was already gone, `watchDirectory` returns
+`undefined` synchronously). A Session with a genuinely missing worktree and no watcher therefore
+ran stop+reset on EVERY call: `resetSession` drops the entry, the load-once effect fires again
+(no entry), and the cycle repeats with no debounce -- a tight IPC+realpath loop that left the
+panel stuck on "loading" forever instead of ever showing the honest worktree-missing error and
+Retry/Recreate state. Fixed: only stop+reset when a watcher was ACTUALLY captured this call
+(`watchedHandle !== undefined`); otherwise the error returns unchanged and the renderer's
+existing root-error state renders it, same as any other load failure.
+
+**MEDIUM** (A11y8): the scrolled-out-row focus rescue moved SELECTION, not just focus --
+`onRowFocus` calls `setSelectedPath` on every row focus event, including the rescue's own
+programmatic `.focus()` call, so a row merely scrolled out from under a focused-but-not-selected
+row silently moved `aria-selected` and announced a new row the user never navigated to, worse
+with every subsequent scroll. Fixed: a `rescueFocusRef` flag brackets the one synchronous
+`.focus()` call (a native `focus` event fires synchronously inside `HTMLElement.focus()`, so
+setting/clearing the flag immediately around that one call reliably brackets just this rescue's
+own event); `onRowFocus` skips `setSelectedPath` while it is set.
+
+**LOW** (A11y8): the fallback chain (treeRow -> previewRegion -> container) could still land on
+the bare container in the narrow case where the rendered range holds no row with `tabindex="0"`
+at all. Now tries any rendered `[data-tree-row-path]` row first.
+
+**MEDIUM wording corrections** (Sec8/Code8/Verif8): the PR's "Risks" text said the ancestor lock
+is held "while ANY `FileExplorerPanel` is mounted (its tab open, regardless of which tab is
+active)" -- backwards; `RightPaneShell.tsx` mounts the panel only while its OWN tab is active.
+What the text missed instead: a COLLAPSED right pane (dragged shut) keeps `activePanelId`
+unchanged, so the panel -- and the watcher it holds open -- stays mounted, just invisible; the
+lock continues while nothing is shown. Corrected to "while File explorer is the active tab,
+including while the pane is collapsed". The `ensureWatching` handler's own "only live-patch
+delivery resumes, the cache is otherwise untouched" claim is also corrected (see the HIGH fix
+above). `resolveInWorktree` (`files.ts`) is shared with the chat-link/`sessions.revealFile` code
+(issue #610) -- the ENOENT/ENOTDIR narrowing from round 7 means EPERM/EBUSY now return
+`file-missing` instead of `worktree-missing` for those callers too, strictly more honest (a
+transient permission hiccup was never really "the worktree is missing" there either), disclosed
+here since Verif8 flagged it as previously undisclosed.
+
+**LOW** (Sec8): a renderer crash or reload resets the module-level ref-count `Map` in
+`FileExplorerPanel.tsx` to empty, but main's own watchers are a separate process and kept running
+regardless, with nothing left to ever call `stopWatching` again short of archive/delete/
+recreate/app-quit. `main/index.ts` now calls `stopAllFileExplorerWatchers()` on
+`render-process-gone` and a main-frame `did-start-navigation` (a reload, including dev HMR's
+full-page fallback) -- both are a hard reset of the renderer's entire state, so stopping every
+watcher unconditionally is correct; the renderer's own fresh mount re-calls `ensureWatching` for
+whichever Session(s) reopen a panel.
+
+**LOW** (Sec8): `setFileExplorerSessionBusy` was a plain `Set` -- two concurrent busy-markers for
+the SAME Session (a delete racing a recreate, both of which call it) could clear busy state
+early, reopening the exact watcher-recreation race the marker exists to close. Now reference-
+counted (`Map<string, number>`): busy only actually clears once every caller that set it has also
+cleared it.
+
+**LOW** (Code8): a flush already in flight when `stopWatching` ran (the panel closed mid-flush)
+no longer delivers its patch afterward -- the same handle-identity guard the `worktree-missing`
+branch already used, now applied to the success path too.
+
+**LOW** (Code8): `ensureWatching`/`stopWatching` IPC failures are logged (`console.warn`) instead
+of silently dropped; neither call has a user-facing recovery action, so this is diagnostic only,
+not a toast.
+
+**LOW** (Code8): the ref-count's own doc comment wrongly justified multi-instance support with "a
+split pane could in principle show the same Session's panel twice" -- `App.tsx` renders exactly
+one `RightPaneShell`, so at most one `FileExplorerPanel` is ever mounted for a given Session
+today. Reworded to cite React StrictMode's own mount-unmount-remount dev-time double-invoke (and
+HMR) as the actual reason ref-counting still matters, not a case that does not exist in this
+codebase.
+
+**Live-verified** (fresh scratch Electron instance, `C:/tmp/refract-671-gate8` -- never touching
+Stuart's live Sessions; own `--user-data-dir`/CDP port 9342; evidence under
+`C:/Users/shopwood/refract-live-check-671-gate8/`: 5 screenshots, two genuinely piped raw-output
+logs -- `raw-output.txt` (the main 6-test run) and `raw-output-testc-isolated.txt` (test (c)'s
+own isolated re-run, below), both driver scripts saved in the evidence folder only, never
+committed to the repo, sha256.json; 10 files total/2 scripts, 0 duplicates):
+- **Worktree-missing loop**: renamed a Session's worktree away (agent confirmed stopped first),
+  opened its panel: `window.__resetEvents.length` stayed at **0** and the honest "Couldn't load
+  this Session's files / This Session's worktree folder no longer exists / Retry" state rendered
+  immediately (screenshot `01-worktree-missing-error-state.png`) -- no stuck "loading", no
+  reset<->reload loop.
+- **Close/reopen staleness**: expanded `src`, previewed `root-file.txt`; closed the panel;
+  externally added `new-file.txt` and deleted `root-file.txt`; reopened: `new-file.txt` appeared
+  as a new row and the preview flipped to "This file no longer exists / root-file.txt was removed
+  or renamed" -- both FR-020 and FR-021 recovered from the SAME re-flush, no separate code path
+  for either (screenshot `02-close-reopen-staleness-fixed.png`).
+- **Session A/B/A switch staleness**: with the tab open, switched chat focus from Session A to
+  Session B (A's watcher released, B's started); added a file to A's worktree while B was
+  focused; switched back to A: the new file appeared without any manual action (screenshot
+  `03-session-switch-staleness-fixed.png`).
+- **Scroll-focus selection preservation**: selected a row in an 80-file virtualised tree,
+  scrolled it out of the rendered window: the rescue moved the ACTIVE element to a different row,
+  but that row's own `aria-selected` stayed `null` (never stolen), and scrolling back confirmed
+  the ORIGINAL row was still the one carrying `aria-selected="true"` (screenshot
+  `04-scroll-focus-rescue.png`).
+- **Test (c), honestly confounded on the first combined-run attempt, then isolated and
+  corrected**: staggered `archive(); sleep(50ms); listDirectory()` (genuinely entering the
+  busy-marker's own window this time, unlike round 7's same-tick `Promise.all`) initially showed
+  **0/10 releasing cleanly** in the same run as the other five tests above -- traced to a
+  self-inflicted confound, not a regression: a SIBLING Session's own agent (left running from the
+  close/reopen test, never explicitly stopped) had its own `cwd` set inside the same parent
+  folder the ancestor-rename check targets, and an agent's cwd lock on its OWN worktree also
+  blocks renaming an ANCESTOR of that cwd, completely independent of the Session-under-test's own
+  watcher or busy-marker state. Re-run in total isolation (`raw-output-testc-isolated.txt`): every
+  Session's own agent confirmed stopped first (a full `omp` process-name/`rpc-ui` scan showed only
+  pre-existing, unrelated pids from other lanes on this shared machine) -- **10/10 released
+  cleanly**, confirming the busy-marker fix genuinely holds under a race that lands where it is
+  supposed to this time.
+- **Test (d), properly awaited this time**: `icacls <worktree> /deny <user>:(RX)`, then
+  `await`ed (inside an async IIFE, not the round-7 `JSON.stringify(Promise)` bug) a `listDirectory`
+  call, THEN restored the ACL only after that await resolved: the result code was genuinely
+  `file-missing` (confirming the fix, and confirming the real errno is `EPERM`, not the `EACCES`
+  round 7 guessed); `window.__resetEvents.length`, expansion, selection, and the absence of any
+  `role="alert"` text were all unchanged before vs. after (screenshot `05-test-d-redo-after.png`).
+
+**Not verified this round**: the round-7 carried-over gaps (an app-side `getStatus()` call-count
+instrumentation during a concurrent git-lock stress burst; the deliberate-click-elsewhere
+focus-steal direction; a genuinely slow/throttled `shutdown()` to force an even wider
+archive-vs-`listDirectory` race window than the now-staggered 50ms gap). A real screen reader
+pass on the scrolled-out-row rescue's own announcement behaviour (confirmed via DOM/`aria-selected`
+state only, as in every round so far).
 
 ---
 
@@ -875,7 +1031,8 @@ cross-slice gate plus live verification the assignment requires before a PR is c
 - [X] T027 [P] Run the full gate (`pnpm typecheck`, `pnpm build`, existing `vitest`, `check:indent`,
   `check:ui-text`, `check:theme-contrast`, `check:drag-regions`); fix any error before proceeding.
   **Results**: typecheck pass (both tsconfigs); vitest 376/376 (no new tests, AGENTS.md #605);
-  check:indent 0/325; check:ui-text 0/371; check:theme-contrast 313/313 (no new tokens);
+  check:indent 0/325 (0/326 as of round 7/8's own new files; re-run before each push); check:ui-text
+  0/371; check:theme-contrast 313/313 (no new tokens);
   check:drag-regions 0/110 (one violation found and fixed on the new preview toolbar, same
   `no-drag-region` convention the Show-ignored-files row already uses); build pass.
 - [X] T028 Full [quickstart.md](quickstart.md) pass in an isolated scratch Electron instance (own
