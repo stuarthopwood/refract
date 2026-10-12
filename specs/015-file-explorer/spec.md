@@ -65,8 +65,17 @@ choice listed in Clarifications below.
 
 ### Needs Stuart's decision (not yet resolved; decision comment posted, conservative choice taken)
 
-- None remaining for this spec's own build scope -- every open item the decision comment raised
-  was itself resolved to a conservative choice (above) or carved out (below), not left pending.
+- **Q (PR #671 gate round 5, Code5/Main's own instruction)**: FR-010 currently lists `deleted` as
+  one of the git status marks tree rows show -- but a deleted TRACKED file structurally cannot
+  have a row at all (`listDirectory` lists via `readdir`, which has no entry for a path that no
+  longer exists, so there is nothing left to attach a `deleted` mark to; `getStatus`'s own
+  `GitStatusMap` still correctly reports `deleted` for such a path, just with no row in the tree
+  to show it on). Posted to issue #463 for Stuart's decision; conservative choice taken for now
+  (not blocking this PR): FR-010 is read as covering modified/added/untracked only for anything
+  rendered as a row, `deleted` stays a real, correct value in the underlying map (useful to #464's
+  future reuse) but is never expected to render here. **A (pending)**: synthetic "ghost" rows for
+  a deleted tracked file (so the mark has somewhere to render) are deferred, not built this round
+  -- Stuart can overrule and ask for them in a follow-up.
 
 ### Carved out, not blocking
 

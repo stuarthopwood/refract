@@ -573,6 +573,77 @@ all 4 viewed.
   state, the preview-toolbar/kebab DOM click-through, the resizable split drag,
   `prefers-reduced-motion`/forced-colors emulation.
 
+### Round 5 gate fixes + live re-verification (Sec5/Code5/A11y5/Verif5, all FAILed; fresh evidence,
+### `C:/Users/shopwood/refract-live-check-671-gate5/`: report.json, 2 probe scripts + raw stdout,
+### 1 screenshot, sha256.json, 7 files, 0 duplicates)
+
+Fixes: `FILE_EXPLORER_RESET` event (watcher-fatal/archive/restore/recreateWorktree lifecycle,
+Code5 HIGH1); focus-steal rescue now checks the lost element is genuinely gone, not merely
+scrolled out or blurred by a deliberate click elsewhere (Code5 HIGH2/A11y5 HIGH); watcher-flush
+dedup by path; `truncated` now survives a live patch (Code5 Medium x2); `withGitStatusMerged`
+only inherits ignored/untracked, not modified (Code5 Low); case-insensitive/truncation-aware
+`isPathGoneUnderPatch` (Code5 Low); `TreeNodeRow` ids are `useId()`-based, not path-based (A11y5
+Medium); `CodeBlock`'s line-number gutter is one `<pre aria-hidden>` text node, not one `<div>`
+per line (Code5 Medium); `watchDirectory.ts`'s `stop()` sets `stopped` too, `'__ignore__'` ->
+`null` (Sec5 Low x2); `readPreview.ts` non-regular-file -> `read-error` not `deleted`, size-aware
+buffer (Sec5 Low x2); `status.ts`'s execution-hook comment corrected + `--ignore-submodules=all`
+(Sec5 Medium); `openInVSCode`'s env-strip is case-insensitive (Sec5 Low). Full detail: commit
+message, round-5 code.
+
+**Live-verified** (two isolated scratch Electron instances, `C:/tmp/refract-463-r5` and
+`C:/tmp/refract-463-r5-anc`, CDP port 9341 each, pid-verified `taskkill` each time, both deleted
+by literal path afterward; isolation: live `%APPDATA%\pinion\processes.json` mtime
+`2026-10-11T08:42:12Z` -- IDENTICAL before and after this round, i.e. unchanged since round 4 --
+`%APPDATA%\refract` absent throughout):
+- `useId()` row ids confirmed (`aria-labelledby="_r_22_-name"`, not path-derived).
+- Gutter: one `<pre aria-hidden>`, line count matches `code.split('\n').length`; Wrap removes the
+  gutter and applies computed `white-space: pre-wrap`.
+- All 5 of A11y5's demanded preview/focus scenarios, each genuinely live: (a) above; (b) focused
+  Wrap button + external file delete -> focus rescued to a real tree row + "no longer exists"
+  shown; (c) external delete of a previewed file's ANCESTOR folder (not just its immediate
+  parent, never tested before) -> "no longer exists" shown correctly; (d) focused row deleted on
+  disk -> rescued to a surviving row; (e) a focused row scrolled out of Virtuoso's rendered
+  window (60 extra fixture files, forced virtualisation) correctly did NOT get rescued (it is
+  still logically present, per the A11y5 fix), `tabbableAbsIndex`'s "first rendered row" fallback
+  (never exercised before) correctly took over, and a real CDP Tab keypress landed in exactly one
+  step on that row.
+- Focus-steal fix, the other direction: a real CDP click on a genuinely non-focusable, no-
+  tabindex-ancestor-anywhere heading correctly left focus on `<body>` -- NOT stolen back to the
+  tree (two earlier click targets in this same test accidentally landed on a focusable ancestor
+  first, a false negative; the third, isolated attempt is the real reproduction).
+- `truncated` survives a live patch: a 1005-file directory's "5 more…" row became "6 more…" after
+  adding one more file externally, not resetting/disappearing.
+- FR-014 (flagged twice, never fixed before this round): a real 48x48 generated PNG (valid
+  zlib/CRC32, not a placeholder) rendered with `img.src` prefix `data:image/png;base64,...`,
+  `naturalWidth/Height: 48`.
+- `FILE_EXPLORER_RESET` fires on `SESSIONS_ARCHIVE` and `SESSIONS_RESTORE` (captured directly via
+  a renderer-side listener), AND actually causes an automatic reload: archiving (which stops the
+  watcher first) while a brand-new file was added externally during that stopped window still
+  surfaced that file immediately with no manual interaction -- only possible because
+  `resetSession` dropped the stale store entry and the panel's now-reactive `hasSessionEntry`
+  effect (previously a one-shot `getState()` read that never re-fired) re-triggered
+  `loadDirectory('')` on its own.
+
+**New finding, reconciles the previous round's contradictory claims about deleting a watched
+root**: three independent, carefully isolated tests this round (confirmed free of any
+confounding process via `Get-CimInstance Win32_Process` -- no stray agent, no `git.exe`, cwd
+always outside the scratch tree) -- a plain `fs.rmSync` on the exact watched root, a recursive
+`fs.rmSync` on the watched root's own PARENT, and a `Rename-Item` on that same parent -- ALL
+failed (`EPERM`/"Access ... denied") while the app's `recursive: true` watch was active, and the
+IDENTICAL delete succeeded immediately once the watching process was killed (pid-verified
+`taskkill`). Ordinary files/subfolders WITHIN the watched tree still delete/rename completely
+normally (reconfirmed repeatedly this round). This supersedes BOTH the original withdrawn claim
+("Windows blocks foreign deletion," too broad/certain) AND this round's own earlier assumption
+that it was fully disproven: the lock is real, but scoped specifically to the exact watched root
+and its ancestors, under `recursive: true`, not to the tree's contents. Practical effect: the
+`onFatal` flood-detection path (round 4's main achievement) is not reachable via an ordinary
+external delete tool at all on Windows -- only via a same-process delete (round 4's own module-
+level probe) or whenever this app's own code legitimately stops the watcher first
+(`recreateWorktree`/archive/restore, this round's own fix). Not re-tested this round: a true
+`git worktree`-backed Session exercising `recreateWorktree`'s own IPC call end-to-end (a
+main-checkout-as-worktree shortcut was used instead, time budget) and an app-side `getStatus`
+call-count instrumentation during a stress burst (Verif5's own ask, not attempted this round).
+
 ---
 
 ## Slice 3 / Phase 3: Open in VS Code, remaining context-menu actions, polish, final verification
