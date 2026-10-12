@@ -336,7 +336,17 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
         }
       }
       if (!existing?.root) return state // stale call, nothing to attach to (see loadDirectory's own doc comment)
-      const root = withChildrenAt(existing.root, relativePath, result.value.entries, result.value.truncated)
+      // Live-verification fix: `withChildrenAt` attaches `result.value.entries` RAW -- these
+      // newly-fetched children have never been through `withGitStatusMerged`, so a folder
+      // expanded AFTER the root's own `fetchAndMergeStatus` already resolved would otherwise
+      // show every new child with no status mark at all, even though `existing.gitStatus`
+      // already has the right answer for them (caught live: expanding `src` after the root load
+      // rendered `index.ts`/`staged.ts` with no mark, while root-level files already fetched at
+      // the same time correctly showed theirs). Applying the already-known map here needs no
+      // extra IPC round trip -- `fetchAndMergeStatus`'s own job is fetching a FRESH map, not
+      // applying an existing one.
+      const attached = withChildrenAt(existing.root, relativePath, result.value.entries, result.value.truncated)
+      const root = withGitStatusMerged(attached, existing.gitStatus)
       if (root === existing.root) return state
       return { bySession: { ...state.bySession, [sessionId]: { ...existing, root } } }
     })
