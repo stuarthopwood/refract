@@ -1,7 +1,8 @@
 # Contract: composer attachments (renderer to main)
 
-Extends `specs/001-core-session-workspace/contracts/ipc.md`. Only the two methods below change;
-every other request and event in that file is unaffected.
+Extends `specs/001-core-session-workspace/contracts/ipc.md`. The `chat.*` methods below change,
+and #514/#432 add two `attachments.*` methods plus one `settings.*` method; every other request
+and event in that file is unaffected.
 
 ## Requests changed
 
@@ -14,6 +15,19 @@ every other request and event in that file is unaffected.
 
 No other `chat.*` method changes. `chat.predictWord`/`chat.predictWordFeedback`, `chat.stop`,
 `chat.removeQueued`, `chat.answer`, and `chat.commands` are unaffected by this spec.
+
+### Attachments (new, #514/#432 FR-020, FR-021, FR-029)
+
+| Method | Returns | Notes |
+|---|---|---|
+| `attachments.readImageFile(sessionId, path)` | `Result<AttachmentImageFile>` | The ONE shared main-process image-file reader #514 (paste/typed-path) and #432 (drag-and-drop) both call. `path` either an absolute OS path (read directly, realpath + regular-file check, no worktree containment -- FR-021) or a path relative to `sessionId`'s own worktree (resolved and contained via the existing `resolveInWorktree`, issue #610, the single reused containment surface). Rejects an unsafe token shape up front via `files.ts`'s existing `isUnsafeToken` (UNC/device paths, a colon other than a drive prefix, a reserved device name per segment -- exported for this reuse, never duplicated). Identifies the type purely by magic bytes (never the extension); enforces the existing `MAX_IMAGE_INPUT_BYTES` cap against the real on-disk size BEFORE ever reading the file, and a pixel-count cap (`MAX_IMAGE_PIXELS`, moved to `shared/images.ts` so this reader and the renderer's own re-encode path share one cap) against dimensions parsed straight from the image's own header bytes (no image-decoding library). Failure reasons reuse the two existing `chat.send` error codes below -- never a third/fourth code for the same two failure shapes. |
+| `attachments.getPathForFile(file)` | `string` | Renderer-local only, no IPC round trip, no main-process involvement: bridges Electron's own `webUtils.getPathForFile` (the renderer-safe replacement for the removed `File.path`) through preload instead of importing `electron` directly in a renderer `.tsx` file. **Why bridged rather than imported directly**: `electron.d.ts` carries its own `/// <reference types="node" />`; once ANY renderer file imports from `'electron'`, that reference pulls Node's ambient `setTimeout` overload into the WHOLE `tsconfig.web.json` program, silently changing every other file's own `setTimeout(...): number` (DOM lib) return type to `NodeJS.Timeout` -- confirmed by a real typecheck run during this feature's own development (five unrelated files broke); routing the one call through preload (which already expects Node's ambient types, `tsconfig.node.json`) avoids this entirely. |
+
+### Settings (new, #514 FR-024)
+
+| Method | Returns | Notes |
+|---|---|---|
+| `settings.setDetectImagePathsOnPaste(enabled)` | `Result<Settings>` | Persists the whole `Settings` row, the same race-safety/migration shape `settings.setShowSampleData` (spec 013) already uses -- no raw/lazy-correction split needed (a plain immediate-apply boolean). Turns path-based image-attach detection off entirely on `false`; a pasted clipboard image itself (FR-001) is never affected. Default `true`. |
 
 ## New error codes
 

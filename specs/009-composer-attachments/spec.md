@@ -17,6 +17,16 @@
 - Q: A clipboard paste can carry more than one representation at once (for example, copying a cell from a spreadsheet can offer both an image and plain text). Which wins? -> A: An image representation always wins when present; the large-paste-to-chip behavior is reached only when the clipboard carries no image representation at all.
 - Q: Can more than one image or text chip be pending on a single draft message at once? -> A: Yes. Each pasted image and each oversized pasted text block becomes its own independent pending attachment; removing or sending one never affects any other.
 
+### Session 2026-10-12 (#514, #432: decided in each issue's own pre-implementation comment, no live Stuart exchange -- recorded here the same way for traceability, open to Stuart's override)
+
+- Q: On a mixed paste (a path alongside other words), replace the path with an `[Image #N]` label, keep the raw path text, or both? -> A: Keep the raw path text, no label. The path-only case already replaces the text with the attachment (nothing left to label); the mixed case leaves the agent a readable, tool-usable path in the message string as-is.
+- Q: Detect an image path while typing (not just on paste) in v1? -> A: No, paste-only for v1. On-type detection (stat on every keystroke, an Undo/Keep-as-text affordance, its own Settings toggle) is deferred as its own follow-up; the Settings switch this spec adds (FR-024) still exists now, since a false-positive path match inside an otherwise-plain paste remains possible.
+- Q: Maximum images attachable from one paste/drop at once? -> A: 10 per message (FR-026), new for path/drop attach only -- plain clipboard-image paste keeps its existing no-cap behaviour (FR-005).
+- Q: Should a relative path resolve against the Session's worktree only, or also the repository root? -> A: Worktree only (FR-021), matching `resolveInWorktree`'s existing containment model every other per-Session feature in this app already uses.
+- Q: Drop target -- the whole chat pane, or only the message box? -> A: The whole chat pane (FR-025), the more discoverable and forgiving target, matching this feature's own issue wording.
+- Q: Wait for #431 (saving pasted images to disk, path-to-agent) before building #432? -> A: No. A dropped/path-attached image goes through the exact same base64-in-`images`-field path (FR-006) a pasted clipboard image already uses; disk-save stays #431's own separate, later concern.
+- Q: A cloud-only OneDrive "Files On-Demand" placeholder path? -> A: Fails the same as any other unreadable file (the existing "could not be read" notice); no special wait/retry/ask flow in v1 -- a disclosed limitation, not a crash.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Attach a pasted image to the next message (Priority: P1)
@@ -58,6 +68,70 @@ A developer pastes a large block of text, for example a long error log or an exi
 
 ---
 
+### User Story 3 - Attach an image from a pasted or typed file path (Priority: P2)
+
+A developer pastes or types a path to an image file already on their machine (Explorer's own "Copy
+as path", a screenshot tool's path, a path from a terminal) instead of the image's own bytes. The
+image attaches above the message box exactly as a pasted clipboard image does. If the path was the
+only thing pasted, it is replaced by the attachment; if it was pasted or typed alongside other
+words, the path text stays exactly where it was (so the agent still gets a readable, tool-usable
+path) and the image is also attached.
+
+**Why this priority**: Covers a common real workflow (Explorer's "Copy as path" on a screenshot) a
+pure clipboard-image paste misses entirely, but is strictly additive on top of Story 1's already-
+shipped attach pipeline -- no new wire capability, follows once that pipeline exists.
+
+**Independent Test**: Can be fully tested by copying a real image file's path from Explorer ("Copy
+as path") and pasting it alone into the message box, confirming a thumbnail appears exactly as a
+pasted clipboard image would; then pasting the same path alongside other words and confirming the
+path text stays in the box while the image is also attached.
+
+**Acceptance Scenarios**:
+
+1. **Given** an empty message box, **When** the developer pastes only a quoted absolute path to an
+   existing PNG file, **Then** a thumbnail appears in the attachment strip and the textarea's own
+   text stays empty (the path is not inserted).
+2. **Given** an empty message box, **When** the developer pastes a sentence that also contains a
+   quoted path to an existing image file, **Then** the sentence (including the path) is inserted
+   into the textarea unchanged, and the image is also attached in the background.
+3. **Given** an empty message box, **When** the developer pastes only a path that does not exist,
+   is not an image, or exceeds the size/pixel cap, **Then** the path text is inserted as plain text
+   instead, with a quiet notice, and nothing is attached.
+4. **Given** the Settings switch for this feature is off, **When** the developer pastes an image
+   path, **Then** it is left as plain text exactly as before this feature existed; a pasted
+   clipboard image itself is never affected by this switch.
+
+---
+
+### User Story 4 - Drag and drop image files onto the chat pane (Priority: P2)
+
+A developer drags one or more image files from File Explorer (or a browser) and drops them
+anywhere on a chat pane. Each one attaches exactly as a pasted clipboard image does, through the
+same attachment strip, remove control, and preview modal.
+
+**Why this priority**: A second way to reach the same already-shipped attach pipeline; no new wire
+capability. Deliberately reuses Story 3's own shared path-based reader rather than a second one.
+
+**Independent Test**: Can be fully tested by dragging a real image file from File Explorer onto an
+open chat pane and dropping it, confirming a visible drop-target indicator appears while dragging
+and a thumbnail appears in the attachment strip after the drop.
+
+**Acceptance Scenarios**:
+
+1. **Given** an open chat pane, **When** the developer drags a file carrying an image over it,
+   **Then** a visible drop-target indicator appears (text, not colour alone) for as long as the
+   drag remains over the pane, and disappears on drop, on leaving the pane, or on Esc.
+2. **Given** the drop-target indicator is showing, **When** the developer drops one supported image
+   file, **Then** it attaches exactly as a pasted clipboard image would, and the indicator clears.
+3. **Given** a drop of several files at once, **When** some are supported images and others are not
+   (or are over a cap/size limit), **Then** every valid image still attaches and the rest are
+   silently skipped with a quiet notice -- one bad file in the drop never blocks the others.
+4. **Given** a Session that is not currently accepting input (stopped, not mid-first-start), **When**
+   the developer drops a file on its pane, **Then** the drop is refused with a visible notice, never
+   silently swallowed.
+
+---
+
 ### Edge Cases
 
 - A clipboard paste that offers both an image and a plain-text representation at once (for example, a spreadsheet cell) is handled as an image paste; the text representation is not also turned into a chip.
@@ -66,6 +140,10 @@ A developer pastes a large block of text, for example a long error log or an exi
 - Sending while a turn is already running (the message is queued as a steer or follow-up instead of starting immediately) carries pending attachments exactly the same way an idle send does.
 - If OMP itself reports a failure tied to a send that carried an image (rather than Refract's own pre-send validation catching it), that failure surfaces to the developer the same way any other failed send does; the draft and its attachments are not silently discarded.
 - A text chip's placeholder label, if the developer edits it so it no longer matches intact (rather than deleting it outright), is treated as no longer present: it drops from the pending list and nothing is substituted for it on send.
+- A pasted path that is the ONLY thing in the paste wins over the large-paste-to-chip behaviour (FR-011) when it also happens to be over the chip threshold (realistically never, since a path is short) -- image-path detection runs first.
+- An absolute path outside the Session's own worktree (the common case: a screenshot in Downloads or Pictures) is read and attached the same as one inside it -- this is a user-initiated choice of their own file, not a worktree-contained operation (FR-023).
+- Several quoted/one-per-line image paths pasted or dropped at once each attach independently, up to the per-message cap (FR-026); anything past the cap is left as text (paste) or silently skipped (drop) with a quiet notice, never a hard error.
+- A split pane: a drop lands only on the pane the pointer is actually over, never the other (unfocused) pane's Session, even if that one is focused.
 
 ## Requirements *(mandatory)*
 
@@ -90,12 +168,24 @@ A developer pastes a large block of text, for example a long error log or an exi
 - **FR-017**: A message sent while a turn is already running (queued as a steer or follow-up, spec 001 FR-010 to FR-012) carries its pending attachments exactly as an idle send does; attachments are not limited to the idle-send path.
 - **FR-018**: Refract MUST validate a pending image's mime type and decoded byte size again in the main process before it is ever placed in an outgoing command, never trusting the renderer's own check alone (constitution Principle V: the renderer is sandboxed and untrusted for anything crossing into a privileged operation).
 - **FR-019**: If OMP reports a failure tied to a send that carried an image, Refract MUST surface that failure to the developer the same way any other failed send is shown, and MUST NOT silently drop the image or the draft without telling the developer.
+- **FR-020** (#514, #432): Refract MUST validate a path/file source for a path-based or dropped image attachment in the main process via ONE shared reader, never the renderer: rejects UNC paths (`\\server\share`), device paths (`\\?\`/`\\.\`), and any other unsafe token shape (`src/main/ipc/files.ts`'s existing `isUnsafeToken`, built for #610 -- reused, never reimplemented); resolves symlinks/junctions via `realpath`; requires the resolved target be a regular file; identifies the image type purely by its magic bytes, never by filename extension (same rule as spec 015 FR-003); enforces FR-003's existing 20 MiB cap and a pixel-count cap (decompression-bomb guard) against the real decoded dimensions, parsed from the image's own header bytes.
+- **FR-021** (#514, #432): An ABSOLUTE path/file source is read directly, NOT required to resolve inside any particular Session's worktree (a screenshot in Downloads or Pictures is a legitimate, common target) -- this is a user-initiated read (a paste, a confirmed typed path, or a drop), never agent/tool/model-authored text, matching the trust level the existing repository folder picker already grants a user's own absolute choice. A RELATIVE path/token is resolved and contained against that Session's own worktree root via the existing `resolveInWorktree` (#610), the single existing containment surface.
+- **FR-022** (#514): Pasting or typing text that, once trimmed, is NOTHING BUT one or more image-path-looking tokens MUST attach each resolvable one as a pending image attachment (FR-001's own shape) and MUST NOT insert the path text into the textarea; a token that fails to resolve (missing, not an image, over a cap) MUST be left as plain text instead, never silently dropped.
+- **FR-023** (#514): Pasting or typing text that mixes an image-path-looking token with other words MUST insert the full text into the textarea completely unchanged (the path stays exactly where it was, still readable and tool-usable by the agent) and MUST ALSO attach each resolvable path as a pending image attachment, in the background, with no interruption to typing.
+- **FR-024** (#514): A Settings switch MUST let the developer turn path-based image-attach detection off entirely (default on); turning it off MUST NOT affect pasting a clipboard image directly (FR-001).
+- **FR-025** (#432): Dragging one or more files carrying at least one image over an open chat pane MUST show a visible drop-target indicator (text, not colour alone); the indicator MUST clear on drop, on the drag leaving the pane, or on Esc.
+- **FR-026** (#514, #432): Dropping files, or a single paste/type carrying several image paths, onto one chat pane MUST attach every resolvable supported image among them (up to a maximum of 10 per message), reusing the same per-file/per-path validation as FR-020; any unsupported file, over-cap file, or path past the 10-image limit MUST be skipped (drop) or left as text (paste) with a quiet notice, never blocking the others or producing a hard error.
+- **FR-027** (#432): A drop targets ONLY the chat pane the pointer is physically over; in a split layout, the other pane's Session MUST NOT receive the attachment even if it is the currently-focused pane.
+- **FR-028** (#432): A drop onto a Session that is not currently accepting input (stopped, and not in its own first `not-started` state) MUST be refused with a visible notice, never silently swallowed.
+- **FR-029** (#514, #432): Nothing from either path -- the resolved file path, parent folder names, or any other filesystem metadata -- is ever exposed to the renderer beyond the validated image bytes themselves (mirrors FR-006's existing "never a file path" rule for the wire-level `images` field, extended here to the IPC response shape too).
+- **FR-030** (#432): A dropped file that is not one of the four supported image types (PNG, JPEG, GIF, WebP) is rejected the same way an unsupported pasted image would be; this spec adds no new attachment kind for a dropped non-image file.
 
 ### Key Entities
 
 - **Pending image attachment**: a clipboard-pasted image not yet sent; held in the renderer until the message carrying it is sent, with its base64 payload, mime type, decoded byte size, and a thumbnail/modal preview.
 - **Pending text chip**: a clipboard-pasted block of text over the chip threshold, not yet sent; held in the renderer with its full original text, a short label, and the position in the draft its label currently occupies.
 - **Attachment strip**: the shared row above the message box holding every pending image and text chip for the draft currently being composed.
+- **Path-based/dropped image attachment** (#514, #432): the exact same Pending image attachment shape above, built by the main-process reader (FR-020) instead of a browser `File` blob from the clipboard -- never a separate entity or a separate strip/remove/preview UI.
 
 ## Success Criteria *(mandatory)*
 
@@ -107,10 +197,11 @@ A developer pastes a large block of text, for example a long error log or an exi
 - **SC-004**: Clicking any pending thumbnail or chip opens its full content in a modal every time it is clicked; closing it always returns focus to the control that opened it.
 - **SC-005**: A non-vision model's extra admission delay for a vision-description call (up to 20 seconds) never produces a visible error or a stalled appearance in the composer.
 - **SC-006**: Removing one pending attachment never alters the draft's other text or any other pending attachment.
+- **SC-007** (#514, #432): Every image attached via a resolvable path (paste, type, or drop) reaches the agent as a real image attachment on that message, 100% of the time, the same measurement SC-001 already uses; a path/file that fails validation is left as text (paste) or silently skipped (drop), never sent as a broken/empty attachment.
 
 ## Assumptions
 
-- Paste only. Drag-and-drop, a file picker, and camera capture are out of scope: Stuart's own wording names pasting specifically for both halves of this feature.
+- Drag-and-drop and path-based attach (#514, #432) reverse this spec's original "paste only" scope as deliberate, Stuart-requested follow-ups (2026-10-07); a file picker and camera capture remain out of scope.
 - A single browser paste event yields at most one image (standard Chromium clipboard-event behaviour, research.md Decision 7); pasting several images one at a time accumulates several independent pending attachments.
 - The 800-character chip threshold is this spec's own default, not a number Stuart specified; research.md Decision 8 records the reasoning, open to revision once seen in use, the same pattern spec 008 used for its avatar size cap.
 - This spec's `docs/DESIGN.md` rule for attachments is written by the implementation task that builds the feature, not by this spec-writing pass, matching how every other spec 001 feature's own doc-update task works.

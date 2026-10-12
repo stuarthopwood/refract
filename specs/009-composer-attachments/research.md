@@ -170,6 +170,99 @@ and delete it with ordinary text editing (FR-014); because it is also the correl
 it so it no longer matches intact is treated the same as deleting it outright (Edge Cases) — the
 pending chip entry is dropped on the next draft change rather than left dangling.
 
+## 11. Path-based attach reuses `resolveInWorktree` only for the RELATIVE case; an absolute path is read directly
+
+**Decision**: `attachments.readImageFile` branches on `path.isAbsolute(token)`. An absolute token
+is `fs.realpath`'d directly (resolves symlinks, confirms a regular file) with NO worktree
+containment check. A relative token is resolved and contained through the existing
+`resolveInWorktree` (`files.ts`, issue #610) unchanged — the single existing containment surface,
+never a second implementation.
+
+**Rationale**: #514's own spec explicitly lists "an absolute Windows path" (a screenshot in
+Downloads, Pictures, or anywhere else on disk) as the common case this feature exists for. The file
+explorer's own `resolveInWorktree` enforces strict worktree containment — correct for THAT feature
+(browsing a Session's own repository), wrong here: it would reject the exact files-anywhere-on-disk
+case the issue is written for. This is a user-initiated read (a paste, a confirmed typed path, or a
+drop), never agent/tool/model-authored text, matching the trust level the existing repository
+folder picker (`repositories.ts`) already grants a user's own absolute choice — not a new, wider
+trust boundary, an existing one this feature simply also qualifies for.
+
+## 12. Pixel-count cap: parsed from the image's own header bytes, no new npm dependency
+
+**Decision**: `shared/images.ts` gains `readImageDimensions(bytes, mimeType)`, a pure function that
+reads width/height straight out of each supported format's own fixed-offset header fields (PNG
+IHDR chunk; GIF Logical Screen Descriptor; JPEG SOF marker segment, scanned past intervening
+markers; WebP's VP8/VP8L/VP8X chunk, per its container spec) — no image-decoding library, no new
+dependency, no `pnpm-lock.yaml` change. `MAX_IMAGE_PIXELS` (40,000,000) moves here from being a
+renderer-only `attachments.ts` constant, so the main-process reader enforces the exact same cap by
+number, never its own separately-tuned copy.
+
+**Rationale**: the renderer's own decompression-bomb guard (Decision 3 area) only ever runs inside
+`reencodeToPng`'s browser `createImageBitmap`/canvas path — no such API exists in the main process,
+and a path-based read has no canvas step to piggyback the check onto at all. Adding a dependency
+(`image-size` or similar) for four well-documented, fixed-offset header formats is disproportionate
+surface for what a few dozen lines of pure byte-reading already covers completely; a header too
+short/malformed to parse is treated as "could not verify dimensions" (not itself evidence of a
+bomb — the magic-byte signature check already proved the type), not a hard rejection.
+
+## 13. Mixed-paste text is NEVER altered; only a path-only paste replaces its own text
+
+**Decision**: pasted/typed text that, once trimmed, is nothing but image-path-looking token(s) has
+that text replaced by the resulting attachment(s) (FR-022). Text that mixes a path with other words
+is inserted completely unchanged — the path stays exactly where it was — and each resolvable path
+within it is ALSO attached, in the background, with no `[Image #N]` label substituted in (FR-023).
+
+**Rationale**: #514's own spec already draws this exact line (point 3): a mixed paste's own text is
+the ONLY place the resolved path remains visible to the developer once attached, and it is also
+what the agent reads from the plain message string — removing or replacing it there would leave
+neither a visible path nor a tool-usable one. OMP's own terminal convention (a visible `[Image #N]`
+label plus a hidden note repeating the source path) was considered and rejected as unnecessary
+complexity here: the raw path text already serves exactly that purpose without a second mechanism.
+
+## 14. Typing detection deferred; paste-only for v1
+
+**Decision**: #514's path detection runs on paste only. Detecting a completed path while typing
+(stat-on-every-keystroke after a trailing space/Enter, an Undo/"Keep as text" toast, its own timing
+edge cases) is explicitly out of scope for this round — a disclosed follow-up, not built.
+
+**Rationale**: #514's own issue text flags this exact question with its own leaning
+(`[INFERENCE: paste only, plus typing with Undo later]`). Typing detection is real additional
+surface (a live, cancellable auto-conversion plus its own reversal UI) disproportionate to this
+round's scope; paste-time detection alone already covers the issue's primary motivating case
+(Explorer's "Copy as path", always arriving via paste). The Settings switch (FR-024) is still built
+now regardless, since a false-positive path-shaped match inside an ordinary paste remains possible
+even without typing detection.
+
+## 15. Drop target is the whole chat pane; per-pane, never per-focus
+
+**Decision**: `onDrop`/`onDragOver`/`onDragEnter`/`onDragLeave` attach to `ChatPane.tsx`'s own root
+container (one per rendered pane, each already carrying its own `sessionId`), not to
+`MessageInput.tsx`'s textarea specifically. A split layout therefore drops onto whichever pane the
+pointer is physically over, independent of which pane is currently focused.
+
+**Rationale**: #432's own issue names "a chat pane" repeatedly as the target, and a pane-scoped
+listener naturally satisfies "the pane under the cursor wins, not the focused one" (the issue's own
+split-view requirement) for free, since each pane's own DOM subtree only ever receives drag events
+that are physically over it — no manual pointer-position/pane-bounds calculation needed.
+
+## 16. `webUtils.getPathForFile` is bridged through preload, never imported directly in a renderer file
+
+**Decision**: `src/preload/index.ts` imports `webUtils` from `'electron'` and exposes
+`window.refract.attachments.getPathForFile(file)`; no renderer `.tsx`/`.ts` file imports from
+`'electron'` directly.
+
+**Verified** (a real `tsc --noEmit -p tsconfig.web.json` run during this feature's own
+development): `node_modules/electron/electron.d.ts` carries `/// <reference types="node" />` at
+its own top. Once any file inside the `tsconfig.web.json` program imports from `'electron'` (even
+only its `Renderer`-namespace members, which `webUtils` is documented to be safely callable from
+under context isolation), that triple-slash reference pulls Node's ambient `setTimeout` overload
+into the WHOLE program — confirmed to silently change five unrelated files' own
+`setTimeout(...): number` (DOM lib) return type to `NodeJS.Timeout`, breaking their typecheck.
+`tsconfig.node.json` already expects Node's ambient types (`"types": ["electron-vite/node",
+"node"]`), so routing the one call through a preload-exposed, plain synchronous bridge function
+avoids the cross-contamination entirely — no IPC round trip either, since `webUtils` itself does no
+main-process work, it only reads a `File` object's own already-resolved path locally.
+
 ## Unknowns resolved
 
 No `NEEDS CLARIFICATION` markers remain in the spec. Every OMP wire-level fact this spec's design
