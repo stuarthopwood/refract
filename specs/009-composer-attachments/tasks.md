@@ -349,3 +349,96 @@ keyboard-scroll reachability, duplicate remove-button names, missing `DialogDesc
 test-reviewer's other Medium (`setAttachments(EMPTY_ATTACHMENTS)` racing a slow `open()`/re-encode)
 were out of this round's assigned scope (Critical/High/the two named Mediums/one named Low only)
 and were left untouched.
+
+---
+
+## Phase 6: User Story 3 - Attach an image from a pasted or typed file path (#514, Priority: P2)
+
+**Goal**: a pasted/typed image path attaches exactly as a pasted clipboard image does, via one
+main-process reader shared with Phase 7's drag-and-drop.
+
+**Written retroactively** (code built first, this phase documents it afterward, per
+`refract-story-speckit-flow`'s own convention): the decisions below were posted on #514/#432's own
+issues BEFORE implementation started (standing process step 2), not derived after the fact.
+
+- [X] T014 [P] Export `src/main/ipc/files.ts`'s existing `isUnsafeToken` (previously module-private)
+  for reuse by the new reader below -- the single source of truth for the UNC/device-path/colon/
+  reserved-name rejection rules, never a second copy.
+- [X] T015 Move `MAX_IMAGE_PIXELS` from a renderer-only `attachments.ts` constant into
+  `src/shared/images.ts`, and add `sniffImageMimeType`/`readImageDimensions` there (research.md
+  Decisions 11-12): content-only type detection and pure header-byte dimension parsing for all
+  four supported formats, no new npm dependency.
+  Built: `shared/images.ts` (+99 lines); `renderer/features/chat/attachments.ts` now imports
+  `MAX_IMAGE_PIXELS` instead of declaring its own copy (behaviour unchanged there).
+- [X] T016 Write the shared reader: new `src/main/ipc/attachments.ts` exporting
+  `registerAttachmentsIpc(manager)`, which handles `attachments.readImageFile(sessionId, path)`
+  (contracts/ipc.md, FR-020, FR-021, FR-029) -- resolves an absolute path directly (`fs.realpath`,
+  regular-file check, no worktree containment) or a relative one via the existing
+  `resolveInWorktree` (T014's export), identifies the type by magic bytes only, enforces the byte
+  and pixel caps (T015) before ever reading/returning anything, and never returns the resolved
+  path or other metadata. Registered in `src/main/ipc/register.ts`.
+- [X] T017 [P] Wire `attachments.readImageFile`/`attachments.getPathForFile` through
+  `src/shared/ipc.ts` (`IPC_REQUESTS`, `AttachmentImageFile`, the `RefractApi.attachments`
+  interface) and `src/preload/index.ts` (the bridge; `getPathForFile` wraps `webUtils` locally,
+  research.md Decision 16 -- never imported directly in a renderer file).
+- [X] T018 [US3] Write path detection and the shared-result mapper in the renderer: new
+  `extractImagePathCandidates`/`isImagePathOnlyText`/`buildImagePathAttachment` in
+  `attachments.ts` (quote/newline-separated token extraction, a cheap extension+path-shape
+  pre-filter, `file://`/quote normalisation); `MessageInput.tsx`'s `handlePaste` gains the
+  path-only branch (FR-022: preventDefault, attach what resolves, fall back failed tokens to text)
+  and the mixed-paste branch (FR-023: paste proceeds untouched, resolvable paths attach in the
+  background) -- gated on the new `detectImagePathsOnPaste` setting.
+- [X] T019 [P] [US3] Add the Settings switch (FR-024): `Settings.detectImagePathsOnPaste`
+  (`shared/model.ts`), `SettingsStore.setDetectImagePathsOnPaste` (main, plain immediate-apply
+  boolean, same migration shape as `transcriptDisplay`), the IPC request/bridge/renderer store
+  action, and a third switch in `ChatDisplaySection.tsx` ("Attach images pasted as a file path").
+- [X] T020 [US3] Shared accessibility wiring moved out of `MessageInput.tsx`'s own local state into
+  `useDraftStore` (`attachmentAnnouncement`/`announceAttachment`, per session): Phase 7's drop
+  handler lives in a sibling component (`ChatPane.tsx`) and needs to announce through the exact
+  same live region `MessageInput.tsx` renders, which private component state could never reach.
+  `MessageInput.tsx`'s own `announceAttachment` now delegates to the store; all 8 existing call
+  sites (image/chip attach, remove, send-now, chip-removal announcements) are unchanged.
+
+**Checkpoint**: `pnpm typecheck` (both configs), `pnpm build`, existing `vitest` (376/376, no new
+tests per this repository's own prototype convention), `check:indent`, `check:ui-text`,
+`check:theme-contrast` (no new tokens), `check:drag-regions` all pass against this phase's and
+Phase 7's combined final state (see Phase 7's own Checkpoint for the one shared run). **Not yet
+live-verified in a built app** -- the machine's free RAM dropped to under 500 MB partway through
+this session (from council's own standing "wait if another lane is building, check free RAM before
+each build" rule), so the scratch-instance click-path walk this repository's convention expects is
+deferred rather than risking a crash; disclosed in the PR body, not silently skipped.
+
+---
+
+## Phase 7: User Story 4 - Drag and drop image files onto the chat pane (#432, Priority: P2)
+
+**Goal**: dropping an image file onto any open chat pane attaches it exactly as a pasted clipboard
+image does, reusing Phase 6's shared reader end to end.
+
+- [X] T021 [US4] Add drag-and-drop handling to `ChatPane.tsx`'s own root container (research.md
+  Decision 15: per-pane, not per-focus -- a split layout's drop always lands on the pane the
+  pointer is physically over): `onDragEnter`/`onDragOver`/`onDragLeave` track a visible
+  drop-target overlay (text, not colour alone, FR-025) via a nested-drag-event depth counter;
+  `onDrop` reads each `File`'s real path via `attachments.getPathForFile` (T017), calls Phase 6's
+  shared `buildImagePathAttachment` per file (capped at `MAX_PATH_ATTACHMENTS_PER_MESSAGE`, FR-026),
+  and announces through the same shared live region T020 exposed. A disabled (stopped,
+  already-started) Session's pane refuses the drop with a visible notice instead of silently
+  swallowing it (FR-028).
+- [X] T022 [P] [US4] Confirm the existing `will-navigate`/`will-frame-navigate` drop-guard in
+  `src/main/index.ts` (blocks in-app navigation from a dropped file) is untouched -- no edit needed,
+  `preventDefault()` on the new `onDrop` handler already stops the drop from ever reaching that
+  path.
+
+**Checkpoint**: same full gate as Phase 6 (one shared run covering both phases' combined final
+code): `pnpm typecheck` (`tsconfig.node.json` clean, `tsconfig.web.json` clean -- including the
+five-unrelated-file regression research.md Decision 16 found and fixed by routing `webUtils`
+through preload instead of a direct renderer import), `vitest` 376/376 (no new tests), `check:indent`
+0 odd-indent lines across 327 files, `check:ui-text` 0 leaks across 371 files, `check:theme-contrast`
+all 313 pairs across 3 themes PASS (no new tokens -- the drop overlay reuses existing
+`border-ring`/`bg-background`/`text-foreground`), `check:drag-regions` 0 violations across 110
+files, `pnpm build` succeeded (`out/` cleaned afterward, literal path). **Not yet live-verified**
+(see Phase 6's own Checkpoint note -- the same memory-pressure disclosure applies here; this
+phase's own click-path, including the split-pane "wrong pane never receives it" case, is unverified
+beyond code-level reasoning and is named explicitly in the PR body's own "not verified live" list).
+
+---

@@ -116,6 +116,24 @@ Rules:
   the resulting string becomes the `message` sent (FR-013); this substitution is renderer-only and
   never crosses into `ImageContent` or any new OMP field.
 
+### `AttachmentImageFile` (new, #514/#432, `src/shared/ipc.ts`)
+
+```ts
+export interface AttachmentImageFile {
+  mimeType: SupportedImageMimeType;
+  base64: string;
+  byteLength: number;
+}
+```
+
+The main-process `attachments.readImageFile` reader's success payload -- deliberately the same
+three fields `PendingImageAttachment` needs (mime type, base64 payload, decoded byte size) and
+nothing else (never the resolved path or any other file metadata, FR-029). The renderer wraps this
+into an ordinary `PendingImageAttachment` (a fresh `id`, a `previewUrl` built from the same
+`mimeType`/`base64`) the instant it arrives, so every downstream piece of UI (strip, remove,
+preview, announce) is the exact same code whether the image came from a clipboard paste, a typed/
+pasted path, or a drop.
+
 ### `AttachmentsState` (per Session, alongside the existing draft/queue state)
 
 ```ts
@@ -140,14 +158,37 @@ chat.send(sessionId: string, text: string, images?: ImageContent[]): Result<{ qu
 // specs/001-core-session-workspace/contracts/ipc.md "Chat" for the current `{ promoted: boolean }`
 // signature.
 chat.sendNow(sessionId: string, text: string): Result<{ steered: boolean }>
+
+// New (#514/#432): the one shared main-process image-file reader. `path` is an absolute OS path
+// (read directly, no worktree containment, FR-021) or a path relative to this Session's own
+// worktree (resolved and contained via the existing `resolveInWorktree`, #610).
+attachments.readImageFile(sessionId: string, path: string): Result<AttachmentImageFile>
+// New (#432): renderer-local only, no IPC round trip -- the renderer-safe replacement for the
+// removed `File.path` (Electron's own `webUtils.getPathForFile`), bridged through preload rather
+// than imported from `electron` directly in a renderer file (see contracts/ipc.md for why).
+attachments.getPathForFile(file: File): string
+// New (#514): the Settings switch FR-024 adds, same immediate-apply shape every other Settings
+// toggle in this app already uses (`settings.setShowSampleData`, spec 013).
+settings.setDetectImagePathsOnPaste(enabled: boolean): Result<Settings>
 ```
 
-New error codes: `unsupported-image-type`, `image-too-large` (contracts/ipc.md).
+New error codes: `unsupported-image-type`, `image-too-large` (contracts/ipc.md) -- both already
+existed for `chat.send`'s own re-validation (FR-018) and are reused as-is by `readImageFile`
+(FR-020), never a second pair of codes for the same two failure shapes.
+
+## Changed entities
+
+- **`Settings`** (specs/001 data-model.md) gains one field, `detectImagePathsOnPaste: boolean`
+  (default `true`, FR-024) -- a plain immediate-apply toggle, the same migration shape
+  `transcriptDisplay` (issue #457) already uses (lazy in-memory correction on a missing/malformed
+  key, no raw/lazy-correction split needed). Persisted in `settings.json` like every other
+  `Settings` field; everything else in this spec stays entirely in-memory (see below).
 
 ## No change to existing entities
 
-- `Session`, `Repository`, `Settings`, `SessionRuntime`, `TranscriptItem`, `PendingRequest`,
+- `Session`, `Repository`, `SessionRuntime`, `TranscriptItem`, `PendingRequest`,
   `ConversationInfo` (specs/001) are unchanged by this spec.
-- `registry.json`, `settings.json`, `processes.json` are unchanged: nothing in this spec is
-  persisted across a restart. A pending attachment on an in-progress draft is simply gone if Refract
-  restarts, the same as the draft text itself already is.
+- `registry.json`, `processes.json` are unchanged. `settings.json` gains exactly the one new
+  field above; nothing else in this spec is persisted across a restart -- a pending attachment on
+  an in-progress draft is simply gone if Refract restarts, the same as the draft text itself
+  already is.
