@@ -109,13 +109,28 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   #605); check:indent 0 odd-indent (321 files); check:ui-text 0 leaks (371 files); check:theme-
   contrast 313/313 (no new token); check:drag-regions 0 violations (109 files); build pass.
 
-**Checkpoint**: live-verified in an isolated scratch Electron instance (own `--user-data-dir`/CDP
-port, scratch repo/registry with one seeded Session pointed at a real directory tree -- never
-touching Stuart's live Sessions), named screenshots, sha256-checked, 0 duplicates. The File
-explorer rail icon appears (fifth icon); the launcher lists all five panels in order; opening it
-shows the worktree root's real top-level entries, folders before files; clicking a folder lazily
-fetches and shows its real children; a path engineered to resolve outside the worktree (a
-junction/symlink, User Story: Edge Cases) is rejected by `resolveInWorktree`, never listed.
+**Checkpoint**: live-verified (scratch clone under `C:/tmp/refract-file-explorer-s1` -- never
+`C:/Repos/personal` -- own `--user-data-dir`/CDP port 9343, torn down by pid-verified `taskkill`,
+deleted by literal path afterward; one seeded Session pointed at a real clone of this repository
+itself, a genuine nested worktree), 6 files (5 screenshots + `report.json`) + `sha256.json` under
+`C:/Users/shopwood/refract-live-check-463-slice1/`, 0 duplicate hashes. Confirmed live: all five
+rail buttons present in order (`subagents`, `fdb-knowledge`, `agent-builder`, `side-chat`,
+`file-explorer`); opening the panel shows the worktree root's real top-level entries, folders
+before files (`.github`, `.omp`, `.specify`, `build`, `docs`, `node_modules`, `out`, `scripts`,
+`specs`, `src`, then every root file); `.git` itself never appears as a row (asserted via a DOM
+text search, not just a glance); clicking `src` lazily fetches and shows its real children
+(`main`, `preload`, `renderer`, `shared`); clicking it again collapses with no second fetch
+(`toggleExpanded`, confirmed by the UI correctly hiding the children with no new IPC round trip
+visible in the screenshot timing). Path-containment proved directly against the real IPC method
+(no UI surface ever sends an escaping path itself, so this exercises the boundary the same way
+issue #610's own gate rounds did): three distinct escape attempts --
+`../../../../Windows/System32` (relative traversal), `C:\Windows` (absolute, another location),
+and `\\?\C:\Windows` (a Windows device path) -- were ALL rejected `outside-worktree`, none
+reached the file system. **Not live-verified this slice**: a REAL symlink/junction escaping the
+worktree (no such fixture was created in the scratch repo; the three escape attempts above prove
+the same `resolveInWorktree` boundary a symlink would also hit, per research.md decision 11's own
+citation of issue #610's gate history already proving the symlink case specifically) -- disclosed
+on issue #650, not claimed as directly tested here.
 
 ---
 
