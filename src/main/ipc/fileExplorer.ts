@@ -386,13 +386,15 @@ export function stopAllFileExplorerWatchers(): void {
 }
 
 /** Gate round 9 fix (Sec9/Code9/A11y9 Low): `main/index.ts`'s own `render-process-gone`/
- * `did-start-navigation` handlers call `stopAllFileExplorerWatchers()` above on a renderer
- * crash/reload, but that alone left every Session's `loadedPathsBySession` entry parked from the
- * OLD renderer's own loaded folders -- the fresh renderer's first `ensureWatching` would then
- * re-flush every one of them, sending patches for folders the NEW renderer never opened (wasted
- * `readdir`/status work, never a wrong result, since `applyPatch` ignores a Session with no
- * `root` yet). A renderer crash/reload is a hard reset of the renderer's ENTIRE in-memory state,
- * so the parked-path map should reset the same way. */
+ * `did-navigate` listeners (round 10: `did-navigate`, not `did-start-navigation` -- see that
+ * file's own comment for why) call this directly on a renderer crash/reload, which stops every
+ * watcher (via `stopAllFileExplorerWatchers` above) AND clears every Session's
+ * `loadedPathsBySession` entry parked from the OLD renderer's own loaded folders -- stopping the
+ * watchers alone would leave the fresh renderer's first `ensureWatching` re-flushing every one of
+ * them, sending patches for folders the NEW renderer never opened (wasted `readdir`/status work,
+ * never a wrong result, since `applyPatch` ignores a Session with no `root` yet). A renderer
+ * crash/reload is a hard reset of the renderer's ENTIRE in-memory state, so the parked-path map
+ * resets the same way. */
 export function resetAllFileExplorerWatchersAndState(): void {
   stopAllFileExplorerWatchers();
   loadedPathsBySession.clear();
@@ -449,14 +451,36 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
           notifyFileExplorerReset(sessionId);
         }
       }
-      // Gate round 9 fix (Sec9 Low): a SUBdirectory that no longer exists (`file-missing`, not
-      // the whole-tree `worktree-missing` above) is pruned from this Session's own parked-path
-      // map -- otherwise a folder deleted while the panel was unwatched gets silently re-flushed
-      // and silently fail again on every later `ensureWatching` restart, forever (bounded waste,
-      // not a correctness bug, but pointless work for a path nothing will ever show again; its
-      // own row already vanished via the PARENT folder's own patch, round 5's existing FR-021
-      // path).
-      if (result.error.code === 'file-missing') loadedPathsBySession.get(sessionId)?.delete(normalizePathKey(relativePath));
+      // Gate round 9 fix (Sec9 Low, round 10 corrected below): a SUBdirectory that no longer
+      // exists (`file-missing`, not the whole-tree `worktree-missing` above) is pruned from this
+      // Session's own parked-path map -- otherwise a folder deleted while the panel was
+      // unwatched gets silently re-flushed and silently fails again on every later
+      // `ensureWatching` restart, forever (bounded waste, not a correctness bug, but pointless
+      // work for a path nothing will ever show again; its own row already vanished via the
+      // PARENT folder's own patch, round 5's existing FR-021 path).
+      // Gate round 10 fix (Sec10/Code10/Verif10 Medium): `file-missing` is not only returned for
+      // a genuinely deleted path -- round 7 deliberately maps every non-ENOENT/ENOTDIR
+      // `realpath`/`lstat` failure (a transient EACCES/EBUSY/EMFILE, an antivirus scan, a brief
+      // Windows delete-pending window) to the same code, specifically so callers treat it as
+      // non-fatal. Pruning unconditionally on ANY `file-missing` therefore permanently dropped a
+      // folder that was only ever transiently unreadable -- a delete-then-recreate (a `git
+      // checkout`/stash, a build tool's rimraf+rebuild) could hit the gap and leave the folder
+      // expanded in the renderer with nothing in `loadedPathsBySession` ever patching it again
+      // until a full reset or reload. Re-confirms the path is ACTUALLY gone (`fs.lstat` itself
+      // throwing `ENOENT`/`ENOTDIR`) before pruning, and never prunes the root (`''`) from here
+      // at all -- a missing root is the `worktree-missing` branch's own job above, not this one.
+      if (result.error.code === 'file-missing' && relativePath !== '') {
+        try {
+          await fs.lstat(path.join(session.worktreePath, relativePath));
+          // Still exists on disk -- the `file-missing` result was transient; keep the path
+          // parked so the next flush/re-flush can still patch it once the hiccup clears.
+        } catch (lstatErr) {
+          const code = (lstatErr as NodeJS.ErrnoException)?.code;
+          if (code === 'ENOENT' || code === 'ENOTDIR') {
+            loadedPathsBySession.get(sessionId)?.delete(normalizePathKey(relativePath));
+          }
+        }
+      }
       // Otherwise not an error to surface here -- the renderer only learns about a deleted
       // SUBdirectory if/when it navigates there directly, the same as any other stale-path race
       // `resolveListTarget` already handles per-request.
@@ -633,7 +657,14 @@ export function registerFileExplorer(manager: SessionManager, getWindow: () => B
       // `loadedPathsBySession`, independent of the watcher's own handle, so it survives a
       // stop/restart cycle (see that map's own doc comment above) -- keyed by the normalised
       // path, valued by the original casing so `FILE_EXPLORER_ENSURE_WATCHING` can re-list it.
-      if (result.ok) {
+      // Gate round 10 fix (Sec10 Low): re-checks the Session still exists -- this call awaited a
+      // real `readdir`/status pass, during which `sessions.delete` may have run to completion
+      // (it checks the Session once at entry, then awaits its own work); without this guard a
+      // `listDirectory` that was already in flight when the Session was deleted could add this
+      // entry back into `loadedPathsBySession` AFTER `forgetFileExplorerSession` already
+      // cleared it on the successful delete path, leaking it for a Session that no longer
+      // exists.
+      if (result.ok && manager.registry.getSession(sessionId)) {
         let loaded = loadedPathsBySession.get(sessionId);
         if (!loaded) {
           loaded = new Map();

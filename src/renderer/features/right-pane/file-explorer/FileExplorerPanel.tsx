@@ -185,12 +185,10 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // inside `HTMLElement.focus()`) so `onRowFocus` can skip `setSelectedPath` while it is set,
   // restoring KEYBOARD position without hijacking the user's own selection.
   const rescueFocusRef = useRef(false)
-  // Gate round 9 fix (A11y9 Medium): set when a focused row scrolls merely out of Virtuoso's
-  // rendered window (still logically present) -- the rescue no longer hops focus to a
-  // different row on EVERY such scroll tick (screen-reader noise on continuous wheel-scrolling,
-  // round 7's own unexamined assumption); instead this arms a ONE-SHOT deferred rescue that
-  // fires on the user's own next real keypress, see the `keydown` listener below.
-  const deferredRescueArmed = useRef(false)
+  // (Gate round 9 fix (A11y9 Medium) added a deferred-rescue flag here, consumed on the user's
+  // own next keypress -- round 10 (A11y10/Code10/Verif10 HIGH) found it stole focus back into
+  // the tree after the user had deliberately clicked somewhere non-focusable, since nothing ever
+  // disarmed it on that click; removed below, see the big comment above `handleFocusOut`.)
   // Type-ahead buffer (T012, FR-022): resets 500ms after the last keypress, same timeout
   // convention as a native `<select>`'s own type-ahead. A ref, not state -- it drives no render
   // of its own, only the NEXT keypress's search.
@@ -350,18 +348,42 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   // skips `setSelectedPath` while it is set, so the rescue restores KEYBOARD position without
   // also hijacking the user's own selection.
   //
-  // Gate round 9 fix (A11y9 Medium): round 8's own fix still re-fired this rescue on EVERY
-  // single scroll tick that pushed the focused-and-selected row out of Virtuoso's rendered
-  // window, even though the row is merely virtualised away, not genuinely gone -- continuous
-  // wheel-scrolling hopped focus from row to row, each hop a fresh announcement to a screen
-  // reader (WCAG 2.2.4/4.1.3 noise), never examined before now. Distinguishes the two cases via
-  // `rowsRef` (kept live every render, below): a row still present in the CURRENT logical `rows`
-  // list is merely virtualised out and does NOT get an immediate rescue -- instead this arms
-  // `deferredRescueArmed`, a ONE-SHOT flag consumed by the `keydown` listener below the first
-  // time the user actually presses a key while focus is still stranded, so the tree stays
-  // keyboard-reachable without silently relocating focus the user never asked to move. A row
-  // genuinely gone (deleted on disk, an ancestor folder collapsed) still rescues immediately, as
-  // before.
+  // Gate round 9 fix (A11y9 Medium, REVERTED round 10 -- see below): round 8's own fix still
+  // re-fired this rescue on EVERY single scroll tick that pushed the focused-and-selected row
+  // out of Virtuoso's rendered window, even though the row is merely virtualised away, not
+  // genuinely gone -- continuous wheel-scrolling hopped focus from row to row, each hop a fresh
+  // announcement to a screen reader (WCAG 2.2.4/4.1.3 noise), never examined before now. Round 9
+  // tried a ONE-SHOT deferred rescue for this case, consumed by the user's own next keydown
+  // anywhere in the document.
+  //
+  // Gate round 10 fix (A11y10/Code10/Verif10 HIGH): the deferred rescue was itself a worse
+  // defect than the noise it fixed -- exactly the "deliberate click on a non-focusable area must
+  // not have focus stolen back" case round 5 rated HIGH (Code5 HIGH2/A11y5 HIGH), reintroduced.
+  // Nothing disarmed the flag on a click: scroll a focused+selected row out of view (flag
+  // armed), then deliberately click non-focusable chat text or empty space to read or select it
+  // (focus is already `<body>`, so no `focusout`/`focusin` fires to clear anything) -- the VERY
+  // NEXT keypress anywhere, for ANY reason (PageDown/arrows to scroll the transcript, Ctrl+C to
+  // copy, the start of an app accelerator), silently pulled focus and the announcement into a
+  // tree row the user never navigated to, and (a separate bug on top) the key's own default
+  // action then ran against that newly-focused row instead of wherever the user actually meant
+  // it to go (Tab skipped past the tree entirely; arrows/PageDown/Space scrolled the TREE, not
+  // the transcript). The flag also never expired on its own. Removed entirely, along with the
+  // `deferredRescueArmed` ref and the document-wide `keydown` listener that consumed it.
+  //
+  // Accepted, disclosed limitation (not re-attempted this round, per round 9's own now-reverted
+  // attempt): a focused+selected row that merely scrolls out of Virtuoso's rendered window drops
+  // focus to `<body>` and STAYS there -- arrow keys/Home/End/type-ahead do nothing until the
+  // user presses Tab or Shift+Tab, at which point the roving-tabindex mechanism (`rowsRef`,
+  // `tabbableAbsIndex`, recomputed via `rangeChanged` below to the first RENDERED row whenever
+  // the previously-tabbable one scrolls out) re-enters the tree at a real, present, fully
+  // keyboard-functional row -- standard behaviour for a virtualised widget, and the exact
+  // behaviour native scrollable listboxes with virtualisation (for example a long native
+  // `<select>` has no equivalent, but other virtualised ARIA trees/grids in the wild commonly
+  // share it) settle on when nothing else rescues. The row's own `aria-selected` is never
+  // touched by a scroll, only `document.activeElement` moves. A row genuinely gone (deleted on
+  // disk, an ancestor folder collapsed -- `!isConnected` AND absent from the CURRENT logical
+  // `rows` list, not merely virtualised away) still rescues immediately, below -- that case was
+  // never in question, only the scroll-only one.
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -394,30 +416,17 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
           if (!genuinelyGone) return
           const lostRowPath = lost.closest('[data-tree-row-path]')?.getAttribute('data-tree-row-path') ?? null
           if (lostRowPath !== null && rowsRef.current.some((row) => row.kind === 'node' && row.node.path === lostRowPath)) {
-            deferredRescueArmed.current = true
+            // Merely scrolled out of the rendered window, still logically present in `rows` --
+            // the accepted, disclosed limitation above: no rescue, Tab/Shift+Tab re-enters.
             return
           }
         }
         performRescue()
       })
     }
-    // Gate round 9 fix (A11y9 Medium): the one-shot consumer for `deferredRescueArmed` above --
-    // fires on the user's own NEXT real keypress anywhere, but only actually rescues if focus is
-    // STILL stranded at that moment (the user may have clicked elsewhere in the meantime, which
-    // must not be overridden). The key that triggers this is otherwise unaffected -- focus moves
-    // during this listener's own capture pass, so THIS keystroke still reaches whatever had focus
-    // before (likely `<body>`, a no-op); the next one lands on the freshly rescued row.
-    function handleDeferredRescueKeydown(): void {
-      if (!deferredRescueArmed.current) return
-      deferredRescueArmed.current = false
-      if (!isFocusStranded(document.activeElement, containerRef.current)) return
-      performRescue()
-    }
     container.addEventListener('focusout', handleFocusOut)
-    document.addEventListener('keydown', handleDeferredRescueKeydown)
     return () => {
       container.removeEventListener('focusout', handleFocusOut)
-      document.removeEventListener('keydown', handleDeferredRescueKeydown)
     }
   }, [])
 

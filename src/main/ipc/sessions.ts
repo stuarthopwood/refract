@@ -302,14 +302,14 @@ export function registerSessions(manager: SessionManager): void {
     try {
       await manager.getOrCreateAgent(id).shutdown();
       try {
-        // PR #671 gate round 4 fix (Critical): releases the watcher BEFORE the worktree folder
-        // is removed -- a watcher left running under a folder mid-deletion is exactly the
-        // deleted-root event flood `watchDirectory`'s own doc comment describes, and held the
-        // underlying handle open against the very folder this call is about to remove. Gate
-        // round 6 fix (Verif6 Low): also marks the Session busy for the whole operation below --
-        // an in-flight `listDirectory` call resolving DURING `removeSessionWorktree` could
-        // otherwise call `ensureWatcher` and recreate a fresh watcher on the very folder this
-        // call is still removing, reopening the same EPERM class one call site later.
+        // PR #671 gate round 4 fix (Critical), round 9 correction (Code9/Verif9 Medium): the
+        // watcher release and the busy marker this comment used to describe HERE both now
+        // happen earlier, above the outer `try` (see that comment at the top of this handler) --
+        // moved there so a thrown `shutdown()` cannot decrement the busy count without ever
+        // having incremented it. By the time `removeSessionWorktree` runs below, the watcher is
+        // already released and the Session is already marked busy for the whole operation, so an
+        // in-flight `listDirectory` resolving DURING this call cannot recreate a fresh watcher on
+        // the very folder being removed.
         // Issue #599 quality-gate fix: decide by `git worktree list --porcelain`, never
         // `fs.stat` -- an orphaned folder (left behind by a crash, a manual `git worktree
         // prune`, or hand cleanup) still exists on disk while git has already lost track of

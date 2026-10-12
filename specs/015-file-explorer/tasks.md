@@ -1042,7 +1042,7 @@ immediately, as before. The one synchronous `.focus()` call itself is now wrappe
 **Round 9 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate9`, own
 `--user-data-dir`/CDP port 9343, pid-verified `taskkill` + a full `Win32_Process` scan confirming
 exit, deleted by literal path afterward; raw CDP driver output piped directly to a file via shell
-redirection, never hand-transcribed; evidence -- 4 screenshots, `raw-output.txt`, the two scratch
+redirection, never hand-transcribed; evidence -- 5 screenshots, `raw-output.txt`, the two scratch
 scripts (`gate9-verify.js`, `setup-gate9.ps1`), `sha256.json` -- saved in
 `C:/Users/shopwood/refract-live-check-671-gate9/`, 9 files total):
 - **Same-document navigation survives (the round-9 HIGH fix)**: opened a Session's panel
@@ -1051,31 +1051,42 @@ scripts (`gate9-verify.js`, `setup-gate9.ps1`), `sha256.json` -- saved in
   causes), then confirmed the SAME ancestor rename was STILL blocked afterward (the watcher never
   stopped) and that live refresh still delivered a patch for a file written externally after the
   navigation (screenshot `A-same-document-nav-watcher-survives.png`).
-- **Scroll-focus deferred rescue (the A11y9 redesign)**: a real CDP click selected+focused a row
-  in an 80-file virtualised tree, then a real CDP mouse-wheel event pushed it out of the rendered
-  window. Immediately after (before any keypress): focus deliberately had NOT been hijacked yet
-  (`document.activeElement` was `<body>`, the natural post-removal blur target) -- confirming the
-  new no-scroll-noise design, not a regression. A single real CDP `keydown` then consumed the
-  one-shot deferred rescue: focus landed on a DIFFERENT real row (`f062.txt`), which was NOT
-  marked `aria-selected`, while the originally-clicked row's own `aria-selected="true"` was
-  unchanged throughout, including after scrolling back to it (screenshots
-  `B-scroll-focus-after-scroll-deferred.png`, `B-scroll-focus-after-deferred-rescue.png`,
-  `B-scroll-focus-scrolled-back.png`).
+- **Scroll-focus deferred rescue (the A11y9 redesign) -- CORRECTED, round 10 (A11y10/Code10/
+  Verif10 HIGH): this bullet originally read as a clean pass. It was not.** The "real CDP
+  `keydown`" used to consume the one-shot rescue was `Escape`, which has no default browser
+  action -- the ONLY key choice that could not expose either of two real defects: (1) the rescue
+  stole focus back into the tree after the user had DELIBERATELY clicked somewhere non-focusable
+  in the meantime (nothing disarmed the flag on a click, the exact "deliberate click-elsewhere"
+  case round 5 rated HIGH, reintroduced); (2) for any key WITH a default action (Tab, arrows,
+  PageDown, Space), that default action ran against the newly-rescued row, not wherever the user
+  actually meant it to go. Round 10 removed the entire deferred-rescue mechanism rather than
+  patch around these two defects (see the Round 10 section below for the fix and its own live
+  verification); the `document.activeElement === BODY` observation immediately after the scroll
+  (before any keypress) still stands as accurate and is now the PERMANENT, intended behaviour
+  (a disclosed limitation), not a staging point for a rescue.
 - **`ensureWatching` one-shot reset still holds**: closed a Session's panel, renamed its worktree
   away externally, reopened the panel: an honest "This Session's worktree folder no longer
   exists" alert, no stale cached `root-file.txt` row left showing (screenshot
   `C-ensurewatching-oneshot-reset.png`).
-- **Archive-race busy-marker fix, re-isolated per-Session (Code9/Verif9)**: the round-8 version of
-  this test renamed the SHARED ancestor folder common to all three scratch Sessions, which an
-  unrelated SIBLING Session's own still-open watcher (left running by an earlier test switching
-  the single globally-open pane away from it) independently locked for its entire test run,
-  regardless of what this Session's own archive/restore cycle did -- a self-inflicted confound in
-  the test itself, not evidence about the fix. Corrected to rename the Session-under-test's OWN
-  worktree folder only, with a short retry-with-backoff (Windows can take a moment to actually
-  release a just-closed recursive watch handle at the OS level, independent of any app-level bug):
-  10 staggered `archive(); sleep(50ms); listDirectory(); sleep(150ms); rename` iterations, **10/10
-  released cleanly**, `listDirectory` correctly returning `session-archived` every time (never
-  silently recreating a watcher mid-shutdown).
+- **Archive-race busy-marker fix, re-isolated per-Session (Code9/Verif9) -- claim narrowed, round
+  10 (Verif10 Medium): the round-8 version of this test renamed the SHARED ancestor folder common
+  to all three scratch Sessions, which an unrelated SIBLING Session's own still-open watcher (left
+  running by an earlier test switching the single globally-open pane away from it) independently
+  locked for its entire test run, regardless of what this Session's own archive/restore cycle
+  did -- a self-inflicted confound in the test itself, not evidence about the fix. Corrected to
+  rename the Session-under-test's OWN worktree folder only, with a short retry-with-backoff
+  (Windows can take a moment to actually release a just-closed recursive watch handle at the OS
+  level, independent of any app-level bug): 10 staggered `archive(); sleep(50ms);
+  listDirectory(); sleep(150ms); rename` iterations, 10/10 renames succeeded and
+  `listDirectory` correctly returned `session-archived` every time (never silently recreating a
+  watcher mid-shutdown) -- that second part is what this test actually demonstrates about the
+  busy-marker fix. The rename succeeding is weaker evidence than originally claimed: round 6's own
+  finding is that renaming the WATCHED ROOT ITSELF succeeds silently even while its own watcher is
+  actively running (only an ANCESTOR of a watched root is blocked, never the watched root
+  directly) -- so this particular rename would have passed whether or not a watcher leaked, and
+  does not independently prove the watcher was released. A test isolating the watcher-release
+  claim itself (each Session under its own intermediate parent folder, with a positive control
+  proving the SAME rename is blocked while NOT archived) was not re-run this round.
 
 **Not verified this round**: the round-7/8 carried-over gaps (an app-side `getStatus()`
 call-count instrumentation during a concurrent git-lock stress burst; the deliberate-click-
@@ -1086,6 +1097,113 @@ in every round so far). The `render-process-gone` branch of this round's own nav
 renderer crash is far harder to trigger deterministically in a scratch instance than a same-
 document navigation; covered by reading the source and the existing crash-recovery tests, not a
 live repro this round).
+
+### Round 10 gate fixes (Sec10/Code10/A11y10/Verif10, all FAILed round 9)
+
+**HIGH (Sec10/Code10/Verif10)**: round 9's own `did-start-navigation` fix (`!details.isSameDocument`)
+still had a false-positive: Chromium emits `DidStartNavigation` BEFORE its own navigation
+throttles run (`will-navigate`/`will-frame-navigate`, which `denyForeignNavigation` uses to cancel
+a foreign-origin navigation below) -- a renderer-initiated CROSS-document navigation that gets
+CANCELLED (an OS file dropped onto the window -- this renderer has no `drop`/`dragover` handler at
+all, so Electron's own default navigation runs -- or a dragged chat link) had ALREADY reset every
+watcher and cleared `loadedPathsBySession` before the cancellation ran, with the page never
+actually navigating away: every panel stayed mounted, nothing ever called `ensureWatching` again,
+and live refresh/deleted-preview detection died exactly the same way as the original round-9
+HIGH, on a navigation that never even happened. Fixed: replaced the `did-start-navigation`
+listener with `window.webContents.on('did-navigate', () => resetAllFileExplorerWatchersAndState())`.
+Electron only emits `did-navigate` for a main-frame cross-document navigation that actually
+COMMITTED (a cancelled one never fires it at all, and an in-page/same-document one fires
+`did-navigate-in-page` instead, a separate event this handler never needs to filter for) --
+strictly simpler than the round-9 `did-start-navigation` + `isSameDocument` check it replaces,
+and immune to the cancelled-navigation false-positive by construction. `render-process-gone` is
+unchanged.
+
+**HIGH (A11y10/Code10/Verif10)**: round 9's one-shot deferred scroll-focus rescue was itself a
+worse defect than the screen-reader noise it fixed -- exactly the "deliberate click on a
+non-focusable area must not have focus stolen back" case round 5 rated HIGH, reintroduced.
+Nothing disarmed the flag on a click: scroll a focused+selected row out of view (flag armed), then
+deliberately click non-focusable chat text or empty space to read or select it (focus is already
+`<body>`, so no `focusout`/`focusin` fires to clear anything) -- the VERY NEXT keypress anywhere,
+for ANY reason (PageDown/arrows to scroll the transcript, Ctrl+C to copy, the start of an app
+accelerator), silently pulled focus and the screen-reader announcement into a tree row the user
+never navigated to. A second, separate defect on top: the key's own default action then ran
+against that newly-focused row instead of wherever the user actually meant it to go (Tab skipped
+past the tree entirely instead of reaching it; arrows/PageDown/Space scrolled the TREE, not the
+chat transcript). The round-9 evidence script tested only `Escape`, the one key with no default
+action, which is why neither defect was caught. **Removed entirely**: the `deferredRescueArmed`
+ref and the document-wide `keydown` listener that consumed it are gone. Kept, unchanged: the
+immediate rescue for a row that is genuinely REMOVED (`!isConnected` AND absent from the current
+logical `rows` list, not merely virtualised away); the `[sessionId, status]` effect's own rescue,
+still wrapped in `rescueFocusRef`; the roving-tabindex mechanism (`tabbableAbsIndex`, recomputed
+via `rangeChanged` to the first RENDERED row whenever the previously-tabbable one scrolls out).
+**Accepted, disclosed limitation** (not re-attempted): a focused+selected row that merely scrolls
+out of Virtuoso's rendered window drops focus to `<body>` and stays there -- arrow keys, Home/End
+and type-ahead do nothing until the user presses Tab or Shift+Tab, at which point the
+roving-tabindex mechanism re-enters the tree at a real, present, fully keyboard-functional row.
+Standard behaviour for a virtualised widget. The row's own `aria-selected` is never touched by a
+scroll, only `document.activeElement` moves. Not verified with a real screen reader.
+
+**MEDIUM (Sec10/Code10/Verif10)**: pruning a parked path on `file-missing` (round 9's own Sec9 Low
+fix) fired on TRANSIENT errors too, not only a genuinely deleted path -- round 7 deliberately maps
+every non-ENOENT/ENOTDIR `realpath`/`lstat` failure (a transient EACCES/EBUSY/EMFILE, an antivirus
+scan, a brief Windows delete-pending window) to the same `file-missing` code, specifically so
+callers treat it as non-fatal. Pruning unconditionally on ANY `file-missing` permanently dropped a
+folder that was only ever transiently unreadable -- a delete-then-recreate (a `git
+checkout`/stash, a build tool's rimraf+rebuild) could hit the gap and leave the folder expanded in
+the renderer with nothing in `loadedPathsBySession` ever patching it again until a full reset or
+reload. Fixed: `refreshDirectory`'s `file-missing` branch now re-confirms the path is ACTUALLY
+gone via `fs.lstat` before pruning, only treating `ENOENT`/`ENOTDIR` from that `lstat` as a
+genuine deletion; any other `lstat` outcome (including the folder still existing) leaves the
+parked path untouched. Never prunes the root (`''`) from this branch at all -- a missing root is
+the separate `worktree-missing` branch's own job.
+
+**LOW**: `FILE_EXPLORER_LIST_DIRECTORY`'s success path now re-checks the Session still exists
+before recording a path as loaded -- a `listDirectory` already in flight when `sessions.delete`
+ran to completion could otherwise add the entry back into `loadedPathsBySession` AFTER
+`forgetFileExplorerSession` already cleared it. `sessions.ts`'s stale inner-`try` comment (it
+described the watcher-release/busy-marker actions as happening at that location; both now happen
+earlier, above the outer `try`, per round 9) corrected. `fileExplorer.ts`'s own doc comment on
+`resetAllFileExplorerWatchersAndState` (still said `main/index.ts` calls `did-start-navigation`)
+corrected to `did-navigate`.
+
+**Round 10 live verification** (fresh isolated scratch Electron, `C:/tmp/refract-671-gate10`, own
+`--user-data-dir`/CDP port 9344, pid-verified `taskkill` + a full `Win32_Process` scan confirming
+exit, deleted by literal path afterward; raw CDP driver output piped directly to a file via shell
+redirection, never hand-transcribed; evidence -- 2 screenshots, `raw-output.txt`, the two scratch
+scripts (`gate10-verify.js`, `setup-gate10.ps1`), `sha256.json` -- saved in
+`C:/Users/shopwood/refract-live-check-671-gate10/`, 6 files total):
+- **`did-navigate` red probe (the HIGH fix)**: opened a Session's panel (ancestor rename
+  confirmed blocked); a same-document `pushState`/`history.back()` round trip still left the
+  ancestor rename blocked (regression check on round 9's own fix, still holds); then a RENDERER-
+  initiated cross-document navigation (`window.location.href` assigned to a foreign `file://`
+  path from page JS, not a CDP-level `Page.navigate` -- the latter does not exercise
+  `will-navigate` the same way) was denied by `denyForeignNavigation`: `window.location.href`
+  unchanged before/after, the ancestor rename STILL blocked afterward, and a file written
+  externally after the attempt still patched into the tree (screenshot
+  `A-did-navigate-red-probe.png`). An earlier attempt at this probe used CDP's `Page.navigate`
+  directly, which bypassed `will-navigate` entirely and committed the navigation to a
+  `chrome-error://` page -- a real false negative in the TEST, not the fix, caught by checking
+  `window.location.href` actually stayed put and corrected before trusting the result.
+- **Prune-on-transient-error fix (the Medium fix)**: expanded a `sub/` folder (recorded in
+  `loadedPathsBySession`), applied a genuine `icacls /deny (RX)` to it (confirmed as a REAL,
+  OS-level block via a direct Node `fs.readdirSync` sanity check inside the same run, which threw
+  `EPERM` -- not merely assumed), then wrote a file inside `sub/` while denied to fire the
+  watcher's own flush for it. After restoring the ACL, a SECOND file written into `sub/` still
+  patched into the tree -- `sub/` was never pruned from `loadedPathsBySession` despite the
+  transient `file-missing` result in between (screenshot `B-prune-transient-error.png`).
+
+**Not verified this round**: the round-7/8/9 carried-over gaps (an app-side `getStatus()`
+call-count instrumentation during a concurrent git-lock stress burst; a genuinely slow/throttled
+`shutdown()` to force a wider archive-vs-`listDirectory` race window; a real screen reader pass,
+now specifically on the scroll-out-then-Tab-re-entry limitation rather than a rescue that no
+longer exists); the `render-process-gone` branch of the navigation fix (source reading only, not
+a live repro -- a renderer crash is far harder to trigger deterministically in a scratch instance
+than a navigation); the deliberate-click-elsewhere focus-steal direction is now MOOT for the
+scroll-out case specifically (the mechanism that could have stolen focus back is gone), but still
+open for the `[sessionId, status]` effect's own rescue in principle (not re-examined this round,
+no evidence either way); the archive-race test's own watcher-release claim is narrowed per the
+Round 9 section's correction above -- a test isolating that specific claim (separate per-Session
+parent folders, a positive control) was not built this round.
 
 ---
 
