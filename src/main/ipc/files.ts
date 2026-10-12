@@ -80,17 +80,43 @@ export type ResolveInWorktreeResult =
  * so a single `fs.lstat`/`fs.readlink` call must never be given more than one new, unverified
  * path component at a time.
  *
+ * PR #671 gate round 3 fix (security-auditor/code-reviewer MEDIUM, reproduced live): a link's
+ * target is checked against EITHER `root` (realpath'd) OR `unresolvedRoot` (the Session's own
+ * recorded worktree path, never realpath'd) -- not `root` alone. When the worktree itself is
+ * reached through a junction or an 8.3 short-name alias, a tool run from that alias (pnpm writes
+ * absolute junction targets from its own cwd) writes an absolute link target in the ALIAS form,
+ * which only matches `unresolvedRoot` lexically, never `root`. Checking `root` alone rejected
+ * every such legitimate in-worktree link as `outside-worktree` -- fails closed (never an escape)
+ * but a real functional regression, the exact false-negative class issue #610's own round-4
+ * Verif3 fix already solved once for top-level TOKENS; this extends the same fix to a link
+ * TARGET found mid-walk. Whichever root the target matches, the walk still restarts from `root`
+ * (the realpath'd one) -- never from `unresolvedRoot` -- so the containment guarantee is
+ * unchanged; only the ACCEPT decision gained the second root.
+ *
  * Capped at `MAX_LINK_HOPS` link substitutions to reject a cycle (`a -> b -> a`) rather than loop
  * forever. Only once every segment has been consumed with no link remaining is the resulting path
  * safe to hand to `fs.realpath` (canonicalises casing/8.3 short names; nothing is left in the
- * path for it to follow). */
+ * path for it to follow).
+ *
+ * **Accepted residual risk (PR #671 gate round 3, security-auditor/verification LOW, NOT closed,
+ * documented rather than silently assumed away)**: a TOCTOU window exists between this walk's
+ * last `fs.lstat` and the caller's own final `fs.realpath` -- a link swapped into an
+ * already-checked segment in that window could still be followed by that `fs.realpath` call. The
+ * post-realpath containment check still rejects the RESULT, so this is not an escape, but a
+ * target that is itself a UNC path could still trigger an outbound SMB/NTLM attempt during that
+ * window before the rejection lands. Winning this race requires a process with write access to
+ * the worktree while a listing is in flight -- the same local attacker who can already reach a
+ * UNC path directly, so this is accepted, not mitigated, for Slice 1. */
 async function resolveNoFollow(
   root: string,
+  unresolvedRoot: string,
   relativeSuffix: string,
   caseInsensitive: boolean
 ): Promise<{ ok: true; path: string } | { ok: false; reason: 'outside-worktree' | 'file-missing' }> {
   const fold = (value: string) => (caseInsensitive ? value.replace(/[A-Z]/g, (c) => c.toLowerCase()) : value);
   const isContainedIn = (value: string, base: string) => value === base || value.startsWith(`${base}${path.sep}`);
+  const foldedRoot = fold(root);
+  const foldedUnresolvedRoot = fold(unresolvedRoot);
 
   let current = root;
   let queue = relativeSuffix.split(/[\\/]+/).filter(Boolean);
@@ -119,15 +145,28 @@ async function resolveNoFollow(
     }
     if (isUnsafeToken(rawTarget)) return { ok: false, reason: 'outside-worktree' };
     const targetAbs = path.isAbsolute(rawTarget) ? path.resolve(rawTarget) : path.resolve(current, rawTarget);
-    if (!isContainedIn(fold(targetAbs), fold(root))) return { ok: false, reason: 'outside-worktree' };
-    // Restart from `root`: the target's OWN path may contain further unverified links in its
-    // OWN intermediate segments, not only at its final component -- prepending its relative
-    // segments back onto the queue and resetting `current` to `root` gives every one of them the
-    // SAME one-at-a-time scrutiny, rather than trusting `targetAbs` as a safe base to resolve
-    // further (see this function's own doc comment).
-    queue = [...path.relative(root, targetAbs).split(/[\\/]+/).filter(Boolean), ...queue];
+    const foldedTarget = fold(targetAbs);
+    const matchedRoot = isContainedIn(foldedTarget, foldedRoot)
+      ? root
+      : isContainedIn(foldedTarget, foldedUnresolvedRoot)
+        ? unresolvedRoot
+        : null;
+    if (matchedRoot === null) return { ok: false, reason: 'outside-worktree' };
+    // Restart from `root` (always the realpath'd one, regardless of which root the target
+    // matched): the target's OWN path may contain further unverified links in its OWN
+    // intermediate segments, not only at its final component -- prepending its relative segments
+    // back onto the queue and resetting `current` to `root` gives every one of them the SAME
+    // one-at-a-time scrutiny, rather than trusting `targetAbs` as a safe base to resolve further
+    // (see this function's own doc comment).
+    queue = [...path.relative(matchedRoot, targetAbs).split(/[\\/]+/).filter(Boolean), ...queue];
     current = root;
   }
+  // PR #671 gate round 3 fix (verification LOW): a link that resolves, through however many
+  // hops, back to the worktree ROOT itself (`loop -> '.'`) must be rejected the same way a
+  // top-level token equal to the root already is (the check just above `resolveNoFollow`'s own
+  // call site in `resolveInWorktree`) -- otherwise `revealFile` would show the whole worktree
+  // folder, and the explorer would render an endlessly re-enterable `loop` row.
+  if (current === root) return { ok: false, reason: 'file-missing' };
   return { ok: true, path: current };
 }
 
@@ -223,7 +262,7 @@ export async function resolveInWorktree(worktreeRoot: string, token: string): Pr
   const relativeSuffix = isContainedIn(candidateLower, resolvedRootLower)
     ? path.relative(resolvedRoot, candidate)
     : path.relative(unresolvedRoot, candidate);
-  const walked = await resolveNoFollow(resolvedRoot, relativeSuffix, caseInsensitive);
+  const walked = await resolveNoFollow(resolvedRoot, unresolvedRoot, relativeSuffix, caseInsensitive);
   if (!walked.ok) return { ok: false, reason: walked.reason };
 
   let resolvedTarget: string;

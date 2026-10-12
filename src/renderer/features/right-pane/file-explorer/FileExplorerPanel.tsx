@@ -14,27 +14,9 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { isFocusStranded } from '@/lib/focus'
 import { useFileExplorerStore } from '@/state'
 import type { ExpandableNode } from '../../../state/file-explorer-store'
-
-/** A focused element the user can no longer usefully interact with: gone from the document,
- * parked on `<body>` (the browser's own fallback once a focused node is removed), or a
- * now-disabled control still sitting inside `root`. Copied verbatim from `ChatPane.tsx`'s own
- * `isFocusStranded` (PR #671 gate fix, accessibility-auditor/code-reviewer MEDIUM, round 2: the
- * previous round's own comment CLAIMED this pattern but did not actually use it -- a plain
- * `onFocus`/`onBlur` pair instead, which never sees a blur for a node removed out from under it,
- * and which unconditionally reclaimed focus on every Session change even when focus had
- * deliberately moved elsewhere, e.g. the sidebar row just clicked). One shared definition would
- * belong in `lib/focus.ts` if a second caller ever needs it; not extracted there yet since this
- * is still the only one outside `ChatPane.tsx` itself. */
-function isFocusStranded(active: Element | null, root: HTMLElement | null): boolean {
-  return (
-    !active ||
-    active === document.body ||
-    !active.isConnected ||
-    (active instanceof HTMLElement && active.matches(':disabled') && !!root?.contains(active))
-  )
-}
 
 interface FileExplorerPanelProps {
   /** The Session this tree follows -- no independent binding of its own (FR-004), the same
@@ -91,20 +73,6 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     })
   }, [sessionId, status])
 
-  if (!sessionId) {
-    return (
-      <Empty className="h-full">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <FolderIcon aria-hidden />
-          </EmptyMedia>
-          <EmptyTitle>No Session open</EmptyTitle>
-          <EmptyDescription>Open a Session to browse its files.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
-  }
-
   function handleToggle(node: ExpandableNode): void {
     if (!sessionId) return
     if (node.children === undefined) {
@@ -132,9 +100,20 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     <div
       ref={containerRef}
       tabIndex={-1}
+      aria-label="File explorer"
       className="flex h-full flex-col overflow-y-auto p-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
-      {status === 'loading' ? (
+      {!sessionId ? (
+        <Empty className="h-full">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <FolderIcon aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>No Session open</EmptyTitle>
+            <EmptyDescription>Open a Session to browse its files.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : status === 'loading' ? (
         <p role="status" className="p-2 text-sm text-muted-foreground">
           Loading…
         </p>

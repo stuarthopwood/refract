@@ -145,19 +145,29 @@ children), same incremental-shippability spec 013/014's own Slice 1s used.
   Slice 2, FR-022) wired to `useFileExplorerStore`, fetching the root on first open per Session
   (mirrors side-chat's own `loadHistory`-on-first-open effect) and lazily fetching a folder's
   children on click-to-expand (`loadDirectory` the first time, `toggleExpanded` thereafter).
-  **PR #671 gate fix round**: a `status: 'error'` state renders an `Empty` with the IPC error
+  **PR #671 gate fix round 1**: a `status: 'error'` state renders an `Empty` with the IPC error
   message and a Retry button calling `loadDirectory(sessionId, '')` again (`code-reviewer HIGH`);
   "Loading…" carries `role="status"` and shows only while `status === 'loading'`. A file (or
   `cannot-access`) row is a non-interactive `<span>`, never a `<button disabled>`
   (`accessibility-auditor MEDIUM`: a disabled button reads to a screen reader as "button,
-  unavailable", announcing a broken control rather than a plain row). The panel's own scroll
-  container is a focus sink (`tabIndex={-1}`, the same `focus-visible:outline-2` convention
-  `SessionList.tsx`/`RightPaneShell.tsx` already use): when the focused row unmounts on a Session
-  switch, the browser drops focus to `<body>` synchronously, before any effect can observe where
-  it was, so a `hadFocusRef` set by the container's own `onFocus`/`onBlur` (the same "no click to
-  capture 'had focus' at" pattern `ChatPane.tsx`'s own `chatHadFocusRef` uses) is checked by the
-  next render's effect to decide whether to reclaim focus onto the container (`accessibility-
-  auditor MEDIUM`).
+  unavailable", announcing a broken control rather than a plain row).
+  **PR #671 gate fix round 2 (code-reviewer MEDIUM: round 1's own focus-sink claim did not match
+  its implementation)**: the panel's own scroll container is a focus sink (`tabIndex={-1}`,
+  `aria-label="File explorer"`, the same `focus-visible:outline-2` convention
+  `SessionList.tsx`/`RightPaneShell.tsx` already use), but `hadFocusRef` is kept current by a
+  DOCUMENT-WIDE `focusin` listener, not the container's own `onFocus`/`onBlur` props -- a removed
+  focused element's forced blur reads as `<body>`, not this panel, by the time any local blur
+  handler could observe it. Reclaim (keyed on `[sessionId, status]`, inside a
+  `requestAnimationFrame`) only fires when focus is actually STRANDED (gone, on `<body>`,
+  disconnected, or a disabled control still inside the panel), never unconditionally on every
+  Session change, which would otherwise steal focus from somewhere the user deliberately moved
+  it to. This is `ChatPane.tsx`'s own `chatHadFocusRef`/`isFocusStranded` pattern exactly --
+  **PR #671 gate fix round 3 (code-reviewer MEDIUM, DRY)**: `isFocusStranded` is now one shared
+  export from `src/renderer/lib/focus.ts`, imported by both `ChatPane.tsx` and this panel,
+  replacing round 2's own byte-for-byte copy. The "No Session open" empty state renders INSIDE
+  this same focusable container too (round 3 fix, accessibility-auditor LOW), not as an early
+  return before the container mounts, so the reclaim effect always has a real element to focus
+  even if `sessionId` goes `null` while focus is inside the panel.
 - [x] T010 Edit `RightPaneShell.tsx`: one more `activePanelId === 'file-explorer'` branch rendering
   `FileExplorerPanel` (depends on T006, T009).
 - [x] T011 [P] `pnpm typecheck` and `pnpm build`; fix any error before proceeding. Run
@@ -292,7 +302,22 @@ focused scratch run for the session-switch focus check below) + `sha256.json` un
   same test against a stale pre-fix build (root listing 4106 ms; an SMB connection count that DID
   increase by one during that run) -- that earlier, slower, connection-incrementing run is the
   fix's own regression baseline, confirming the vulnerability these fixtures target is real and
-  reproducible, not merely theoretical.
+  reproducible, not merely theoretical. **Independently corroborated, PR #671 gate round 3**:
+  three reviewers each built their own scratch probe of the real `isUnsafeToken`/`resolveNoFollow`
+  code, with every `fs.lstat`/`readlink`/`realpath`/`stat` call logged, and ran 30+ fixtures
+  (chains, middle-segment links, cycles, 8.3 aliases, trailing dots) through it independently of
+  this slice's own live check -- their call logs show NO call ever received a UNC argument. That
+  is stronger evidence than this slice's own timing/connection-count method (which remains
+  honestly described as suggestive, not conclusive, since it does not instrument every syscall).
+- **Accepted residual risk, not closed (PR #671 gate round 3, security-auditor/verification LOW)**:
+  a TOCTOU window exists between `resolveNoFollow`'s own last `fs.lstat` and the caller's final
+  `fs.realpath` -- a link swapped into an already-checked segment in that window could still be
+  followed by that `fs.realpath` call. The post-realpath containment check still rejects the
+  RESULT (never an escape), but a UNC-targeted swap could still trigger an outbound SMB/NTLM
+  attempt during that window before the rejection lands. Exploiting this needs a process with
+  write access to the worktree while a listing is in flight -- the same local attacker who could
+  already reach a UNC path directly -- so this is accepted, not mitigated, documented in
+  `resolveNoFollow`'s own doc comment (files.ts) rather than silently assumed away.
 - **`sub/.git` and the Windows 8.3 alias `GIT~1`** (confirmed enabled on this volume via `dir /x
   /a`, showing `.git` <-> `GIT~1`): `listDirectory(sessionId, 'sub/.git')`,
   `listDirectory(sessionId, 'GIT~1')` and `listDirectory(sessionId, 'sub/GIT~1')` all three
@@ -319,6 +344,29 @@ focused scratch run for the session-switch focus check below) + `sha256.json` un
 - **Three string-level escape attempts and the earlier round-1 fixtures** (outside junction,
   in-root junction, broken junction, outside symlink) were all re-run this round too, same
   results as before.
+
+**PR #671 gate round 3 live verification** (a direct probe of the REAL `isUnsafeToken`/
+`resolveNoFollow`/`resolveInWorktree` source, copied verbatim with only Electron's own imports
+removed, run under Node 26 type-stripping against real NTFS junctions/symlinks under
+`C:/tmp/r671-round3-probe` -- matching the same technique the round-3 gate reviewers themselves
+independently used; junction/symlink fixtures deleted afterward with `rmdir` on each literal
+link path only, never recursing into a link, and the real target folders confirmed intact
+before the rest of the scratch tree was removed):
+- **The alias regression itself, fixed**: worktree `wt`, junction `alias -> wt`. An in-root link
+  `viaalias` whose absolute target is written in the ALIAS form (`alias\src`, simulating a tool
+  that ran with its own cwd set to the alias, e.g. pnpm). Calling `resolveInWorktree(alias,
+  'viaalias/real.txt')` -- the realistic case, where the Session's OWN recorded `worktreePath` IS
+  the alias the link was written through -- now returns `ok: true` with the correct real path.
+  Before this round's fix it returned `outside-worktree` (fails closed, never an escape, but a
+  real functional regression this round closes).
+- **No weakening of containment**: with the SAME fixture set, an escaping link (`escape -> ` an
+  outside folder) is still rejected `outside-worktree`, and an ordinary in-root link still
+  resolves `ok: true`.
+- **The `loop -> '.'` self-reference fix**: a link pointing at the worktree root itself now
+  returns `file-missing`, matching the existing rule for a top-level token equal to the root,
+  instead of silently resolving to the root folder.
+- **No round-2 regression**: the SAME `chain-a -> in-root chain-b -> UNC` fixture from round 2,
+  re-run against this round's code, still correctly returns `outside-worktree`.
 
 ---
 

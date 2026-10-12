@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
 import { cn } from '@/lib/utils'
-import { focusPaneContent, focusSessionsNav } from '@/lib/focus'
+import { focusPaneContent, focusSessionsNav, isFocusStranded } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import {
   EMPTY_TRANSCRIPT,
@@ -74,33 +74,6 @@ export function describeStopReason(reason: StopReason, detail?: string): string 
     default:
       return 'The agent is stopped.'
   }
-}
-
-/** Gate-fixes a11y High finding (cycle 9): a focused element that the user can no longer
- * interact with -- missing, `<body>` (the UA's own fallback once nothing is explicitly
- * focused), disconnected from the document, OR disabled AND inside this pane. Every one of
- * this pane's stranded-focus checks used to test only the first three, which missed a real
- * case: a Cancel that WINS during a mode-change `restart()` from `idle` sends two separate
- * status events (`startProgress` cleared first, while `status` is still `idle`;
- * `stopped`/`start-failed` moments later once `proc.stop()` finishes) -- the first moves focus
- * onto the still-enabled textarea, which the SECOND event then disables. Chromium may not blur
- * a focused element when it becomes `disabled` (it can remain `document.activeElement`, still
- * inert, depending on the Chromium version), so a check that only looked for
- * `<body>`/disconnected saw a perfectly normal-looking, connected element and left focus stuck
- * on a control the user can no longer type into or tab away from.
- *
- * Gate-fixes a11y Medium finding (cycle 10): the `:disabled` clause must only count a disabled
- * element as stranded when it is INSIDE this pane -- `root` is each call site's own
- * `chatPaneRef.current`. Without that scope, a disabled control elsewhere in the window (a
- * dialog's Save button, or the other split pane's own RequestCard Approve/Deny button while
- * `disabled={busy}`) also counted as stranded, so this pane's banner resolving pulled focus out
- * of that other control. The cycle-9 restart sequence above still works: the disabled textarea
- * it exists to rescue focus from is always inside the pane whose own effect is running.
- *
- * One shared definition here instead of several independently-drifting copies of the same test.
- */
-function isFocusStranded(active: Element | null, root: HTMLElement | null): boolean {
-  return !active || active === document.body || !active.isConnected || (active instanceof HTMLElement && active.matches(':disabled') && !!root?.contains(active))
 }
 
 interface ChatPaneProps {

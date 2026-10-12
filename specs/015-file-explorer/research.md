@@ -208,3 +208,25 @@
     check (tasks.md Slice 1 Checkpoint) adds a two-hop chain, a middle-segment link, a hop-cap
     cycle, and genuine UNC targets (`\\127.0.0.1\refract-none-<random>`, never a real remote
     host) to close that gap for real.
+
+    **Addendum 3 (PR #671 gate round 3, security-auditor/code-reviewer MEDIUM, reproduced live):**
+    round 2's own `resolveNoFollow` checked a link's target against the realpath'd `root` only,
+    not the Session's recorded, never-realpath'd `unresolvedRoot` -- when the worktree itself is
+    reached through a junction or an 8.3 short-name alias, an absolute link target written in
+    that ALIAS form (pnpm writes absolute junction targets from its own cwd) was rejected as
+    `outside-worktree`: a fail-closed regression for `revealFile`, and a false `cannot-access` in
+    the panel, not an escape, but the same false-negative class issue #610's own round-4 Verif3
+    fix already solved once for top-level TOKENS. Fixed by accepting a link's target under
+    EITHER root, while still always restarting the walk from the realpath'd `root`.
+
+    **Accepted residual risk, documented rather than claimed closed (PR #671 gate round 3,
+    security-auditor/verification LOW):** a TOCTOU window exists between `resolveNoFollow`'s own
+    last `fs.lstat` and the caller's final `fs.realpath` on the fully-walked path -- a link
+    swapped into an already-checked segment in that window could still be followed by that
+    `fs.realpath` call. The post-realpath containment check still rejects the RESULT (never an
+    escape), but a UNC-targeted swap could trigger an outbound SMB/NTLM attempt during that
+    window before the rejection lands. Exploiting this needs a process with write access to the
+    worktree while a listing is in flight -- the same local attacker who could already reach a
+    UNC path directly -- so this is accepted, not mitigated, for this spec's own threat model
+    (constitution V treats agent/tool output as untrusted, not the local filesystem as a
+    multi-tenant boundary against a co-resident writer).

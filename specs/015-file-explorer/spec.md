@@ -209,13 +209,19 @@ previously-expanded folder still expanded.
   same path-containment check every other read goes through (FR-001) -- surfaced as a plain
   "cannot access" row state, not a silent skip that could let a developer believe a path is empty.
 - A worktree reached through OneDrive Files-On-Demand (or another cloud-sync provider using
-  reparse-point placeholders), a deduplicated file, or an `AppExecLink`: Windows reports every one
-  of these as a link the same way a real symlink/junction is reported (`isSymbolicLink()`), and
-  `fs.readlink` fails on a reparse tag that is not an actual symlink/junction -- the row fails
-  CLOSED as "cannot access" rather than being followed, the same as a genuine escaping link.
-  [INFERENCE, PR #671 gate round 2: not observed against a real OneDrive placeholder.] A real
-  file under such a worktree would show as "cannot access" too, not just an escaping one --
-  tracked as a known limitation, not a crash or a silent skip.
+  reparse-point placeholders), a deduplicated file, or an `AppExecLink`: **corrected, PR #671
+  gate round 3** -- round 2's own note here claimed every one of these reports as a link the same
+  way a real symlink/junction does (`isSymbolicLink()`); that was [INFERENCE] and is WRONG,
+  contradicted by direct observation against a real OneDrive folder with four such placeholder
+  entries, all four of which Node's own `readdir({ withFileTypes: true })` reported as ordinary,
+  non-link entries (`isSymbolicLink()` false for every one). By default, a cloud-sync placeholder
+  hides its reparse attribute from an application that has not specifically opted in to seeing
+  it, so it lists and classifies as a normal file or folder -- it never reaches the no-follow
+  walk at all. The real, still-open question this raises for Slice 2 is different from a
+  containment one: reading such a placeholder's CONTENT (`readPreview`) can trigger the cloud
+  provider to "hydrate" (download) it on demand, an I/O-cost and privacy consideration T019 must
+  account for, not a path-escape one. [INFERENCE: the hydration behaviour itself was not
+  exercised, only the `isSymbolicLink()` reporting was.]
 - A file is deleted while its preview is open (User Story 5, Scenario 2).
 - A huge repository (many thousands of entries in one folder): the folder's own listing is capped
   per `research.md` decision 7, with a "N more" row past the cap rather than an unbounded render
