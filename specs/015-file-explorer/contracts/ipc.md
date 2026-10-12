@@ -1,0 +1,66 @@
+# Contract: renderer to main additions for File explorer
+
+Extends spec 001's `contracts/ipc.md` (the `Result<T>` envelope, error codes, constitution V) and
+mirrors spec 014's `contracts/ipc.md` table format and `sideChat.*`/`SIDE_CHAT_PATCH` naming shape
+(research.md decision 9: `fileExplorer.*` request names, `FILE_EXPLORER_PATCH` event, keyed by
+Session id the same way `side-chat:patch` is).
+
+## Requests
+
+### File explorer (FR-001 to FR-006, FR-009, FR-012 to FR-018, FR-020)
+
+| Method | Returns | Notes |
+|---|---|---|
+| `fileExplorer.listDirectory(sessionId, relativePath, showIgnored)` | `{ entries: FileTreeNode[] }` | Lists one directory's immediate children (FR-005, lazy-load -- never recurses). `relativePath` `''` lists the worktree root (FR-004); any other value is resolved against that Session's worktree root and MUST stay inside it after resolving symlinks/junctions, or the call fails with `invalid-argument` (FR-001, SC-002) rather than reading outside it. `.git` itself is never returned as an entry (FR-007), regardless of `showIgnored`. `showIgnored: false` filters out every path the shared git-status/ignore reader (data-model.md) marks `ignored`; `true` includes them, each still carrying `gitStatus: 'ignored'` (FR-009). Entries are pre-sorted folders-before-files, then alphabetically (FR-006). Errors: `invalid-argument` (path escapes the worktree, or is not a directory), `not-found` (Session unknown, or the directory no longer exists). |
+| `fileExplorer.readPreview(sessionId, relativePath)` | `{ preview: FilePreview }` | Reads one file's preview data (FR-012 to FR-015, FR-002/FR-003). Binary detection is by content (a NUL byte in a capped header slice, reusing `diffStat.ts`'s own `isBinary` heuristic, data-model.md), never by extension; an image is detected by magic bytes, also never by extension (FR-014). A file over the preview size cap returns `preview.kind: 'too-large'` with `size` set, never a partial read (FR-002, SC-001). Same path-containment check and error codes as `listDirectory` above, plus `not-found` when the path exists in the tree but the read itself fails (race with a delete -- the renderer instead prefers the `FILE_EXPLORER_PATCH`/watcher path to catch this before the user re-reads, FR-021). |
+| `fileExplorer.getStatus(sessionId)` | `{ status: GitStatusMap }` | Issues the single shared git-status/ignore reader (research.md decisions 2 and 6, data-model.md) once for the whole worktree; the renderer merges this into every currently-loaded node's `gitStatus` rather than calling per-path. Built for reuse by #464 (FR-011) -- this method's shape is intentionally generic (a full map, not scoped to the explorer's own currently-expanded paths). |
+| `fileExplorer.openInVSCode(sessionId, relativePath)` | `{ opened: true } \| { opened: false }` | Resolves `Code.exe` via the dedicated fixed-install-root resolver (research.md decision 1) and spawns it with `shell: false` and an args array (`[absolutePath]`) -- never `resolveExecutable('code')` (`code.cmd`, unspawnable without a shell) and never `shell: true` (FR-016). `{ opened: false }` when no known install root resolves (FR-017); this is a normal result, not an IPC error, so the renderer can show the "VS Code not found" state inline without a toast. No silent fallback to `shell.openPath` or any other launcher. |
+| `fileExplorer.reveal(sessionId, relativePath)` | `void` | Reuses the existing pattern `SessionDetailsCard.tsx`'s own `revealWorktree` already establishes (`shell.openPath` after an `fs.stat` check), scoped to the selected file's own path rather than the worktree root (FR-018). Error `not-found` when the path no longer exists. |
+| `fileExplorer.copyPath(sessionId, relativePath)` | `void` | Reuses the existing `clipboard.writeText` fallback pattern (`useWorktreeActions.ts`): the renderer tries `navigator.clipboard.writeText` itself first and only calls this IPC method when the sandboxed renderer refuses it (FR-018). Writes the file's absolute path. Error `clipboard-failed`. |
+
+No `fileExplorer.openWithDefaultApp` method exists this round (FR-019, Clarification item 11).
+
+## Events (main to renderer)
+
+| Event | Payload | Notes |
+|---|---|---|
+| `FILE_EXPLORER_PATCH` (`file-explorer:patch`) | `{ sessionId, relativePath, entries: FileTreeNode[] }` | Pushed whenever that Session's file watcher (`fs.watch({ recursive: true })`, research.md decision 5) reports a change, debounced against a burst of rapid events (FR-020) and coalesced to one re-list of the single affected directory (`relativePath`) -- never a full tree rebuild. The renderer merges `entries` into `root` at `relativePath`, preserving every path's `expandedPaths` membership (store-side state, data-model.md) rather than resetting it, so a previously-expanded folder stays expanded (FR-020, SC-003). If `relativePath` is a directory the renderer has never fetched (not yet expanded), the patch is dropped -- nothing to merge into. |
+
+### Preview invalidation on delete (FR-021)
+
+No separate event exists for this: the renderer's own `applyPatch` (data-model.md) checks whether
+`preview.path` lives under the patched `relativePath` and is no longer present in the new
+`entries`; if so it sets `preview.kind` to `'deleted'` locally, without an extra round trip to
+`fileExplorer.readPreview`. This mirrors spec 014's own `SIDE_CHAT_INTERRUPTED` precedent of a
+store-side reconciliation step rather than a dedicated per-file "it's gone" push for every
+possible path.
+
+## Error codes added
+
+| Code | When |
+|---|---|
+| `invalid-argument` (existing code, no new one needed) | A `relativePath` that resolves outside the Session's worktree root (including through a symlink/junction, FR-001, SC-002), or a non-string `sessionId`/`relativePath`. |
+| `not-found` (existing code, no new one needed) | An unknown `sessionId`, or a path that no longer exists at read time (`listDirectory`, `readPreview`, `reveal`). |
+| `clipboard-failed` (existing code, reused from `clipboard.writeText`) | `fileExplorer.copyPath`'s own main-side clipboard write fails. |
+
+No new error code is added for "VS Code not found" (FR-017): that is the normal
+`{ opened: false }` result shape above, shown inline, never surfaced as an IPC-layer error.
+
+## Panel registration (FR-026)
+
+`'file-explorer'` is added to `panel-registry.ts`'s `PanelId` union and `HOSTED_PANELS` array,
+alongside `subagents`/`fdb-knowledge`/`agent-builder`/`side-chat`, with `FolderTreeIcon`
+(research.md decision 8, `lucide-react`) and `hasCount: false` (no live count defined for this
+panel, same as `fdb-knowledge`/`agent-builder`/`side-chat`). No existing hosted panel is replaced.
+
+## Non-IPC: the renderer's own state
+
+`file-explorer-store.ts` (`FileExplorerSessionState`/`FileExplorerStoreState`, data-model.md)
+holds the tree, expansion state, selection, preview, and git-status map PER SESSION
+(research.md decision 10), mirroring `side-chat-store.ts`'s own per-Session keying -- rebuilt
+fresh on every launch (no renderer-side persistence), since `fileExplorer.listDirectory`/
+`getStatus` are the single source of truth for anything not already held in memory, the same
+reasoning spec 014's own `contracts/ipc.md` gives for `side-chat-store.ts`. Resizing the pane or
+switching panels (spec 013's shared shell) MUST NOT reset `expandedPaths`/`selectedPath`
+(FR-025) -- both live on the store, keyed by Session id, independent of which panel is currently
+mounted or visible.
