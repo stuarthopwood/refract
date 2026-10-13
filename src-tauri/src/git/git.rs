@@ -48,7 +48,10 @@ pub struct GitError {
 
 impl GitError {
     pub fn new(code: GitErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -94,7 +97,9 @@ const GIT_ENV_VARS_TO_STRIP: &[&str] = &[
 ];
 
 fn is_stripped_env_var(key: &str) -> bool {
-    GIT_ENV_VARS_TO_STRIP.iter().any(|stripped| stripped.eq_ignore_ascii_case(key))
+    GIT_ENV_VARS_TO_STRIP
+        .iter()
+        .any(|stripped| stripped.eq_ignore_ascii_case(key))
 }
 
 /// Runs `git <args>` with no shell in `cwd`. Never fails on a non-zero exit; callers branch on
@@ -104,11 +109,20 @@ fn is_stripped_env_var(key: &str) -> bool {
 pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> GitRawResult {
     let git_path = match which::which_global("git") {
         Ok(path) => path,
-        Err(err) => return GitRawResult { stdout: String::new(), stderr: err.to_string(), code: 1 },
+        Err(err) => {
+            return GitRawResult {
+                stdout: String::new(),
+                stderr: err.to_string(),
+                code: 1,
+            }
+        }
     };
 
     let mut command = Command::new(&git_path);
-    command.args(args).current_dir(cwd).creation_flags(CREATE_NO_WINDOW);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .creation_flags(CREATE_NO_WINDOW);
     // Perf: a timed-out `output_future` below is dropped, not awaited to completion; without
     // this the child (and its pipes) would keep running as an orphan. `kill_on_drop` makes
     // tokio reap it the moment the future is dropped, matching Node's `execFile` timeout.
@@ -127,7 +141,13 @@ pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> Gi
     let result = match timeout {
         Some(duration) => match tokio::time::timeout(duration, output_future).await {
             Ok(result) => result,
-            Err(_) => return GitRawResult { stdout: String::new(), stderr: "git command timed out".to_string(), code: 1 },
+            Err(_) => {
+                return GitRawResult {
+                    stdout: String::new(),
+                    stderr: "git command timed out".to_string(),
+                    code: 1,
+                }
+            }
         },
         None => output_future.await,
     };
@@ -138,7 +158,11 @@ pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> Gi
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             code: output.status.code().unwrap_or(1),
         },
-        Err(err) => GitRawResult { stdout: String::new(), stderr: err.to_string(), code: 1 },
+        Err(err) => GitRawResult {
+            stdout: String::new(),
+            stderr: err.to_string(),
+            code: 1,
+        },
     }
 }
 
@@ -147,8 +171,15 @@ pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> Gi
 pub async fn git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
     let result = git_raw(cwd, args, None).await;
     if result.code != 0 {
-        let detail = if !result.stderr.trim().is_empty() { result.stderr.trim() } else { result.stdout.trim() };
-        return Err(GitError::new(GitErrorCode::GitFailed, format!("git {} failed: {detail}", args.join(" "))));
+        let detail = if !result.stderr.trim().is_empty() {
+            result.stderr.trim()
+        } else {
+            result.stdout.trim()
+        };
+        return Err(GitError::new(
+            GitErrorCode::GitFailed,
+            format!("git {} failed: {detail}", args.join(" ")),
+        ));
     }
     Ok(result.stdout)
 }
@@ -163,13 +194,19 @@ pub struct RepoInfo {
 pub async fn repo_info(repo_path: &Path) -> Result<RepoInfo, GitError> {
     let top = git_raw(repo_path, &["rev-parse", "--show-toplevel"], None).await;
     if top.code != 0 {
-        return Err(GitError::new(GitErrorCode::NotARepo, format!("Not a git repository: {}", repo_path.display())));
+        return Err(GitError::new(
+            GitErrorCode::NotARepo,
+            format!("Not a git repository: {}", repo_path.display()),
+        ));
     }
     let toplevel = normalize_git_path(top.stdout.trim());
 
     let head = git_raw(Path::new(&toplevel), &["rev-parse", "HEAD"], None).await;
     if head.code != 0 {
-        return Err(GitError::new(GitErrorCode::NoCommits, format!("Repository has no commits: {}", repo_path.display())));
+        return Err(GitError::new(
+            GitErrorCode::NoCommits,
+            format!("Repository has no commits: {}", repo_path.display()),
+        ));
     }
 
     Ok(RepoInfo { path: toplevel })

@@ -1,7 +1,7 @@
 # Quickstart: verifying the Rust (Tauri v2) build
 
-Refract-Tauri is an EXPERIMENTAL, developer-run comparison build (spec.md Assumptions): no
-automated test suite covers it (repository `AGENTS.md`), so every check below is a manual run of
+Refract-Tauri is Refract's main build (promoted epic #797, `docs/PLAN.md` Phase R): no automated
+test suite covers it (repository `AGENTS.md`), so every check below is a manual run of
 the app, per user story in [spec.md](spec.md). Everything here applies once milestone 1
 (FR-012/FR-013, `parity.md`'s milestone-1 rows) is implemented; `tasks.md` tracks which phase lands
 each piece.
@@ -14,7 +14,7 @@ each piece.
   `rust-version = 1.95` floor (research.md).
 - **Visual Studio 2022 Build Tools**, "Desktop development with C++" workload, plus the **Windows
   11 SDK** component -- required by the MSVC linker Tauri's Rust build depends on; without this,
-  `cargo build`/`pnpm dev:tauri` fails at link time, not compile time, so confirm this first if a
+  `cargo build`/`pnpm dev` fails at link time, not compile time, so confirm this first if a
   build fails with an `link.exe` or `LNK` error.
 - **`omp` on PATH**, at least the minimum supported version (constitution Principle IV), same
   requirement as the Electron build -- `readiness.check` (milestone 1) reports it missing
@@ -29,20 +29,21 @@ each piece.
 
 ## Commands
 
-- `pnpm dev:tauri` -- starts the separate Tauri dev pipeline (`tauri.vite.config.ts` serving
-  `tauri/index.html`, `cargo` building and launching `src-tauri/` against it). Does not touch
-  `pnpm dev`'s own Electron dev server or port.
-- `pnpm build:tauri` -- builds the Tauri renderer bundle (`out/tauri-web`) and the Rust binary via
-  `@tauri-apps/cli`'s `build` command. No installer/auto-update step is produced or expected (spec.md
-  Assumptions: this build is never distributed during the experimental phase).
-- `pnpm dev` / `pnpm build` -- unchanged, still the Electron build; running them is the comparison
-  baseline for the footprint check below, not a step this build's own verification depends on.
+- `pnpm dev` -- starts the Tauri dev pipeline (`tauri.vite.config.ts` serving
+  `tauri/index.html`, `cargo` building and launching `src-tauri/` against it). This is now the
+  default build (epic #797, `docs/PLAN.md` Phase R).
+- `pnpm build` -- builds the Tauri renderer bundle (`out/tauri-web`) and the Rust binary via
+  `@tauri-apps/cli`'s `build --no-bundle` command. No installer/auto-update step is produced or
+  expected yet (the bundled installer is lane R11, issue #794).
+- `pnpm dev:electron` / `pnpm build:electron` -- the Electron build, frozen per `AGENTS.md`'s
+  main-process freeze rule; running it is the comparison baseline for the footprint check below,
+  not a step this build's own verification depends on.
 
 ## Checks per story (milestone 1, FR-012/FR-013)
 
 **Story 1 -- Run the Rust build and see Repositories (P1, spec.md)**
 
-1. Run `pnpm dev:tauri` with `omp` on PATH at a supported version. Expect: a native window titled
+1. Run `pnpm dev` with `omp` on PATH at a supported version. Expect: a native window titled
    "Refract (Rust preview)" opens with native OS decorations (no custom caption bar -- an accepted
    difference, see "Known differences" below), showing the Repositories screen.
 2. Confirm the saved theme's CSS class is already applied on the very first rendered frame -- no
@@ -176,7 +177,7 @@ each piece.
   which is not part of the existing `pnpm typecheck` script).
 - `cargo check` (run from the repository root, or `cd src-tauri && cargo check`) passes with no
   warnings on the milestone-1 module set.
-- `pnpm build:tauri` completes and the built binary launches and passes Story 1 above.
+- `pnpm build` completes and the built binary launches and passes Story 1 above.
 
 ## Live verification record
 

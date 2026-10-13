@@ -19,7 +19,11 @@ use serde_json::Value;
 use crate::git::git::git_raw;
 use crate::omp::process::{ApprovalMode, OmpProcess, OmpProcessOptions};
 
-use super::{AppState, HandlerFuture};
+use super::{AppState, Dispatcher, HandlerFuture};
+
+pub fn register(d: &mut Dispatcher) {
+    d.register("readiness.check", readiness_check);
+}
 
 #[derive(Debug, Serialize, Default)]
 struct Check {
@@ -58,7 +62,8 @@ const OMP_VERSION_PROBE_TIMEOUT_MS: u64 = 10_000;
 
 pub fn readiness_check(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let (git, omp, omp_signed_in) = tokio::join!(check_git(), check_omp(), check_omp_signed_in());
+        let (git, omp, omp_signed_in) =
+            tokio::join!(check_git(), check_omp(), check_omp_signed_in());
         let readiness = serde_json::json!({ "git": git, "omp": omp, "ompSignedIn": omp_signed_in });
         Ok(readiness)
     })
@@ -67,9 +72,19 @@ pub fn readiness_check(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
 async fn check_git() -> Check {
     let result = git_raw(&std::env::temp_dir(), &["--version"], None).await;
     if result.code != 0 {
-        return Check { ok: false, hint: Some("Git not found on PATH. Install Git for Windows and relaunch Refract.".to_string()), ..Default::default() };
+        return Check {
+            ok: false,
+            hint: Some(
+                "Git not found on PATH. Install Git for Windows and relaunch Refract.".to_string(),
+            ),
+            ..Default::default()
+        };
     }
-    Check { ok: true, found: Some(result.stdout.trim().to_string()), ..Default::default() }
+    Check {
+        ok: true,
+        found: Some(result.stdout.trim().to_string()),
+        ..Default::default()
+    }
 }
 
 /// Extracts the first `\d+\.\d+\.\d+` run from `stdout` without a `regex` crate dependency (not
@@ -98,7 +113,9 @@ fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
             }
             if parts.len() == 3 {
                 let found = &stdout[start..j];
-                if let (Ok(major), Ok(minor), Ok(patch)) = (parts[0].parse(), parts[1].parse(), parts[2].parse()) {
+                if let (Ok(major), Ok(minor), Ok(patch)) =
+                    (parts[0].parse(), parts[1].parse(), parts[2].parse())
+                {
                     return Some((found.to_string(), major, minor, patch));
                 }
             }
@@ -111,7 +128,13 @@ fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
 async fn check_omp() -> Check {
     let omp_path = match which::which_global("omp") {
         Ok(path) => path,
-        Err(_) => return Check { ok: false, hint: Some("omp not found on PATH. Install omp and relaunch Refract.".to_string()), ..Default::default() },
+        Err(_) => {
+            return Check {
+                ok: false,
+                hint: Some("omp not found on PATH. Install omp and relaunch Refract.".to_string()),
+                ..Default::default()
+            }
+        }
     };
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -120,20 +143,42 @@ async fn check_omp() -> Check {
     // Perf: a timed-out probe below is dropped, not awaited to completion; `kill_on_drop` stops
     // it from running on as an orphan (matches `git::git_raw`'s own timeout handling).
     command.kill_on_drop(true);
-    let output = match tokio::time::timeout(Duration::from_millis(OMP_VERSION_PROBE_TIMEOUT_MS), command.output()).await {
+    let output = match tokio::time::timeout(
+        Duration::from_millis(OMP_VERSION_PROBE_TIMEOUT_MS),
+        command.output(),
+    )
+    .await
+    {
         Ok(result) => result,
-        Err(_) => return Check { ok: false, hint: Some("omp --version timed out.".to_string()), ..Default::default() },
-    };
-    let stdout = match output {
-        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout).into_owned(),
-        Ok(output) => {
+        Err(_) => {
             return Check {
                 ok: false,
-                hint: Some(format!("omp --version failed: {}", String::from_utf8_lossy(&output.stderr).trim())),
+                hint: Some("omp --version timed out.".to_string()),
                 ..Default::default()
             }
         }
-        Err(err) => return Check { ok: false, hint: Some(format!("omp --version failed: {err}")), ..Default::default() },
+    };
+    let stdout = match output {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        }
+        Ok(output) => {
+            return Check {
+                ok: false,
+                hint: Some(format!(
+                    "omp --version failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                )),
+                ..Default::default()
+            }
+        }
+        Err(err) => {
+            return Check {
+                ok: false,
+                hint: Some(format!("omp --version failed: {err}")),
+                ..Default::default()
+            }
+        }
     };
 
     let Some((found, major, minor, patch)) = find_version(&stdout) else {
@@ -155,7 +200,8 @@ async fn check_omp() -> Check {
         };
     }
 
-    let below_minimum = minor < OMP_MINIMUM_MINOR || (minor == OMP_MINIMUM_MINOR && patch < OMP_MINIMUM_PATCH);
+    let below_minimum =
+        minor < OMP_MINIMUM_MINOR || (minor == OMP_MINIMUM_MINOR && patch < OMP_MINIMUM_PATCH);
     if below_minimum {
         return Check {
             ok: false,
@@ -166,7 +212,11 @@ async fn check_omp() -> Check {
     }
 
     if minor == 8 {
-        return Check { ok: true, found: Some(found), ..Default::default() };
+        return Check {
+            ok: true,
+            found: Some(found),
+            ..Default::default()
+        };
     }
 
     Check {
@@ -188,10 +238,17 @@ async fn check_omp_signed_in() -> Check {
     let scratch_dir = std::env::temp_dir().join(format!(
         "refract-readiness-probe-{}-{}",
         std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
     ));
     if tokio::fs::create_dir_all(&scratch_dir).await.is_err() {
-        return Check { ok: false, hint: Some(SIGNED_IN_HINT.to_string()), ..Default::default() };
+        return Check {
+            ok: false,
+            hint: Some(SIGNED_IN_HINT.to_string()),
+            ..Default::default()
+        };
     }
 
     let opts = OmpProcessOptions {
@@ -209,7 +266,11 @@ async fn check_omp_signed_in() -> Check {
             proc.stop().await;
             outcome
         }
-        Err(_) => Check { ok: false, hint: Some(SIGNED_IN_HINT.to_string()), ..Default::default() },
+        Err(_) => Check {
+            ok: false,
+            hint: Some(SIGNED_IN_HINT.to_string()),
+            ..Default::default()
+        },
     };
 
     let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
@@ -218,27 +279,71 @@ async fn check_omp_signed_in() -> Check {
 
 /// The `get_state`/`get_available_models` round trip itself, once the scratch process is up.
 async fn probe_signed_in(proc: &OmpProcess) -> Check {
-    let state_res = match proc.request(serde_json::json!({ "type": "get_state" }), PROBE_REQUEST_TIMEOUT_MS).await {
+    let state_res = match proc
+        .request(
+            serde_json::json!({ "type": "get_state" }),
+            PROBE_REQUEST_TIMEOUT_MS,
+        )
+        .await
+    {
         Ok(res) => res,
-        Err(_) => return Check { ok: false, hint: Some(signed_in_failure_hint(proc).await), ..Default::default() },
+        Err(_) => {
+            return Check {
+                ok: false,
+                hint: Some(signed_in_failure_hint(proc).await),
+                ..Default::default()
+            }
+        }
     };
     if state_res.get("success").and_then(Value::as_bool) != Some(true) {
-        return Check { ok: false, hint: Some(signed_in_failure_hint(proc).await), ..Default::default() };
+        return Check {
+            ok: false,
+            hint: Some(signed_in_failure_hint(proc).await),
+            ..Default::default()
+        };
     }
 
     let model = state_res.get("data").and_then(|d| d.get("model")).cloned();
-    let provider = model.as_ref().and_then(|m| m.get("provider")).and_then(Value::as_str).map(str::to_string);
-    let id = model.as_ref().and_then(|m| m.get("id")).and_then(Value::as_str).map(str::to_string);
+    let provider = model
+        .as_ref()
+        .and_then(|m| m.get("provider"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let id = model
+        .as_ref()
+        .and_then(|m| m.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let (Some(provider), Some(id)) = (provider, id) else {
-        return Check { ok: false, hint: Some(signed_in_failure_hint(proc).await), ..Default::default() };
+        return Check {
+            ok: false,
+            hint: Some(signed_in_failure_hint(proc).await),
+            ..Default::default()
+        };
     };
 
-    let models_res = match proc.request(serde_json::json!({ "type": "get_available_models" }), PROBE_REQUEST_TIMEOUT_MS).await {
+    let models_res = match proc
+        .request(
+            serde_json::json!({ "type": "get_available_models" }),
+            PROBE_REQUEST_TIMEOUT_MS,
+        )
+        .await
+    {
         Ok(res) => res,
-        Err(_) => return Check { ok: false, hint: Some(signed_in_failure_hint(proc).await), ..Default::default() },
+        Err(_) => {
+            return Check {
+                ok: false,
+                hint: Some(signed_in_failure_hint(proc).await),
+                ..Default::default()
+            }
+        }
     };
     if models_res.get("success").and_then(Value::as_bool) != Some(true) {
-        return Check { ok: false, hint: Some(signed_in_failure_hint(proc).await), ..Default::default() };
+        return Check {
+            ok: false,
+            hint: Some(signed_in_failure_hint(proc).await),
+            ..Default::default()
+        };
     }
 
     let models_match = models_res
@@ -254,9 +359,16 @@ async fn probe_signed_in(proc: &OmpProcess) -> Check {
         .unwrap_or(false);
 
     if models_match {
-        Check { ok: true, ..Default::default() }
+        Check {
+            ok: true,
+            ..Default::default()
+        }
     } else {
-        Check { ok: false, hint: Some(signed_in_failure_hint(proc).await), ..Default::default() }
+        Check {
+            ok: false,
+            hint: Some(signed_in_failure_hint(proc).await),
+            ..Default::default()
+        }
     }
 }
 
@@ -266,13 +378,23 @@ async fn probe_signed_in(proc: &OmpProcess) -> Check {
 /// scratch `omp`. Failures are swallowed since the base hint is already correct without this
 /// enrichment.
 async fn signed_in_failure_hint(proc: &OmpProcess) -> String {
-    let Ok(res) = proc.request(serde_json::json!({ "type": "get_login_providers" }), PROBE_REQUEST_TIMEOUT_MS).await else {
+    let Ok(res) = proc
+        .request(
+            serde_json::json!({ "type": "get_login_providers" }),
+            PROBE_REQUEST_TIMEOUT_MS,
+        )
+        .await
+    else {
         return SIGNED_IN_HINT.to_string();
     };
     if res.get("success").and_then(Value::as_bool) != Some(true) {
         return SIGNED_IN_HINT.to_string();
     }
-    let Some(providers) = res.get("data").and_then(|d| d.get("providers")).and_then(Value::as_array) else {
+    let Some(providers) = res
+        .get("data")
+        .and_then(|d| d.get("providers"))
+        .and_then(Value::as_array)
+    else {
         return SIGNED_IN_HINT.to_string();
     };
     let unauthenticated: Vec<&str> = providers
@@ -284,5 +406,9 @@ async fn signed_in_failure_hint(proc: &OmpProcess) -> String {
     if unauthenticated.is_empty() {
         return SIGNED_IN_HINT.to_string();
     }
-    format!("Not signed in: {}. {}", unauthenticated.join(", "), SIGNED_IN_HINT)
+    format!(
+        "Not signed in: {}. {}",
+        unauthenticated.join(", "),
+        SIGNED_IN_HINT
+    )
 }

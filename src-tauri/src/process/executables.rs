@@ -38,7 +38,9 @@ pub fn taskkill_path() -> PathBuf {
     let system_root = env::var("SystemRoot")
         .or_else(|_| env::var("windir"))
         .unwrap_or_else(|_| "C:\\Windows".to_string());
-    Path::new(&system_root).join("System32").join("taskkill.exe")
+    Path::new(&system_root)
+        .join("System32")
+        .join("taskkill.exe")
 }
 
 /// Gate-fixes a LOW security finding: `lib.rs`'s `run()` now sets this env var process-wide as

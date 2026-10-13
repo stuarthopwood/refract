@@ -6,7 +6,8 @@ existing per-spec-branch convention) | **Date**: 2026-10-13 | **Spec**: [spec.md
 
 ## Summary
 
-Add a second, EXPERIMENTAL desktop shell for Refract on Tauri v2, living entirely under a new
+Tauri v2 is Refract's main desktop shell (promoted 2026-10-13, epic #797; see `docs/PLAN.md` Phase
+R), living entirely under a new
 `src-tauri/` Rust crate plus a thin `src/tauri-bridge/` TypeScript shim, while `src/renderer` and
 `src/shared` are reused completely unchanged. One generic Tauri command,
 `refract_request(channel, args)`, dispatches to Rust handlers keyed by the exact string values
@@ -20,7 +21,8 @@ worktree/branch operations (`git/`), the Session/agent core loop (`session/agent
 `session/manager.rs`, ports of `SessionAgent.ts`/`SessionManager.ts`), and Windows process
 containment via a kill-on-close Job Object (`process/job_object.rs`). A separate Vite config and
 HTML entry keep the Tauri build's dev/build pipeline fully isolated from the Electron one; no
-Electron file changes.
+Electron file changes. The Electron build (`src/main`, `src/preload`) is now frozen to P0 bug
+fixes only (`AGENTS.md`).
 
 ## Technical Context
 
@@ -67,9 +69,11 @@ Assumptions).
 
 **Scale/Scope**: One new Rust crate (`src-tauri/`, roughly a dozen modules per the Project
 Structure below), one new TypeScript bridge directory (`src/tauri-bridge/`, two files), one new
-Vite config and HTML entry, two new `package.json` scripts and two new dev dependencies. Milestone
-1 covers 23 of 86 request channels and 8 of 20 event channels (parity.md); the remaining 63
-requests and 12 events are explicitly `unsupported` until later slices.
+Vite config and HTML entry, two new `package.json` scripts and two new dev dependencies. 23 of 86
+request channels and 8 of 20 event channels was the original milestone-1 target at the time this
+document was written; the live, current count is whatever `pnpm check:parity`'s generated report
+says, not a number recorded here. The remaining channels not yet in scope are explicitly
+`unsupported` until later slices.
 
 ## Constitution Check
 
@@ -161,8 +165,9 @@ tauri.vite.config.ts                # separate Vite config, points at tauri/inde
 tauri/
 └── index.html                      # separate HTML entry; imports src/tauri-bridge/entry.ts
 
-package.json                       # + "dev:tauri", "build:tauri" scripts;
-                                    # + devDependencies "@tauri-apps/cli", "@tauri-apps/api"
+package.json                       # scripts renamed by promotion (epic #797, R1 #784): "dev"/
+                                    #   "build" now run Tauri; + devDependencies "@tauri-apps/cli",
+                                    #   "@tauri-apps/api"
 ```
 
 **Structure Decision**: `src-tauri/` holds the entire Rust backend as its own Cargo crate, kept at

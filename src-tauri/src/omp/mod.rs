@@ -4,6 +4,8 @@
 // research.md decision 9). Not yet implemented -- scaffold placeholder for a later milestone-1
 // slice (plan.md Project Structure: `omp/process.rs`, `omp/transcript.rs`, `omp/diff.rs`).
 
+pub mod config;
 pub mod diff;
+pub mod images;
 pub mod process;
 pub mod transcript;
