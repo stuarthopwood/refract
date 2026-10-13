@@ -12,6 +12,7 @@ interface SettingsState {
   setWatermarkEnabled(enabled: boolean): Promise<void>
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
+  setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -24,7 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   watermarkEnabled: true,
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
-  showSampleData: false
+  showSampleData: false,
+  detectImagePathsOnPaste: true
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -70,6 +72,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setShowSampleData: async (enabled) => {
     const result = await window.refract.settings.setShowSampleData(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setDetectImagePathsOnPaste: async (enabled) => {
+    const result = await window.refract.settings.setDetectImagePathsOnPaste(enabled)
     if (result.ok) {
       set({ settings: result.value })
     } else {

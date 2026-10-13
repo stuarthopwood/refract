@@ -36,16 +36,21 @@ import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import {
   buildChipLabel,
   buildImageAttachment,
+  buildImagePathAttachment,
+  describeAttachFailureReason,
   EMPTY_ATTACHMENTS,
+  extractImagePathCandidates,
   findChipOccurrences,
   findClipboardImageItem,
   formatByteSize,
+  isImagePathOnlyText,
   isLargePaste,
+  MAX_PATH_ATTACHMENTS_PER_MESSAGE,
   pruneDanglingChips,
   substituteChips,
   toImageContent
 } from './attachments'
-import type { PendingTextChip } from './attachments'
+import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 import { parseSlashCommand } from '../../../shared/slash-commands'
@@ -96,6 +101,13 @@ interface MessageInputProps {
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
   const sessionReadout = useSettingsStore((s) => s.settings.sessionReadout)
+  // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
+  // clipboard image itself is never affected by this).
+  const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
+  // PR #723 gate round 1 fix (Code1 Medium): reactive read so the Send button's own
+  // `aria-disabled` reflects an in-flight background path/drop read the same way `handleSend`'s
+  // own guard does (draft-store.ts's `pendingAttachmentReads` doc comment).
+  const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
   // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
   // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
@@ -141,24 +153,30 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // reach a screen-reader user, who only ever hears the textarea's own plain-text value. Separate
   // live region from the slash-menu one below so an attachment event is never swallowed by (or
   // swallows) an unrelated "No matching commands" announcement.
-  const [attachmentAnnouncement, setAttachmentAnnouncement] = useState<{ seq: number; message: string } | null>(
-    null
+  // #514/#432: now held in `useDraftStore` (per session), not local state -- ChatPane.tsx's own
+  // drag-and-drop handler (#432) needs to announce through this EXACT same live region, and it
+  // lives outside this component. The sequence-number re-render trick (a repeated identical
+  // message, e.g. pasting the same image twice, must still force a fresh DOM node) now lives in
+  // the store's own `announceAttachment` action instead of a local ref.
+  const attachmentAnnouncement = useDraftStore((s) => s.bySession[sessionId]?.attachmentAnnouncement ?? null)
+  const announceAttachment = useCallback(
+    (message: string) => {
+      useDraftStore.getState().announceAttachment(sessionId, message)
+    },
+    [sessionId]
   )
-  const announceSeqRef = useRef(0)
-  // Medium fix (a11y, #598): a repeated identical announcement (e.g. pasting the same image
-  // twice, or two Removes in a row that both announce "Queued message removed.") must still
-  // re-render the live region even though the message text is unchanged. The previous
-  // `null`-then-value "clear and reset" dance relied on the clear actually committing as its
-  // own render before the real value landed -- which React 18/19's automatic batching does not
-  // guarantee outside a discrete event (e.g. after an `await`, as `handleRemoveQueued` calls
-  // this): both updates can land in the SAME commit, in which case the DOM's text node never
-  // changes at all and the announcement is silently swallowed. A monotonically-increasing
-  // sequence number, keyed onto the rendered node's identity below, forces a genuinely new node
-  // every call, independent of whether the message text repeats.
-  const announceAttachment = useCallback((message: string) => {
-    announceSeqRef.current += 1
-    setAttachmentAnnouncement({ seq: announceSeqRef.current, message })
-  }, [])
+  // PR #723 gate round 2 fix (Code2/A11y2 Medium): announces "Attaching image…" once per
+  // 0-to-positive transition of `pendingAttachmentReads` (never on every re-render while it
+  // stays above 0, and never again on the already-covered 0-to-0/no-op case) -- the paired
+  // visible text line above this component's own JSX is the courtesy UI; this is the
+  // announcement a screen-reader user needs for the exact same state.
+  const prevPendingAttachmentReadsRef = useRef(pendingAttachmentReads)
+  useEffect(() => {
+    if (pendingAttachmentReads > 0 && prevPendingAttachmentReadsRef.current === 0) {
+      announceAttachment('Attaching image…')
+    }
+    prevPendingAttachmentReadsRef.current = pendingAttachmentReads
+  }, [pendingAttachmentReads, announceAttachment])
   const attachmentsStatusId = `${sessionId}-attachments-status`
   const attachmentsSummaryId = `${sessionId}-attachments-summary`
   // Issue #533: sr-only accessible description for the composer's empty-state hint overlay --
@@ -182,6 +200,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const isFocusedPaneRef = useRef(isFocusedPane)
   isFocusedPaneRef.current = isFocusedPane
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // PR #723 gate round 3 fix (A11y3 HIGH): scopes `handleRemoveImage`'s own focus query to THIS
+  // composer's own attachment strip -- in split view each pane renders its own MessageInput, so
+  // a `document`-wide query always found whichever pane's strip happened to render first.
+  const attachmentStripRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   // Issue #540 (Medium gate fix, #591): container for the queued-message chip row, queried by
   // stable chip key so focus can be moved explicitly after Send now/Remove settles, rather than
@@ -441,7 +463,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   async function handleSend() {
-    if (disabled || starting) return
+    // PR #723 gate round 1 fix (Code1 Medium): refuses while a background path/drop image read
+    // for this session is still in flight (`pendingAttachmentReads`, draft-store.ts's own doc
+    // comment) -- otherwise Enter mid-read sent the message WITHOUT the image (which then landed
+    // on the NEXT draft instead), the same race class `disabled`/`starting` already guard against.
+    if (disabled || starting || pendingAttachmentReads > 0) return
     const draftText = text
     if (!draftText.trim()) return
     // Enter-send and the Send button both clear the draft via `clear(sessionId)` below, bypassing
@@ -989,6 +1015,168 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     }
 
     const pastedText = data.getData('text/plain')
+
+    // #514: paste-time image-path detection, shares the main-process reader with #432's
+    // drag-and-drop. Runs on EVERY paste with no clipboard image (even a short one, well under
+    // the FR-011 chip threshold below) -- a pasted path is typically only a few dozen characters.
+    if (detectImagePathsOnPaste) {
+      const pathCandidates = extractImagePathCandidates(pastedText)
+      if (pathCandidates.length > 0) {
+        if (isImagePathOnlyText(pastedText)) {
+          // #514 point 3: nothing else in the paste -- the path text is replaced by the
+          // attachment(s), the box stays clean. Any candidate that fails to resolve (missing,
+          // not an image, too large) falls back to its own raw text instead of vanishing.
+          // PR #723 gate round 1 fix (Sec1/Code1/A11y1/Verif1 HIGH, reproduced by all four
+          // reviewers): `event.currentTarget`/`selectionStart`/`selectionEnd` MUST be captured
+          // synchronously, right here, BEFORE the first `await` below -- React nulls a synthetic
+          // event's `currentTarget` the instant this handler's synchronous portion returns, so
+          // reading it after an `await` threw a TypeError that silently discarded the pasted
+          // text with no notice at all (`onPaste`'s own `void handlePaste(event)` swallowed the
+          // rejection). The fallback insert below also no longer reads the stale, paste-time
+          // `text` closure -- it reads the LIVE draft text from the store.
+          //
+          // PR #723 gate round 2 fix (Code2 Medium): `before` (the textarea's own value at THIS
+          // exact moment) is captured alongside `start`/`end` -- if the live text at fallback
+          // time no longer matches it, the developer typed during the IPC round trip and
+          // `start`/`end` are no longer meaningful offsets into `liveText` (splicing at them
+          // could delete or duplicate characters the developer just typed, round 2's own
+          // reproduction: select text, paste a missing path, type a character before the read
+          // resolves). The fallback then inserts at the textarea's CURRENT caret position
+          // instead (or at the end of the live text if the ref is gone), never the stale
+          // offsets. `pruneDanglingChips` now also runs on the result, matching every other
+          // write path (onChange, Esc, slash-command completion).
+          event.preventDefault()
+          const target = event.currentTarget
+          const before = target.value
+          const start = target.selectionStart
+          const end = target.selectionEnd
+          // PR #723 gate round 1 fix (Code1 LOW): the cap applies PER MESSAGE, not per paste --
+          // computed from this session's CURRENT pending image count, not a static slice of this
+          // one paste's own candidate list.
+          const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
+          const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+          const capped = pathCandidates.slice(0, remainingSlots)
+          const overflow = pathCandidates.slice(remainingSlots)
+          const loopFailures: { candidate: ImagePathCandidate; reason: ImagePathAttachFailureReason }[] = []
+          useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
+          let attachedCount = 0
+          try {
+            for (const candidate of capped) {
+              const result = await buildImagePathAttachment(sessionId, candidate.normalized)
+              if (result.ok) {
+                useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+                attachedCount++
+              } else {
+                loopFailures.push({ candidate, reason: result.reason })
+              }
+            }
+          } finally {
+            useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
+          }
+          if (attachedCount > 0) {
+            announceAttachment(attachedCount === 1 ? 'Image attached from a file path.' : `${attachedCount} images attached from file paths.`)
+          }
+          // PR #723 gate round 3 fix (Code3 Low): re-inserts each candidate's own RAW pasted
+          // text (FR-022's actual wording), never the normalized form `buildImagePathAttachment`
+          // above was given -- a quoted path's quotes, and a `file://…%20…` URL's own encoding,
+          // are no longer silently rewritten on fallback. Round 4 fix (Verif4 HIGH): `raw` itself
+          // used to be the quote-stripped regex capture for a QUOTED candidate, so this still
+          // dropped the quotes on fallback despite the comment above; `attachments.ts`'s
+          // `extractImagePathCandidates` now keeps `raw` as the full quoted match.
+          const unresolved = [...overflow, ...loopFailures.map((f) => f.candidate)].map((c) => c.raw)
+          if (unresolved.length > 0) {
+            const liveText = useDraftStore.getState().bySession[sessionId]?.text ?? ''
+            const fallbackText = unresolved.join('\n')
+            const typedDuringRead = liveText !== before
+            const insertAt = typedDuringRead ? (textareaRef.current?.selectionStart ?? liveText.length) : start
+            const insertEnd = typedDuringRead ? insertAt : end
+            const nextText = liveText.slice(0, insertAt) + fallbackText + liveText.slice(insertEnd)
+            const nextCursor = insertAt + fallbackText.length
+            useDraftStore.getState().setText(sessionId, nextText)
+            const liveChips = useDraftStore.getState().bySession[sessionId]?.attachments.textChips ?? []
+            const prunedChips = pruneDanglingChips(nextText, liveChips)
+            if (prunedChips.length !== liveChips.length) {
+              announceChipRemoval(liveChips.filter((chip) => !prunedChips.includes(chip)))
+              useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, textChips: prunedChips }))
+            }
+            requestAnimationFrame(() => {
+              textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
+            })
+            // PR #723 gate round 3 fix (A11y3 Low): overflow and read-failure sentences are now
+            // BOTH reported when a paste has both at once (previously the ternary below only
+            // ever reported overflow, silently dropping the failure half), matching the join
+            // pattern `ChatPane.tsx`'s own drop-overflow notice already uses.
+            const overflowText =
+              overflow.length > 0
+                ? remainingSlots === 0
+                  ? 'This message already has the maximum of 10 images; nothing more was attached.'
+                  : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were left as text.`
+                : null
+            const failureText =
+              loopFailures.length === 1
+                ? `That file ${describeAttachFailureReason(loopFailures[0]!.reason)}; left as text.`
+                : loopFailures.length > 1
+                  ? `${loopFailures.length} files could not be attached as images; left as text.`
+                  : null
+            notify({ code: 'invalid-argument', message: [overflowText, failureText].filter(Boolean).join(' ') })
+          }
+          return
+        }
+        // Mixed paste (#514 point 3): the path stays exactly where it was pasted below (never
+        // prevented) -- each candidate is resolved in the background and attached silently if it
+        // turns out to be a real image, with no interruption to typing or the normal paste.
+        const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
+        const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+        const capped = pathCandidates.slice(0, remainingSlots)
+        const overflow = pathCandidates.slice(remainingSlots)
+        useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
+        void (async () => {
+          let attachedCount = 0
+          let failedCount = 0
+          try {
+            for (const candidate of capped) {
+              const result = await buildImagePathAttachment(sessionId, candidate.normalized)
+              if (result.ok) {
+                useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+                attachedCount++
+              } else {
+                failedCount++
+              }
+            }
+          } finally {
+            useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
+          }
+          if (attachedCount > 0) {
+            announceAttachment(
+              attachedCount === 1 ? 'Image attached from a file path in your message.' : `${attachedCount} images attached from file paths in your message.`
+            )
+          }
+          // PR #723 gate round 2 fix (Code2/A11y2 Medium): a path past the per-message cap, or
+          // one that failed to resolve, used to be silently dropped here with no notice at all
+          // -- FR-026 says even a mixed paste's own over-cap/unresolved paths get "a quiet
+          // notice", the same wording the path-only branch already uses (the path TEXT itself
+          // still stays in the draft either way, untouched -- only the ATTACH attempt failed).
+          // Round 3 fix (A11y3 Low): both sentences now join, same as the path-only branch above.
+          const skipped = overflow.length + failedCount
+          if (skipped > 0) {
+            const overflowText =
+              overflow.length > 0
+                ? remainingSlots === 0
+                  ? 'This message already has the maximum of 10 images; nothing more was attached; the paths were left as text.'
+                  : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were left as text.`
+                : null
+            const failureText =
+              failedCount === 1
+                ? 'One of the paths in your message could not be attached as an image.'
+                : failedCount > 1
+                  ? `${failedCount} of the paths in your message could not be attached as images.`
+                  : null
+            notify({ code: 'invalid-argument', message: [overflowText, failureText].filter(Boolean).join(' ') })
+          }
+        })()
+      }
+    }
+
     if (!isLargePaste(pastedText)) return // FR-010: at or under the threshold, paste as normal
 
     // FR-011: collapse it into a pending text chip, replacing the raw text at the paste position
@@ -1014,8 +1202,35 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     })
   }
 
+  // PR #723 gate round 2 fix (A11y2 Medium, pre-existing on `main`, now reachable up to 10x per
+  // message once #514/#432 can produce more than one or two pending images): removing the
+  // focused image's own remove button unmounted it with no focus management and no
+  // announcement at all -- focus fell to `<body>` (WCAG 2.4.3) and nothing told a screen-reader
+  // user the removal even happened (WCAG 4.1.3). Now: if focus was inside the attachment strip
+  // when Remove was activated, it moves to whichever image now occupies that same position (the
+  // one that shifted into the removed slot), or the previous image if the removed one was last,
+  // or the textarea if none remain; `announceAttachment` always fires, same live region every
+  // other attachment event already uses.
   function handleRemoveImage(id: string) {
+    const activeElement = document.activeElement as HTMLElement | null
+    // PR #723 gate round 3 fix (A11y3 HIGH, reproduced): `document.activeElement?.closest(...)`
+    // and the document-wide `querySelector` below used to find ANY strip in the whole page, not
+    // necessarily this composer's own -- in split view, removing an image in pane B moved focus
+    // to pane A's Remove button (a second Enter then deleted pane A's attachment, and "Image
+    // removed." announced through pane A's live region, not pane B's). Both now scope to
+    // `attachmentStripRef`, this composer's own strip, never `document`.
+    const focusWasInStrip = !!attachmentStripRef.current?.contains(activeElement)
+    const currentImages = useDraftStore.getState().bySession[sessionId]?.attachments.images ?? []
+    const removedIndex = currentImages.findIndex((image) => image.id === id)
     useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: prev.images.filter((image) => image.id !== id) }))
+    announceAttachment('Image removed.')
+    if (!focusWasInStrip || removedIndex === -1) return
+    requestAnimationFrame(() => {
+      const removeButtons = attachmentStripRef.current ? Array.from(attachmentStripRef.current.querySelectorAll('button[aria-label^="Remove"]')) : []
+      const next = (removeButtons[removedIndex] ?? removeButtons[removedIndex - 1]) as HTMLElement | undefined
+      if (next) next.focus()
+      else textareaRef.current?.focus()
+    })
   }
 
   const placeholder = disabled
@@ -1153,7 +1368,16 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       </div>
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}
-      <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} />
+      <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} containerRef={attachmentStripRef} />
+      {/* PR #723 gate round 2 fix (Code2/A11y2 Medium): while a background path/drop read is in
+          flight, Send/Enter are refused (`pendingAttachmentReads`) with no visible or announced
+          reason -- a developer who pressed Enter right after a mixed paste or a drop saw nothing
+          happen at all. A real network stall (a OneDrive placeholder hydrating, a disconnected
+          mapped drive) can make this last a while, so a visible, text-only line here (never only
+          a cursor/disabled-state change) is the actual notice, not just a courtesy. The
+          announcement itself (`useEffect` below) fires once per 0-to-positive transition, not on
+          every re-render while the count stays above 0. */}
+      {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching image…</p>}
       {/* T063/quality-gate fix, Composer tone remediation (2026-10-04); spec 007 T014
           token-ized (FR-007): the composer's fill is a per-theme `--composer-background`
           custom property (globals.css), not a literal colour -- each built-in theme sets its own
@@ -1369,9 +1593,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   className="rounded-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
-                  aria-disabled={disabled || starting || !text.trim()}
+                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}
                   onClick={() => {
-                    if (disabled || starting || !text.trim()) return
+                    if (disabled || starting || pendingAttachmentReads > 0 || !text.trim()) return
                     void handleSend()
                   }}
                 >

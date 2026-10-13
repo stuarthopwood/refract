@@ -111,6 +111,10 @@ export interface Settings {
   watermarkEnabled: boolean; // spec 012 FR-015 to FR-020: default true
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
+  // #514: lets the developer turn off path-based image-attach detection entirely (every pasted
+  // image path still works until turned off here); default true, same migration shape as
+  // `transcriptDisplay` (plain immediate-apply boolean, no raw/lazy-correction split needed).
+  detectImagePathsOnPaste: boolean;
 }
 
 /** Issue #457: two independent view filters for the chat transcript, applied in the renderer

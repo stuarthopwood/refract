@@ -21,6 +21,8 @@ import { useSettingsStore } from '@/state'
 export function ChatDisplaySection() {
   const transcriptDisplay = useSettingsStore((state) => state.settings.transcriptDisplay)
   const setTranscriptDisplay = useSettingsStore((state) => state.setTranscriptDisplay)
+  const detectImagePathsOnPaste = useSettingsStore((state) => state.settings.detectImagePathsOnPaste)
+  const setDetectImagePathsOnPaste = useSettingsStore((state) => state.setDetectImagePathsOnPaste)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export function ChatDisplaySection() {
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
         Chat
       </h2>
-      <p className="mb-4 text-sm text-muted-foreground">Choose what the chat transcript shows in every session.</p>
+      <p className="mb-4 text-sm text-muted-foreground">Choose what the chat transcript shows and how pasted content is handled.</p>
       <div className="flex flex-col divide-y divide-border">
         <div className="flex items-center justify-between gap-4 py-3">
           <div className="flex flex-col gap-0.5">
@@ -64,6 +66,22 @@ export function ChatDisplaySection() {
             aria-describedby="transcript-display-tool-calls-description"
             checked={transcriptDisplay.toolCalls}
             onCheckedChange={(checked) => void setTranscriptDisplay('toolCalls', checked)}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-4 py-3">
+          <div className="flex flex-col gap-0.5">
+            <label htmlFor="detect-image-paths-on-paste" className="text-sm font-medium">
+              Attach images pasted as a file path
+            </label>
+            <span id="detect-image-paths-on-paste-description" className="text-xs text-muted-foreground">
+              A pasted path to an image file (for example, Explorer's "Copy as path") attaches the image above the message box.
+            </span>
+          </div>
+          <Switch
+            id="detect-image-paths-on-paste"
+            aria-describedby="detect-image-paths-on-paste-description"
+            checked={detectImagePathsOnPaste}
+            onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
           />
         </div>
       </div>

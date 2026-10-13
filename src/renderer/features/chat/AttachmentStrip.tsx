@@ -18,20 +18,30 @@ export interface AttachmentStripProps {
   images: PendingImageAttachment[]
   textChips: PendingTextChip[]
   onRemoveImage: (id: string) => void
+  // PR #723 gate round 3 fix (A11y3 HIGH): lets the caller scope a focus/query to THIS
+  // composer's own strip specifically -- in split view, two ChatPanes each render their own
+  // MessageInput/AttachmentStrip pair, and a `document`-wide query for `[role="group"][aria-
+  // label="Pending attachments"]` always finds whichever one is FIRST in the page, regardless of
+  // which pane the user is actually in.
+  containerRef?: RefObject<HTMLDivElement | null>
 }
 
-export function AttachmentStrip({ images, textChips, onRemoveImage }: AttachmentStripProps) {
+export function AttachmentStrip({ images, textChips, onRemoveImage, containerRef }: AttachmentStripProps) {
   if (images.length === 0 && textChips.length === 0) return null
   return (
-    <div role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
-      {images.map((image) => (
+    <div ref={containerRef} role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
+      {images.map((image, index) => (
         <div key={image.id} className="group relative">
           <ImagePreviewModal
             attachment={image}
             trigger={
               <button
                 type="button"
-                aria-label={`View pasted image, ${formatByteSize(image.byteLength)}`}
+                aria-label={
+                  images.length > 1
+                    ? `View image ${index + 1} of ${images.length}, ${formatByteSize(image.byteLength)}`
+                    : `View image, ${formatByteSize(image.byteLength)}`
+                }
                 className="block size-10 overflow-hidden rounded-md border border-border bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 <img src={image.previewUrl} alt="" className="size-full object-cover" />
@@ -40,7 +50,7 @@ export function AttachmentStrip({ images, textChips, onRemoveImage }: Attachment
           />
           <button
             type="button"
-            aria-label="Remove pasted image"
+            aria-label={images.length > 1 ? `Remove image ${index + 1} of ${images.length}` : 'Remove image'}
             onClick={() => onRemoveImage(image.id)}
             className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >

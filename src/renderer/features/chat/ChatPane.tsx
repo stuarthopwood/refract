@@ -3,7 +3,8 @@
 // Spec 005: generalised from a singleton reading `visibleSessionId` to an explicit `sessionId`/
 // `paneIndex` pair, so one or two of these can render side by side (App.tsx).
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { AlertTriangleIcon, MessageSquareIcon } from 'lucide-react'
+import type { DragEvent as ReactDragEvent } from 'react'
+import { AlertTriangleIcon, ImageIcon, MessageSquareIcon } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -16,6 +17,7 @@ import {
   notify,
   useChatScrollStore,
   useCommandsStore,
+  useDraftStore,
   usePendingRequestsStore,
   useQueueStore,
   useReadoutStore,
@@ -25,6 +27,8 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
+import { buildImagePathAttachment, describeAttachFailureReason, MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
+import type { ImagePathAttachFailureReason } from './attachments'
 import { canResumeSession, resumeSession } from './resume'
 import { applySnapshot } from './applySnapshot'
 import { closeChatPane } from './closeChatPane'
@@ -839,6 +843,127 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     prevSessionIdRef.current = sessionId
   }
 
+  // #432: drag-and-drop image attach, the whole chat pane is the drop target (this Session's own
+  // decision comment on the issue, 2026-10-07/12). `dragDepthRef` counts nested dragenter/
+  // dragleave pairs (every descendant element fires its own, per the DOM drag-and-drop spec) so
+  // the overlay only clears once the pointer has genuinely left the pane, not a child boundary.
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false)
+  const dragDepthRef = useRef(0)
+  // Mirrors MessageInput.tsx's own `disabled` (no Session accepting input): a drop while the
+  // agent is stopped (and this Session HAS been started before -- `not-started` still accepts a
+  // first message, exactly like the composer itself) is refused with a notice, never silently
+  // swallowed (#432's own requirement).
+  const composerDisabled = session.status === 'stopped' && effectiveStopReason !== 'not-started'
+
+  function hasFilesPayload(event: ReactDragEvent): boolean {
+    return Array.from(event.dataTransfer.types).includes('Files')
+  }
+  function handlePaneDragEnter(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    event.preventDefault()
+    dragDepthRef.current += 1
+    setIsDraggingFiles(true)
+  }
+  function handlePaneDragOver(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    event.preventDefault() // required for `onDrop` to ever fire
+    // PR #723 gate round 1 fix (Sec1/Code1/A11y1 Medium): `dropEffect = 'none'` for a disabled
+    // Session used to mean Chromium never dispatches `drop` at all (a 'none' operation fires
+    // `dragleave` instead) -- the FR-028 refusal `notify(...)` below was dead code, never once
+    // reached. Always `'copy'`; `handlePaneDrop`'s own `composerDisabled` check is what actually
+    // refuses the drop now, with a real, user-visible toast.
+    event.dataTransfer.dropEffect = 'copy'
+  }
+  function handlePaneDragLeave(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) setIsDraggingFiles(false)
+  }
+  async function handlePaneDrop(event: ReactDragEvent) {
+    if (!hasFilesPayload(event)) return
+    event.preventDefault()
+    dragDepthRef.current = 0
+    setIsDraggingFiles(false)
+    if (composerDisabled) {
+      notify({ code: 'disabled', message: 'This session is not accepting input right now; nothing was attached.' })
+      return
+    }
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length === 0) return
+    // PR #723 gate round 1 fix (Code1 LOW): the cap applies PER MESSAGE, not per drop --
+    // computed from this session's CURRENT pending image count, matching the identical fix in
+    // `MessageInput.tsx`'s own path-only paste branch.
+    const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
+    const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+    const capped = files.slice(0, remainingSlots)
+    let attachedCount = 0
+    // Basenames only (never a full path, FR-029) of every file that did not attach, for an
+    // honest-but-private failure notice (A11y1 LOW), paired with WHY where there is exactly one.
+    const failedFiles: { name: string; reason?: ImagePathAttachFailureReason }[] = []
+    useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
+    try {
+      for (const file of capped) {
+        let filePath: string
+        try {
+          // A browser-dragged image with no on-disk backing file (spec US4 says "or a browser")
+          // returns `''` here -- `buildImagePathAttachment` below refuses it the same way any
+          // other unresolvable path is refused (resolves to the worktree root itself, `file-
+          // missing`), never a silent drop; disclosed as unsupported in the PR body rather than
+          // given its own bespoke message.
+          filePath = window.refract.attachments.getPathForFile(file)
+        } catch {
+          failedFiles.push({ name: file.name })
+          continue
+        }
+        const result = await buildImagePathAttachment(sessionId, filePath)
+        if (result.ok) {
+          useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+          attachedCount++
+        } else {
+          failedFiles.push({ name: file.name, reason: result.reason })
+        }
+      }
+    } finally {
+      useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
+    }
+    if (attachedCount > 0) {
+      useDraftStore
+        .getState()
+        .announceAttachment(sessionId, attachedCount === 1 ? 'Image attached from a dropped file.' : `${attachedCount} images attached from dropped files.`)
+    }
+    const overflowCount = files.length - capped.length
+    const skipped = failedFiles.length + overflowCount
+    if (skipped > 0) {
+      const only = failedFiles[0]
+      // PR #723 gate round 2 fix (A11y2 Low): a zero-slots overflow used to read "Only 0 more
+      // images could be attached", and a drop that had BOTH overflow and read failures silently
+      // dropped the failure half of the sentence. Both now stated precisely.
+      const overflowText =
+        overflowCount > 0
+          ? remainingSlots === 0
+            ? 'This message already has the maximum of 10 images; nothing more was attached.'
+            : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
+          : null
+      // PR #723 gate round 3 fix (A11y3 Low): "other" only makes sense when something ELSE
+      // attached or overflowed this same drop -- a drop where every file failed and none
+      // overflowed used to still read "N OTHER files could not be attached", with nothing else
+      // for them to be "other" than.
+      const saysOther = attachedCount > 0 || overflowCount > 0
+      const failureText =
+        failedFiles.length === 1 && only
+          ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
+          : failedFiles.length > 1
+            ? saysOther
+              ? `${failedFiles.length} other files could not be attached as images.`
+              : `${failedFiles.length} files could not be attached as images.`
+            : null
+      notify({
+        code: 'invalid-argument',
+        message: [overflowText, failureText].filter(Boolean).join(' ')
+      })
+    }
+  }
+
   async function handleRecover() {
     const recoveringFor = sessionId
     const focusedAtStart = document.activeElement
@@ -1086,8 +1211,25 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       data-session-pane={sessionId}
       onMouseDownCapture={handleFocusPane}
       onFocusCapture={handleFocusPane}
+      onDragEnter={handlePaneDragEnter}
+      onDragOver={handlePaneDragOver}
+      onDragLeave={handlePaneDragLeave}
+      onDrop={(event) => void handlePaneDrop(event)}
       className="relative flex h-full flex-col overflow-hidden"
     >
+      {/* #432: visible drop-target overlay while a file drag is over this pane -- text, not
+          colour alone (WCAG 1.4.1); `aria-hidden`, since nothing here needs an accessible name
+          (drag-and-drop has no keyboard/screen-reader path of its own, paste remains the full
+          equivalent). Removed on leave, drop, or (natively, no handler needed) Esc. */}
+      {isDraggingFiles && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ring bg-background/90 text-sm font-medium text-foreground"
+        >
+          <ImageIcon className="size-4" aria-hidden />
+          {composerDisabled ? 'This session is not accepting input right now' : 'Drop images to attach'}
+        </div>
+      )}
       {/* Spec 005 (research.md Decision 9): the focused pane's accent bar, mirroring
           SessionList.tsx's own `aria-current` left-edge bar; paired with ChatHeader's visible
           "Focused" text badge so the marker is never colour alone. */}

@@ -33,12 +33,24 @@ const RESERVED_NAME_RE = /^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|(COM|LPT)[1-9\u00b9
  * IDENTICAL set of checks a top-level token gets -- the previous round only ever UNC-checked a
  * link's own first-hop target text, so a SECOND link in the chain (`a -> b`, `b ->
  * \\attacker\share`) reached `fs.realpath` unchecked and opened an outbound SMB/NTLM connection
- * with no click. */
-function isUnsafeToken(value: string): boolean {
+ * with no click. Exported (#514/#432) for the shared attachment-path reader in `attachments.ts`
+ * -- the single source of truth so a path-based image attach can never apply a narrower set of
+ * checks than `resolveInWorktree` does.
+ *
+ * PR #723 gate round 1 fix (Sec1 LOW): the colon check above only ever looked at the FIRST colon
+ * (needed so a legitimate `C:\...` drive prefix still passes) -- a token with a SECOND colon
+ * after the drive letter, e.g. `C:\tmp\host.txt:hidden.png` (an NTFS alternate data stream),
+ * slipped through: `colonIndex` found the drive-letter colon at index 1, matched the allowed
+ * shape, and the function returned early without ever noticing the stream marker later in the
+ * string. Checking `value.indexOf(':', 2)` as a SEPARATE condition closes this: any colon from
+ * index 2 onward (i.e. anywhere after a drive letter has already been allowed) is rejected,
+ * regardless of what the first colon looked like. */
+export function isUnsafeToken(value: string): boolean {
   if (value.includes('\0')) return true;
   if (value.replace(/\\/g, '/').startsWith('//')) return true;
   const colonIndex = value.indexOf(':');
   if (colonIndex !== -1 && !(colonIndex === 1 && /^[A-Za-z]$/.test(value[0] ?? ''))) return true;
+  if (value.indexOf(':', 2) !== -1) return true;
   if (/^[A-Za-z]:(?![\\/])/.test(value)) return true;
   const segments = value.split(/[\\/]+/).filter(Boolean);
   return segments.some((segment) => RESERVED_NAME_RE.test(segment));
@@ -167,6 +179,56 @@ async function resolveNoFollow(
   // call site in `resolveInWorktree`) -- otherwise `revealFile` would show the whole worktree
   // folder, and the explorer would render an endlessly re-enterable `loop` row.
   if (current === root) return { ok: false, reason: 'file-missing' };
+  return { ok: true, path: current };
+}
+
+/** PR #723 gate round 1 fix (Sec1/Verif1 HIGH, reproduced live: a symlink to `\\127.0.0.1\C$\...`
+ * made `fs.realpath` take ~7.8s and open a real SMB session; a chained/middle-segment symlink to
+ * UNC behaved the same way). Generalises `resolveNoFollow` above for an ABSOLUTE token with NO
+ * containment boundary (`attachments.ts`'s own absolute-path branch, #514/#432): walks from the
+ * token's own drive root one segment at a time via `fs.lstat`, exactly like `resolveNoFollow`,
+ * but never checks containment against any root -- there is none here (research.md Decision 11:
+ * a user-initiated absolute path is read directly, not required to stay inside any worktree). A
+ * link's target is still vetted for its own TEXT shape (`isUnsafeToken`: UNC/device/ADS/
+ * reserved-name rejection) before ever being followed, exactly as a top-level token is -- this is
+ * what was MISSING before this fix: the absolute branch previously handed the token straight to
+ * `fs.realpath`, which follows every link (including to a UNC target) in ONE native call with no
+ * chance to vet an intermediate hop. A target on a different drive restarts the walk from ITS
+ * OWN root, the same "never trust `targetAbs` as a safe base, re-walk every one of its segments"
+ * rule `resolveNoFollow`'s own doc comment describes. */
+export async function resolveNoFollowUnrooted(absoluteToken: string): Promise<{ ok: true; path: string } | { ok: false; reason: 'not-found' }> {
+  const tokenRoot = path.parse(absoluteToken).root;
+  let current = tokenRoot;
+  let queue = absoluteToken.slice(tokenRoot.length).split(/[\\/]+/).filter(Boolean);
+  let hops = 0;
+
+  while (queue.length > 0) {
+    const segment = queue.shift()!;
+    const next = path.join(current, segment);
+    let lst;
+    try {
+      lst = await fs.lstat(next);
+    } catch {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (!lst.isSymbolicLink()) {
+      current = next;
+      continue;
+    }
+    hops += 1;
+    if (hops > MAX_LINK_HOPS) return { ok: false, reason: 'not-found' };
+    let rawTarget: string;
+    try {
+      rawTarget = await fs.readlink(next);
+    } catch {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (isUnsafeToken(rawTarget)) return { ok: false, reason: 'not-found' };
+    const targetAbs = path.isAbsolute(rawTarget) ? path.resolve(rawTarget) : path.resolve(current, rawTarget);
+    const targetRoot = path.parse(targetAbs).root;
+    queue = [...targetAbs.slice(targetRoot.length).split(/[\\/]+/).filter(Boolean), ...queue];
+    current = targetRoot;
+  }
   return { ok: true, path: current };
 }
 
