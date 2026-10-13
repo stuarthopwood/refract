@@ -25,9 +25,17 @@ pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
 
 pub fn settings_set_approval_mode(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let mode = match args.first().and_then(|v| v.as_str()).and_then(parse_approval_mode) {
+        let mode = match args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(parse_approval_mode)
+        {
             Some(mode) => mode,
-            None => return Err(invalid_argument("settings.setApprovalMode expects one of 'ask' | 'edit-freely' | 'auto'")),
+            None => {
+                return Err(invalid_argument(
+                    "settings.setApprovalMode expects one of 'ask' | 'edit-freely' | 'auto'",
+                ))
+            }
         };
         let value = state
             .settings

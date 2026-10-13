@@ -37,8 +37,15 @@ pub fn data_dir() -> PathBuf {
 /// navigate to Tauri's own custom protocol, served as `http://tauri.localhost` on this build's
 /// Windows-only target (`use_https_scheme` is left at its default `false`).
 fn is_allowed_navigation_url(url: &Url) -> bool {
-    let allowed = if cfg!(debug_assertions) { "http://localhost:5174" } else { "http://tauri.localhost" };
-    url.origin() == Url::parse(allowed).expect("allowed navigation origin is a valid URL").origin()
+    let allowed = if cfg!(debug_assertions) {
+        "http://localhost:5174"
+    } else {
+        "http://tauri.localhost"
+    };
+    url.origin()
+        == Url::parse(allowed)
+            .expect("allowed navigation origin is a valid URL")
+            .origin()
 }
 
 /// State `.manage()`d once at startup: the one `Dispatcher` every `refract_request` call routes
@@ -57,7 +64,10 @@ async fn refract_request(
     channel: String,
     args: Vec<Value>,
 ) -> Result<Value, ()> {
-    Ok(state.dispatcher.dispatch(&channel, state.app_state.clone(), args).await)
+    Ok(state
+        .dispatcher
+        .dispatch(&channel, state.app_state.clone(), args)
+        .await)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -78,8 +88,9 @@ pub fn run() {
     }
 
     let data_dir = data_dir();
-    std::fs::create_dir_all(&data_dir)
-        .unwrap_or_else(|err| panic!("refract-tauri: failed to create data directory {data_dir:?}: {err}"));
+    std::fs::create_dir_all(&data_dir).unwrap_or_else(|err| {
+        panic!("refract-tauri: failed to create data directory {data_dir:?}: {err}")
+    });
 
     // FR-010: opened BEFORE the window is created, so the theme bootstrap initialization script
     // below runs before any renderer script does. `tauri::async_runtime::block_on` runs the
@@ -100,19 +111,27 @@ pub fn run() {
 
     // FR-010/FR-011: the theme as `SettingsStore::open`'s own FR-013 lazy-correction already
     // resolved it (missing/invalid key falls back to `dark`), not a second, separate read.
-    let bootstrap_theme = serde_json::to_value(settings.get().theme).expect("ThemeId is always JSON-serialisable");
+    let bootstrap_theme =
+        serde_json::to_value(settings.get().theme).expect("ThemeId is always JSON-serialisable");
 
     // Phase 3 (tasks.md T029): the one `session::SessionManager` every agent-backed handler
     // dispatches into, sharing this SAME `registry`/`settings`/`app_handle` the registry-only
     // handlers already use -- never a second store instance.
     let registry = std::sync::Arc::new(tokio::sync::Mutex::new(registry));
     let settings = std::sync::Arc::new(tokio::sync::Mutex::new(settings));
-    let app_handle_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::AppHandle>>> = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let app_handle_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::AppHandle>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
     let events = events::EventSink::new(app_handle_slot.clone());
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     let session_manager_for_exit = session_manager.clone();
 
-    let app_state = AppState { data_dir, registry, settings, app_handle: app_handle_slot, session_manager };
+    let app_state = AppState {
+        data_dir,
+        registry,
+        settings,
+        app_handle: app_handle_slot,
+        session_manager,
+    };
     let mut dispatcher = Dispatcher::new();
     ipc::register_handlers(&mut dispatcher);
 
@@ -123,20 +142,31 @@ pub fn run() {
                 // `ipc::Dispatcher::dispatch`) to a persistent log file. Release builds drop to
                 // Info so routine traffic never reaches disk; dev builds keep Debug for local
                 // troubleshooting.
-                .level(if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info })
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(ManagedState { app_state, dispatcher })
+        .manage(ManagedState {
+            app_state,
+            dispatcher,
+        })
         .invoke_handler(tauri::generate_handler![refract_request])
         .setup(move |app| {
             // Phase 3's event emission (`events::emit`) needs a live `AppHandle`, which does not
             // exist until `setup` runs -- filled in here, before the window is built, so it is
             // never observed `None` by any handler invoked after the event loop starts.
             let managed = app.state::<ManagedState>();
-            *managed.app_state.app_handle.lock().expect("app_handle mutex poisoned") = Some(app.handle().clone());
+            *managed
+                .app_state
+                .app_handle
+                .lock()
+                .expect("app_handle mutex poisoned") = Some(app.handle().clone());
 
             // FR-010/FR-011: `window.__REFRACT_THEME_BOOTSTRAP__` set via an initialization
             // script, so `src/tauri-bridge/index.ts`'s synchronous `themeBootstrap()` -- and so
@@ -188,7 +218,11 @@ pub fn run() {
             api.prevent_exit();
             let session_manager = session_manager_for_exit.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = tokio::time::timeout(std::time::Duration::from_secs(15), session_manager.stop_all()).await;
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    session_manager.stop_all(),
+                )
+                .await;
                 std::process::exit(0);
             });
         }

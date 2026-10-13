@@ -124,7 +124,10 @@ pub struct ProcessError {
 
 impl ProcessError {
     pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into(), ready_ceiling: false }
+        Self {
+            message: message.into(),
+            ready_ceiling: false,
+        }
     }
 }
 
@@ -163,7 +166,10 @@ pub enum ProcessEvent {
     /// `OmpProcess.ts`'s own `'frame'` event.
     Frame(Value),
     /// Port of `OmpProcess.ts`'s own `'start-progress'` event.
-    StartProgress { stage: ReadyWaitStage, elapsed_ms: u64 },
+    StartProgress {
+        stage: ReadyWaitStage,
+        elapsed_ms: u64,
+    },
     /// Fires exactly once. Port of `OmpProcess.ts`'s own `'exit'` event.
     Exit { code: Option<i32>, requested: bool },
 }
@@ -236,7 +242,9 @@ impl Inner {
         // of them now rather than let each wait out its own timeout.
         let mut pending = self.pending.lock().unwrap();
         for (_, tx) in pending.drain() {
-            let _ = tx.send(Err(ProcessError::new(format!("OmpProcess: process exited (code {code:?})"))));
+            let _ = tx.send(Err(ProcessError::new(format!(
+                "OmpProcess: process exited (code {code:?})"
+            ))));
         }
     }
 }
@@ -247,7 +255,11 @@ pub struct OmpProcess {
 }
 
 fn build_args(opts: &OmpProcessOptions) -> Vec<String> {
-    let mut args = vec!["--mode".to_string(), "rpc-ui".to_string(), format!("--approval-mode={}", opts.approval_mode.omp_flag())];
+    let mut args = vec![
+        "--mode".to_string(),
+        "rpc-ui".to_string(),
+        format!("--approval-mode={}", opts.approval_mode.omp_flag()),
+    ];
     if opts.no_session {
         args.push("--no-session".to_string());
     }
@@ -293,9 +305,18 @@ impl OmpProcess {
         })?;
 
         let pid = child.id().unwrap_or(0);
-        let stdin = child.stdin.take().ok_or_else(|| ProcessError::new("OmpProcess: stdin not piped"))?;
-        let stdout = child.stdout.take().ok_or_else(|| ProcessError::new("OmpProcess: stdout not piped"))?;
-        let stderr = child.stderr.take().ok_or_else(|| ProcessError::new("OmpProcess: stderr not piped"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| ProcessError::new("OmpProcess: stdin not piped"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ProcessError::new("OmpProcess: stdout not piped"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ProcessError::new("OmpProcess: stderr not piped"))?;
 
         let (exit_tx, _exit_rx) = watch::channel(None);
 
@@ -328,7 +349,14 @@ impl OmpProcess {
     /// exit-before-ready race) so a caller never has to handle a live-but-unready child on the
     /// error path -- same contract the old combined `spawn()` had.
     pub async fn wait_ready(&self, opts: &OmpProcessOptions) -> Result<(), ProcessError> {
-        if let Err(err) = wait_for_ready(self, opts, self.inner.spawned_at, self.inner.spawned_at_system).await {
+        if let Err(err) = wait_for_ready(
+            self,
+            opts,
+            self.inner.spawned_at,
+            self.inner.spawned_at_system,
+        )
+        .await
+        {
             self.stop().await;
             return Err(err);
         }
@@ -367,13 +395,24 @@ impl OmpProcess {
         if self.inner.exited.load(Ordering::SeqCst) {
             return Err(ProcessError::new("OmpProcess: process has exited"));
         }
-        let cmd_type = cmd.get("type").and_then(Value::as_str).unwrap_or("unknown").to_string();
-        let id = format!("refract-{}", self.inner.request_counter.fetch_add(1, Ordering::SeqCst) + 1);
+        let cmd_type = cmd
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        let id = format!(
+            "refract-{}",
+            self.inner.request_counter.fetch_add(1, Ordering::SeqCst) + 1
+        );
         match cmd.as_object_mut() {
             Some(map) => {
                 map.insert("id".to_string(), Value::String(id.clone()));
             }
-            None => return Err(ProcessError::new("OmpProcess: request command must be a JSON object")),
+            None => {
+                return Err(ProcessError::new(
+                    "OmpProcess: request command must be a JSON object",
+                ))
+            }
         }
 
         let (tx, rx) = oneshot::channel();
@@ -385,10 +424,14 @@ impl OmpProcess {
 
         match tokio::time::timeout(Duration::from_millis(timeout_ms), rx).await {
             Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(ProcessError::new(format!("OmpProcess: request cancelled ({cmd_type})"))),
+            Ok(Err(_)) => Err(ProcessError::new(format!(
+                "OmpProcess: request cancelled ({cmd_type})"
+            ))),
             Err(_) => {
                 self.inner.pending.lock().unwrap().remove(&id);
-                Err(ProcessError::new(format!("OmpProcess: request timed out after {timeout_ms}ms ({cmd_type})")))
+                Err(ProcessError::new(format!(
+                    "OmpProcess: request timed out after {timeout_ms}ms ({cmd_type})"
+                )))
             }
         }
     }
@@ -410,7 +453,9 @@ impl OmpProcess {
     /// Writes one JSON object to stdin as a newline-delimited frame. Port of `OmpProcess.ts`'s
     /// own `write`.
     async fn write_line(&self, value: &Value) -> Result<(), ProcessError> {
-        let mut data = serde_json::to_vec(value).map_err(|err| ProcessError::new(format!("OmpProcess: failed to serialize command: {err}")))?;
+        let mut data = serde_json::to_vec(value).map_err(|err| {
+            ProcessError::new(format!("OmpProcess: failed to serialize command: {err}"))
+        })?;
         data.push(b'\n');
         let mut guard = self.inner.stdin.lock().await;
         match guard.as_mut() {
@@ -427,7 +472,10 @@ impl OmpProcess {
     pub async fn stop(&self) {
         self.inner.requested_stop.store(true, Ordering::SeqCst);
         let inner = self.inner.clone();
-        self.inner.stop_cell.get_or_init(move || do_stop(inner)).await;
+        self.inner
+            .stop_cell
+            .get_or_init(move || do_stop(inner))
+            .await;
     }
 }
 
@@ -554,7 +602,10 @@ fn handle_line(line: &str, inner: &Arc<Inner>) {
         Err(err) => {
             // Logs length only, never content (security finding, 2026-10-13): a stdout line can
             // carry transcript text or tool output that may hold secrets.
-            log::error!("OmpProcess: skipping unparseable stdout line: {err} (length {} bytes)", line.len());
+            log::error!(
+                "OmpProcess: skipping unparseable stdout line: {err} (length {} bytes)",
+                line.len()
+            );
             return;
         }
     };
@@ -567,7 +618,10 @@ fn handle_parsed(parsed: Value, inner: &Arc<Inner>) {
         None => {
             // Logs length only, never content (security finding, 2026-10-13): same rationale as
             // `handle_line`'s own unparseable-line case.
-            log::error!("OmpProcess: skipping malformed frame (no string type), length {} bytes", parsed.to_string().len());
+            log::error!(
+                "OmpProcess: skipping malformed frame (no string type), length {} bytes",
+                parsed.to_string().len()
+            );
             return;
         }
     };
@@ -607,7 +661,8 @@ fn dispatch_frame(frame_type: &str, frame: Value, inner: &Arc<Inner>) {
 fn handle_chunk(frame: Value, inner: &Arc<Inner>) {
     if let Err(err) = try_handle_chunk(&frame, inner) {
         log::error!("OmpProcess: dropping malformed rpc_chunk: {err}");
-        let rejection = format!("OmpProcess: request failed: a chunked response failed reassembly ({err})");
+        let rejection =
+            format!("OmpProcess: request failed: a chunked response failed reassembly ({err})");
         let mut pending = inner.pending.lock().unwrap();
         for (_, tx) in pending.drain() {
             let _ = tx.send(Err(ProcessError::new(rejection.clone())));
@@ -640,16 +695,22 @@ fn try_handle_chunk(frame: &Value, inner: &Arc<Inner>) -> Result<(), String> {
     if byte_length as u64 > MAX_REASSEMBLED_BYTES {
         return Err(format!("rpc_chunk {chunk_id}: byteLength {byte_length} exceeds {MAX_REASSEMBLED_BYTES} byte ceiling"));
     }
-    let data = frame.get("data").and_then(Value::as_str).ok_or_else(|| format!("rpc_chunk {chunk_id}: missing data"))?;
-    let decoded = base64_decode(data).map_err(|err| format!("rpc_chunk {chunk_id}: invalid base64 ({err})"))?;
+    let data = frame
+        .get("data")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("rpc_chunk {chunk_id}: missing data"))?;
+    let decoded = base64_decode(data)
+        .map_err(|err| format!("rpc_chunk {chunk_id}: invalid base64 ({err})"))?;
 
     let mut chunks = inner.chunks.lock().unwrap();
     let ready = {
-        let assembly = chunks.entry(chunk_id.clone()).or_insert_with(|| ChunkAssembly {
-            parts: vec![None; count as usize],
-            got: 0,
-            byte_length: byte_length as u64,
-        });
+        let assembly = chunks
+            .entry(chunk_id.clone())
+            .or_insert_with(|| ChunkAssembly {
+                parts: vec![None; count as usize],
+                got: 0,
+                byte_length: byte_length as u64,
+            });
         if assembly.parts.len() != count as usize || assembly.byte_length != byte_length as u64 {
             chunks.remove(&chunk_id);
             return Err("interleaved sequence (count/byteLength changed mid-assembly)".to_string());
@@ -665,7 +726,9 @@ fn try_handle_chunk(frame: &Value, inner: &Arc<Inner>) -> Result<(), String> {
     if !ready {
         return Ok(());
     }
-    let completed = chunks.remove(&chunk_id).expect("just inserted/updated above");
+    let completed = chunks
+        .remove(&chunk_id)
+        .expect("just inserted/updated above");
     drop(chunks);
 
     let mut whole = Vec::with_capacity(completed.byte_length as usize);
@@ -673,10 +736,16 @@ fn try_handle_chunk(frame: &Value, inner: &Arc<Inner>) -> Result<(), String> {
         whole.extend_from_slice(&part.ok_or_else(|| format!("missing part {i} after completion"))?);
     }
     if whole.len() as u64 != completed.byte_length {
-        return Err(format!("got {} bytes, expected {}", whole.len(), completed.byte_length));
+        return Err(format!(
+            "got {} bytes, expected {}",
+            whole.len(),
+            completed.byte_length
+        ));
     }
-    let text = String::from_utf8(whole).map_err(|_| "reassembled payload is not valid UTF-8".to_string())?;
-    let parsed: Value = serde_json::from_str(&text).map_err(|err| format!("reassembled payload is not valid JSON: {err}"))?;
+    let text = String::from_utf8(whole)
+        .map_err(|_| "reassembled payload is not valid UTF-8".to_string())?;
+    let parsed: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("reassembled payload is not valid JSON: {err}"))?;
     handle_parsed(parsed, inner);
     Ok(())
 }
@@ -696,7 +765,10 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
         }
     }
 
-    let stripped: Vec<u8> = input.bytes().filter(|b| !b.is_ascii_whitespace() && *b != b'=').collect();
+    let stripped: Vec<u8> = input
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
+        .collect();
     if stripped.len() % 4 == 1 {
         return Err("invalid length".to_string());
     }
@@ -734,17 +806,36 @@ async fn finish_ready(process: &OmpProcess, ready_frame: &Value) -> Result<(), P
         .map(|versions| versions.iter().any(|v| v.as_i64() == Some(2)))
         .unwrap_or(false);
     if supports_v2 {
-        let response = process.request(json!({ "type": "negotiate_protocol", "protocolVersion": 2 }), DEFAULT_REQUEST_TIMEOUT_MS).await?;
-        let success = response.get("success").and_then(Value::as_bool).unwrap_or(false);
+        let response = process
+            .request(
+                json!({ "type": "negotiate_protocol", "protocolVersion": 2 }),
+                DEFAULT_REQUEST_TIMEOUT_MS,
+            )
+            .await?;
+        let success = response
+            .get("success")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if !success {
-            let error = response.get("error").and_then(Value::as_str).unwrap_or("unknown error");
-            return Err(ProcessError::new(format!("negotiate_protocol failed: {}", redact_best_effort(error))));
+            let error = response
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error");
+            return Err(ProcessError::new(format!(
+                "negotiate_protocol failed: {}",
+                redact_best_effort(error)
+            )));
         }
     }
     Ok(())
 }
 
-async fn wait_for_ready(process: &OmpProcess, opts: &OmpProcessOptions, spawned_at: Instant, spawned_at_system: SystemTime) -> Result<(), ProcessError> {
+async fn wait_for_ready(
+    process: &OmpProcess,
+    opts: &OmpProcessOptions,
+    spawned_at: Instant,
+    spawned_at_system: SystemTime,
+) -> Result<(), ProcessError> {
     let mut events_rx = process.subscribe();
     let mut exit_rx = process.inner.exit_tx.subscribe();
     // Issue #512 follow-up (2026-10-13): both subscriptions above are taken AFTER `connect`
@@ -819,12 +910,19 @@ async fn wait_for_ready(process: &OmpProcess, opts: &OmpProcessOptions, spawned_
 /// memory line -- no declared crate exposes it without a new Windows feature flag -- and
 /// `redact.ts`'s full regex set -- no `regex` crate is declared, so this uses a conservative
 /// whole-line heuristic instead of exact per-pattern redaction).
-async fn build_start_failure(inner: &Arc<Inner>, reason: String, spawned_at_system: SystemTime) -> ProcessError {
+async fn build_start_failure(
+    inner: &Arc<Inner>,
+    reason: String,
+    spawned_at_system: SystemTime,
+) -> ProcessError {
     let pid = inner.pid.load(Ordering::SeqCst);
 
     let (stderr_text, stderr_truncated) = {
         let tail = inner.stderr_tail.lock().unwrap();
-        (String::from_utf8_lossy(&tail.buf).into_owned(), tail.truncated)
+        (
+            String::from_utf8_lossy(&tail.buf).into_owned(),
+            tail.truncated,
+        )
     };
     let stderr_for_redaction = if stderr_truncated {
         match stderr_text.find('\n') {
@@ -837,7 +935,11 @@ async fn build_start_failure(inner: &Arc<Inner>, reason: String, spawned_at_syst
     let stderr_redacted = redact_best_effort(&mask_home_dir(&stderr_for_redaction));
     let stderr_filtered = filter_warn_error_lines(&stderr_redacted);
     let stderr_capped = cap_tail(&stderr_filtered, STDERR_FAILURE_TAIL_BYTES);
-    let stderr_part = if stderr_capped.is_empty() { String::new() } else { format!("\n--- stderr warnings/errors ---\n{stderr_capped}") };
+    let stderr_part = if stderr_capped.is_empty() {
+        String::new()
+    } else {
+        format!("\n--- stderr warnings/errors ---\n{stderr_capped}")
+    };
 
     let omp_log_part = if pid != 0 {
         match read_omp_log_tail(pid as u32, spawned_at_system, OMP_LOG_READ_WINDOW_BYTES).await {
@@ -845,7 +947,11 @@ async fn build_start_failure(inner: &Arc<Inner>, reason: String, spawned_at_syst
                 let redacted = redact_best_effort(&mask_home_dir(&raw));
                 let filtered = filter_warn_error_lines(&redacted);
                 let capped = cap_tail(&filtered, OMP_LOG_TAIL_BYTES);
-                if capped.is_empty() { String::new() } else { format!("\n--- omp log warnings/errors (pid {pid}) ---\n{capped}") }
+                if capped.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n--- omp log warnings/errors (pid {pid}) ---\n{capped}")
+                }
             }
             None => String::new(),
         }
@@ -857,14 +963,28 @@ async fn build_start_failure(inner: &Arc<Inner>, reason: String, spawned_at_syst
 }
 
 fn filter_warn_error_lines(text: &str) -> String {
-    const NEEDLES: &[&str] = &["warn", "error", "fatal", "panic", "exception", "cannot", "failed", "enoent", "eacces", "eperm", "timed out"];
+    const NEEDLES: &[&str] = &[
+        "warn",
+        "error",
+        "fatal",
+        "panic",
+        "exception",
+        "cannot",
+        "failed",
+        "enoent",
+        "eacces",
+        "eperm",
+        "timed out",
+    ];
     let lines: Vec<&str> = text.lines().collect();
     let filtered: Vec<&str> = lines
         .iter()
         .copied()
         .filter(|line| {
             let lower = line.to_ascii_lowercase();
-            NEEDLES.iter().any(|needle| lower.contains(needle)) || lower.contains("\"level\":\"warn\"") || lower.contains("\"level\":\"error\"")
+            NEEDLES.iter().any(|needle| lower.contains(needle))
+                || lower.contains("\"level\":\"warn\"")
+                || lower.contains("\"level\":\"error\"")
         })
         .collect();
     if !filtered.is_empty() {
@@ -897,7 +1017,9 @@ fn cap_tail(text: &str, max_len: usize) -> String {
 }
 
 fn mask_home_dir(text: &str) -> String {
-    let Some(home) = dirs::home_dir() else { return text.to_string() };
+    let Some(home) = dirs::home_dir() else {
+        return text.to_string();
+    };
     let backslashes = home.to_string_lossy().into_owned();
     let forward_slashes = backslashes.replace('\\', "/");
     let mut result = text.replace(&backslashes, "~");
@@ -971,7 +1093,9 @@ async fn read_omp_log_tail(pid: u32, spawned_at: SystemTime, max_bytes: u64) -> 
         if metadata.file_type().is_symlink() || !metadata.is_file() {
             continue;
         }
-        let Ok(modified) = metadata.modified() else { continue };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
         if modified < spawned_at {
             continue;
         }

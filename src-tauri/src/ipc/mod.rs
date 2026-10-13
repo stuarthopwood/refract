@@ -64,7 +64,10 @@ pub struct IpcError {
 
 impl IpcError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -85,7 +88,9 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     pub fn new() -> Self {
-        Self { handlers: HashMap::new() }
+        Self {
+            handlers: HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, channel: &'static str, handler: Handler) {
@@ -99,7 +104,9 @@ impl Dispatcher {
         let envelope = match self.handlers.get(channel) {
             Some(handler) => match handler(state, args).await {
                 Ok(value) => serde_json::json!({ "ok": true, "value": value }),
-                Err(err) => serde_json::json!({ "ok": false, "error": { "code": err.code, "message": err.message } }),
+                Err(err) => {
+                    serde_json::json!({ "ok": false, "error": { "code": err.code, "message": err.message } })
+                }
             },
             None => serde_json::json!({
                 "ok": false,
@@ -136,14 +143,23 @@ impl Dispatcher {
 /// live `session::SessionManager` `AppState::session_manager` carries.
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
     dispatcher.register("settings.get", settings::settings_get);
-    dispatcher.register("settings.setApprovalMode", settings::settings_set_approval_mode);
+    dispatcher.register(
+        "settings.setApprovalMode",
+        settings::settings_set_approval_mode,
+    );
     dispatcher.register("readiness.check", readiness::readiness_check);
     dispatcher.register("repositories.list", repositories::repositories_list);
     dispatcher.register("repositories.add", repositories::repositories_add);
     dispatcher.register("repositories.remove", repositories::repositories_remove);
     dispatcher.register("repositories.branches", repositories::repositories_branches);
-    dispatcher.register("repositories.pickFolder", repositories::repositories_pick_folder);
-    dispatcher.register("repositories.userName", repositories::repositories_user_name);
+    dispatcher.register(
+        "repositories.pickFolder",
+        repositories::repositories_pick_folder,
+    );
+    dispatcher.register(
+        "repositories.userName",
+        repositories::repositories_user_name,
+    );
     dispatcher.register("sessions.list", sessions::sessions_list);
     dispatcher.register("sessions.create", sessions::sessions_create);
     dispatcher.register("sessions.rename", sessions::sessions_rename);
@@ -151,7 +167,10 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     dispatcher.register("sessions.stopAgent", sessions::sessions_stop_agent);
     dispatcher.register("sessions.setVisible", sessions::sessions_set_visible);
     dispatcher.register("conversations.list", conversations::conversations_list);
-    dispatcher.register("conversations.startNew", conversations::conversations_start_new);
+    dispatcher.register(
+        "conversations.startNew",
+        conversations::conversations_start_new,
+    );
     dispatcher.register("conversations.open", conversations::conversations_open);
     dispatcher.register("chat.send", chat::chat_send);
     dispatcher.register("chat.stop", chat::chat_stop);
@@ -240,7 +259,11 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
         "disabled",
         "session-archived",
     ];
-    let code = if IPC_ERROR_CODES.contains(&err.code) { err.code } else { "reattach-failed" };
+    let code = if IPC_ERROR_CODES.contains(&err.code) {
+        err.code
+    } else {
+        "reattach-failed"
+    };
     IpcError::new(code, err.message)
 }
 
@@ -256,7 +279,9 @@ pub fn arg_str(args: &[Value], index: usize) -> Option<&str> {
 /// in this build's `Cargo.toml`): a manual proleptic-Gregorian civil-date conversion (Howard
 /// Hinnant's well-known `civil_from_days` algorithm), UTC only.
 pub fn now_iso8601() -> String {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
     let millis = now.as_millis();
     let secs = (millis / 1000) as i64;
     let subsec_millis = (millis % 1000) as u32;

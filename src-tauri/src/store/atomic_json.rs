@@ -73,7 +73,8 @@ pub async fn write_json_file<T: Serialize>(file: &Path, value: &T) -> io::Result
     tmp_name.push(format!(".{}.{n}.tmp", std::process::id()));
     let tmp = std::path::PathBuf::from(tmp_name);
 
-    let data = serde_json::to_vec_pretty(value).expect("refract-tauri: value must be JSON-serialisable");
+    let data =
+        serde_json::to_vec_pretty(value).expect("refract-tauri: value must be JSON-serialisable");
     let mut handle = tokio::fs::File::create(&tmp).await?;
     handle.write_all(&data).await?;
     handle.sync_all().await?;

@@ -60,7 +60,11 @@ impl EventSink {
     }
 
     fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
-        let handle = self.app_handle.lock().expect("app_handle mutex poisoned").clone();
+        let handle = self
+            .app_handle
+            .lock()
+            .expect("app_handle mutex poisoned")
+            .clone();
         if let Some(app) = handle {
             emit(&app, event, payload);
         }
@@ -92,15 +96,24 @@ impl EventSink {
     }
 
     pub fn emit_request_pending(&self, session_id: &str, request: &serde_json::Value) {
-        self.send(REQUEST_PENDING, serde_json::json!({ "sessionId": session_id, "request": request }));
+        self.send(
+            REQUEST_PENDING,
+            serde_json::json!({ "sessionId": session_id, "request": request }),
+        );
     }
 
     pub fn emit_request_resolved(&self, session_id: &str, request_id: &str) {
-        self.send(REQUEST_RESOLVED, serde_json::json!({ "sessionId": session_id, "requestId": request_id }));
+        self.send(
+            REQUEST_RESOLVED,
+            serde_json::json!({ "sessionId": session_id, "requestId": request_id }),
+        );
     }
 
     pub fn emit_commands_update(&self, session_id: &str, commands: &serde_json::Value) {
-        self.send(COMMANDS_UPDATE, serde_json::json!({ "sessionId": session_id, "commands": commands }));
+        self.send(
+            COMMANDS_UPDATE,
+            serde_json::json!({ "sessionId": session_id, "commands": commands }),
+        );
     }
 
     /// `settings:changed` (`ipc/broadcast.ts`'s own `broadcastSettingsChanged`): the whole

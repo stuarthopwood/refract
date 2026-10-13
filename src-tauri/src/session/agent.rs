@@ -32,7 +32,9 @@ use tokio::sync::{mpsc, watch, Mutex as AsyncMutex};
 
 use crate::events::EventSink;
 use crate::omp::diff::{diff_transcript, PatchCoalescer, TranscriptOp};
-use crate::omp::process::{ApprovalMode as ProcApprovalMode, OmpProcess, OmpProcessOptions, ProcessEvent};
+use crate::omp::process::{
+    ApprovalMode as ProcApprovalMode, OmpProcess, OmpProcessOptions, ProcessEvent,
+};
 use crate::omp::transcript::{RequestResolution, TranscriptItem, TranscriptState};
 use crate::store::registry::{RegistryStore, Session, SessionPatch};
 use crate::store::settings::{ApprovalMode, SettingsStore};
@@ -74,7 +76,10 @@ pub struct AgentError {
 
 impl AgentError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -93,7 +98,12 @@ impl std::error::Error for AgentError {}
 #[serde(tag = "kind", rename_all_fields = "camelCase")]
 pub enum PendingRequest {
     #[serde(rename = "approval")]
-    Approval { request_id: String, tool: String, target: String, details: Vec<String> },
+    Approval {
+        request_id: String,
+        tool: String,
+        target: String,
+        details: Vec<String>,
+    },
     #[serde(rename = "question")]
     Question {
         request_id: String,
@@ -165,7 +175,11 @@ impl SessionAgent {
                 // Port of `SessionManager.ts`'s own `agent.on('patch', ...)` listener: a hidden
                 // Session's patches are still computed (the coalescer always flushes) but never
                 // forwarded, matching `visibleSessionIds.has(payload.sessionId)`'s own gate.
-                if !flush_visible_ids.lock().expect("visible_ids mutex poisoned").contains(&flush_session_id) {
+                if !flush_visible_ids
+                    .lock()
+                    .expect("visible_ids mutex poisoned")
+                    .contains(&flush_session_id)
+                {
                     return;
                 }
                 flush_events.emit_transcript_patch(&flush_session_id, &ops);
@@ -201,11 +215,16 @@ impl SessionAgent {
     }
 
     fn arc(&self) -> Arc<Self> {
-        self.self_ref.upgrade().expect("SessionAgent dropped while a background task still referenced it")
+        self.self_ref
+            .upgrade()
+            .expect("SessionAgent dropped while a background task still referenced it")
     }
 
     fn is_visible(&self) -> bool {
-        self.visible_ids.lock().expect("visible_ids mutex poisoned").contains(&self.session_id)
+        self.visible_ids
+            .lock()
+            .expect("visible_ids mutex poisoned")
+            .contains(&self.session_id)
     }
 
     async fn require_session(&self) -> Result<Session, AgentError> {
@@ -214,7 +233,15 @@ impl SessionAgent {
             .await
             .get_session(&self.session_id)
             .cloned()
-            .ok_or_else(|| AgentError::new("not-found", format!("SessionAgent {}: session not found in registry", self.session_id)))
+            .ok_or_else(|| {
+                AgentError::new(
+                    "not-found",
+                    format!(
+                        "SessionAgent {}: session not found in registry",
+                        self.session_id
+                    ),
+                )
+            })
     }
 
     // -----------------------------------------------------------------------------------------
@@ -229,7 +256,9 @@ impl SessionAgent {
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
         });
-        let obj = payload.as_object_mut().expect("status_event_locked payload is always a JSON object");
+        let obj = payload
+            .as_object_mut()
+            .expect("status_event_locked payload is always a JSON object");
         // `stopReason`/`stopDetail` are TS `?:` optional fields (the renderer checks
         // `=== undefined`, ChatPane.tsx:205): omitted entirely when absent, not sent as JSON
         // `null` (code-review finding, 2026-10-13). `terminatedUnexpectedly`/`startProgress`
@@ -255,10 +284,17 @@ impl SessionAgent {
     /// `idle` transition while this Session is not the visible one (T037). Window-focus is not
     /// tracked in this build (simplification, see this file's own header), so only visibility
     /// gates `unread`, not focus.
-    async fn set_status(&self, status: SessionStatus, stop_reason: Option<&'static str>, stop_detail: Option<String>) {
+    async fn set_status(
+        &self,
+        status: SessionStatus,
+        stop_reason: Option<&'static str>,
+        stop_detail: Option<String>,
+    ) {
         {
             let mut state = self.state.lock().await;
-            let became_unread = state.status == SessionStatus::Working && status == SessionStatus::Idle && !self.is_visible();
+            let became_unread = state.status == SessionStatus::Working
+                && status == SessionStatus::Idle
+                && !self.is_visible();
             state.status = status;
             state.stop_reason = stop_reason;
             state.stop_detail = stop_detail;
@@ -284,7 +320,11 @@ impl SessionAgent {
     /// matching TS: if `record_start_failure` wins the race to the lock, this call sees
     /// `Stopped` already and skips; if this call wins instead, `record_start_failure`'s own
     /// unconditional `set_status` still overwrites it right after, same final result.
-    async fn set_stopped_unless_already_stopped(&self, stop_reason: &'static str, stop_detail: Option<String>) {
+    async fn set_stopped_unless_already_stopped(
+        &self,
+        stop_reason: &'static str,
+        stop_detail: Option<String>,
+    ) {
         {
             let mut state = self.state.lock().await;
             if state.status == SessionStatus::Stopped {
@@ -359,7 +399,9 @@ impl SessionAgent {
             "queue": { "followUp": state.queue_follow_up, "steering": state.queue_steering },
             "pending": state.pending,
         });
-        let obj = payload.as_object_mut().expect("runtime_view payload is always a JSON object");
+        let obj = payload
+            .as_object_mut()
+            .expect("runtime_view payload is always a JSON object");
         if let Some(reason) = state.stop_reason {
             obj.insert("stopReason".to_string(), Value::String(reason.to_string()));
         }
@@ -396,7 +438,8 @@ impl SessionAgent {
     }
 
     async fn append_notice(&self, text: String, level: &str) {
-        self.apply_transcript_frame(&json!({ "type": "notice", "level": level, "message": text })).await;
+        self.apply_transcript_frame(&json!({ "type": "notice", "level": level, "message": text }))
+            .await;
     }
 
     /// Port of `SessionAgent.ts`'s `upsertTranscriptItem` for `kind: 'request'` rows
@@ -440,7 +483,12 @@ impl SessionAgent {
     /// "Reattach verification" step 3), so a failed spawn or reattach never leaves a blank chat.
     async fn record_start_failure(&self, detail: &str) {
         self.append_notice(detail.to_string(), "error").await;
-        self.set_status(SessionStatus::Stopped, Some("start-failed"), Some(detail.to_string())).await;
+        self.set_status(
+            SessionStatus::Stopped,
+            Some("start-failed"),
+            Some(detail.to_string()),
+        )
+        .await;
     }
 
     // -----------------------------------------------------------------------------------------
@@ -465,8 +513,16 @@ impl SessionAgent {
         }
         let session = self.require_session().await?;
         if tokio::fs::metadata(&session.worktree_path).await.is_err() {
-            self.set_status(SessionStatus::Stopped, Some("worktree-missing"), Some(session.worktree_path.clone())).await;
-            return Err(AgentError::new("worktree-missing", format!("Worktree missing: {}", session.worktree_path)));
+            self.set_status(
+                SessionStatus::Stopped,
+                Some("worktree-missing"),
+                Some(session.worktree_path.clone()),
+            )
+            .await;
+            return Err(AgentError::new(
+                "worktree-missing",
+                format!("Worktree missing: {}", session.worktree_path),
+            ));
         }
         self.launch(&session, "").await
     }
@@ -481,7 +537,13 @@ impl SessionAgent {
         {
             let state = self.state.lock().await;
             if state.process.is_some() || state.status != SessionStatus::Stopped {
-                return Err(AgentError::new("not-idle", format!("SessionAgent {}: cannot start while not idle", self.session_id)));
+                return Err(AgentError::new(
+                    "not-idle",
+                    format!(
+                        "SessionAgent {}: cannot start while not idle",
+                        self.session_id
+                    ),
+                ));
             }
         }
         {
@@ -490,7 +552,11 @@ impl SessionAgent {
         }
         let session = self.require_session().await?;
         if tokio::fs::metadata(&session.worktree_path).await.is_ok() {
-            let patch = SessionPatch { current_conversation: Some(file), last_message_count: Some(None), ..Default::default() };
+            let patch = SessionPatch {
+                current_conversation: Some(file),
+                last_message_count: Some(None),
+                ..Default::default()
+            };
             self.registry
                 .lock()
                 .await
@@ -504,7 +570,10 @@ impl SessionAgent {
 
     async fn launch(&self, session: &Session, failure_prefix: &str) -> Result<(), AgentError> {
         let approval_mode = self.settings.lock().await.get().approval_mode;
-        let opts = OmpProcessOptions::new(PathBuf::from(&session.worktree_path), to_process_mode(approval_mode));
+        let opts = OmpProcessOptions::new(
+            PathBuf::from(&session.worktree_path),
+            to_process_mode(approval_mode),
+        );
 
         let proc = match OmpProcess::connect(&opts).await {
             Ok(p) => p,
@@ -528,8 +597,12 @@ impl SessionAgent {
 
         if self.state.lock().await.stop_requested {
             proc.stop().await;
-            self.set_status(SessionStatus::Stopped, Some("not-started"), None).await;
-            return Err(AgentError::new("not-started", "SessionAgent: stop requested during launch"));
+            self.set_status(SessionStatus::Stopped, Some("not-started"), None)
+                .await;
+            return Err(AgentError::new(
+                "not-started",
+                "SessionAgent: stop requested during launch",
+            ));
         }
 
         {
@@ -551,8 +624,12 @@ impl SessionAgent {
         if self.state.lock().await.stop_requested {
             proc.stop().await;
             self.state.lock().await.process = None;
-            self.set_status(SessionStatus::Stopped, Some("not-started"), None).await;
-            return Err(AgentError::new("not-started", "SessionAgent: stop requested during launch"));
+            self.set_status(SessionStatus::Stopped, Some("not-started"), None)
+                .await;
+            return Err(AgentError::new(
+                "not-started",
+                "SessionAgent: stop requested during launch",
+            ));
         }
 
         let (messages, complete) = fetch_all_messages(&proc).await;
@@ -572,7 +649,11 @@ impl SessionAgent {
             state.stop_reason = None;
             state.stop_detail = None;
             state.launched_mode = approval_mode;
-            state.pending_mode = if current_mode == approval_mode { None } else { Some(current_mode) };
+            state.pending_mode = if current_mode == approval_mode {
+                None
+            } else {
+                Some(current_mode)
+            };
             if complete {
                 // Merges in the freshly fetched history rather than replacing the transcript
                 // outright (code-review finding, 2026-10-13): a flat replace silently dropped
@@ -600,23 +681,46 @@ impl SessionAgent {
     /// `currentConversation` (skipped for a brand-new Session), then `get_state` plus the
     /// reattach verification (`reattachVerification.ts`'s `verifyReattach`). Throws (returns
     /// `Err`) on any failure; the caller stops `proc` and records it.
-    async fn attach_and_verify(&self, proc: &OmpProcess, session: &Session) -> Result<Value, String> {
+    async fn attach_and_verify(
+        &self,
+        proc: &OmpProcess,
+        session: &Session,
+    ) -> Result<Value, String> {
         if let Some(conversation) = &session.current_conversation {
             if tokio::fs::metadata(conversation).await.is_err() {
                 return Err(format!("Conversation file missing: {conversation}"));
             }
             let switch_res = proc
-                .request(json!({ "type": "switch_session", "sessionPath": conversation }), DEFAULT_REQUEST_TIMEOUT_MS)
+                .request(
+                    json!({ "type": "switch_session", "sessionPath": conversation }),
+                    DEFAULT_REQUEST_TIMEOUT_MS,
+                )
                 .await
                 .map_err(|err| err.to_string())?;
-            let cancelled = switch_res.get("data").and_then(|d| d.get("cancelled")).and_then(Value::as_bool);
-            if switch_res.get("success").and_then(Value::as_bool) != Some(true) || cancelled != Some(false) {
-                return Err(format!("switch_session failed or was cancelled for {conversation}"));
+            let cancelled = switch_res
+                .get("data")
+                .and_then(|d| d.get("cancelled"))
+                .and_then(Value::as_bool);
+            if switch_res.get("success").and_then(Value::as_bool) != Some(true)
+                || cancelled != Some(false)
+            {
+                return Err(format!(
+                    "switch_session failed or was cancelled for {conversation}"
+                ));
             }
         }
-        let state_res = proc.request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS).await.map_err(|err| err.to_string())?;
+        let state_res = proc
+            .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+            .map_err(|err| err.to_string())?;
         if state_res.get("success").and_then(Value::as_bool) != Some(true) {
-            return Err(format!("get_state failed: {}", state_res.get("error").and_then(Value::as_str).unwrap_or("unknown error")));
+            return Err(format!(
+                "get_state failed: {}",
+                state_res
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown error")
+            ));
         }
         let data = state_res.get("data").cloned().unwrap_or(Value::Null);
         if let Some(conversation) = &session.current_conversation {
@@ -629,12 +733,26 @@ impl SessionAgent {
     /// `SessionAgent.ts`'s own `syncFromState`): persists `sessionDir`/`currentConversation`/
     /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`.
     async fn sync_from_state(&self, state: &Value) {
-        let session_file = state.get("sessionFile").and_then(Value::as_str).map(str::to_string);
-        let message_count = state.get("messageCount").and_then(Value::as_i64).unwrap_or(0);
+        let session_file = state
+            .get("sessionFile")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let message_count = state
+            .get("messageCount")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
 
-        let existing_session_dir = self.registry.lock().await.get_session(&self.session_id).and_then(|s| s.session_dir.clone());
+        let existing_session_dir = self
+            .registry
+            .lock()
+            .await
+            .get_session(&self.session_id)
+            .and_then(|s| s.session_dir.clone());
 
-        let mut patch = SessionPatch { last_activity_at: Some(crate::ipc::now_iso8601()), ..Default::default() };
+        let mut patch = SessionPatch {
+            last_activity_at: Some(crate::ipc::now_iso8601()),
+            ..Default::default()
+        };
         if existing_session_dir.is_none() {
             if let Some(file) = &session_file {
                 if let Some(parent) = std::path::Path::new(file).parent() {
@@ -647,7 +765,10 @@ impl SessionAgent {
             patch.current_conversation = Some(session_file.clone());
         }
         if let Some(model) = state.get("model") {
-            if let (Some(provider), Some(id)) = (model.get("provider").and_then(Value::as_str), model.get("id").and_then(Value::as_str)) {
+            if let (Some(provider), Some(id)) = (
+                model.get("provider").and_then(Value::as_str),
+                model.get("id").and_then(Value::as_str),
+            ) {
                 if !provider.is_empty() && !id.is_empty() {
                     let name = model.get("name").and_then(Value::as_str);
                     patch.last_model = Some(crate::store::registry::LastModel {
@@ -656,11 +777,19 @@ impl SessionAgent {
                         name: name.map(|n| truncate(n, MAX_MODEL_FIELD_LENGTH)),
                     });
                     let thinking_level = state.get("thinkingLevel").and_then(Value::as_str);
-                    patch.last_thinking_level = Some(thinking_level.map(|t| truncate(t, MAX_MODEL_FIELD_LENGTH)));
+                    patch.last_thinking_level =
+                        Some(thinking_level.map(|t| truncate(t, MAX_MODEL_FIELD_LENGTH)));
                 }
             }
         }
-        if self.registry.lock().await.update_session(&self.session_id, patch).await.is_ok() {
+        if self
+            .registry
+            .lock()
+            .await
+            .update_session(&self.session_id, patch)
+            .await
+            .is_ok()
+        {
             self.events.emit_session_list_changed();
         }
     }
@@ -669,7 +798,11 @@ impl SessionAgent {
     // Live frames (port of `SessionAgent.ts`'s own `onFrame`)
     // -----------------------------------------------------------------------------------------
 
-    fn spawn_frame_listener(&self, proc: Arc<OmpProcess>, mut rx: mpsc::UnboundedReceiver<ProcessEvent>) {
+    fn spawn_frame_listener(
+        &self,
+        proc: Arc<OmpProcess>,
+        mut rx: mpsc::UnboundedReceiver<ProcessEvent>,
+    ) {
         let agent = self.arc();
         tokio::spawn(async move {
             loop {
@@ -711,14 +844,19 @@ impl SessionAgent {
                 self.set_queue(follow_up, steering).await;
             }
             "available_commands_update" => {
-                let raw = frame.get("commands").and_then(Value::as_array).cloned().unwrap_or_default();
+                let raw = frame
+                    .get("commands")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
                 let filtered = filter_supported_commands(&raw);
                 {
                     let mut state = self.state.lock().await;
                     state.commands = filtered.clone();
                 }
                 let commands_value = Value::Array(filtered);
-                self.events.emit_commands_update(&self.session_id, &commands_value);
+                self.events
+                    .emit_commands_update(&self.session_id, &commands_value);
             }
             "extension_ui_request" => self.handle_extension_ui_request(&frame).await,
             "message_start" | "message_update" | "message_end" | "command_output" => {
@@ -753,13 +891,16 @@ impl SessionAgent {
             state.queue_follow_up = follow_up.clone();
             state.queue_steering = steering.clone();
         }
-        self.events.emit_queue_update(&self.session_id, &follow_up, &steering);
+        self.events
+            .emit_queue_update(&self.session_id, &follow_up, &steering);
     }
 
     async fn handle_extension_ui_request(&self, frame: &Value) {
         match classify_dialog(frame) {
             DialogClassification::Ignore => {}
-            DialogClassification::Notify { message, level } => self.append_notice(message, &level).await,
+            DialogClassification::Notify { message, level } => {
+                self.append_notice(message, &level).await
+            }
             DialogClassification::Cancel(target) => {
                 let became_working = {
                     let mut state = self.state.lock().await;
@@ -769,15 +910,21 @@ impl SessionAgent {
                     state.pending.retain(|r| r.request_id() != target);
                     state.pending.is_empty() && state.status == SessionStatus::NeedsYou
                 };
-                self.upsert_request_row(&target, Some(RequestResolution::Cancelled)).await;
-                self.append_notice("Request withdrawn: the agent cancelled it.".to_string(), "info").await;
+                self.upsert_request_row(&target, Some(RequestResolution::Cancelled))
+                    .await;
+                self.append_notice(
+                    "Request withdrawn: the agent cancelled it.".to_string(),
+                    "info",
+                )
+                .await;
                 self.events.emit_request_resolved(&self.session_id, &target);
                 if became_working {
                     self.set_status(SessionStatus::Working, None, None).await;
                 }
             }
             DialogClassification::Request(request) => {
-                let payload = serde_json::to_value(&request).expect("PendingRequest is always JSON-serialisable");
+                let payload = serde_json::to_value(&request)
+                    .expect("PendingRequest is always JSON-serialisable");
                 let request_id = request.request_id().to_string();
                 {
                     let mut state = self.state.lock().await;
@@ -815,12 +962,17 @@ impl SessionAgent {
     async fn settle_turn_pending(&self) {
         let ids: Vec<String> = {
             let mut state = self.state.lock().await;
-            let ids: Vec<String> = state.pending.iter().map(|r| r.request_id().to_string()).collect();
+            let ids: Vec<String> = state
+                .pending
+                .iter()
+                .map(|r| r.request_id().to_string())
+                .collect();
             state.pending.clear();
             ids
         };
         for id in ids {
-            self.upsert_request_row(&id, Some(RequestResolution::Cancelled)).await;
+            self.upsert_request_row(&id, Some(RequestResolution::Cancelled))
+                .await;
             self.events.emit_request_resolved(&self.session_id, &id);
         }
     }
@@ -828,7 +980,10 @@ impl SessionAgent {
     async fn on_session_settled(&self) {
         let proc = { self.state.lock().await.process.clone() };
         let Some(proc) = proc else { return };
-        if let Ok(res) = proc.request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS).await {
+        if let Ok(res) = proc
+            .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+        {
             if res.get("success").and_then(Value::as_bool) == Some(true) {
                 if let Some(data) = res.get("data") {
                     self.sync_from_state(data).await;
@@ -878,14 +1033,16 @@ impl SessionAgent {
                 // stopped/start-failed status for this; nothing further to do here.
                 return;
             }
-            self.set_status(SessionStatus::Stopped, Some("not-started"), None).await;
+            self.set_status(SessionStatus::Stopped, Some("not-started"), None)
+                .await;
             return;
         }
         let detail = match code {
             Some(c) => format!("exit code {c}"),
             None => "exit code null".to_string(),
         };
-        self.set_stopped_unless_already_stopped("agent-exited", Some(detail)).await;
+        self.set_stopped_unless_already_stopped("agent-exited", Some(detail))
+            .await;
     }
 
     // -----------------------------------------------------------------------------------------
@@ -895,7 +1052,11 @@ impl SessionAgent {
     /// `chat.send` (contracts/omp-usage.md "Send a message"): `message`, never `text`
     /// (constitution II). `images` is only attached when non-empty, matching `streamingBehavior`
     /// only being set while the turn is already `working`/`needs-you` (a steer/follow-up).
-    pub async fn send(&self, text: String, images: Option<Vec<Value>>) -> Result<Value, AgentError> {
+    pub async fn send(
+        &self,
+        text: String,
+        images: Option<Vec<Value>>,
+    ) -> Result<Value, AgentError> {
         let (proc, working) = {
             let mut state = self.state.lock().await;
             // Port of `SessionAgent.ts`'s own `send()`: marks the user as having acted before
@@ -903,8 +1064,19 @@ impl SessionAgent {
             // notice/`command_output` kept the `startup-notice:` id and stayed hidden,
             // `Transcript.tsx:423`).
             state.transcript.mark_user_acted();
-            let proc = state.process.clone().ok_or_else(|| AgentError::new("agent-not-running", format!("SessionAgent {}: cannot send, no live process", self.session_id)))?;
-            let working = matches!(state.status, SessionStatus::Working | SessionStatus::NeedsYou);
+            let proc = state.process.clone().ok_or_else(|| {
+                AgentError::new(
+                    "agent-not-running",
+                    format!(
+                        "SessionAgent {}: cannot send, no live process",
+                        self.session_id
+                    ),
+                )
+            })?;
+            let working = matches!(
+                state.status,
+                SessionStatus::Working | SessionStatus::NeedsYou
+            );
             (proc, working)
         };
         let mut cmd = json!({ "type": "prompt", "message": text });
@@ -916,9 +1088,16 @@ impl SessionAgent {
         if working {
             cmd["streamingBehavior"] = Value::String("followUp".to_string());
         }
-        let res = proc.request(cmd, DEFAULT_REQUEST_TIMEOUT_MS).await.map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        let res = proc
+            .request(cmd, DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         if res.get("success").and_then(Value::as_bool) != Some(true) {
-            let err_message = res.get("error").and_then(Value::as_str).unwrap_or("unknown error").to_string();
+            let err_message = res
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+                .to_string();
             let detail = format!("prompt failed: {err_message}");
             self.append_notice(detail.clone(), "error").await;
             return Err(AgentError::new("prompt-failed", detail));
@@ -938,10 +1117,18 @@ impl SessionAgent {
         if status == SessionStatus::Idle {
             return Ok(());
         }
-        if let Ok(res) = proc.request(json!({ "type": "abort" }), DEFAULT_REQUEST_TIMEOUT_MS).await {
+        if let Ok(res) = proc
+            .request(json!({ "type": "abort" }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+        {
             if res.get("success").and_then(Value::as_bool) != Some(true) {
-                let err_message = res.get("error").and_then(Value::as_str).unwrap_or("unknown error").to_string();
-                self.append_notice(format!("abort failed: {err_message}"), "error").await;
+                let err_message = res
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown error")
+                    .to_string();
+                self.append_notice(format!("abort failed: {err_message}"), "error")
+                    .await;
             }
         }
         let mut rx = self.status_tx.subscribe();
@@ -955,8 +1142,20 @@ impl SessionAgent {
                 }
             }
         };
-        if tokio::time::timeout(std::time::Duration::from_millis(ABORT_SETTLE_TIMEOUT_MS), wait).await.is_err() {
-            return Err(AgentError::new("prompt-failed", format!("SessionAgent {}: timed out waiting for idle", self.session_id)));
+        if tokio::time::timeout(
+            std::time::Duration::from_millis(ABORT_SETTLE_TIMEOUT_MS),
+            wait,
+        )
+        .await
+        .is_err()
+        {
+            return Err(AgentError::new(
+                "prompt-failed",
+                format!(
+                    "SessionAgent {}: timed out waiting for idle",
+                    self.session_id
+                ),
+            ));
         }
         Ok(())
     }
@@ -965,26 +1164,49 @@ impl SessionAgent {
     /// `'steering'`) -- OMP's `remove_queued_message` only matches within the exact queue given.
     pub async fn remove_queued(&self, text: String, queue: &str) -> Result<Value, AgentError> {
         let proc = {
-            self.state.lock().await.process.clone().ok_or_else(|| AgentError::new("agent-not-running", format!("SessionAgent {}: cannot remove a queued message, no live process", self.session_id)))?
+            self.state.lock().await.process.clone().ok_or_else(|| {
+                AgentError::new(
+                    "agent-not-running",
+                    format!(
+                        "SessionAgent {}: cannot remove a queued message, no live process",
+                        self.session_id
+                    ),
+                )
+            })?
         };
         let res = proc
-            .request(json!({ "type": "remove_queued_message", "message": text, "queue": queue }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .request(
+                json!({ "type": "remove_queued_message", "message": text, "queue": queue }),
+                DEFAULT_REQUEST_TIMEOUT_MS,
+            )
             .await
             .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         if res.get("success").and_then(Value::as_bool) != Some(true) {
-            let err_message = res.get("error").and_then(Value::as_str).unwrap_or("unknown error").to_string();
+            let err_message = res
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+                .to_string();
             let detail = format!("remove_queued_message failed: {err_message}");
             self.append_notice(detail.clone(), "error").await;
             return Err(AgentError::new("prompt-failed", detail));
         }
-        let removed = res.get("data").and_then(|d| d.get("removed")).and_then(Value::as_bool).unwrap_or(false);
+        let removed = res
+            .get("data")
+            .and_then(|d| d.get("removed"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         Ok(json!({ "removed": removed }))
     }
 
     /// `chat.answer` (T028): writes the `extension_ui_response` for a still-pending request
     /// (via `OmpProcess::send_raw`, which preserves the ORIGINAL request's own `id` -- see that
     /// method's own doc comment) and marks it resolved.
-    pub async fn answer_request(&self, request_id: String, answer: Value) -> Result<(), AgentError> {
+    pub async fn answer_request(
+        &self,
+        request_id: String,
+        answer: Value,
+    ) -> Result<(), AgentError> {
         let (request, proc) = {
             let state = self.state.lock().await;
             let request = state
@@ -992,19 +1214,42 @@ impl SessionAgent {
                 .iter()
                 .find(|r| r.request_id() == request_id)
                 .cloned()
-                .ok_or_else(|| AgentError::new("not-found", format!("SessionAgent {}: no pending request {request_id}", self.session_id)))?;
-            let proc = state.process.clone().ok_or_else(|| AgentError::new("agent-not-running", format!("SessionAgent {}: cannot answer, no live process", self.session_id)))?;
+                .ok_or_else(|| {
+                    AgentError::new(
+                        "not-found",
+                        format!(
+                            "SessionAgent {}: no pending request {request_id}",
+                            self.session_id
+                        ),
+                    )
+                })?;
+            let proc = state.process.clone().ok_or_else(|| {
+                AgentError::new(
+                    "agent-not-running",
+                    format!(
+                        "SessionAgent {}: cannot answer, no live process",
+                        self.session_id
+                    ),
+                )
+            })?;
             (request, proc)
         };
-        let response = build_dialog_response(&request_id, &request, &answer).map_err(|err| AgentError::new("invalid-argument", err))?;
-        proc.send_raw(response).await.map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        let response = build_dialog_response(&request_id, &request, &answer)
+            .map_err(|err| AgentError::new("invalid-argument", err))?;
+        proc.send_raw(response)
+            .await
+            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
 
         // Port of `SessionAgent.ts` `answer`'s resolved mapping: `cancelled` key wins, then
         // `approve` true/false, otherwise a question answer.
         let resolved = if answer.get("cancelled").is_some() {
             RequestResolution::Cancelled
         } else if let Some(approve) = answer.get("approve") {
-            if approve.as_bool() == Some(true) { RequestResolution::Approved } else { RequestResolution::Denied }
+            if approve.as_bool() == Some(true) {
+                RequestResolution::Approved
+            } else {
+                RequestResolution::Denied
+            }
         } else {
             RequestResolution::Answered
         };
@@ -1014,7 +1259,8 @@ impl SessionAgent {
             state.pending.retain(|r| r.request_id() != request_id);
             state.pending.is_empty() && state.status == SessionStatus::NeedsYou
         };
-        self.events.emit_request_resolved(&self.session_id, &request_id);
+        self.events
+            .emit_request_resolved(&self.session_id, &request_id);
         if became_working {
             self.set_status(SessionStatus::Working, None, None).await;
         }
@@ -1032,25 +1278,51 @@ impl SessionAgent {
         let proc = {
             let state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.process.is_none() {
-                return Err(AgentError::new("not-idle", format!("SessionAgent {}: cannot start a new Conversation while {:?}", self.session_id, state.status)));
+                return Err(AgentError::new(
+                    "not-idle",
+                    format!(
+                        "SessionAgent {}: cannot start a new Conversation while {:?}",
+                        self.session_id, state.status
+                    ),
+                ));
             }
             state.process.clone().unwrap()
         };
-        let res = proc.request(json!({ "type": "new_session" }), DEFAULT_REQUEST_TIMEOUT_MS).await.map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        let res = proc
+            .request(json!({ "type": "new_session" }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         if res.get("success").and_then(Value::as_bool) != Some(true) {
             return Err(AgentError::new(
                 "prompt-failed",
-                format!("new_session failed: {}", res.get("error").and_then(Value::as_str).unwrap_or("unknown error")),
+                format!(
+                    "new_session failed: {}",
+                    res.get("error")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown error")
+                ),
             ));
         }
-        let patch = SessionPatch { current_conversation: Some(None), last_message_count: Some(None), ..Default::default() };
-        let _ = self.registry.lock().await.update_session(&self.session_id, patch).await;
+        let patch = SessionPatch {
+            current_conversation: Some(None),
+            last_message_count: Some(None),
+            ..Default::default()
+        };
+        let _ = self
+            .registry
+            .lock()
+            .await
+            .update_session(&self.session_id, patch)
+            .await;
         {
             let mut state = self.state.lock().await;
             state.transcript = TranscriptState::new();
         }
         self.emit_patch_reset().await;
-        if let Ok(res) = proc.request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS).await {
+        if let Ok(res) = proc
+            .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+        {
             if res.get("success").and_then(Value::as_bool) == Some(true) {
                 if let Some(data) = res.get("data") {
                     self.sync_from_state(data).await;
@@ -1070,20 +1342,40 @@ impl SessionAgent {
         let proc = {
             let state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.process.is_none() {
-                return Err(AgentError::new("not-idle", format!("SessionAgent {}: cannot open a Conversation while {:?}", self.session_id, state.status)));
+                return Err(AgentError::new(
+                    "not-idle",
+                    format!(
+                        "SessionAgent {}: cannot open a Conversation while {:?}",
+                        self.session_id, state.status
+                    ),
+                ));
             }
             state.process.clone().unwrap()
         };
         let switch_res = proc
-            .request(json!({ "type": "switch_session", "sessionPath": file }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .request(
+                json!({ "type": "switch_session", "sessionPath": file }),
+                DEFAULT_REQUEST_TIMEOUT_MS,
+            )
             .await
             .map_err(|err| AgentError::new("reattach-failed", err.to_string()))?;
-        let cancelled = switch_res.get("data").and_then(|d| d.get("cancelled")).and_then(Value::as_bool);
-        if switch_res.get("success").and_then(Value::as_bool) != Some(true) || cancelled != Some(false) {
-            return Err(AgentError::new("reattach-failed", format!("switch_session failed or was cancelled for {file}")));
+        let cancelled = switch_res
+            .get("data")
+            .and_then(|d| d.get("cancelled"))
+            .and_then(Value::as_bool);
+        if switch_res.get("success").and_then(Value::as_bool) != Some(true)
+            || cancelled != Some(false)
+        {
+            return Err(AgentError::new(
+                "reattach-failed",
+                format!("switch_session failed or was cancelled for {file}"),
+            ));
         }
 
-        let state_res = match proc.request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS).await {
+        let state_res = match proc
+            .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
+            .await
+        {
             Ok(res) => res,
             Err(err) => {
                 proc.stop().await;
@@ -1096,7 +1388,13 @@ impl SessionAgent {
         if state_res.get("success").and_then(Value::as_bool) != Some(true) {
             proc.stop().await;
             self.state.lock().await.process = None;
-            let detail = format!("get_state after switch_session failed: {}", state_res.get("error").and_then(Value::as_str).unwrap_or("unknown error"));
+            let detail = format!(
+                "get_state after switch_session failed: {}",
+                state_res
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown error")
+            );
             self.record_start_failure(&detail).await;
             return Err(AgentError::new("reattach-failed", detail));
         }
@@ -1145,7 +1443,6 @@ impl SessionAgent {
 // slash-commands.ts classification)
 // ---------------------------------------------------------------------------
 
-
 /// `RegistryStoreError` has no `Display` impl (only its `Registry` variant's inner
 /// `RegistryError` does); mirrors `ipc::map_registry_error`'s own match for the message half.
 fn registry_store_error_message(err: crate::store::registry::RegistryStoreError) -> String {
@@ -1168,18 +1465,31 @@ fn truncate(s: &str, max_len: usize) -> String {
 }
 
 fn string_array(value: Option<&Value>) -> Vec<String> {
-    value.and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
+    value
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Port of `reattachVerification.ts`'s own `verifyReattach`. Windows paths are compared
 /// case-insensitively without canonicalisation (both sides are already absolute paths from the
 /// registry/OMP itself, unlike `path.resolve`'s own relative-path handling).
 fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), String> {
-    let session_file = state.get("sessionFile").and_then(Value::as_str).unwrap_or("");
+    let session_file = state
+        .get("sessionFile")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if session_file.to_lowercase() != expected_file.to_lowercase() {
         return Err(format!("Reattach verification failed: sessionFile mismatch (expected {expected_file}, got {session_file})"));
     }
-    let message_count = state.get("messageCount").and_then(Value::as_i64).unwrap_or(0);
+    let message_count = state
+        .get("messageCount")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     if message_count <= 0 {
         return Err(format!("Reattach verification failed: messageCount is {message_count}, expected greater than 0"));
     }
@@ -1209,15 +1519,22 @@ async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
             return (all, false);
         }
         let data = res.get("data");
-        let messages = data.and_then(|d| d.get("messages")).and_then(Value::as_array);
-        let total_messages = data.and_then(|d| d.get("totalMessages")).and_then(Value::as_u64);
+        let messages = data
+            .and_then(|d| d.get("messages"))
+            .and_then(Value::as_array);
+        let total_messages = data
+            .and_then(|d| d.get("totalMessages"))
+            .and_then(Value::as_u64);
         let (Some(messages), Some(total_messages)) = (messages, total_messages) else {
             if page == 0 {
                 return fallback_to_get_messages(proc).await;
             }
             return (all, false);
         };
-        let next_cursor = data.and_then(|d| d.get("nextCursor")).and_then(Value::as_str).map(str::to_string);
+        let next_cursor = data
+            .and_then(|d| d.get("nextCursor"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
         if next_cursor.is_some() && (messages.is_empty() || next_cursor == cursor) {
             return (all, false);
         }
@@ -1225,18 +1542,29 @@ async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
         if all.len() as u64 >= total_messages {
             return (all, true);
         }
-        let Some(next_cursor) = next_cursor else { return (all, false) };
+        let Some(next_cursor) = next_cursor else {
+            return (all, false);
+        };
         cursor = Some(next_cursor);
     }
     (all, false)
 }
 
 async fn fallback_to_get_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
-    let res = match proc.request(json!({ "type": "get_messages" }), DEFAULT_REQUEST_TIMEOUT_MS).await {
+    let res = match proc
+        .request(
+            json!({ "type": "get_messages" }),
+            DEFAULT_REQUEST_TIMEOUT_MS,
+        )
+        .await
+    {
         Ok(res) => res,
         Err(_) => return (Vec::new(), false),
     };
-    let messages = res.get("data").and_then(|d| d.get("messages")).and_then(Value::as_array);
+    let messages = res
+        .get("data")
+        .and_then(|d| d.get("messages"))
+        .and_then(Value::as_array);
     if res.get("success").and_then(Value::as_bool) != Some(true) || messages.is_none() {
         return (Vec::new(), false);
     }
@@ -1257,8 +1585,18 @@ const MAX_TARGET_LENGTH: usize = 200;
 /// confirmed `title.starts_with(APPROVAL_PREFIX)`, so the first line always carries the prefix.
 fn parse_approval_title(title: &str) -> (String, Vec<String>) {
     let first_line = title.split('\n').next().unwrap_or("");
-    let tool = first_line.strip_prefix(APPROVAL_PREFIX).unwrap_or(first_line).trim().to_string();
-    let details: Vec<String> = title.split('\n').skip(1).map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
+    let tool = first_line
+        .strip_prefix(APPROVAL_PREFIX)
+        .unwrap_or(first_line)
+        .trim()
+        .to_string();
+    let details: Vec<String> = title
+        .split('\n')
+        .skip(1)
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
     (tool, details)
 }
 
@@ -1277,19 +1615,41 @@ fn pick_approval_target(tool: &str, details: &[String]) -> String {
 /// Port of `dialogs.ts`'s own `classifyDialog`.
 fn classify_dialog(frame: &Value) -> DialogClassification {
     let method = frame.get("method").and_then(Value::as_str).unwrap_or("");
-    let id = frame.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    let id = frame
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     match method {
         "select" => {
-            let title = frame.get("title").and_then(Value::as_str).unwrap_or("").to_string();
+            let title = frame
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             if title.starts_with(APPROVAL_PREFIX) {
                 let (tool, details) = parse_approval_title(&title);
                 let target = pick_approval_target(&tool, &details);
-                return DialogClassification::Request(PendingRequest::Approval { request_id: id, tool, target, details });
+                return DialogClassification::Request(PendingRequest::Approval {
+                    request_id: id,
+                    tool,
+                    target,
+                    details,
+                });
             }
             let options = string_array(frame.get("options"));
-            let option_details = frame.get("optionDetails").and_then(Value::as_array).map(|list| {
-                list.iter().map(|d| d.get("description").and_then(Value::as_str).map(str::to_string)).collect::<Vec<_>>()
-            });
+            let option_details = frame
+                .get("optionDetails")
+                .and_then(Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .map(|d| {
+                            d.get("description")
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                        })
+                        .collect::<Vec<_>>()
+                });
             DialogClassification::Request(PendingRequest::Question {
                 request_id: id,
                 title,
@@ -1301,7 +1661,11 @@ fn classify_dialog(frame: &Value) -> DialogClassification {
         }
         "input" | "editor" => DialogClassification::Request(PendingRequest::Question {
             request_id: id,
-            title: frame.get("title").and_then(Value::as_str).unwrap_or("").to_string(),
+            title: frame
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
             message: None,
             options: vec![],
             option_details: None,
@@ -1309,49 +1673,89 @@ fn classify_dialog(frame: &Value) -> DialogClassification {
         }),
         "confirm" => DialogClassification::Request(PendingRequest::Question {
             request_id: id,
-            title: frame.get("title").and_then(Value::as_str).unwrap_or("").to_string(),
-            message: frame.get("message").and_then(Value::as_str).map(str::to_string),
+            title: frame
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            message: frame
+                .get("message")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             options: vec!["Yes".to_string(), "No".to_string()],
             option_details: None,
             input_kind: "confirm",
         }),
-        "cancel" => DialogClassification::Cancel(frame.get("targetId").and_then(Value::as_str).map(str::to_string).unwrap_or(id)),
+        "cancel" => DialogClassification::Cancel(
+            frame
+                .get("targetId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .unwrap_or(id),
+        ),
         "notify" => DialogClassification::Notify {
-            message: frame.get("message").and_then(Value::as_str).unwrap_or("").to_string(),
-            level: frame.get("notifyType").and_then(Value::as_str).unwrap_or("info").to_string(),
+            message: frame
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            level: frame
+                .get("notifyType")
+                .and_then(Value::as_str)
+                .unwrap_or("info")
+                .to_string(),
         },
         _ => DialogClassification::Ignore,
     }
 }
 
 /// Port of `dialogs.ts`'s own `buildDialogResponse`.
-fn build_dialog_response(request_id: &str, request: &PendingRequest, answer: &Value) -> Result<Value, String> {
+fn build_dialog_response(
+    request_id: &str,
+    request: &PendingRequest,
+    answer: &Value,
+) -> Result<Value, String> {
     if answer.get("cancelled") == Some(&Value::Bool(true)) {
         return Ok(json!({ "type": "extension_ui_response", "id": request_id, "cancelled": true }));
     }
     if matches!(request, PendingRequest::Approval { .. }) {
-        let approve = answer.get("approve").and_then(Value::as_bool).ok_or_else(|| format!("expected an approve answer for approval request {request_id}"))?;
-        return Ok(json!({ "type": "extension_ui_response", "id": request_id, "value": if approve { "Approve" } else { "Deny" } }));
+        let approve = answer
+            .get("approve")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                format!("expected an approve answer for approval request {request_id}")
+            })?;
+        return Ok(
+            json!({ "type": "extension_ui_response", "id": request_id, "value": if approve { "Approve" } else { "Deny" } }),
+        );
     }
     if let PendingRequest::Question { input_kind, .. } = request {
         if *input_kind == "confirm" {
             if let Some(value) = answer.get("value").and_then(Value::as_str) {
-                return Ok(json!({ "type": "extension_ui_response", "id": request_id, "confirmed": value == "Yes" }));
+                return Ok(
+                    json!({ "type": "extension_ui_response", "id": request_id, "confirmed": value == "Yes" }),
+                );
             }
         }
     }
     if let Some(confirmed) = answer.get("confirmed").and_then(Value::as_bool) {
-        return Ok(json!({ "type": "extension_ui_response", "id": request_id, "confirmed": confirmed }));
+        return Ok(
+            json!({ "type": "extension_ui_response", "id": request_id, "confirmed": confirmed }),
+        );
     }
     if let Some(value) = answer.get("value").and_then(Value::as_str) {
         return Ok(json!({ "type": "extension_ui_response", "id": request_id, "value": value }));
     }
-    Err(format!("unsupported dialog answer for request {request_id}"))
+    Err(format!(
+        "unsupported dialog answer for request {request_id}"
+    ))
 }
 
 /// `chat.answer`'s own wire-shape validation (port of `chat.ts`'s own `isChatAnswer`).
 pub fn is_chat_answer(value: &Value) -> bool {
-    let Some(obj) = value.as_object() else { return false };
+    let Some(obj) = value.as_object() else {
+        return false;
+    };
     matches!(obj.get("approve"), Some(Value::Bool(_)))
         || matches!(obj.get("value"), Some(Value::String(_)))
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
@@ -1365,14 +1769,17 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
         "slow" => Some(&["on", "off", "status"]),
         "extended-context" => Some(&["on", "off", "status"]),
         "prewalk" => Some(&["restart"]),
-        "effort" => Some(&["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"]),
+        "effort" => Some(&[
+            "off", "minimal", "low", "medium", "high", "xhigh", "max", "auto",
+        ]),
         "dump" => Some(&["all"]),
         "todo" => Some(&["expand", "collapse", "append", "start", "done", "rm"]),
         "session" => Some(&["info"]),
         "jobs" => Some(&["full"]),
         "usage" => Some(&["show"]),
         "changelog" => Some(&["full", "last"]),
-        "tools" | "context" | "fresh" | "retry" | "rename" | "add-dir" | "dirs" | "force" | "autoresearch" | "annotate" => Some(&[]),
+        "tools" | "context" | "fresh" | "retry" | "rename" | "add-dir" | "dirs" | "force"
+        | "autoresearch" | "annotate" => Some(&[]),
         "shake" => Some(&["elide", "images", "thinking"]),
         _ => None,
     }
@@ -1383,18 +1790,36 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
 /// no implementation here (side chat out of scope, see this file's own header) -- `ipc::chat`'s
 /// own `NATIVE_RESERVED_COMMANDS` check refuses it with `unknown-command` before classification
 /// ever reaches `chat.send`, so this module never sees a `/btw` invocation to special-case.
-const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[("new", "Start a new Conversation in this Session"), ("btw", "Ask the agent a side question")];
+const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
+    ("new", "Start a new Conversation in this Session"),
+    ("btw", "Ask the agent a side question"),
+];
 
 /// Port of `slash-commands.ts`'s own `filterSupportedCommands`.
 fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
-    let mut out: Vec<Value> = NATIVE_BUILT_COMMANDS.iter().map(|(name, description)| json!({ "name": name, "description": description })).collect();
+    let mut out: Vec<Value> = NATIVE_BUILT_COMMANDS
+        .iter()
+        .map(|(name, description)| json!({ "name": name, "description": description }))
+        .collect();
     for command in raw {
-        let Some(name) = command.get("name").and_then(Value::as_str) else { continue };
-        let Some(allowed) = supported_omp_subcommands(name) else { continue };
+        let Some(name) = command.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(allowed) = supported_omp_subcommands(name) else {
+            continue;
+        };
         let mut pruned = command.clone();
         if let Some(subs) = command.get("subcommands").and_then(Value::as_array) {
-            let filtered: Vec<Value> =
-                subs.iter().filter(|sub| sub.get("name").and_then(Value::as_str).map(|n| allowed.contains(&n)).unwrap_or(false)).cloned().collect();
+            let filtered: Vec<Value> = subs
+                .iter()
+                .filter(|sub| {
+                    sub.get("name")
+                        .and_then(Value::as_str)
+                        .map(|n| allowed.contains(&n))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect();
             pruned["subcommands"] = Value::Array(filtered);
         }
         out.push(pruned);
@@ -1428,12 +1853,21 @@ pub enum SlashInvocationClassification {
     UnsupportedArguments,
 }
 
-pub fn classify_slash_invocation(name: &str, rest: &str, commands: &[Value]) -> SlashInvocationClassification {
+pub fn classify_slash_invocation(
+    name: &str,
+    rest: &str,
+    commands: &[Value],
+) -> SlashInvocationClassification {
     let descriptor = commands.iter().find(|c| {
         c.get("name").and_then(Value::as_str) == Some(name)
-            || c.get("aliases").and_then(Value::as_array).map(|a| a.iter().any(|v| v.as_str() == Some(name))).unwrap_or(false)
+            || c.get("aliases")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().any(|v| v.as_str() == Some(name)))
+                .unwrap_or(false)
     });
-    let Some(descriptor) = descriptor else { return SlashInvocationClassification::UnknownCommand };
+    let Some(descriptor) = descriptor else {
+        return SlashInvocationClassification::UnknownCommand;
+    };
     if rest.is_empty() {
         return SlashInvocationClassification::Supported;
     }
@@ -1452,7 +1886,10 @@ pub fn classify_slash_invocation(name: &str, rest: &str, commands: &[Value]) -> 
     let supported = descriptor
         .get("subcommands")
         .and_then(Value::as_array)
-        .map(|subs| subs.iter().any(|s| s.get("name").and_then(Value::as_str) == Some(sub_name)))
+        .map(|subs| {
+            subs.iter()
+                .any(|s| s.get("name").and_then(Value::as_str) == Some(sub_name))
+        })
         .unwrap_or(false);
     if supported {
         SlashInvocationClassification::Supported

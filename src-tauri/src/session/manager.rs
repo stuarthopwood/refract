@@ -31,11 +31,21 @@ pub struct SessionManager {
 
 impl SessionManager {
     pub fn new(registry: SharedRegistry, settings: SharedSettings, events: EventSink) -> Arc<Self> {
-        Arc::new(Self { registry, settings, events, agents: StdMutex::new(HashMap::new()), visible_ids: Arc::new(StdMutex::new(HashSet::new())) })
+        Arc::new(Self {
+            registry,
+            settings,
+            events,
+            agents: StdMutex::new(HashMap::new()),
+            visible_ids: Arc::new(StdMutex::new(HashSet::new())),
+        })
     }
 
     pub fn get_agent(&self, session_id: &str) -> Option<Arc<SessionAgent>> {
-        self.agents.lock().expect("agents mutex poisoned").get(session_id).cloned()
+        self.agents
+            .lock()
+            .expect("agents mutex poisoned")
+            .get(session_id)
+            .cloned()
     }
 
     /// `SessionManager.ts`'s own `getOrCreateAgent`: a brand-new instance on first access,
@@ -46,7 +56,13 @@ impl SessionManager {
         if let Some(existing) = agents.get(session_id) {
             return existing.clone();
         }
-        let agent = SessionAgent::new(session_id.to_string(), self.registry.clone(), self.settings.clone(), self.events.clone(), self.visible_ids.clone());
+        let agent = SessionAgent::new(
+            session_id.to_string(),
+            self.registry.clone(),
+            self.settings.clone(),
+            self.events.clone(),
+            self.visible_ids.clone(),
+        );
         agents.insert(session_id.to_string(), agent.clone());
         agent
     }
@@ -66,24 +82,38 @@ impl SessionManager {
     /// absent, see `session::agent`'s own header).
     pub async fn summaries(&self) -> Vec<Value> {
         let sessions = self.registry.lock().await.snapshot().sessions;
-        let launched_mode = serde_json::to_value(self.settings.lock().await.get().approval_mode).expect("ApprovalMode is always JSON-serialisable");
+        let launched_mode = serde_json::to_value(self.settings.lock().await.get().approval_mode)
+            .expect("ApprovalMode is always JSON-serialisable");
 
         let mut summaries = Vec::with_capacity(sessions.len());
         for session in &sessions {
-            let mut summary = serde_json::to_value(session).expect("Session is always JSON-serialisable");
-            let object = summary.as_object_mut().expect("Session serialises to a JSON object");
+            let mut summary =
+                serde_json::to_value(session).expect("Session is always JSON-serialisable");
+            let object = summary
+                .as_object_mut()
+                .expect("Session serialises to a JSON object");
             match self.get_agent(&session.id) {
                 Some(agent) => {
                     let live = agent.summary_fields().await;
-                    for (key, value) in live.as_object().expect("summary_fields is always a JSON object") {
+                    for (key, value) in live
+                        .as_object()
+                        .expect("summary_fields is always a JSON object")
+                    {
                         object.insert(key.clone(), value.clone());
                     }
                 }
                 None => {
                     let worktree_exists = tokio::fs::metadata(&session.worktree_path).await.is_ok();
-                    let stop_reason = if worktree_exists { "not-started" } else { "worktree-missing" };
+                    let stop_reason = if worktree_exists {
+                        "not-started"
+                    } else {
+                        "worktree-missing"
+                    };
                     object.insert("status".to_string(), Value::String("stopped".to_string()));
-                    object.insert("stopReason".to_string(), Value::String(stop_reason.to_string()));
+                    object.insert(
+                        "stopReason".to_string(),
+                        Value::String(stop_reason.to_string()),
+                    );
                     object.insert("unread".to_string(), Value::Bool(false));
                     object.insert("launchedMode".to_string(), launched_mode.clone());
                     object.insert("pendingMode".to_string(), Value::Null);
@@ -119,7 +149,13 @@ impl SessionManager {
     /// Stops every live agent concurrently (`lib.rs`'s `RunEvent::ExitRequested` handler, port
     /// of `src/main/index.ts`'s own `before-quit` stop-all).
     pub async fn stop_all(&self) {
-        let agents: Vec<Arc<SessionAgent>> = self.agents.lock().expect("agents mutex poisoned").values().cloned().collect();
+        let agents: Vec<Arc<SessionAgent>> = self
+            .agents
+            .lock()
+            .expect("agents mutex poisoned")
+            .values()
+            .cloned()
+            .collect();
         let mut handles = Vec::with_capacity(agents.len());
         for agent in agents {
             handles.push(tokio::spawn(async move { agent.shutdown().await }));

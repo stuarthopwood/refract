@@ -110,7 +110,11 @@ fn parse_split_layout(value: &Value) -> Option<SplitLayout> {
         1 => 1u8,
         _ => return None,
     };
-    Some(SplitLayout { session_ids: [first.to_string(), second.to_string()], divider_percent, focused_index })
+    Some(SplitLayout {
+        session_ids: [first.to_string(), second.to_string()],
+        divider_percent,
+        focused_index,
+    })
 }
 
 pub struct SettingsStore {
@@ -131,7 +135,9 @@ pub struct SettingsStore {
 impl SettingsStore {
     pub async fn open(dir: &Path) -> std::io::Result<Self> {
         let file = dir.join("settings.json");
-        let raw = super::atomic_json::read_json_file::<Value, _>(&file, || Value::Object(Map::new())).await?;
+        let raw =
+            super::atomic_json::read_json_file::<Value, _>(&file, || Value::Object(Map::new()))
+                .await?;
         let object = raw.as_object().cloned().unwrap_or_default();
 
         // No lazy-correction comment in `settings.ts` covers `approvalMode` itself (it is only
@@ -148,12 +154,24 @@ impl SettingsStore {
             .and_then(Value::as_object)
             .map(|o| SessionReadout {
                 changes: o.get("changes").and_then(Value::as_bool).unwrap_or(true),
-                context_usage: o.get("context-usage").and_then(Value::as_bool).unwrap_or(true),
+                context_usage: o
+                    .get("context-usage")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
                 turn_time: o.get("turn-time").and_then(Value::as_bool).unwrap_or(true),
-                current_time: o.get("current-time").and_then(Value::as_bool).unwrap_or(false),
-                pull_request: o.get("pull-request").and_then(Value::as_bool).unwrap_or(true),
+                current_time: o
+                    .get("current-time")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                pull_request: o
+                    .get("pull-request")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
                 subagents: o.get("subagents").and_then(Value::as_bool).unwrap_or(true),
-                todo_progress: o.get("todo-progress").and_then(Value::as_bool).unwrap_or(true),
+                todo_progress: o
+                    .get("todo-progress")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
             })
             .unwrap_or_else(default_session_readout);
 
@@ -162,7 +180,9 @@ impl SettingsStore {
             Some(v) => parse_split_layout(v),
         };
 
-        let raw_theme = object.get("theme").and_then(|v| serde_json::from_value::<ThemeId>(v.clone()).ok());
+        let raw_theme = object
+            .get("theme")
+            .and_then(|v| serde_json::from_value::<ThemeId>(v.clone()).ok());
         let theme = raw_theme.unwrap_or(ThemeId::Dark);
 
         let raw_watermark_enabled = object.get("watermarkEnabled").and_then(Value::as_bool);
@@ -170,14 +190,23 @@ impl SettingsStore {
 
         let raw_transcript_display = object.get("transcriptDisplay").and_then(Value::as_object);
         let transcript_display = TranscriptDisplaySettings {
-            thinking: raw_transcript_display.and_then(|o| o.get("thinking")).and_then(Value::as_bool).unwrap_or(true),
-            tool_calls: raw_transcript_display.and_then(|o| o.get("toolCalls")).and_then(Value::as_bool).unwrap_or(true),
+            thinking: raw_transcript_display
+                .and_then(|o| o.get("thinking"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            tool_calls: raw_transcript_display
+                .and_then(|o| o.get("toolCalls"))
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
         };
 
         let raw_show_sample_data = object.get("showSampleData").and_then(Value::as_bool);
         let show_sample_data = raw_show_sample_data.unwrap_or(false);
 
-        let detect_image_paths_on_paste = object.get("detectImagePathsOnPaste").and_then(Value::as_bool).unwrap_or(true);
+        let detect_image_paths_on_paste = object
+            .get("detectImagePathsOnPaste")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
 
         let data = Settings {
             version: 1,
@@ -191,7 +220,13 @@ impl SettingsStore {
             detect_image_paths_on_paste,
         };
 
-        Ok(Self { file, data, raw_theme, raw_watermark_enabled, raw_show_sample_data })
+        Ok(Self {
+            file,
+            data,
+            raw_theme,
+            raw_watermark_enabled,
+            raw_show_sample_data,
+        })
     }
 
     pub fn get(&self) -> Settings {
@@ -207,7 +242,10 @@ impl SettingsStore {
         let mut map = Map::new();
         map.insert("version".to_string(), json!(1));
         map.insert("approvalMode".to_string(), json!(self.data.approval_mode));
-        map.insert("sessionReadout".to_string(), json!(self.data.session_readout));
+        map.insert(
+            "sessionReadout".to_string(),
+            json!(self.data.session_readout),
+        );
         map.insert(
             "split".to_string(),
             match &self.data.split {
@@ -221,11 +259,17 @@ impl SettingsStore {
         if let Some(enabled) = self.raw_watermark_enabled {
             map.insert("watermarkEnabled".to_string(), json!(enabled));
         }
-        map.insert("transcriptDisplay".to_string(), json!(self.data.transcript_display));
+        map.insert(
+            "transcriptDisplay".to_string(),
+            json!(self.data.transcript_display),
+        );
         if let Some(enabled) = self.raw_show_sample_data {
             map.insert("showSampleData".to_string(), json!(enabled));
         }
-        map.insert("detectImagePathsOnPaste".to_string(), json!(self.data.detect_image_paths_on_paste));
+        map.insert(
+            "detectImagePathsOnPaste".to_string(),
+            json!(self.data.detect_image_paths_on_paste),
+        );
         Value::Object(map)
     }
 
@@ -239,7 +283,10 @@ impl SettingsStore {
     /// row via `persist_whole`. Returns this call's own written value, not a possibly-superseded
     /// shared read -- matches `settings.ts`'s own race-safety comment on every setter.
     pub async fn set_approval_mode(&mut self, mode: ApprovalMode) -> std::io::Result<Settings> {
-        let next = Settings { approval_mode: mode, ..self.data.clone() };
+        let next = Settings {
+            approval_mode: mode,
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 
@@ -247,7 +294,11 @@ impl SettingsStore {
     /// of the seven `ReadoutKind` string values; an unrecognised one is a no-op (the IPC handler
     /// that will eventually call this validates against the known set first, the same division of
     /// responsibility `settings.ts`'s own `READOUT_KINDS` guard uses).
-    pub async fn set_readout_visibility(&mut self, kind: &str, visible: bool) -> std::io::Result<Settings> {
+    pub async fn set_readout_visibility(
+        &mut self,
+        kind: &str,
+        visible: bool,
+    ) -> std::io::Result<Settings> {
         let mut readout = self.data.session_readout.clone();
         match kind {
             "changes" => readout.changes = visible,
@@ -259,21 +310,30 @@ impl SettingsStore {
             "todo-progress" => readout.todo_progress = visible,
             _ => return Ok(self.data.clone()),
         }
-        let next = Settings { session_readout: readout, ..self.data.clone() };
+        let next = Settings {
+            session_readout: readout,
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 
     /// `settings.setSplit(layout)` (spec 005 FR-014/FR-015): persists the whole Split layout (or
     /// `None` for no split).
     pub async fn set_split(&mut self, layout: Option<SplitLayout>) -> std::io::Result<Settings> {
-        let next = Settings { split: layout, ..self.data.clone() };
+        let next = Settings {
+            split: layout,
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 
     /// `theme.set(themeId)` (spec 007 FR-004): the one and only place allowed to turn `raw_theme`
     /// into a real, developer-saved value.
     pub async fn set_theme(&mut self, theme: ThemeId) -> std::io::Result<Settings> {
-        let next = Settings { theme, ..self.data.clone() };
+        let next = Settings {
+            theme,
+            ..self.data.clone()
+        };
         self.data = next;
         self.raw_theme = Some(theme);
         write_json_file(&self.file, &self.serialize_for_disk()).await?;
@@ -284,21 +344,31 @@ impl SettingsStore {
     /// allowed to turn `raw_watermark_enabled` into a real, developer-saved value.
     pub async fn set_watermark_enabled(&mut self, enabled: bool) -> std::io::Result<Settings> {
         self.raw_watermark_enabled = Some(enabled);
-        let next = Settings { watermark_enabled: enabled, ..self.data.clone() };
+        let next = Settings {
+            watermark_enabled: enabled,
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 
     /// `settings.setTranscriptDisplay(field, visible)` (issue #457): merges ONE field into
     /// `transcript_display`, never a whole-object replace (a quick second toggle built from a
     /// stale value must not revert the first).
-    pub async fn set_transcript_display(&mut self, field: &str, visible: bool) -> std::io::Result<Settings> {
+    pub async fn set_transcript_display(
+        &mut self,
+        field: &str,
+        visible: bool,
+    ) -> std::io::Result<Settings> {
         let mut transcript_display = self.data.transcript_display.clone();
         match field {
             "thinking" => transcript_display.thinking = visible,
             "toolCalls" => transcript_display.tool_calls = visible,
             _ => return Ok(self.data.clone()),
         }
-        let next = Settings { transcript_display, ..self.data.clone() };
+        let next = Settings {
+            transcript_display,
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 
@@ -306,14 +376,23 @@ impl SettingsStore {
     /// allowed to turn `raw_show_sample_data` into a real, developer-saved value.
     pub async fn set_show_sample_data(&mut self, enabled: bool) -> std::io::Result<Settings> {
         self.raw_show_sample_data = Some(enabled);
-        let next = Settings { show_sample_data: enabled, ..self.data.clone() };
+        let next = Settings {
+            show_sample_data: enabled,
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 
     /// `settings.setDetectImagePathsOnPaste(enabled)` (#514): no raw/lazy-correction tracking
     /// needed, the same plain-boolean migration shape `set_transcript_display` above uses.
-    pub async fn set_detect_image_paths_on_paste(&mut self, enabled: bool) -> std::io::Result<Settings> {
-        let next = Settings { detect_image_paths_on_paste: enabled, ..self.data.clone() };
+    pub async fn set_detect_image_paths_on_paste(
+        &mut self,
+        enabled: bool,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            detect_image_paths_on_paste: enabled,
+            ..self.data.clone()
+        };
         self.persist_whole(next).await
     }
 }

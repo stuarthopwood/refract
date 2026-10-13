@@ -15,7 +15,11 @@ pub fn clipboard_write_text(state: AppState, args: Vec<Value>) -> HandlerFuture 
             Some(text) => text.to_string(),
             None => return Err(invalid_argument("clipboard.writeText expects a string")),
         };
-        let app_handle = state.app_handle.lock().expect("app_handle mutex poisoned").clone();
+        let app_handle = state
+            .app_handle
+            .lock()
+            .expect("app_handle mutex poisoned")
+            .clone();
         let Some(app_handle) = app_handle else {
             return Err(IpcError::new("clipboard-failed", "No window yet"));
         };
