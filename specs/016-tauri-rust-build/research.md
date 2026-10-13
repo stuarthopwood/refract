@@ -33,13 +33,15 @@
 
 3. **Milestone 1 ships the core loop first; full IPC parity is a tracked checklist, not a
    blocking gate.** Decided by Stuart on issue://780 (cited in spec.md Clarifications). Of the 86
-   `IPC_REQUESTS` and 20 `IPC_EVENTS` entries in `src/shared/ipc.ts`, milestone 1 implements 23
-   requests and 8 events (FR-012/FR-013; full enumeration in `parity.md`) -- exactly the surface
-   User Stories 1 through 5 exercise (readiness, repositories, Sessions, Conversations, chat,
-   approval answers, the settings subset those stories touch, clipboard, and the theme bootstrap).
-   Every other channel returns the `unsupported` error shape (FR-007) rather than silently doing
-   nothing or crashing. **Rejected**: full parity before anything runs -- porting all 106 rows of
-   `parity.md` before the first window ever opens risks months of Rust work with zero runnable
+   `IPC_REQUESTS` and 20 `IPC_EVENTS` entries in `src/shared/ipc.ts`, 23 requests and 8 events
+   (FR-012/FR-013) was the original milestone-1 target at the time this document was written --
+   exactly the surface User Stories 1 through 5 exercise (readiness, repositories, Sessions,
+   Conversations, chat, approval answers, the settings subset those stories touch, clipboard, and
+   the theme bootstrap). The live, current count of implemented channels is whatever `pnpm
+   check:parity`'s generated report says, not a number recorded in this document. Every
+   not-yet-ported channel returns the `unsupported` error shape (FR-007) rather than silently
+   doing nothing or crashing. **Rejected**: full parity before anything runs -- porting all 106
+   channels before the first window ever opens risks months of Rust work with zero runnable
    verification of the one thing this experiment is actually testing (whether a Rust/Tauri backend
    is viable at all for this app's process model); a developer could not run `quickstart.md`'s
    manual verification against any of it until the very end, the opposite of "evidence before

@@ -22,9 +22,10 @@ fn random_index(len: usize) -> usize {
 
 const ADJECTIVES: &[&str] = &[
     "amber", "ancient", "auburn", "bold", "brave", "bright", "brisk", "calm", "clever", "cosmic",
-    "crisp", "curious", "daring", "earnest", "eager", "fleet", "fluent", "fond", "frosty", "gallant",
-    "gentle", "golden", "humble", "keen", "lively", "lucid", "lucky", "mellow", "merry", "mighty",
-    "nimble", "noble", "placid", "quiet", "quick", "radiant", "rustic", "silent", "sunny", "swift",
+    "crisp", "curious", "daring", "earnest", "eager", "fleet", "fluent", "fond", "frosty",
+    "gallant", "gentle", "golden", "humble", "keen", "lively", "lucid", "lucky", "mellow", "merry",
+    "mighty", "nimble", "noble", "placid", "quiet", "quick", "radiant", "rustic", "silent",
+    "sunny", "swift",
 ];
 
 const NOUNS: &[&str] = &[
@@ -36,24 +37,51 @@ const NOUNS: &[&str] = &[
 
 /// The directory that holds every worktree for `repo`: `<repo>/../pinion-worktrees/<repoName>`.
 pub fn worktrees_root(repo: &Path) -> PathBuf {
-    let repo_name = repo.file_name().map(|name| name.to_os_string()).unwrap_or_default();
+    let repo_name = repo
+        .file_name()
+        .map(|name| name.to_os_string())
+        .unwrap_or_default();
     repo.join("..").join("pinion-worktrees").join(repo_name)
 }
 
 pub async fn list_branches(repo: &Path) -> Result<Vec<String>, GitError> {
-    let stdout = git(repo, &["for-each-ref", "--format=%(refname:short)", "refs/heads"]).await?;
-    Ok(stdout.split('\n').map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect())
+    let stdout = git(
+        repo,
+        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    )
+    .await?;
+    Ok(stdout
+        .split('\n')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 pub async fn branch_exists(repo: &Path, branch: &str) -> bool {
-    let result = git_raw(repo, &["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")], None).await;
+    let result = git_raw(
+        repo,
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+        None,
+    )
+    .await;
     result.code == 0
 }
 
 /// Reads `origin/HEAD`, falling back to the current branch, then `main`, then `master`,
 /// whichever exists (T011).
 pub async fn default_branch(repo: &Path) -> Result<String, GitError> {
-    let symbolic = git_raw(repo, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], None).await;
+    let symbolic = git_raw(
+        repo,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        None,
+    )
+    .await;
     if symbolic.code == 0 {
         let reference = symbolic.stdout.trim();
         if !reference.is_empty() {
@@ -76,13 +104,20 @@ pub async fn default_branch(repo: &Path) -> Result<String, GitError> {
         return Ok("master".to_string());
     }
 
-    Err(GitError::new(GitErrorCode::GitFailed, format!("Could not determine a default branch for {}", repo.display())))
+    Err(GitError::new(
+        GitErrorCode::GitFailed,
+        format!(
+            "Could not determine a default branch for {}",
+            repo.display()
+        ),
+    ))
 }
 
 /// Picks a readable adjective-noun name (e.g. "swift-otter"), unique against the repository's
 /// local branches and the folders already under its worktrees root.
 pub async fn generate_name(repo: &Path) -> Result<String, GitError> {
-    let branches: std::collections::HashSet<String> = list_branches(repo).await?.into_iter().collect();
+    let branches: std::collections::HashSet<String> =
+        list_branches(repo).await?.into_iter().collect();
 
     let mut existing_folders = std::collections::HashSet::new();
     match tokio::fs::read_dir(worktrees_root(repo)).await {
@@ -125,31 +160,59 @@ pub struct AddWorktreeResult {
 /// `base_branch`. On any failure, removes the worktree and branch it created (no half-created
 /// Session) and fails with a `GitError` mapped to `base-missing`, `path-too-long`, or
 /// `worktree-failed`.
-pub async fn add_worktree(repo: &Path, name: &str, base_branch: &str) -> Result<AddWorktreeResult, GitError> {
+pub async fn add_worktree(
+    repo: &Path,
+    name: &str,
+    base_branch: &str,
+) -> Result<AddWorktreeResult, GitError> {
     let worktree_path = worktrees_root(repo).join(name);
 
     if let Some(parent) = worktree_path.parent() {
         if let Err(err) = tokio::fs::create_dir_all(parent).await {
             if is_path_too_long_error(&err.to_string(), err.raw_os_error()) {
-                return Err(GitError::new(GitErrorCode::PathTooLong, format!("Worktree path too long: {}", worktree_path.display())));
+                return Err(GitError::new(
+                    GitErrorCode::PathTooLong,
+                    format!("Worktree path too long: {}", worktree_path.display()),
+                ));
             }
             return Err(err.into());
         }
     }
 
     let worktree_path_str = worktree_path.to_string_lossy().into_owned();
-    let result = git_raw(repo, &["worktree", "add", "-b", name, "--", &worktree_path_str, base_branch], None).await;
+    let result = git_raw(
+        repo,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            name,
+            "--",
+            &worktree_path_str,
+            base_branch,
+        ],
+        None,
+    )
+    .await;
     if result.code != 0 {
         cleanup_failed_worktree(repo, name, &worktree_path).await;
         return Err(map_add_worktree_error(&result.stderr, &worktree_path));
     }
 
-    Ok(AddWorktreeResult { worktree_path, branch: name.to_string() })
+    Ok(AddWorktreeResult {
+        worktree_path,
+        branch: name.to_string(),
+    })
 }
 
 async fn cleanup_failed_worktree(repo: &Path, name: &str, worktree_path: &Path) {
     let worktree_path_str = worktree_path.to_string_lossy().into_owned();
-    git_raw(repo, &["worktree", "remove", "--force", "--", &worktree_path_str], None).await;
+    git_raw(
+        repo,
+        &["worktree", "remove", "--force", "--", &worktree_path_str],
+        None,
+    )
+    .await;
     // Best effort: leave the directory behind rather than mask the original git failure.
     let _ = tokio::fs::remove_dir_all(worktree_path).await;
     git_raw(repo, &["worktree", "prune"], None).await;
@@ -163,33 +226,62 @@ fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
         || text.contains("is not a valid object name")
         || text.contains("not a valid branch")
     {
-        return GitError::new(GitErrorCode::BaseMissing, format!("Base branch not found: {}", stderr.trim()));
+        return GitError::new(
+            GitErrorCode::BaseMissing,
+            format!("Base branch not found: {}", stderr.trim()),
+        );
     }
     let path_str = worktree_path.to_string_lossy();
     if is_path_too_long_error(stderr, None) || path_str.len() >= 260 {
-        return GitError::new(GitErrorCode::PathTooLong, format!("Worktree path too long: {path_str}"));
+        return GitError::new(
+            GitErrorCode::PathTooLong,
+            format!("Worktree path too long: {path_str}"),
+        );
     }
     let detail = stderr.trim();
-    let message = if detail.is_empty() { format!("git worktree add failed for {path_str}") } else { detail.to_string() };
+    let message = if detail.is_empty() {
+        format!("git worktree add failed for {path_str}")
+    } else {
+        detail.to_string()
+    };
     GitError::new(GitErrorCode::WorktreeFailed, message)
 }
 
 /// Mirrors `worktrees.ts`'s own `isPathTooLongError`: a Windows `ENAMETOOLONG`-equivalent raw OS
 /// error code (`206`, `ERROR_FILENAME_EXCED_RANGE`) or a "file name too long" message fragment.
 fn is_path_too_long_error(message: &str, raw_os_error: Option<i32>) -> bool {
-    raw_os_error == Some(206) || message.to_lowercase().contains("file name too long") || message.to_lowercase().contains("filename too long")
+    raw_os_error == Some(206)
+        || message.to_lowercase().contains("file name too long")
+        || message.to_lowercase().contains("filename too long")
 }
 
 /// Removes the worktree with `git worktree remove --force`, then the branch only when asked.
 /// Used by `sessions.create`'s own rollback path when `RegistryStore::add_session` fails after
 /// `add_worktree` already succeeded (a Repository removed mid-flight, the same race
 /// `RegistryStore::add_session`'s own doc comment describes).
-pub async fn remove_worktree(repo: &Path, worktree_path: &Path, branch: &str, delete_branch: bool) -> Result<(), GitError> {
+pub async fn remove_worktree(
+    repo: &Path,
+    worktree_path: &Path,
+    branch: &str,
+    delete_branch: bool,
+) -> Result<(), GitError> {
     let worktree_path_str = worktree_path.to_string_lossy().into_owned();
-    let result = git_raw(repo, &["worktree", "remove", "--force", "--", &worktree_path_str], None).await;
+    let result = git_raw(
+        repo,
+        &["worktree", "remove", "--force", "--", &worktree_path_str],
+        None,
+    )
+    .await;
     if result.code != 0 {
-        let detail = if !result.stderr.trim().is_empty() { result.stderr.trim() } else { result.stdout.trim() };
-        return Err(GitError::new(GitErrorCode::WorktreeFailed, format!("git worktree remove failed: {detail}")));
+        let detail = if !result.stderr.trim().is_empty() {
+            result.stderr.trim()
+        } else {
+            result.stdout.trim()
+        };
+        return Err(GitError::new(
+            GitErrorCode::WorktreeFailed,
+            format!("git worktree remove failed: {detail}"),
+        ));
     }
     if delete_branch {
         git(repo, &["branch", "-D", "--", branch]).await?;

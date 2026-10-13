@@ -24,13 +24,21 @@ use crate::git::git::GitError;
 use crate::store::registry::{RegistryStore, RegistryStoreError};
 use crate::store::settings::SettingsStore;
 
+pub mod accounts;
+pub mod attachments;
 pub mod chat;
 pub mod clipboard;
 pub mod conversations;
+pub mod file_explorer;
+pub mod files;
+pub mod pull_requests;
 pub mod readiness;
 pub mod repositories;
-pub mod sessions;
+pub mod sessions_agent;
+pub mod sessions_lifecycle;
 pub mod settings;
+pub mod side_chat;
+pub mod theme;
 
 /// Shared state every registered handler receives. `registry`/`settings` are each behind their
 /// own `Arc<tokio::sync::Mutex<_>>` -- one lock per store, not one lock for both, so a slow
@@ -64,7 +72,10 @@ pub struct IpcError {
 
 impl IpcError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -85,7 +96,9 @@ pub struct Dispatcher {
 
 impl Dispatcher {
     pub fn new() -> Self {
-        Self { handlers: HashMap::new() }
+        Self {
+            handlers: HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, channel: &'static str, handler: Handler) {
@@ -99,7 +112,9 @@ impl Dispatcher {
         let envelope = match self.handlers.get(channel) {
             Some(handler) => match handler(state, args).await {
                 Ok(value) => serde_json::json!({ "ok": true, "value": value }),
-                Err(err) => serde_json::json!({ "ok": false, "error": { "code": err.code, "message": err.message } }),
+                Err(err) => {
+                    serde_json::json!({ "ok": false, "error": { "code": err.code, "message": err.message } })
+                }
             },
             None => serde_json::json!({
                 "ok": false,
@@ -128,37 +143,34 @@ impl Dispatcher {
 }
 
 /// Registers every channel this build implements (tasks.md T013 to T029, `parity.md`'s
-/// milestone-1 set): `settings.get`/`settings.setApprovalMode` (Phase 2(b)), the registry-only
+/// milestone-1 set), by calling exactly one `<module>::register(dispatcher)` per module (issue
+/// #784, "Pre-declare per-lane Rust files"): each module owns its own `dispatcher.register(...)`
+/// calls, so a lane adds a channel inside its own file and this function gains one new call,
+/// never a second pass over another lane's registrations. Milestone-1 channels registered today:
+/// `settings.get`/`settings.setApprovalMode` (Phase 2(b)), the registry-only
 /// `repositories.*`/`sessions.{list,create,rename}`/`conversations.list` channels (Phase 2(b)),
 /// `clipboard.writeText`/`readiness.check` (Phase 1), and the agent-backed `sessions.{open,
-/// stopAgent,setVisible}`, `conversations.{startNew,open}`, and every `chat.*` channel this
-/// file's own module completes (Phase 3, tasks.md T024 to T026) -- each now dispatches into the
-/// live `session::SessionManager` `AppState::session_manager` carries.
+/// stopAgent,setVisible}`, `conversations.{startNew,open}`, and every `chat.*` channel (Phase 3,
+/// tasks.md T024 to T026) -- each now dispatches into the live `session::SessionManager`
+/// `AppState::session_manager` carries. Every other module registered below (`accounts`,
+/// `attachments`, `file_explorer`, `files`, `pull_requests`, `side_chat`, `theme`) is an empty,
+/// pre-declared stub: its `register` is a no-op until that lane lands.
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
-    dispatcher.register("settings.get", settings::settings_get);
-    dispatcher.register("settings.setApprovalMode", settings::settings_set_approval_mode);
-    dispatcher.register("readiness.check", readiness::readiness_check);
-    dispatcher.register("repositories.list", repositories::repositories_list);
-    dispatcher.register("repositories.add", repositories::repositories_add);
-    dispatcher.register("repositories.remove", repositories::repositories_remove);
-    dispatcher.register("repositories.branches", repositories::repositories_branches);
-    dispatcher.register("repositories.pickFolder", repositories::repositories_pick_folder);
-    dispatcher.register("repositories.userName", repositories::repositories_user_name);
-    dispatcher.register("sessions.list", sessions::sessions_list);
-    dispatcher.register("sessions.create", sessions::sessions_create);
-    dispatcher.register("sessions.rename", sessions::sessions_rename);
-    dispatcher.register("sessions.open", sessions::sessions_open);
-    dispatcher.register("sessions.stopAgent", sessions::sessions_stop_agent);
-    dispatcher.register("sessions.setVisible", sessions::sessions_set_visible);
-    dispatcher.register("conversations.list", conversations::conversations_list);
-    dispatcher.register("conversations.startNew", conversations::conversations_start_new);
-    dispatcher.register("conversations.open", conversations::conversations_open);
-    dispatcher.register("chat.send", chat::chat_send);
-    dispatcher.register("chat.stop", chat::chat_stop);
-    dispatcher.register("chat.removeQueued", chat::chat_remove_queued);
-    dispatcher.register("chat.answer", chat::chat_answer);
-    dispatcher.register("chat.commands", chat::chat_commands);
-    dispatcher.register("clipboard.writeText", clipboard::clipboard_write_text);
+    settings::register(dispatcher);
+    readiness::register(dispatcher);
+    repositories::register(dispatcher);
+    sessions_lifecycle::register(dispatcher);
+    sessions_agent::register(dispatcher);
+    conversations::register(dispatcher);
+    chat::register(dispatcher);
+    clipboard::register(dispatcher);
+    file_explorer::register(dispatcher);
+    files::register(dispatcher);
+    pull_requests::register(dispatcher);
+    accounts::register(dispatcher);
+    attachments::register(dispatcher);
+    side_chat::register(dispatcher);
+    theme::register(dispatcher);
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +252,11 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
         "disabled",
         "session-archived",
     ];
-    let code = if IPC_ERROR_CODES.contains(&err.code) { err.code } else { "reattach-failed" };
+    let code = if IPC_ERROR_CODES.contains(&err.code) {
+        err.code
+    } else {
+        "reattach-failed"
+    };
     IpcError::new(code, err.message)
 }
 
@@ -256,7 +272,9 @@ pub fn arg_str(args: &[Value], index: usize) -> Option<&str> {
 /// in this build's `Cargo.toml`): a manual proleptic-Gregorian civil-date conversion (Howard
 /// Hinnant's well-known `civil_from_days` algorithm), UTC only.
 pub fn now_iso8601() -> String {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
     let millis = now.as_millis();
     let secs = (millis / 1000) as i64;
     let subsec_millis = (millis % 1000) as u32;

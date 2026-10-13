@@ -41,25 +41,35 @@ pub enum TranscriptOp {
 /// value, so a pointer mismatch is a precise, O(1)-per-item "changed" signal -- cheap regardless
 /// of transcript size, unlike a full value compare, so diffing stays proportional to what changed
 /// instead of to the whole transcript (performance finding, 2026-10-13).
-pub fn diff_transcript(prev: &[Arc<TranscriptItem>], next: &[Arc<TranscriptItem>]) -> Vec<TranscriptOp> {
+pub fn diff_transcript(
+    prev: &[Arc<TranscriptItem>],
+    next: &[Arc<TranscriptItem>],
+) -> Vec<TranscriptOp> {
     if prev.is_empty() {
         return if next.is_empty() {
             Vec::new()
         } else {
-            vec![TranscriptOp::Reset { items: next.to_vec() }]
+            vec![TranscriptOp::Reset {
+                items: next.to_vec(),
+            }]
         };
     }
     let next_ids: HashSet<&str> = next.iter().map(|item| item.id()).collect();
     let any_removed = prev.iter().any(|item| !next_ids.contains(item.id()));
     if any_removed {
-        return vec![TranscriptOp::Reset { items: next.to_vec() }];
+        return vec![TranscriptOp::Reset {
+            items: next.to_vec(),
+        }];
     }
-    let prev_by_id: HashMap<&str, &Arc<TranscriptItem>> = prev.iter().map(|item| (item.id(), item)).collect();
+    let prev_by_id: HashMap<&str, &Arc<TranscriptItem>> =
+        prev.iter().map(|item| (item.id(), item)).collect();
     let mut ops = Vec::new();
     for item in next {
         match prev_by_id.get(item.id()) {
             Some(before) if Arc::ptr_eq(before, item) => {}
-            _ => ops.push(TranscriptOp::Upsert { item: Box::new((**item).clone()) }),
+            _ => ops.push(TranscriptOp::Upsert {
+                item: Box::new((**item).clone()),
+            }),
         }
     }
     ops
@@ -70,7 +80,10 @@ pub fn diff_transcript(prev: &[Arc<TranscriptItem>], next: &[Arc<TranscriptItem>
 /// while that round trip was in flight. Port of `mergeLiveTranscript`: keeps `history` as-is and
 /// appends only live items history can never contain -- an UNRESOLVED `request`, or a still-
 /// in-flight `tool`/`subagent` (`status: 'running'`) or streaming `assistant-text`/`thinking`.
-pub fn merge_history_with_live(history: &[Arc<TranscriptItem>], live: &[Arc<TranscriptItem>]) -> Vec<Arc<TranscriptItem>> {
+pub fn merge_history_with_live(
+    history: &[Arc<TranscriptItem>],
+    live: &[Arc<TranscriptItem>],
+) -> Vec<Arc<TranscriptItem>> {
     let history_ids: HashSet<&str> = history.iter().map(|item| item.id()).collect();
     let is_unpersisted = |item: &&Arc<TranscriptItem>| -> bool {
         if history_ids.contains(item.id()) {
@@ -85,7 +98,11 @@ pub fn merge_history_with_live(history: &[Arc<TranscriptItem>], live: &[Arc<Tran
             _ => false,
         }
     };
-    let extra: Vec<Arc<TranscriptItem>> = live.iter().filter(|item| is_unpersisted(item)).cloned().collect();
+    let extra: Vec<Arc<TranscriptItem>> = live
+        .iter()
+        .filter(|item| is_unpersisted(item))
+        .cloned()
+        .collect();
     if extra.is_empty() {
         history.to_vec()
     } else {
@@ -99,14 +116,25 @@ pub fn merge_history_with_live(history: &[Arc<TranscriptItem>], live: &[Arc<Tran
 /// mode-change `restart()` leaves those items spinning in the UI forever, and (per the TS doc
 /// comment) `merge_history_with_live`'s `is_unpersisted` check would keep mistaking them for
 /// still-live and re-append them onto every later `launch()`'s fresh history.
-pub fn finalize_live_transcript(mut transcript: Vec<Arc<TranscriptItem>>) -> Vec<Arc<TranscriptItem>> {
+pub fn finalize_live_transcript(
+    mut transcript: Vec<Arc<TranscriptItem>>,
+) -> Vec<Arc<TranscriptItem>> {
     for item in transcript.iter_mut() {
         let needs_finalize = matches!(
             item.as_ref(),
-            TranscriptItem::Tool { status: ToolStatus::Running, .. }
-                | TranscriptItem::Subagent { status: SubagentStatus::Running, .. }
-                | TranscriptItem::AssistantText { streaming: true, .. }
-                | TranscriptItem::Thinking { streaming: true, .. }
+            TranscriptItem::Tool {
+                status: ToolStatus::Running,
+                ..
+            } | TranscriptItem::Subagent {
+                status: SubagentStatus::Running,
+                ..
+            } | TranscriptItem::AssistantText {
+                streaming: true,
+                ..
+            } | TranscriptItem::Thinking {
+                streaming: true,
+                ..
+            }
         );
         if !needs_finalize {
             continue;
@@ -214,7 +242,10 @@ impl PatchCoalescer {
 
     /// Queues `ops`, flushing every op queued so far after `window` of quiet.
     pub fn queue(&self, ops: Vec<TranscriptOp>) {
-        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         state.enqueue(ops);
         if state.timer_armed {
             return;
@@ -228,7 +259,9 @@ impl PatchCoalescer {
         let window = self.window;
         tokio::spawn(async move {
             tokio::time::sleep(window).await;
-            let mut state = state_handle.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut state = state_handle
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if state.generation != generation || !state.timer_armed {
                 // Superseded by an explicit `flush_now` while this timer was sleeping.
                 return;
@@ -244,7 +277,10 @@ impl PatchCoalescer {
 
     /// Emits every op queued so far immediately, cancelling any in-flight debounce timer.
     pub fn flush_now(&self) {
-        let mut state = self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         state.generation = state.generation.wrapping_add(1);
         state.timer_armed = false;
         let ops = state.drain();

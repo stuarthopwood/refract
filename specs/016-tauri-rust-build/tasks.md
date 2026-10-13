@@ -10,8 +10,8 @@ contracts/bridge.md, parity.md, quickstart.md)
 
 **Tests**: None new. Refract has an existing automated vitest suite (`src/` test files, run via
 the repository's existing test script); this feature adds no new tests to it, since `src-tauri/`
-is a separate, experimental Rust backend verified manually per `quickstart.md`, matching plan.md's
-own Technical Context ("Testing: None [new]").
+is the Rust backend (now the main build, promoted epic #797) verified manually per
+`quickstart.md`, matching plan.md's own Technical Context ("Testing: None [new]").
 
 **Organization**: Phase 1 is project scaffolding (owned by a separate, concurrent worker -- listed
 here only so Phase 2's dependency on it is explicit, not duplicated). Phases 2 through 4 are this
@@ -46,8 +46,9 @@ Phase 2 cannot start until this phase's files exist.
   `@tauri-apps/api` `invoke`/`listen`, theme bootstrap read from
   `window.__REFRACT_THEME_BOOTSTRAP__`).
 - T007 `tauri.vite.config.ts`, `tauri/index.html` (CSP extended per `contracts/bridge.md`).
-- T008 `package.json` (`dev:tauri`, `build:tauri` scripts; `@tauri-apps/cli`/`@tauri-apps/api` dev
-  dependencies), `.gitignore` (`src-tauri/target`, `out/tauri-web`).
+- T008 `package.json` (`dev:tauri`, `build:tauri` scripts, since renamed to `dev`/`build` by
+  promotion, epic #797, R1 #784; `@tauri-apps/cli`/`@tauri-apps/api` dev dependencies),
+  `.gitignore` (`src-tauri/target`, `out/tauri-web`).
 - T009 First real channel end to end: `settings.get` + the `theme:bootstrap` sync channel, proving
   the whole `refract_request`/window-creation pipeline actually works before Phase 2 builds on it.
 

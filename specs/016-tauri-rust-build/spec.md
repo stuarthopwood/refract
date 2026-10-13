@@ -5,10 +5,11 @@ the Spec Kit record, not a literal git branch)
 
 **Created**: 2026-10-13
 
-**Status**: Implemented (milestone 1), experimental. This build is a second, separate desktop
-shell for Refract. The Electron build (`src/main`, `src/preload`) remains the source of truth and
-is not changed by this spec. Nothing here is promoted into the supported product until Stuart
-explicitly decides to promote it (see Assumptions and `plan.md` Constitution Check).
+**Status**: Promoted to the main build (epic #797, Stuart 2026-10-13). Milestone 1 is implemented;
+the Rust (Tauri v2) build is now the default (`pnpm dev`/`pnpm build`), and the Electron build
+(`src/main`, `src/preload`) is frozen to P0 bug fixes only. See `docs/PLAN.md` Phase R for the
+promotion lanes and the pending parity gate; the constitution amendment for this promotion is
+drafted in `constitution-amendment-draft.md` and ratified separately (#796).
 
 **Input**: [issue://780](https://github.com/stuarthopwood/refract/issues/780) ("Experiment: Rust
 (Tauri v2) build of Refract with a Rust-native backend, separate from the Electron build") and
@@ -35,7 +36,9 @@ Stuart's decision comment on that issue, dated 2026-10-13.
   never the Electron build's `%APPDATA%\pinion` -- the two builds must never write the same
   registry or session store.
 - **Q (issue://780, Stuart 2026-10-13)**: separate build/dev scripts? -> **yes**, `dev:tauri` /
-  `build:tauri`; the existing Electron `dev` / `build` scripts are untouched.
+  `build:tauri`; the existing Electron `dev` / `build` scripts are untouched. **Superseded
+  2026-10-13 by promotion (epic #797, R1 #784)**: `dev`/`build` now run Tauri and the Electron
+  scripts moved to `dev:electron`/`build:electron`.
 
 ### Carved out, not blocking
 
@@ -51,13 +54,13 @@ Stuart's decision comment on that issue, dated 2026-10-13.
 
 ### User Story 1 - Run the Rust build and see Repositories (Priority: P1)
 
-A developer runs `pnpm dev:tauri` instead of `pnpm dev`, and the app window opens showing the same
-Repositories-first screen as the Electron build, themed correctly from the very first paint.
+A developer runs `pnpm dev` (now the default, epic #797), and the app window opens showing the
+same Repositories-first screen as the Electron build, themed correctly from the very first paint.
 
 **Why this priority**: without a window that opens, themes correctly, and shows real readiness,
 every other story is unreachable; this is the floor the whole experiment stands on.
 
-**Independent Test**: run `pnpm dev:tauri`, confirm the window opens with native WebView2 content,
+**Independent Test**: run `pnpm dev`, confirm the window opens with native WebView2 content,
 the `readiness.check` result renders (omp found/not found, as applicable), and the saved theme's
 CSS class is already applied on the very first frame (no flash of the wrong theme).
 
@@ -306,7 +309,8 @@ opening a Session's prior Conversation shows the same transcript as before the r
 - **FR-016**: The system MUST add `dev:tauri` and `build:tauri` scripts to `package.json` without
   modifying the existing Electron `dev`/`build` scripts, and MUST add a separate Vite config
   (`tauri.vite.config.ts`) and HTML entry (`tauri/index.html`) without modifying any file under
-  `src/renderer`.
+  `src/renderer`. **Superseded 2026-10-13 by promotion (epic #797, R1 #784)**: `dev`/`build` are
+  renamed to run Tauri, and the Electron scripts moved to `dev:electron`/`build:electron`.
 
 ### Key Entities
 
@@ -349,11 +353,12 @@ is an internal routing detail, not a persisted entity.
 - Native window decorations (no custom caption/title bar) are accepted for milestone 1; the
   renderer's existing custom caption spacer rendering a visible gap under Tauri is a known,
   intentionally deferred difference (quickstart.md documents it), not a defect this spec fixes.
-- This build is never installed/distributed to end users during the experimental phase; it is a
-  developer-run comparison build only. No installer/auto-update work is in scope.
-- "Promotion" (making the Rust build the shipped product, or retiring the Electron build) is
-  explicitly out of scope for this spec; it requires a separate, future decision and its own
-  constitution amendment (plan.md Constitution Check).
+- This build is not installed or distributed to end users until the bundled installer lands (lane
+  R11, issue #794); until then it runs only as a developer build.
+- Promotion (making the Rust build the main build) happened 2026-10-13 (epic #797, `docs/PLAN.md`
+  Phase R); this spec's milestone-1 scope is unchanged by that decision. Retiring the Electron
+  build entirely is still a separate, future decision at the parity gate (#796), which also
+  carries the formal constitution amendment (draft: `constitution-amendment-draft.md`).
 - The parity count in issue://780's own body (84 requests / 20 events) is stale relative to the
   live `src/shared/ipc.ts` at the time this spec was written (86 requests / 20 events, see
   `parity.md`); this spec's counts are read directly from the source file, not copied from the

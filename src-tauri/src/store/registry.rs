@@ -94,7 +94,11 @@ pub struct Registry {
 }
 
 fn default_registry() -> Registry {
-    Registry { version: 1, repositories: Vec::new(), sessions: Vec::new() }
+    Registry {
+        version: 1,
+        repositories: Vec::new(),
+        sessions: Vec::new(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,7 +126,10 @@ pub struct RegistryError {
 
 impl RegistryError {
     pub fn new(code: RegistryErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -135,7 +142,8 @@ impl std::fmt::Display for RegistryError {
 impl std::error::Error for RegistryError {}
 
 /// Single source of truth for the `has-sessions` refusal text.
-pub const REPOSITORY_HAS_SESSIONS_MESSAGE: &str = "Delete this repository's Sessions before removing it.";
+pub const REPOSITORY_HAS_SESSIONS_MESSAGE: &str =
+    "Delete this repository's Sessions before removing it.";
 
 /// Any error a `RegistryStore` method can produce: either a business-rule `RegistryError`
 /// (duplicate/not-found/has-sessions) or an unexpected I/O failure writing `registry.json`.
@@ -174,7 +182,11 @@ impl RegistryStore {
     }
 
     pub fn snapshot(&self) -> Registry {
-        Registry { version: 1, repositories: self.data.repositories.clone(), sessions: self.data.sessions.clone() }
+        Registry {
+            version: 1,
+            repositories: self.data.repositories.clone(),
+            sessions: self.data.sessions.clone(),
+        }
     }
 
     async fn persist(&self) -> std::io::Result<()> {
@@ -182,8 +194,17 @@ impl RegistryStore {
     }
 
     pub async fn add_repository(&mut self, r: Repository) -> Result<(), RegistryStoreError> {
-        if self.data.repositories.iter().any(|existing| same_path(&existing.path, &r.path)) {
-            return Err(RegistryError::new(RegistryErrorCode::Duplicate, format!("Repository already added: {}", r.path)).into());
+        if self
+            .data
+            .repositories
+            .iter()
+            .any(|existing| same_path(&existing.path, &r.path))
+        {
+            return Err(RegistryError::new(
+                RegistryErrorCode::Duplicate,
+                format!("Repository already added: {}", r.path),
+            )
+            .into());
         }
         self.data.repositories.push(r);
         self.persist().await?;
@@ -193,13 +214,22 @@ impl RegistryStore {
     /// Issue #480: display-name-only edit. No uniqueness check on `name`. Rolls back on a failed
     /// write, the same discipline `remove_repository` below already uses: memory must not keep a
     /// name the disk copy never got.
-    pub async fn update_repository_name(&mut self, id: &str, name: String) -> Result<Repository, RegistryStoreError> {
+    pub async fn update_repository_name(
+        &mut self,
+        id: &str,
+        name: String,
+    ) -> Result<Repository, RegistryStoreError> {
         let index = self
             .data
             .repositories
             .iter()
             .position(|r| r.id == id)
-            .ok_or_else(|| RegistryError::new(RegistryErrorCode::NotFound, format!("Repository not found: {id}")))?;
+            .ok_or_else(|| {
+                RegistryError::new(
+                    RegistryErrorCode::NotFound,
+                    format!("Repository not found: {id}"),
+                )
+            })?;
         let previous_name = self.data.repositories[index].name.clone();
         self.data.repositories[index].name = name;
         if let Err(err) = self.persist().await {
@@ -216,9 +246,18 @@ impl RegistryStore {
             .repositories
             .iter()
             .position(|r| r.id == id)
-            .ok_or_else(|| RegistryError::new(RegistryErrorCode::NotFound, format!("Repository not found: {id}")))?;
+            .ok_or_else(|| {
+                RegistryError::new(
+                    RegistryErrorCode::NotFound,
+                    format!("Repository not found: {id}"),
+                )
+            })?;
         if self.data.sessions.iter().any(|s| s.repository_id == id) {
-            return Err(RegistryError::new(RegistryErrorCode::HasSessions, REPOSITORY_HAS_SESSIONS_MESSAGE).into());
+            return Err(RegistryError::new(
+                RegistryErrorCode::HasSessions,
+                REPOSITORY_HAS_SESSIONS_MESSAGE,
+            )
+            .into());
         }
         let removed = self.data.repositories.remove(index);
         if let Err(err) = self.persist().await {
@@ -236,17 +275,41 @@ impl RegistryStore {
     }
 
     pub async fn add_session(&mut self, s: Session) -> Result<(), RegistryStoreError> {
-        if self.data.sessions.iter().any(|existing| same_path(&existing.worktree_path, &s.worktree_path)) {
-            return Err(RegistryError::new(RegistryErrorCode::Duplicate, format!("Worktree already registered: {}", s.worktree_path)).into());
+        if self
+            .data
+            .sessions
+            .iter()
+            .any(|existing| same_path(&existing.worktree_path, &s.worktree_path))
+        {
+            return Err(RegistryError::new(
+                RegistryErrorCode::Duplicate,
+                format!("Worktree already registered: {}", s.worktree_path),
+            )
+            .into());
         }
-        if self.data.sessions.iter().any(|existing| existing.repository_id == s.repository_id && existing.branch == s.branch) {
-            return Err(RegistryError::new(RegistryErrorCode::Duplicate, format!("Branch already used in this repository: {}", s.branch)).into());
+        if self.data.sessions.iter().any(|existing| {
+            existing.repository_id == s.repository_id && existing.branch == s.branch
+        }) {
+            return Err(RegistryError::new(
+                RegistryErrorCode::Duplicate,
+                format!("Branch already used in this repository: {}", s.branch),
+            )
+            .into());
         }
         // Security remediation (Medium, ported from registry.ts): closes the race where a
         // Repository is removed while this Session's worktree/branch creation was still in
         // flight.
-        if !self.data.repositories.iter().any(|r| r.id == s.repository_id) {
-            return Err(RegistryError::new(RegistryErrorCode::NotFound, format!("Repository not found: {}", s.repository_id)).into());
+        if !self
+            .data
+            .repositories
+            .iter()
+            .any(|r| r.id == s.repository_id)
+        {
+            return Err(RegistryError::new(
+                RegistryErrorCode::NotFound,
+                format!("Repository not found: {}", s.repository_id),
+            )
+            .into());
         }
         let id = s.id.clone();
         self.data.sessions.push(s);
@@ -260,13 +323,22 @@ impl RegistryStore {
         Ok(())
     }
 
-    pub async fn update_session_name(&mut self, id: &str, name: String) -> Result<Session, RegistryStoreError> {
+    pub async fn update_session_name(
+        &mut self,
+        id: &str,
+        name: String,
+    ) -> Result<Session, RegistryStoreError> {
         let index = self
             .data
             .sessions
             .iter()
             .position(|s| s.id == id)
-            .ok_or_else(|| RegistryError::new(RegistryErrorCode::NotFound, format!("Session not found: {id}")))?;
+            .ok_or_else(|| {
+                RegistryError::new(
+                    RegistryErrorCode::NotFound,
+                    format!("Session not found: {id}"),
+                )
+            })?;
         let previous_name = self.data.sessions[index].name.clone();
         self.data.sessions[index].name = name;
         if let Err(err) = self.persist().await {
@@ -282,13 +354,22 @@ impl RegistryStore {
     /// a failed write (same discipline every other mutator here already uses). Used by
     /// `session::agent` (Phase 3) after `get_state` (`syncFromState`), `new_session`
     /// (`startNewConversation`), and the stopped-Session Conversation switch.
-    pub async fn update_session(&mut self, id: &str, patch: SessionPatch) -> Result<Session, RegistryStoreError> {
+    pub async fn update_session(
+        &mut self,
+        id: &str,
+        patch: SessionPatch,
+    ) -> Result<Session, RegistryStoreError> {
         let index = self
             .data
             .sessions
             .iter()
             .position(|s| s.id == id)
-            .ok_or_else(|| RegistryError::new(RegistryErrorCode::NotFound, format!("Session not found: {id}")))?;
+            .ok_or_else(|| {
+                RegistryError::new(
+                    RegistryErrorCode::NotFound,
+                    format!("Session not found: {id}"),
+                )
+            })?;
         let previous = self.data.sessions[index].clone();
         {
             let session = &mut self.data.sessions[index];

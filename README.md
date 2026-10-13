@@ -19,12 +19,16 @@ Spec 001 (core session workspace) is implemented: sessions per git worktree, cha
 
 ```
 pnpm install
-pnpm dev          # Electron with hot reload (electron-vite dev)
-pnpm build        # production build (electron-vite build), output in out/
-pnpm typecheck    # tsc --noEmit over the main and web projects
+pnpm dev            # Tauri (Rust) build with hot reload
+pnpm build          # production build (tauri build --no-bundle), output in src-tauri/target/
+pnpm typecheck      # tsc --noEmit over the main and web projects
+pnpm dev:electron   # Electron build, frozen to P0 bug fixes only (see AGENTS.md)
+pnpm build:electron # Electron production build (electron-vite build), output in out/
 ```
 
-There is no packaged installer yet. After `pnpm build`, launch the built app directly:
+There is no packaged installer yet (lane R11, issue #794). After `pnpm build`, launch the Tauri
+binary directly: `src-tauri/target/release/refract-tauri.exe`. After `pnpm build:electron`, launch
+the Electron build directly:
 
 ```
 node_modules/electron/dist/electron.exe .
@@ -34,7 +38,7 @@ The taskbar, Alt+Tab and notifications show the Refract logo, not Electron's ato
 
 ## Where state lives
 
-Refract keeps no state in the repo. Everything is under Electron's `userData` directory, which `src/main/index.ts` pins to `%APPDATA%/pinion` (the folder keeps the app's former name, Pinion, so state from before the rename carries over). `pnpm dev` and built runs share it; starting Electron with `--user-data-dir=<dir>` overrides the pin, which gives an isolated instance with its own single-instance lock:
+Refract keeps no state in the repo. The Electron build's state is under its `userData` directory, which `src/main/index.ts` pins to `%APPDATA%/pinion` (the folder keeps the app's former name, Pinion, so state from before the rename carries over). `pnpm dev:electron` and `pnpm build:electron` runs share it; starting Electron with `--user-data-dir=<dir>` overrides the pin, which gives an isolated instance with its own single-instance lock. The Tauri build (`pnpm dev`/`pnpm build`, now the default per epic #797) keeps its own, separate data directory, `%APPDATA%\refract-tauri` (`specs/016-tauri-rust-build/spec.md` FR-014), and imports the Electron state once rather than sharing it.
 
 | File | Holds |
 |---|---|

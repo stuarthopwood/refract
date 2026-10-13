@@ -7,17 +7,19 @@
   "type": "commonjs",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "dev:tauri": "tauri dev",
-    "build:tauri": "tauri build",
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "dev:electron": "electron-vite dev",
+    "build:electron": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "check:indent": "node scripts/check-indent.mjs",
     "test": "vitest run",
     "check:ui-text": "node scripts/check-ui-text.mjs",
     "check:drag-regions": "node scripts/check-drag-regions.mjs",
     "check:theme-contrast": "node scripts/check-theme-contrast.mjs",
-    "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs"
+    "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs",
+    "check:parity": "node scripts/check-parity.mjs",
+    "check:file-size": "node scripts/check-file-size.mjs"
   },
   "dependencies": {
     "@shadcn/react": "0.3.1",
