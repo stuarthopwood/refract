@@ -1,0 +1,45 @@
+[package]
+name = "refract-tauri"
+version = "0.1.0"
+description = "EXPERIMENTAL Rust (Tauri v2) build of Refract (issue #780, spec 016). A second,\nseparate desktop shell for Refract; src/main (Electron) remains the supported build."
+edition = "2021"
+rust-version = "1.90"
+
+# See `tauri.conf.json`'s own `build` section for how `build.rs` and this manifest fit together.
+[build-dependencies]
+tauri-build = { version = "2.7.2", features = [] }
+
+[lib]
+# Suffixed `_lib`, the standard Tauri convention (also required for a future mobile entry point,
+# `#[cfg_attr(mobile, tauri::mobile_entry_point)]`), so the library target's name never collides
+# with the `refract-tauri` binary crate (`src/main.rs`) on a platform where that matters (Windows
+# DLL naming).
+name = "refract_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+tauri = { version = "2.12.3", features = [] }
+tauri-plugin-dialog = "2.8.2"
+tauri-plugin-clipboard-manager = "2.4.2"
+tauri-plugin-opener = "2.7.1"
+tauri-plugin-log = "2.10.1"
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = "1.0.154"
+tokio = { version = "1.53.2", features = ["full"] }
+uuid = { version = "1.28.0", features = ["v4"] }
+thiserror = "2.0.21"
+log = "0.4.34"
+dirs = "7.0.0"
+which = "8.0.6"
+
+# `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
+# FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
+# Windows-only anyway (spec.md Assumptions), but there is no reason to pull Win32 bindings into a
+# build graph for any other target.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+  "Win32_Security",
+] }

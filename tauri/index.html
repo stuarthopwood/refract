@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Refract (Rust preview)</title>
+    <!-- Content-Security-Policy is set via `src-tauri/tauri.conf.json`'s own
+         `app.security.csp` (LOW security finding: a separate manual meta tag here would drift
+         out of sync with that config as the policy changes). Tauri injects the configured
+         policy into every served page, so no meta tag is needed. -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/tauri-bridge/entry.ts"></script>
+  </body>
+</html>

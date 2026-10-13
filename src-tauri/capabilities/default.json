@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window of the EXPERIMENTAL Tauri build (spec 016,\nissue #780). The single custom `refract_request` command needs no explicit permission here --\napp-defined commands are callable from every window by default (security/capabilities.mdx).\nCapabilities gate webview-to-plugin calls only: Rust-side plugin calls (`repositories.\npickFolder`'s `app.dialog()`, `clipboard.writeText`'s `app.clipboard()`) need no permission here\nregardless of what this file grants, so this only covers what the renderer itself may invoke\ndirectly -- `clipboard-manager:default` (never actually used: writes go through the typed\nbridge, so the renderer has no clipboard access at all) and the two `opener` scopes the\ninjected `_blank`-link handler needs (`allow-open-url`, `allow-default-urls`), never the\nbroader `opener:default` (which also grants the unscoped `reveal_item_in_dir`). `core:default`\nis the baseline window/app/event permission set every Tauri window needs.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "clipboard-manager:default",
+    "opener:allow-open-url",
+    "opener:allow-default-urls"
+  ]
+}
