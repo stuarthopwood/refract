@@ -87,24 +87,26 @@ function buildWriteField(tool: string, args: unknown): ToolItem['write'] {
 }
 
 /** Issue #543, first slice: a `read` call whose `path` starts with `skill://` is a skill load,
- * not an ordinary file read. The name is the whole URL remainder after the prefix -- a namespaced
- * skill (`skill://<namespace>/<name>`) or a supporting-file read (`skill://<name>/<file>`) both
- * show their full remainder unseparated; nesting a supporting-file read under its owning skill's
- * row is a future slice, not this one. */
+ * not an ordinary file read. The name is the remainder after the prefix with any `?query` or
+ * `#fragment`, any trailing `:<selector>` and any trailing `/` removed, and with control and bidi
+ * override characters stripped. A namespaced skill (`skill://<namespace>/<name>`) or a
+ * supporting-file read (`skill://<name>/<file>`) show their full remainder unseparated; nesting a
+ * supporting-file read under its owning skill's row is a future slice, not this one. */
 const SKILL_URL_PREFIX = 'skill://';
 
 function buildSkillField(tool: string, args: unknown): ToolItem['skill'] {
   if (tool !== 'read' || !args || typeof args !== 'object') return undefined;
   const path = (args as Record<string, unknown>).path;
   if (typeof path !== 'string' || !path.startsWith(SKILL_URL_PREFIX)) return undefined;
-  // Strip a `:<selector>` (e.g. `:1-50`), a `?...` query, a `#...` fragment, and a trailing
-  // `/`, in that order, keeping a `/<file>` supporting-file remainder intact; the raw remainder
-  // otherwise includes tool-call plumbing that was never part of the skill's own name.
+  // Strip a `?...` query / `#...` fragment first, then a trailing `:<selector>` (e.g. `:1-50`),
+  // then a trailing `/`, keeping a `/<file>` supporting-file remainder intact; control and bidi
+  // override characters are removed so a model-controlled name cannot reorder its own text.
   const name = path
     .slice(SKILL_URL_PREFIX.length)
-    .replace(/:[^/:?#]*$/, '')
     .replace(/[?#].*$/, '')
+    .replace(/:[^/:]*$/, '')
     .replace(/\/+$/, '')
+    .replace(/[\u0000-\u001F\u007F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '')
     .trim();
   return name.length > 0 ? { name } : undefined;
 }
@@ -536,13 +538,16 @@ function tryBuildSkillPromptItem(messageId: string, message: OmpCustomMessage): 
   const details = message.details;
   if (!details || typeof details !== 'object') return undefined;
   const record = details as Record<string, unknown>;
-  if (typeof record.name !== 'string' || record.name.length === 0) return undefined;
+  const promptName = typeof record.name === 'string'
+    ? record.name.replace(/[\u0000-\u001F\u007F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '').trim()
+    : '';
+  if (promptName.length === 0) return undefined;
   const args = typeof record.args === 'string' && record.args.length > 0 ? record.args : undefined;
   const lineCount = typeof record.lineCount === 'number' && Number.isInteger(record.lineCount) && record.lineCount >= 0 ? record.lineCount : undefined;
   return {
     kind: 'skill-prompt',
     id: messageId,
-    name: record.name,
+    name: promptName,
     ...(args !== undefined ? { args } : {}),
     ...(lineCount !== undefined ? { lineCount } : {}),
     text: message.content,
