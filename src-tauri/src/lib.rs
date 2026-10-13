@@ -24,7 +24,22 @@ use ipc::{AppState, Dispatcher};
 /// Tauri's own conventional `app_data_dir()` (which derives the folder name from `identifier`/
 /// `productName` instead), so this path stays exactly `refract-tauri` regardless of whatever
 /// bundle identifier `tauri.conf.json` ends up with.
+///
+/// Issue #795 (R12a, verification harness): `REFRACT_DATA_DIR` overrides this with a literal
+/// absolute path when set, so `scripts/verify-tauri.mjs` can point a dev instance at a scratch
+/// directory instead of the real profile -- the same role Electron's own `--user-data-dir` CLI
+/// flag plays (README.md "Where state lives"). Tauri has no such flag (the Rust CLI's `--config`
+/// only overlays `tauri.conf.json`, not an arbitrary app-data path), and `dirs::data_dir()` calls
+/// `SHGetKnownFolderPath` directly, which does not honour a redirected `%APPDATA%` env var on an
+/// ordinary (non-redirected) Windows profile -- so this override is this build's own env var, not
+/// a side effect of setting `APPDATA` on the child process. Unset in every normal run; this is a
+/// no-op for the packaged app and for `pnpm dev:tauri` run without the harness.
 pub fn data_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("REFRACT_DATA_DIR") {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
     dirs::data_dir()
         .expect("refract-tauri: no platform data directory available")
         .join("refract-tauri")

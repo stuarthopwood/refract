@@ -1,0 +1,12 @@
+// SYNTHESIZED, not captured live: the current Rust build has no `btw` implementation yet
+// (src-tauri/src/session/agent.rs's own header: "side chat (`btw`) ... not ported"), so there is
+// no live session to record this from. Built directly from the documented wire contract
+// (src/shared/frames.ts's `BtwCommand`/`BtwDeltaFrame`/`BtwRecordFrame`/`BtwHistoryThread`,
+// cross-checked against specs/014's gate-fix notes), for the R6 lane (#789) to drive once it
+// ports the channel. See README.md's provenance table.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["btw"]}
+{"type":"btw_delta","recordId":"topic-1","delta":"Check"}
+{"type":"btw_delta","recordId":"topic-1","delta":"ing..."}
+{"type":"btw_record","record":{"id":"topic-1","leafId":"leaf-1","question":"$lastMessage","answer":"It stays internal to this module.","status":"complete","createdAt":0,"updatedAt":0,"followUps":[]}}
+{"id":"$lastId","type":"response","command":"btw","success":true}

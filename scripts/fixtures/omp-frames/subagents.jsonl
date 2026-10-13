@@ -1,0 +1,19 @@
+// SYNTHESIZED, not captured live: a batch `task()` call needs a model turn that spawns
+// subagents, which was out of scope for the one tiny real capture this harness is built from
+// (issue #795 part 2's "tiny prompts only" budget). Built directly from the documented wire
+// contract (src/shared/frames.ts's `ToolExecutionUpdateFrame`, spec 004 FR-007/FR-017 to
+// FR-020), for the R5 lane (#788, subagents/readout) to drive once it ports `get_subagents`-style
+// rendering. See README.md's provenance table.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\subagents\\conversation.json","sessionId":"sess-subagents-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"}}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"nextCursor":null,"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"type":"agent_start"}
+{"type":"tool_execution_start","toolCallId":"task-batch-1","toolName":"task","args":{"tasks":[{"name":"alpha","task":"Investigate alpha"},{"name":"beta","task":"Investigate beta"}]},"intent":"Running two subagents"}
+{"type":"tool_execution_update","toolCallId":"task-batch-1","toolName":"task","args":{"tasks":[{"name":"alpha"},{"name":"beta"}]},"partialResult":{"content":[{"type":"text","text":"2 subagents running"}],"details":{"progress":[{"index":0,"id":"alpha","status":"running","task":"Investigate alpha"},{"index":1,"id":"beta","status":"pending","task":"Investigate beta"}]}}}
+{"type":"tool_execution_update","toolCallId":"task-batch-1","toolName":"task","args":{"tasks":[{"name":"alpha"},{"name":"beta"}]},"partialResult":{"content":[{"type":"text","text":"1 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"alpha","status":"finished","task":"Investigate alpha","durationMs":1200},{"index":1,"id":"beta","status":"running","task":"Investigate beta"}]}}}
+{"type":"tool_execution_end","toolCallId":"task-batch-1","toolName":"task","result":{"content":[{"type":"text","text":"2 of 2 subagents finished"}],"details":{"progress":[{"index":0,"id":"alpha","status":"finished","task":"Investigate alpha","durationMs":1200},{"index":1,"id":"beta","status":"finished","task":"Investigate beta","durationMs":1500}]}},"isError":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
