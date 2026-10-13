@@ -39,21 +39,33 @@ pub fn data_dir() -> PathBuf {
 /// `pnpm dev` run navigates to the Vite dev server (`tauri.conf.json`'s own `devUrl`,
 /// `http://localhost:5174`); a built binary (`tauri build`, with or without `--debug`) navigates
 /// to Tauri's own custom protocol, served as `http://tauri.localhost` on this build's
-/// Windows-only target (`use_https_scheme` is left at its default `false`). Both origins are
-/// allowed unconditionally -- NOT gated on `cfg!(debug_assertions)` (found live, 2026-10-13: a
-/// `tauri build --debug` binary is still a debug-profile build, so a `debug_assertions`-gated
-/// allow list denied that binary's own `http://tauri.localhost` navigation and left the window on
-/// `about:blank` with no error). Which origin is actually in play depends on how the app was
-/// launched, not on the compiled profile, so this checks both regardless of profile.
+/// Windows-only target (`use_https_scheme` is left at its default `false`).
+///
+/// Which origin is actually in play is gated on `tauri::is_dev()` (`!cfg!(feature =
+/// "custom-protocol")` in tauri 2.12.3), NOT on `cfg!(debug_assertions)` and NOT on allowing both
+/// origins unconditionally -- two bugs found live in succession, 2026-10-13/14:
+///
+/// - `debug_assertions`-gated (first attempt): a `tauri build --debug` binary is still a
+///   debug-PROFILE build, so a `debug_assertions`-gated allow list denied that binary's own
+///   `http://tauri.localhost` navigation and left the window on `about:blank` with no error.
+///   `is_dev()` reflects how the binary was actually *launched* (dev server vs. any built
+///   binary), not the compiled profile, so it correctly treats `tauri build --debug` the same as
+///   a release build: not dev mode, so the `tauri.localhost` branch applies.
+/// - Allow-both-unconditionally (second attempt): a release build has no reason to ever accept
+///   `localhost:5174` as a trusted same-window origin -- any local process listening on that port
+///   would become a navigable same-window origin in a packaged app, a UI-spoofing risk the
+///   Electron build's own `isOwnOrigin` does not have (it only allows the dev-server origin when
+///   `isDev && ELECTRON_RENDERER_URL` is set).
 fn is_allowed_navigation_url(url: &Url) -> bool {
-    const ALLOWED_ORIGINS: [&str; 2] = ["http://localhost:5174", "http://tauri.localhost"];
-    let origin = url.origin();
-    ALLOWED_ORIGINS.iter().any(|allowed| {
-        origin
-            == Url::parse(allowed)
-                .expect("allowed navigation origin is a valid URL")
-                .origin()
-    })
+    let allowed = if tauri::is_dev() {
+        "http://localhost:5174"
+    } else {
+        "http://tauri.localhost"
+    };
+    url.origin()
+        == Url::parse(allowed)
+            .expect("allowed navigation origin is a valid URL")
+            .origin()
 }
 
 /// State `.manage()`d once at startup: the one `Dispatcher` every `refract_request` call routes
