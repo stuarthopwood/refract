@@ -24,6 +24,7 @@ use crate::git::git::GitError;
 use crate::store::registry::{RegistryStore, RegistryStoreError};
 use crate::store::settings::SettingsStore;
 
+pub mod chat;
 pub mod clipboard;
 pub mod conversations;
 pub mod readiness;
@@ -39,13 +40,18 @@ pub mod settings;
 /// the one `RegistryStore`/`SettingsStore` instance behind this one lock, so at most one write is
 /// ever in flight for it. `app_handle` is `None` until `lib.rs`'s `setup` closure runs (Phase 3's
 /// event emission is the first reader); behind a plain `std::sync::Mutex` since it is only ever
-/// read-then-cloned, never held across an `.await`.
+/// read-then-cloned, never held across an `.await`. `session_manager` (Phase 3, tasks.md T029)
+/// is the one `session::SessionManager` every agent-backed handler (`sessions.open`/
+/// `.stopAgent`/`.setVisible`, `conversations.startNew`/`.open`, every `chat.*` channel)
+/// dispatches into; it shares this SAME `registry`/`settings` pair, never a second copy, so a
+/// registry-only handler and an agent-backed one never disagree about the Session row.
 #[derive(Clone)]
 pub struct AppState {
     pub data_dir: PathBuf,
     pub registry: Arc<AsyncMutex<RegistryStore>>,
     pub settings: Arc<AsyncMutex<SettingsStore>>,
     pub app_handle: Arc<StdMutex<Option<tauri::AppHandle>>>,
+    pub session_manager: Arc<crate::session::SessionManager>,
 }
 
 /// The exact shape `src/shared/ipc.ts`'s `IpcError` serialises to inside the `Result<T>`
@@ -108,14 +114,13 @@ impl Dispatcher {
     }
 }
 
-/// Registers every channel this slice implements (tasks.md T013 to T019, `parity.md`'s
-/// milestone-1 set): `settings.get`/`settings.setApprovalMode` (completing the Phase 1 stub with
-/// the real store), the registry-only `repositories.*`/`sessions.*`/`conversations.list`
-/// channels, `clipboard.writeText`, and `readiness.check`. `sessions.open`/`.stopAgent`/
-/// `.setVisible`, `conversations.startNew`/`.open`, and every `chat.*` channel are deliberately
-/// left unregistered here -- they need the live `session::manager` Phase 3 provides, so an
-/// unmodified renderer calling one of them today still gets the documented `unsupported`
-/// envelope above, never a panic or a hang.
+/// Registers every channel this build implements (tasks.md T013 to T029, `parity.md`'s
+/// milestone-1 set): `settings.get`/`settings.setApprovalMode` (Phase 2(b)), the registry-only
+/// `repositories.*`/`sessions.{list,create,rename}`/`conversations.list` channels (Phase 2(b)),
+/// `clipboard.writeText`/`readiness.check` (Phase 1), and the agent-backed `sessions.{open,
+/// stopAgent,setVisible}`, `conversations.{startNew,open}`, and every `chat.*` channel this
+/// file's own module completes (Phase 3, tasks.md T024 to T026) -- each now dispatches into the
+/// live `session::SessionManager` `AppState::session_manager` carries.
 pub fn register_handlers(dispatcher: &mut Dispatcher) {
     dispatcher.register("settings.get", settings::settings_get);
     dispatcher.register("settings.setApprovalMode", settings::settings_set_approval_mode);
@@ -129,7 +134,17 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     dispatcher.register("sessions.list", sessions::sessions_list);
     dispatcher.register("sessions.create", sessions::sessions_create);
     dispatcher.register("sessions.rename", sessions::sessions_rename);
+    dispatcher.register("sessions.open", sessions::sessions_open);
+    dispatcher.register("sessions.stopAgent", sessions::sessions_stop_agent);
+    dispatcher.register("sessions.setVisible", sessions::sessions_set_visible);
     dispatcher.register("conversations.list", conversations::conversations_list);
+    dispatcher.register("conversations.startNew", conversations::conversations_start_new);
+    dispatcher.register("conversations.open", conversations::conversations_open);
+    dispatcher.register("chat.send", chat::chat_send);
+    dispatcher.register("chat.stop", chat::chat_stop);
+    dispatcher.register("chat.removeQueued", chat::chat_remove_queued);
+    dispatcher.register("chat.answer", chat::chat_answer);
+    dispatcher.register("chat.commands", chat::chat_commands);
     dispatcher.register("clipboard.writeText", clipboard::clipboard_write_text);
 }
 

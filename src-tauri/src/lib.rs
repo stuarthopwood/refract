@@ -76,16 +76,21 @@ pub fn run() {
     // resolved it (missing/invalid key falls back to `dark`), not a second, separate read.
     let bootstrap_theme = serde_json::to_value(settings.get().theme).expect("ThemeId is always JSON-serialisable");
 
-    let app_state = AppState {
-        data_dir,
-        registry: std::sync::Arc::new(tokio::sync::Mutex::new(registry)),
-        settings: std::sync::Arc::new(tokio::sync::Mutex::new(settings)),
-        app_handle: std::sync::Arc::new(std::sync::Mutex::new(None)),
-    };
+    // Phase 3 (tasks.md T029): the one `session::SessionManager` every agent-backed handler
+    // dispatches into, sharing this SAME `registry`/`settings`/`app_handle` the registry-only
+    // handlers already use -- never a second store instance.
+    let registry = std::sync::Arc::new(tokio::sync::Mutex::new(registry));
+    let settings = std::sync::Arc::new(tokio::sync::Mutex::new(settings));
+    let app_handle_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::AppHandle>>> = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let events = events::EventSink::new(app_handle_slot.clone());
+    let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
+    let session_manager_for_exit = session_manager.clone();
+
+    let app_state = AppState { data_dir, registry, settings, app_handle: app_handle_slot, session_manager };
     let mut dispatcher = Dispatcher::new();
     ipc::register_handlers(&mut dispatcher);
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().level(log::LevelFilter::Debug).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -129,6 +134,23 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Port of `src/main/index.ts`'s own `before-quit` stop-all (tasks.md T029): every live
+    // `omp` process is asked to exit gracefully (and force-killed past its own grace period,
+    // `OmpProcess::stop`) before the app itself actually quits. `prevent_exit` defers Tauri's own
+    // shutdown until that finishes or a 15 s bound elapses, whichever comes first -- a stuck
+    // child must never hold the whole app open forever (the kill-on-close Job Object, already
+    // joined before `run()` was ever called, is the final belt-and-braces guarantee regardless).
+    app.run(move |_app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            api.prevent_exit();
+            let session_manager = session_manager_for_exit.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(15), session_manager.stop_all()).await;
+                std::process::exit(0);
+            });
+        }
+    });
 }

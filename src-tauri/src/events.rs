@@ -30,6 +30,70 @@ pub const FILE_EXPLORER_RESET: &str = "file-explorer:reset";
 pub const ACCOUNTS_GITHUB_CHANGED: &str = "accounts:github-changed";
 pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
 
+/// The milestone-1 event fan-out (tasks.md T027, `src/main/ipc/register.ts`'s own
+/// `forwardEvent` plus `broadcast.ts`'s `broadcastSettingsChanged`): one typed emit method per
+/// event this build actually fires, each a thin wrapper over `emit` below. Cheap to clone (one
+/// `Arc`), so every `session::agent::SessionAgent`/`session::manager::SessionManager` instance
+/// holds its own copy instead of threading an `&AppHandle` through every method signature --
+/// `app_handle` is `None` until `lib.rs`'s `setup` closure runs; every method here silently
+/// no-ops until then, the same "no window yet, drop it" stance `forwardEvent` takes.
+#[derive(Clone)]
+pub struct EventSink {
+    app_handle: std::sync::Arc<std::sync::Mutex<Option<AppHandle>>>,
+}
+
+impl EventSink {
+    pub fn new(app_handle: std::sync::Arc<std::sync::Mutex<Option<AppHandle>>>) -> Self {
+        Self { app_handle }
+    }
+
+    fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
+        let handle = self.app_handle.lock().expect("app_handle mutex poisoned").clone();
+        if let Some(app) = handle {
+            emit(&app, event, payload);
+        }
+    }
+
+    /// `session:status`: `payload` is a `session::agent::SessionStatusEvent` already serialised
+    /// to `Value` by the caller (kept generic here so `events.rs` never needs to depend on
+    /// `session`, avoiding a module cycle).
+    pub fn emit_session_status(&self, payload: &serde_json::Value) {
+        self.send(SESSION_STATUS, payload.clone());
+    }
+
+    /// `session:list-changed`: no payload, matching `window.webContents.send(IPC_EVENTS.
+    /// SESSION_LIST_CHANGED)`'s own no-argument call.
+    pub fn emit_session_list_changed(&self) {
+        self.send(SESSION_LIST_CHANGED, ());
+    }
+
+    pub fn emit_transcript_patch(&self, session_id: &str, ops: &serde_json::Value) {
+        self.send(TRANSCRIPT_PATCH, serde_json::json!({ "sessionId": session_id, "ops": ops }));
+    }
+
+    pub fn emit_queue_update(&self, session_id: &str, follow_up: &[String], steering: &[String]) {
+        self.send(QUEUE_UPDATE, serde_json::json!({ "sessionId": session_id, "followUp": follow_up, "steering": steering }));
+    }
+
+    pub fn emit_request_pending(&self, session_id: &str, request: &serde_json::Value) {
+        self.send(REQUEST_PENDING, serde_json::json!({ "sessionId": session_id, "request": request }));
+    }
+
+    pub fn emit_request_resolved(&self, session_id: &str, request_id: &str) {
+        self.send(REQUEST_RESOLVED, serde_json::json!({ "sessionId": session_id, "requestId": request_id }));
+    }
+
+    pub fn emit_commands_update(&self, session_id: &str, commands: &serde_json::Value) {
+        self.send(COMMANDS_UPDATE, serde_json::json!({ "sessionId": session_id, "commands": commands }));
+    }
+
+    /// `settings:changed` (`ipc/broadcast.ts`'s own `broadcastSettingsChanged`): the whole
+    /// `Settings` row, already serialised by the caller.
+    pub fn emit_settings_changed(&self, settings: &serde_json::Value) {
+        self.send(SETTINGS_CHANGED, settings.clone());
+    }
+}
+
 /// Emits `event` with `payload` to every window, mirroring the Electron build's own
 /// `webContents.send(channel, payload)` broadcasts (FR-008). Logs rather than panics on
 /// failure -- a dropped event (for example, no window yet) must never crash the backend, the

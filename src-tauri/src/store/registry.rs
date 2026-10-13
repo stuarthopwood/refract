@@ -66,6 +66,23 @@ pub struct LastModel {
     pub name: Option<String>,
 }
 
+/// A partial update to one `Session` (port of `registry.ts`'s own `updateSession(id, patch:
+/// Partial<Session>)`, used by `session::agent`'s `syncFromState`/`startNewConversation`/the
+/// stopped-Session Conversation switch, Phase 3). `current_conversation`/`last_message_count`
+/// are tri-state (`None` = leave unchanged, `Some(None)` = clear to `null`, `Some(Some(v))` =
+/// set) since both callers above need to explicitly clear them (a brand new Conversation); every
+/// other field here is only ever set, never cleared, by its callers, so a plain `Option<T>`
+/// (`None` = leave unchanged) is enough.
+#[derive(Debug, Clone, Default)]
+pub struct SessionPatch {
+    pub last_activity_at: Option<String>,
+    pub session_dir: Option<String>,
+    pub current_conversation: Option<Option<String>>,
+    pub last_message_count: Option<Option<i64>>,
+    pub last_model: Option<LastModel>,
+    pub last_thinking_level: Option<Option<String>>,
+}
+
 /// The full contents of `registry.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Registry {
@@ -254,6 +271,48 @@ impl RegistryStore {
         self.data.sessions[index].name = name;
         if let Err(err) = self.persist().await {
             self.data.sessions[index].name = previous_name;
+            let _ = self.persist().await;
+            return Err(err.into());
+        }
+        Ok(self.data.sessions[index].clone())
+    }
+
+    /// `registry.ts`'s own `updateSession(id, patch)`: applies every `Some` field of `patch`,
+    /// leaves every `None` field untouched, persists, and rolls back to the pre-patch Session on
+    /// a failed write (same discipline every other mutator here already uses). Used by
+    /// `session::agent` (Phase 3) after `get_state` (`syncFromState`), `new_session`
+    /// (`startNewConversation`), and the stopped-Session Conversation switch.
+    pub async fn update_session(&mut self, id: &str, patch: SessionPatch) -> Result<Session, RegistryStoreError> {
+        let index = self
+            .data
+            .sessions
+            .iter()
+            .position(|s| s.id == id)
+            .ok_or_else(|| RegistryError::new(RegistryErrorCode::NotFound, format!("Session not found: {id}")))?;
+        let previous = self.data.sessions[index].clone();
+        {
+            let session = &mut self.data.sessions[index];
+            if let Some(value) = patch.last_activity_at {
+                session.last_activity_at = value;
+            }
+            if let Some(value) = patch.session_dir {
+                session.session_dir = Some(value);
+            }
+            if let Some(value) = patch.current_conversation {
+                session.current_conversation = value;
+            }
+            if let Some(value) = patch.last_message_count {
+                session.last_message_count = value;
+            }
+            if let Some(value) = patch.last_model {
+                session.last_model = Some(value);
+            }
+            if let Some(value) = patch.last_thinking_level {
+                session.last_thinking_level = value;
+            }
+        }
+        if let Err(err) = self.persist().await {
+            self.data.sessions[index] = previous;
             let _ = self.persist().await;
             return Err(err.into());
         }

@@ -1,12 +1,13 @@
-// IPC handler for `conversations.list` (contracts/ipc.md "Conversations", tasks.md T018). Only
-// the registry-only `.list` arm is ported here -- `.startNew`/`.open` need the live
-// `SessionAgent` (Phase 3) and stay unregistered, matching `parity.md`'s own milestone marking
-// (both channels are milestone 1, but the `startStoppedSessionOnConversation`/live-agent body
-// those arms need does not exist yet in this slice). The directory-scan logic itself is a direct
-// port of `src/main/conversations.ts`'s `listConversations` (there is no live-agent dependency in
-// that half at all -- it is a pure file read), folded into this one file rather than mirroring
-// the Electron build's separate `src/main/conversations.ts` module, since no other milestone-1
-// handler in this slice needs it.
+// IPC handlers for `conversations.*` (contracts/ipc.md "Conversations", tasks.md T018/T025).
+// `.list` is the registry-only arm (Phase 2(b)); `.startNew`/`.open` (Phase 3, tasks.md T025)
+// drive the live `SessionAgent` via `AppState::session_manager`, going through
+// `startStoppedSessionOnConversation`'s port (`SessionAgent::start_with_conversation`) for a
+// `stopped` Session (issue #69). The directory-scan logic itself is a direct port of
+// `src/main/conversations.ts`'s `listConversations` (no live-agent dependency at all -- a pure
+// file read), folded into this one file rather than mirroring the Electron build's separate
+// `src/main/conversations.ts` module. `list_conversations`/`ConversationInfo`/`build_snapshot`
+// are `pub(crate)` so `ipc::sessions`'s own `.open` arm can build the same `SessionSnapshot`
+// shape (`contracts/ipc.md`'s own shared `buildSnapshot`, `src/main/ipc/util.ts`).
 
 use serde::Serialize;
 use serde_json::Value;
@@ -14,15 +15,44 @@ use serde_json::Value;
 use super::{invalid_argument, not_found, AppState, HandlerFuture};
 
 /// `src/shared/model.ts`'s own `ConversationInfo` shape.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ConversationInfo {
+pub(crate) struct ConversationInfo {
     file: String,
     id: String,
     created_at: String,
     title: String,
     preview: String,
     is_current: bool,
+}
+
+/// Port of `src/main/ipc/util.ts`'s own `buildSnapshot`, returned by `sessions.open`/`.recover`
+/// and `conversations.startNew`/`.open` alike (contracts/ipc.md). `readout`/`subagents` are out
+/// of this build's scope (`session::agent`'s own header): emitted as the documented "nothing
+/// read yet" empty shape so the unmodified renderer's `SessionSnapshot` consumers never see a
+/// missing field, never actually computed or updated afterward.
+pub(crate) async fn build_snapshot(session: &crate::store::registry::Session, agent: &std::sync::Arc<crate::session::SessionAgent>) -> Value {
+    let runtime = agent.runtime_view().await;
+    let conversations = list_conversations(session.session_dir.as_deref(), session.current_conversation.as_deref()).await;
+    serde_json::json!({
+        "runtime": runtime,
+        "conversations": conversations,
+        "readout": empty_readout(),
+        "subagents": Value::Array(Vec::<Value>::new()),
+    })
+}
+
+/// Port of `SessionAgent.ts`'s own `EMPTY_READOUT` (data-model.md: every field `null` means
+/// "not yet read" / "chip hidden").
+fn empty_readout() -> Value {
+    serde_json::json!({
+        "changes": Value::Null,
+        "contextUsage": Value::Null,
+        "turnTime": Value::Null,
+        "pullRequest": Value::Null,
+        "subagentCount": Value::Null,
+        "todoProgress": Value::Null,
+    })
 }
 
 pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
@@ -155,7 +185,7 @@ fn same_file(a: &str, b: &str) -> bool {
 
 /// Lists every Conversation in `session_dir`, newest first. `session_dir == None` (no Conversation
 /// has ever been started) and an unreadable directory both yield an empty list, never a failure.
-async fn list_conversations(session_dir: Option<&str>, current_conversation: Option<&str>) -> Vec<ConversationInfo> {
+pub(crate) async fn list_conversations(session_dir: Option<&str>, current_conversation: Option<&str>) -> Vec<ConversationInfo> {
     let Some(session_dir) = session_dir else { return Vec::new() };
     let mut entries = match tokio::fs::read_dir(session_dir).await {
         Ok(entries) => entries,
@@ -183,4 +213,62 @@ async fn list_conversations(session_dir: Option<&str>, current_conversation: Opt
     }
     results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     results
+}
+
+/// `conversations.startNew` (contracts/omp-usage.md "New Conversation"): a `stopped` Session
+/// goes through the stopped-Session Conversation switch (`startStoppedSessionOnConversation`'s
+/// port); an already-live, idle Session calls `SessionAgent::start_new_conversation` directly.
+pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let Some(session_id) = args.first().and_then(Value::as_str).map(str::to_string) else {
+            return Err(invalid_argument("conversations.startNew expects a string sessionId"));
+        };
+        if state.registry.lock().await.get_session(&session_id).is_none() {
+            return Err(not_found(format!("Session not found: {session_id}")));
+        }
+        let agent = state.session_manager.get_or_create_agent(&session_id);
+        let result = if agent.status().await == crate::session::SessionStatus::Stopped {
+            agent.start_with_conversation(None).await
+        } else {
+            agent.start_new_conversation().await
+        };
+        if let Err(err) = result {
+            return Err(super::IpcError::new(err.code, err.message));
+        }
+        let session = state.registry.lock().await.get_session(&session_id).cloned().ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
+        Ok(build_snapshot(&session, &agent).await)
+    })
+}
+
+/// `conversations.open` (contracts/omp-usage.md "Open an earlier Conversation"): `file` is
+/// renderer-supplied and only accepted if it is one of this Session's own Conversations (never
+/// an arbitrary filesystem path). A `stopped` Session goes through the stopped-Session
+/// Conversation switch; an already-live, idle Session calls `SessionAgent::open_conversation`.
+pub fn conversations_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let (Some(session_id), Some(file)) = (args.first().and_then(Value::as_str).map(str::to_string), args.get(1).and_then(Value::as_str).map(str::to_string))
+        else {
+            return Err(invalid_argument("conversations.open expects (sessionId, file) strings"));
+        };
+        let session = state.registry.lock().await.get_session(&session_id).cloned().ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
+        let own_conversations = list_conversations(session.session_dir.as_deref(), session.current_conversation.as_deref()).await;
+        let resolved_file = std::path::absolute(&file).map(|p| p.to_string_lossy().to_lowercase()).unwrap_or_else(|_| file.to_lowercase());
+        let matched = own_conversations.into_iter().find(|c| {
+            std::path::absolute(&c.file).map(|p| p.to_string_lossy().to_lowercase()).unwrap_or_else(|_| c.file.to_lowercase()) == resolved_file
+        });
+        let Some(matched) = matched else {
+            return Err(invalid_argument("conversations.open file must be one of this Session's own Conversations"));
+        };
+        let agent = state.session_manager.get_or_create_agent(&session_id);
+        let result = if agent.status().await == crate::session::SessionStatus::Stopped {
+            agent.start_with_conversation(Some(matched.file.clone())).await
+        } else {
+            agent.open_conversation(matched.file.clone()).await
+        };
+        if let Err(err) = result {
+            return Err(super::IpcError::new(err.code, err.message));
+        }
+        let session = state.registry.lock().await.get_session(&session_id).cloned().ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
+        Ok(build_snapshot(&session, &agent).await)
+    })
 }

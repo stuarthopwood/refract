@@ -1,9 +1,14 @@
-// IPC handlers for `settings.*` (contracts/ipc.md "Settings", tasks.md T015). Milestone 1 only
-// wires `settings.get` and `settings.setApprovalMode` (`parity.md`); every other `settings.*`
-// channel is `later` and stays unregistered. `settings.setApprovalMode` persists the mode only --
-// fanning `pendingMode` out to every live Session (`SessionManager.applyPendingModeChange`) and
-// broadcasting `settings:changed` both need the live `session::manager`/`events` Phase 3 provides,
-// so neither happens here yet (this slice's own assignment explicitly defers both).
+// IPC handlers for `settings.*` (contracts/ipc.md "Settings", tasks.md T015/T028). Milestone 1
+// only wires `settings.get` and `settings.setApprovalMode` (`parity.md`); every other
+// `settings.*` channel is `later` and stays unregistered. `settings.setApprovalMode` persists the
+// mode and broadcasts `settings:changed` (T028, port of `ipc/broadcast.ts`'s own
+// `broadcastSettingsChanged`) so every window stays in sync even for a caller that reaches this
+// channel directly instead of through the renderer store's own self-updating action. Not ported
+// (`session::agent`'s own header): fanning `pendingMode` out to every LIVE Session and restarting
+// each at its own next settle (`SessionManager.applyPendingModeChange`/`SessionAgent.restart`,
+// T031/T032) -- this build has no `restart()`, so an already-running Session keeps its OLD mode
+// until the next time it is stopped and reopened; only a Session started (or restarted by this
+// channel in the Electron build) AFTER this call picks up the new mode.
 
 use serde_json::Value;
 
@@ -31,7 +36,9 @@ pub fn settings_set_approval_mode(state: AppState, args: Vec<Value>) -> HandlerF
             .set_approval_mode(mode)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
-        Ok(serde_json::to_value(value).expect("Settings is always JSON-serialisable"))
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
     })
 }
 

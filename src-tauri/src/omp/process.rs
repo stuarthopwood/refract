@@ -346,6 +346,20 @@ impl OmpProcess {
         }
     }
 
+    /// Writes `value` to stdin verbatim, with no `id` injection and no correlated-response wait
+    /// -- unlike `request()`. Port of `OmpProcess.ts`'s own `write` (distinct from `request`):
+    /// used for `extension_ui_response` (`session::agent::answer_request`, Phase 3), whose `id`
+    /// must stay the ORIGINAL `extension_ui_request`'s own id for OMP to resolve which dialog
+    /// this answers -- `request()`'s fresh-per-call id would break that correlation, and OMP
+    /// never sends a `response` frame for this command type regardless, so there is nothing to
+    /// wait for.
+    pub async fn send_raw(&self, value: Value) -> Result<(), ProcessError> {
+        if self.inner.exited.load(Ordering::SeqCst) {
+            return Err(ProcessError::new("OmpProcess: process has exited"));
+        }
+        self.write_line(&value).await
+    }
+
     /// Writes one JSON object to stdin as a newline-delimited frame. Port of `OmpProcess.ts`'s
     /// own `write`.
     async fn write_line(&self, value: &Value) -> Result<(), ProcessError> {
