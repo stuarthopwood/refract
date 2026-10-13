@@ -1162,7 +1162,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             const overflowText =
               overflow.length > 0
                 ? remainingSlots === 0
-                  ? 'This message already has the maximum of 10 images; nothing more was attached.'
+                  ? 'This message already has the maximum of 10 images; nothing more was attached; the paths were left as text.'
                   : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message.`
                 : null
             const failureText =

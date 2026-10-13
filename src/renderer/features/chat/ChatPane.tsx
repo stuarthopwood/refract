@@ -954,7 +954,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
           : failedFiles.length > 1
             ? saysOther
-              ? `${failedFiles.length} other file${failedFiles.length === 1 ? '' : 's'} could not be attached as images.`
+              ? `${failedFiles.length} other files could not be attached as images.`
               : `${failedFiles.length} files could not be attached as images.`
             : null
       notify({

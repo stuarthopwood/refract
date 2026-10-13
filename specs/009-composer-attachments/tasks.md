@@ -453,19 +453,32 @@ image does, reusing Phase 6's shared reader end to end.
 **Round 3's own first attempt with the fixed harness (head `1b4a96e`): partial, not clean.**
 Preflight passed (`file://` URL confirmed inside this worktree). Scenarios 1-3 failed on a
 harness-level `Set-Clipboard exited 1` race (not app-related, not yet fixed). Scenarios 4 and 5
-PASSED and are genuinely live-confirmed: a mixed paste kept its text and attached in the
-background (FR-023), and a nonexistent path's own paste fell back to its exact raw text with a
-quiet notice (FR-022, including the round 3 raw-vs-normalized fix). From scenario 6
-(paste-oversized-image) onward, the renderer went blank (solid black screenshots, `document`
-queries returning nothing, though CDP itself stayed responsive) for the rest of the run --
-unresolved: the app's own "Low memory" status-bar warning was already showing one scenario
-earlier, on a machine whose free RAM swung between ~0.4 GB and 1.7 GB repeatedly this session, so
-a low-memory renderer crash is the leading candidate [INFERENCE], but this was not conclusively
-separated from a genuine app bug in handling the oversized-image test case, and was not dug into
-further (scope: one live run and report). Evidence copied to
+PASSED live: a mixed paste kept its text and attached in the background (FR-023), and a
+nonexistent path's own paste fell back to its exact raw text with a quiet notice (FR-022).
+Scenario 5's own input was a QUOTED path, so its raw text equalled its normalized form either
+way -- that live pass proves nothing about the round 3 raw-vs-normalized fix specifically (round
+4 gate finding, Verif4 HIGH): the quoted-path fallback is fixed in code at `616c4059`, not
+re-run live. From scenario 6 (paste-oversized-image) onward, the renderer went blank (solid
+black screenshots, `document` queries returning nothing, though CDP itself stayed responsive)
+for the rest of the run -- unresolved: the app's own "Low memory" status-bar warning was already
+showing one scenario earlier, on a machine whose free RAM swung between ~0.4 GB and 1.7 GB
+repeatedly this session, so a low-memory renderer crash is the leading candidate [INFERENCE].
+Round 4's own read-only probe (see below) found scenario 6's own fixture refused before any
+image bytes are read, on the SAME branch as scenario 5 (which rendered fine) -- this narrows, but
+does not conclusively prove, the low-memory explanation over an app-level crash; not dug into
+further (scope: one live run, one read-only probe). Evidence copied to
 `C:/Users/shopwood/refract-live-check-723-live/` with a verified `sha256.json` manifest. STILL
 NOT closed -- a follow-up run is needed (fix the `Set-Clipboard` race, then re-attempt from
 scenario 6 onward, ideally first establishing whether the crash reproduces in isolation).
+
+**Round 4's own read-only probe conclusion (not proof)**: scenario 6 is a path paste of a
+22,020,096-byte padded PNG, refused at main's own `fstat` size cap (`ipc/attachments.ts` ~101)
+BEFORE any image bytes are read -- the exact same branch scenario 5 already passed through
+cleanly. The blank renderer is most likely the Low-memory artefact described above (the banner
+was already showing before any paste that session, RAM swinging ~0.4-1.7 GB), not a crash in the
+oversized-image handling path itself, but this is an inference from a read-only probe, not a
+repeat of the live scenario. Scenarios 6 onward remain NOT verified.
+
 
 ### Round 1 gate fixes (Sec1/Code1/A11y1/Verif1 FAIL, against the initial Phase 6/7 head)
 
@@ -671,3 +684,48 @@ harness -- partial (FR-022/FR-023 live-confirmed; a renderer crash from scenario
 the rest unverified); see T023's own note above. Still open.
 
 ---
+
+### Round 4 gate fixes (Verif4 HIGH, Sec4/Code4 Medium, against the round 3 head)
+
+**1 HIGH**: `extractImagePathCandidates` (`attachments.ts`) pushed the regex CAPTURE GROUP
+(quotes already stripped) as a QUOTED candidate's own `raw` value, so an unresolved Explorer
+"Copy as path" paste came back WITHOUT its own quotes on the FR-022 fallback -- the round 3
+"raw-vs-normalized" fix only ever covered the `file:///%20` URL case, never the quoted-path case
+it claimed to fix too. Fixed at `616c4059`: `raw` is now the full quoted match (quotes included);
+candidates are built as `{ raw, normalized: normalizeImagePathToken(raw) }` and filtered on
+`looksLikeImagePathToken(normalized)` (the extension regex can never match past a trailing quote
+character). Verified with a throwaway scratch probe under `C:/tmp` (deleted after use; a
+pure-function copy of the fixed helpers, no app code touched): quoted path -> raw keeps quotes;
+`file:///C:/my%20x/a.png` -> raw keeps `%20`; unquoted spaced path unchanged; `https://` excluded;
+mixed text + quoted path -> quotes preserved, prose untouched. All 5 cases passed. Round 3's own
+scenario 5 live pass is NOT evidence for this fix (its input was already quoted so raw equalled
+normalized either way) -- this fix is confirmed in code only, not re-run live; see the round 3
+live-check note above.
+
+**Docs (Verif4/Code4/A11y4 Medium)**: the round 3 live-check note's "genuine app-level crash"
+framing for scenario 6 overstated an inference as a conclusion; corrected above to attribute the
+blank renderer to the Low-memory artefact as the LEADING candidate, not a proven cause, backed by
+a new read-only probe conclusion (not itself live proof). `docs/PLAN.md`'s composer row status
+cell corrected from "gate round 3" to current (round 4 passed with fixes).
+`MessageInput.tsx`'s cap-reached notice reworded to "nothing more was attached; the paths were
+left as text." `ChatPane.tsx`'s dead `failedFiles.length === 1 ? '' : 's'` pluralisation inside
+its own `>1` branch (always `'s'` there) replaced with the literal "other files".
+
+**Risks (pre-existing, not introduced this round)**: the clipboard-IMAGE path
+(`attachments.ts` ~80-139) decodes any clipboard MIME type via `createImageBitmap` BEFORE the
+pixel cap -- an unsupported type has no size check at all before decode, and even a supported
+type has no pixel check until the later thumbnail decode; renderer memory is roughly 230 MB per
+image at the existing caps (10 images is therefore ~0.5 GB of strings plus bitmaps). Filed as a
+follow-up: see the PR body's own Risks section for the issue link. Separately: an unquoted,
+drive-letter-prefixed line of ordinary prose that happens to END in a supported image extension
+is indistinguishable from a real path-only paste under the current heuristic; if the read fails,
+the raw text is re-inserted with a quiet notice and native undo is lost for that keystroke --
+accepted as the simplest correct heuristic given there is no reliable way to tell "this is prose"
+from "this is a real but currently-unreadable path" without a quote character to anchor on.
+
+**Checkpoint**: `pnpm typecheck` (both tsconfigs), `vitest` (no new tests), `check:indent`,
+`check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `pnpm build` -- see the PR body's
+own Gates section for this round's exact results. No live app verification attempted this round
+(code-level fix plus a read-only probe only); scenarios 1-3 and 6-26 remain not completed; a
+manual pass by Stuart in a normal Session is requested (see the PR body's own Verification
+section for exact steps). Still open pending that manual pass.
