@@ -22,14 +22,17 @@ export function isToolGroup(item: GroupedTranscriptItem): item is ToolGroup {
 // through two different React component types at the same tree position, or a focused/expanded
 // row loses focus the moment a second call arrives (FINDINGS: focus loss on tool-call grouping).
 // `ask` never groups: T073 gives every `ask` call its own dedicated question rendering, never a
-// generic collapsed-tool-call summary. A thinking line, a request, a notice, an agent-message, a
-// subagent row, or a different tool name all end the current run -- except a hidden bookkeeping
-// tool's own failure notice (T086, FR-052, `HIDDEN_TOOL_NOTICE_PREFIX`), the one documented
-// exception: it is emitted in place but never flushes `run`, so a hidden call's failure in the
-// middle of a run of the *surrounding* visible tool's calls never splits that run into two groups
-// (it does reorder that one notice ahead of the eventual merged group in `result`, since the run
-// it belongs to is not flushed until the next non-matching item -- an accepted trade-off for never
-// breaking the group apart).
+// generic collapsed-tool-call summary. A `read` whose `skill` field is set never groups either
+// (issue #543, first slice): it is a grouping boundary on both sides, so a skill load next to
+// ordinary `read` calls is never folded into their run and never splits that run's own
+// before/after pieces back together across it. A thinking line, a request, a notice, an
+// agent-message, a subagent row, a skill-prompt row, or a different tool name all end the
+// current run -- except a hidden bookkeeping tool's own failure notice (T086, FR-052,
+// `HIDDEN_TOOL_NOTICE_PREFIX`), the one documented exception: it is emitted in place but never
+// flushes `run`, so a hidden call's failure in the middle of a run of the *surrounding* visible
+// tool's calls never splits that run into two groups (it does reorder that one notice ahead of
+// the eventual merged group in `result`, since the run it belongs to is not flushed until the
+// next non-matching item -- an accepted trade-off for never breaking the group apart).
 export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[] {
   const result: GroupedTranscriptItem[] = []
   let run: ToolItem[] = []
@@ -46,7 +49,7 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
   }
 
   for (const item of items) {
-    if (item.kind === 'tool' && item.tool !== 'ask') {
+    if (item.kind === 'tool' && item.tool !== 'ask' && !item.skill) {
       if (run.length > 0 && run[0]!.tool === item.tool) {
         run.push(item)
       } else {

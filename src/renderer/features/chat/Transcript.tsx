@@ -23,6 +23,7 @@ import { toolStatusLabel } from './toolStatus'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
+import { SkillPromptRow } from './SkillPromptRow'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -249,6 +250,9 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
 
     case 'notice':
       return <NoticeRow level={item.level} text={item.text} />
+
+    case 'skill-prompt':
+      return <SkillPromptRow item={item} />
 
     default:
       return null

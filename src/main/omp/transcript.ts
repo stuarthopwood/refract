@@ -86,6 +86,21 @@ function buildWriteField(tool: string, args: unknown): ToolItem['write'] {
   return undefined;
 }
 
+/** Issue #543, first slice: a `read` call whose `path` starts with `skill://` is a skill load,
+ * not an ordinary file read. The name is the whole URL remainder after the prefix -- a namespaced
+ * skill (`skill://<namespace>/<name>`) or a supporting-file read (`skill://<name>/<file>`) both
+ * show their full remainder unseparated; nesting a supporting-file read under its owning skill's
+ * row is a future slice, not this one. */
+const SKILL_URL_PREFIX = 'skill://';
+
+function buildSkillField(tool: string, args: unknown): ToolItem['skill'] {
+  if (tool !== 'read' || !args || typeof args !== 'object') return undefined;
+  const path = (args as Record<string, unknown>).path;
+  if (typeof path !== 'string' || !path.startsWith(SKILL_URL_PREFIX)) return undefined;
+  const name = path.slice(SKILL_URL_PREFIX.length);
+  return name.length > 0 ? { name } : undefined;
+}
+
 function buildEditField(tool: string, details: unknown): ToolItem['edit'] {
   if (tool !== 'edit' || !details || typeof details !== 'object') return undefined;
   const record = details as Record<string, unknown>;
@@ -499,6 +514,32 @@ function tryBuildAdvisoryItems(messageId: string, message: OmpCustomMessage): Tr
   return [{ kind: 'notice', id: messageId, level: 'info', text: message.content }];
 }
 
+/** Issue #547: a user-invoked `/skill:<name>` arrives as `customType: 'skill-prompt'`,
+ * `attribution: 'user'`, `display: true`, `details: { name, args?, lineCount? }`, `content` the
+ * whole injected skill text. Returns `undefined` -- not a fallback notice itself, unlike
+ * `tryBuildAdvisoryItems` above -- for anything that is not exactly this shape, including a
+ * `details` that fails to validate, so the caller's existing `display === true` generic-notice
+ * fallback (or the hidden `display: false` path) still applies; this function never invents a
+ * missing `name`. Gated on `attribution === 'user'` too: OMP's autoloaded, subagent-facing skill
+ * messages use a different, hidden format and must never read as something the user invoked. */
+function tryBuildSkillPromptItem(messageId: string, message: OmpCustomMessage): TranscriptItem | undefined {
+  if (message.customType !== 'skill-prompt' || message.display !== true || message.attribution !== 'user') return undefined;
+  const details = message.details;
+  if (!details || typeof details !== 'object') return undefined;
+  const record = details as Record<string, unknown>;
+  if (typeof record.name !== 'string' || record.name.length === 0) return undefined;
+  const args = typeof record.args === 'string' && record.args.length > 0 ? record.args : undefined;
+  const lineCount = typeof record.lineCount === 'number' && Number.isFinite(record.lineCount) ? record.lineCount : undefined;
+  return {
+    kind: 'skill-prompt',
+    id: messageId,
+    name: record.name,
+    ...(args !== undefined ? { args } : {}),
+    ...(lineCount !== undefined ? { lineCount } : {}),
+    text: message.content,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Hidden bookkeeping tools (T086, FR-052): `HIDDEN_TOOLS` calls never become a `tool` item, in
 // either the live frame path or history, so they never reach the renderer. A hidden call that
@@ -581,8 +622,9 @@ function buildAssistantItems(
       const existing = existingForMessage.find((item): item is ToolItem => isToolItem(item) && item.id === id);
       const target = extractTarget(part.name, part.arguments);
       const write = buildWriteField(part.name, part.arguments);
+      const skill = buildSkillField(part.name, part.arguments);
       if (existing) {
-        result.push({ ...existing, tool: part.name, target, args: part.arguments, ...(write ? { write } : {}) });
+        result.push({ ...existing, tool: part.name, target, args: part.arguments, ...(write ? { write } : {}), ...(skill ? { skill } : {}) });
       } else {
         result.push({
           kind: 'tool',
@@ -594,6 +636,7 @@ function buildAssistantItems(
           ...(captureTiming ? { startedAt: Date.now() } : {}),
           args: part.arguments,
           ...(write ? { write } : {}),
+          ...(skill ? { skill } : {}),
         });
       }
       return;
@@ -650,6 +693,8 @@ function applyMessageSnapshot(
       if (advisoryItems) return replaceMessageItems(items, messageId, advisoryItems);
       const agentMessage = tryBuildAgentMessage(messageId, message);
       if (agentMessage) return replaceMessageItems(items, messageId, [agentMessage]);
+      const skillPrompt = tryBuildSkillPromptItem(messageId, message);
+      if (skillPrompt) return replaceMessageItems(items, messageId, [skillPrompt]);
       if (message.display === true) {
         return replaceMessageItems(items, messageId, [{ kind: 'notice', id: messageId, level: 'info', text: message.content }]);
       }
@@ -673,6 +718,7 @@ function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionSt
   const existing = items.find((item): item is ToolItem => isToolItem(item) && item.toolCallId === frame.toolCallId);
   const target = extractTarget(frame.toolName, frame.args);
   const write = buildWriteField(frame.toolName, frame.args);
+  const skill = buildSkillField(frame.toolName, frame.args);
   if (!existing) {
     const created: TranscriptItem = {
       kind: 'tool',
@@ -684,6 +730,7 @@ function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionSt
       startedAt: Date.now(),
       args: frame.args,
       ...(write ? { write } : {}),
+      ...(skill ? { skill } : {}),
     };
     return [...items, created];
   }
@@ -695,6 +742,7 @@ function applyToolExecutionStart(items: TranscriptItem[], frame: ToolExecutionSt
     status: 'running',
     startedAt: Date.now(),
     ...(write ? { write } : {}),
+    ...(skill ? { skill } : {}),
   };
   return items.map((item) => (item === existing ? updated : item));
 }
@@ -942,6 +990,11 @@ export function fromHistory(
         const agentMessage = tryBuildAgentMessage(messageId, message);
         if (agentMessage) {
           items = [...items, agentMessage];
+          return;
+        }
+        const skillPrompt = tryBuildSkillPromptItem(messageId, message);
+        if (skillPrompt) {
+          items = [...items, skillPrompt];
           return;
         }
         if (message.display === true) {

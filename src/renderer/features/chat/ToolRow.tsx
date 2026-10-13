@@ -176,10 +176,19 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
         : 'done'
   const last = group.items[group.items.length - 1]!
   const othersCount = group.items.length - 1
-  const label = solo ? last.tool : group.tool
-  const summary = solo
-    ? last.target
-    : `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}${failedCount > 0 ? `, ${failedCount} failed` : ''}${interruptedCount > 0 ? `, ${interruptedCount} interrupted` : ''}`
+  // Issue #543, first slice: a solo `read` whose target is a `skill://` URL (groupToolItems
+  // guarantees it is always solo -- it is exempted from every run, never merged with the calls
+  // around it) reads "Using skill: <name>" instead of the raw tool name; the icon and the usual
+  // running/done/failed status are unchanged (Accessibility note on #543: "status is icon plus
+  // text", the same convention every other row already uses).
+  const skillName = solo ? last.skill?.name : undefined
+  const label = skillName !== undefined ? 'Using skill:' : solo ? last.tool : group.tool
+  const summary =
+    skillName !== undefined
+      ? skillName
+      : solo
+        ? last.target
+        : `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}${failedCount > 0 ? `, ${failedCount} failed` : ''}${interruptedCount > 0 ? `, ${interruptedCount} interrupted` : ''}`
   const meta = solo && last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
 
   return (
