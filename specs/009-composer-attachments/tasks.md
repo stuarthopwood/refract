@@ -452,17 +452,20 @@ image does, reusing Phase 6's shared reader end to end.
 
 **Round 3's own first attempt with the fixed harness (head `1b4a96e`): partial, not clean.**
 Preflight passed (`file://` URL confirmed inside this worktree). Scenarios 1-3 failed on a
-harness-level `Set-Clipboard exited 1` race (not app-related, not yet fixed). Scenarios 4 and 5
-PASSED live: a mixed paste kept its text and attached in the background (FR-023), and a
-nonexistent path's own paste fell back to its exact raw text with a quiet notice (FR-022).
-Scenario 5's own input was a QUOTED path, so its raw text equalled its normalized form either
-way -- that live pass proves nothing about the round 3 raw-vs-normalized fix specifically (round
-4 gate finding, Verif4 HIGH): the quoted-path fallback is fixed in code at `616c4059`, not
-re-run live. From scenario 6 (paste-oversized-image) onward, the renderer went blank (solid
-black screenshots, `document` queries returning nothing, though CDP itself stayed responsive)
-for the rest of the run -- unresolved: the app's own "Low memory" status-bar warning was already
-showing one scenario earlier, on a machine whose free RAM swung between ~0.4 GB and 1.7 GB
-repeatedly this session, so a low-memory renderer crash is the leading candidate [INFERENCE].
+harness-level `Set-Clipboard exited 1` race (not app-related, not yet fixed). Scenario 4 PASSED
+live: a mixed paste kept its text and attached in the background (FR-023). Scenario 5 did NOT
+pass (PR #723 gate round 5 doc-truth finding, Code5/Sec5/A11y5/Verif5 HIGH): its own
+`report.json` records `textareaValue` for `05-paste-nonexistent-path` ending
+`...pleaseC:/tmp/refract-live-check-723/repo/does-not-exist.png` -- the pasted token was quoted
+but came back WITHOUT its quotes, a live REPRODUCTION of the pre-fix quote-dropping defect this
+round's own note below wrongly logged as a clean FR-022 pass; the toast itself was correct, but
+the fallback TEXT was not. Fixed in code at `616c4059` (round 4) plus the round 5 consistency fix
+(`candidateCheckToken`), never re-run live since. From scenario 6 (paste-oversized-image) onward,
+the renderer went blank (solid black screenshots, `document` queries returning nothing, though
+CDP itself stayed responsive) for the rest of the run -- unresolved: the app's own "Low memory"
+status-bar warning was already showing one scenario earlier, on a machine whose free RAM swung
+between ~0.4 GB and 1.7 GB repeatedly this session, so a low-memory renderer crash is the leading
+candidate [INFERENCE].
 Round 4's own read-only probe (see below) found scenario 6's own fixture refused before any
 image bytes are read, on the SAME branch as scenario 5 (which rendered fine) -- this narrows, but
 does not conclusively prove, the low-memory explanation over an app-level crash; not dug into
@@ -680,8 +683,9 @@ paste over CDP) rather than simulating a Ctrl+V keydown/keyup pair.
 (both tsconfigs clean), `vitest` 376/376 (no new tests), `check:indent`, `check:ui-text`,
 `check:theme-contrast`, `check:drag-regions`, `pnpm build` -- see the PR body's own Gates section
 for this round's exact numbers. Live verification: attempted once this round against the fixed
-harness -- partial (FR-022/FR-023 live-confirmed; a renderer crash from scenario 6 onward left
-the rest unverified); see T023's own note above. Still open.
+harness -- partial (FR-023 live-confirmed; FR-022 NOT live-confirmed -- scenario 5 actually
+reproduced the quote-dropping defect, see the corrected note above; a renderer crash from
+scenario 6 onward left the rest unverified); see T023's own note above. Still open.
 
 ---
 
@@ -698,9 +702,9 @@ character). Verified with a throwaway scratch probe under `C:/tmp` (deleted afte
 pure-function copy of the fixed helpers, no app code touched): quoted path -> raw keeps quotes;
 `file:///C:/my%20x/a.png` -> raw keeps `%20`; unquoted spaced path unchanged; `https://` excluded;
 mixed text + quoted path -> quotes preserved, prose untouched. All 5 cases passed. Round 3's own
-scenario 5 live pass is NOT evidence for this fix (its input was already quoted so raw equalled
-normalized either way) -- this fix is confirmed in code only, not re-run live; see the round 3
-live-check note above.
+scenario 5 run did NOT actually pass (see the corrected round 3 live-check note above: its own
+`report.json` reproduced the quote-dropping defect) -- this fix is confirmed in code only, not
+re-run live.
 
 **Docs (Verif4/Code4/A11y4 Medium)**: the round 3 live-check note's "genuine app-level crash"
 framing for scenario 6 overstated an inference as a conclusion; corrected above to attribute the
@@ -729,3 +733,49 @@ own Gates section for this round's exact results. No live app verification attem
 (code-level fix plus a read-only probe only); scenarios 1-3 and 6-26 remain not completed; a
 manual pass by Stuart in a normal Session is requested (see the PR body's own Verification
 section for exact steps). Still open pending that manual pass.
+
+---
+
+### Round 5 gate fixes (Code5/Sec5/A11y5 HIGH, doc-truth finding against the round 4 head)
+
+**1 HIGH (probe-reproduced)**: `extractImagePathCandidates`'s candidate filter ran on
+`normalized` while `isImagePathOnlyText` ran its own equivalent check on the raw (quote-stripped
+only) token -- they could disagree on a `file://` URL carrying a `#`/`?` suffix, since
+`normalizeImagePathToken`'s own `new URL(...)` parse drops everything from a `#`/`?` onward as a
+fragment/query, losing the `.png` extension that `isImagePathOnlyText` still saw at the string's
+own end. A paste like `C:\x.png` + `file:///C:/a#b.png` was path-only=true but yielded only 1
+candidate for 2 lines, so the path-only branch's `preventDefault` silently dropped the second
+line with no notice (FR-022). Fixed: both functions now share one `candidateCheckToken`
+(quote-strip only, never `file://`-decoded) ahead of `looksLikeImagePathToken`, so they can never
+disagree again; `normalized` is still what is actually sent over IPC. Re-verified with a
+throwaway scratch probe under `C:/tmp` (deleted after use): quoted path (raw keeps quotes), two
+quoted paths, quoted `.txt` excluded, quoted `https://` excluded, mixed prose + quoted path (not
+path-only, text unchanged), `file:///C:/a%20b/x.png` (raw keeps `%20`), `file:///C:/a#b.png` and
+`file:///C:/a?v=b.png` (path-only consistent: candidate count now equals line count, nothing
+vanishes), unquoted spaced path, CRLF lines -- all consistent, no vanishing line. See the PR
+body's own probe table for the full case/result list.
+
+**LOW**: `MessageInput.tsx`'s mixed-paste partial-slots overflow notice ("Only N more images
+could be attached...") now appends "; the rest were left as text." so the fate of the remaining
+paths is stated, not left implicit.
+
+**Docs (A11y5/Sec5/Verif5/Code5 HIGH, verified against `report.json`)**: round 3's own live-check
+note wrongly logged scenario 5 (quoted nonexistent path) as a clean FR-022 pass; its own
+`report.json` `textareaValue` for `05-paste-nonexistent-path` in fact came back WITHOUT its
+quotes, a live REPRODUCTION of the pre-fix defect, not a pass. Corrected above (round 3 note,
+round 3 checkpoint, round 4's scenario-5 cross-reference), in the PR #723 body (FR-022 AC row now
+"Done in code; not live-verified", the Round 4 paragraph, the Net paragraph, the live-verification
+scenario-5 bullet), and in the #650 comment (6145134709, edited via `gh api -X PATCH`). FR-023 /
+scenario 4 remains live-verified (text unchanged, thumbnailCount 1, per `report.json`). The manual
+click-path list (#650 and the PR body) gained: "Explorer Copy as path on a PNG, delete or rename
+the file, then paste: expect the text to come back WITH its surrounding quotes and a quiet
+could-not-be-found notice." `docs/PLAN.md`'s composer row status cell now reads: "gate round 4
+failed (1 doc/code HIGH), fixed; round 5 failed (1 code HIGH + doc-truth), fixed; round 6 pending;
+not live-verified."
+
+**Checkpoint**: `pnpm typecheck` (both tsconfigs), existing `vitest` (no new tests),
+`check:indent`, `pnpm build` then `check:ui-text`, `check:theme-contrast`, `check:drag-regions` --
+see the PR body's own Gates section for this round's exact results. No live app verification
+attempted this round (code-level fix plus a read-only probe only); scenarios 1-3 and 6-26 remain
+not completed; a manual pass by Stuart in a normal Session is still requested. Still open pending
+that manual pass.

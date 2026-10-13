@@ -263,18 +263,29 @@ export interface ImagePathCandidate {
  * line or separated by spaces (when each is quoted or exists)"). Deliberately never splits an
  * UNQUOTED line on spaces -- a real Windows path containing a space is always quoted by the
  * tools that produce one (Explorer's "Copy as path"), so a prose sentence that merely contains a
- * slash is never torn into nonsense fragments. Returns only tokens whose NORMALIZED form passes
- * the cheap `looksLikeImagePathToken` pre-filter (see the round 4 fix note below for why the
- * filter runs on `normalized`, never `raw`), each with its raw AND normalized form (see
- * `ImagePathCandidate`'s own doc comment).
+ * slash is never torn into nonsense fragments. Returns only tokens whose QUOTE-STRIPPED RAW form
+ * (`candidateCheckToken`, see below) passes the cheap `looksLikeImagePathToken` pre-filter, each
+ * with its raw AND normalized form (see `ImagePathCandidate`'s own doc comment).
+ *
+ * PR #723 gate round 5 fix (Code5/Sec5/A11y5 HIGH, reproduced): this filter used to run on
+ * `normalized` while `isImagePathOnlyText` below ran its own equivalent check on the RAW
+ * (quote-stripped only, never `file://`-decoded) token -- the two could disagree on a `file://`
+ * URL carrying a `#`/`?` suffix, since `normalizeImagePathToken`'s own `new URL(...)` parse
+ * treats everything from a `#` or `?` onward as a fragment/query, not part of the pathname, so a
+ * `file:///C:/a#b.png` candidate lost its `.png` extension (and so got filtered OUT here) while
+ * `isImagePathOnlyText` still saw `.png` at the string's own end and called the whole paste
+ * path-only -- `MessageInput.tsx`'s path-only paste branch then called `preventDefault` and only
+ * RE-INSERTED the candidates that actually failed to attach, so the line with the `#`/`?` token
+ * silently VANISHED from the draft with no notice at all (FR-022). Both functions now run the
+ * identical cheap `candidateCheckToken` (quote-strip only, no `file://` URL parse) before
+ * `looksLikeImagePathToken`, so they can never again disagree on which tokens look path-shaped;
+ * `normalized` itself (the `file://`-decoded form) is still what actually gets sent over IPC.
  *
  * PR #723 gate round 4 fix (Verif4 HIGH, Sec4/Code4 Medium): a QUOTED line's `raw` candidate
  * used to be the regex CAPTURE GROUP (quotes already stripped), so an unresolved "Copy as path"
  * paste (`"C:\a b\x.png"`) came back WITHOUT its own quotes on the FR-022 fallback -- the round 3
  * fix above only ever covered the `file:///%20` URL case, never the quoted-path case it was
- * supposedly fixing too. `raw` is now the FULL quoted match (quotes included); the pre-filter
- * therefore runs on `normalized` instead of `raw`, since `looksLikeImagePathToken`'s own extension
- * regex can never match past a trailing quote character.
+ * supposedly fixing too. `raw` is now the FULL quoted match (quotes included).
  * PR #723 gate round 1 fix (Code1 HIGH): an UNQUOTED line containing OTHER WORDS besides a path
  * (`look at C:\x\shot.png`, `see src/a.png`) used to be pushed whole as one "candidate", since
  * `looksLikeImagePathToken` only checks the line's own END/START shape, never whether it is a
@@ -291,6 +302,12 @@ export interface ImagePathCandidate {
  * a candidate even when it contains spaces -- the whitespace-free restriction above was always
  * about distinguishing a path from PROSE, never about rejecting a legitimate unquoted path with
  * spaces in its own name. */
+/** Round 5 fix's own shared pre-filter token: strips a surrounding quote pair ONLY (never
+ * `file://`-decodes, unlike `normalizeImagePathToken`) so `extractImagePathCandidates` and
+ * `isImagePathOnlyText` test the identical string before `looksLikeImagePathToken` and can never
+ * disagree on which tokens look path-shaped (see the round 5 fix note above). */
+const candidateCheckToken = (raw: string): string => (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw)
+
 export function extractImagePathCandidates(text: string): ImagePathCandidate[] {
   const rawCandidates: string[] = []
   for (const rawLine of text.split(/\r?\n/)) {
@@ -307,7 +324,7 @@ export function extractImagePathCandidates(text: string): ImagePathCandidate[] {
   }
   return rawCandidates
     .map((raw) => ({ raw, normalized: normalizeImagePathToken(raw) }))
-    .filter((candidate) => looksLikeImagePathToken(candidate.normalized))
+    .filter((candidate) => looksLikeImagePathToken(candidateCheckToken(candidate.raw)))
 }
 
 /** True when `text`, once trimmed, is NOTHING BUT image-path-looking tokens (#514 point 3: the
@@ -334,13 +351,13 @@ export function isImagePathOnlyText(text: string): boolean {
     .filter(Boolean)
   if (lines.length === 0) return false
   return lines.every((line) => {
-    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '')
+    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[0])
     if (quoted.length > 0) {
       if (line.replace(/"[^"]+"/g, '').trim() !== '') return false
-      return quoted.every(looksLikeImagePathToken)
+      return quoted.every((raw) => looksLikeImagePathToken(candidateCheckToken(raw)))
     }
-    if (/\s/.test(line)) return isUnquotedSpacedPathLine(line) && looksLikeImagePathToken(line)
-    return looksLikeImagePathToken(line)
+    if (/\s/.test(line)) return isUnquotedSpacedPathLine(line) && looksLikeImagePathToken(candidateCheckToken(line))
+    return looksLikeImagePathToken(candidateCheckToken(line))
   })
 }
 
