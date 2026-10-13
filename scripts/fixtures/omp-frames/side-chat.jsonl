@@ -1,5 +1,5 @@
 // SYNTHESIZED, not captured live: the current Rust build has no `btw` implementation yet
-// (src-tauri/src/session/agent.rs's own header: "side chat (`btw`) ... not ported"), so there is
+// (src-tauri/src/session/agent/mod.rs's own header: "side chat (`btw`) ... not ported"), so there is
 // no live session to record this from. Built directly from the documented wire contract
 // (src/shared/frames.ts's `BtwCommand`/`BtwDeltaFrame`/`BtwRecordFrame`/`BtwHistoryThread`,
 // cross-checked against specs/014's gate-fix notes), for the R6 lane (#789) to drive once it
