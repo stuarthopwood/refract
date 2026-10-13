@@ -14,7 +14,7 @@ pub mod store;
 use std::path::PathBuf;
 
 use serde_json::Value;
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 use ipc::{AppState, Dispatcher};
 
@@ -55,11 +55,33 @@ pub fn run() {
     std::fs::create_dir_all(&data_dir)
         .unwrap_or_else(|err| panic!("refract-tauri: failed to create data directory {data_dir:?}: {err}"));
 
-    // FR-010: read the persisted theme BEFORE the window is created, so the initialization
-    // script below runs before any renderer script does.
-    let bootstrap_theme = ipc::read_bootstrap_theme(&data_dir);
+    // FR-010: opened BEFORE the window is created, so the theme bootstrap initialization script
+    // below runs before any renderer script does. `tauri::async_runtime::block_on` runs the
+    // async store opens to completion here -- `run()` itself is a plain `fn`, and this is the
+    // one startup-only spot before the event loop exists where a blocking wait for that is fine
+    // (`store::registry`/`store::settings`'s own doc comments: a failed open is an unexpected
+    // I/O error, not a normal "missing file" case, which both modules already handle as a
+    // corrected default in memory).
+    let (registry, settings) = tauri::async_runtime::block_on(async {
+        let registry = store::registry::RegistryStore::open(&data_dir)
+            .await
+            .unwrap_or_else(|err| panic!("refract-tauri: failed to open registry.json: {err}"));
+        let settings = store::settings::SettingsStore::open(&data_dir)
+            .await
+            .unwrap_or_else(|err| panic!("refract-tauri: failed to open settings.json: {err}"));
+        (registry, settings)
+    });
 
-    let app_state = AppState { data_dir };
+    // FR-010/FR-011: the theme as `SettingsStore::open`'s own FR-013 lazy-correction already
+    // resolved it (missing/invalid key falls back to `dark`), not a second, separate read.
+    let bootstrap_theme = serde_json::to_value(settings.get().theme).expect("ThemeId is always JSON-serialisable");
+
+    let app_state = AppState {
+        data_dir,
+        registry: std::sync::Arc::new(tokio::sync::Mutex::new(registry)),
+        settings: std::sync::Arc::new(tokio::sync::Mutex::new(settings)),
+        app_handle: std::sync::Arc::new(std::sync::Mutex::new(None)),
+    };
     let mut dispatcher = Dispatcher::new();
     ipc::register_handlers(&mut dispatcher);
 
@@ -71,6 +93,12 @@ pub fn run() {
         .manage(ManagedState { app_state, dispatcher })
         .invoke_handler(tauri::generate_handler![refract_request])
         .setup(move |app| {
+            // Phase 3's event emission (`events::emit`) needs a live `AppHandle`, which does not
+            // exist until `setup` runs -- filled in here, before the window is built, so it is
+            // never observed `None` by any handler invoked after the event loop starts.
+            let managed = app.state::<ManagedState>();
+            *managed.app_state.app_handle.lock().expect("app_handle mutex poisoned") = Some(app.handle().clone());
+
             // FR-010/FR-011: `window.__REFRACT_THEME_BOOTSTRAP__` set via an initialization
             // script, so `src/tauri-bridge/index.ts`'s synchronous `themeBootstrap()` -- and so
             // `main.tsx`'s very first line, `initThemeStore(window.refract.themeBootstrap().theme)`

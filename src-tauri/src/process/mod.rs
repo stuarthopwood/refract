@@ -1,7 +1,7 @@
-// Rust process containment: ported from `src/main/process/jobObject.ts`'s own kill-on-close
-// Windows Job Object. Real Windows API implementation (`windows-rs`'s
-// `CreateJobObjectW`/`SetInformationJobObject`/`AssignProcessToJobObject`) is a later slice's
-// responsibility (plan.md Project Structure, "process/job_object.rs"); this module currently
-// only carries the compiling stub `join_kill_on_close`, so `main.rs` has a real call site to
-// join before any `omp` process is ever spawned.
+// Rust process containment and spawn-path safety: `job_object.rs` ports
+// `src/main/process/jobObject.ts`'s kill-on-close Windows Job Object (real `windows-rs`
+// implementation); `executables.rs` ports the relevant parts of
+// `src/main/process/executables.ts` (PATH-only `omp` resolution, the fixed `taskkill` path,
+// the `NoDefaultCurrentDirectoryInExePath` spawn-path safety).
+pub mod executables;
 pub mod job_object;

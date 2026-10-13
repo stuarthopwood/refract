@@ -1,3 +1,7 @@
-// Rust port of `src/main/git/worktrees.ts`: CLI wrappers for repository checks, branch listing,
-// and worktree create/remove. Not yet implemented -- scaffold placeholder for a later
-// milestone-1 slice (plan.md Project Structure).
+// Rust port of `src/main/git/`: `git.rs` is `git.ts`'s shell-free `execFile` wrapper and typed
+// errors; `worktrees.rs` is the slice of `worktrees.ts` milestone 1 needs (repo-validity checks,
+// the branch-listing CLI wrapper `repositories.branches` uses, worktree create used by
+// `sessions.create`), tasks.md T016.
+
+pub mod git;
+pub mod worktrees;
