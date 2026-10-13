@@ -97,7 +97,15 @@ function buildSkillField(tool: string, args: unknown): ToolItem['skill'] {
   if (tool !== 'read' || !args || typeof args !== 'object') return undefined;
   const path = (args as Record<string, unknown>).path;
   if (typeof path !== 'string' || !path.startsWith(SKILL_URL_PREFIX)) return undefined;
-  const name = path.slice(SKILL_URL_PREFIX.length);
+  // Strip a `:<selector>` (e.g. `:1-50`), a `?...` query, a `#...` fragment, and a trailing
+  // `/`, in that order, keeping a `/<file>` supporting-file remainder intact; the raw remainder
+  // otherwise includes tool-call plumbing that was never part of the skill's own name.
+  const name = path
+    .slice(SKILL_URL_PREFIX.length)
+    .replace(/:[^/:?#]*$/, '')
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '')
+    .trim();
   return name.length > 0 ? { name } : undefined;
 }
 
@@ -524,12 +532,13 @@ function tryBuildAdvisoryItems(messageId: string, message: OmpCustomMessage): Tr
  * messages use a different, hidden format and must never read as something the user invoked. */
 function tryBuildSkillPromptItem(messageId: string, message: OmpCustomMessage): TranscriptItem | undefined {
   if (message.customType !== 'skill-prompt' || message.display !== true || message.attribution !== 'user') return undefined;
+  if (typeof message.content !== 'string') return undefined;
   const details = message.details;
   if (!details || typeof details !== 'object') return undefined;
   const record = details as Record<string, unknown>;
   if (typeof record.name !== 'string' || record.name.length === 0) return undefined;
   const args = typeof record.args === 'string' && record.args.length > 0 ? record.args : undefined;
-  const lineCount = typeof record.lineCount === 'number' && Number.isFinite(record.lineCount) ? record.lineCount : undefined;
+  const lineCount = typeof record.lineCount === 'number' && Number.isInteger(record.lineCount) && record.lineCount >= 0 ? record.lineCount : undefined;
   return {
     kind: 'skill-prompt',
     id: messageId,
@@ -624,7 +633,7 @@ function buildAssistantItems(
       const write = buildWriteField(part.name, part.arguments);
       const skill = buildSkillField(part.name, part.arguments);
       if (existing) {
-        result.push({ ...existing, tool: part.name, target, args: part.arguments, ...(write ? { write } : {}), ...(skill ? { skill } : {}) });
+        result.push({ ...existing, tool: part.name, target, args: part.arguments, ...(write ? { write } : {}), skill });
       } else {
         result.push({
           kind: 'tool',

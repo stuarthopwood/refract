@@ -49,6 +49,11 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
   }
 
   for (const item of items) {
+    if (item.kind === 'tool' && item.skill) {
+      flushRun()
+      result.push({ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] })
+      continue
+    }
     if (item.kind === 'tool' && item.tool !== 'ask' && !item.skill) {
       if (run.length > 0 && run[0]!.tool === item.tool) {
         run.push(item)

@@ -301,7 +301,8 @@ const BOOKKEEPING_KINDS = new Set<GroupedTranscriptItem['kind']>([
   'advisory',
   'notice',
   'subagent',
-  'agent-message'
+  'agent-message',
+  'skill-prompt'
 ])
 
 function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
@@ -1087,7 +1088,9 @@ export function Transcript({
                                 unreachable. */}
                             <span className="sr-only">
                               {isToolGroup(row)
-                                ? `${toolStatusLabel('running')} ${row.tool}`
+                                ? row.items[0]!.skill
+                                  ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
+                                  : `${toolStatusLabel('running')} ${row.tool}`
                                 : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
                             </span>
                           </MessageScrollerItem>

@@ -25,8 +25,18 @@ export function SkillPromptRow({ item }: SkillPromptRowProps) {
   return (
     <CollapsedLine
       icon={<BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground" />}
-      label={`Skill invoked: ${item.name}`}
-      summary={summaryParts.length > 0 ? summaryParts.join(' \u00b7 ') : undefined}
+      label="Skill invoked:"
+      summary={
+        <>
+          {/* `name` is an untrusted `/skill:<name>` remainder (#543/#547 follow-up, code
+           * review round 2): wrapped in `<bdi>` so an embedded bidi control character can't
+           * reorder the summary parts after it, and kept out of `label` (which doesn't
+           * truncate) so a long or no-space name truncates with the rest of the summary
+           * instead of overflowing the row. */}
+          <bdi>{item.name}</bdi>
+          {summaryParts.length > 0 ? ` \u00b7 ${summaryParts.join(' \u00b7 ')}` : null}
+        </>
+      }
     >
       <Markdown id={item.id} text={item.text} className="text-muted-foreground" />
     </CollapsedLine>

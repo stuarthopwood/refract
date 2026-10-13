@@ -185,7 +185,7 @@ export function ToolGroupRow({ group, summaryWrap }: ToolGroupRowProps) {
   const label = skillName !== undefined ? 'Using skill:' : solo ? last.tool : group.tool
   const summary =
     skillName !== undefined
-      ? skillName
+      ? <bdi>{skillName}</bdi>
       : solo
         ? last.target
         : `${last.target}  +\u00a0${othersCount}\u00a0${othersCount === 1 ? 'other' : 'others'}${failedCount > 0 ? `, ${failedCount} failed` : ''}${interruptedCount > 0 ? `, ${interruptedCount} interrupted` : ''}`
