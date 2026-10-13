@@ -25,7 +25,9 @@ const LEAK_PATTERN = /\b(?:FR|SC)-\d{3}\b|\bT\d{3}\b|\bUS\d\b|later task|wired u
 const ALLOWED = ['not implemented'];
 
 const root = path.resolve(process.cwd(), process.argv[2] ?? path.join(repoRoot, 'out'));
-const SUBDIRS = ['main', 'preload', path.join('renderer', 'assets')];
+// `tauri-web/assets` is the shared renderer as built by `pnpm build` (Tauri, the main build);
+// the other three are the Electron build's output (`pnpm build:electron`, frozen until #796).
+const SUBDIRS = ['main', 'preload', path.join('renderer', 'assets'), path.join('tauri-web', 'assets')];
 
 function* walk(dir) {
   let entries;
