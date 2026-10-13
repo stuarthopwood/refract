@@ -57,6 +57,16 @@ function extractConstObject(source, constName) {
   const entryRe = /^\s*([A-Z0-9_]+):\s*'([^']+)',?\s*$/gm;
   let m;
   while ((m = entryRe.exec(match[1]))) entries.push({ key: m[1], value: m[2] });
+  // Guards against a line the regex above silently failed to parse (a trailing `// comment`, a
+  // different quote style, ...) instead of quietly undercounting the real channel list.
+  const bodyLineCount = match[1]
+    .split('\n')
+    .filter((line) => line.trim().length > 0 && !line.trim().startsWith('//')).length;
+  if (bodyLineCount !== entries.length) {
+    throw new Error(
+      `check-parity: ${constName} entry count mismatch -- parsed ${entries.length} entries but found ${bodyLineCount} non-comment line(s) in its object body`,
+    );
+  }
   return entries;
 }
 
@@ -121,30 +131,73 @@ const electronEventSources = findElectronSourcesForEvents();
 // `session/agent.rs` into per-lane modules while this runs).
 // ---------------------------------------------------------------------------
 
+/** Strips a trailing `//` line comment from each line before scanning for `.register(...)` calls
+ * (this codebase's `.register("...")` calls never put a `//` inside the string argument, so a
+ * naive per-line split on the first `//` is sufficient to keep a commented-out call from being
+ * counted as a real registration). */
+function stripLineComments(content) {
+  return content
+    .split('\n')
+    .map((line) => {
+      const idx = line.indexOf('//');
+      return idx === -1 ? line : line.slice(0, idx);
+    })
+    .join('\n');
+}
+
+/** Blanks out every `#[cfg(test)] mod ... { ... }` span (brace-depth matched from the `{` that
+ * follows `mod`) so a test-only registration never inflates the count. Blanking rather than
+ * slicing keeps every other line's offset -- and the rest of this scan -- unaffected. */
+function stripCfgTestModules(content) {
+  const attrRe = /#\[cfg\(test\)\]/g;
+  let result = content;
+  let m;
+  while ((m = attrRe.exec(result))) {
+    const modMatch = /mod\s+\w+\s*\{/.exec(result.slice(m.index));
+    if (!modMatch) continue;
+    const braceStart = m.index + modMatch.index + modMatch[0].length - 1;
+    let depth = 1;
+    let i = braceStart + 1;
+    while (i < result.length && depth > 0) {
+      if (result[i] === '{') depth += 1;
+      else if (result[i] === '}') depth -= 1;
+      i += 1;
+    }
+    const span = result.slice(m.index, i);
+    result = result.slice(0, m.index) + span.replace(/[^\n]/g, ' ') + result.slice(i);
+    attrRe.lastIndex = i;
+  }
+  return result;
+}
+
 /** Every string literal passed as the first argument to a `.register(...)` call, anywhere under
  * `src-tauri/src` -- the Rust `Dispatcher`'s channel registration, mirroring
- * `ipcMain.handle(IPC_REQUESTS.X, ...)` on the Electron side. */
+ * `ipcMain.handle(IPC_REQUESTS.X, ...)` on the Electron side. Comments and `#[cfg(test)]` modules
+ * are stripped first so neither a commented-out call nor a test-only registration counts. */
 function findRustRegisteredRequests() {
   const registered = new Set();
+  const registeredSources = new Map(); // registered string -> Set<relative file path>
   let rawCount = 0;
   for (const file of walk(tauriSrcDir)) {
     if (!file.endsWith('.rs')) continue;
-    const content = readFile(file);
+    const content = stripCfgTestModules(stripLineComments(readFile(file)));
     const re = /\.register\(\s*"([a-zA-Z0-9_.]+)"/g;
     let m;
     while ((m = re.exec(content))) {
       registered.add(m[1]);
       rawCount += 1;
+      if (!registeredSources.has(m[1])) registeredSources.set(m[1], new Set());
+      registeredSources.get(m[1]).add(relPath(file));
     }
   }
-  return { registered, rawCount };
+  return { registered, registeredSources, rawCount };
 }
 
 /** `events.rs` declares one `pub const NAME: &str = "value"` per `IPC_EVENTS` entry (FR-008
- * comment at the top of that file) but only wires some of them to a `emit_*` method that calls
- * `self.send(NAME, ...)`. A declared-but-unwired constant is not implemented -- it exists only so
- * a later lane never has to re-derive the string from `ipc.ts` by hand. Returns the constant ->
- * string-value map plus the constant -> emit-method-name map for constants that ARE sent. */
+ * comment at the top of that file) but only wires some of them to a working emit path. Returns
+ * the constant -> string-value map plus the constant -> emit-method-name map for constants whose
+ * `emit_*` wrapper in this file sends them via `self.send(NAME, ...)` (used by
+ * `isEmitMethodCalledElsewhere` below for the pre-split scaffold's own call path). */
 function findRustEventConstants() {
   const eventsRsPath = path.join(tauriSrcDir, 'events.rs');
   const content = readFile(eventsRsPath);
@@ -176,6 +229,21 @@ function isEmitMethodCalledElsewhere(methodName) {
   return false;
 }
 
+/** A lane calling its own event directly -- `.send(NAME, ...)`/`.emit(NAME, ...)` with the named
+ * constant, or `.send("value", ...)`/`.emit("value", ...)` with the constant's own string literal
+ * -- now that `EventSink::send` is `pub(crate)` (issue #784: no `events.rs` edit required to add
+ * a new emit call). Checked against every `.rs` file except `events.rs` itself, which only
+ * defines the constants and the `emit_*` wrappers, never calls them directly. */
+function isEventSentDirectlyFromLaneFile(constName, value) {
+  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const callRe = new RegExp(`\\.(?:send|emit)\\(\\s*(?:${constName}\\b|"${escapedValue}")`);
+  for (const file of walk(tauriSrcDir)) {
+    if (!file.endsWith('.rs') || path.basename(file) === 'events.rs') continue;
+    if (callRe.test(readFile(file))) return true;
+  }
+  return false;
+}
+
 /** FR-010/FR-011 (spec 016): the one non-`IPC_EVENTS`/non-`IPC_REQUESTS` channel. Implemented
  * once `lib.rs` injects `window.__REFRACT_THEME_BOOTSTRAP__` via a Tauri `initialization_script`,
  * the Rust equivalent of the Electron preload's synchronous `ipcMain.on(THEME_BOOTSTRAP_CHANNEL,
@@ -191,12 +259,28 @@ function isThemeBootstrapImplemented() {
   return false;
 }
 
-const { registered: rustRegisteredRequests, rawCount: rustRegisterRawCount } = findRustRegisteredRequests();
+const {
+  registered: rustRegisteredRequests,
+  registeredSources: rustRegisteredSources,
+  rawCount: rustRegisterRawCount,
+} = findRustRegisteredRequests();
 const { constants: rustEventConstants, emitMethodByConst } = findRustEventConstants();
 const rustSentEventConsts = new Set(
-  [...emitMethodByConst.entries()].filter(([, methodName]) => isEmitMethodCalledElsewhere(methodName)).map(([constName]) => constName),
+  [...rustEventConstants.entries()]
+    .filter(([constName, value]) => {
+      const methodName = emitMethodByConst.get(constName);
+      return (methodName && isEmitMethodCalledElsewhere(methodName)) || isEventSentDirectlyFromLaneFile(constName, value);
+    })
+    .map(([constName]) => constName),
 );
 const themeBootstrapImplemented = isThemeBootstrapImplemented();
+
+// A registered string with no matching `IPC_REQUESTS` entry is a typo'd or stale channel name --
+// report it (and, under `--gate`, fail on it) instead of letting it silently vanish.
+const ipcRequestValues = new Set(requests.map((r) => r.value));
+const unexpectedRegistrations = [...rustRegisteredRequests]
+  .filter((value) => !ipcRequestValues.has(value))
+  .map((value) => ({ value, sources: formatSources(rustRegisteredSources.get(value)) }));
 
 function rustEventConstNameForValue(value) {
   for (const [constName, constValue] of rustEventConstants) {
@@ -402,6 +486,10 @@ if (markdown) {
   console.log();
 }
 
+for (const { value, sources } of unexpectedRegistrations) {
+  console.log(`unexpected registration: "${value}" (${sources}) -- not in IPC_REQUESTS`);
+}
+
 const requestsDone = requestRows.filter((r) => r.implemented).length;
 const eventsDone = eventRows.filter((r) => r.implemented).length;
 
@@ -410,7 +498,11 @@ console.log(`events: ${eventsDone} of ${eventRows.length}`);
 console.log(`theme bootstrap: ${bootstrapRow.implemented ? 'done' : 'todo'}`);
 console.log(`(${rustRegisterRawCount} total .register(...) call(s) across src-tauri/src resolve to ${requestsDone} unique registered request channel(s))`);
 
-const missing = requestRows.filter((r) => !r.implemented).length + eventRows.filter((r) => !r.implemented).length + (bootstrapRow.implemented ? 0 : 1);
+const missing =
+  requestRows.filter((r) => !r.implemented).length +
+  eventRows.filter((r) => !r.implemented).length +
+  (bootstrapRow.implemented ? 0 : 1) +
+  unexpectedRegistrations.length;
 
 if (gate && missing > 0) {
   console.log(`check:parity --gate: ${missing} channel(s) missing`);

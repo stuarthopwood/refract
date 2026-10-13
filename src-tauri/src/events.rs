@@ -59,7 +59,7 @@ impl EventSink {
         Self { app_handle }
     }
 
-    fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
+    pub(crate) fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
         let handle = self
             .app_handle
             .lock()
