@@ -30,7 +30,8 @@ export default defineConfig({
   // own build artifacts under `src-tauri/target/debug/deps/*.dll`; `cargo run`'s linker opens
   // that file exclusively while writing it, so Vite's `fs.watch` call on the same file races it
   // and crashes the whole `beforeDevCommand` with `EBUSY: resource busy or locked` the moment a
-  // rebuild lands mid-link (observed live running `pnpm dev:tauri`, tasks.md T030).
+  // rebuild lands mid-link (observed live running `pnpm dev` -- `dev:tauri` at the time this was
+  // observed, renamed when Tauri was promoted to the main build; tasks.md T030).
   server: {
     port: 5174,
     strictPort: true,

@@ -55,11 +55,13 @@ are not touched by this draft.
 > - App windows MUST NOT load remote content. External links open in the system browser
 >   (unchanged from the current Principle V bullet; `opener:allow-open-url`/
 >   `opener:allow-default-urls` in `capabilities/default.json`).
-> - The renderer MUST reach the Rust backend through exactly one validated command,
->   `refract_request(channel, args)` (`src-tauri/src/lib.rs`). It dispatches only to the string
->   channel names already defined in `src/shared/ipc.ts`'s `IPC_REQUESTS`/`IPC_EVENTS`; there is no
->   second command surface and no direct filesystem/process/git access exposed to the webview --
->   the Tauri equivalent of the old preload `contextBridge` allowlist.
+> - The renderer MUST reach the Rust backend through exactly one app-defined command,
+>   `refract_request(channel, args)` (`src-tauri/src/lib.rs`), plus Tauri's own built-in
+>   `core:default` permission set (event listen/emit, app/window queries;
+>   `src-tauri/capabilities/default.json`). `refract_request` dispatches only to the string
+>   channel names already defined in `src/shared/ipc.ts`'s `IPC_REQUESTS`/`IPC_EVENTS`; no fs,
+>   shell, or process plugin permission is granted to the webview -- the Tauri equivalent of the
+>   old preload `contextBridge` allowlist.
 > - Agent, tool, and file output is untrusted. The renderer MUST NOT inject it as raw HTML, and
 >   markdown MUST be rendered through a sanitiser (unchanged from the current Principle V bullet;
 >   this is a renderer-side rule and applies identically to both shells).

@@ -67,8 +67,9 @@ The Tauri v2 Rust build (`src-tauri/`) is promoted to be Refract's main build. `
   only. New main-process features are built in Rust, in the lane that owns the file. `src/renderer`
   and `src/shared` are shared by both shells and continue normally.
 - Build, test and gate commands: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`,
-  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:mermaid-contrast`, and
-  `pnpm check:parity` (generated IPC parity table, `src/shared/ipc.ts` against `src-tauri/src`).
+  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:mermaid-contrast`,
+  `check:file-size`, and `pnpm check:parity` (generated IPC parity table, `src/shared/ipc.ts`
+  against `src-tauri/src`).
   For `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
   (run with `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri`
   first). CI (`.github/workflows/ci.yml`) runs all of these on every pull request to `main` except
@@ -78,6 +79,21 @@ The Tauri v2 Rust build (`src-tauri/`) is promoted to be Refract's main build. `
   just a reference.
 - Per-lane Rust file ownership (which lane owns which `src-tauri/src/**` module, so no two lanes
   touch the same file) lives in `docs/PLAN.md`'s Phase R table, not duplicated here.
+
+## No god files (HARD RULE, issue #806)
+
+The soft cap is 600 lines per source file (TypeScript, TSX, scripts, and the Rust crate in
+`src-tauri/`).
+
+- A new file over the cap fails the `check:file-size` gate.
+- An existing offender over the cap may shrink but must never grow further; the cap-exempt
+  baseline is tracked in `scripts/file-size-baseline.json`.
+- A split extracts cohesive blocks unchanged (no behaviour change), verified by typecheck, the
+  existing test suite, and a live smoke run of the changed path.
+- No per-folder `types.ts`/`constants.ts`/`interfaces.ts` dumping ground. A type used by one
+  consumer lives beside that consumer; it moves out only when it crosses a process/package/
+  renderer-main boundary. A constant used by one consumer lives beside it too; it moves out only
+  when two modules must agree on the same value.
 
 ## The plan
 

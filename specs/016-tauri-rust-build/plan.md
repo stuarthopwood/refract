@@ -69,9 +69,11 @@ Assumptions).
 
 **Scale/Scope**: One new Rust crate (`src-tauri/`, roughly a dozen modules per the Project
 Structure below), one new TypeScript bridge directory (`src/tauri-bridge/`, two files), one new
-Vite config and HTML entry, two new `package.json` scripts and two new dev dependencies. Milestone
-1 covers 23 of 86 request channels and 8 of 20 event channels (parity.md); the remaining 63
-requests and 12 events are explicitly `unsupported` until later slices.
+Vite config and HTML entry, two new `package.json` scripts and two new dev dependencies. 23 of 86
+request channels and 8 of 20 event channels was the original milestone-1 target at the time this
+document was written; the live, current count is whatever `pnpm check:parity`'s generated report
+says, not a number recorded here. The remaining channels not yet in scope are explicitly
+`unsupported` until later slices.
 
 ## Constitution Check
 
