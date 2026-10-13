@@ -443,6 +443,12 @@ export type TranscriptItem =
       edit?: { path: string; oldText: string; newText: string };
       /** From a `write` tool's args; the renderer diffs it against a cached prior read/edit of the same path (T025). */
       write?: { path: string; content: string };
+      /** Set when this `read` call's target is a `skill://` URL (issue #543, first slice):
+       * `name` is the URL's remainder after `skill://`. A grouping boundary -- `groupToolItems`
+       * never folds this call into a run of adjacent `read` calls -- and the row's label reads
+       * "Using skill: <name>" instead of the raw tool name; expansion is unchanged (the same
+       * arguments/result view any other `read` row gets). */
+      skill?: { name: string };
     }
   | {
       /** One subagent started by a batch `task()` call (T078): a `tasks` array of N starts N of
@@ -499,7 +505,22 @@ export type TranscriptItem =
       text: string;
     }
   | { kind: 'request'; id: string; requestId: string; resolved?: 'approved' | 'denied' | 'answered' | 'cancelled' }
-  | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string };
+  | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string }
+  | {
+      /** A user-invoked `/skill:<name>` custom message (issue #547): OMP's `role: 'custom'`
+       * `customType: 'skill-prompt'` message, `attribution: 'user'`, `display: true`. Rendered as
+       * its own row reading "Skill invoked: <name>", with `args`/`lineCount` summarised and
+       * `text` (the full injected skill body) collapsed behind an explicit expand, rendered as
+       * sanitised Markdown (constitution V: it is skill prose, not trusted markup). A message
+       * that matches the type but whose `details` carries no usable `name` falls back to the
+       * generic `notice` kind above instead of this one (FR-063). */
+      kind: 'skill-prompt';
+      id: string;
+      name: string;
+      args?: string;
+      lineCount?: number;
+      text: string;
+    };
 
 /** Tool names the agent calls for its own bookkeeping (T086, FR-052): a call to one of these
  * never becomes a `tool` TranscriptItem, so it never reaches the chat transcript -- the only

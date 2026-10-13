@@ -23,6 +23,7 @@ import { toolStatusLabel } from './toolStatus'
 import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
 import { initials } from '@/lib/initials'
 import { NoticeRow } from './NoticeRow'
+import { SkillPromptRow } from './SkillPromptRow'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -250,6 +251,9 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
     case 'notice':
       return <NoticeRow level={item.level} text={item.text} />
 
+    case 'skill-prompt':
+      return <SkillPromptRow item={item} />
+
     default:
       return null
   }
@@ -297,7 +301,8 @@ const BOOKKEEPING_KINDS = new Set<GroupedTranscriptItem['kind']>([
   'advisory',
   'notice',
   'subagent',
-  'agent-message'
+  'agent-message',
+  'skill-prompt'
 ])
 
 function isBookkeepingRow(row: GroupedTranscriptItem): boolean {
@@ -1083,7 +1088,9 @@ export function Transcript({
                                 unreachable. */}
                             <span className="sr-only">
                               {isToolGroup(row)
-                                ? `${toolStatusLabel('running')} ${row.tool}`
+                                ? row.items[0]!.skill
+                                  ? `${toolStatusLabel('running')} skill ${row.items[0]!.skill.name}`
+                                  : `${toolStatusLabel('running')} ${row.tool}`
                                 : `${toolStatusLabel('running')} subagent ${(row as Extract<GroupedTranscriptItem, { kind: 'subagent' }>).name}`}
                             </span>
                           </MessageScrollerItem>
