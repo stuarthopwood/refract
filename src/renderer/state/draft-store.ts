@@ -20,6 +20,15 @@ export interface Draft {
   // state ChatPane could never reach. `seq` forces a fresh DOM node even when `message` repeats
   // (a11y fix #598: a repeated identical announcement must still re-render the live region).
   attachmentAnnouncement: { seq: number; message: string } | null
+  // PR #723 gate round 1 fix (Code1 Medium): a background path/drop image read (the mixed-paste
+  // branch in `MessageInput.tsx`, and every drop in `ChatPane.tsx`) is NOT awaited by whatever
+  // triggered it -- the rest of the app, including Enter-to-send, keeps running while the IPC
+  // round trip is in flight. Without this counter, pressing Enter mid-read sends the message
+  // WITHOUT the image (which then lands on the NEXT draft instead), or a late-arriving result
+  // during an in-flight send's own `await` can be silently dropped. Incremented before a
+  // background/drop read starts, decremented in its own `finally`; `handleSend` refuses while
+  // this is above 0 for the session, the same way it already refuses while `disabled`/`starting`.
+  pendingAttachmentReads: number
 }
 
 // Stable reference for a Session with no draft yet, so a selector never returns a fresh object on
@@ -27,7 +36,7 @@ export interface Draft {
 // an infinite re-render loop -- same reasoning queue-store's EMPTY_QUEUE/readout-store's
 // EMPTY_READOUT document). Reuses attachments.ts's own EMPTY_ATTACHMENTS rather than duplicating
 // the empty shape.
-export const EMPTY_DRAFT: Draft = { text: '', attachments: EMPTY_ATTACHMENTS, attachmentAnnouncement: null }
+export const EMPTY_DRAFT: Draft = { text: '', attachments: EMPTY_ATTACHMENTS, attachmentAnnouncement: null, pendingAttachmentReads: 0 }
 
 interface DraftState {
   bySession: Record<string, Draft>
@@ -42,6 +51,9 @@ interface DraftState {
    * Monotonic `seq` so a repeated identical message still forces a fresh DOM node (a11y fix
    * #598), matching the exact behaviour the message-local implementation this replaces had. */
   announceAttachment(sessionId: string, message: string): void
+  /** See `Draft.pendingAttachmentReads`'s own doc comment. */
+  incrementPendingAttachmentReads(sessionId: string): void
+  decrementPendingAttachmentReads(sessionId: string): void
 }
 
 export const useDraftStore = create<DraftState>((set, get) => ({
@@ -62,5 +74,13 @@ export const useDraftStore = create<DraftState>((set, get) => ({
     const current = get().bySession[sessionId] ?? EMPTY_DRAFT
     const seq = (current.attachmentAnnouncement?.seq ?? 0) + 1
     set({ bySession: { ...get().bySession, [sessionId]: { ...current, attachmentAnnouncement: { seq, message } } } })
+  },
+  incrementPendingAttachmentReads: (sessionId) => {
+    const current = get().bySession[sessionId] ?? EMPTY_DRAFT
+    set({ bySession: { ...get().bySession, [sessionId]: { ...current, pendingAttachmentReads: current.pendingAttachmentReads + 1 } } })
+  },
+  decrementPendingAttachmentReads: (sessionId) => {
+    const current = get().bySession[sessionId] ?? EMPTY_DRAFT
+    set({ bySession: { ...get().bySession, [sessionId]: { ...current, pendingAttachmentReads: Math.max(0, current.pendingAttachmentReads - 1) } } })
   }
 }))

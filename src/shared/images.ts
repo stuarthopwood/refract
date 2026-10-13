@@ -96,22 +96,37 @@ export function readImageDimensions(bytes: Uint8Array, mimeType: SupportedImageM
       // each SOF segment's own payload is [length:2][precision:1][height:2][width:2], both
       // dimensions big-endian (ITU-T T.81 Annex B). Every other marker's 2-byte length field
       // (itself included in the count) says exactly how far to skip to the next marker.
+      //
+      // PR #723 gate round 1 fix (Sec1/Code1/Verif1 Medium): ITU-T T.81 B.1.1.2 permits any
+      // number of 0xFF "fill bytes" between markers (real encoders legitimately emit them, and
+      // libjpeg skips them) -- the PREVIOUS version treated the byte right after the first 0xFF
+      // as the marker code unconditionally, so a fill byte there was misread as a bogus marker,
+      // producing a garbage length and (eventually) a `null` result for a perfectly normal JPEG.
+      // `attachments.ts`'s own caller used to treat that `null` as "could not verify, allow it" --
+      // together the two bugs let a crafted file with one fill/junk byte before its SOF bypass
+      // the pixel cap entirely (fail-open). Fixed at BOTH ends: this loop now skips every
+      // consecutive 0xFF before treating the next byte as the real marker code, and the caller
+      // now refuses (never allows) a `null` result -- see that file's own comment.
       let offset = 2;
-      while (offset + 4 <= bytes.length) {
+      while (offset + 2 <= bytes.length) {
         if (view.getUint8(offset) !== 0xff) return null; // not a marker where one was expected
-        const marker = view.getUint8(offset + 1);
+        let markerOffset = offset + 1;
+        while (markerOffset < bytes.length && view.getUint8(markerOffset) === 0xff) markerOffset++;
+        if (markerOffset >= bytes.length) return null;
+        const marker = view.getUint8(markerOffset);
         if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
-          offset += 2; // markers with no length field (SOI/RST*/EOI/TEM)
+          offset = markerOffset + 1; // markers with no length field (SOI/RST*/EOI/TEM)
           continue;
         }
-        const segmentLength = view.getUint16(offset + 2, false);
+        if (markerOffset + 3 > bytes.length) return null;
+        const segmentLength = view.getUint16(markerOffset + 1, false);
         const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
         if (isSof) {
-          if (offset + 9 > bytes.length) return null;
-          return { height: view.getUint16(offset + 5, false), width: view.getUint16(offset + 7, false) };
+          if (markerOffset + 8 > bytes.length) return null;
+          return { height: view.getUint16(markerOffset + 4, false), width: view.getUint16(markerOffset + 6, false) };
         }
         if (marker === 0xda) return null; // Start Of Scan: no SOF seen before entropy-coded data
-        offset += 2 + segmentLength;
+        offset = markerOffset + 1 + segmentLength;
       }
       return null;
     }

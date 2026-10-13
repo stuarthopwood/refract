@@ -24,14 +24,18 @@ export function AttachmentStrip({ images, textChips, onRemoveImage }: Attachment
   if (images.length === 0 && textChips.length === 0) return null
   return (
     <div role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
-      {images.map((image) => (
+      {images.map((image, index) => (
         <div key={image.id} className="group relative">
           <ImagePreviewModal
             attachment={image}
             trigger={
               <button
                 type="button"
-                aria-label={`View pasted image, ${formatByteSize(image.byteLength)}`}
+                aria-label={
+                  images.length > 1
+                    ? `View image ${index + 1} of ${images.length}, ${formatByteSize(image.byteLength)}`
+                    : `View pasted image, ${formatByteSize(image.byteLength)}`
+                }
                 className="block size-10 overflow-hidden rounded-md border border-border bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 <img src={image.previewUrl} alt="" className="size-full object-cover" />
@@ -40,7 +44,7 @@ export function AttachmentStrip({ images, textChips, onRemoveImage }: Attachment
           />
           <button
             type="button"
-            aria-label="Remove pasted image"
+            aria-label={images.length > 1 ? `Remove image ${index + 1} of ${images.length}` : 'Remove pasted image'}
             onClick={() => onRemoveImage(image.id)}
             className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full border border-border bg-background text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >

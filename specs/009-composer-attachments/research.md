@@ -170,22 +170,37 @@ and delete it with ordinary text editing (FR-014); because it is also the correl
 it so it no longer matches intact is treated the same as deleting it outright (Edge Cases) — the
 pending chip entry is dropped on the next draft change rather than left dangling.
 
-## 11. Path-based attach reuses `resolveInWorktree` only for the RELATIVE case; an absolute path is read directly
+## 11. Path-based attach reuses `resolveInWorktree` only for the RELATIVE case; an absolute path's own FINAL destination is not worktree-contained -- but every link along the way still is fully vetted
 
 **Decision**: `attachments.readImageFile` branches on `path.isAbsolute(token)`. An absolute token
-is `fs.realpath`'d directly (resolves symlinks, confirms a regular file) with NO worktree
-containment check. A relative token is resolved and contained through the existing
-`resolveInWorktree` (`files.ts`, issue #610) unchanged — the single existing containment surface,
-never a second implementation.
+is walked ONE SEGMENT AT A TIME (`resolveNoFollowUnrooted`, `files.ts`), re-vetting every
+symlink/junction's own target text (`isUnsafeToken`) before ever following it, only THEN
+canonicalised via `fs.realpath` -- its FINAL destination is not required to stay inside any
+worktree, but every hop along the way is. A relative token is resolved and contained through the
+existing `resolveInWorktree` (`files.ts`, issue #610) unchanged — the single existing containment
+surface, never a second implementation.
 
 **Rationale**: #514's own spec explicitly lists "an absolute Windows path" (a screenshot in
 Downloads, Pictures, or anywhere else on disk) as the common case this feature exists for. The file
 explorer's own `resolveInWorktree` enforces strict worktree containment — correct for THAT feature
 (browsing a Session's own repository), wrong here: it would reject the exact files-anywhere-on-disk
-case the issue is written for. This is a user-initiated read (a paste, a confirmed typed path, or a
-drop), never agent/tool/model-authored text, matching the trust level the existing repository
-folder picker (`repositories.ts`) already grants a user's own absolute choice — not a new, wider
-trust boundary, an existing one this feature simply also qualifies for.
+case the issue is written for. This is a user-initiated READ (a paste, a confirmed typed path, or a
+drop) of a file the user chose to attach, matching the trust level the existing repository folder
+picker (`repositories.ts`) already grants a user's own absolute choice — not a new, wider trust
+boundary, an existing one this feature simply also qualifies for.
+
+**Corrected (PR #723 gate round 1, Sec1/Verif1 HIGH, reproduced live: a symlink to
+`\\127.0.0.1\C$\...` made `fs.realpath` take ~7.8s and open a real SMB session)**: this decision's
+own ORIGINAL wording claimed the pasted/dragged text is "never agent/tool/model-authored" -- that
+is false. Pasted text very often comes straight from the agent's own transcript (the user copies a
+line the agent printed), and an agent can plant a symlink inside the worktree pointing at a UNC
+share, then print its absolute path; the user pasting or dragging that path is still a genuine
+user action, but the TEXT itself is exactly as untrusted as any other agent-authored string
+elsewhere in this app. The fix is NOT to add worktree containment back (that would defeat the
+whole point of this decision) -- it is to vet every LINK the absolute path passes through, exactly
+as `resolveNoFollow` already does for the relative/worktree-contained branch, while still allowing
+the link's ultimate, fully-vetted target to live anywhere on disk. "User-initiated" now describes
+only the ACT of pasting/dragging, never a trust claim about the text's own origin.
 
 ## 12. Pixel-count cap: parsed from the image's own header bytes, no new npm dependency
 

@@ -428,17 +428,76 @@ image does, reusing Phase 6's shared reader end to end.
   `src/main/index.ts` (blocks in-app navigation from a dropped file) is untouched -- no edit needed,
   `preventDefault()` on the new `onDrop` handler already stops the drop from ever reaching that
   path.
+- [ ] T023 Live click-path verification (PR #723's own body list) on the built app in an isolated
+  scratch instance: every scenario named in the PR body's "What to click-path verify live"
+  section, including the round-1 gate fixes below. NOT done yet -- this is the one open item
+  blocking #514/#432's own closure; Phase 6/7's own `[X]` marks above cover the CODE being
+  written and gate-clean, not this live pass.
+
+### Round 1 gate fixes (Sec1/Code1/A11y1/Verif1 FAIL, against the initial Phase 6/7 head)
+
+**2 HIGH, reproduced by multiple reviewers:**
+1. `src/main/ipc/attachments.ts`'s absolute-path branch called `fs.realpath(token)` directly,
+   following every symlink in one native call with no per-hop vetting -- a symlink planted inside
+   the worktree pointing at a UNC share, printed as an absolute path and pasted/dragged, triggered
+   a real SMB/NTLM connection attempt with no further click (reproduced live: ~7.8s `fs.realpath`
+   call against a loopback UNC target). Fixed: new `resolveNoFollowUnrooted` (`files.ts`) walks
+   the absolute token one segment at a time, re-vets every link target via `isUnsafeToken` before
+   following it, only then canonicalises via `realpath` -- the FINAL destination still is not
+   worktree-contained (research.md Decision 11, corrected), but every hop along the way now is.
+2. `MessageInput.tsx`'s path-only paste fallback read `event.currentTarget` AFTER an `await` --
+   React 19.3 nulls a synthetic event's `currentTarget` once the handler's synchronous portion
+   returns, so any unresolved path (missing, wrong type, over a cap) threw a silent TypeError and
+   the pasted text vanished with no notice (FR-022). Fixed: `target`/`start`/`end` captured
+   synchronously before the first `await`; the fallback now reads the LIVE draft text from
+   `useDraftStore` instead of the stale paste-time closure.
+3. `isImagePathOnlyText`/`extractImagePathCandidates` only checked QUOTED substrings, ignoring
+   every other word on the line -- `please review "C:\shots\a.png" carefully` counted as
+   path-only and the whole sentence was deleted (FR-023). Fixed: a quoted line is path-only only
+   when stripping every quoted substring leaves nothing but whitespace; an unquoted line is
+   path-only only when it is a single whitespace-free token.
+
+**4 MEDIUM, 1 LOW (code):**
+4. `shared/images.ts`'s JPEG header walker misread a legal `0xFF` fill byte (ITU-T T.81 B.1.1.2)
+   as a marker, producing a `null` dimension result the caller then ACCEPTED (fail-open) -- a
+   crafted JPEG under the byte cap could bypass the pixel cap entirely. Fixed: the walker now
+   skips consecutive fill bytes before reading the real marker, and the caller now REFUSES
+   (never accepts) a `null` result for any format.
+5. `ChatPane.tsx` set `dropEffect = 'none'` for a disabled Session, which means Chromium never
+   dispatches `drop` at all (a `'none'` operation fires `dragleave` instead) -- the FR-028
+   refusal toast was dead code. Fixed: `dropEffect` is now always `'copy'`; `handlePaneDrop`'s own
+   `composerDisabled` check is what actually refuses the drop, with a real toast.
+6. A background path/drop read (the mixed-paste branch, every drop) is not awaited by whatever
+   triggered it, so pressing Enter mid-read could send the message without the image. Fixed: a
+   new per-session `pendingAttachmentReads` counter (`draft-store.ts`) guards `handleSend`.
+7. `normalizeImagePathToken` kept only `pathname` from a `file://host/share/x.png` URL, silently
+   reading a DIFFERENT local file on the current drive. Fixed: a non-empty `url.host` now returns
+   the raw token, letting `isUnsafeToken` refuse the UNC shape.
+8. `MAX_IMAGE_PIXELS`'s own cap was applied per paste/drop, not per message (several smaller
+   pastes/drops could accumulate past 10 total). Fixed: both call sites now compute remaining
+   slots from the session's current pending image count.
+9. `files.ts`'s `isUnsafeToken` only ever checked the FIRST colon, so an NTFS alternate data
+   stream after a drive letter (`C:\x\host.txt:hidden.png`) slipped through. Fixed: a second,
+   independent check rejects any colon from index 2 onward.
+
+**A11y/docs**: chip labels now read "image N of M" when more than one is pending (previously
+identical "Remove pasted image" on every one); refusal toasts now name the reason and (for a
+drop) the file's own basename, never a full path; `ChatDisplaySection.tsx`'s intro text now
+mentions pasted-content handling; the WCAG 2.5.7 single-pointer-alternative gap (drag has no
+non-drag equivalent of its own; paste remains the full keyboard/screen-reader route) is a
+disclosed residual, not fixed this round -- a follow-up issue for an attach (file-picker) button
+is filed separately, not built here. `spec.md` FR-020/FR-021/research.md Decision 11 corrected
+(see above); FR-022/FR-023 reworded "Pasting" (typing was already deferred, Decision 14, but the
+FR text still said "Pasting or typing"); US4 corrected (a browser-dragged, not-yet-saved image has
+no on-disk path and is refused, not silently attached).
 
 **Checkpoint**: same full gate as Phase 6 (one shared run covering both phases' combined final
-code): `pnpm typecheck` (`tsconfig.node.json` clean, `tsconfig.web.json` clean -- including the
-five-unrelated-file regression research.md Decision 16 found and fixed by routing `webUtils`
-through preload instead of a direct renderer import), `vitest` 376/376 (no new tests), `check:indent`
-0 odd-indent lines across 327 files, `check:ui-text` 0 leaks across 371 files, `check:theme-contrast`
-all 313 pairs across 3 themes PASS (no new tokens -- the drop overlay reuses existing
-`border-ring`/`bg-background`/`text-foreground`), `check:drag-regions` 0 violations across 110
-files, `pnpm build` succeeded (`out/` cleaned afterward, literal path). **Not yet live-verified**
-(see Phase 6's own Checkpoint note -- the same memory-pressure disclosure applies here; this
-phase's own click-path, including the split-pane "wrong pane never receives it" case, is unverified
-beyond code-level reasoning and is named explicitly in the PR body's own "not verified live" list).
+code, including this round's fixes): `pnpm typecheck` (`tsconfig.node.json` clean, `tsconfig.web.json`
+clean), `vitest` 376/376 (no new tests), `check:indent` 0 odd-indent lines across 327 files,
+`check:ui-text` 0 leaks across 371 files, `check:theme-contrast` all 313 pairs across 3 themes PASS
+(no new tokens), `check:drag-regions` 0 violations across 110 files, `pnpm build` succeeded (`out/`
+cleaned afterward, literal path). **Still not live-verified** (T023 above) -- machine free RAM has
+repeatedly dropped under 1 GB this session (Stuart's own live Refract instance, not another lane);
+deferred rather than risking a crash, disclosed in the PR body's own "not verified live" list.
 
 ---

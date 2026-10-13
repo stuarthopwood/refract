@@ -185,13 +185,24 @@ function looksLikeImagePathToken(token: string): boolean {
 
 /** Strips a surrounding pair of double quotes (Explorer's own "Copy as path" always quotes) and
  * converts a `file://` URL to a plain path string; `attachments.readImageFile`'s own path
- * validation is the authority on whether the result is actually usable. */
+ * validation is the authority on whether the result is actually usable.
+ *
+ * PR #723 gate round 1 fix (Code1 Medium): a `file://host/share/x.png` URL (a HOST-carrying
+ * UNC-shaped `file:` URL, not the bare `file:///C:/...` local form) used to keep only
+ * `new URL(value).pathname` (`/share/x.png`), silently DROPPING the host -- `path.isAbsolute`
+ * then accepted that as a normal absolute path and main read `<current drive>:\share\x.png`, a
+ * completely different local file the caller never named. A non-empty `url.host` now returns the
+ * ORIGINAL, unmodified token instead: `isUnsafeToken`'s own UNC-shape check (the token still
+ * contains `//host/...` after its own internal slash normalisation) then refuses it cleanly,
+ * exactly as a literal `\\host\share\...` token already is. */
 function normalizeImagePathToken(token: string): string {
   let value = token.trim()
   if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1)
   if (/^file:\/\//i.test(value)) {
     try {
-      let pathname = decodeURIComponent(new URL(value).pathname)
+      const url = new URL(value)
+      if (url.host !== '') return value // host-carrying file: URL -- let isUnsafeToken refuse it
+      let pathname = decodeURIComponent(url.pathname)
       // A `file:///C:/...` URL's pathname keeps a leading slash before the drive letter.
       if (/^\/[A-Za-z]:/.test(pathname)) pathname = pathname.slice(1)
       value = pathname
@@ -208,7 +219,18 @@ function normalizeImagePathToken(token: string): string {
  * UNQUOTED line on spaces -- a real Windows path containing a space is always quoted by the
  * tools that produce one (Explorer's "Copy as path"), so a prose sentence that merely contains a
  * slash is never torn into nonsense fragments. Returns only tokens that already pass the cheap
- * `looksLikeImagePathToken` pre-filter, normalized and ready for `attachments.readImageFile`. */
+ * `looksLikeImagePathToken` pre-filter, normalized and ready for `attachments.readImageFile`.
+ *
+ * PR #723 gate round 1 fix (Code1 HIGH): an UNQUOTED line containing OTHER WORDS besides a path
+ * (`look at C:\x\shot.png`, `see src/a.png`) used to be pushed whole as one "candidate", since
+ * `looksLikeImagePathToken` only checks the line's own END/START shape, never whether it is a
+ * SINGLE token. Prose was then sent straight to the main-process reader as if it were a literal
+ * path (it simply failed to resolve there, but this is "prose is never even sent to main" territory,
+ * not a resolution question). Only a WHITESPACE-FREE unquoted line can be "the whole line is just
+ * a path" -- any embedded space means prose, possibly ending in a path, which this function now
+ * never extracts a candidate from at all (there is no reliable boundary to isolate an unquoted
+ * path from surrounding prose without quotes; only a QUOTED path inside prose is ever detected,
+ * see `isImagePathOnlyText`'s own mixed-line handling for the same reasoning). */
 export function extractImagePathCandidates(text: string): string[] {
   const candidates: string[] = []
   for (const rawLine of text.split(/\r?\n/)) {
@@ -217,7 +239,7 @@ export function extractImagePathCandidates(text: string): string[] {
     const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '')
     if (quoted.length > 0) {
       candidates.push(...quoted)
-    } else {
+    } else if (!/\s/.test(line)) {
       candidates.push(line)
     }
   }
@@ -226,7 +248,18 @@ export function extractImagePathCandidates(text: string): string[] {
 
 /** True when `text`, once trimmed, is NOTHING BUT image-path-looking tokens (#514 point 3: the
  * path text is only ever replaced by the attachment -- never left as a label -- when there is
- * nothing else in the paste; a mixed paste always keeps its own text untouched instead). */
+ * nothing else in the paste; a mixed paste always keeps its own text untouched instead).
+ *
+ * PR #723 gate round 1 fix (Code1/Sec1/A11y1/Verif1 HIGH, reproduced by all four reviewers): a
+ * line with a QUOTED path used to check ONLY the quoted substring(s), completely ignoring every
+ * other word on the line -- `please review "C:\shots\a.png" carefully` counted as "path-only" and
+ * the whole sentence was silently DELETED on paste (FR-023 requires a mixed paste's text to stay
+ * completely unchanged). Now requires that stripping every quoted substring from the line leaves
+ * NOTHING but whitespace before treating it as path-only; otherwise the line is mixed, and
+ * `isImagePathOnlyText` correctly returns `false` for the whole paste (the mixed-paste branch in
+ * `MessageInput.tsx` then runs instead, leaving the text untouched and attaching in the
+ * background). An unquoted line is "path-only" only when it is a single whitespace-free token,
+ * same reasoning as `extractImagePathCandidates` above. */
 export function isImagePathOnlyText(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
@@ -237,21 +270,31 @@ export function isImagePathOnlyText(text: string): boolean {
   if (lines.length === 0) return false
   return lines.every((line) => {
     const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '')
-    const tokens = quoted.length > 0 ? quoted : [line]
-    return tokens.every(looksLikeImagePathToken)
+    if (quoted.length > 0) {
+      if (line.replace(/"[^"]+"/g, '').trim() !== '') return false
+      return quoted.every(looksLikeImagePathToken)
+    }
+    if (/\s/.test(line)) return false
+    return looksLikeImagePathToken(line)
   })
 }
 
-/** #514 point 3: a sensible bound on how many image paths one paste/drop can attach at once,
- * independent of the existing clipboard-image flow (which has no count cap -- FR-005). Bounds
- * the worst case of a long list of paths stalling the main-process reader; anything past this is
- * left as plain text (paste) or silently skipped (drop) with a quiet notice, the same style as an
- * oversized image. */
+/** #514 point 3: a sensible bound on how many image paths ONE MESSAGE'S draft can hold at once
+ * from path/drop attach, independent of the existing clipboard-image flow (which has no count
+ * cap -- FR-005). Bounds the worst case of a long list of paths stalling the main-process reader.
+ * Enforced per message, not per individual paste/drop (PR #723 gate round 1 fix, Code1 LOW: the
+ * previous version capped only the current paste/drop's own candidate list, so several smaller
+ * pastes/drops could accumulate past 10 total) -- each call site (`MessageInput.tsx`'s path-only
+ * paste branch, `ChatPane.tsx`'s drop handler) computes its own REMAINING slots from the
+ * session's current `attachments.images.length` before slicing its candidate list, so the total
+ * across any number of pastes/drops in one draft never exceeds this. Anything past the remaining
+ * slots is left as plain text (paste) or silently skipped (drop) with a quiet notice, the same
+ * style as an oversized image. */
 export const MAX_PATH_ATTACHMENTS_PER_MESSAGE = 10
 
-export type ImagePathAttachResult =
-  | { ok: true; attachment: PendingImageAttachment }
-  | { ok: false; reason: 'not-found' | 'unsupported-type' | 'too-large' }
+export type ImagePathAttachFailureReason = 'not-found' | 'unsupported-type' | 'too-large'
+
+export type ImagePathAttachResult = { ok: true; attachment: PendingImageAttachment } | { ok: false; reason: ImagePathAttachFailureReason }
 
 /** Calls the shared main-process reader (#514/#432) and maps its `Result` onto the exact same
  * `PendingImageAttachment` shape a pasted clipboard image produces (`buildImageAttachment`
@@ -259,7 +302,7 @@ export type ImagePathAttachResult =
 export async function buildImagePathAttachment(sessionId: string, filePath: string): Promise<ImagePathAttachResult> {
   const result = await window.refract.attachments.readImageFile(sessionId, filePath)
   if (!result.ok) {
-    const reason =
+    const reason: ImagePathAttachFailureReason =
       result.error.code === 'image-too-large' ? 'too-large' : result.error.code === 'unsupported-image-type' ? 'unsupported-type' : 'not-found'
     return { ok: false, reason }
   }
@@ -274,6 +317,24 @@ export async function buildImagePathAttachment(sessionId: string, filePath: stri
       byteLength,
       previewUrl: `data:${mimeType};base64,${base64}`
     }
+  }
+}
+
+/** PR #723 gate round 1 fix (A11y1 LOW): a refusal notice used to drop the REASON
+ * `buildImagePathAttachment` already returns -- the developer saw only "could not be attached",
+ * never WHY. Maps each reason to the specific, plain-English wording FR-022/FR-026's own
+ * requirement text already names ("a path that does not exist, is not an image, or is too
+ * large"), for the single-failure case where one concrete reason is actually meaningful (the
+ * multi-failure case still uses a plain count -- several different reasons mixed into one
+ * sentence would be noise, not clarity). */
+export function describeAttachFailureReason(reason: ImagePathAttachFailureReason): string {
+  switch (reason) {
+    case 'not-found':
+      return 'could not be found'
+    case 'unsupported-type':
+      return 'is not a supported image type'
+    case 'too-large':
+      return 'is too large to attach'
   }
 }
 

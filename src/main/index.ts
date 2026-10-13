@@ -263,9 +263,10 @@ function createWindow(): void {
   // navigations through -- but round 10 (Sec10/Code10/Verif10 HIGH) found `did-start-navigation`
   // itself fires BEFORE Electron's own navigation throttles (`will-navigate`/
   // `will-frame-navigate` below, which `denyForeignNavigation` can cancel): a renderer-started
-  // CROSS-document navigation that gets cancelled (an OS file dropped onto the window -- this
-  // renderer has no `drop`/`dragover` handler at all, so Electron's own default navigation
-  // kicks in -- or a dragged chat link) had ALREADY reset every watcher and cleared
+  // CROSS-document navigation that gets cancelled (an OS file dropped outside a chat pane --
+  // #432's `onDrop`/`onDragOver` handlers only exist on `ChatPane.tsx`'s own container and
+  // `preventDefault` there, so a drop anywhere else still falls through to Electron's own default
+  // navigation, which this guard denies -- or a dragged chat link) had ALREADY reset every
   // `loadedPathsBySession` before the cancellation ran, with the page never actually navigating
   // away: every panel stayed mounted, nothing ever called `ensureWatching` again, and live
   // refresh/deleted-preview detection died exactly the same way as the original round-9 HIGH, on

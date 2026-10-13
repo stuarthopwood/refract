@@ -27,7 +27,8 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
-import { buildImagePathAttachment, MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
+import { buildImagePathAttachment, describeAttachFailureReason, MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
+import type { ImagePathAttachFailureReason } from './attachments'
 import { canResumeSession, resumeSession } from './resume'
 import { applySnapshot } from './applySnapshot'
 import { closeChatPane } from './closeChatPane'
@@ -866,7 +867,12 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   function handlePaneDragOver(event: ReactDragEvent) {
     if (!hasFilesPayload(event)) return
     event.preventDefault() // required for `onDrop` to ever fire
-    event.dataTransfer.dropEffect = composerDisabled ? 'none' : 'copy'
+    // PR #723 gate round 1 fix (Sec1/Code1/A11y1 Medium): `dropEffect = 'none'` for a disabled
+    // Session used to mean Chromium never dispatches `drop` at all (a 'none' operation fires
+    // `dragleave` instead) -- the FR-028 refusal `notify(...)` below was dead code, never once
+    // reached. Always `'copy'`; `handlePaneDrop`'s own `composerDisabled` check is what actually
+    // refuses the drop now, with a real, user-visible toast.
+    event.dataTransfer.dropEffect = 'copy'
   }
   function handlePaneDragLeave(event: ReactDragEvent) {
     if (!hasFilesPayload(event)) return
@@ -884,40 +890,59 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     }
     const files = Array.from(event.dataTransfer.files)
     if (files.length === 0) return
-    const capped = files.slice(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE)
+    // PR #723 gate round 1 fix (Code1 LOW): the cap applies PER MESSAGE, not per drop --
+    // computed from this session's CURRENT pending image count, matching the identical fix in
+    // `MessageInput.tsx`'s own path-only paste branch.
+    const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
+    const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+    const capped = files.slice(0, remainingSlots)
     let attachedCount = 0
-    let failedCount = 0
-    for (const file of capped) {
-      let filePath: string
-      try {
-        filePath = window.refract.attachments.getPathForFile(file)
-      } catch {
-        failedCount++
-        continue
+    // Basenames only (never a full path, FR-029) of every file that did not attach, for an
+    // honest-but-private failure notice (A11y1 LOW), paired with WHY where there is exactly one.
+    const failedFiles: { name: string; reason?: ImagePathAttachFailureReason }[] = []
+    useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
+    try {
+      for (const file of capped) {
+        let filePath: string
+        try {
+          // A browser-dragged image with no on-disk backing file (spec US4 says "or a browser")
+          // returns `''` here -- `buildImagePathAttachment` below refuses it the same way any
+          // other unresolvable path is refused (resolves to the worktree root itself, `file-
+          // missing`), never a silent drop; disclosed as unsupported in the PR body rather than
+          // given its own bespoke message.
+          filePath = window.refract.attachments.getPathForFile(file)
+        } catch {
+          failedFiles.push({ name: file.name })
+          continue
+        }
+        const result = await buildImagePathAttachment(sessionId, filePath)
+        if (result.ok) {
+          useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+          attachedCount++
+        } else {
+          failedFiles.push({ name: file.name, reason: result.reason })
+        }
       }
-      const result = await buildImagePathAttachment(sessionId, filePath)
-      if (result.ok) {
-        useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-        attachedCount++
-      } else {
-        failedCount++
-      }
+    } finally {
+      useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
     }
     if (attachedCount > 0) {
       useDraftStore
         .getState()
         .announceAttachment(sessionId, attachedCount === 1 ? 'Image attached from a dropped file.' : `${attachedCount} images attached from dropped files.`)
     }
-    const skipped = failedCount + (files.length - capped.length)
+    const overflowCount = files.length - capped.length
+    const skipped = failedFiles.length + overflowCount
     if (skipped > 0) {
+      const only = failedFiles[0]
       notify({
         code: 'invalid-argument',
         message:
-          files.length > capped.length
-            ? `Only the first ${MAX_PATH_ATTACHMENTS_PER_MESSAGE} images were attached; the rest were skipped.`
-            : skipped === 1
-              ? 'One file could not be attached as an image.'
-              : `${skipped} files could not be attached as images.`
+          overflowCount > 0
+            ? `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
+            : failedFiles.length === 1 && only
+              ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
+              : `${failedFiles.length} files could not be attached as images.`
       })
     }
   }

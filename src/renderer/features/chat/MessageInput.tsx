@@ -37,6 +37,7 @@ import {
   buildChipLabel,
   buildImageAttachment,
   buildImagePathAttachment,
+  describeAttachFailureReason,
   EMPTY_ATTACHMENTS,
   extractImagePathCandidates,
   findChipOccurrences,
@@ -49,7 +50,7 @@ import {
   substituteChips,
   toImageContent
 } from './attachments'
-import type { PendingTextChip } from './attachments'
+import type { ImagePathAttachFailureReason, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 import { parseSlashCommand } from '../../../shared/slash-commands'
@@ -103,6 +104,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
   // clipboard image itself is never affected by this).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
+  // PR #723 gate round 1 fix (Code1 Medium): reactive read so the Send button's own
+  // `aria-disabled` reflects an in-flight background path/drop read the same way `handleSend`'s
+  // own guard does (draft-store.ts's `pendingAttachmentReads` doc comment).
+  const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
   // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
   // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
@@ -442,7 +447,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   }, [])
 
   async function handleSend() {
-    if (disabled || starting) return
+    // PR #723 gate round 1 fix (Code1 Medium): refuses while a background path/drop image read
+    // for this session is still in flight (`pendingAttachmentReads`, draft-store.ts's own doc
+    // comment) -- otherwise Enter mid-read sent the message WITHOUT the image (which then landed
+    // on the NEXT draft instead), the same race class `disabled`/`starting` already guard against.
+    if (disabled || starting || pendingAttachmentReads > 0) return
     const draftText = text
     if (!draftText.trim()) return
     // Enter-send and the Send button both clear the draft via `clear(sessionId)` below, bypassing
@@ -1001,37 +1010,64 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           // #514 point 3: nothing else in the paste -- the path text is replaced by the
           // attachment(s), the box stays clean. Any candidate that fails to resolve (missing,
           // not an image, too large) falls back to its own raw text instead of vanishing.
+          //
+          // PR #723 gate round 1 fix (Sec1/Code1/A11y1/Verif1 HIGH, reproduced by all four
+          // reviewers): `event.currentTarget`/`selectionStart`/`selectionEnd` MUST be captured
+          // synchronously, right here, BEFORE the first `await` below -- React nulls a synthetic
+          // event's `currentTarget` the instant this handler's synchronous portion returns, so
+          // reading it after an `await` threw a TypeError that silently discarded the pasted
+          // text with no notice at all (`onPaste`'s own `void handlePaste(event)` swallowed the
+          // rejection). The fallback insert below also no longer reads the stale, paste-time
+          // `text` closure -- it reads the LIVE draft text from the store, so a keystroke typed
+          // during the IPC round trip is never overwritten.
           event.preventDefault()
-          const capped = pathCandidates.slice(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE)
-          const unresolved = pathCandidates.slice(MAX_PATH_ATTACHMENTS_PER_MESSAGE)
+          const target = event.currentTarget
+          const start = target.selectionStart
+          const end = target.selectionEnd
+          // PR #723 gate round 1 fix (Code1 LOW): the cap applies PER MESSAGE, not per paste --
+          // computed from this session's CURRENT pending image count, not a static slice of this
+          // one paste's own candidate list.
+          const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
+          const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+          const capped = pathCandidates.slice(0, remainingSlots)
+          const overflow = pathCandidates.slice(remainingSlots)
+          const loopFailures: { token: string; reason: ImagePathAttachFailureReason }[] = []
+          useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
           let attachedCount = 0
-          for (const token of capped) {
-            const result = await buildImagePathAttachment(sessionId, token)
-            if (result.ok) {
-              useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-              attachedCount++
-            } else {
-              unresolved.push(token)
+          try {
+            for (const token of capped) {
+              const result = await buildImagePathAttachment(sessionId, token)
+              if (result.ok) {
+                useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+                attachedCount++
+              } else {
+                loopFailures.push({ token, reason: result.reason })
+              }
             }
+          } finally {
+            useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
           }
           if (attachedCount > 0) {
             announceAttachment(attachedCount === 1 ? 'Image attached from a file path.' : `${attachedCount} images attached from file paths.`)
           }
+          const unresolved = [...overflow, ...loopFailures.map((f) => f.token)]
           if (unresolved.length > 0) {
-            const target = event.currentTarget
-            const start = target.selectionStart
-            const end = target.selectionEnd
+            const liveText = useDraftStore.getState().bySession[sessionId]?.text ?? ''
             const fallbackText = unresolved.join('\n')
-            const nextText = text.slice(0, start) + fallbackText + text.slice(end)
+            const nextText = liveText.slice(0, start) + fallbackText + liveText.slice(end)
+            const nextCursor = start + fallbackText.length
             useDraftStore.getState().setText(sessionId, nextText)
+            requestAnimationFrame(() => {
+              textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
+            })
             notify({
               code: 'invalid-argument',
               message:
-                pathCandidates.length > capped.length
-                  ? `Only the first ${MAX_PATH_ATTACHMENTS_PER_MESSAGE} images were attached; the rest were left as text.`
-                  : unresolved.length === 1
-                    ? 'That file could not be attached as an image; left as text.'
-                    : `${unresolved.length} files could not be attached as images; left as text.`
+                overflow.length > 0
+                  ? `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were left as text.`
+                  : loopFailures.length === 1
+                    ? `That file ${describeAttachFailureReason(loopFailures[0]!.reason)}; left as text.`
+                    : `${loopFailures.length} files could not be attached as images; left as text.`
             })
           }
           return
@@ -1039,15 +1075,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         // Mixed paste (#514 point 3): the path stays exactly where it was pasted below (never
         // prevented) -- each candidate is resolved in the background and attached silently if it
         // turns out to be a real image, with no interruption to typing or the normal paste.
-        const capped = pathCandidates.slice(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE)
+        const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
+        const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+        const capped = pathCandidates.slice(0, remainingSlots)
+        useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
         void (async () => {
           let attachedCount = 0
-          for (const token of capped) {
-            const result = await buildImagePathAttachment(sessionId, token)
-            if (result.ok) {
-              useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-              attachedCount++
+          try {
+            for (const token of capped) {
+              const result = await buildImagePathAttachment(sessionId, token)
+              if (result.ok) {
+                useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
+                attachedCount++
+              }
             }
+          } finally {
+            useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
           }
           if (attachedCount > 0) {
             announceAttachment(
@@ -1438,9 +1481,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                   className="rounded-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                   aria-label="Send message"
                   aria-keyshortcuts="Enter"
-                  aria-disabled={disabled || starting || !text.trim()}
+                  aria-disabled={disabled || starting || pendingAttachmentReads > 0 || !text.trim()}
                   onClick={() => {
-                    if (disabled || starting || !text.trim()) return
+                    if (disabled || starting || pendingAttachmentReads > 0 || !text.trim()) return
                     void handleSend()
                   }}
                 >
