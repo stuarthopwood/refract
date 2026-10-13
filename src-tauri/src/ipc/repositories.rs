@@ -17,8 +17,17 @@ use crate::store::registry::{Repository, Session, REPOSITORY_HAS_SESSIONS_MESSAG
 
 use super::{
     arg_str, invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, AppState,
-    HandlerFuture, IpcError,
+    Dispatcher, HandlerFuture, IpcError,
 };
+
+pub fn register(d: &mut Dispatcher) {
+    d.register("repositories.list", repositories_list);
+    d.register("repositories.add", repositories_add);
+    d.register("repositories.remove", repositories_remove);
+    d.register("repositories.branches", repositories_branches);
+    d.register("repositories.pickFolder", repositories_pick_folder);
+    d.register("repositories.userName", repositories_user_name);
+}
 
 /// `repositories.userName` (T072, FR-045): `git config user.name` in the repository's own
 /// checkout, falling back to the Windows account name when git has none configured; cached per

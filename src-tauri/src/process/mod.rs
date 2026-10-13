@@ -5,3 +5,4 @@
 // the `NoDefaultCurrentDirectoryInExePath` spawn-path safety).
 pub mod executables;
 pub mod job_object;
+pub mod pid_records;

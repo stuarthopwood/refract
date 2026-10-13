@@ -12,7 +12,15 @@ use crate::session::agent::{
 };
 use crate::session::SessionManager;
 
-use super::{invalid_argument, not_found, AppState, HandlerFuture, IpcError};
+use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
+
+pub fn register(d: &mut Dispatcher) {
+    d.register("chat.send", chat_send);
+    d.register("chat.stop", chat_stop);
+    d.register("chat.removeQueued", chat_remove_queued);
+    d.register("chat.answer", chat_answer);
+    d.register("chat.commands", chat_commands);
+}
 
 /// Maximum accepted decoded image size (spec 009 research.md Decision 3), mirrored from
 /// `src/shared/images.ts`'s own `MAX_IMAGE_INPUT_BYTES` (20 MiB) -- not a declared dependency of

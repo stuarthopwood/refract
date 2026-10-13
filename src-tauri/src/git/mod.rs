@@ -6,6 +6,9 @@
 // `git.rs` is named for parity with the Electron build's `git.ts`, not nested by mistake --
 // `clippy::module_inception` would otherwise flag `git::git` as a module sharing its parent's
 // name.
+pub mod diff_stat;
 #[allow(clippy::module_inception)]
 pub mod git;
+pub mod remote;
+pub mod status;
 pub mod worktrees;

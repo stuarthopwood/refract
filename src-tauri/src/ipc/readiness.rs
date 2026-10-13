@@ -19,7 +19,11 @@ use serde_json::Value;
 use crate::git::git::git_raw;
 use crate::omp::process::{ApprovalMode, OmpProcess, OmpProcessOptions};
 
-use super::{AppState, HandlerFuture};
+use super::{AppState, Dispatcher, HandlerFuture};
+
+pub fn register(d: &mut Dispatcher) {
+    d.register("readiness.check", readiness_check);
+}
 
 #[derive(Debug, Serialize, Default)]
 struct Check {

@@ -6,13 +6,19 @@
 // `src/main/conversations.ts`'s `listConversations` (no live-agent dependency at all -- a pure
 // file read), folded into this one file rather than mirroring the Electron build's separate
 // `src/main/conversations.ts` module. `list_conversations`/`ConversationInfo`/`build_snapshot`
-// are `pub(crate)` so `ipc::sessions`'s own `.open` arm can build the same `SessionSnapshot`
+// are `pub(crate)` so `ipc::sessions_agent`'s own `.open` arm can build the same `SessionSnapshot`
 // shape (`contracts/ipc.md`'s own shared `buildSnapshot`, `src/main/ipc/util.ts`).
 
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{invalid_argument, not_found, AppState, HandlerFuture};
+use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture};
+
+pub fn register(d: &mut Dispatcher) {
+    d.register("conversations.list", conversations_list);
+    d.register("conversations.startNew", conversations_start_new);
+    d.register("conversations.open", conversations_open);
+}
 
 /// `src/shared/model.ts`'s own `ConversationInfo` shape.
 #[derive(Debug, Clone, Serialize)]

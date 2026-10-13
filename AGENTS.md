@@ -48,6 +48,7 @@ On 2026-10-08 the user decided that Refract is in a rapid-prototyping phase. Tes
 - Reviewers (including `test-reviewer`) must not ask for new tests, and a missing test is not a reason to block a merge in this phase.
 - Verify behaviour by running the app and exercising the changed path.
 - The phase ends only when the user says so. Until then, put this rule in every delegation brief.
+- Exception (epic #797, Rust promotion, 2026-10-13): each Rust lane PR ports the TypeScript tests named in its lane issue as Rust tests (`cargo test`); the rule above still applies to `src/renderer`, `src/main`, `src/preload` and `src/shared`.
 
 ## Docs-only PRs are always merged (HARD RULE)
 
@@ -56,6 +57,23 @@ On 2026-10-09 the user decided that a docs-only PR merges without asking, so the
 - A PR is docs-only when every file it touches is a doc (`*.md`, `docs/`, `AGENTS.md`, `CONTEXT.md`, `README.md` and the like) — no source, test, or config file changed.
 - Open the PR, confirm `git diff origin/main...HEAD --stat` touches docs only, confirm `gh pr view` reports it as mergeable and clean, then merge it (`gh pr merge --squash --delete-branch`) and report the PR number, merge commit, and a one-paragraph summary of what changed. Do not wait for a human to say "merge it."
 - This does not relax any other rule: still no new tests while prototyping (above), still ground every factual claim before writing it, still run the safe-deletion rules for the branch/worktree cleanup that follows a merge.
+
+## Rust build is the main build (Stuart, 2026-10-13, epic #797)
+
+The Tauri v2 Rust build (`src-tauri/`) is promoted to be Refract's main build. `pnpm dev` and
+`pnpm build` run it; the Electron build moved to `pnpm dev:electron` and `pnpm build:electron`.
+
+- **Electron main-process freeze (HARD RULE)**: `src/main` and `src/preload` get P0 bug fixes
+  only. New main-process features are built in Rust, in the lane that owns the file. `src/renderer`
+  and `src/shared` are shared by both shells and continue normally.
+- Build, test and gate commands: `pnpm typecheck`, `pnpm test`, `pnpm check:indent`,
+  `check:ui-text`, `check:theme-contrast`, `check:drag-regions`, `check:mermaid-contrast`, and
+  `pnpm check:parity` (generated IPC parity table, `src/shared/ipc.ts` against `src-tauri/src`).
+  For `src-tauri/`: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` (run with
+  `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri` first). CI
+  (`.github/workflows/ci.yml`) runs all of the above on every pull request to `main`.
+- Per-lane Rust file ownership (which lane owns which `src-tauri/src/**` module, so no two lanes
+  touch the same file) lives in `docs/PLAN.md`'s Phase R table, not duplicated here.
 
 ## The plan
 

@@ -14,7 +14,12 @@ use serde_json::Value;
 
 use crate::store::settings::ApprovalMode;
 
-use super::{invalid_argument, AppState, HandlerFuture};
+use super::{invalid_argument, AppState, Dispatcher, HandlerFuture};
+
+pub fn register(d: &mut Dispatcher) {
+    d.register("settings.get", settings_get);
+    d.register("settings.setApprovalMode", settings_set_approval_mode);
+}
 
 pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {

@@ -21,6 +21,14 @@
 // Electron build distinguishes it; `openConversation`'s failed-switch recovery is simplified to
 // "stop and mark stopped/start-failed" rather than TS's "try switching back to the previous
 // Conversation first".
+//
+// Issue #784 ("Pre-declare per-lane Rust files") pre-declares the above scope cuts as their own
+// empty sibling files -- `model.rs`, `readout.rs`, `side_chat.rs`, `start_queue.rs`,
+// `subagents.rs`, `termination.rs` -- so each lane (RM, R5, R6, R3) adds its behaviour inside its
+// own file only. `handle_frame`'s own match above stays exactly as scoped by this header; its
+// ONE extension point, a sequential `on_frame(self, frame_type, &frame)` call per lane module
+// right after that match, is the only thing a lane ever needs to reach a frame from -- this file
+// does not change shape again for a lane's sake.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -883,6 +891,18 @@ impl SessionAgent {
             // this slice does not port.
             _ => {}
         }
+
+        // Issue #784 ("Pre-declare per-lane Rust files"): the one extension point for every
+        // not-yet-landed lane's frame handling, so each lane adds behaviour inside its own file
+        // only and this match above never changes shape again for that lane's sake. Each
+        // `on_frame` is a no-op today (cheap, allocation-free); `frame` is shared by reference so
+        // no lane clones it just to decline the frame.
+        super::model::on_frame(self, frame_type, &frame);
+        super::readout::on_frame(self, frame_type, &frame);
+        super::side_chat::on_frame(self, frame_type, &frame);
+        super::start_queue::on_frame(self, frame_type, &frame);
+        super::subagents::on_frame(self, frame_type, &frame);
+        super::termination::on_frame(self, frame_type, &frame);
     }
 
     async fn set_queue(&self, follow_up: Vec<String>, steering: Vec<String>) {

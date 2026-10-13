@@ -4,11 +4,14 @@
 // placeholders (their own file's doc comment says which Electron source they will eventually
 // port) until a later milestone-1 slice fills them in.
 pub mod events;
+pub mod fs;
 pub mod git;
+pub mod github;
 pub mod ipc;
 pub mod omp;
 pub mod process;
 pub mod session;
+pub mod shell;
 pub mod store;
 
 use std::path::PathBuf;

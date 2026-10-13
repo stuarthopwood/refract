@@ -1,9 +1,12 @@
-// IPC handlers for `sessions.*` (contracts/ipc.md "Sessions", tasks.md T019/T024). `.list`/
-// `.create`/`.rename` are the registry-only subset (Phase 2(b)); `.list` now completes its
-// live-runtime fields via `session::SessionManager::summaries` (Phase 3, tasks.md T024) instead
-// of the "never opened this run" default placeholder. `.open`/`.stopAgent`/`.setVisible` (Phase
-// 3, tasks.md T024) dispatch into the live `session::SessionManager` `AppState::session_manager`
-// carries.
+// IPC handlers for the registry-only `sessions.*` subset (contracts/ipc.md "Sessions", tasks.md
+// T019/T024): `.list`/`.create`/`.rename` (Phase 2(b)). `.list` now completes its live-runtime
+// fields via `session::SessionManager::summaries` (Phase 3, tasks.md T024) instead of the "never
+// opened this run" default placeholder.
+//
+// Split from the former `ipc/sessions.rs` (issue #784, "Pre-declare per-lane Rust files") so
+// lane R2 (#785, session worktree and lifecycle: archive, restore, delete, recreate, diffStat,
+// reveal, remotes) is the only lane that ever edits this file; `.open`/`.stopAgent`/
+// `.setVisible` live in the sibling `ipc/sessions_agent.rs` instead (lane R3, #786).
 
 use serde_json::Value;
 
@@ -12,8 +15,14 @@ use crate::store::registry::Session;
 
 use super::{
     invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, AppState,
-    HandlerFuture,
+    Dispatcher, HandlerFuture,
 };
+
+pub fn register(d: &mut Dispatcher) {
+    d.register("sessions.list", sessions_list);
+    d.register("sessions.create", sessions_create);
+    d.register("sessions.rename", sessions_rename);
+}
 
 pub fn sessions_list(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move { Ok(Value::Array(state.session_manager.summaries().await)) })
@@ -131,98 +140,6 @@ pub fn sessions_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .update_session_name(&id, name)
             .await
             .map_err(map_registry_error)?;
-        Ok(Value::Null)
-    })
-}
-
-/// `sessions.open` (T024): auto-starts a `stopped` Session when nothing is wrong with the agent
-/// itself (port of `ipc/canAutoStart.ts`'s own `canAutoStart`, simplified: `terminatedUnexpectedly`
-/// is always `false` in this build, see `session::agent`'s own header, so this reduces to
-/// "`stopReason` is absent, `not-started`, or `worktree-missing`"). `userAction` (issue #509
-/// quality-gate fix) bypasses this gate outright -- a user explicitly sending a message to a
-/// not-yet-opened pane must still start the agent.
-pub fn sessions_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let Some(id) = args.first().and_then(Value::as_str).map(str::to_string) else {
-            return Err(invalid_argument("sessions.open expects a string id"));
-        };
-        let user_action = args.get(1).and_then(Value::as_bool).unwrap_or(false);
-        if state.registry.lock().await.get_session(&id).is_none() {
-            return Err(not_found(format!("Session not found: {id}")));
-        }
-        let agent = state.session_manager.get_or_create_agent(&id);
-        if agent.status().await == crate::session::SessionStatus::Stopped {
-            let runtime = agent.runtime_view().await;
-            let stop_reason = runtime
-                .get("stopReason")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let can_auto_start = user_action
-                || matches!(
-                    stop_reason.as_deref(),
-                    None | Some("not-started") | Some("worktree-missing")
-                );
-            if can_auto_start {
-                let _ = agent.start().await;
-                state.session_manager.notify_list_changed();
-            }
-        }
-        let session = state
-            .registry
-            .lock()
-            .await
-            .get_session(&id)
-            .cloned()
-            .ok_or_else(|| not_found(format!("Session not found: {id}")))?;
-        Ok(super::conversations::build_snapshot(&session, &agent).await)
-    })
-}
-
-/// `sessions.stopAgent` (T040): closes stdin, awaits a graceful exit, then force-kills via the
-/// Job Object's owning process tree (`OmpProcess::stop`, FR-004).
-pub fn sessions_stop_agent(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let Some(id) = args.first().and_then(Value::as_str) else {
-            return Err(invalid_argument(
-                "sessions.stopAgent expects a string sessionId",
-            ));
-        };
-        if state.registry.lock().await.get_session(id).is_none() {
-            return Err(not_found(format!("Session not found: {id}")));
-        }
-        state
-            .session_manager
-            .get_or_create_agent(id)
-            .shutdown()
-            .await;
-        Ok(Value::Null)
-    })
-}
-
-/// `sessions.setVisible` (T036/T037, spec 005 Decision 2): at most two session ids (a single
-/// pane, or a split).
-pub fn sessions_set_visible(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let Some(array) = args.first().and_then(Value::as_array) else {
-            return Err(invalid_argument(
-                "sessions.setVisible expects an array of at most 2 session ids",
-            ));
-        };
-        if array.len() > 2 {
-            return Err(invalid_argument(
-                "sessions.setVisible expects an array of at most 2 session ids",
-            ));
-        }
-        let mut ids = Vec::with_capacity(array.len());
-        for entry in array {
-            let Some(id) = entry.as_str() else {
-                return Err(invalid_argument(
-                    "sessions.setVisible expects an array of at most 2 session ids",
-                ));
-            };
-            ids.push(id.to_string());
-        }
-        state.session_manager.set_visible(ids).await;
         Ok(Value::Null)
     })
 }
