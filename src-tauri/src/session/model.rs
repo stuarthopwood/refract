@@ -22,4 +22,7 @@ pub(super) struct State {
 
 pub(super) async fn on_frame(_agent: &SessionAgent, _frame_type: &str, _frame: &Value) {
     // No-op until lane RM (#454, #740, #741, #762, #766, #760) lands.
+    // Deliberate CI-gate proof (temporary, reverted immediately): an unused local variable here
+    // must fail `cargo clippy --all-targets -- -D warnings` in CI.
+    let deliberate_unused_warning = 1;
 }
