@@ -944,11 +944,18 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
             ? 'This message already has the maximum of 10 images; nothing more was attached.'
             : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
           : null
+      // PR #723 gate round 3 fix (A11y3 Low): "other" only makes sense when something ELSE
+      // attached or overflowed this same drop -- a drop where every file failed and none
+      // overflowed used to still read "N OTHER files could not be attached", with nothing else
+      // for them to be "other" than.
+      const saysOther = attachedCount > 0 || overflowCount > 0
       const failureText =
         failedFiles.length === 1 && only
           ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
           : failedFiles.length > 1
-            ? `${failedFiles.length} other file${failedFiles.length === 1 ? '' : 's'} could not be attached as images.`
+            ? saysOther
+              ? `${failedFiles.length} other file${failedFiles.length === 1 ? '' : 's'} could not be attached as images.`
+              : `${failedFiles.length} files could not be attached as images.`
             : null
       notify({
         code: 'invalid-argument',

@@ -18,12 +18,18 @@ export interface AttachmentStripProps {
   images: PendingImageAttachment[]
   textChips: PendingTextChip[]
   onRemoveImage: (id: string) => void
+  // PR #723 gate round 3 fix (A11y3 HIGH): lets the caller scope a focus/query to THIS
+  // composer's own strip specifically -- in split view, two ChatPanes each render their own
+  // MessageInput/AttachmentStrip pair, and a `document`-wide query for `[role="group"][aria-
+  // label="Pending attachments"]` always finds whichever one is FIRST in the page, regardless of
+  // which pane the user is actually in.
+  containerRef?: RefObject<HTMLDivElement | null>
 }
 
-export function AttachmentStrip({ images, textChips, onRemoveImage }: AttachmentStripProps) {
+export function AttachmentStrip({ images, textChips, onRemoveImage, containerRef }: AttachmentStripProps) {
   if (images.length === 0 && textChips.length === 0) return null
   return (
-    <div role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
+    <div ref={containerRef} role="group" aria-label="Pending attachments" className="flex flex-wrap items-center gap-1.5">
       {images.map((image, index) => (
         <div key={image.id} className="group relative">
           <ImagePreviewModal

@@ -54,15 +54,20 @@ async function resolveAttachmentPath(worktreeRoot: string, token: string): Promi
     // handed to `readImageFile` as-is now; `fs.open` below is the only further filesystem call
     // that touches it.
     //
-    // **Accepted residual risk (PR #723 gate round 2, Sec2/Verif2 Low/Medium, reproduced:
-    // 1/1228 runs under a tight symlink-swap loop)**: a window still exists between this walk's
-    // last `fs.lstat` and `readImageFile`'s own `fs.open` -- a link swapped into an
-    // already-checked segment in that window could still be followed by `fs.open`. This mirrors
-    // the EXACT accepted residual `resolveNoFollow`'s own doc comment (`files.ts`) already
-    // documents for the worktree-relative branch below; winning it requires a process with
-    // symlink-creation privilege already running locally as the user racing a paste/drop, i.e.
-    // the same local attacker who could already reach a UNC path directly -- accepted, not
-    // mitigated, same as the relative branch's own identical window.
+    // **Accepted residual risk (PR #723 gate round 2, Sec2/Verif2 Low/Medium; the lane's own
+    // measurement, not independently reproduced by every reviewer: 1/1228 runs under a tight
+    // symlink-swap loop)**: a window still exists between this walk's last `fs.lstat` and
+    // `readImageFile`'s own `fs.open` -- a link swapped into an already-checked segment in that
+    // window could still be followed by `fs.open`. This is the same RACE WINDOW
+    // `resolveNoFollow`'s own doc comment (`files.ts`) already documents for the worktree-relative
+    // branch below (round 3 correction, Code3 Low: NOT "the exact same accepted residual" --
+    // the relative branch's window ends in `resolveInWorktree`'s own `fs.realpath` followed by a
+    // containment rejection, a backstop this absolute branch has no equivalent of; here, a link
+    // swapped in during the window is followed by `fs.open` and its bytes read with no check
+    // after, so a swapped-in image located ANYWHERE ELSE on disk could be attached, on top of the
+    // shared UNC/NTLM risk). Winning it requires a process with symlink-creation privilege
+    // already running locally as the user racing a paste/drop, i.e. the same local attacker who
+    // could already reach a UNC path directly -- accepted, not mitigated.
     return { ok: true, realPath: walked.path };
   }
   const resolved = await resolveInWorktree(worktreeRoot, token);
@@ -76,9 +81,10 @@ async function resolveAttachmentPath(worktreeRoot: string, token: string): Promi
  * PR #723 gate round 1 fix (Sec1/Code1/Verif1 Medium, TOCTOU): the size cap and the read now both
  * go through the SAME open file handle (`fs.open` -> `handle.stat()` -> a single bounded read),
  * never a `fs.stat(path)` followed by a separate `fs.readFile(path)` -- a file swapped or grown
- * between those two calls could otherwise be read with no limit at all. The read is capped at
- * `MAX_IMAGE_INPUT_BYTES + 1` bytes into a preallocated buffer so an over-cap file is rejected
- * from the bytes actually read, not from a second, already-stale stat. */
+ * between those two calls could otherwise be read with no limit at all. The read buffer is sized
+ * from the real on-disk size (round 2 fix, Sec2 Low; see the read call site below), capped at
+ * `MAX_IMAGE_INPUT_BYTES + 1` so an over-cap file is rejected from the bytes actually read, not
+ * from a second, already-stale stat. */
 async function readImageFile(worktreeRoot: string, token: string): Promise<Result<AttachmentImageFile>> {
   const resolved = await resolveAttachmentPath(worktreeRoot, token);
   if (!resolved.ok) return notFound('That file could not be found.');
@@ -101,9 +107,7 @@ async function readImageFile(worktreeRoot: string, token: string): Promise<Resul
     // PR #723 gate round 2 fix (Sec2 Low): sized from the REAL on-disk size (capped at the byte
     // limit), not a flat `MAX_IMAGE_INPUT_BYTES + 1` allocation every time -- a 1 KB file no
     // longer zero-fills 20 MiB. `+ 1` still over-reads by one byte so a file that GREW past the
-    // cap between the stat above and this read is caught by `bytesRead > stat.size` below,
-    // exactly like the previous version's own `bytesRead > MAX_IMAGE_INPUT_BYTES` check, but
-    // phrased against this read's own expectation rather than the global cap a second time.
+    // cap between the stat above and this read is caught by `bytesRead > stat.size` below.
     const capped = Buffer.alloc(Math.min(stat.size, MAX_IMAGE_INPUT_BYTES) + 1);
     const { bytesRead } = await handle.read(capped, 0, capped.length, 0);
     if (bytesRead > stat.size) {
@@ -111,12 +115,12 @@ async function readImageFile(worktreeRoot: string, token: string): Promise<Resul
       // read that no longer matches what was size-checked.
       return notFound('That file could not be read.');
     }
-    if (bytesRead > MAX_IMAGE_INPUT_BYTES) {
-      return {
-        ok: false,
-        error: { code: 'image-too-large', message: `Image is too large to attach (over the ${Math.round(MAX_IMAGE_INPUT_BYTES / (1024 * 1024))} MiB limit); nothing was attached.` }
-      };
-    }
+    // PR #723 gate round 3 fix (Code3 Low): the `bytesRead > MAX_IMAGE_INPUT_BYTES` branch that
+    // used to sit here was dead code -- `stat.size` is already checked `<= MAX_IMAGE_INPUT_BYTES`
+    // above (or this function already returned), the buffer is sized from `stat.size` (never
+    // larger than `MAX_IMAGE_INPUT_BYTES + 1`), and the `bytesRead > stat.size` check above
+    // already catches the only way `bytesRead` could exceed `stat.size` -- so `bytesRead` can
+    // never exceed `MAX_IMAGE_INPUT_BYTES` once both checks above have passed. Removed.
     buffer = capped.subarray(0, bytesRead);
   } catch {
     return notFound('That file could not be read.');

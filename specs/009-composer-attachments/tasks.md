@@ -430,9 +430,25 @@ image does, reusing Phase 6's shared reader end to end.
   path.
 - [ ] T023 Live click-path verification (PR #723's own body list) on the built app in an isolated
   scratch instance: every scenario named in the PR body's "What to click-path verify live"
-  section, including the round-1 gate fixes below. NOT done yet -- this is the one open item
+  section, including the round-1/2/3 gate fixes below. NOT done yet -- this is the one open item
   blocking #514/#432's own closure; Phase 6/7's own `[X]` marks above cover the CODE being
-  written and gate-clean, not this live pass.
+  written and gate-clean, not this live pass. **Round 2's own attempted live run was invalid, not
+  inconclusive** (gate round 3, Verif3 Medium, root-caused): the scratch `electron.exe` was
+  spawned with no `env` override, so it inherited this agent's own shell's `ELECTRON_RENDERER_URL`
+  -- `src/main/index.ts`'s unpackaged `loadURL` branch then loaded THAT dev server's renderer
+  (proven via the Cache_Data inspection: the cached Vite client and `MessageInput.tsx` module both
+  resolved to `C:/Repos/personal/pinion/src/renderer/...`, the MAIN checkout, not this worktree),
+  which has no #514/#432 code at all. All 26 scenarios that round therefore exercised the WRONG
+  renderer, not this PR's own code -- a harness defect, never a code defect, and never fixed by
+  rebuilding this worktree (the dev server neither needs nor serves its `out/`). Fixed in
+  `driver.js`/`diag-paste.js`/`spawn.js`: the spawn now strips `ELECTRON_*`/`VITE_*` from the
+  child's env, and a preflight (`location.href` must be a `file://` URL inside THIS worktree, and
+  `window.refract.attachments.readImageFile` must exist) runs before any scenario, aborting loudly
+  instead of silently recording results against the wrong build. **Lesson for every future scratch
+  live-check in this repo**: a scratch Electron instance spawned without an explicit `env` option
+  inherits `ELECTRON_RENDERER_URL` from the launching shell and can silently load a COMPLETELY
+  DIFFERENT checkout's renderer with no error of any kind -- always strip it (and any other
+  `VITE_*`/`ELECTRON_*` dev-server variable) and assert a `file://` URL before trusting any result.
 
 ### Round 1 gate fixes (Sec1/Code1/A11y1/Verif1 FAIL, against the initial Phase 6/7 head)
 
@@ -551,5 +567,89 @@ was never actually pasted; the multi-image "image N of M" labels (round 1) were 
 (both tsconfigs clean), `vitest` 376/376 (no new tests), `check:indent` 0/327, `check:ui-text`
 0/371, `check:theme-contrast` 313/313 (no new tokens), `check:drag-regions` 0/110, `pnpm build`
 succeeded (`out/` cleaned afterward, literal path). Live verification: see PR body.
+
+### Round 3 gate fixes (Sec3 FAIL High, A11y3 FAIL High, Code3/Verif3 Mediums, against the round 2 head)
+
+**1 HIGH (security)**: `src/main/omp/images.ts`'s `validateImageAttachment` decoded only the
+first 16 base64 characters (12 bytes) of an image's payload to check its magic-byte signature --
+but round 2 strengthened `matchesImageSignature`'s PNG case to require 16 bytes (full 8-byte
+signature plus the fixed-offset "IHDR" tag) and GIF to require 6, so the check was ALWAYS `false`
+for PNG and `chat.send` rejected every PNG attachment -- the format nearly every screenshot is,
+and the renderer's own re-encode target for any unsupported format -- with "Unsupported image
+type: image/png". Broke BOTH the pre-existing clipboard-image paste (spec 009) and this PR's own
+path/drop attachments, for every PNG. Fixed: decodes `slice(0, 24)` (18 bytes) instead, covering
+every current format's signature with headroom. Proven against the REAL `validateImageAttachment`/
+`matchesImageSignature` (not a reimplementation) via a throwaway scratch script (verbatim copies
+of the two source files, deleted after use) constructing minimal real PNG/JPEG/GIF/WebP headers,
+each valid, truncated, and fake/mislabeled: every valid format now reports `{"ok":true}`; every
+truncated/fake case still correctly reports `{"ok":false,"code":"unsupported-image-type"}`; the
+OLD 16-char slice was independently confirmed to reject the same valid PNG bytes the new 24-char
+slice accepts, closing the loop on both the bug and the fix.
+
+**1 HIGH (a11y)**: `MessageInput.tsx`'s round-2 focus-after-remove fix queried the WHOLE
+`document` for `[role="group"][aria-label="Pending attachments"]` -- in split view, where two
+`ChatPane`s each render their own `MessageInput`/`AttachmentStrip` pair, this always found
+whichever pane's strip happened to render first in the page, not necessarily the pane the user
+was actually in. Removing an image in pane B could move focus to pane A's own Remove button; a
+second Enter (the natural "remove the next one" gesture) then deleted PANE A'S attachment, and
+"Image removed." announced through pane A's live region. Fixed: `AttachmentStrip` now accepts an
+optional `containerRef`; `MessageInput.tsx` wires its own `attachmentStripRef` through it and
+scopes both the focus-origin check and the remove-button query to that ref, never `document`.
+
+**6 Medium/Low (code/a11y)**: both the path-only and mixed-paste branches' own notices only ever
+reported ONE of "overflow" or "read failure" when a single paste produced both -- fixed to join
+both sentences, matching the pattern `ChatPane.tsx`'s own drop-overflow notice already used.
+`ChatPane.tsx`'s "N OTHER files could not be attached" said "other" even when nothing else
+attached or overflowed in the same drop -- fixed to say "N files..." (no "other") in that case.
+An unquoted path containing spaces (Windows' own default screenshot filenames, VS Code's "Copy
+Path", ShareX) was never detected at all and pasted as literal text with no notice, even though
+#514's own spec explicitly asks to "prefer matching existing files (stat)" -- fixed: a line that
+is unambiguously path-shaped end to end (starts with a drive-letter separator or `file://`, ends
+in a supported image extension, no quote characters) is now a candidate even with embedded
+spaces; main's own `fs.stat` remains the real authority on whether it resolves. A path-only paste
+of an `https://` image URL was treated as a path candidate, triggering a pointless IPC round trip
+that always failed and re-inserted the URL with a misleading "could not be found; left as text"
+notice -- fixed: any URL scheme other than `file:` is now rejected by the same cheap pre-filter
+(a single-letter drive prefix is unaffected, handled first). The fallback re-insert on an
+unresolved/overflowed path used the NORMALIZED token (quotes stripped, a `file://…%20…` URL
+decoded), contradicting FR-022's own "its own raw text" wording -- fixed: `extractImagePathCandidates`
+now returns each candidate's raw AND normalized form, and the fallback re-inserts the raw one.
+The GIF dimension walk (round 2) stopped at the FIRST Image Descriptor -- a multi-frame GIF's
+SECOND (or later) frame could still be oversized and bypass the pixel cap (reproduced: a 10x10
+screen plus a 60000² second frame was accepted) -- fixed to walk every Image Descriptor in the
+buffer, taking the max bound across all of them, not only the first.
+
+**Docs/wording**: the round-2 "mirrors the EXACT accepted residual" wording (`attachments.ts`,
+research.md Decision 11) overstated things -- the relative branch's TOCTOU window ends in a
+`fs.realpath` + containment rejection backstop the absolute branch has no equivalent of; corrected
+to describe the same RACE WINDOW without claiming an identical backstop, and the "1/1228" figure
+is now attributed to "the lane's own measurement", not independently reproduced by every reviewer.
+A dead `bytesRead > MAX_IMAGE_INPUT_BYTES` branch in `readImageFile` (unreachable since round 2's
+real-size buffer sizing) removed. Stale doc comments fixed: `readImageDimensions`'s own doc
+claimed a `null` result is "could not verify, not a hard failure" when the caller actually
+REFUSES every `null` (round 1's own fix); research.md Decision 12 still named only the GIF
+"Logical Screen Descriptor" without mentioning the Image Descriptor expansion. Issue #728
+corrected: its body said "once #514's Settings switch is on", implying the switch defaults OFF,
+when FR-024 requires ON by default. `spec.md` FR-026/SC-007/US3 wording ("silently skipped"
+contradicted FR-026's own quiet-notice requirement; "paste/type" still implied typing detection
+shipped, though it is deferred to #727) corrected. `docs/PLAN.md`'s composer row corrected: no
+longer says "realpath" for the absolute branch (removed this round), no longer says "typed"
+(deferred), status cell now says "gate round 3".
+
+**Live-check harness fix (Verif3 Medium, root-caused)**: round 2's own live-run attempt was
+INVALID, not inconsistent with the code -- see T023's own note above for the full root cause
+(an inherited `ELECTRON_RENDERER_URL` loaded the MAIN checkout's dev-server renderer, which has
+no #514/#432 code, into every one of 26 scenarios). Fixed in the scratch driver scripts
+(`driver.js`, `diag-paste.js`, `spawn.js`): spawn now strips `ELECTRON_*`/`VITE_*` env vars, and a
+preflight (`file://` URL inside this worktree, `window.refract.attachments.readImageFile` present)
+runs before any scenario. The paste mechanism itself also now uses CDP `Input.dispatchKeyEvent`'s
+`commands: ['paste']` directly (the documented, keyboard-layout-independent way to invoke a real
+paste over CDP) rather than simulating a Ctrl+V keydown/keyup pair.
+
+**Checkpoint**: same full gate, combined final code including this round's fixes: `pnpm typecheck`
+(both tsconfigs clean), `vitest` 376/376 (no new tests), `check:indent`, `check:ui-text`,
+`check:theme-contrast`, `check:drag-regions`, `pnpm build` -- see the PR body's own Gates section
+for this round's exact numbers. Live verification: still pending (T023), to be attempted once
+free RAM allows, now against the fixed harness.
 
 ---

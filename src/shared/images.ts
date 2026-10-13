@@ -82,7 +82,7 @@ export function matchesImageSignature(bytes: Uint8Array, mimeType: SupportedImag
 /** #514/#432: identifies a buffer's real image type purely by content, never by filename
  * extension (same "detect by content" rule spec 015 FR-003 already established for the file
  * explorer) -- tries each supported type's magic-byte signature in turn, returns the first
- * match or `null` if none matches. `bytes` only needs to carry the first ~12 bytes. */
+ * match or `null` if none matches. `bytes` only needs to carry the first 16 bytes. */
 export function sniffImageMimeType(bytes: Uint8Array): SupportedImageMimeType | null {
   for (const candidate of SUPPORTED_IMAGE_MIME_TYPES) {
     if (matchesImageSignature(bytes, candidate)) return candidate;
@@ -101,10 +101,10 @@ export const MAX_IMAGE_PIXELS = 40_000_000;
 
 /** Parses width/height straight out of a supported format's own header bytes -- no decode, no
  * image library, just the handful of fixed-offset fields each container format already commits
- * to in its spec. Returns `null` on a buffer too short or too malformed to contain a header
- * (treated by the caller as "could not verify dimensions", not as a hard failure -- the magic-
- * byte signature check already proved the type; a header that is merely too short to find
- * dimensions in is not itself evidence of a decompression bomb). */
+ * to in its spec. Returns `null` on a buffer too short or too malformed to contain a header --
+ * the caller REFUSES (fail-closed) any `null` result for any format (round 1 gate fix, Code1
+ * Medium: a `null` used to be silently accepted here, a pixel-cap bypass for a truncated/crafted
+ * file); a genuinely too-short-to-decode file is never attached, never "possibly fine". */
 export function readImageDimensions(bytes: Uint8Array, mimeType: SupportedImageMimeType): { width: number; height: number } | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   switch (mimeType) {
@@ -122,16 +122,22 @@ export function readImageDimensions(bytes: Uint8Array, mimeType: SupportedImageM
       //
       // PR #723 gate round 2 fix (Sec2 Medium): the Logical Screen Descriptor's own width/height
       // is only the NOMINAL canvas size -- a crafted file can declare a tiny screen (even 1x1)
-      // while its first Image Descriptor's own left/top/width/height describe a far larger
-      // frame; real-world GIF decoders (including Chromium's) commonly EXPAND the canvas to fit
-      // an over-sized first frame rather than clipping it, so checking only the screen size let
-      // a decompression-bomb-shaped frame bypass the pixel cap entirely. This now walks past the
-      // optional Global Color Table and any Extension blocks (0x21, sub-blocks terminated by a
-      // 0-length block) to the first Image Descriptor (0x2C) and reports
-      // `max(screen, frameLeft+frameWidth)` / `max(screen, frameTop+frameHeight)` instead -- the
-      // worst-case canvas size a non-strict decoder could actually allocate. A walk that cannot
-      // find an Image Descriptor (malformed, truncated, or the Trailer `0x3B` reached first)
-      // fails closed (`null`), same as every other parser gap in this file.
+      // while an Image Descriptor's own left/top/width/height describe a far larger frame;
+      // real-world GIF decoders (including Chromium's) commonly EXPAND the canvas to fit an
+      // over-sized frame rather than clipping it, so checking only the screen size let a
+      // decompression-bomb-shaped frame bypass the pixel cap entirely.
+      //
+      // PR #723 gate round 3 fix (Code3 Low): round 2 only walked to the FIRST Image Descriptor
+      // and returned immediately -- a crafted file with an innocuous first frame and an
+      // oversized SECOND frame still bypassed the cap (probed: a 10x10 screen plus a 60000^2
+      // second frame was accepted). This now walks every Image Descriptor in the buffer (never
+      // stopping at the first), skipping each frame's own optional Local Color Table and
+      // LZW-compressed image-data sub-blocks to reach the next one, and reports
+      // `max(screen, every frame's own left+width and top+height)` -- the worst-case canvas size
+      // a non-strict decoder could actually allocate across every frame, not only the first.
+      // Cheap: the whole file is already in memory, so an extra walk costs nothing new. A walk
+      // that finds no Image Descriptor at all (malformed, truncated, or the Trailer `0x3B`
+      // reached first) fails closed (`null`), same as every other parser gap in this file.
       if (bytes.length < 13) return null;
       const screenWidth = view.getUint16(6, true);
       const screenHeight = view.getUint16(8, true);
@@ -141,6 +147,9 @@ export function readImageDimensions(bytes: Uint8Array, mimeType: SupportedImageM
         const gctEntries = 2 ** ((packed & 0x07) + 1);
         offset += gctEntries * 3;
       }
+      let maxWidth = screenWidth;
+      let maxHeight = screenHeight;
+      let foundAnyFrame = false;
       while (offset < bytes.length) {
         const blockType = view.getUint8(offset);
         if (blockType === 0x21) {
@@ -155,20 +164,35 @@ export function readImageDimensions(bytes: Uint8Array, mimeType: SupportedImageM
           continue;
         }
         if (blockType === 0x2c) {
-          if (offset + 9 > bytes.length) return null;
+          if (offset + 10 > bytes.length) return null;
           const frameLeft = view.getUint16(offset + 1, true);
           const frameTop = view.getUint16(offset + 3, true);
           const frameWidth = view.getUint16(offset + 5, true);
           const frameHeight = view.getUint16(offset + 7, true);
-          return {
-            width: Math.max(screenWidth, frameLeft + frameWidth),
-            height: Math.max(screenHeight, frameTop + frameHeight)
-          };
+          const framePacked = view.getUint8(offset + 9);
+          maxWidth = Math.max(maxWidth, frameLeft + frameWidth);
+          maxHeight = Math.max(maxHeight, frameTop + frameHeight);
+          foundAnyFrame = true;
+          offset += 10;
+          if (framePacked & 0x80) {
+            const lctEntries = 2 ** ((framePacked & 0x07) + 1);
+            offset += lctEntries * 3;
+          }
+          // LZW minimum code size (1 byte), then image-data sub-blocks, same terminated-by-zero
+          // shape as an Extension's sub-blocks above.
+          offset += 1;
+          while (offset < bytes.length) {
+            const subBlockSize = view.getUint8(offset);
+            offset += 1 + subBlockSize;
+            if (subBlockSize === 0) break;
+          }
+          continue;
         }
-        // Trailer (0x3B) or any other unexpected byte: no Image Descriptor found at all.
-        return null;
+        // Trailer (0x3B) or any other unexpected byte: stop walking: report whatever frames were
+        // found so far, or fail closed if none were.
+        return foundAnyFrame ? { width: maxWidth, height: maxHeight } : null;
       }
-      return null;
+      return foundAnyFrame ? { width: maxWidth, height: maxHeight } : null;
     }
     case 'image/jpeg': {
       // Scans marker segments from byte 2 (past the 0xFFD8 SOI marker) looking for a Start Of

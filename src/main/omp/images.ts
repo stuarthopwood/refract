@@ -33,11 +33,17 @@ export function validateImageAttachment(image: ImageContent): ImageValidationRes
   if (!isSupportedMimeType(image.mimeType)) return { ok: false, code: 'unsupported-image-type' };
   if (decodedBase64ByteLength(image.data) > MAX_IMAGE_INPUT_BYTES) return { ok: false, code: 'image-too-large' };
   // Security remediation (Medium): the two checks above only look at the declared `mimeType`
-  // string and the base64 string's own length -- never the real bytes. Decode only the first 16
-  // base64 characters (12 bytes, enough for every supported format's signature, including
-  // WebP's "WEBP" at offset 8) to catch a renamed/mislabeled non-image file that already claims a
-  // supported MIME type, without ever touching the rest of a potentially huge payload.
-  const prefix = Buffer.from(image.data.slice(0, 16), 'base64');
+  // string and the base64 string's own length -- never the real bytes. Decode only the first 24
+  // base64 characters (18 bytes) to catch a renamed/mislabeled non-image file that already
+  // claims a supported MIME type, without ever touching the rest of a potentially huge payload.
+  // PR #723 gate round 3 fix (Sec3 HIGH): round 2 strengthened `matchesImageSignature`'s PNG
+  // case to require 16 bytes (full 8-byte signature plus the fixed-offset "IHDR" tag) and its
+  // GIF case to require 6 -- this prefix used to decode only 16 base64 characters (12 bytes),
+  // so `matchesImageSignature` was always `false` for PNG and `chat.send` rejected every PNG
+  // attachment (the format nearly every screenshot is, and the renderer's own re-encode target
+  // for any unsupported format) with "Unsupported image type: image/png". 24 base64 characters
+  // decode to 18 bytes, covering every current format's signature with headroom.
+  const prefix = Buffer.from(image.data.slice(0, 24), 'base64');
   if (!matchesImageSignature(prefix, image.mimeType)) return { ok: false, code: 'unsupported-image-type' };
   return { ok: true };
 }

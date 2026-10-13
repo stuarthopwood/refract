@@ -50,7 +50,7 @@ import {
   substituteChips,
   toImageContent
 } from './attachments'
-import type { ImagePathAttachFailureReason, PendingTextChip } from './attachments'
+import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import { deriveQueuedChips, EMPTY_CHIP_POOL, type ChipPoolState, type DerivedChip } from './queuedChips'
 import { MAX_IMAGE_INPUT_BYTES } from '../../../shared/images'
 import { parseSlashCommand } from '../../../shared/slash-commands'
@@ -200,6 +200,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   const isFocusedPaneRef = useRef(isFocusedPane)
   isFocusedPaneRef.current = isFocusedPane
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // PR #723 gate round 3 fix (A11y3 HIGH): scopes `handleRemoveImage`'s own focus query to THIS
+  // composer's own attachment strip -- in split view each pane renders its own MessageInput, so
+  // a `document`-wide query always found whichever pane's strip happened to render first.
+  const attachmentStripRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   // Issue #540 (Medium gate fix, #591): container for the queued-message chip row, queried by
   // stable chip key so focus can be moved explicitly after Send now/Remove settles, rather than
@@ -1053,17 +1057,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
           const capped = pathCandidates.slice(0, remainingSlots)
           const overflow = pathCandidates.slice(remainingSlots)
-          const loopFailures: { token: string; reason: ImagePathAttachFailureReason }[] = []
+          const loopFailures: { candidate: ImagePathCandidate; reason: ImagePathAttachFailureReason }[] = []
           useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
           let attachedCount = 0
           try {
-            for (const token of capped) {
-              const result = await buildImagePathAttachment(sessionId, token)
+            for (const candidate of capped) {
+              const result = await buildImagePathAttachment(sessionId, candidate.normalized)
               if (result.ok) {
                 useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
                 attachedCount++
               } else {
-                loopFailures.push({ token, reason: result.reason })
+                loopFailures.push({ candidate, reason: result.reason })
               }
             }
           } finally {
@@ -1072,7 +1076,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           if (attachedCount > 0) {
             announceAttachment(attachedCount === 1 ? 'Image attached from a file path.' : `${attachedCount} images attached from file paths.`)
           }
-          const unresolved = [...overflow, ...loopFailures.map((f) => f.token)]
+          // PR #723 gate round 3 fix (Code3 Low): re-inserts each candidate's own RAW pasted
+          // text (FR-022's actual wording), never the normalized form `buildImagePathAttachment`
+          // above was given -- a quoted path's quotes, and a `file://…%20…` URL's own encoding,
+          // are no longer silently rewritten on fallback.
+          const unresolved = [...overflow, ...loopFailures.map((f) => f.candidate)].map((c) => c.raw)
           if (unresolved.length > 0) {
             const liveText = useDraftStore.getState().bySession[sessionId]?.text ?? ''
             const fallbackText = unresolved.join('\n')
@@ -1091,17 +1099,23 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
             requestAnimationFrame(() => {
               textareaRef.current?.setSelectionRange(nextCursor, nextCursor)
             })
-            notify({
-              code: 'invalid-argument',
-              message:
-                overflow.length > 0
-                  ? remainingSlots === 0
-                    ? 'This message already has the maximum of 10 images; nothing more was attached.'
-                    : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were left as text.`
-                  : loopFailures.length === 1
-                    ? `That file ${describeAttachFailureReason(loopFailures[0]!.reason)}; left as text.`
-                    : `${loopFailures.length} files could not be attached as images; left as text.`
-            })
+            // PR #723 gate round 3 fix (A11y3 Low): overflow and read-failure sentences are now
+            // BOTH reported when a paste has both at once (previously the ternary below only
+            // ever reported overflow, silently dropping the failure half), matching the join
+            // pattern `ChatPane.tsx`'s own drop-overflow notice already uses.
+            const overflowText =
+              overflow.length > 0
+                ? remainingSlots === 0
+                  ? 'This message already has the maximum of 10 images; nothing more was attached.'
+                  : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were left as text.`
+                : null
+            const failureText =
+              loopFailures.length === 1
+                ? `That file ${describeAttachFailureReason(loopFailures[0]!.reason)}; left as text.`
+                : loopFailures.length > 1
+                  ? `${loopFailures.length} files could not be attached as images; left as text.`
+                  : null
+            notify({ code: 'invalid-argument', message: [overflowText, failureText].filter(Boolean).join(' ') })
           }
           return
         }
@@ -1117,8 +1131,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           let attachedCount = 0
           let failedCount = 0
           try {
-            for (const token of capped) {
-              const result = await buildImagePathAttachment(sessionId, token)
+            for (const candidate of capped) {
+              const result = await buildImagePathAttachment(sessionId, candidate.normalized)
               if (result.ok) {
                 useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
                 attachedCount++
@@ -1139,19 +1153,22 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           // -- FR-026 says even a mixed paste's own over-cap/unresolved paths get "a quiet
           // notice", the same wording the path-only branch already uses (the path TEXT itself
           // still stays in the draft either way, untouched -- only the ATTACH attempt failed).
+          // Round 3 fix (A11y3 Low): both sentences now join, same as the path-only branch above.
           const skipped = overflow.length + failedCount
           if (skipped > 0) {
-            notify({
-              code: 'invalid-argument',
-              message:
-                overflow.length > 0
-                  ? remainingSlots === 0
-                    ? 'This message already has the maximum of 10 images; nothing more was attached.'
-                    : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message.`
-                  : failedCount === 1
-                    ? 'One of the paths in your message could not be attached as an image.'
-                    : `${failedCount} of the paths in your message could not be attached as images.`
-            })
+            const overflowText =
+              overflow.length > 0
+                ? remainingSlots === 0
+                  ? 'This message already has the maximum of 10 images; nothing more was attached.'
+                  : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message.`
+                : null
+            const failureText =
+              failedCount === 1
+                ? 'One of the paths in your message could not be attached as an image.'
+                : failedCount > 1
+                  ? `${failedCount} of the paths in your message could not be attached as images.`
+                  : null
+            notify({ code: 'invalid-argument', message: [overflowText, failureText].filter(Boolean).join(' ') })
           }
         })()
       }
@@ -1193,15 +1210,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // other attachment event already uses.
   function handleRemoveImage(id: string) {
     const activeElement = document.activeElement as HTMLElement | null
-    const focusWasInStrip = !!activeElement?.closest('[role="group"][aria-label="Pending attachments"]')
+    // PR #723 gate round 3 fix (A11y3 HIGH, reproduced): `document.activeElement?.closest(...)`
+    // and the document-wide `querySelector` below used to find ANY strip in the whole page, not
+    // necessarily this composer's own -- in split view, removing an image in pane B moved focus
+    // to pane A's Remove button (a second Enter then deleted pane A's attachment, and "Image
+    // removed." announced through pane A's live region, not pane B's). Both now scope to
+    // `attachmentStripRef`, this composer's own strip, never `document`.
+    const focusWasInStrip = !!attachmentStripRef.current?.contains(activeElement)
     const currentImages = useDraftStore.getState().bySession[sessionId]?.attachments.images ?? []
     const removedIndex = currentImages.findIndex((image) => image.id === id)
     useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: prev.images.filter((image) => image.id !== id) }))
     announceAttachment('Image removed.')
     if (!focusWasInStrip || removedIndex === -1) return
     requestAnimationFrame(() => {
-      const strip = document.querySelector('[role="group"][aria-label="Pending attachments"]')
-      const removeButtons = strip ? Array.from(strip.querySelectorAll('button[aria-label^="Remove"]')) : []
+      const removeButtons = attachmentStripRef.current ? Array.from(attachmentStripRef.current.querySelectorAll('button[aria-label^="Remove"]')) : []
       const next = (removeButtons[removedIndex] ?? removeButtons[removedIndex - 1]) as HTMLElement | undefined
       if (next) next.focus()
       else textareaRef.current?.focus()
@@ -1343,7 +1365,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       </div>
       {/* Spec 009, FR-009: the shared attachment strip, directly above the message box, hidden
           entirely while nothing is pending. */}
-      <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} />
+      <AttachmentStrip images={attachments.images} textChips={attachments.textChips} onRemoveImage={handleRemoveImage} containerRef={attachmentStripRef} />
       {/* PR #723 gate round 2 fix (Code2/A11y2 Medium): while a background path/drop read is in
           flight, Send/Enter are refused (`pendingAttachmentReads`) with no visible or announced
           reason -- a developer who pressed Enter right after a mixed paste or a drop saw nothing

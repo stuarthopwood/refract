@@ -207,32 +207,57 @@ only the ACT of pasting/dragging, never a trust claim about the text's own origi
 short names" -- but `fs.realpath` follows links, and `walked.path` is already link-free, so that
 call bought nothing except a second, unvetted chance for a link swapped in between the walk and
 this call to be followed. Removed; `walked.path` is handed to the reader as-is. **Accepted
-residual risk** (reproduced: 1/1228 runs under a tight symlink-swap loop): a window still exists
-between the walk's last `fs.lstat` and the reader's own `fs.open` -- a link swapped into an
-already-checked segment in that window could still be followed. This is the exact same accepted
-residual `resolveNoFollow`'s own doc comment (`files.ts`) already documents for the
-worktree-relative branch; winning it requires a process with symlink-creation privilege already
-running locally as the user racing a paste/drop, i.e. the same local attacker who could already
-reach a UNC path directly -- accepted, not mitigated, identically to the relative branch's own
-window.
+residual risk** (the lane's own measurement, not independently reproduced by every reviewer: 1/1228
+runs under a tight symlink-swap loop): a window still exists between the walk's last `fs.lstat`
+and the reader's own `fs.open` -- a link swapped into an already-checked segment in that window
+could still be followed. This is the same RACE WINDOW `resolveNoFollow`'s own doc comment
+(`files.ts`) already documents for the worktree-relative branch below (round 3 correction, Code3
+Low: NOT "the exact same accepted residual" -- the relative branch's window ends in
+`resolveInWorktree`'s own `fs.realpath` followed by a containment rejection, a backstop this
+absolute branch has no equivalent of; a link swapped in during this window is followed by
+`fs.open` and its bytes read with no check after, so a swapped-in image located ANYWHERE ELSE on
+disk could be attached, on top of the shared UNC/NTLM risk); winning it requires a process with
+symlink-creation privilege already running locally as the user racing a paste/drop, i.e. the same
+local attacker who could already reach a UNC path directly -- accepted, not mitigated.
 
 ## 12. Pixel-count cap: parsed from the image's own header bytes, no new npm dependency
 
 **Decision**: `shared/images.ts` gains `readImageDimensions(bytes, mimeType)`, a pure function that
 reads width/height straight out of each supported format's own fixed-offset header fields (PNG
-IHDR chunk; GIF Logical Screen Descriptor; JPEG SOF marker segment, scanned past intervening
-markers; WebP's VP8/VP8L/VP8X chunk, per its container spec) — no image-decoding library, no new
-dependency, no `pnpm-lock.yaml` change. `MAX_IMAGE_PIXELS` (40,000,000) moves here from being a
-renderer-only `attachments.ts` constant, so the main-process reader enforces the exact same cap by
-number, never its own separately-tuned copy.
+IHDR chunk; GIF Logical Screen Descriptor, expanded by every Image Descriptor's own bounds; JPEG
+SOF marker segment, scanned past intervening markers; WebP's VP8/VP8X/VP8L chunk, per its
+container spec) — no image-decoding library, no new dependency, no `pnpm-lock.yaml` change.
+`MAX_IMAGE_PIXELS` (40,000,000) moves here from being a renderer-only `attachments.ts` constant,
+so the main-process reader enforces the exact same cap by number, never its own separately-tuned
+copy.
 
 **Rationale**: the renderer's own decompression-bomb guard (Decision 3 area) only ever runs inside
 `reencodeToPng`'s browser `createImageBitmap`/canvas path — no such API exists in the main process,
 and a path-based read has no canvas step to piggyback the check onto at all. Adding a dependency
 (`image-size` or similar) for four well-documented, fixed-offset header formats is disproportionate
-surface for what a few dozen lines of pure byte-reading already covers completely; a header too
-short/malformed to parse is treated as "could not verify dimensions" (not itself evidence of a
-bomb — the magic-byte signature check already proved the type), not a hard rejection.
+surface for what a few dozen lines of pure byte-reading already covers completely.
+
+**Corrected (PR #723 gate round 1, Code1 Medium)**: this decision's own ORIGINAL wording claimed a
+header too short/malformed to parse is "treated as 'could not verify dimensions' ... not a hard
+rejection" -- that is false and was never the actual intent once implemented: the caller REFUSES
+(fail-closed) any `null` result for any format. A genuinely too-short-to-decode file is never
+attached, never "possibly fine" -- the magic-byte signature check proving the declared TYPE is
+correct says nothing about whether the DIMENSIONS are safe, so a header gap is treated the same as
+any other decompression-bomb-shaped signal: refused.
+
+**Addendum (PR #723 gate round 2, Sec2 Medium)**: the GIF case originally read only the Logical
+Screen Descriptor's own nominal canvas size -- a crafted file can declare a tiny screen (even 1x1)
+while its first Image Descriptor describes a far larger frame that real-world decoders (including
+Chromium's) expand the canvas to fit rather than clipping, bypassing the pixel cap entirely. Fixed
+to walk past the optional Global Color Table and any Extension blocks to the first Image
+Descriptor and report `max(screen, frame bounds)` instead.
+
+**Addendum (PR #723 gate round 3, Code3 Low, reproduced: a 10x10 screen plus a 60000² SECOND
+frame was accepted)**: round 2's walk stopped at the FIRST Image Descriptor -- a multi-frame GIF's
+second (or later) frame could still be oversized and bypass the cap. Fixed to walk every Image
+Descriptor in the buffer (skipping each frame's own optional Local Color Table and
+LZW-compressed image-data sub-blocks to reach the next one), taking the max bound across every
+frame found, not only the first; cheap, since the whole file is already in memory for this check.
 
 ## 13. Mixed-paste text is NEVER altered; only a path-only paste replaces its own text
 

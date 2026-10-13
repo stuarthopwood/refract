@@ -129,7 +129,7 @@ and a thumbnail appears in the attachment strip after the drop.
    file, **Then** it attaches exactly as a pasted clipboard image would, and the indicator clears.
 3. **Given** a drop of several files at once, **When** some are supported images and others are not
    (or are over a cap/size limit), **Then** every valid image still attaches and the rest are
-   silently skipped with a quiet notice -- one bad file in the drop never blocks the others.
+   skipped with a quiet notice -- one bad file in the drop never blocks the others.
 4. **Given** a Session that is not currently accepting input (stopped, not mid-first-start), **When**
    the developer drops a file on its pane, **Then** the drop is refused with a visible notice, never
    silently swallowed.
@@ -146,7 +146,7 @@ and a thumbnail appears in the attachment strip after the drop.
 - A text chip's placeholder label, if the developer edits it so it no longer matches intact (rather than deleting it outright), is treated as no longer present: it drops from the pending list and nothing is substituted for it on send.
 - A pasted path that is the ONLY thing in the paste wins over the large-paste-to-chip behaviour (FR-011) when it also happens to be over the chip threshold (realistically never, since a path is short) -- image-path detection runs first.
 - An absolute path outside the Session's own worktree (the common case: a screenshot in Downloads or Pictures) is read and attached the same as one inside it -- this is a user-initiated choice of their own file, not a worktree-contained operation (FR-021).
-- Several quoted/one-per-line image paths pasted or dropped at once each attach independently, up to the per-message cap (FR-026); anything past the cap is left as text (paste) or silently skipped (drop) with a quiet notice, never a hard error.
+- Several quoted/one-per-line image paths pasted or dropped at once each attach independently, up to the per-message cap (FR-026); anything past the cap is left as text (paste) or skipped (drop) with a quiet notice, never a hard error.
 - A split pane: a drop lands only on the pane the pointer is actually over, never the other (unfocused) pane's Session, even if that one is focused.
 
 ## Requirements *(mandatory)*
@@ -178,7 +178,7 @@ and a thumbnail appears in the attachment strip after the drop.
 - **FR-023** (#514): Pasting text that mixes an image-path-looking token with other words MUST insert the full text into the textarea completely unchanged (the path stays exactly where it was, still readable and tool-usable by the agent) and MUST ALSO attach each resolvable path as a pending image attachment, in the background, with no interruption to typing.
 - **FR-024** (#514): A Settings switch MUST let the developer turn path-based image-attach detection off entirely (default on); turning it off MUST NOT affect pasting a clipboard image directly (FR-001).
 - **FR-025** (#432): Dragging one or more files carrying at least one image over an open chat pane MUST show a visible drop-target indicator (text, not colour alone); the indicator MUST clear on drop, on the drag leaving the pane, or on Esc.
-- **FR-026** (#514, #432): Dropping files, or a single paste/type carrying several image paths, onto one chat pane MUST attach every resolvable supported image among them (up to a maximum of 10 per message), reusing the same per-file/per-path validation as FR-020; any unsupported file, over-cap file, or path past the 10-image limit MUST be skipped (drop) or left as text (paste) with a quiet notice, never blocking the others or producing a hard error.
+- **FR-026** (#514, #432): Dropping files, or a single paste carrying several image paths (typing: #727), onto one chat pane MUST attach every resolvable supported image among them (up to a maximum of 10 per message), reusing the same per-file/per-path validation as FR-020; any unsupported file, over-cap file, or path past the 10-image limit MUST be skipped (drop) or left as text (paste) with a quiet notice, never blocking the others or producing a hard error.
 - **FR-027** (#432): A drop targets ONLY the chat pane the pointer is physically over; in a split layout, the other pane's Session MUST NOT receive the attachment even if it is the currently-focused pane.
 - **FR-028** (#432): A drop onto a Session that is not currently accepting input (stopped, and not in its own first `not-started` state) MUST be refused with a visible notice, never silently swallowed.
 - **FR-029** (#514, #432): Nothing from either path -- the resolved file path, parent folder names, or any other filesystem metadata -- is ever exposed to the renderer beyond the validated image bytes themselves (mirrors FR-006's existing "never a file path" rule for the wire-level `images` field, extended here to the IPC response shape too).
@@ -201,7 +201,7 @@ and a thumbnail appears in the attachment strip after the drop.
 - **SC-004**: Clicking any pending thumbnail or chip opens its full content in a modal every time it is clicked; closing it always returns focus to the control that opened it.
 - **SC-005**: A non-vision model's extra admission delay for a vision-description call (up to 20 seconds) never produces a visible error or a stalled appearance in the composer.
 - **SC-006**: Removing one pending attachment never alters the draft's other text or any other pending attachment.
-- **SC-007** (#514, #432): Every image attached via a resolvable path (paste, type, or drop) reaches the agent as a real image attachment on that message, 100% of the time, the same measurement SC-001 already uses; a path/file that fails validation is left as text (paste) or silently skipped (drop), never sent as a broken/empty attachment.
+- **SC-007** (#514, #432): Every image attached via a resolvable path (paste or drop; typing: #727) reaches the agent as a real image attachment on that message, 100% of the time, the same measurement SC-001 already uses; a path/file that fails validation is left as text (paste) or skipped (drop) with a quiet notice, never sent as a broken/empty attachment.
 
 ## Assumptions
 

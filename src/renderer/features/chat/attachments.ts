@@ -180,7 +180,40 @@ function looksLikeImagePathToken(token: string): boolean {
   if (!IMAGE_PATH_EXTENSION_RE.test(token)) return false
   if (/^file:\/\//i.test(token)) return true
   if (/^[A-Za-z]:[\\/]/.test(token)) return true
+  // PR #723 gate round 3 fix (Code3 Medium, reproduced): `https://example.com/a.png` has no drive
+  // prefix and is not `file://`, so it used to fall through to the slash-containing check below
+  // and get treated as a path candidate -- a pointless IPC round trip that always fails (main has
+  // no such local file) and re-inserts the URL text with a misleading "could not be found; left
+  // as text" notice, and loses native undo in the process. Any OTHER 2-or-more-character URL
+  // scheme (`https:`, `ftp:`, ...) is rejected here; a single ASCII letter followed by `:` is
+  // never a URL scheme in practice, so this cannot collide with a drive letter (already handled,
+  // and returned `true`, above).
+  if (/^[a-z][a-z0-9+.-]+:/i.test(token)) return false
   return token.includes('/') || token.includes('\\')
+}
+
+/** A trimmed line that looks like ONE absolute path containing spaces (a screenshot tool's
+ * default filename, a path copied from a terminal or editor without Explorer's own
+ * auto-quoting) -- detected only when unambiguous: the line starts with a drive-letter
+ * separator or a `file://` prefix AND ends with a supported image extension, with no quote
+ * character anywhere on the line (a quoted/unquoted mix on the same line is the caller's own
+ * quote branch's job, checked first). Lets main's own `fs.stat` be the actual authority on
+ * whether the path resolves -- exactly like every other candidate -- rather than rejecting a
+ * real file outright just because Explorer's own "Copy as path" quoting wasn't used this time.
+ * Deliberately anchored at the START of the line (never matched inside surrounding prose): there
+ * is no reliable boundary to isolate an unquoted path from prose without quotes, the same
+ * reasoning `extractImagePathCandidates`'s own header comment already gives for the plain
+ * whitespace-free case.
+ *
+ * PR #723 gate round 3 fix (Sec3/Code3 Medium, reproduced: Windows' own default screenshot
+ * filenames, VS Code's "Copy Path", and ShareX all commonly produce an unquoted path containing
+ * spaces): previously ANY embedded space meant "prose, not a path" -- but a path is not
+ * necessarily prose just because it has a space in it, when its own shape is unambiguous end to
+ * end. */
+function isUnquotedSpacedPathLine(line: string): boolean {
+  if (line.includes('"')) return false
+  if (!IMAGE_PATH_EXTENSION_RE.test(line)) return false
+  return /^[A-Za-z]:[\\/]/.test(line) || /^file:\/\//i.test(line)
 }
 
 /** Strips a surrounding pair of double quotes (Explorer's own "Copy as path" always quotes) and
@@ -214,12 +247,25 @@ function normalizeImagePathToken(token: string): string {
   return value
 }
 
+/** One candidate path as it was actually pasted/typed (`raw`) alongside the value actually sent
+ * to `attachments.readImageFile` (`normalized` -- quotes stripped, a `file://` URL decoded to a
+ * plain path). FR-022's own fallback text is the user's RAW pasted text, never a normalised form
+ * they never typed (PR #723 gate round 3 fix, Code3 Low: the fallback used to re-insert
+ * `normalized`, so a quoted path lost its quotes and a `file:///…%20…` URL came back as a
+ * decoded plain path on fallback -- neither is "its own raw text", contradicting both FR-022's
+ * own wording and this file's own code comment). */
+export interface ImagePathCandidate {
+  raw: string
+  normalized: string
+}
+
 /** Splits `text` into line- and quote-separated candidate tokens (#514: "several paths, one per
  * line or separated by spaces (when each is quoted or exists)"). Deliberately never splits an
  * UNQUOTED line on spaces -- a real Windows path containing a space is always quoted by the
  * tools that produce one (Explorer's "Copy as path"), so a prose sentence that merely contains a
  * slash is never torn into nonsense fragments. Returns only tokens that already pass the cheap
- * `looksLikeImagePathToken` pre-filter, normalized and ready for `attachments.readImageFile`.
+ * `looksLikeImagePathToken` pre-filter, each with its raw AND normalized form (see
+ * `ImagePathCandidate`'s own doc comment).
  *
  * PR #723 gate round 1 fix (Code1 HIGH): an UNQUOTED line containing OTHER WORDS besides a path
  * (`look at C:\x\shot.png`, `see src/a.png`) used to be pushed whole as one "candidate", since
@@ -230,20 +276,28 @@ function normalizeImagePathToken(token: string): string {
  * a path" -- any embedded space means prose, possibly ending in a path, which this function now
  * never extracts a candidate from at all (there is no reliable boundary to isolate an unquoted
  * path from surrounding prose without quotes; only a QUOTED path inside prose is ever detected,
- * see `isImagePathOnlyText`'s own mixed-line handling for the same reasoning). */
-export function extractImagePathCandidates(text: string): string[] {
-  const candidates: string[] = []
+ * see `isImagePathOnlyText`'s own mixed-line handling for the same reasoning).
+ *
+ * PR #723 gate round 3 fix (Sec3/Code3 Medium): an UNQUOTED line with no OTHER words, that is
+ * unambiguously shaped as one absolute path end to end (`isUnquotedSpacedPathLine`), is now ALSO
+ * a candidate even when it contains spaces -- the whitespace-free restriction above was always
+ * about distinguishing a path from PROSE, never about rejecting a legitimate unquoted path with
+ * spaces in its own name. */
+export function extractImagePathCandidates(text: string): ImagePathCandidate[] {
+  const rawCandidates: string[] = []
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line) continue
     const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '')
     if (quoted.length > 0) {
-      candidates.push(...quoted)
+      rawCandidates.push(...quoted)
     } else if (!/\s/.test(line)) {
-      candidates.push(line)
+      rawCandidates.push(line)
+    } else if (isUnquotedSpacedPathLine(line)) {
+      rawCandidates.push(line)
     }
   }
-  return candidates.filter(looksLikeImagePathToken).map(normalizeImagePathToken)
+  return rawCandidates.filter(looksLikeImagePathToken).map((raw) => ({ raw, normalized: normalizeImagePathToken(raw) }))
 }
 
 /** True when `text`, once trimmed, is NOTHING BUT image-path-looking tokens (#514 point 3: the
@@ -259,7 +313,8 @@ export function extractImagePathCandidates(text: string): string[] {
  * `isImagePathOnlyText` correctly returns `false` for the whole paste (the mixed-paste branch in
  * `MessageInput.tsx` then runs instead, leaving the text untouched and attaching in the
  * background). An unquoted line is "path-only" only when it is a single whitespace-free token,
- * same reasoning as `extractImagePathCandidates` above. */
+ * OR an unambiguous unquoted-with-spaces path line (round 3 fix, same reasoning as
+ * `extractImagePathCandidates` above). */
 export function isImagePathOnlyText(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
@@ -274,7 +329,7 @@ export function isImagePathOnlyText(text: string): boolean {
       if (line.replace(/"[^"]+"/g, '').trim() !== '') return false
       return quoted.every(looksLikeImagePathToken)
     }
-    if (/\s/.test(line)) return false
+    if (/\s/.test(line)) return isUnquotedSpacedPathLine(line) && looksLikeImagePathToken(line)
     return looksLikeImagePathToken(line)
   })
 }
