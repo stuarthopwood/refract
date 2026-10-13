@@ -317,6 +317,60 @@ into the WHOLE program — confirmed to silently change five unrelated files' ow
 avoids the cross-contamination entirely — no IPC round trip either, since `webUtils` itself does no
 main-process work, it only reads a `File` object's own already-resolved path locally.
 
+## 17. #513 probe: a user message's `image` content part carries full inline base64 LIVE, but a reopened/history read carries only a `blob:sha256:<hash>` reference -- resolved by reading OMP's own blob folder directly, never over RPC
+
+**Decision**: `transcript.ts` reads an `image` content part on a `user` message the same way in
+both `applyFrame` (live) and `fromHistory`: `data` starting with `blob:sha256:` is a reference
+resolved by a new main-process-only reader against OMP's own blob store
+(`%USERPROFILE%\.omp\agent\blobs\<sha256>.<ext>`, never over RPC -- no such RPC command exists,
+confirmed below); any other `data` value is treated as inline base64 and used directly. Both
+shapes can legitimately appear for the SAME message depending on when it is read (Decision 17a/b),
+so the reader branches on the value's own prefix rather than on which code path (live vs. history)
+called it.
+
+**Sourced** (own live RPC probe this session, `omp/18.10.1`, protocol v2, `--mode rpc`, a scratch
+`--no-session` cwd, `prompt` with a fresh 1x1 PNG never seen before by this profile): the
+`message_start`/`message_end` frames AND an immediate `get_messages` call against the SAME live
+process all echoed the user message's `image` content part with `data` equal to the EXACT base64
+string sent -- `{"role":"user","content":[{"type":"text","text":"probe-513 test message"},
+{"type":"image","data":"iVBORw0KGgo...","mimeType":"image/png"}],...}`. No `[Image #N]` caption was
+synthesised into the text part for this RPC-originated image (that caption, seen in real recorded
+`.jsonl` sessions below, is the TUI's own paste-handling inserting literal placeholder text into
+the composed message before submission -- not something OMP's engine adds server-side for a
+caller-supplied `images` field). This directly confirms issue #513's own open question ("Does the
+live user message frame include the image inline or as a blob reference?"): inline, for an
+image not yet stored under its content hash.
+
+**Sourced** (reading real, previously-recorded `.jsonl` session files under
+`~/.omp/agent/sessions/**`, structure only, per this session's own skill guidance -- never image
+bytes or chat text content beyond what grounds this shape): multiple independent historical user
+messages with images, from several real Sessions spanning July through October 2026, all show the
+SAME persisted shape: `{"role":"user","content":[{"type":"text","text":"<message, sometimes
+prefixed by the TUI's own \"[Image #1, WxH]\" marker>"},{"type":"image","data":"blob:sha256:<64 hex
+chars>","mimeType":"image/png"}],...}` -- NEVER inline base64 once the message has round-tripped
+through OMP's own on-disk persistence. This matches issue #513's own finding verified against a
+real session file ("the user message content has `{ type: \"image\", data: \"blob:sha256:<64
+hex>\", mimeType }`... The bytes live in OMP's blob store, `%USERPROFILE%\.omp\agent\blobs\
+<sha256>.<ext>`").
+
+**Verified** (`rpc.md`'s full Command Schema and Event Stream Schema sections, read exhaustively
+this session): there is no RPC command that resolves a `blob:sha256:<hash>` or `local://<name>`
+reference into bytes for a host process. The only place either reference is meant to be read is
+INSIDE the agent's own tool execution (the model/agent's own `read` tool, confirmed by several
+real `toolResult` entries in the same session files showing `blob:sha256:` values the agent reads
+directly) -- never a host-facing capability `set_host_uri_schemes`/a new RPC command would expose.
+Issue #513's own technical notes independently reach the identical conclusion and specify the fix:
+read the blob file directly in the main process (constitution Principle V), validating the hash
+against a strict `^[0-9a-f]{64}$` pattern and building the path from the fixed blob folder --
+never from any path/filename carried in the message itself.
+
+**Rationale for branching on the `data` prefix rather than on live-vs-history**: a single session's
+`get_messages`/history read can mix both shapes for the OLDEST vs. the MOST RECENT message once an
+image has round-tripped through at least one persistence cycle (for example: `--resume`ing a
+session, sending one more image-carrying message, then reading history again) -- there is no
+guarantee every entry in one `get_messages` response shares one shape. A value-prefix check is the
+only rule that is correct for every message in a mixed list, not just the common case.
+
 ## Unknowns resolved
 
 No `NEEDS CLARIFICATION` markers remain in the spec. Every OMP wire-level fact this spec's design
