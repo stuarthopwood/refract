@@ -215,8 +215,10 @@ through 5 are mechanically reachable, pending Phase 4's actual live verification
   1 partial (`repositories.pickFolder`), 10 not exercised live (see `verification.md` for the
   full breakdown) -- not "all 32 done".
 
-**Checkpoint**: every milestone-1 acceptance scenario in spec.md (User Stories 1-5) passes live,
-SC-001 through SC-005 are satisfied, and `parity.md` accurately reflects what actually shipped.
+**Checkpoint**: met except where `verification.md` says otherwise: User Stories 1-7 and the Job
+Object force-kill passed live, US2 without the native folder picker, SC-005 measured, and the 10
+milestone-1 rows listed in `verification.md` are implemented but not exercised live.
+`parity.md` reflects exactly that.
 
 ---
 

@@ -127,27 +127,30 @@ each piece.
 
 ## Footprint measurement (SC-005)
 
-1. In the **Electron** build: open two Sessions, settle them both (one left idle, one after
-   completing at least one chat turn). Using PowerShell, sum private bytes across the whole
-   process tree, app side and omp side separately (main + renderer + GPU + utility processes on
-   the app side; every spawned `omp.exe` and its own tool subprocesses on the omp side):
+1. In the **Electron** build: open two Sessions and leave both idle (this is the state
+   `verification.md` recorded). Find the app's root process id (the `electron.exe` main process,
+   or `refract-tauri.exe` for the Rust build), then sum private bytes over its process tree by
+   parent id, split into the app side (every descendant that is not under an `omp.exe`) and the
+   omp side (each `omp.exe` plus all of its descendants, including MCP servers):
    ```powershell
-   Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'electron.exe' } |
-     Measure-Object -Property PrivatePageCount -Sum
-   Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'omp.exe' } |
-     Measure-Object -Property PrivatePageCount -Sum
+   $root = <root pid>
+   $all = Get-CimInstance Win32_Process
+   function Get-Tree($id) { $all | Where-Object ParentProcessId -eq $id | ForEach-Object { $_; Get-Tree $_.ProcessId } }
+   $tree = @($all | Where-Object ProcessId -eq $root) + @(Get-Tree $root)
+   $ompRoots = $tree | Where-Object Name -eq 'omp.exe'
+   $ompSide = $ompRoots + ($ompRoots | ForEach-Object { Get-Tree $_.ProcessId })
+   $appSide = $tree | Where-Object { $ompSide.ProcessId -notcontains $_.ProcessId }
+   'app', ($appSide | Measure-Object PrivatePageCount -Sum).Sum / 1MB
+   'omp', ($ompSide | Measure-Object PrivatePageCount -Sum).Sum / 1MB
    ```
    (`PrivatePageCount` is `Win32_Process`'s private-bytes figure, matching spec.md SC-005's
-   `WorkingSetPrivate`/`PrivateUsage` metric; cross-reference by PID against `Get-Process
-   -IncludeUserName | Select-Object Id,PM,PrivateMemorySize64,WorkingSet64` if a second source is
-   wanted.) Record both totals (app side, omp side).
+   `WorkingSetPrivate`/`PrivateUsage` metric.) Exclude dev-only tooling that is not in the tree
+   (the `electron-vite`, Vite and Tauri CLI Node processes) and report it separately if wanted.
 2. Quit the Electron build fully (not just close the window) so no process from step 1 is still
    running.
-3. In the **Rust** build: recreate the same two-Session state (one idle, one settled after a chat
-   turn) against its own `%APPDATA%\refract-tauri` data directory, then repeat the same
-   `Win32_Process` measurement, substituting the Tauri binary's own process name for
-   `electron.exe` (its name is whatever `tauri.conf.json`'s `productName` resolves to) and the
-   same `omp.exe` filter, again recording the app side and omp side separately.
+3. In the **Rust** build: recreate the same two idle Sessions against its own
+   `%APPDATA%\refract-tauri` data directory, then repeat the measurement with `refract-tauri.exe`
+   as the root (its `msedgewebview2.exe` children count as the app side).
 4. Report all four totals side by side (Rust app, Rust omp, Electron app, Electron omp). No
    specific percentage-saving target is required (SC-005): the acceptance bar is a real,
    reproducible measurement recorded once per build, not a pass/fail threshold -- WebView2's own
