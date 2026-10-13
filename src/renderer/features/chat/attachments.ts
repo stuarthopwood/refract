@@ -263,10 +263,18 @@ export interface ImagePathCandidate {
  * line or separated by spaces (when each is quoted or exists)"). Deliberately never splits an
  * UNQUOTED line on spaces -- a real Windows path containing a space is always quoted by the
  * tools that produce one (Explorer's "Copy as path"), so a prose sentence that merely contains a
- * slash is never torn into nonsense fragments. Returns only tokens that already pass the cheap
- * `looksLikeImagePathToken` pre-filter, each with its raw AND normalized form (see
+ * slash is never torn into nonsense fragments. Returns only tokens whose NORMALIZED form passes
+ * the cheap `looksLikeImagePathToken` pre-filter (see the round 4 fix note below for why the
+ * filter runs on `normalized`, never `raw`), each with its raw AND normalized form (see
  * `ImagePathCandidate`'s own doc comment).
  *
+ * PR #723 gate round 4 fix (Verif4 HIGH, Sec4/Code4 Medium): a QUOTED line's `raw` candidate
+ * used to be the regex CAPTURE GROUP (quotes already stripped), so an unresolved "Copy as path"
+ * paste (`"C:\a b\x.png"`) came back WITHOUT its own quotes on the FR-022 fallback -- the round 3
+ * fix above only ever covered the `file:///%20` URL case, never the quoted-path case it was
+ * supposedly fixing too. `raw` is now the FULL quoted match (quotes included); the pre-filter
+ * therefore runs on `normalized` instead of `raw`, since `looksLikeImagePathToken`'s own extension
+ * regex can never match past a trailing quote character.
  * PR #723 gate round 1 fix (Code1 HIGH): an UNQUOTED line containing OTHER WORDS besides a path
  * (`look at C:\x\shot.png`, `see src/a.png`) used to be pushed whole as one "candidate", since
  * `looksLikeImagePathToken` only checks the line's own END/START shape, never whether it is a
@@ -288,7 +296,7 @@ export function extractImagePathCandidates(text: string): ImagePathCandidate[] {
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line) continue
-    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '')
+    const quoted = [...line.matchAll(/"([^"]+)"/g)].map((m) => m[0])
     if (quoted.length > 0) {
       rawCandidates.push(...quoted)
     } else if (!/\s/.test(line)) {
@@ -297,7 +305,9 @@ export function extractImagePathCandidates(text: string): ImagePathCandidate[] {
       rawCandidates.push(line)
     }
   }
-  return rawCandidates.filter(looksLikeImagePathToken).map((raw) => ({ raw, normalized: normalizeImagePathToken(raw) }))
+  return rawCandidates
+    .map((raw) => ({ raw, normalized: normalizeImagePathToken(raw) }))
+    .filter((candidate) => looksLikeImagePathToken(candidate.normalized))
 }
 
 /** True when `text`, once trimmed, is NOTHING BUT image-path-looking tokens (#514 point 3: the

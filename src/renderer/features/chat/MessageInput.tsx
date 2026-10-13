@@ -1079,7 +1079,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           // PR #723 gate round 3 fix (Code3 Low): re-inserts each candidate's own RAW pasted
           // text (FR-022's actual wording), never the normalized form `buildImagePathAttachment`
           // above was given -- a quoted path's quotes, and a `file://…%20…` URL's own encoding,
-          // are no longer silently rewritten on fallback.
+          // are no longer silently rewritten on fallback. Round 4 fix (Verif4 HIGH): `raw` itself
+          // used to be the quote-stripped regex capture for a QUOTED candidate, so this still
+          // dropped the quotes on fallback despite the comment above; `attachments.ts`'s
+          // `extractImagePathCandidates` now keeps `raw` as the full quoted match.
           const unresolved = [...overflow, ...loopFailures.map((f) => f.candidate)].map((c) => c.raw)
           if (unresolved.length > 0) {
             const liveText = useDraftStore.getState().bySession[sessionId]?.text ?? ''
