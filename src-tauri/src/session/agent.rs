@@ -87,8 +87,10 @@ impl std::fmt::Display for AgentError {
 impl std::error::Error for AgentError {}
 
 /// `src/shared/model.ts`'s own `PendingRequest` union (`dialogs.ts`'s `classifyDialog` output).
+/// `rename_all_fields` (not `rename_all`, which only renames variants) gives the camelCase field
+/// names the renderer matches on (`requestId`, `optionDetails`, `inputKind`).
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all_fields = "camelCase")]
 pub enum PendingRequest {
     #[serde(rename = "approval")]
     Approval { request_id: String, tool: String, target: String, details: Vec<String> },
