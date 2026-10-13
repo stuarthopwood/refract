@@ -57,7 +57,9 @@ each piece.
 
 1. Click "Add repository", pick a real git repository folder via the native folder picker
    (`repositories.pickFolder`). Expect: it appears in the Repositories list with its name and
-   branch list populated (`repositories.add`, `.branches`, `.userName`).
+   branch list populated (`repositories.add`, `.branches`, `.userName`). **Not yet verified live**:
+   the native folder picker dialog itself has not been driven live; only the dialog's typed-path
+   fallback field has been exercised (see `verification.md`).
 2. Attempt to add a folder that is not a git repository. Expect: the same rejection the Electron
    build gives (`not-a-repo` `IpcErrorCode`, unchanged on the wire).
 
@@ -86,6 +88,28 @@ each piece.
    fires, matching the Electron build's own `select`-request-answering contract (constitution
    Principle II).
 
+**Story 6 -- Stop the agent (P2, spec.md)**
+
+1. With a Session's agent running (mid-turn or idle), click Stop (Session actions menu).
+   Expect: `sessions.stopAgent` runs, the Session's status flips to Stopped, and the `omp` process
+   for that Session exits (confirm via `Get-Process omp` or `Win32_Process` that its pid is gone).
+
+**Story 7 -- Reopen the app and see Sessions and history (P2, spec.md)**
+
+1. After completing Stories 2-4 at least once, fully quit the Rust build (stop the process, not
+   just close the window) and relaunch it.
+2. Confirm every Repository and Session from before the restart still appears, and opening a
+   Session's prior Conversation shows the same transcript as before the restart.
+
+**Job Object force-kill (SC-004)**
+
+1. With a Session's agent running, note the main process's pid (`refract-tauri.exe`) and its
+   child `omp.exe` pid plus any of `omp`'s own MCP-server child processes (`Win32_Process`).
+2. Run `taskkill /PID <main-pid> /F` -- explicitly WITHOUT `/T` (no tree kill). Expect: within a
+   few seconds, re-querying `Win32_Process` for the main pid, the `omp.exe` pid, and every MCP
+   child pid returns zero rows -- the Job Object's `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` tears
+   down the whole descendant tree even without an explicit tree-kill flag.
+
 **Settings subset (FR-012, no dedicated story)**
 
 1. Confirm `settings.get` returns the same `Settings` shape as the Electron build's own
@@ -96,29 +120,39 @@ each piece.
 3. Copy some chat text (`clipboard.writeText`) and paste it outside the app, confirming the system
    clipboard actually received it.
 
+**Not yet verified live**:
+
+- `settings.setApprovalMode` and the `settings:changed` event it triggers (step 2 above).
+- `clipboard.writeText` (step 3 above).
+
 ## Footprint measurement (SC-005)
 
 1. In the **Electron** build: open two Sessions, settle them both (one left idle, one after
-   completing at least one chat turn). Using PowerShell, sum private bytes across the whole process
-   tree (main + renderer + GPU + utility + every spawned `omp.exe` and its own tool subprocesses):
+   completing at least one chat turn). Using PowerShell, sum private bytes across the whole
+   process tree, app side and omp side separately (main + renderer + GPU + utility processes on
+   the app side; every spawned `omp.exe` and its own tool subprocesses on the omp side):
    ```powershell
-   Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'electron.exe','omp.exe' } |
-     Measure-Object -Property WorkingSetSize -Sum
+   Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'electron.exe' } |
+     Measure-Object -Property PrivatePageCount -Sum
+   Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'omp.exe' } |
+     Measure-Object -Property PrivatePageCount -Sum
    ```
-   (Use `PrivateUsage` via `Get-Process` if a more precise private-bytes figure than
-   `WorkingSetSize` is needed; `Win32_Process` does not expose `PrivateUsage` directly, so cross-
-   reference by PID against `Get-Process -IncludeUserName | Select-Object Id,PM,PrivateMemorySize64`
-   for the same process set.) Record the total.
+   (`PrivatePageCount` is `Win32_Process`'s private-bytes figure, matching spec.md SC-005's
+   `WorkingSetPrivate`/`PrivateUsage` metric; cross-reference by PID against `Get-Process
+   -IncludeUserName | Select-Object Id,PM,PrivateMemorySize64,WorkingSet64` if a second source is
+   wanted.) Record both totals (app side, omp side).
 2. Quit the Electron build fully (not just close the window) so no process from step 1 is still
    running.
 3. In the **Rust** build: recreate the same two-Session state (one idle, one settled after a chat
    turn) against its own `%APPDATA%\refract-tauri` data directory, then repeat the same
-   `Win32_Process`/`Get-Process` measurement, substituting the Tauri binary's own process name for
-   `electron.exe` (its name is whatever `tauri.conf.json`'s `productName` resolves to) and the same
-   `omp.exe` filter.
-4. Report both totals side by side. No specific percentage-saving target is required (SC-005): the
-   acceptance bar is a real, reproducible measurement recorded once per build, not a pass/fail
-   threshold -- WebView2's own Chromium renderer/GPU process persists in both builds either way.
+   `Win32_Process` measurement, substituting the Tauri binary's own process name for
+   `electron.exe` (its name is whatever `tauri.conf.json`'s `productName` resolves to) and the
+   same `omp.exe` filter, again recording the app side and omp side separately.
+4. Report all four totals side by side (Rust app, Rust omp, Electron app, Electron omp). No
+   specific percentage-saving target is required (SC-005): the acceptance bar is a real,
+   reproducible measurement recorded once per build, not a pass/fail threshold -- WebView2's own
+   Chromium renderer/GPU process persists in both builds either way. See `verification.md` for a
+   recorded measurement and its figures.
 
 ## Known, accepted differences (not defects)
 
@@ -140,3 +174,9 @@ each piece.
 - `cargo check` (run from the repository root, or `cd src-tauri && cargo check`) passes with no
   warnings on the milestone-1 module set.
 - `pnpm build:tauri` completes and the built binary launches and passes Story 1 above.
+
+## Live verification record
+
+See [verification.md](verification.md) for the dated results of actually running every check
+above against a live build, including which checks are still unverified and the footprint
+measurement's recorded figures.

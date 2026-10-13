@@ -115,8 +115,9 @@ pub fn run() {
             );
 
             // One main window, native decorations (spec.md Assumptions: no custom caption
-            // parity in milestone 1), same initial/minimum size as the Electron build's own
-            // `BrowserWindow` (`src/main/index.ts`'s `width: 1280, height: 800`).
+            // parity in milestone 1), same initial size as the Electron build's own
+            // `BrowserWindow` (`src/main/index.ts`'s `width: 1280, height: 800`). Like Electron,
+            // no minimum size, so the window still fits and reflows at 150-200% display scaling.
             // `tauri.vite.config.ts` keeps Vite's default root (the repository root, not
             // `tauri/`) so this build's HTML entry can reference the sibling
             // `src/tauri-bridge/` tree by an ordinary root-relative script `src` -- the built
@@ -127,7 +128,6 @@ pub fn run() {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
                 .title("Refract (Rust preview)")
                 .inner_size(1280.0, 800.0)
-                .min_inner_size(1280.0, 800.0)
                 .decorations(true)
                 .initialization_script(&init_script)
                 .build()?;

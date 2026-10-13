@@ -125,11 +125,12 @@ const refract: RefractApi = {
   attachments: {
     readImageFile: (sessionId, path) => request<AttachmentImageFile>(IPC_REQUESTS.ATTACHMENTS_READ_IMAGE_FILE, sessionId, path),
     // Known, accepted difference (spec 016 Assumptions): Tauri's webview has no equivalent to
-    // Electron's `webUtils.getPathForFile` -- the standard `File` API never exposes an absolute
-    // OS path for security reasons. `ChatPane.tsx`'s own caller comment already documents and
-    // handles the `''` case (a browser-dragged file with no on-disk backing), so every dropped
-    // file degrades the same way under this build as it already does for that existing case.
-    getPathForFile: () => ''
+    // Electron's `webUtils.getPathForFile`; the standard `File` API never exposes an OS path.
+    // Throwing (rather than returning '') sends `ChatPane.tsx`'s drop handler down its generic
+    // "could not be attached as an image" path instead of a misleading "file missing" reason.
+    getPathForFile: () => {
+      throw new Error('Dropping files is not available in the Rust build yet.')
+    }
   },
 
   clipboard: {

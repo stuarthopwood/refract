@@ -8,9 +8,10 @@ description: "Task list for spec 016: Rust (Tauri v2) build"
 **Input**: Design documents from `specs/016-tauri-rust-build/` (spec.md, plan.md, research.md,
 contracts/bridge.md, parity.md, quickstart.md)
 
-**Tests**: None. Refract is a prototyping-phase project with no automated test suite (repository
-`AGENTS.md`); plan.md's own Technical Context states "Testing: None"; every task below is verified
-manually per `quickstart.md`.
+**Tests**: None new. Refract has an existing automated vitest suite (`src/` test files, run via
+the repository's existing test script); this feature adds no new tests to it, since `src-tauri/`
+is a separate, experimental Rust backend verified manually per `quickstart.md`, matching plan.md's
+own Technical Context ("Testing: None [new]").
 
 **Organization**: Phase 1 is project scaffolding (owned by a separate, concurrent worker -- listed
 here only so Phase 2's dependency on it is explicit, not duplicated). Phases 2 through 4 are this
@@ -193,20 +194,26 @@ through 5 are mechanically reachable, pending Phase 4's actual live verification
   actually called before any `omp` spawn is possible (not just present as a stub, T005), and every
   milestone-1 `ipc::*` module (`repositories`, `sessions`, `conversations`, `chat`, `settings`,
   `clipboard`, `readiness`) is registered into `ipc::mod`'s dispatch table alongside the
-  `unsupported` default.
+  `unsupported` default. **Done** -- see `verification.md`.
 - T030 Live-verify User Story 1 (run the Rust build, see Repositories, zero-flash theme) per
-  `quickstart.md`.
-- T031 Live-verify User Story 2 (add a repository) per `quickstart.md`.
+  `quickstart.md`. **Done** -- see `verification.md`.
+- T031 Live-verify User Story 2 (add a repository) per `quickstart.md`. **Done (partial)** -- see
+  `verification.md`: verified via the typed-path fallback; the native folder picker itself was
+  not driven live.
 - T032 Live-verify User Story 3 (create and open a Session, real `omp` child process with the
-  worktree as cwd) per `quickstart.md`.
+  worktree as cwd) per `quickstart.md`. **Done** -- see `verification.md`.
 - T033 Live-verify User Story 4 (chat with a streamed answer, `transcript:patch` upserts) per
-  `quickstart.md`.
-- T034 Live-verify User Story 5 (answer an approval request) per `quickstart.md`.
+  `quickstart.md`. **Done** -- see `verification.md`.
+- T034 Live-verify User Story 5 (answer an approval request) per `quickstart.md`. **Done** -- see
+  `verification.md`: required the `PendingRequest` `rename_all_fields` fix (`2a78831`).
 - T035 Footprint measurement (SC-005): run the procedure in `quickstart.md` against both builds
-  with the same two-Session state, record both private-memory totals side by side.
+  with the same two-Session state, record both private-memory totals side by side. **Done** --
+  see `verification.md` for the recorded app-side and omp-side totals for both builds.
 - T036 Update `parity.md`'s "Rust status" column from `todo` to `done` for every one of the 32
   milestone-1 rows (23 requests + 8 events + the bootstrap) landed by T010-T028; leave the
-  remaining 75 rows `todo`.
+  remaining 75 rows `todo`. **Done, updated parity.md honestly**: 21 of 32 milestone-1 rows done,
+  1 partial (`repositories.pickFolder`), 10 not exercised live (see `verification.md` for the
+  full breakdown) -- not "all 32 done".
 
 **Checkpoint**: every milestone-1 acceptance scenario in spec.md (User Stories 1-5) passes live,
 SC-001 through SC-005 are satisfied, and `parity.md` accurately reflects what actually shipped.
@@ -236,7 +243,8 @@ All three can start the moment Phase 1's checkpoint (T001-T009) is confirmed.
 
 ## Notes
 
-- No test tasks anywhere in this list: Refract has no automated test suite (`AGENTS.md`); every
-  checkpoint above is a manual run against `quickstart.md`.
+- No test tasks anywhere in this list: this feature adds no new automated tests (Refract's
+  existing vitest suite is unaffected; `src-tauri/` is verified manually per `quickstart.md`), so
+  every checkpoint above is a manual run.
 - Every task names the exact Rust file(s) it owns and the Electron TypeScript file it ports, so no
   two tasks across Phase 2's three slices touch the same file.

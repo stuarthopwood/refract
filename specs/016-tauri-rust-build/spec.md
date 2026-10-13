@@ -5,10 +5,10 @@ the Spec Kit record, not a literal git branch)
 
 **Created**: 2026-10-13
 
-**Status**: Draft -- **EXPERIMENTAL**. This build is a second, separate desktop shell for Refract.
-The Electron build (`src/main`, `src/preload`) remains the source of truth and is not changed by
-this spec. Nothing here is promoted into the supported product until Stuart explicitly decides to
-promote it (see Assumptions and `plan.md` Constitution Check).
+**Status**: Implemented (milestone 1), experimental. This build is a second, separate desktop
+shell for Refract. The Electron build (`src/main`, `src/preload`) remains the source of truth and
+is not changed by this spec. Nothing here is promoted into the supported product until Stuart
+explicitly decides to promote it (see Assumptions and `plan.md` Constitution Check).
 
 **Input**: [issue://780](https://github.com/stuarthopwood/refract/issues/780) ("Experiment: Rust
 (Tauri v2) build of Refract with a Rust-native backend, separate from the Electron build") and
