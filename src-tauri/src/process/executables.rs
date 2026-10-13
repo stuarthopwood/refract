@@ -41,14 +41,14 @@ pub fn taskkill_path() -> PathBuf {
     Path::new(&system_root).join("System32").join("taskkill.exe")
 }
 
-/// Sets the Windows loader's `NoDefaultCurrentDirectoryInExePath` opt-out once, before this
-/// process ever spawns `omp` (FR-001 "scoped to omp spawns"; port of `src/main/index.ts`'s own
-/// top-of-file env var line, which sets it unconditionally for the whole Electron main process --
-/// here it is set lazily, right before the first `omp` spawn, since `omp::process` is the only
-/// caller that needs it). Defense in depth only: `resolve_omp` above already returns an absolute
-/// path, so the spawn itself never relies on this, but it ensures no accidental bare-name spawn
-/// anywhere in this process's lifetime can ever fall into the cwd-before-PATH search order
-/// either, matching the independent security review `executables.ts`'s file header cites.
+/// Gate-fixes a LOW security finding: `lib.rs`'s `run()` now sets this env var process-wide as
+/// its very first action, before the window, any handler, or any spawn exists -- matching the
+/// Electron build's own unconditional top-of-file line (`src/main/index.ts`), so a `git` child
+/// spawned before the first `omp` spawn (readiness, `repositories.add`, `sessions.create`) is
+/// covered too. This call is therefore now a no-op by the time `OmpProcess::spawn` reaches it
+/// (the variable is already set) -- kept, rather than removed, as a second, independent
+/// belt-and-braces guard scoped to exactly the one caller (`omp::process`) that actually needs
+/// the loader opt-out, in case `run()`'s own call is ever reordered or removed.
 pub fn ensure_no_default_cwd_in_exe_path() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {

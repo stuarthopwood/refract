@@ -11,7 +11,7 @@
 // do not apply -- this build has no start queue or memory defer to starve behind in the first
 // place (`omp::process`'s own module header), so only the ready-wait ceiling itself is ported.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -51,6 +51,10 @@ const OMP_MINIMUM_PATCH: u32 = 3;
 const PROBE_READY_PROMPT_AFTER_MS: u64 = 30_000;
 const PROBE_READY_CEILING_MS: u64 = 60_000;
 const PROBE_REQUEST_TIMEOUT_MS: u64 = 60_000;
+
+/// Perf: `omp --version` had no bound at all (gate finding), unlike every other `omp`/`git`
+/// child this build spawns. A hung PATH-resolved binary must not hang `readiness.check` forever.
+const OMP_VERSION_PROBE_TIMEOUT_MS: u64 = 10_000;
 
 pub fn readiness_check(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
@@ -105,13 +109,21 @@ fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
 }
 
 async fn check_omp() -> Check {
-    let omp_path = match which::which("omp") {
+    let omp_path = match which::which_global("omp") {
         Ok(path) => path,
         Err(_) => return Check { ok: false, hint: Some("omp not found on PATH. Install omp and relaunch Refract.".to_string()), ..Default::default() },
     };
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let output = tokio::process::Command::new(&omp_path).arg("--version").creation_flags(CREATE_NO_WINDOW).output().await;
+    let mut command = tokio::process::Command::new(&omp_path);
+    command.arg("--version").creation_flags(CREATE_NO_WINDOW);
+    // Perf: a timed-out probe below is dropped, not awaited to completion; `kill_on_drop` stops
+    // it from running on as an orphan (matches `git::git_raw`'s own timeout handling).
+    command.kill_on_drop(true);
+    let output = match tokio::time::timeout(Duration::from_millis(OMP_VERSION_PROBE_TIMEOUT_MS), command.output()).await {
+        Ok(result) => result,
+        Err(_) => return Check { ok: false, hint: Some("omp --version timed out.".to_string()), ..Default::default() },
+    };
     let stdout = match output {
         Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout).into_owned(),
         Ok(output) => {

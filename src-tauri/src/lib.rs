@@ -14,7 +14,7 @@ pub mod store;
 use std::path::PathBuf;
 
 use serde_json::Value;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
 use ipc::{AppState, Dispatcher};
 
@@ -28,6 +28,17 @@ pub fn data_dir() -> PathBuf {
     dirs::data_dir()
         .expect("refract-tauri: no platform data directory available")
         .join("refract-tauri")
+}
+
+/// Security LOW finding: restricts same-window navigation to the app's own origin -- the
+/// Electron build's equivalent is `denyForeignNavigation`. `Url::origin()` compares
+/// scheme+host+port as one unit, so neither a lookalike host nor a stray port can pass. Dev
+/// builds navigate to the Vite dev server (`tauri.conf.json`'s own `devUrl`); release builds
+/// navigate to Tauri's own custom protocol, served as `http://tauri.localhost` on this build's
+/// Windows-only target (`use_https_scheme` is left at its default `false`).
+fn is_allowed_navigation_url(url: &Url) -> bool {
+    let allowed = if cfg!(debug_assertions) { "http://localhost:5174" } else { "http://tauri.localhost" };
+    url.origin() == Url::parse(allowed).expect("allowed navigation origin is a valid URL").origin()
 }
 
 /// State `.manage()`d once at startup: the one `Dispatcher` every `refract_request` call routes
@@ -51,6 +62,21 @@ async fn refract_request(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // FR-001 / security LOW finding: set for the WHOLE process, as the very first thing `run()`
+    // does -- mirrors the Electron build's own unconditional top-of-file env var line
+    // (`src/main/index.ts`), so even a `git` child spawned before the first `omp` spawn (e.g.
+    // `readiness.check`, `repositories.add`) is covered. `process::executables::
+    // ensure_no_default_cwd_in_exe_path`'s own lazy, pre-first-`omp`-spawn call is now a
+    // redundant no-op (the env var is already set by the time it runs) -- kept as-is rather
+    // than removed, since its one caller lives in `omp::process` (a different owner's file).
+    //
+    // Safety: called once, synchronously, before any other code in this process (no window, no
+    // handler, no spawned child) has started, so nothing else reads or writes this specific
+    // variable concurrently.
+    unsafe {
+        std::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
+    }
+
     let data_dir = data_dir();
     std::fs::create_dir_all(&data_dir)
         .unwrap_or_else(|err| panic!("refract-tauri: failed to create data directory {data_dir:?}: {err}"));
@@ -91,7 +117,15 @@ pub fn run() {
     ipc::register_handlers(&mut dispatcher);
 
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::new().level(log::LevelFilter::Debug).build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                // Security: Debug level also writes envelopes (now channel+outcome only, see
+                // `ipc::Dispatcher::dispatch`) to a persistent log file. Release builds drop to
+                // Info so routine traffic never reaches disk; dev builds keep Debug for local
+                // troubleshooting.
+                .level(if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info })
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
@@ -130,6 +164,12 @@ pub fn run() {
                 .inner_size(1280.0, 800.0)
                 .decorations(true)
                 .initialization_script(&init_script)
+                // Security LOW finding: matches the Electron build's `denyForeignNavigation` --
+                // same-window navigation to a remote page would otherwise replace the app UI
+                // (remote origins can already not reach `refract_request`, and wry denies new
+                // windows with no `on_new_window` handler set, but a same-window navigation
+                // away is a separate hole neither of those closes).
+                .on_navigation(is_allowed_navigation_url)
                 .build()?;
 
             Ok(())

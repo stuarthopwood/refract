@@ -19,10 +19,13 @@
 // `diff_transcript`, which needs the same signal.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use super::diff::{finalize_live_transcript, merge_history_with_live};
 
 // ---------------------------------------------------------------------------
 // Wire types (`src/shared/model.ts` `TranscriptItem`)
@@ -249,7 +252,7 @@ fn is_advisory_severity(value: &str) -> bool {
 
 /// `src/shared/frames.ts`'s `KNOWN_FRAME_TYPES`: every frame type `apply_frame` (and OMP itself)
 /// can emit. Exposed so `session::agent` (Phase 3) can mirror `SessionAgent.onFrame`'s own
-/// `isKnownFrame` gate before falling back to `try_build_agent_message_from_unknown_frame`.
+/// `isKnownFrame` gate before deciding whether an unrecognised frame can be ignored.
 pub fn is_known_frame_type(frame_type: &str) -> bool {
     matches!(
         frame_type,
@@ -463,10 +466,10 @@ fn subagent_name(spec: &Value) -> String {
 /// Upserts one `subagent` item per `specs[]` entry, keyed by `subagent:<tool_call_id>:<index>`.
 /// Port of `upsertSubagentItems`.
 fn upsert_subagent_items(
-    mut items: Vec<TranscriptItem>,
+    mut items: Vec<Arc<TranscriptItem>>,
     tool_call_id: &str,
     specs: &[Value],
-) -> Vec<TranscriptItem> {
+) -> Vec<Arc<TranscriptItem>> {
     for (index, spec) in specs.iter().enumerate() {
         let id = format!("subagent:{tool_call_id}:{index}");
         let name = subagent_name(spec);
@@ -474,15 +477,12 @@ fn upsert_subagent_items(
         let existing_pos = items.iter().position(|item| item.id() == id);
         match existing_pos {
             Some(pos) => {
-                if let TranscriptItem::Subagent {
-                    name: n, task: t, ..
-                } = &mut items[pos]
-                {
+                if let TranscriptItem::Subagent { name: n, task: t, .. } = Arc::make_mut(&mut items[pos]) {
                     *n = name;
                     *t = task;
                 }
             }
-            None => items.push(TranscriptItem::Subagent {
+            None => items.push(Arc::new(TranscriptItem::Subagent {
                 id,
                 tool_call_id: tool_call_id.to_string(),
                 spec_index: index as u32,
@@ -493,7 +493,7 @@ fn upsert_subagent_items(
                 duration_ms: None,
                 result: None,
                 job_id: None,
-            }),
+            })),
         }
     }
     items
@@ -517,17 +517,17 @@ fn map_progress_status(status: Option<&str>) -> SubagentStatus {
 /// `applyBatchTaskResult`. Returns `items` unchanged when `tool_call_id` has no subagent items at
 /// all, so callers can fall through to the generic `tool` item path for a malformed `task` call.
 fn apply_batch_task_result(
-    items: Vec<TranscriptItem>,
+    items: Vec<Arc<TranscriptItem>>,
     tool_call_id: &str,
     is_error: bool,
     details: &Value,
     live: bool,
-) -> Vec<TranscriptItem> {
+) -> Vec<Arc<TranscriptItem>> {
     let subagent_positions: Vec<usize> = items
         .iter()
         .enumerate()
         .filter(|(_, item)| {
-            matches!(item, TranscriptItem::Subagent { tool_call_id: t, .. } if t == tool_call_id)
+            matches!(item.as_ref(), TranscriptItem::Subagent { tool_call_id: t, .. } if t == tool_call_id)
         })
         .map(|(i, _)| i)
         .collect();
@@ -549,7 +549,7 @@ fn apply_batch_task_result(
             duration_ms,
             started_at,
             ..
-        } = &mut items[pos]
+        } = Arc::make_mut(&mut items[pos])
         {
             let entry_job_id = entry
                 .and_then(|e| e.get("id"))
@@ -601,23 +601,11 @@ fn safe_stringify(value: &Value) -> String {
 /// `tool_execution_end` by `id` instead -- both key names are matched here, falling back to
 /// `label === name` for a subagent that never got a `progress` entry at all. Port of
 /// `applyAsyncResultJobs`.
-fn apply_async_result_jobs(items: Vec<TranscriptItem>, jobs: &[Value]) -> Vec<TranscriptItem> {
+fn apply_async_result_jobs(items: Vec<Arc<TranscriptItem>>, jobs: &[Value]) -> Vec<Arc<TranscriptItem>> {
     items
         .into_iter()
-        .map(|item| {
-            let TranscriptItem::Subagent {
-                id,
-                tool_call_id,
-                spec_index,
-                name,
-                task,
-                status,
-                started_at,
-                duration_ms,
-                result,
-                job_id,
-            } = item
-            else {
+        .map(|mut item| {
+            let TranscriptItem::Subagent { name, job_id, .. } = item.as_ref() else {
                 return item;
             };
             let job_id_of = |j: &Value| -> Option<String> {
@@ -637,35 +625,11 @@ fn apply_async_result_jobs(items: Vec<TranscriptItem>, jobs: &[Value]) -> Vec<Tr
             };
             let job = match by_job_id.or(by_label) {
                 Some(j) => j,
-                None => {
-                    return TranscriptItem::Subagent {
-                        id,
-                        tool_call_id,
-                        spec_index,
-                        name,
-                        task,
-                        status,
-                        started_at,
-                        duration_ms,
-                        result,
-                        job_id,
-                    };
-                }
+                None => return item,
             };
             let job_status = job.get("status").and_then(Value::as_str);
             if matches!(job_status, Some("pending") | Some("running")) {
-                return TranscriptItem::Subagent {
-                    id,
-                    tool_call_id,
-                    spec_index,
-                    name,
-                    task,
-                    status,
-                    started_at,
-                    duration_ms,
-                    result,
-                    job_id,
-                };
+                return item;
             }
             // The installed omp 18.5.1 binary's own job records use `'failed'`/`'cancelled'`
             // (direct binary inspection, 2026-10-03): both, plus `'error'`/`'aborted'`, must map
@@ -678,35 +642,32 @@ fn apply_async_result_jobs(items: Vec<TranscriptItem>, jobs: &[Value]) -> Vec<Tr
             let result_text = job.get("resultText").and_then(Value::as_str);
             let schema_data = job.get("schema").and_then(|s| s.get("data"));
             let label = job.get("label").and_then(Value::as_str);
-            let new_result = if failed && error_text.is_some() {
-                error_text.map(String::from)
-            } else if let Some(r) = result_text {
-                Some(r.to_string())
-            } else if let Some(data) = schema_data {
-                Some(safe_stringify(data))
-            } else if let Some(l) = label {
-                Some(l.to_string())
-            } else {
-                result
-            };
-            let new_job_id = job_id_of(job).or(job_id);
-            let new_duration = job.get("durationMs").and_then(Value::as_f64).map(|f| f as i64).or(duration_ms);
-            TranscriptItem::Subagent {
-                id,
-                tool_call_id,
-                spec_index,
-                name,
-                task,
-                status: if failed {
-                    SubagentStatus::Error
+            let new_job_id = job_id_of(job);
+            let new_duration = job.get("durationMs").and_then(Value::as_f64).map(|f| f as i64);
+            // `Arc::make_mut` clones the value only when another reference is still outstanding,
+            // so an untouched (`return item` above) or no-op subagent row never pays a copy.
+            if let TranscriptItem::Subagent { status, duration_ms, result, job_id, .. } = Arc::make_mut(&mut item) {
+                let new_result = if failed && error_text.is_some() {
+                    error_text.map(String::from)
+                } else if let Some(r) = result_text {
+                    Some(r.to_string())
+                } else if let Some(data) = schema_data {
+                    Some(safe_stringify(data))
+                } else if let Some(l) = label {
+                    Some(l.to_string())
                 } else {
-                    SubagentStatus::Done
-                },
-                started_at,
-                duration_ms: new_duration,
-                result: new_result,
-                job_id: new_job_id,
+                    result.clone()
+                };
+                *status = if failed { SubagentStatus::Error } else { SubagentStatus::Done };
+                *result = new_result;
+                if let Some(d) = new_duration {
+                    *duration_ms = Some(d);
+                }
+                if let Some(jid) = new_job_id {
+                    *job_id = Some(jid);
+                }
             }
+            item
         })
         .collect()
 }
@@ -714,19 +675,16 @@ fn apply_async_result_jobs(items: Vec<TranscriptItem>, jobs: &[Value]) -> Vec<Tr
 /// `details.jobs[]` reader shared by `tool_execution_end`/`toolResult` for the `wait` tool
 /// (port of `jobsFromDetails`).
 fn jobs_from_details(details: &Value) -> Option<Vec<Value>> {
-    details
-        .get("jobs")
-        .and_then(Value::as_array)
-        .map(|arr| arr.clone())
+    details.get("jobs").and_then(Value::as_array).cloned()
 }
 
 /// Returns the patched items when `message` is a batch-subagent result carrier, `None` when it
 /// is not one at all. Port of `tryApplyAsyncResult`.
 fn try_apply_async_result(
-    items: &[TranscriptItem],
+    items: &[Arc<TranscriptItem>],
     custom_type: &str,
     details: &Value,
-) -> Option<Vec<TranscriptItem>> {
+) -> Option<Vec<Arc<TranscriptItem>>> {
     if custom_type != ASYNC_RESULT_CUSTOM_TYPE {
         return None;
     }
@@ -770,44 +728,6 @@ fn try_build_agent_message(message_id: &str, custom_type: &str, message: &Value)
         to,
         text,
         at,
-    })
-}
-
-/// Best-effort fallback for T079's other hypothesis: OMP emits a subagent-to-parent IRC message
-/// as its own top-level frame `type` rather than a `custom` message. Called from
-/// `session::agent`'s own frame dispatch `default` case (an unrecognised top-level frame never
-/// reaches `apply_frame`, mirroring `isKnownFrame`/`is_known_frame_type`). Port of
-/// `tryBuildAgentMessageFromUnknownFrame`.
-pub fn try_build_agent_message_from_unknown_frame(frame: &Value, index: usize) -> Option<TranscriptItem> {
-    let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
-    let looks_like_agent_message = AGENT_MESSAGE_CUSTOM_TYPES.contains(&frame_type)
-        || frame.get("from").and_then(Value::as_str).is_some()
-        || frame.get("sender").and_then(Value::as_str).is_some();
-    if !looks_like_agent_message {
-        return None;
-    }
-    let from = frame
-        .get("from")
-        .and_then(Value::as_str)
-        .or_else(|| frame.get("sender").and_then(Value::as_str))
-        .unwrap_or("subagent")
-        .to_string();
-    let to = frame
-        .get("to")
-        .and_then(Value::as_str)
-        .or_else(|| frame.get("recipient").and_then(Value::as_str))
-        .unwrap_or("main agent")
-        .to_string();
-    let text = frame
-        .get("text")
-        .and_then(Value::as_str)
-        .or_else(|| frame.get("message").and_then(Value::as_str))?;
-    Some(TranscriptItem::AgentMessage {
-        id: format!("agent-message:frame-{index}"),
-        from,
-        to,
-        text: text.to_string(),
-        at: now_ms(),
     })
 }
 
@@ -1075,10 +995,7 @@ fn parse_advisory_elements(message_id: &str, content: &str) -> Vec<TranscriptIte
     let mut items = Vec::new();
     let mut index = 0usize;
     let mut search_from = 0usize;
-    loop {
-        let Some(open_match) = find_advisory_open_tag(content, search_from) else {
-            break;
-        };
+    while let Some(open_match) = find_advisory_open_tag(content, search_from) {
         let body_start = open_match.body_start;
         let Some(close_rel) = content[body_start..].find(ADVISORY_CLOSE_TAG) else {
             break;
@@ -1156,12 +1073,13 @@ fn build_assistant_items(
     message_id: &str,
     parts: &[Value],
     streaming: bool,
-    existing_items: &[TranscriptItem],
+    existing_items: &[Arc<TranscriptItem>],
     capture_timing: bool,
 ) -> Vec<TranscriptItem> {
     let prefix = format!("{message_id}:");
     let existing_for_message: Vec<&TranscriptItem> = existing_items
         .iter()
+        .map(|item| item.as_ref())
         .filter(|item| item.id() == message_id || item.id().starts_with(&prefix))
         .collect();
     let mut result: Vec<TranscriptItem> = Vec::new();
@@ -1226,9 +1144,10 @@ fn build_assistant_items(
                             let sub_id = format!("subagent:{part_id}:{spec_index}");
                             let sub_name = subagent_name(spec);
                             let task = task_text(spec);
-                            let existing = existing_items.iter().find(|item| {
-                                matches!(item, TranscriptItem::Subagent { id, .. } if *id == sub_id)
-                            });
+                            let existing = existing_items
+                                .iter()
+                                .map(|item| item.as_ref())
+                                .find(|item| matches!(item, TranscriptItem::Subagent { id, .. } if *id == sub_id));
                             match existing {
                                 Some(TranscriptItem::Subagent {
                                     id,
@@ -1330,13 +1249,13 @@ fn build_assistant_items(
 /// whose id appears in `replacement` from wherever it currently sits (a `subagent` item is keyed
 /// by `tool_call_id`, not `message_id`). Port of `replaceMessageItems`.
 fn replace_message_items(
-    items: Vec<TranscriptItem>,
+    items: Vec<Arc<TranscriptItem>>,
     message_id: &str,
-    replacement: Vec<TranscriptItem>,
-) -> Vec<TranscriptItem> {
+    replacement: Vec<Arc<TranscriptItem>>,
+) -> Vec<Arc<TranscriptItem>> {
     let replacement_ids: HashSet<&str> = replacement.iter().map(|item| item.id()).collect();
     let prefix = format!("{message_id}:");
-    let matches = |item: &TranscriptItem| -> bool {
+    let matches = |item: &Arc<TranscriptItem>| -> bool {
         item.id() == message_id || item.id().starts_with(&prefix) || replacement_ids.contains(item.id())
     };
     if !items.iter().any(matches) {
@@ -1345,7 +1264,7 @@ fn replace_message_items(
         return items;
     }
     let insert_at = items.iter().position(matches).unwrap_or(items.len());
-    let without_message: Vec<TranscriptItem> = items.into_iter().filter(|item| !matches(item)).collect();
+    let without_message: Vec<Arc<TranscriptItem>> = items.into_iter().filter(|item| !matches(item)).collect();
     // `insert_at` was computed against the original list; since every item strictly before it
     // was (by definition of `position`) not a match, it also survives into `without_message`
     // unchanged, so the same index still marks the right splice point.
@@ -1361,20 +1280,20 @@ fn replace_message_items(
 // Message snapshot application (port of `applyMessageSnapshot`, lines 629-665)
 // ---------------------------------------------------------------------------
 
-fn content_parts(message: &Value) -> Vec<Value> {
-    message
-        .get("content")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
+/// Borrows `message`'s own `content[]` instead of cloning it (performance finding, 2026-10-13:
+/// this runs on every `message_start`/`message_update`/`message_end` frame -- once per streamed
+/// token chunk -- and a deep clone of a long assistant message's content array was pure waste
+/// when every caller only ever reads it).
+fn content_parts(message: &Value) -> &[Value] {
+    message.get("content").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[])
 }
 
 fn apply_message_snapshot(
-    items: Vec<TranscriptItem>,
+    items: Vec<Arc<TranscriptItem>>,
     message_id: &str,
     message: &Value,
     streaming: bool,
-) -> Vec<TranscriptItem> {
+) -> Vec<Arc<TranscriptItem>> {
     if message_id.is_empty() {
         return items;
     }
@@ -1382,17 +1301,17 @@ fn apply_message_snapshot(
     match role {
         "assistant" => {
             let parts = content_parts(message);
-            let built = build_assistant_items(message_id, &parts, streaming, &items, true);
-            replace_message_items(items, message_id, built)
+            let built = build_assistant_items(message_id, parts, streaming, &items, true);
+            replace_message_items(items, message_id, built.into_iter().map(Arc::new).collect())
         }
         "user" => {
             let parts = content_parts(message);
-            let text = join_text(&parts);
+            let text = join_text(parts);
             let at = as_timestamp(message, "timestamp").unwrap_or_else(now_ms);
             replace_message_items(
                 items,
                 message_id,
-                vec![TranscriptItem::User { id: message_id.to_string(), text, at }],
+                vec![Arc::new(TranscriptItem::User { id: message_id.to_string(), text, at })],
             )
         }
         "custom" => {
@@ -1403,27 +1322,29 @@ fn apply_message_snapshot(
                 return async_result;
             }
             if let Some(advisory_items) = try_build_advisory_items(message_id, custom_type, content) {
-                return replace_message_items(items, message_id, advisory_items);
+                return replace_message_items(items, message_id, advisory_items.into_iter().map(Arc::new).collect());
             }
             if let Some(agent_message) = try_build_agent_message(message_id, custom_type, message) {
-                return replace_message_items(items, message_id, vec![agent_message]);
+                return replace_message_items(items, message_id, vec![Arc::new(agent_message)]);
             }
             if message.get("display").and_then(Value::as_bool) == Some(true) {
                 return replace_message_items(
                     items,
                     message_id,
-                    vec![TranscriptItem::Notice {
+                    vec![Arc::new(TranscriptItem::Notice {
                         id: message_id.to_string(),
                         level: NoticeLevel::Info,
                         text: content.to_string(),
-                    }],
+                    })],
                 );
             }
             replace_message_items(items, message_id, Vec::new())
         }
         // `developer` is always hidden; `toolResult` live output comes from
-        // `tool_execution_end`, not from the message lifecycle frames.
-        "developer" | "toolResult" | _ => items,
+        // `tool_execution_end`, not from the message lifecycle frames. Both (and anything else)
+        // fall through the wildcard below unchanged (clippy `wildcard_in_or_patterns`: `_` alone
+        // already covers them).
+        _ => items,
     }
 }
 
@@ -1431,7 +1352,7 @@ fn apply_message_snapshot(
 // Live tool-execution frames (port of `applyToolExecutionStart`/`End`, lines 667-754)
 // ---------------------------------------------------------------------------
 
-fn apply_tool_execution_start(items: Vec<TranscriptItem>, frame: &Value) -> Vec<TranscriptItem> {
+fn apply_tool_execution_start(items: Vec<Arc<TranscriptItem>>, frame: &Value) -> Vec<Arc<TranscriptItem>> {
     let tool_call_id = frame.get("toolCallId").and_then(Value::as_str).unwrap_or("").to_string();
     let tool_name = frame.get("toolName").and_then(Value::as_str).unwrap_or("").to_string();
     let args = frame.get("args").cloned().unwrap_or(Value::Null);
@@ -1447,11 +1368,11 @@ fn apply_tool_execution_start(items: Vec<TranscriptItem>, frame: &Value) -> Vec<
     let target = extract_target(&tool_name, &args);
     let write = build_write_field(&tool_name, &args);
     let has_existing = items.iter().any(|item| {
-        matches!(item, TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
+        matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
     if !has_existing {
         let mut items = items;
-        items.push(TranscriptItem::Tool {
+        items.push(Arc::new(TranscriptItem::Tool {
             id: format!("tool-exec:{tool_call_id}"),
             tool_call_id,
             tool: tool_name,
@@ -1465,43 +1386,32 @@ fn apply_tool_execution_start(items: Vec<TranscriptItem>, frame: &Value) -> Vec<
             details: None,
             edit: None,
             write,
-        });
+        }));
         return items;
     }
     items
         .into_iter()
-        .map(|item| match item {
-            TranscriptItem::Tool {
-                id,
-                tool_call_id: t,
-                duration_ms,
-                output,
-                diff,
-                details,
-                edit,
-                write: old_write,
-                ..
-            } if t == tool_call_id => TranscriptItem::Tool {
-                id,
-                tool_call_id: t,
-                tool: tool_name.clone(),
-                target: target.clone(),
-                status: ToolStatus::Running,
-                started_at: Some(now_ms()),
-                duration_ms,
-                args: args.clone(),
-                output,
-                diff,
-                details,
-                edit,
-                write: write.clone().or(old_write),
-            },
-            other => other,
+        .map(|mut item| {
+            let is_target = matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id);
+            if is_target {
+                if let TranscriptItem::Tool { tool, target: t, status, started_at, args: a, write: old_write, .. } =
+                    Arc::make_mut(&mut item)
+                {
+                    let merged_write = write.clone().or_else(|| old_write.clone());
+                    *tool = tool_name.clone();
+                    *t = target.clone();
+                    *status = ToolStatus::Running;
+                    *started_at = Some(now_ms());
+                    *a = args.clone();
+                    *old_write = merged_write;
+                }
+            }
+            item
         })
         .collect()
 }
 
-fn apply_tool_execution_end(items: Vec<TranscriptItem>, frame: &Value) -> Vec<TranscriptItem> {
+fn apply_tool_execution_end(items: Vec<Arc<TranscriptItem>>, frame: &Value) -> Vec<Arc<TranscriptItem>> {
     let tool_call_id = frame.get("toolCallId").and_then(Value::as_str).unwrap_or("").to_string();
     let tool_name = frame.get("toolName").and_then(Value::as_str).unwrap_or("").to_string();
     let is_error = frame.get("isError").and_then(Value::as_bool).unwrap_or(false);
@@ -1514,14 +1424,14 @@ fn apply_tool_execution_end(items: Vec<TranscriptItem>, frame: &Value) -> Vec<Tr
             return items;
         }
         let mut items = items;
-        items.push(hidden_tool_failure_notice(&tool_call_id, &tool_name, &join_text(&result_content)));
+        items.push(Arc::new(hidden_tool_failure_notice(&tool_call_id, &tool_name, &join_text(&result_content))));
         return items;
     }
 
     let mut items = items;
     if tool_name == "task" {
         let updated = apply_batch_task_result(items.clone(), &tool_call_id, is_error, &result_details, true);
-        if updated != items {
+        if updated.len() != items.len() || !updated.iter().zip(items.iter()).all(|(a, b)| Arc::ptr_eq(a, b)) {
             return updated;
         }
     }
@@ -1535,10 +1445,10 @@ fn apply_tool_execution_end(items: Vec<TranscriptItem>, frame: &Value) -> Vec<Tr
     let output = join_text(&result_content);
     let edit = build_edit_field(&tool_name, &result_details);
     let has_existing = items.iter().any(|item| {
-        matches!(item, TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
+        matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
     if !has_existing {
-        items.push(TranscriptItem::Tool {
+        items.push(Arc::new(TranscriptItem::Tool {
             id: format!("tool-exec:{tool_call_id}"),
             tool_call_id,
             tool: tool_name,
@@ -1552,46 +1462,31 @@ fn apply_tool_execution_end(items: Vec<TranscriptItem>, frame: &Value) -> Vec<Tr
             details: Some(result_details),
             edit,
             write: None,
-        });
+        }));
         return items;
     }
     items
         .into_iter()
-        .map(|item| match item {
-            TranscriptItem::Tool {
-                id,
-                tool_call_id: t,
-                tool,
-                target,
-                started_at,
-                args,
-                diff,
-                write,
-                ..
-            } if t == tool_call_id => {
-                let duration_ms = Some(started_at.map(|sa| (now_ms() - sa).max(0)).unwrap_or(0));
-                TranscriptItem::Tool {
-                    id,
-                    tool_call_id: t,
-                    tool,
-                    target,
-                    status: if is_error { ToolStatus::Error } else { ToolStatus::Done },
-                    started_at,
-                    duration_ms,
-                    args,
-                    output: Some(output.clone()),
-                    diff,
-                    details: Some(result_details.clone()),
-                    edit: edit.clone(),
-                    write,
+        .map(|mut item| {
+            let is_target = matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id);
+            if is_target {
+                if let TranscriptItem::Tool { status, started_at, duration_ms, output: out, details: det, edit: e, .. } =
+                    Arc::make_mut(&mut item)
+                {
+                    let new_duration = Some(started_at.map(|sa| (now_ms() - sa).max(0)).unwrap_or(0));
+                    *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
+                    *duration_ms = new_duration;
+                    *out = Some(output.clone());
+                    *det = Some(result_details.clone());
+                    *e = edit.clone();
                 }
             }
-            other => other,
+            item
         })
         .collect()
 }
 
-fn apply_prompt_result_notice(items: Vec<TranscriptItem>, frame: &Value) -> Vec<TranscriptItem> {
+fn apply_prompt_result_notice(items: Vec<Arc<TranscriptItem>>, frame: &Value) -> Vec<Arc<TranscriptItem>> {
     let status = frame.get("status").and_then(Value::as_str).unwrap_or("");
     let mut items = items;
     match status {
@@ -1606,16 +1501,16 @@ fn apply_prompt_result_notice(items: Vec<TranscriptItem>, frame: &Value) -> Vec<
                 None => "Prompt failed.".to_string(),
             };
             let id = format!("notice-{}", items.len());
-            items.push(TranscriptItem::Notice { id, level: NoticeLevel::Error, text });
+            items.push(Arc::new(TranscriptItem::Notice { id, level: NoticeLevel::Error, text }));
             items
         }
         "aborted" => {
             let id = format!("notice-{}", items.len());
-            items.push(TranscriptItem::Notice {
+            items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,
                 text: "Turn aborted.".to_string(),
-            });
+            }));
             items
         }
         _ => items,
@@ -1627,14 +1522,18 @@ fn apply_prompt_result_notice(items: Vec<TranscriptItem>, frame: &Value) -> Vec<
 /// mirrors `SessionAgent`'s own tracking of whether the user has sent a prompt or slash command
 /// yet in this process's lifetime -- `false` only for the window between process start and the
 /// user's first send, exactly when OMP's unsolicited startup banner can arrive. Port of
-/// `applyFrame`.
-fn apply_frame_items(items: Vec<TranscriptItem>, frame: &Value, has_user_acted: bool) -> Vec<TranscriptItem> {
+/// `applyFrame`. `tool_execution_update` has no arm (falls to the wildcard below): `session::agent`
+/// never routes it here (TS itself only acts on it for a `task` tool, and subagents are not
+/// ported in this build -- performance finding, 2026-10-13).
+fn apply_frame_items(items: Vec<Arc<TranscriptItem>>, frame: &Value, has_user_acted: bool) -> Vec<Arc<TranscriptItem>> {
     let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
     match frame_type {
         "message_start" => {
             let message_id = frame.get("messageId").and_then(Value::as_str).unwrap_or("");
-            let message = frame.get("message").cloned().unwrap_or(Value::Null);
-            apply_message_snapshot(items, message_id, &message, true)
+            match frame.get("message") {
+                Some(message) => apply_message_snapshot(items, message_id, message, true),
+                None => items,
+            }
         }
         "message_update" => {
             let message_id = frame.get("messageId").and_then(Value::as_str).unwrap_or("");
@@ -1650,8 +1549,10 @@ fn apply_frame_items(items: Vec<TranscriptItem>, frame: &Value, has_user_acted: 
         }
         "message_end" => {
             let message_id = frame.get("messageId").and_then(Value::as_str).unwrap_or("");
-            let message = frame.get("message").cloned().unwrap_or(Value::Null);
-            apply_message_snapshot(items, message_id, &message, false)
+            match frame.get("message") {
+                Some(message) => apply_message_snapshot(items, message_id, message, false),
+                None => items,
+            }
         }
         "tool_execution_start" => apply_tool_execution_start(items, frame),
         "tool_execution_end" => apply_tool_execution_end(items, frame),
@@ -1671,7 +1572,7 @@ fn apply_frame_items(items: Vec<TranscriptItem>, frame: &Value, has_user_acted: 
             } else {
                 format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
             };
-            items.push(TranscriptItem::Notice { id, level: NoticeLevel::Info, text: text.to_string() });
+            items.push(Arc::new(TranscriptItem::Notice { id, level: NoticeLevel::Info, text: text.to_string() }));
             items
         }
         "notice" => {
@@ -1688,7 +1589,7 @@ fn apply_frame_items(items: Vec<TranscriptItem>, frame: &Value, has_user_acted: 
             } else {
                 format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
             };
-            items.push(TranscriptItem::Notice { id, level, text: message });
+            items.push(Arc::new(TranscriptItem::Notice { id, level, text: message }));
             items
         }
         _ => items,
@@ -1699,7 +1600,7 @@ fn apply_frame_items(items: Vec<TranscriptItem>, frame: &Value, has_user_acted: 
 // History (`get_messages`) conversion (port of `attachToolResult`/`fromHistory`, lines 810-963)
 // ---------------------------------------------------------------------------
 
-fn attach_tool_result(items: Vec<TranscriptItem>, message: &Value) -> Vec<TranscriptItem> {
+fn attach_tool_result(items: Vec<Arc<TranscriptItem>>, message: &Value) -> Vec<Arc<TranscriptItem>> {
     let tool_call_id = message.get("toolCallId").and_then(Value::as_str).unwrap_or("").to_string();
     let tool_name = message.get("toolName").and_then(Value::as_str).unwrap_or("").to_string();
     let is_error = message.get("isError").and_then(Value::as_bool).unwrap_or(false);
@@ -1711,14 +1612,14 @@ fn attach_tool_result(items: Vec<TranscriptItem>, message: &Value) -> Vec<Transc
             return items;
         }
         let mut items = items;
-        items.push(hidden_tool_failure_notice(&tool_call_id, &tool_name, &join_text(&content)));
+        items.push(Arc::new(hidden_tool_failure_notice(&tool_call_id, &tool_name, &join_text(content))));
         return items;
     }
 
     let mut items = items;
     if tool_name == "task" {
         let updated = apply_batch_task_result(items.clone(), &tool_call_id, is_error, &details, false);
-        if updated != items {
+        if updated.len() != items.len() || !updated.iter().zip(items.iter()).all(|(a, b)| Arc::ptr_eq(a, b)) {
             return updated;
         }
     }
@@ -1726,13 +1627,13 @@ fn attach_tool_result(items: Vec<TranscriptItem>, message: &Value) -> Vec<Transc
         items = apply_async_result_jobs(items, &wait_jobs);
     }
 
-    let output = join_text(&content);
+    let output = join_text(content);
     let edit = build_edit_field(&tool_name, &details);
     let has_existing = items.iter().any(|item| {
-        matches!(item, TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
+        matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
     if !has_existing {
-        items.push(TranscriptItem::Tool {
+        items.push(Arc::new(TranscriptItem::Tool {
             id: format!("tool-hist:{tool_call_id}"),
             tool_call_id,
             tool: tool_name,
@@ -1746,87 +1647,24 @@ fn attach_tool_result(items: Vec<TranscriptItem>, message: &Value) -> Vec<Transc
             details: Some(details),
             edit,
             write: None,
-        });
+        }));
         return items;
     }
     items
         .into_iter()
-        .map(|item| match item {
-            TranscriptItem::Tool {
-                id,
-                tool_call_id: t,
-                tool,
-                target,
-                started_at,
-                duration_ms,
-                args,
-                diff,
-                write,
-                ..
-            } if t == tool_call_id => TranscriptItem::Tool {
-                id,
-                tool_call_id: t,
-                tool,
-                target,
-                status: if is_error { ToolStatus::Error } else { ToolStatus::Done },
-                started_at,
-                duration_ms,
-                args,
-                output: Some(output.clone()),
-                diff,
-                details: Some(details.clone()),
-                edit: edit.clone(),
-                write,
-            },
-            other => other,
-        })
-        .collect()
-}
-
-/// Issue #489 (durable turn marker): settles every `subagent` row still `running` whose
-/// `tool_call_id:spec_index` key is NOT in `current_turn_keys` to `'exited'` -- a row from an
-/// older turn that OMP's own persisted `.jsonl` just keeps replaying as "spawned" forever. Port
-/// of `settleStaleSubagentRows`. Returns `true` when any row changed.
-fn settle_stale_subagent_rows_items(
-    items: Vec<TranscriptItem>,
-    current_turn_keys: &HashSet<String>,
-) -> (Vec<TranscriptItem>, bool) {
-    let mut changed = false;
-    let next = items
-        .into_iter()
-        .map(|item| match item {
-            TranscriptItem::Subagent {
-                id,
-                tool_call_id,
-                spec_index,
-                name,
-                task,
-                status,
-                started_at,
-                duration_ms,
-                result,
-                job_id,
-            } if status == SubagentStatus::Running
-                && !current_turn_keys.contains(&format!("{tool_call_id}:{spec_index}")) =>
-            {
-                changed = true;
-                TranscriptItem::Subagent {
-                    id,
-                    tool_call_id,
-                    spec_index,
-                    name,
-                    task,
-                    status: SubagentStatus::Exited,
-                    started_at,
-                    duration_ms,
-                    result,
-                    job_id,
+        .map(|mut item| {
+            let is_target = matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id);
+            if is_target {
+                if let TranscriptItem::Tool { status, output: out, details: det, edit: e, .. } = Arc::make_mut(&mut item) {
+                    *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
+                    *out = Some(output.clone());
+                    *det = Some(details.clone());
+                    *e = edit.clone();
                 }
             }
-            other => other,
+            item
         })
-        .collect();
-    (next, changed)
+        .collect()
 }
 
 /// Issue #510 slice 3: settles a `tool` row still `running` to `'interrupted'` when the caller
@@ -1835,81 +1673,52 @@ fn settle_stale_subagent_rows_items(
 /// within one healthy process life). Port of `settleInterruptedToolRows`. Returns `true` when any
 /// row changed.
 fn settle_interrupted_tool_rows_items(
-    items: Vec<TranscriptItem>,
+    mut items: Vec<Arc<TranscriptItem>>,
     terminated_unexpectedly: bool,
-) -> (Vec<TranscriptItem>, bool) {
+) -> (Vec<Arc<TranscriptItem>>, bool) {
     let mut changed = false;
     let mut saw_later_user = false;
-    let mut next = vec![None; items.len()];
-    for (i, item) in items.into_iter().enumerate().rev() {
-        if matches!(item, TranscriptItem::User { .. }) {
+    for item in items.iter_mut().rev() {
+        if matches!(item.as_ref(), TranscriptItem::User { .. }) {
             saw_later_user = true;
         }
-        let settle = matches!(&item, TranscriptItem::Tool { status, .. } if *status == ToolStatus::Running)
+        let settle = matches!(item.as_ref(), TranscriptItem::Tool { status, .. } if *status == ToolStatus::Running)
             && (terminated_unexpectedly || saw_later_user);
-        if settle {
-            changed = true;
-            if let TranscriptItem::Tool {
-                id,
-                tool_call_id,
-                tool,
-                target,
-                started_at,
-                duration_ms,
-                args,
-                output,
-                diff,
-                details,
-                edit,
-                write,
-                ..
-            } = item
-            {
-                next[i] = Some(TranscriptItem::Tool {
-                    id,
-                    tool_call_id,
-                    tool,
-                    target,
-                    status: ToolStatus::Interrupted,
-                    started_at,
-                    duration_ms,
-                    args,
-                    output,
-                    diff,
-                    details,
-                    edit,
-                    write,
-                });
-            }
-        } else {
-            next[i] = Some(item);
+        if !settle {
+            continue;
+        }
+        changed = true;
+        if let TranscriptItem::Tool { status, .. } = Arc::make_mut(item) {
+            *status = ToolStatus::Interrupted;
         }
     }
-    (next.into_iter().map(|i| i.expect("every index written exactly once")).collect(), changed)
+    (items, changed)
 }
 
 /// Builds the transcript items for a stored session's history (from `get_messages`), per
 /// contracts/omp-usage.md "Message parts". Port of `fromHistory`'s own per-message loop --
-/// deliberately NOT including the final `settle_stale_subagent_rows`/`settle_interrupted_tool_rows`
-/// pass the TS function always runs: this facade exposes those as separate `TranscriptState`
-/// methods (see that struct's doc comment) since the Rust signature carries no
-/// `current_turn_keys`/`terminated_unexpectedly` parameters to run them with yet.
-fn items_from_history(messages: &[Value]) -> Vec<TranscriptItem> {
-    let mut items: Vec<TranscriptItem> = Vec::new();
+/// deliberately NOT including the final `settleInterruptedToolRows` pass the TS function always
+/// runs: this facade exposes that as a separate `TranscriptState::settle_interrupted_tool_rows`
+/// method (see that struct's doc comment), since the Rust signature carries no
+/// `terminated_unexpectedly` parameter to run it with yet. (`settleStaleSubagentRows` has no port
+/// in this build: subagents are out of scope, see this file's own header comment, so there is no
+/// `current_turn_keys`-scoped staleness to settle.)
+fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
+    let mut items: Vec<Arc<TranscriptItem>> = Vec::new();
     for (index, message) in messages.iter().enumerate() {
         let message_id = format!("h{index}");
         let role = message.get("role").and_then(Value::as_str).unwrap_or("");
         match role {
             "assistant" => {
                 let parts = content_parts(message);
-                let built = build_assistant_items(&message_id, &parts, false, &items, false);
-                items.extend(built);
+                let built = build_assistant_items(&message_id, parts, false, &items, false);
+                items.extend(built.into_iter().map(Arc::new));
             }
             "user" => {
                 let parts = content_parts(message);
-                let text = join_text(&parts);
+                let text = join_text(parts);
                 let at = as_timestamp(message, "timestamp").unwrap_or(0);
-                items.push(TranscriptItem::User { id: message_id, text, at });
+                items.push(Arc::new(TranscriptItem::User { id: message_id, text, at }));
             }
             "custom" => {
                 let custom_type = message.get("customType").and_then(Value::as_str).unwrap_or("");
@@ -1920,19 +1729,19 @@ fn items_from_history(messages: &[Value]) -> Vec<TranscriptItem> {
                     continue;
                 }
                 if let Some(advisory_items) = try_build_advisory_items(&message_id, custom_type, content) {
-                    items.extend(advisory_items);
+                    items.extend(advisory_items.into_iter().map(Arc::new));
                     continue;
                 }
                 if let Some(agent_message) = try_build_agent_message(&message_id, custom_type, message) {
-                    items.push(agent_message);
+                    items.push(Arc::new(agent_message));
                     continue;
                 }
                 if message.get("display").and_then(Value::as_bool) == Some(true) {
-                    items.push(TranscriptItem::Notice {
+                    items.push(Arc::new(TranscriptItem::Notice {
                         id: message_id,
                         level: NoticeLevel::Info,
                         text: content.to_string(),
-                    });
+                    }));
                 }
             }
             "toolResult" => {
@@ -1951,56 +1760,70 @@ fn items_from_history(messages: &[Value]) -> Vec<TranscriptItem> {
 
 /// Owns one Session's current `TranscriptItem[]`, built from `get_messages` history
 /// (`from_history`) and kept current by live rpc-ui frames (`apply_frame`). Mirrors
-/// `SessionAgent.ts`'s own `runtime.transcript` field plus the pieces of its state that feed
-/// `transcript.ts`'s functions: `has_user_acted` (`SessionAgent.hasUserActed`),
-/// `current_turn_keys` (`Session.currentTurnSubagents`, via `current_turn_keys`), and
-/// `terminated_unexpectedly` (`detectUnexpectedTermination`). The last two have no equivalent
-/// constructor parameter on this struct (the facade's `from_history` takes only `messages`) --
-/// set them with `set_current_turn_keys`/`set_terminated_unexpectedly` before calling
-/// `settle_stale_subagent_rows`/`settle_interrupted_tool_rows`, which is how `fromHistory` itself
-/// always finished (it called both, back to back, with exactly this information) on the TS side.
+/// `SessionAgent.ts`'s own `runtime.transcript` field plus the piece of its state that feeds
+/// `transcript.ts`'s functions: `has_user_acted` (`SessionAgent.hasUserActed`).
+/// `terminated_unexpectedly` (`detectUnexpectedTermination`) has no equivalent constructor
+/// parameter on this struct (the facade's `from_history` takes only `messages`) -- set it with
+/// `set_terminated_unexpectedly` before calling `settle_interrupted_tool_rows`, which is how
+/// `fromHistory` itself always finished on the TS side. `settleStaleSubagentRows`/
+/// `current_turn_keys` have no port in this build: subagents are out of scope (see this file's
+/// own header comment), so there is nothing for a durable-turn-marker staleness pass to settle.
+///
+/// Items are stored behind `Arc` (performance finding, 2026-10-13): `apply_frame` and every
+/// helper it calls only ever wrap a genuinely new/changed value in a fresh `Arc`
+/// (`Arc::make_mut`'s own clone-on-write, or a freshly built item), leaving every untouched
+/// item's `Arc` pointer unchanged. That makes `items().to_vec()` (done once per frame by
+/// `session::agent` to diff against) O(n) pointer bumps instead of a full deep copy, and lets
+/// `diff.rs`'s `diff_transcript` tell "changed" from "unchanged" with `Arc::ptr_eq` instead of a
+/// full value compare -- so per-frame cost is proportional to what changed, not to the whole
+/// transcript.
 pub struct TranscriptState {
-    items: Vec<TranscriptItem>,
+    items: Vec<Arc<TranscriptItem>>,
     has_user_acted: bool,
-    current_turn_keys: HashSet<String>,
     terminated_unexpectedly: bool,
 }
 
 impl TranscriptState {
     pub fn new() -> Self {
-        Self {
-            items: Vec::new(),
-            has_user_acted: false,
-            current_turn_keys: HashSet::new(),
-            terminated_unexpectedly: false,
-        }
+        Self { items: Vec::new(), has_user_acted: false, terminated_unexpectedly: false }
     }
 
     /// Port of the `get_messages` history conversion (`fromHistory`'s per-message loop; see
-    /// `items_from_history`'s doc comment for why the trailing settle passes are not run here).
+    /// `items_from_history`'s doc comment for why the trailing settle pass is not run here).
     pub fn from_history(messages: &[Value]) -> Self {
-        Self {
-            items: items_from_history(messages),
-            has_user_acted: false,
-            current_turn_keys: HashSet::new(),
-            terminated_unexpectedly: false,
-        }
+        Self { items: items_from_history(messages), has_user_acted: false, terminated_unexpectedly: false }
     }
 
-    /// Applies one live rpc-ui frame (port of `applyFrame`). Returns `true` when any item
-    /// changed (by value -- see this module's header comment on the identity-vs-equality
-    /// deviation from the TS source).
-    pub fn apply_frame(&mut self, frame: &Value) -> bool {
-        let next = apply_frame_items(self.items.clone(), frame, self.has_user_acted);
-        if next == self.items {
-            false
-        } else {
-            self.items = next;
-            true
-        }
+    /// Finalizes every still-live row (a still-`running` tool/subagent call becomes `error`,
+    /// streaming assistant-text/thinking stops `streaming`) via `diff::finalize_live_transcript`.
+    /// For `SessionAgent::handle_exit`'s own use: a crash or `stop()` mid-turn must not leave a
+    /// row spinning forever in the UI (code-review finding, 2026-10-13; TS calls this
+    /// `finalizeLiveItems`, `SessionAgent.ts:1379`).
+    pub fn finalize_live_items(&mut self) {
+        let items = std::mem::take(&mut self.items);
+        self.items = finalize_live_transcript(items);
     }
 
-    pub fn items(&self) -> &[TranscriptItem] {
+    /// Builds history-based items, then merges the Session's current (still-live) items on top
+    /// via `diff::merge_history_with_live`, keeping `has_user_acted`/`terminated_unexpectedly`
+    /// unchanged across the swap. Port of `mergeLiveTranscript` (code-review finding,
+    /// 2026-10-13: `launch()` used to replace the transcript outright instead of merging,
+    /// silently dropping any notice/request/in-flight item a live frame appended while the
+    /// history fetch was in flight).
+    pub fn merge_from_history(&mut self, messages: &[Value]) {
+        let history_items = items_from_history(messages);
+        self.items = merge_history_with_live(&history_items, &self.items);
+    }
+
+    /// Applies one live rpc-ui frame (port of `applyFrame`), mutating `self.items` in place so
+    /// that only the items the frame actually touched get a new `Arc` -- everything else keeps
+    /// its identity (see this struct's own doc comment).
+    pub fn apply_frame(&mut self, frame: &Value) {
+        let items = std::mem::take(&mut self.items);
+        self.items = apply_frame_items(items, frame, self.has_user_acted);
+    }
+
+    pub fn items(&self) -> &[Arc<TranscriptItem>] {
         &self.items
     }
 
@@ -2009,8 +1832,8 @@ impl TranscriptState {
     /// approval dialogs, and for ad hoc `notice`/`agent-message` items built outside a frame).
     pub fn upsert_item(&mut self, item: TranscriptItem) {
         match self.items.iter().position(|existing| existing.id() == item.id()) {
-            Some(pos) => self.items[pos] = item,
-            None => self.items.push(item),
+            Some(pos) => self.items[pos] = Arc::new(item),
+            None => self.items.push(Arc::new(item)),
         }
     }
 
@@ -2019,27 +1842,6 @@ impl TranscriptState {
     /// flips false -> true).
     pub fn mark_user_acted(&mut self) {
         self.has_user_acted = true;
-    }
-
-    /// Sets the durable-turn-marker scope `settle_stale_subagent_rows` checks against
-    /// (`Session.currentTurnSubagents`, via `current_turn_keys`).
-    pub fn set_current_turn_keys(&mut self, keys: HashSet<String>) {
-        self.current_turn_keys = keys;
-    }
-
-    /// Sets whether `settle_interrupted_tool_rows` should treat every still-`running` `tool` row
-    /// as orphaned (the writing process is confirmed gone), not only ones followed by a later
-    /// `user` item.
-    pub fn set_terminated_unexpectedly(&mut self, value: bool) {
-        self.terminated_unexpectedly = value;
-    }
-
-    /// Port of `settleStaleSubagentRows`, using the keys set by `set_current_turn_keys`. Returns
-    /// `true` when any row changed.
-    pub fn settle_stale_subagent_rows(&mut self) -> bool {
-        let (next, changed) = settle_stale_subagent_rows_items(self.items.clone(), &self.current_turn_keys);
-        self.items = next;
-        changed
     }
 
     /// Port of `settleInterruptedToolRows`, using the flag set by `set_terminated_unexpectedly`.
@@ -2057,14 +1859,3 @@ impl Default for TranscriptState {
     }
 }
 
-/// Port of `currentTurnKeys` (issue #489 hardening): `registry.json` is hand-editable disk state
-/// that goes through no runtime validation on load, so a malformed `currentTurnSubagents` field
-/// (not an array, or an array with non-string entries) must read as empty rather than panic or
-/// silently misbehave. Takes the raw `Session.currentTurnSubagents` JSON field directly (this
-/// crate does not yet share a `Session` struct with `store::registry`).
-pub fn current_turn_keys(current_turn_subagents: Option<&Value>) -> HashSet<String> {
-    current_turn_subagents
-        .and_then(Value::as_array)
-        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
-        .unwrap_or_default()
-}

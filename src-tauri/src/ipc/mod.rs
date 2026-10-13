@@ -109,7 +109,20 @@ impl Dispatcher {
                 }
             }),
         };
-        log::debug!("refract_request {channel} -> {envelope}");
+        // Security/perf: never log the envelope itself -- `sessions.open`/`conversations.open`
+        // carry the whole transcript (prompts, tool output, secrets) in `value`. Only the
+        // channel name and the outcome (`ok`, or the error code) are safe and cheap to log.
+        match envelope.get("ok").and_then(Value::as_bool) {
+            Some(true) => log::debug!("refract_request {channel} -> ok"),
+            _ => {
+                let code = envelope
+                    .get("error")
+                    .and_then(|error| error.get("code"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                log::debug!("refract_request {channel} -> err:{code}");
+            }
+        }
         envelope
     }
 }

@@ -9,6 +9,8 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::omp::diff::TranscriptOp;
+
 pub const SESSION_STATUS: &str = "session:status";
 pub const SESSION_LIST_CHANGED: &str = "session:list-changed";
 pub const TRANSCRIPT_PATCH: &str = "transcript:patch";
@@ -29,6 +31,16 @@ pub const FILE_EXPLORER_PATCH: &str = "file-explorer:patch";
 pub const FILE_EXPLORER_RESET: &str = "file-explorer:reset";
 pub const ACCOUNTS_GITHUB_CHANGED: &str = "accounts:github-changed";
 pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
+
+/// Wire-identical to `transcript:patch`'s payload shape (`{ sessionId, ops }`), borrowed instead
+/// of built through `serde_json::Value` (performance finding, 2026-10-13): lets `app.emit`
+/// serialise straight from `ops` in one pass instead of two extra `Value`-tree copies first.
+#[derive(Clone, Serialize)]
+struct TranscriptPatchPayload<'a> {
+    #[serde(rename = "sessionId")]
+    session_id: &'a str,
+    ops: &'a [TranscriptOp],
+}
 
 /// The milestone-1 event fan-out (tasks.md T027, `src/main/ipc/register.ts`'s own
 /// `forwardEvent` plus `broadcast.ts`'s `broadcastSettingsChanged`): one typed emit method per
@@ -67,8 +79,12 @@ impl EventSink {
         self.send(SESSION_LIST_CHANGED, ());
     }
 
-    pub fn emit_transcript_patch(&self, session_id: &str, ops: &serde_json::Value) {
-        self.send(TRANSCRIPT_PATCH, serde_json::json!({ "sessionId": session_id, "ops": ops }));
+    /// Serialises `ops` directly from a borrowed `TranscriptPatchPayload` (performance finding,
+    /// 2026-10-13): the caller used to build a `serde_json::Value` tree via `to_value(&ops)` and
+    /// this method then rewrapped that `Value` through another `json!()` call -- two extra full
+    /// copies of the patch on top of the one `app.emit` itself must do to reach the webview.
+    pub fn emit_transcript_patch(&self, session_id: &str, ops: &[TranscriptOp]) {
+        self.send(TRANSCRIPT_PATCH, TranscriptPatchPayload { session_id, ops });
     }
 
     pub fn emit_queue_update(&self, session_id: &str, follow_up: &[String], steering: &[String]) {

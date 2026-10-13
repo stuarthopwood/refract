@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex as StdMutex, Weak};
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use tokio::sync::{watch, Mutex as AsyncMutex};
+use tokio::sync::{mpsc, watch, Mutex as AsyncMutex};
 
 use crate::events::EventSink;
 use crate::omp::diff::{diff_transcript, PatchCoalescer, TranscriptOp};
@@ -168,8 +168,7 @@ impl SessionAgent {
                 if !flush_visible_ids.lock().expect("visible_ids mutex poisoned").contains(&flush_session_id) {
                     return;
                 }
-                let ops_value = serde_json::to_value(&ops).expect("TranscriptOp is always JSON-serialisable");
-                flush_events.emit_transcript_patch(&flush_session_id, &ops_value);
+                flush_events.emit_transcript_patch(&flush_session_id, &ops);
             }),
         );
         Arc::new_cyclic(|weak| Self {
@@ -223,17 +222,26 @@ impl SessionAgent {
     // -----------------------------------------------------------------------------------------
 
     fn status_event_locked(&self, state: &AgentState) -> Value {
-        json!({
+        let mut payload = json!({
             "sessionId": self.session_id,
             "status": state.status,
-            "stopReason": state.stop_reason,
-            "stopDetail": state.stop_detail,
-            "terminatedUnexpectedly": Value::Null,
-            "startProgress": Value::Null,
             "unread": state.unread,
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
-        })
+        });
+        let obj = payload.as_object_mut().expect("status_event_locked payload is always a JSON object");
+        // `stopReason`/`stopDetail` are TS `?:` optional fields (the renderer checks
+        // `=== undefined`, ChatPane.tsx:205): omitted entirely when absent, not sent as JSON
+        // `null` (code-review finding, 2026-10-13). `terminatedUnexpectedly`/`startProgress`
+        // have no port in this build (see this file's own header comment) and so are never
+        // emitted at all either.
+        if let Some(reason) = state.stop_reason {
+            obj.insert("stopReason".to_string(), Value::String(reason.to_string()));
+        }
+        if let Some(detail) = &state.stop_detail {
+            obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
+        }
+        payload
     }
 
     async fn emit_status(&self) {
@@ -284,24 +292,28 @@ impl SessionAgent {
     /// only calls this for a Session that already has one).
     pub async fn summary_fields(&self) -> Value {
         let state = self.state.lock().await;
-        json!({
+        let mut payload = json!({
             "status": state.status,
-            "stopReason": state.stop_reason,
             "unread": state.unread,
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
-        })
+        });
+        if let Some(reason) = state.stop_reason {
+            payload
+                .as_object_mut()
+                .expect("summary_fields payload is always a JSON object")
+                .insert("stopReason".to_string(), Value::String(reason.to_string()));
+        }
+        payload
     }
 
     /// `SessionRuntimeView` (`sessions.open`/`.recover`/`conversations.startNew`/`.open`'s own
     /// `SessionSnapshot.runtime`).
     pub async fn runtime_view(&self) -> Value {
         let state = self.state.lock().await;
-        json!({
+        let mut payload = json!({
             "sessionId": self.session_id,
             "status": state.status,
-            "stopReason": state.stop_reason,
-            "stopDetail": state.stop_detail,
             "unread": state.unread,
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
@@ -315,7 +327,15 @@ impl SessionAgent {
             "transcript": state.transcript.items(),
             "queue": { "followUp": state.queue_follow_up, "steering": state.queue_steering },
             "pending": state.pending,
-        })
+        });
+        let obj = payload.as_object_mut().expect("runtime_view payload is always a JSON object");
+        if let Some(reason) = state.stop_reason {
+            obj.insert("stopReason".to_string(), Value::String(reason.to_string()));
+        }
+        if let Some(detail) = &state.stop_detail {
+            obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
+        }
+        payload
     }
 
     pub async fn status(&self) -> SessionStatus {
@@ -333,12 +353,12 @@ impl SessionAgent {
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
         let before = state.transcript.items().to_vec();
-        let changed = state.transcript.apply_frame(frame);
-        if !changed {
-            return;
-        }
+        state.transcript.apply_frame(frame);
         let ops = diff_transcript(&before, state.transcript.items());
-        drop(state);
+        // Queued while still holding `state.lock()` (code-review finding, 2026-10-13): otherwise
+        // a concurrent `emit_patch_reset` (`SessionManager::set_visible`) can slip its own
+        // `Reset` into the coalescer between this diff and this queue call, and the reset would
+        // then supersede (drop) this upsert even though it is the newer change.
         if !ops.is_empty() {
             self.coalescer.queue(ops);
         }
@@ -360,7 +380,6 @@ impl SessionAgent {
             resolved,
         });
         let ops = diff_transcript(&before, state.transcript.items());
-        drop(state);
         if !ops.is_empty() {
             self.coalescer.queue(ops);
         }
@@ -371,8 +390,10 @@ impl SessionAgent {
     /// `session::manager::SessionManager::set_visible` for a Session that just became visible
     /// (its patches were dropped by the coalescer's own visibility gate while hidden).
     pub async fn emit_patch_reset(&self) {
-        let items = self.state.lock().await.transcript.items().to_vec();
+        let state = self.state.lock().await;
+        let items: Vec<TranscriptItem> = state.transcript.items().iter().map(|item| (**item).clone()).collect();
         self.coalescer.queue(vec![TranscriptOp::Reset { items }]);
+        drop(state);
         self.coalescer.flush_now();
     }
 
@@ -446,7 +467,7 @@ impl SessionAgent {
         let approval_mode = self.settings.lock().await.get().approval_mode;
         let opts = OmpProcessOptions::new(PathBuf::from(&session.worktree_path), to_process_mode(approval_mode));
 
-        let proc = match OmpProcess::spawn(opts).await {
+        let proc = match OmpProcess::connect(&opts).await {
             Ok(p) => p,
             Err(err) => {
                 let detail = format!("{failure_prefix}{}", err.message);
@@ -455,6 +476,16 @@ impl SessionAgent {
             }
         };
         let proc = Arc::new(proc);
+        // Subscribed before `wait_ready` (code-review/perf finding, 2026-10-13): registers this
+        // listener before any frame -- including ones the ready-wait itself observes -- can
+        // possibly be produced, the same guarantee `OmpProcess.ts` gets from attaching
+        // `proc.on('frame', ...)` before calling `start()` (SessionAgent.ts:471).
+        self.spawn_frame_listener(proc.clone(), proc.subscribe());
+        if let Err(err) = proc.wait_ready(&opts).await {
+            let detail = format!("{failure_prefix}{}", err.message);
+            self.record_start_failure(&detail).await;
+            return Err(AgentError::new("start-failed", detail));
+        }
 
         if self.state.lock().await.stop_requested {
             proc.stop().await;
@@ -466,7 +497,6 @@ impl SessionAgent {
             let mut state = self.state.lock().await;
             state.process = Some(proc.clone());
         }
-        self.spawn_frame_listener(proc.clone());
 
         let state_data = match self.attach_and_verify(&proc, session).await {
             Ok(data) => data,
@@ -505,9 +535,12 @@ impl SessionAgent {
             state.launched_mode = approval_mode;
             state.pending_mode = if current_mode == approval_mode { None } else { Some(current_mode) };
             if complete {
-                let mut fresh = TranscriptState::from_history(&messages);
-                let _ = fresh.settle_interrupted_tool_rows();
-                state.transcript = fresh;
+                // Merges in the freshly fetched history rather than replacing the transcript
+                // outright (code-review finding, 2026-10-13): a flat replace silently dropped
+                // any notice/request/in-flight item a live frame appended while this fetch was
+                // in flight. Port of `mergeLiveTranscript`.
+                state.transcript.merge_from_history(&messages);
+                let _ = state.transcript.settle_interrupted_tool_rows();
             }
         }
 
@@ -597,20 +630,20 @@ impl SessionAgent {
     // Live frames (port of `SessionAgent.ts`'s own `onFrame`)
     // -----------------------------------------------------------------------------------------
 
-    fn spawn_frame_listener(&self, proc: Arc<OmpProcess>) {
+    fn spawn_frame_listener(&self, proc: Arc<OmpProcess>, mut rx: mpsc::UnboundedReceiver<ProcessEvent>) {
         let agent = self.arc();
-        let mut rx = proc.subscribe();
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
-                    Ok(ProcessEvent::Frame(frame)) => agent.handle_frame(frame).await,
-                    Ok(ProcessEvent::StartProgress { .. }) => {}
-                    Ok(ProcessEvent::Exit { code, requested }) => {
-                        agent.handle_exit(code, requested).await;
+                    Some(ProcessEvent::Frame(frame)) => agent.handle_frame(frame).await,
+                    Some(ProcessEvent::StartProgress { .. }) => {}
+                    Some(ProcessEvent::Exit { code, requested }) => {
+                        agent.handle_exit(&proc, code, requested).await;
                         break;
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    // The unbounded `mpsc` channel never lags; it only closes when the process
+                    // itself is gone (every sender dropped).
+                    None => break,
                 }
             }
         });
@@ -659,9 +692,15 @@ impl SessionAgent {
                     self.apply_transcript_frame(&frame).await;
                 }
             }
-            "tool_execution_start" | "tool_execution_end" | "tool_execution_update" => {
+            "tool_execution_start" | "tool_execution_end" => {
                 self.apply_transcript_frame(&frame).await;
             }
+            // `tool_execution_update` has no live-transcript effect in this build (perf/code-
+            // review finding, 2026-10-13): TS only acts on it for a `task` tool's streamed
+            // progress (SessionAgent.ts:1555-1558), and subagents are not ported here (see this
+            // file's own header). Routing it into `apply_transcript_frame` anyway paid a lock
+            // acquisition plus a transcript diff on every streamed tool-output chunk for no
+            // effect; falls to the default no-op arm below instead.
             // `agent_end`, `btw_delta`/`btw_record` (side chat), and anything else: no-op, same
             // as `SessionAgent.ts`'s own default branch minus the subagent-IRC-message handling
             // this slice does not port.
@@ -704,8 +743,12 @@ impl SessionAgent {
                 {
                     let mut state = self.state.lock().await;
                     state.pending.push(request);
-                    state.status = SessionStatus::NeedsYou;
                 }
+                // Routed through `set_status` (code-review finding, 2026-10-13: this used to set
+                // `state.status` directly, so the renderer's row/list status and `unread` never
+                // updated to `needs-you` until the next unrelated transition). Port of
+                // `addPendingRequest` (SessionAgent.ts:1641-1644), which does emit.
+                self.set_status(SessionStatus::NeedsYou, None, None).await;
                 self.upsert_request_row(&request_id, None).await;
                 self.events.emit_request_pending(&self.session_id, &payload);
             }
@@ -755,15 +798,37 @@ impl SessionAgent {
         }
     }
 
-    /// Port of `SessionAgent.ts`'s own `onExit`, simplified: the `shouldApplyCrashExitVerdict`/
-    /// `lifeEpoch` race guard is dropped (it exists only to protect a concurrent `restart()`,
-    /// which this build does not implement -- see this file's own header), and
+    /// Port of `SessionAgent.ts`'s own `onExit`. The epoch guard (`proc` must still be
+    /// `state.process`) is a real port, not a no-op (code-review finding, 2026-10-13: this
+    /// file's header previously said the TS guard only protects a `restart()` this build does
+    /// not implement -- that was wrong; `SessionAgent.ts:1440-1449` says it guards exactly this
+    /// `launch()` race, where the listener task's own `Exit` can arrive after a quick
+    /// stop-then-start already moved `state.process` on to a newer life).
     /// `detectUnexpectedTermination`'s crash-tail read/the persisted stopped-on-request marker
     /// are not ported (`terminatedUnexpectedly` always absent).
-    async fn handle_exit(&self, code: Option<i32>, requested: bool) {
+    async fn handle_exit(&self, proc: &Arc<OmpProcess>, code: Option<i32>, requested: bool) {
+        let is_current = {
+            let mut state = self.state.lock().await;
+            let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
+            if is_current {
+                state.process = None;
+            }
+            is_current
+        };
+        if !is_current {
+            return;
+        }
+        // Finalizes every still-live row before settling pending requests (code-review finding,
+        // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
+        // crash or `stop()` mid-turn leaves a streaming/running row spinning forever.
         {
             let mut state = self.state.lock().await;
-            state.process = None;
+            let before = state.transcript.items().to_vec();
+            state.transcript.finalize_live_items();
+            let ops = diff_transcript(&before, state.transcript.items());
+            if !ops.is_empty() {
+                self.coalescer.queue(ops);
+            }
         }
         self.settle_turn_pending().await;
         if requested {
@@ -777,7 +842,11 @@ impl SessionAgent {
             self.set_status(SessionStatus::Stopped, Some("not-started"), None).await;
             return;
         }
-        self.set_status(SessionStatus::Stopped, Some("agent-exited"), Some(format!("exit code {code:?}"))).await;
+        let detail = match code {
+            Some(c) => format!("exit code {c}"),
+            None => "exit code null".to_string(),
+        };
+        self.set_status(SessionStatus::Stopped, Some("agent-exited"), Some(detail)).await;
     }
 
     // -----------------------------------------------------------------------------------------
@@ -789,7 +858,12 @@ impl SessionAgent {
     /// only being set while the turn is already `working`/`needs-you` (a steer/follow-up).
     pub async fn send(&self, text: String, images: Option<Vec<Value>>) -> Result<Value, AgentError> {
         let (proc, working) = {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
+            // Port of `SessionAgent.ts`'s own `send()`: marks the user as having acted before
+            // anything else (code-review finding, 2026-10-13 -- this was never called, so every
+            // notice/`command_output` kept the `startup-notice:` id and stayed hidden,
+            // `Transcript.tsx:423`).
+            state.transcript.mark_user_acted();
             let proc = state.process.clone().ok_or_else(|| AgentError::new("agent-not-running", format!("SessionAgent {}: cannot send, no live process", self.session_id)))?;
             let working = matches!(state.status, SessionStatus::Working | SessionStatus::NeedsYou);
             (proc, working)
@@ -1267,8 +1341,9 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
 
 /// Refract's own native commands (`NATIVE_BUILT_COMMANDS`): `/new` has a working implementation
 /// (`start_new_conversation`); `/btw` is listed for menu parity with the Electron build but has
-/// no implementation here (side chat out of scope, see this file's own header) -- `chat.send`
-/// never special-cases it, so it falls through to the unknown-command refusal below if invoked.
+/// no implementation here (side chat out of scope, see this file's own header) -- `ipc::chat`'s
+/// own `NATIVE_RESERVED_COMMANDS` check refuses it with `unknown-command` before classification
+/// ever reaches `chat.send`, so this module never sees a `/btw` invocation to special-case.
 const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[("new", "Start a new Conversation in this Session"), ("btw", "Ask the agent a side question")];
 
 /// Port of `slash-commands.ts`'s own `filterSupportedCommands`.

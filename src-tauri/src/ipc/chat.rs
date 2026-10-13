@@ -17,6 +17,11 @@ use super::{invalid_argument, not_found, AppState, HandlerFuture, IpcError};
 /// this crate's `shared/` tree, so re-declared here.
 const MAX_IMAGE_INPUT_BYTES: u64 = 20 * 1024 * 1024;
 
+/// Port of `src/shared/slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS`: Refract's own
+/// native/reserved command names (constitution I), refused locally even if OMP later recognizes
+/// one of them as a real command -- never forwarded as a literal prompt.
+const NATIVE_RESERVED_COMMANDS: &[&str] = &["new", "resume", "plan", "fork", "settings", "pause", "plan-review", "btw"];
+
 fn manager(state: &AppState) -> &std::sync::Arc<SessionManager> {
     &state.session_manager
 }
@@ -161,9 +166,16 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let agent = manager(&state).get_or_create_agent(session_id);
 
         if let Some((name, rest)) = parse_slash_command(text) {
-            if name == "new" {
+            if name == "new" && rest.is_empty() {
                 agent.start_new_conversation().await.map_err(map_chat_error)?;
                 return Ok(serde_json::json!({ "queued": false }));
+            }
+            // Port of `slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS` (chat.ts:125-130):
+            // refused locally before classification, never forwarded to OMP even if a future
+            // OMP version later recognizes one of these names as a real command.
+            if NATIVE_RESERVED_COMMANDS.contains(&name.as_str()) {
+                let suffix = if rest.is_empty() { String::new() } else { format!(" {rest}") };
+                return Err(IpcError::new("unknown-command", format!("Unknown command: /{name}{suffix}")));
             }
             let commands = agent.available_commands().await;
             match classify_slash_invocation(&name, &rest, &commands) {

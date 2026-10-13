@@ -102,13 +102,17 @@ fn is_stripped_env_var(key: &str) -> bool {
 /// `cwd` before PATH for a bare `"git"`, so a repository that commits its own `git.exe` could run
 /// instead of the real one -- `which` only ever searches `PATH`, never the child's `cwd`).
 pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> GitRawResult {
-    let git_path = match which::which("git") {
+    let git_path = match which::which_global("git") {
         Ok(path) => path,
         Err(err) => return GitRawResult { stdout: String::new(), stderr: err.to_string(), code: 1 },
     };
 
     let mut command = Command::new(&git_path);
     command.args(args).current_dir(cwd).creation_flags(CREATE_NO_WINDOW);
+    // Perf: a timed-out `output_future` below is dropped, not awaited to completion; without
+    // this the child (and its pipes) would keep running as an orphan. `kill_on_drop` makes
+    // tokio reap it the moment the future is dropped, matching Node's `execFile` timeout.
+    command.kill_on_drop(true);
     command.env_clear();
     for (key, value) in std::env::vars_os() {
         if let Some(key_str) = key.to_str() {

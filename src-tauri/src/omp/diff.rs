@@ -1,10 +1,13 @@
 // Port of `src/main/omp/transcriptDiff.ts` and `patchCoalescer.ts` (tasks.md T021).
 //
 // `diff_transcript` deliberately deviates from the TS source in two ways, both documented at the
-// call site below: change detection is by VALUE EQUALITY (`TranscriptItem: PartialEq`) rather
-// than JS object identity (see `transcript.rs`'s header comment for why that is a strictly safe
-// substitute), and the diff itself is a true O(n) pass via an id->item map over `prev` (issue
-// #776) rather than the TS version's repeated `Array.prototype.find` (O(n*m)).
+// call site below: change detection is by `Arc` POINTER IDENTITY (`Arc::ptr_eq`), the same
+// identity rule the TS source itself uses (`transcript.rs`'s own helpers only ever wrap a
+// genuinely new value in a fresh `Arc`, mirroring `replaceMessageItems` preserving the reference
+// of any item it did not touch) -- and the diff itself is a true O(n) pass via an id->item map
+// over `prev` (issue #776) rather than the TS version's repeated `Array.prototype.find` (O(n*m)).
+// See `transcript.rs`'s own header comment for why `Arc<TranscriptItem>` (not a plain value, and
+// not `PartialEq`) is the live transcript's storage type (performance finding, 2026-10-13).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -15,36 +18,45 @@ use serde::Serialize;
 use super::transcript::{SubagentStatus, ToolStatus, TranscriptItem};
 
 /// Wire-identical to `src/shared/ipc.ts`'s `TranscriptOp` (`{ op: 'upsert', item }` or
-/// `{ op: 'reset', items }`).
+/// `{ op: 'reset', items }`). `Upsert`'s payload is boxed (clippy `large_enum_variant`):
+/// `TranscriptItem` is a large enum (the `Tool`/`Subagent` variants carry a dozen-odd fields), so
+/// an un-boxed `Upsert { item }` would make every `TranscriptOp` -- including the much smaller
+/// `Reset`, whose `Vec` is a fixed-size pointer/len/cap triple regardless of content -- pay that
+/// size.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "op", rename_all = "lowercase")]
 pub enum TranscriptOp {
     Reset { items: Vec<TranscriptItem> },
-    Upsert { item: TranscriptItem },
+    Upsert { item: Box<TranscriptItem> },
 }
 
 /// Builds the `TranscriptOp`s that bring a subscriber from `prev` to `next`. Port of
 /// `diffTranscript`; if any item present in `prev` is gone from `next` (no `TranscriptOp` models
-/// deletion), the whole snapshot is resent as a `reset`, exactly like the TS source.
-pub fn diff_transcript(prev: &[TranscriptItem], next: &[TranscriptItem]) -> Vec<TranscriptOp> {
+/// deletion), the whole snapshot is resent as a `reset`, exactly like the TS source. Compares by
+/// `Arc::ptr_eq`: every `apply_frame` helper upstream only ever rewraps an item in a fresh `Arc`
+/// (`Arc::make_mut`'s own clone-on-write, or a freshly built item) when it actually changed the
+/// value, so a pointer mismatch is a precise, O(1)-per-item "changed" signal -- cheap regardless
+/// of transcript size, unlike a full value compare, so diffing stays proportional to what changed
+/// instead of to the whole transcript (performance finding, 2026-10-13).
+pub fn diff_transcript(prev: &[Arc<TranscriptItem>], next: &[Arc<TranscriptItem>]) -> Vec<TranscriptOp> {
     if prev.is_empty() {
         return if next.is_empty() {
             Vec::new()
         } else {
-            vec![TranscriptOp::Reset { items: next.to_vec() }]
+            vec![TranscriptOp::Reset { items: next.iter().map(|item| (**item).clone()).collect() }]
         };
     }
-    let next_ids: HashSet<&str> = next.iter().map(TranscriptItem::id).collect();
+    let next_ids: HashSet<&str> = next.iter().map(|item| item.id()).collect();
     let any_removed = prev.iter().any(|item| !next_ids.contains(item.id()));
     if any_removed {
-        return vec![TranscriptOp::Reset { items: next.to_vec() }];
+        return vec![TranscriptOp::Reset { items: next.iter().map(|item| (**item).clone()).collect() }];
     }
-    let prev_by_id: HashMap<&str, &TranscriptItem> = prev.iter().map(|item| (item.id(), item)).collect();
+    let prev_by_id: HashMap<&str, &Arc<TranscriptItem>> = prev.iter().map(|item| (item.id(), item)).collect();
     let mut ops = Vec::new();
     for item in next {
         match prev_by_id.get(item.id()) {
-            Some(before) if *before == item => {}
-            _ => ops.push(TranscriptOp::Upsert { item: item.clone() }),
+            Some(before) if Arc::ptr_eq(before, item) => {}
+            _ => ops.push(TranscriptOp::Upsert { item: Box::new((**item).clone()) }),
         }
     }
     ops
@@ -55,13 +67,13 @@ pub fn diff_transcript(prev: &[TranscriptItem], next: &[TranscriptItem]) -> Vec<
 /// while that round trip was in flight. Port of `mergeLiveTranscript`: keeps `history` as-is and
 /// appends only live items history can never contain -- an UNRESOLVED `request`, or a still-
 /// in-flight `tool`/`subagent` (`status: 'running'`) or streaming `assistant-text`/`thinking`.
-pub fn merge_history_with_live(history: &[TranscriptItem], live: &[TranscriptItem]) -> Vec<TranscriptItem> {
-    let history_ids: HashSet<&str> = history.iter().map(TranscriptItem::id).collect();
-    let is_unpersisted = |item: &TranscriptItem| -> bool {
+pub fn merge_history_with_live(history: &[Arc<TranscriptItem>], live: &[Arc<TranscriptItem>]) -> Vec<Arc<TranscriptItem>> {
+    let history_ids: HashSet<&str> = history.iter().map(|item| item.id()).collect();
+    let is_unpersisted = |item: &&Arc<TranscriptItem>| -> bool {
         if history_ids.contains(item.id()) {
             return false;
         }
-        match item {
+        match item.as_ref() {
             TranscriptItem::Request { resolved, .. } => resolved.is_none(),
             TranscriptItem::Tool { status, .. } => *status == ToolStatus::Running,
             TranscriptItem::Subagent { status, .. } => *status == SubagentStatus::Running,
@@ -70,7 +82,7 @@ pub fn merge_history_with_live(history: &[TranscriptItem], live: &[TranscriptIte
             _ => false,
         }
     };
-    let extra: Vec<TranscriptItem> = live.iter().filter(|item| is_unpersisted(item)).cloned().collect();
+    let extra: Vec<Arc<TranscriptItem>> = live.iter().filter(|item| is_unpersisted(item)).cloned().collect();
     if extra.is_empty() {
         history.to_vec()
     } else {
@@ -84,71 +96,30 @@ pub fn merge_history_with_live(history: &[TranscriptItem], live: &[TranscriptIte
 /// mode-change `restart()` leaves those items spinning in the UI forever, and (per the TS doc
 /// comment) `merge_history_with_live`'s `is_unpersisted` check would keep mistaking them for
 /// still-live and re-append them onto every later `launch()`'s fresh history.
-pub fn finalize_live_transcript(transcript: Vec<TranscriptItem>) -> Vec<TranscriptItem> {
+pub fn finalize_live_transcript(mut transcript: Vec<Arc<TranscriptItem>>) -> Vec<Arc<TranscriptItem>> {
+    for item in transcript.iter_mut() {
+        let needs_finalize = matches!(
+            item.as_ref(),
+            TranscriptItem::Tool { status: ToolStatus::Running, .. }
+                | TranscriptItem::Subagent { status: SubagentStatus::Running, .. }
+                | TranscriptItem::AssistantText { streaming: true, .. }
+                | TranscriptItem::Thinking { streaming: true, .. }
+        );
+        if !needs_finalize {
+            continue;
+        }
+        // `Arc::make_mut` clones the value only when another reference is still outstanding (the
+        // common case while this runs: nothing else holds these items), so this stays O(1)
+        // allocation-wise per touched item, not a whole-transcript copy.
+        match Arc::make_mut(item) {
+            TranscriptItem::Tool { status, .. } => *status = ToolStatus::Error,
+            TranscriptItem::Subagent { status, .. } => *status = SubagentStatus::Error,
+            TranscriptItem::AssistantText { streaming, .. } => *streaming = false,
+            TranscriptItem::Thinking { streaming, .. } => *streaming = false,
+            _ => unreachable!("needs_finalize only set for the four variants matched above"),
+        }
+    }
     transcript
-        .into_iter()
-        .map(|item| match item {
-            TranscriptItem::Tool {
-                id,
-                tool_call_id,
-                tool,
-                target,
-                status,
-                started_at,
-                duration_ms,
-                args,
-                output,
-                diff,
-                details,
-                edit,
-                write,
-            } if status == ToolStatus::Running => TranscriptItem::Tool {
-                id,
-                tool_call_id,
-                tool,
-                target,
-                status: ToolStatus::Error,
-                started_at,
-                duration_ms,
-                args,
-                output,
-                diff,
-                details,
-                edit,
-                write,
-            },
-            TranscriptItem::Subagent {
-                id,
-                tool_call_id,
-                spec_index,
-                name,
-                task,
-                status,
-                started_at,
-                duration_ms,
-                result,
-                job_id,
-            } if status == SubagentStatus::Running => TranscriptItem::Subagent {
-                id,
-                tool_call_id,
-                spec_index,
-                name,
-                task,
-                status: SubagentStatus::Error,
-                started_at,
-                duration_ms,
-                result,
-                job_id,
-            },
-            TranscriptItem::AssistantText { id, text, streaming } if streaming => {
-                TranscriptItem::AssistantText { id, text, streaming: false }
-            }
-            TranscriptItem::Thinking { id, text, streaming, started_at, ended_at } if streaming => {
-                TranscriptItem::Thinking { id, text, streaming: false, started_at, ended_at }
-            }
-            other => other,
-        })
-        .collect()
 }
 
 /// Pending ops a `PatchCoalescer` is accumulating for the window currently in flight.
@@ -161,7 +132,7 @@ struct PendingState {
     upsert_order: Vec<String>,
     /// Keyed by id: a second `upsert` for the same id queued in the same window replaces the
     /// first rather than both being sent (issue #778, "last write wins").
-    upserts: HashMap<String, TranscriptItem>,
+    upserts: HashMap<String, Box<TranscriptItem>>,
     /// Bumped by `flush_now`; a scheduled debounce timer checks this to tell whether it has
     /// already been superseded by an explicit flush before it fired.
     generation: u64,

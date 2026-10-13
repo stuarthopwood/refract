@@ -37,7 +37,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
-use tokio::sync::{broadcast, oneshot, watch, Mutex as TokioMutex};
+use tokio::sync::{mpsc, oneshot, watch, Mutex as TokioMutex};
 use tokio::time::Instant;
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
@@ -60,7 +60,6 @@ const OMP_LOG_TAIL_BYTES: usize = 4 * 1024;
 // Electron port has no such cap on a raw stdout line, only on chunk reassembly, but an unbounded
 // `Vec<u8>` on a line that never sees a newline would otherwise grow forever).
 const MAX_REASSEMBLED_BYTES: u64 = 64 * 1024 * 1024;
-const EVENT_CHANNEL_CAPACITY: usize = 256;
 
 /// Settings.approvalMode (`src/shared/model.ts`), re-declared here rather than imported (no
 /// shared Rust `model` crate exists yet; `store::settings`, Phase 2(b), is the natural home for a
@@ -190,9 +189,26 @@ struct Inner {
     chunks: StdMutex<HashMap<String, ChunkAssembly>>,
     stderr_tail: StdMutex<StderrTail>,
     stdin: TokioMutex<Option<tokio::process::ChildStdin>>,
-    events_tx: broadcast::Sender<ProcessEvent>,
+    /// Every live `subscribe()` consumer's sender half. Replaces a `tokio::sync::broadcast`
+    /// channel (code-review/perf finding, 2026-10-13): broadcast's fixed-size ring buffer could
+    /// silently drop a `session_settled`/`extension_ui_request` frame under a burst (each frame
+    /// costing several full-transcript copies downstream made that burst easier to trigger, not
+    /// just theoretical); an unbounded `mpsc` per consumer never drops a queued event.
+    events_subs: StdMutex<Vec<mpsc::UnboundedSender<ProcessEvent>>>,
     exit_tx: watch::Sender<Option<ExitInfo>>,
     stop_cell: tokio::sync::OnceCell<()>,
+    /// Set once at construction, read by `wait_ready` (moved out of `spawn`'s own locals so
+    /// `connect`/`wait_ready` can be called as two separate steps -- see `OmpProcess::connect`'s
+    /// own doc comment).
+    spawned_at: Instant,
+    spawned_at_system: SystemTime,
+}
+
+/// Fans `event` out to every still-live `subscribe()` consumer, pruning any whose receiver was
+/// dropped. `&Inner` (not `&Arc<Inner>`): deref-coerces from either caller shape.
+fn broadcast_event(inner: &Inner, event: ProcessEvent) {
+    let mut subs = inner.events_subs.lock().unwrap();
+    subs.retain(|tx| tx.send(event.clone()).is_ok());
 }
 
 impl Inner {
@@ -206,7 +222,7 @@ impl Inner {
         let requested = self.requested_stop.load(Ordering::SeqCst);
         let info = ExitInfo { code, requested };
         let _ = self.exit_tx.send(Some(info));
-        let _ = self.events_tx.send(ProcessEvent::Exit { code, requested });
+        broadcast_event(self, ProcessEvent::Exit { code, requested });
         // The process is gone: nothing will ever answer an in-flight request, so fail every one
         // of them now rather than let each wait out its own timeout.
         let mut pending = self.pending.lock().unwrap();
@@ -230,21 +246,22 @@ fn build_args(opts: &OmpProcessOptions) -> Vec<String> {
 }
 
 impl OmpProcess {
-    /// Spawns `omp` and resolves once the ready handshake (and v2 protocol negotiation) completes
-    /// (FR-001, FR-002). Unlike `OmpProcess.ts`'s own two-phase constructor-then-`start()` (where
-    /// the caller already holds a reference to `this.child` even if the ready-wait itself fails,
-    /// so it can still `stop()` it), this port's `spawn()` is the single combined entry point the
-    /// Phase 3 API contract calls for; to avoid leaking a live `omp` child when the ready-wait
-    /// fails (ceiling or an exit-before-ready race) with no handle ever reaching the caller, this
-    /// function tears the process down itself (via the same `stop()` a caller would otherwise
-    /// use) before returning `Err`.
-    pub async fn spawn(opts: OmpProcessOptions) -> Result<Self, ProcessError> {
+    /// Spawns `omp` and wires up its stdout/stderr/exit reader tasks (FR-001), returning as soon
+    /// as the child and those tasks exist -- before the ready handshake. Split out of the old
+    /// combined `spawn()` (code-review/perf finding, 2026-10-13: "subscribe() only happens after
+    /// `OmpProcess::spawn` returns ... frames sent between ready and subscribe go nowhere"): a
+    /// caller that needs every frame from the very first one (`session::agent::launch`) must
+    /// call `subscribe()` on the value this returns, and only THEN call `wait_ready` -- so its
+    /// listener is registered before any frame (including ones emitted during the ready-wait
+    /// itself) can possibly be produced, the same guarantee `OmpProcess.ts` gets for free from
+    /// attaching `proc.on('frame', ...)` before calling `start()` (SessionAgent.ts:471).
+    pub async fn connect(opts: &OmpProcessOptions) -> Result<Self, ProcessError> {
         executables::ensure_no_default_cwd_in_exe_path();
         let omp_path = match &opts.omp_path {
             Some(path) => path.clone(),
             None => executables::resolve_omp().map_err(ProcessError::new)?,
         };
-        let args = build_args(&opts);
+        let args = build_args(opts);
 
         let mut command = Command::new(&omp_path);
         command
@@ -271,7 +288,6 @@ impl OmpProcess {
         let stdout = child.stdout.take().ok_or_else(|| ProcessError::new("OmpProcess: stdout not piped"))?;
         let stderr = child.stderr.take().ok_or_else(|| ProcessError::new("OmpProcess: stderr not piped"))?;
 
-        let (events_tx, _events_rx) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let (exit_tx, _exit_rx) = watch::channel(None);
 
         let inner = Arc::new(Inner {
@@ -283,20 +299,39 @@ impl OmpProcess {
             chunks: StdMutex::new(HashMap::new()),
             stderr_tail: StdMutex::new(StderrTail::default()),
             stdin: TokioMutex::new(Some(stdin)),
-            events_tx,
+            events_subs: StdMutex::new(Vec::new()),
             exit_tx,
             stop_cell: tokio::sync::OnceCell::new(),
+            spawned_at,
+            spawned_at_system,
         });
 
         tokio::spawn(stdout_reader_task(stdout, inner.clone()));
         tokio::spawn(stderr_reader_task(stderr, inner.clone()));
         tokio::spawn(exit_wait_task(child, inner.clone()));
 
-        let process = OmpProcess { inner };
-        if let Err(err) = wait_for_ready(&process, &opts, spawned_at, spawned_at_system).await {
-            process.stop().await;
+        Ok(OmpProcess { inner })
+    }
+
+    /// Runs the ready handshake (FR-002, v2 protocol negotiation) to completion on an already-
+    /// `connect`ed process, tearing the process down itself on failure (ceiling, or an
+    /// exit-before-ready race) so a caller never has to handle a live-but-unready child on the
+    /// error path -- same contract the old combined `spawn()` had.
+    pub async fn wait_ready(&self, opts: &OmpProcessOptions) -> Result<(), ProcessError> {
+        if let Err(err) = wait_for_ready(self, opts, self.inner.spawned_at, self.inner.spawned_at_system).await {
+            self.stop().await;
             return Err(err);
         }
+        Ok(())
+    }
+
+    /// Combined `connect` + `wait_ready` (FR-001, FR-002), for a caller that does not need to
+    /// subscribe before the ready-wait. This build's one caller that streams live frames
+    /// (`session::agent::launch`) calls `connect`/`subscribe`/`wait_ready` directly instead of
+    /// this -- see that call site's own comment.
+    pub async fn spawn(opts: OmpProcessOptions) -> Result<Self, ProcessError> {
+        let process = Self::connect(&opts).await?;
+        process.wait_ready(&opts).await?;
         Ok(process)
     }
 
@@ -309,8 +344,10 @@ impl OmpProcess {
         }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<ProcessEvent> {
-        self.inner.events_tx.subscribe()
+    pub fn subscribe(&self) -> mpsc::UnboundedReceiver<ProcessEvent> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.inner.events_subs.lock().unwrap().push(tx);
+        rx
     }
 
     /// Sends `cmd` (a JSON object; `id` is injected here, overwriting any caller-supplied value)
@@ -372,18 +409,6 @@ impl OmpProcess {
                 .await
                 .map_err(|err| ProcessError::new(format!("OmpProcess: stdin write failed: {err}"))),
             None => Err(ProcessError::new("OmpProcess: stdin is closed")),
-        }
-    }
-
-    pub async fn wait_exit(&self) -> ExitInfo {
-        let mut rx = self.inner.exit_tx.subscribe();
-        loop {
-            if let Some(info) = rx.borrow_and_update().clone() {
-                return info;
-            }
-            if rx.changed().await.is_err() {
-                return ExitInfo { code: None, requested: false };
-            }
         }
     }
 
@@ -458,6 +483,11 @@ async fn exit_wait_task(mut child: Child, inner: Arc<Inner>) {
 async fn stdout_reader_task(mut stdout: ChildStdout, inner: Arc<Inner>) {
     let mut buf: Vec<u8> = Vec::new();
     let mut read_buf = [0u8; 8192];
+    // Bytes before this index are already confirmed newline-free (perf finding, 2026-10-13): a
+    // single long line split across many reads used to get rescanned from byte 0 on every read
+    // (quadratic in the line's total length); each read now only scans the bytes it just
+    // appended.
+    let mut scanned = 0usize;
     loop {
         let n = match stdout.read(&mut read_buf).await {
             Ok(0) => break,
@@ -468,19 +498,24 @@ async fn stdout_reader_task(mut stdout: ChildStdout, inner: Arc<Inner>) {
             }
         };
         buf.extend_from_slice(&read_buf[..n]);
-        while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
-            let remainder = buf.split_off(pos + 1);
-            buf.truncate(pos);
-            let line = String::from_utf8_lossy(&buf).into_owned();
-            buf = remainder;
+        while let Some(rel) = buf[scanned..].iter().position(|&b| b == b'\n') {
+            let pos = scanned + rel;
+            let line = String::from_utf8_lossy(&buf[..pos]).into_owned();
             let trimmed = line.trim();
             if !trimmed.is_empty() {
                 handle_line(trimmed, &inner);
             }
+            // Positions shift after this drain, so the next search in this same buffer (if a
+            // second line already arrived in the same read) restarts from the front -- that
+            // scan is bounded by the remaining buffer, not the historical total.
+            buf.drain(..=pos);
+            scanned = 0;
         }
+        scanned = buf.len();
         if buf.len() as u64 > MAX_REASSEMBLED_BYTES {
             log::error!("OmpProcess: stdout buffered {} bytes with no newline (ceiling {MAX_REASSEMBLED_BYTES}); dropping", buf.len());
             buf.clear();
+            scanned = 0;
         }
     }
 }
@@ -507,8 +542,9 @@ fn handle_line(line: &str, inner: &Arc<Inner>) {
     let parsed: Value = match serde_json::from_str(line) {
         Ok(value) => value,
         Err(err) => {
-            let preview: String = line.chars().take(200).collect();
-            log::error!("OmpProcess: skipping unparseable stdout line: {err} ({preview})");
+            // Logs length only, never content (security finding, 2026-10-13): a stdout line can
+            // carry transcript text or tool output that may hold secrets.
+            log::error!("OmpProcess: skipping unparseable stdout line: {err} (length {} bytes)", line.len());
             return;
         }
     };
@@ -519,7 +555,9 @@ fn handle_parsed(parsed: Value, inner: &Arc<Inner>) {
     let frame_type = match parsed.get("type").and_then(Value::as_str) {
         Some(t) => t.to_string(),
         None => {
-            log::error!("OmpProcess: skipping malformed frame (no string type): {parsed}");
+            // Logs length only, never content (security finding, 2026-10-13): same rationale as
+            // `handle_line`'s own unparseable-line case.
+            log::error!("OmpProcess: skipping malformed frame (no string type), length {} bytes", parsed.to_string().len());
             return;
         }
     };
@@ -542,7 +580,7 @@ fn dispatch_frame(frame_type: &str, frame: Value, inner: &Arc<Inner>) {
         // Responses are consumed by request() only; they are never broadcast as a frame.
         return;
     }
-    let _ = inner.events_tx.send(ProcessEvent::Frame(frame));
+    broadcast_event(inner, ProcessEvent::Frame(frame));
 }
 
 /// rpc_chunk reassembly (FINDINGS C22b / contracts/omp-usage.md "Failure handling"): validates
@@ -691,7 +729,7 @@ async fn finish_ready(process: &OmpProcess, ready_frame: &Value) -> Result<(), P
 }
 
 async fn wait_for_ready(process: &OmpProcess, opts: &OmpProcessOptions, spawned_at: Instant, spawned_at_system: SystemTime) -> Result<(), ProcessError> {
-    let mut events_rx = process.inner.events_tx.subscribe();
+    let mut events_rx = process.subscribe();
     let mut exit_rx = process.inner.exit_tx.subscribe();
     let mut ticker = tokio::time::interval(Duration::from_millis(1_000));
     ticker.tick().await; // the first tick fires immediately; skip it
@@ -700,14 +738,15 @@ async fn wait_for_ready(process: &OmpProcess, opts: &OmpProcessOptions, spawned_
         tokio::select! {
             frame = events_rx.recv() => {
                 match frame {
-                    Ok(ProcessEvent::Frame(value)) => {
+                    Some(ProcessEvent::Frame(value)) => {
                         if value.get("type").and_then(Value::as_str) == Some("ready") {
                             return finish_ready(process, &value).await;
                         }
                     }
-                    Ok(_) => {}
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => {
+                    Some(_) => {}
+                    // The unbounded `mpsc` channel never lags (no ring buffer to overflow); it
+                    // only closes when every sender -- i.e. the process itself -- is gone.
+                    None => {
                         return Err(ProcessError::new("OmpProcess: event stream closed before ready"));
                     }
                 }
@@ -731,7 +770,7 @@ async fn wait_for_ready(process: &OmpProcess, opts: &OmpProcessOptions, spawned_
                     return Err(err);
                 }
                 let stage = if elapsed_ms >= opts.ready_prompt_after_ms { ReadyWaitStage::Prompt } else { ReadyWaitStage::Waiting };
-                let _ = process.inner.events_tx.send(ProcessEvent::StartProgress { stage, elapsed_ms });
+                broadcast_event(&process.inner, ProcessEvent::StartProgress { stage, elapsed_ms });
             }
         }
     }
