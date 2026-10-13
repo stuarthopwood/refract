@@ -822,13 +822,19 @@ that manual pass.
   Built: `src/renderer/features/chat/ImagePreviewModal.tsx`, `TranscriptImages.tsx` (new), `Transcript.tsx`, `AttachmentStrip.tsx`.
 - [X] T028 (#513) Spec amendment: this spec's own User Story 5, FR-031 to FR-040, SC-008/SC-009,
   the `TranscriptImageRef`/`images.get` entries in data-model.md, and this Phase 8.
-- [ ] T029 (#513) Gates + draft PR: `pnpm typecheck` (both tsconfigs), existing `vitest` (no new
+- [X] T029 (#513) Gates + draft PR: `pnpm typecheck` (both tsconfigs), existing `vitest` (no new
   tests), `check:indent`, `pnpm build` then `check:ui-text`/`check:theme-contrast`/
-  `check:drag-regions`; open one draft PR against `origin/main`.
-- [ ] T030 (#513) Live verification in an isolated scratch Electron instance: a message with 1 and
+  `check:drag-regions`; open one draft PR against `origin/main`. Done: all gates clean (376/376
+  vitest), draft PR #783 opened against `origin/main`.
+- [X] T030 (#513) Live verification in an isolated scratch Electron instance: a message with 1 and
   with 3+ images shows live bubble thumbnails; a seeded history session shows the same from a
   `blob:sha256:` reference, including the "unavailable" placeholder for a deliberately-missing
   hash; keyboard Enter opens the viewer, arrow keys move between images, Esc returns focus; a
   no-image message is pixel-for-pixel unchanged; no `blob:` URL ever appears in a rendered
-  `<img src>`.
-
+  `<img src>`. Done: live-checked against a hand-written fake-`omp` relay (no real `omp`/live
+  Session touched) -- 1-image and 4-image sends, a history Session's seeded `blob:sha256:`
+  thumbnail plus two placeholders (missing hash and a wrong-signature file) in the same message,
+  real Tab/Enter/Arrow/Esc keyboard events opening/navigating/closing the viewer with focus
+  returned to the triggering thumbnail, an unchanged no-image bubble, and a DOM-wide scan
+  confirming no `<img src="blob:...">` anywhere. Evidence (9 screenshots, `report.json`, verified
+  `sha256.json`) under `C:/Users/shopwood/refract-live-check-513/`.
