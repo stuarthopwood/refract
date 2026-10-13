@@ -20,11 +20,7 @@
 // deliberate Stop followed by a full app restart cannot be distinguished from a crash the way the
 // Electron build distinguishes it; `openConversation`'s failed-switch recovery is simplified to
 // "stop and mark stopped/start-failed" rather than TS's "try switching back to the previous
-// Conversation first"; pending approval/question requests are not also mirrored into the main
-// transcript as a `kind: 'request'` row (the `omp::transcript::TranscriptState` facade this
-// module is built against exposes no arbitrary-item insertion API, only `apply_frame` over real
-// OMP frames) -- the approval workflow itself (`request:pending`/`request:resolved` events plus
-// the `pending` list) is unaffected.
+// Conversation first".
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -37,7 +33,7 @@ use tokio::sync::{watch, Mutex as AsyncMutex};
 use crate::events::EventSink;
 use crate::omp::diff::{diff_transcript, PatchCoalescer, TranscriptOp};
 use crate::omp::process::{ApprovalMode as ProcApprovalMode, OmpProcess, OmpProcessOptions, ProcessEvent};
-use crate::omp::transcript::TranscriptState;
+use crate::omp::transcript::{RequestResolution, TranscriptItem, TranscriptState};
 use crate::store::registry::{RegistryStore, Session, SessionPatch};
 use crate::store::settings::{ApprovalMode, SettingsStore};
 
@@ -338,6 +334,24 @@ impl SessionAgent {
 
     async fn append_notice(&self, text: String, level: &str) {
         self.apply_transcript_frame(&json!({ "type": "notice", "level": level, "message": text })).await;
+    }
+
+    /// Port of `SessionAgent.ts`'s `upsertTranscriptItem` for `kind: 'request'` rows
+    /// (`addPendingRequest` and `resolvePendingRequest`). The renderer draws an approval or
+    /// question card only from these rows, joined with the live pending list (`Transcript.tsx`).
+    async fn upsert_request_row(&self, request_id: &str, resolved: Option<RequestResolution>) {
+        let mut state = self.state.lock().await;
+        let before = state.transcript.items().to_vec();
+        state.transcript.upsert_item(TranscriptItem::Request {
+            id: format!("request:{request_id}"),
+            request_id: request_id.to_string(),
+            resolved,
+        });
+        let ops = diff_transcript(&before, state.transcript.items());
+        drop(state);
+        if !ops.is_empty() {
+            self.coalescer.queue(ops);
+        }
     }
 
     /// Full-snapshot flush (`PatchCoalescer`'s `reset` semantics: "reset supersedes queue"),
@@ -665,6 +679,7 @@ impl SessionAgent {
                     state.pending.retain(|r| r.request_id() != target);
                     state.pending.is_empty() && state.status == SessionStatus::NeedsYou
                 };
+                self.upsert_request_row(&target, Some(RequestResolution::Cancelled)).await;
                 self.append_notice("Request withdrawn: the agent cancelled it.".to_string(), "info").await;
                 self.events.emit_request_resolved(&self.session_id, &target);
                 if became_working {
@@ -673,11 +688,13 @@ impl SessionAgent {
             }
             DialogClassification::Request(request) => {
                 let payload = serde_json::to_value(&request).expect("PendingRequest is always JSON-serialisable");
+                let request_id = request.request_id().to_string();
                 {
                     let mut state = self.state.lock().await;
                     state.pending.push(request);
                     state.status = SessionStatus::NeedsYou;
                 }
+                self.upsert_request_row(&request_id, None).await;
                 self.events.emit_request_pending(&self.session_id, &payload);
             }
         }
@@ -709,6 +726,7 @@ impl SessionAgent {
             ids
         };
         for id in ids {
+            self.upsert_request_row(&id, Some(RequestResolution::Cancelled)).await;
             self.events.emit_request_resolved(&self.session_id, &id);
         }
     }
@@ -856,10 +874,16 @@ impl SessionAgent {
         let response = build_dialog_response(&request_id, &request, &answer).map_err(|err| AgentError::new("invalid-argument", err))?;
         proc.send_raw(response).await.map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
 
-        // `resolved`'s approved/denied/answered/cancelled distinction (`SessionAgent.ts`'s own
-        // `resolvePendingRequest`) only ever fed the main-transcript `kind: 'request'` item's
-        // own `resolved` field in the TS original; that mirroring is not ported here (see this
-        // file's own header), so only `requestId` itself needs to reach `request:resolved`.
+        // Port of `SessionAgent.ts` `answer`'s resolved mapping: `cancelled` key wins, then
+        // `approve` true/false, otherwise a question answer.
+        let resolved = if answer.get("cancelled").is_some() {
+            RequestResolution::Cancelled
+        } else if let Some(approve) = answer.get("approve") {
+            if approve.as_bool() == Some(true) { RequestResolution::Approved } else { RequestResolution::Denied }
+        } else {
+            RequestResolution::Answered
+        };
+        self.upsert_request_row(&request_id, Some(resolved)).await;
         let became_working = {
             let mut state = self.state.lock().await;
             state.pending.retain(|r| r.request_id() != request_id);
