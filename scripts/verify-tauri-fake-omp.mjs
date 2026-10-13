@@ -74,6 +74,13 @@ function substitute(value, vars) {
 async function main() {
   const argv = parseArgv(process.argv.slice(2));
 
+  const debugLogPath = process.env.REFRACT_FAKE_OMP_DEBUG_LOG;
+  const { appendFileSync } = debugLogPath ? await import('node:fs') : { appendFileSync: null };
+  const debugLog = (line) => {
+    if (debugLogPath) appendFileSync(debugLogPath, line + '\n');
+  };
+  debugLog(`pid=${process.pid} argv=${JSON.stringify(process.argv.slice(2))} cwd=${process.cwd()}`);
+
   if (argv.version) {
     process.stdout.write('omp/18.10.1\n');
     process.exit(0);
@@ -81,6 +88,7 @@ async function main() {
 
   const scenarioName = process.env.REFRACT_FAKE_OMP_SCENARIO || (argv.noSession ? 'readiness' : 'session');
   const tape = loadScenario(scenarioName);
+  debugLog(`pid=${process.pid} scenario=${scenarioName} tapeLength=${tape.length}`);
 
   const vars = { lastId: null, turnId: null, lastMessage: null };
   let cursor = 0;
@@ -90,7 +98,9 @@ async function main() {
   let waitingFor = null;
 
   function emit(frame) {
-    process.stdout.write(JSON.stringify(substitute(frame, vars)) + '\n');
+    const line = JSON.stringify(substitute(frame, vars));
+    debugLog(`pid=${process.pid} EMIT ${line}`);
+    process.stdout.write(line + '\n');
   }
 
   function advance() {
@@ -113,6 +123,7 @@ async function main() {
   }
 
   function handleCommand(cmd) {
+    debugLog(`pid=${process.pid} RECV ${JSON.stringify(cmd)} (waitingFor=${JSON.stringify(waitingFor)})`);
     if (!waitingFor || !waitingFor.includes(cmd.type)) {
       process.stderr.write(`verify-tauri-fake-omp: scenario "${scenarioName}" was not waiting for "${cmd.type}" (waiting for ${JSON.stringify(waitingFor)}); dropped\n`);
       return;

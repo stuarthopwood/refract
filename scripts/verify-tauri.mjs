@@ -24,7 +24,7 @@
 // fresh `src-tauri/target`.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +37,25 @@ const DEFAULT_PORT = 9351;
 
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+/** Best-effort recursive delete: a Windows file handle from the just-stopped process tree
+ * (vite, cargo, the built exe, the fake-omp Node child) can still be closing asynchronously
+ * for a moment after `taskkill /T /F` returns, so EPERM/EBUSY here must never mask the proof's
+ * own pass/fail result -- it is logged and otherwise ignored, never thrown. */
+async function safeRmSync(dir) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        console.warn(`verify-tauri: could not remove scratch dir ${dir} (left on disk): ${err.message}`);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
 }
 
 /** Compiles the native PATH shim (scripts/verify-tauri-omp-shim.rs) into `<dir>/omp.exe` with a
@@ -67,7 +86,7 @@ function makeScratchRepo(dir) {
   return dir;
 }
 
-function launchDevTauri({ port, dataDir, pathPrepend, extraEnv = {} }) {
+function launchDevTauri({ port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
   const env = {
     ...process.env,
     CARGO_TARGET_DIR,
@@ -78,7 +97,13 @@ function launchDevTauri({ port, dataDir, pathPrepend, extraEnv = {} }) {
   if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
   // `cmd.exe /c` wraps pnpm's own `.cmd` shim; the resulting pid is the root of the whole tree
   // (vite, the tauri CLI, cargo, the built exe) for a single tree-kill at shutdown.
-  return spawn('cmd.exe', ['/c', 'pnpm', 'run', 'dev:tauri'], { cwd: REPO_ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('cmd.exe', ['/c', 'pnpm', 'run', 'dev:tauri'], { cwd: REPO_ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  if (logFile) {
+    const stream = createWriteStream(logFile);
+    child.stdout.pipe(stream, { end: false });
+    child.stderr.pipe(stream, { end: false });
+  }
+  return child;
 }
 
 async function withEvidenceDir(name) {
@@ -92,10 +117,16 @@ async function withEvidenceDir(name) {
 async function proveUs1(cdp, evidenceDir) {
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
   await cdp.screenshot(path.join(evidenceDir, 'us1-01-readiness-loading.png'));
-  await cdp.waitFor(
-    `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
-    { timeoutMs: 60_000, label: 'US1: readiness checklist all green (Add repository enabled)' },
-  );
+  try {
+    await cdp.waitFor(
+      `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
+      { timeoutMs: 60_000, label: 'US1: readiness checklist all green (Add repository enabled)' },
+    );
+  } catch (err) {
+    const text = await cdp.evaluate(`document.body.innerText`);
+    console.error('verify-tauri: US1 readiness never went green; page text at failure:\n' + text);
+    throw err;
+  }
   await cdp.screenshot(path.join(evidenceDir, 'us1-02-readiness-green.png'));
   console.log('US1 PASS: window painted, readiness green, Add repository enabled.');
 }
@@ -158,9 +189,11 @@ async function runFakeOmpProof() {
     port,
     dataDir,
     pathPrepend: shimDir,
+    logFile: path.join(evidenceDir, 'dev-tauri.log'),
     extraEnv: {
       REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
       REFRACT_FAKE_OMP_NODE: process.execPath,
+      REFRACT_FAKE_OMP_DEBUG_LOG: path.join(evidenceDir, 'fake-omp-invocations.log'),
     },
   });
   let cdp;
@@ -172,10 +205,10 @@ async function runFakeOmpProof() {
     console.log(`verify-tauri: PASS (fake omp). Evidence: ${evidenceDir}`);
   } finally {
     cdp?.close();
-    await stopProcess(child, { tree: true });
-    rmSync(shimDir, { recursive: true, force: true });
-    rmSync(dataDir, { recursive: true, force: true });
-    rmSync(repoDir, { recursive: true, force: true });
+    await stopProcess(child);
+    await safeRmSync(shimDir);
+    await safeRmSync(dataDir);
+    await safeRmSync(repoDir);
   }
 }
 
@@ -199,8 +232,8 @@ async function runRealOmpProof() {
     console.log(`verify-tauri: PASS (real omp, US1 only). Evidence: ${evidenceDir}`);
   } finally {
     cdp?.close();
-    await stopProcess(child, { tree: true });
-    rmSync(dataDir, { recursive: true, force: true });
+    await stopProcess(child);
+    await safeRmSync(dataDir);
   }
 }
 

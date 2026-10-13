@@ -8,7 +8,7 @@
 // the spawned dev process (not the launcher), discovered over the DevTools `/json/list` HTTP
 // endpoint exactly like Chrome/Electron.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 /** Polls `http://127.0.0.1:<port>/json/list` until a `page` target's `webSocketDebuggerUrl`
@@ -169,29 +169,72 @@ export function launch(command, args, options) {
   return child;
 }
 
-/** Stops only this one pid (never by name, never a tree-wide taskkill unless `tree` is set) --
- * matches the repo's destructive-operations rule (AGENTS.md) applied to processes. */
-export async function stopProcess(child, { graceMs = 5000, tree = false } = {}) {
-  if (!child || child.killed || child.exitCode !== null) return;
-  const pid = child.pid;
+/** Snapshots every live process's (pid, parent pid) once via PowerShell/CIM. Windows records a
+ * process's parent pid at creation time and never updates it, so this still finds a process
+ * whose intermediate ancestor (a `cmd.exe`/pnpm/node wrapper that has already exited, handing
+ * off to a long-lived `cargo run` + built exe) is long gone -- the gap `taskkill /PID <pid> /T`
+ * cannot cross once `<pid>` itself is no longer resolvable. */
+function liveProcessTree() {
+  const result = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (result.status !== 0 || !result.stdout) return [];
+  const parsed = JSON.parse(result.stdout);
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+/** Every currently-live pid transitively descended from `rootPid` (rootPid itself excluded),
+ * found by walking the live-process snapshot's recorded parent links -- works even when
+ * `rootPid` or an intermediate ancestor has already exited. */
+function liveDescendants(rootPid) {
+  const rows = liveProcessTree();
+  const childrenOf = new Map();
+  for (const row of rows) {
+    const list = childrenOf.get(row.ParentProcessId) ?? [];
+    list.push(row.ProcessId);
+    childrenOf.set(row.ParentProcessId, list);
+  }
+  const out = [];
+  const queue = [rootPid];
+  while (queue.length > 0) {
+    const pid = queue.shift();
+    for (const child of childrenOf.get(pid) ?? []) {
+      out.push(child);
+      queue.push(child);
+    }
+  }
+  return out;
+}
+
+function killByPid(pid) {
+  return new Promise((resolve) => {
+    const tk = spawn('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true, stdio: 'ignore' });
+    tk.on('exit', resolve);
+    tk.on('error', resolve);
+  });
+}
+
+/** Stops the process this script itself started: asks it to exit, then force-kills it and every
+ * pid still transitively descended from it (see `liveDescendants`'s own doc comment -- needed
+ * because a dev-server CLI wrapper (`cmd.exe`/pnpm/the Tauri CLI) can exit on its own once it
+ * hands off to a long-lived `cargo run`, orphaning the built app and WebView2 from the pid this
+ * script holds). Every kill is a literal, explicit pid -- never a kill by image name -- matching
+ * AGENTS.md's destructive-operations rule applied to processes. */
+export async function stopProcess(child, { graceMs = 5000 } = {}) {
+  const pid = child?.pid;
   if (!pid) return;
-  try {
-    child.kill();
-  } catch {
-    // already gone
+  if (!child.killed && child.exitCode === null) {
+    try {
+      child.kill();
+    } catch {
+      // already gone
+    }
+    await Promise.race([new Promise((resolve) => child.once('exit', () => resolve(true))), sleep(graceMs).then(() => false)]);
   }
-  const exited = await Promise.race([
-    new Promise((resolve) => child.once('exit', () => resolve(true))),
-    sleep(graceMs).then(() => false),
-  ]);
-  if (!exited) {
-    const args = tree ? ['/PID', String(pid), '/T', '/F'] : ['/PID', String(pid), '/F'];
-    await new Promise((resolve) => {
-      const tk = spawn('taskkill', args, { windowsHide: true, stdio: 'ignore' });
-      tk.on('exit', resolve);
-      tk.on('error', resolve);
-    });
-  }
+  const descendants = liveDescendants(pid);
+  for (const descendantPid of descendants) await killByPid(descendantPid);
+  await killByPid(pid);
 }
 
 export { sleep };

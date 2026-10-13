@@ -1,4 +1,6 @@
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
 {"__wait__":["get_state"]}
 {"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\readiness-probe\\session.json","sessionId":"sess-readiness-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
 {"__wait__":["get_available_models"]}

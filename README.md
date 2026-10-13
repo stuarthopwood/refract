@@ -21,8 +21,15 @@ Spec 001 (core session workspace) is implemented: sessions per git worktree, cha
 pnpm install
 pnpm dev          # Electron with hot reload (electron-vite dev)
 pnpm build        # production build (electron-vite build), output in out/
+pnpm dev:tauri    # Rust (Tauri v2) build with hot reload (epic #797; the promoted main build)
+pnpm build:tauri  # production Tauri build, output in out/tauri-web/ plus the bundled installer
 pnpm typecheck    # tsc --noEmit over the main and web projects
 ```
+
+`dev:tauri`/`build:tauri` run `cargo` under the hood; point `CARGO_TARGET_DIR` at a shared build
+cache if disk space is tight (this repo's own worktree instructions use
+`C:/Users/shopwood/.cargo-target/refract`) -- never let two worktrees build into the same
+`src-tauri/target` at once without one.
 
 There is no packaged installer yet. After `pnpm build`, launch the built app directly:
 
@@ -43,6 +50,22 @@ Refract keeps no state in the repo. Everything is under Electron's `userData` di
 | `processes.json` | pids of live `omp` root processes, used to detect and reap orphans left by a crash (`src/main/process/pidRecords.ts`). |
 
 A Session's worktree lives next to the Repository it belongs to, not under `userData`: `<repo>/../pinion-worktrees/<repoName>/<name>` (`src/main/git/worktrees.ts`; the folder also keeps the former name).
+
+The Rust (Tauri v2) build keeps its own, separate data directory, `%APPDATA%/refract-tauri`
+(`src-tauri/src/lib.rs`'s `data_dir()`), so the two builds never read or write each other's
+`registry.json`/`settings.json` (epic #797). Tauri has no `--user-data-dir` equivalent; `scripts/
+verify-tauri.mjs` points a scratch instance elsewhere with the `REFRACT_DATA_DIR` environment
+variable instead (unset in every normal run).
+
+## Verification
+
+`pnpm verify:tauri` (issue #795) drives the Tauri/WebView2 build over the Chrome DevTools
+Protocol against a scratch data directory, a scratch git repository, and a recorded-frame fake
+`omp` (`scripts/verify-tauri-fake-omp.mjs`, fixtures under `scripts/fixtures/omp-frames/`) --
+readiness, adding a repository, creating a Session, and a streamed chat reply, all with no model
+cost and no network. `pnpm verify:tauri --real-omp` runs the readiness half of the same check
+against a real, signed-in `omp` on `PATH` instead. See `scripts/fixtures/omp-frames/README.md`
+for the fixture format and how to re-record them.
 
 ## Where things live
 

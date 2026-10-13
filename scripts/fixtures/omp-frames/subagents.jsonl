@@ -5,6 +5,8 @@
 // FR-020), for the R5 lane (#788, subagents/readout) to drive once it ports `get_subagents`-style
 // rendering. See README.md's provenance table.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
 {"__wait__":["get_state"]}
 {"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\subagents\\conversation.json","sessionId":"sess-subagents-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"}}}
 {"__wait__":["get_messages_page","get_messages"]}

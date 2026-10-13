@@ -60,3 +60,25 @@ On 2026-10-09 the user decided that a docs-only PR merges without asking, so the
 ## The plan
 
 `docs/PLAN.md` holds the ordered work queue, dependencies and status. When the user asks "What's next?" or "Implement the next story", read it first and follow its "How to use this file" section. Keep it current: update the row's status in the same change as the work. When the user asks for new issues to be created, update the plan in the same turn (working rule 8).
+
+## Verifying the Rust (Tauri) build (epic #797)
+
+The Rust build has its own shared build cache and its own live-verification mechanics, separate
+from the Electron CDP recipe above.
+
+- Point `CARGO_TARGET_DIR` at the shared, already-populated cache for every `cargo`/`tauri`
+  command (disk space is tight); never let `src-tauri/target` get created inside a worktree.
+  Builds serialise on that cache's lock -- wait for a build in flight rather than starting a
+  second one, and never delete anything under the shared cache except a crate-scoped `cargo
+  clean -p <crate>` for a confirmed stale-path error.
+- `scripts/verify-tauri.mjs` (`pnpm verify:tauri`, issue #795) is the CDP harness: a scratch data
+  directory (`REFRACT_DATA_DIR`, since Tauri has no `--user-data-dir` equivalent), a scratch git
+  repository, and a recorded-frame fake `omp` on PATH ahead of the real one, so a UI flow can be
+  driven with no model cost and no network. Use it (or its `--real-omp` mode) instead of a live
+  real-`omp` CDP session wherever the flow you need is already covered by its fixtures
+  (`scripts/fixtures/omp-frames/README.md`); fall back to a real `omp` only for a flow the
+  fixtures do not cover yet.
+- Driving a real `omp` against the Rust build still needs `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=
+  --remote-debugging-port=<port>` set on the `pnpm dev:tauri` process only, same as the Electron
+  recipe's own isolation discipline: a scratch data directory, a scratch repository, never
+  Stuart's real `%APPDATA%\refract-tauri`.

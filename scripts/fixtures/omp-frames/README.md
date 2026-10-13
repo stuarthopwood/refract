@@ -19,6 +19,12 @@ Every non-comment line is JSON. Three shapes:
 - `{"__exit__": {"code": <number>}}`: exit the process immediately with this code. Simulates `omp`
   crashing or exiting unexpectedly.
 
+**Every fixture's second step (right after `ready`) is the `negotiate_protocol` handshake**
+(`__wait__: ["negotiate_protocol"]` then its `response`): `omp::process::OmpProcess` sends this
+unconditionally for every connection once `ready.supportedProtocolVersions` includes 2
+(contracts/omp-usage.md "Start-up sequence per Session" step 2), before any other command --
+omitting it stalls the real caller until its 60s/180s ready-wait ceiling with no visible error.
+
 ### Sentinels
 
 Substituted as a bare string value only (never inside a longer string), anywhere in a frame:
