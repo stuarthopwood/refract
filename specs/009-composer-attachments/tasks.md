@@ -450,6 +450,23 @@ image does, reusing Phase 6's shared reader end to end.
   DIFFERENT checkout's renderer with no error of any kind -- always strip it (and any other
   `VITE_*`/`ELECTRON_*` dev-server variable) and assert a `file://` URL before trusting any result.
 
+**Round 3's own first attempt with the fixed harness (head `1b4a96e`): partial, not clean.**
+Preflight passed (`file://` URL confirmed inside this worktree). Scenarios 1-3 failed on a
+harness-level `Set-Clipboard exited 1` race (not app-related, not yet fixed). Scenarios 4 and 5
+PASSED and are genuinely live-confirmed: a mixed paste kept its text and attached in the
+background (FR-023), and a nonexistent path's own paste fell back to its exact raw text with a
+quiet notice (FR-022, including the round 3 raw-vs-normalized fix). From scenario 6
+(paste-oversized-image) onward, the renderer went blank (solid black screenshots, `document`
+queries returning nothing, though CDP itself stayed responsive) for the rest of the run --
+unresolved: the app's own "Low memory" status-bar warning was already showing one scenario
+earlier, on a machine whose free RAM swung between ~0.4 GB and 1.7 GB repeatedly this session, so
+a low-memory renderer crash is the leading candidate [INFERENCE], but this was not conclusively
+separated from a genuine app bug in handling the oversized-image test case, and was not dug into
+further (scope: one live run and report). Evidence copied to
+`C:/Users/shopwood/refract-live-check-723-live/` with a verified `sha256.json` manifest. STILL
+NOT closed -- a follow-up run is needed (fix the `Set-Clipboard` race, then re-attempt from
+scenario 6 onward, ideally first establishing whether the crash reproduces in isolation).
+
 ### Round 1 gate fixes (Sec1/Code1/A11y1/Verif1 FAIL, against the initial Phase 6/7 head)
 
 **2 HIGH, reproduced by multiple reviewers:**
@@ -649,7 +666,8 @@ paste over CDP) rather than simulating a Ctrl+V keydown/keyup pair.
 **Checkpoint**: same full gate, combined final code including this round's fixes: `pnpm typecheck`
 (both tsconfigs clean), `vitest` 376/376 (no new tests), `check:indent`, `check:ui-text`,
 `check:theme-contrast`, `check:drag-regions`, `pnpm build` -- see the PR body's own Gates section
-for this round's exact numbers. Live verification: still pending (T023), to be attempted once
-free RAM allows, now against the fixed harness.
+for this round's exact numbers. Live verification: attempted once this round against the fixed
+harness -- partial (FR-022/FR-023 live-confirmed; a renderer crash from scenario 6 onward left
+the rest unverified); see T023's own note above. Still open.
 
 ---
