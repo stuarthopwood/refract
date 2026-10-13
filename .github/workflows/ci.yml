@@ -63,6 +63,9 @@ jobs:
       - name: Check IPC parity
         run: pnpm check:parity
 
+      - name: Check file size
+        run: pnpm check:file-size
+
       - name: Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
