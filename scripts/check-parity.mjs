@@ -147,15 +147,23 @@ function stripLineComments(content) {
 
 /** Blanks out every `#[cfg(test)] mod ... { ... }` span (brace-depth matched from the `{` that
  * follows `mod`) so a test-only registration never inflates the count. Blanking rather than
- * slicing keeps every other line's offset -- and the rest of this scan -- unaffected. */
+ * slicing keeps every other line's offset -- and the rest of this scan -- unaffected. Only
+ * treats a `#[cfg(test)]` attribute as gating a module if `mod \w+ {` is the next real token
+ * after it (only whitespace and `//` line comments may sit between); an attribute annotating
+ * anything else (`fn`, `use`, ...) is left untouched so a later, unrelated real module is never
+ * walked past and blanked out by mistake. */
 function stripCfgTestModules(content) {
   const attrRe = /#\[cfg\(test\)\]/g;
   let result = content;
   let m;
   while ((m = attrRe.exec(result))) {
-    const modMatch = /mod\s+\w+\s*\{/.exec(result.slice(m.index));
-    if (!modMatch) continue;
-    const braceStart = m.index + modMatch.index + modMatch[0].length - 1;
+    const afterAttr = m.index + m[0].length;
+    const modMatch = /^(?:\s|\/\/[^\n]*)*mod\s+\w+\s*\{/.exec(result.slice(afterAttr));
+    if (!modMatch) {
+      attrRe.lastIndex = afterAttr;
+      continue;
+    }
+    const braceStart = afterAttr + modMatch[0].length - 1;
     let depth = 1;
     let i = braceStart + 1;
     while (i < result.length && depth > 0) {
@@ -230,16 +238,22 @@ function isEmitMethodCalledElsewhere(methodName) {
 }
 
 /** A lane calling its own event directly -- `.send(NAME, ...)`/`.emit(NAME, ...)` with the named
- * constant, or `.send("value", ...)`/`.emit("value", ...)` with the constant's own string literal
- * -- now that `EventSink::send` is `pub(crate)` (issue #784: no `events.rs` edit required to add
- * a new emit call). Checked against every `.rs` file except `events.rs` itself, which only
- * defines the constants and the `emit_*` wrappers, never calls them directly. */
+ * constant (optionally path-qualified, e.g. `crate::events::NAME` or `events::emit(&app, NAME,
+ * ...)`'s free-function form, which takes the constant as its *second* argument rather than
+ * calling it as a method), or `.send("value", ...)`/`.emit("value", ...)` with the constant's own
+ * string literal -- now that `EventSink::send` is `pub(crate)` (issue #784: no `events.rs` edit
+ * required to add a new emit call). Line comments are stripped first so a commented-out call is
+ * never counted. Checked against every `.rs` file except `events.rs` itself, which only defines
+ * the constants, the `emit_*` wrappers, and the free `emit()` function, never calls them
+ * directly. */
 function isEventSentDirectlyFromLaneFile(constName, value) {
   const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const callRe = new RegExp(`\\.(?:send|emit)\\(\\s*(?:${constName}\\b|"${escapedValue}")`);
+  const methodCallRe = new RegExp(`\\.(?:send|emit)\\(\\s*(?:(?:[\\w:]+::)?${constName}\\b|"${escapedValue}")`);
+  const freeEmitRe = new RegExp(`\\bemit\\(\\s*[^,]+,\\s*(?:[\\w:]+::)?${constName}\\b`);
   for (const file of walk(tauriSrcDir)) {
     if (!file.endsWith('.rs') || path.basename(file) === 'events.rs') continue;
-    if (callRe.test(readFile(file))) return true;
+    const content = stripLineComments(readFile(file));
+    if (methodCallRe.test(content) || freeEmitRe.test(content)) return true;
   }
   return false;
 }

@@ -21,7 +21,7 @@
 // Exits 1 if any new-file-over-cap or baseline-growth violation is found, 2 if no matching files
 // were scanned at all, 0 otherwise.
 
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -69,8 +69,8 @@ function* walk(dir, exts) {
   }
 }
 
-// Path-shape exclusions only (no file content involved), extracted for unit testing: test/spec
-// files, vendored shadcn UI components, and anything under a `gen/` directory segment.
+// Path-shape exclusions only (no file content involved): test/spec files, vendored shadcn UI
+// components, and anything under a `gen/` directory segment.
 export function isExcludedPath(relative) {
   if (TEST_FILE_RE.test(relative)) return true;
   if (VENDORED_UI_RE.test(relative)) return true;
@@ -94,8 +94,7 @@ function countLines(content) {
 }
 
 // Walks the configured roots under baseDir and returns [{ relative, lineCount }] for every file
-// that matches an extension and isn't excluded by path or content. Exported so the test suite
-// can point it at a throwaway temp directory instead of the real repo.
+// that matches an extension and isn't excluded by path or content.
 export function scanFiles(baseDir = repoRoot, roots = DEFAULT_SCAN_ROOTS) {
   const results = [];
   for (const { subdir, exts } of roots) {
@@ -167,11 +166,16 @@ if (isMain) {
   const updateMode = process.argv.includes('--update');
   const files = scanFiles();
 
+  // A missing baseline file (first run) is an empty baseline; a baseline file that exists but
+  // fails to parse is corrupt and must fail loudly, never silently reset to `{}` -- that would
+  // make every current offender look like a brand-new violation and silently drop the ratchet.
   let baseline = {};
-  try {
-    baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf-8'));
-  } catch {
-    baseline = {};
+  if (existsSync(BASELINE_PATH)) {
+    try {
+      baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf-8'));
+    } catch (err) {
+      throw new Error(`check-file-size: failed to parse baseline file ${BASELINE_PATH}: ${err.message}`);
+    }
   }
 
   if (files.length === 0) {
