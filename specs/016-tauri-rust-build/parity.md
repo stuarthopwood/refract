@@ -6,11 +6,11 @@ entries), `IPC_EVENTS` (20 entries), or the one synchronous `THEME_BOOTSTRAP_CHA
 84 requests, see spec.md Assumptions). "Electron source file" is the file under `src/main` that
 registers the matching `ipcMain.handle`/`ipcMain.on` or calls the matching
 `window.webContents.send`. "Milestone" is `1` for the 23 requests + 8 events + the bootstrap that
-FR-012/FR-013 require for User Stories 1-5; everything else is `later`. "Rust status" is `todo` for
-every row: no channel has been implemented in `src-tauri/` yet (the scaffold work in progress
-alongside this document wires up the dispatch table and the `settings.get`/theme-bootstrap sample
-handlers, but does not change this column until that work lands and this file is updated to match,
-per tasks.md Phase 4).
+FR-012/FR-013 require for User Stories 1-5; everything else is `later`. "Rust status" is `done`
+once a channel has been implemented in `src-tauri/` AND live-verified against the running app per
+tasks.md Phase 4 (T030-T036); `partial` where the implementation exists but only part of its
+behaviour was exercised live; `todo` for every `later` row (not in scope for milestone 1) and for
+any milestone-1 row not yet live-verified.
 
 ## Requests (86)
 
@@ -36,7 +36,7 @@ per tasks.md Phase 4).
 | `sessions.recreateWorktree` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.recover` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.resume` | request | `src/main/ipc/sessions.ts` | later | todo |
-| `sessions.stopAgent` | request | `src/main/ipc/sessions.ts` | 1 | todo |
+| `sessions.stopAgent` | request | `src/main/ipc/sessions.ts` | 1 | done |
 | `sessions.keepWaitingForStart` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.cancelStart` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.setVisible` | request | `src/main/ipc/sessions.ts` | 1 | done |
@@ -46,13 +46,13 @@ per tasks.md Phase 4).
 | `attachments.readImageFile` | request | `src/main/ipc/attachments.ts` | later | todo |
 | `clipboard.writeText` | request | `src/main/ipc/clipboard.ts` | 1 | todo |
 | `conversations.list` | request | `src/main/ipc/conversations.ts` | 1 | todo |
-| `conversations.startNew` | request | `src/main/ipc/conversations.ts` | 1 | todo |
+| `conversations.startNew` | request | `src/main/ipc/conversations.ts` | 1 | done |
 | `conversations.open` | request | `src/main/ipc/conversations.ts` | 1 | todo |
 | `chat.send` | request | `src/main/ipc/chat.ts` | 1 | done |
 | `chat.stop` | request | `src/main/ipc/chat.ts` | 1 | todo |
 | `chat.removeQueued` | request | `src/main/ipc/chat.ts` | later | todo |
 | `chat.sendNow` | request | `src/main/ipc/chat.ts` | later | todo |
-| `chat.answer` | request | `src/main/ipc/chat.ts` | 1 | partial (a `write` tool approval was raised and `request:pending` reached the renderer, but the turn settled with the tool call stuck at "Running" and no file written -- `chat.answer` itself was never exercised because no actionable Approve/Deny card rendered in time; root cause not found before hand-off, see final report "US5" note) |
+| `chat.answer` | request | `src/main/ipc/chat.ts` | 1 | done |
 | `chat.commands` | request | `src/main/ipc/chat.ts` | 1 | done |
 | `chat.predictWord` | request | `src/main/ipc/chat.ts` | later | todo |
 | `chat.predictWordFeedback` | request | `src/main/ipc/chat.ts` | later | todo |
@@ -107,12 +107,12 @@ per tasks.md Phase 4).
 
 | Channel | Kind | Electron source file | Milestone | Rust status |
 |---|---|---|---|---|
-| `session:status` | event | `src/main/ipc/register.ts` | 1 | todo |
-| `session:list-changed` | event | `src/main/ipc/register.ts` | 1 | todo |
-| `transcript:patch` | event | `src/main/ipc/register.ts` | 1 | todo |
-| `queue:update` | event | `src/main/ipc/register.ts` | 1 | todo |
-| `request:pending` | event | `src/main/ipc/register.ts` | 1 | todo |
-| `request:resolved` | event | `src/main/ipc/register.ts` | 1 | todo |
+| `session:status` | event | `src/main/ipc/register.ts` | 1 | done |
+| `session:list-changed` | event | `src/main/ipc/register.ts` | 1 | done |
+| `transcript:patch` | event | `src/main/ipc/register.ts` | 1 | done |
+| `queue:update` | event | `src/main/ipc/register.ts` | 1 | done |
+| `request:pending` | event | `src/main/ipc/register.ts` | 1 | done |
+| `request:resolved` | event | `src/main/ipc/register.ts` | 1 | done |
 | `commands:update` | event | `src/main/ipc/register.ts` | 1 | todo |
 | `settings:changed` | event | `src/main/ipc/broadcast.ts` | 1 | todo |
 | `ui:open-session` | event | `src/main/index.ts` | later | todo |
