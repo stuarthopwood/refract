@@ -35,20 +35,25 @@ pub fn data_dir() -> PathBuf {
 
 /// Security LOW finding: restricts same-window navigation to the app's own origin -- the
 /// Electron build's equivalent is `denyForeignNavigation`. `Url::origin()` compares
-/// scheme+host+port as one unit, so neither a lookalike host nor a stray port can pass. Dev
-/// builds navigate to the Vite dev server (`tauri.conf.json`'s own `devUrl`); release builds
-/// navigate to Tauri's own custom protocol, served as `http://tauri.localhost` on this build's
-/// Windows-only target (`use_https_scheme` is left at its default `false`).
+/// scheme+host+port as one unit, so neither a lookalike host nor a stray port can pass. A
+/// `pnpm dev` run navigates to the Vite dev server (`tauri.conf.json`'s own `devUrl`,
+/// `http://localhost:5174`); a built binary (`tauri build`, with or without `--debug`) navigates
+/// to Tauri's own custom protocol, served as `http://tauri.localhost` on this build's
+/// Windows-only target (`use_https_scheme` is left at its default `false`). Both origins are
+/// allowed unconditionally -- NOT gated on `cfg!(debug_assertions)` (found live, 2026-10-13: a
+/// `tauri build --debug` binary is still a debug-profile build, so a `debug_assertions`-gated
+/// allow list denied that binary's own `http://tauri.localhost` navigation and left the window on
+/// `about:blank` with no error). Which origin is actually in play depends on how the app was
+/// launched, not on the compiled profile, so this checks both regardless of profile.
 fn is_allowed_navigation_url(url: &Url) -> bool {
-    let allowed = if cfg!(debug_assertions) {
-        "http://localhost:5174"
-    } else {
-        "http://tauri.localhost"
-    };
-    url.origin()
-        == Url::parse(allowed)
-            .expect("allowed navigation origin is a valid URL")
-            .origin()
+    const ALLOWED_ORIGINS: [&str; 2] = ["http://localhost:5174", "http://tauri.localhost"];
+    let origin = url.origin();
+    ALLOWED_ORIGINS.iter().any(|allowed| {
+        origin
+            == Url::parse(allowed)
+                .expect("allowed navigation origin is a valid URL")
+                .origin()
+    })
 }
 
 /// State `.manage()`d once at startup: the one `Dispatcher` every `refract_request` call routes
