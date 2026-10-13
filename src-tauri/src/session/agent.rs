@@ -270,6 +270,37 @@ impl SessionAgent {
         self.emit_status().await;
     }
 
+    /// Port of `exitVerdictGuard.ts`'s `shouldApplyCrashExitVerdict`'s `statusNow !== 'stopped'`
+    /// half, used by `handle_exit`'s crash branch (code-review finding, 2026-10-13): a crash
+    /// arriving during `launch()`'s post-spawn history fetch can race `launch()`'s own
+    /// synchronous `exitedDuringStart`/`record_start_failure` write (both read/write
+    /// `state.process`/`state.status` across the same await). Checking `state.status` and
+    /// writing the new one inside ONE lock acquisition -- instead of a separate pre-check
+    /// followed by `set_status`'s own lock -- closes the narrow window where the two writers
+    /// could otherwise still interleave between check and write. TS's single-threaded
+    /// `shouldApplyCrashExitVerdict` only needs the read-then-write to be atomic with respect to
+    /// awaits, which this mirrors with an explicit lock. Whichever write actually lands first,
+    /// this makes the final reason always `start-failed` (never `agent-exited`) for this race,
+    /// matching TS: if `record_start_failure` wins the race to the lock, this call sees
+    /// `Stopped` already and skips; if this call wins instead, `record_start_failure`'s own
+    /// unconditional `set_status` still overwrites it right after, same final result.
+    async fn set_stopped_unless_already_stopped(&self, stop_reason: &'static str, stop_detail: Option<String>) {
+        {
+            let mut state = self.state.lock().await;
+            if state.status == SessionStatus::Stopped {
+                return;
+            }
+            if state.status == SessionStatus::Working && !self.is_visible() {
+                state.unread = true;
+            }
+            state.status = SessionStatus::Stopped;
+            state.stop_reason = Some(stop_reason);
+            state.stop_detail = stop_detail;
+            let _ = self.status_tx.send(SessionStatus::Stopped);
+        }
+        self.emit_status().await;
+    }
+
     /// `sessions.setVisible` (T036/T037): clears `unread` once this Session becomes visible.
     pub async fn clear_unread(&self) {
         let changed = {
@@ -388,10 +419,18 @@ impl SessionAgent {
     /// Full-snapshot flush (`PatchCoalescer`'s `reset` semantics: "reset supersedes queue"),
     /// used at the end of `launch()`/`start_new_conversation()`/`open_conversation()`, and by
     /// `session::manager::SessionManager::set_visible` for a Session that just became visible
-    /// (its patches were dropped by the coalescer's own visibility gate while hidden).
+    /// (its patches were dropped by the coalescer's own visibility gate while hidden). Skips
+    /// queuing entirely for a hidden Session (performance finding, 2026-10-13): the flush
+    /// closure's own `visible_ids` gate would drop the patch anyway, so there is no reason to
+    /// even clone the `Arc` pointers for it. `set_visible` always calls this AFTER it has
+    /// already added the Session to `visible_ids`, so the one call that must fire -- the
+    /// newly-visible catch-up snapshot -- still passes this check.
     pub async fn emit_patch_reset(&self) {
+        if !self.is_visible() {
+            return;
+        }
         let state = self.state.lock().await;
-        let items: Vec<TranscriptItem> = state.transcript.items().iter().map(|item| (**item).clone()).collect();
+        let items: Vec<Arc<TranscriptItem>> = state.transcript.items().to_vec();
         self.coalescer.queue(vec![TranscriptOp::Reset { items }]);
         drop(state);
         self.coalescer.flush_now();
@@ -846,7 +885,7 @@ impl SessionAgent {
             Some(c) => format!("exit code {c}"),
             None => "exit code null".to_string(),
         };
-        self.set_status(SessionStatus::Stopped, Some("agent-exited"), Some(detail)).await;
+        self.set_stopped_unless_already_stopped("agent-exited", Some(detail)).await;
     }
 
     // -----------------------------------------------------------------------------------------

@@ -233,7 +233,7 @@ pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFutu
             agent.start_new_conversation().await
         };
         if let Err(err) = result {
-            return Err(super::IpcError::new(err.code, err.message));
+            return Err(super::map_agent_error(err));
         }
         let session = state.registry.lock().await.get_session(&session_id).cloned().ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
         Ok(build_snapshot(&session, &agent).await)
@@ -266,7 +266,7 @@ pub fn conversations_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
             agent.open_conversation(matched.file.clone()).await
         };
         if let Err(err) = result {
-            return Err(super::IpcError::new(err.code, err.message));
+            return Err(super::map_agent_error(err));
         }
         let session = state.registry.lock().await.get_session(&session_id).cloned().ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
         Ok(build_snapshot(&session, &agent).await)

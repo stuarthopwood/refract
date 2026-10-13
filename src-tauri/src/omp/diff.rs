@@ -22,11 +22,14 @@ use super::transcript::{SubagentStatus, ToolStatus, TranscriptItem};
 /// `TranscriptItem` is a large enum (the `Tool`/`Subagent` variants carry a dozen-odd fields), so
 /// an un-boxed `Upsert { item }` would make every `TranscriptOp` -- including the much smaller
 /// `Reset`, whose `Vec` is a fixed-size pointer/len/cap triple regardless of content -- pay that
-/// size.
+/// size. `Reset`'s items are `Arc<TranscriptItem>` (not an owned `TranscriptItem`), so queuing a
+/// reset only bumps refcounts instead of deep-copying every item (performance finding,
+/// 2026-10-13); serde's `rc` feature (`Cargo.toml`) makes `Arc<TranscriptItem>` serialize
+/// exactly like `TranscriptItem` itself, so the wire payload is unchanged.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "op", rename_all = "lowercase")]
 pub enum TranscriptOp {
-    Reset { items: Vec<TranscriptItem> },
+    Reset { items: Vec<Arc<TranscriptItem>> },
     Upsert { item: Box<TranscriptItem> },
 }
 
@@ -43,13 +46,13 @@ pub fn diff_transcript(prev: &[Arc<TranscriptItem>], next: &[Arc<TranscriptItem>
         return if next.is_empty() {
             Vec::new()
         } else {
-            vec![TranscriptOp::Reset { items: next.iter().map(|item| (**item).clone()).collect() }]
+            vec![TranscriptOp::Reset { items: next.to_vec() }]
         };
     }
     let next_ids: HashSet<&str> = next.iter().map(|item| item.id()).collect();
     let any_removed = prev.iter().any(|item| !next_ids.contains(item.id()));
     if any_removed {
-        return vec![TranscriptOp::Reset { items: next.iter().map(|item| (**item).clone()).collect() }];
+        return vec![TranscriptOp::Reset { items: next.to_vec() }];
     }
     let prev_by_id: HashMap<&str, &Arc<TranscriptItem>> = prev.iter().map(|item| (item.id(), item)).collect();
     let mut ops = Vec::new();
@@ -127,7 +130,7 @@ struct PendingState {
     /// Set when a `reset` was queued this window; supersedes (and clears) every upsert queued
     /// before it (issue #778) -- any upsert queued AFTER it is still tracked separately below and
     /// still emitted on top of it, since it represents a later, incremental change.
-    reset_items: Option<Vec<TranscriptItem>>,
+    reset_items: Option<Vec<Arc<TranscriptItem>>>,
     /// Ids in first-seen order, so a flush emits upserts in a stable, deterministic sequence.
     upsert_order: Vec<String>,
     /// Keyed by id: a second `upsert` for the same id queued in the same window replaces the

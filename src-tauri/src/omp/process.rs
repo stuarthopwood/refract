@@ -195,6 +195,15 @@ struct Inner {
     /// costing several full-transcript copies downstream made that burst easier to trigger, not
     /// just theoretical); an unbounded `mpsc` per consumer never drops a queued event.
     events_subs: StdMutex<Vec<mpsc::UnboundedSender<ProcessEvent>>>,
+    /// Set once, by `dispatch_frame`, the moment the "ready" frame itself is seen -- BEFORE
+    /// that same call's `broadcast_event` (issue #512 follow-up, 2026-10-13): `wait_ready`'s own
+    /// `events_rx` is a fresh `subscribe()` taken after `connect` has already started the
+    /// stdout reader, so a `ready` frame that lands between the reader starting and that
+    /// `subscribe()` call would otherwise reach no subscriber at all and `wait_ready` would sit
+    /// out the full ready ceiling. Checked immediately after subscribing, the same way
+    /// `wait_for_exit_or_timeout`/`hard_kill` already re-check `exited` right after their own
+    /// `exit_tx.subscribe()`.
+    ready_frame: StdMutex<Option<Value>>,
     exit_tx: watch::Sender<Option<ExitInfo>>,
     stop_cell: tokio::sync::OnceCell<()>,
     /// Set once at construction, read by `wait_ready` (moved out of `spawn`'s own locals so
@@ -300,6 +309,7 @@ impl OmpProcess {
             stderr_tail: StdMutex::new(StderrTail::default()),
             stdin: TokioMutex::new(Some(stdin)),
             events_subs: StdMutex::new(Vec::new()),
+            ready_frame: StdMutex::new(None),
             exit_tx,
             stop_cell: tokio::sync::OnceCell::new(),
             spawned_at,
@@ -580,6 +590,12 @@ fn dispatch_frame(frame_type: &str, frame: Value, inner: &Arc<Inner>) {
         // Responses are consumed by request() only; they are never broadcast as a frame.
         return;
     }
+    if frame_type == "ready" {
+        // Recorded BEFORE `broadcast_event` below (issue #512 follow-up, 2026-10-13): see
+        // `Inner::ready_frame`'s own doc comment for the `wait_ready`-subscribes-late race this
+        // closes.
+        *inner.ready_frame.lock().unwrap() = Some(frame.clone());
+    }
     broadcast_event(inner, ProcessEvent::Frame(frame));
 }
 
@@ -731,6 +747,26 @@ async fn finish_ready(process: &OmpProcess, ready_frame: &Value) -> Result<(), P
 async fn wait_for_ready(process: &OmpProcess, opts: &OmpProcessOptions, spawned_at: Instant, spawned_at_system: SystemTime) -> Result<(), ProcessError> {
     let mut events_rx = process.subscribe();
     let mut exit_rx = process.inner.exit_tx.subscribe();
+    // Issue #512 follow-up (2026-10-13): both subscriptions above are taken AFTER `connect`
+    // already started the stdout reader and exit-wait task, so a `ready` frame or an exit that
+    // landed in that gap would reach neither `events_rx` nor a `changed()` on `exit_rx` -- a
+    // `watch::Receiver` returned by `subscribe()` starts already "seen" at the CURRENT value, so
+    // `changed()` only fires on the NEXT update -- and the call below would then sit out the
+    // full ready ceiling instead of resolving immediately. Re-checking the already-recorded
+    // ready frame/exit state right here, the same way `wait_for_exit_or_timeout`/`hard_kill`
+    // already re-check `exited` right after their own `exit_tx.subscribe()`, closes that
+    // window.
+    let already_ready = process.inner.ready_frame.lock().unwrap().clone();
+    if let Some(ready_frame) = already_ready {
+        return finish_ready(process, &ready_frame).await;
+    }
+    if process.inner.exited.load(Ordering::SeqCst) {
+        let already_exited = exit_rx.borrow_and_update().clone();
+        if let Some(info) = already_exited {
+            let reason = format!("process exited before ready (code {:?})", info.code);
+            return Err(build_start_failure(&process.inner, reason, spawned_at_system).await);
+        }
+    }
     let mut ticker = tokio::time::interval(Duration::from_millis(1_000));
     ticker.tick().await; // the first tick fires immediately; skip it
 

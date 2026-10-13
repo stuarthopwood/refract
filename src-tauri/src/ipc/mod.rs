@@ -191,6 +191,59 @@ pub fn map_registry_error(err: RegistryStoreError) -> IpcError {
     }
 }
 
+/// Mirrors `ipc/util.ts`'s own `mapSessionThrown`: `AgentError::code` is NOT always one of
+/// `src/shared/ipc.ts`'s `IpcErrorCode` values -- `SessionAgent::launch`'s own internal
+/// bookkeeping reasons `start-failed`/`not-started` are Session `stopReason`s (data-model.md),
+/// never meant to cross the wire as an IPC error code -- so an unrecognised code falls back to
+/// `reattach-failed`, exactly like `mapSessionThrown`'s own catch-all branch (code-review
+/// finding, 2026-10-13: `conversations.startNew`/`.open` used to pass `err.code` straight
+/// through for the `start_with_conversation` path, which can return either of those two).
+pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
+    const IPC_ERROR_CODES: &[&str] = &[
+        "not-a-repo",
+        "no-commits",
+        "duplicate",
+        "has-sessions",
+        "git-failed",
+        "worktree-failed",
+        "base-missing",
+        "path-too-long",
+        "not-idle",
+        "reattach-failed",
+        "unknown-command",
+        "unsupported-arguments",
+        "branch-missing",
+        "not-found",
+        "invalid-argument",
+        "prompt-failed",
+        "agent-not-running",
+        "worktree-missing",
+        "file-missing",
+        "outside-worktree",
+        "clipboard-failed",
+        "unsupported-image-type",
+        "image-too-large",
+        "invalid-theme",
+        "gh-not-found",
+        "gh-failed",
+        "timeout",
+        "account-not-found",
+        "omp-probe-failed",
+        "unsupported",
+        "no-github-remote",
+        "gh-unavailable",
+        "rate-limited",
+        "github-failed",
+        "stale",
+        "not-mergeable",
+        "checkout-failed",
+        "disabled",
+        "session-archived",
+    ];
+    let code = if IPC_ERROR_CODES.contains(&err.code) { err.code } else { "reattach-failed" };
+    IpcError::new(code, err.message)
+}
+
 /// Reads one positional string argument (`args[index]`), the Rust equivalent of destructuring
 /// `ipcMain.handle`'s own `(_event, ...args)` callback parameters. Returns `None` for a missing
 /// or non-string argument alike, so every call site can fold both into one `invalid_argument`.
