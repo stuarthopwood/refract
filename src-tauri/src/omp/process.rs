@@ -714,7 +714,9 @@ async fn wait_for_ready(process: &OmpProcess, opts: &OmpProcessOptions, spawned_
             }
             changed = exit_rx.changed() => {
                 if changed.is_ok() {
-                    if let Some(info) = exit_rx.borrow_and_update().clone() {
+                    // Clone out first: the `watch::Ref` is not `Send` and must not live across the await below.
+                    let exited = exit_rx.borrow_and_update().clone();
+                    if let Some(info) = exited {
                         let reason = format!("process exited before ready (code {:?})", info.code);
                         return Err(build_start_failure(&process.inner, reason, spawned_at_system).await);
                     }
