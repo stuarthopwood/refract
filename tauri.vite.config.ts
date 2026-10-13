@@ -24,10 +24,19 @@ export default defineConfig({
   },
   plugins: [react(), tailwindcss()],
   // `tauri.conf.json`'s own `build.devUrl` targets this exact port and path; `strictPort` so a
-  // silently different port never leaves the Tauri window loading nothing.
+  // silently different port never leaves the Tauri window loading nothing. `watch.ignored`
+  // excludes `src-tauri/target` (and its own build output `out/tauri-web`): with `root` left at
+  // the repository root (see above), Vite's default watcher would otherwise also watch `cargo`'s
+  // own build artifacts under `src-tauri/target/debug/deps/*.dll`; `cargo run`'s linker opens
+  // that file exclusively while writing it, so Vite's `fs.watch` call on the same file races it
+  // and crashes the whole `beforeDevCommand` with `EBUSY: resource busy or locked` the moment a
+  // rebuild lands mid-link (observed live running `pnpm dev:tauri`, tasks.md T030).
   server: {
     port: 5174,
-    strictPort: true
+    strictPort: true,
+    watch: {
+      ignored: ['**/src-tauri/target/**', '**/out/tauri-web/**']
+    }
   },
   build: {
     outDir: resolve(__dirname, 'out/tauri-web'),

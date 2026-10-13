@@ -303,6 +303,16 @@ impl SessionAgent {
             "unread": state.unread,
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
+            // `SessionRuntimeView` (`src/shared/ipc.ts`) requires all three of these: the
+            // renderer's `ChatPane`/`Transcript` components read `runtime.transcript`/`.queue`/
+            // `.pending` unconditionally (no optional-chaining fallback) the moment a Session
+            // pane opens, so an omitted field here throws under the renderer's own ErrorBoundary
+            // ("Something went wrong rendering this view") the instant `sessions.open` resolves,
+            // before any turn even runs. Fixed live (tasks.md T032 verification, first Session
+            // ever opened in this build).
+            "transcript": state.transcript.items(),
+            "queue": { "followUp": state.queue_follow_up, "steering": state.queue_steering },
+            "pending": state.pending,
         })
     }
 

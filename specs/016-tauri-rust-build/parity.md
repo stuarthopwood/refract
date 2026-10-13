@@ -16,19 +16,19 @@ per tasks.md Phase 4).
 
 | Channel | Kind | Electron source file | Milestone | Rust status |
 |---|---|---|---|---|
-| `readiness.check` | request | `src/main/ipc/readiness.ts` | 1 | todo |
-| `repositories.list` | request | `src/main/ipc/repositories.ts` | 1 | todo |
-| `repositories.add` | request | `src/main/ipc/repositories.ts` | 1 | todo |
+| `readiness.check` | request | `src/main/ipc/readiness.ts` | 1 | done |
+| `repositories.list` | request | `src/main/ipc/repositories.ts` | 1 | done |
+| `repositories.add` | request | `src/main/ipc/repositories.ts` | 1 | done |
 | `repositories.remove` | request | `src/main/ipc/repositories.ts` | 1 | todo |
 | `repositories.rename` | request | `src/main/ipc/repositories.ts` | later | todo |
 | `repositories.branches` | request | `src/main/ipc/repositories.ts` | 1 | todo |
 | `repositories.remotes` | request | `src/main/ipc/repositories.ts` | later | todo |
-| `repositories.pickFolder` | request | `src/main/ipc/repositories.ts` | 1 | todo |
-| `repositories.userName` | request | `src/main/ipc/repositories.ts` | 1 | todo |
-| `sessions.list` | request | `src/main/ipc/sessions.ts` | 1 | todo |
-| `sessions.create` | request | `src/main/ipc/sessions.ts` | 1 | todo |
+| `repositories.pickFolder` | request | `src/main/ipc/repositories.ts` | 1 | partial (native folder picker not driven live; the dialog's typed-path field was used instead, which calls the same `repositories.add`; `pickFolder`'s own native-dialog round trip is unverified) |
+| `repositories.userName` | request | `src/main/ipc/repositories.ts` | 1 | done |
+| `sessions.list` | request | `src/main/ipc/sessions.ts` | 1 | done |
+| `sessions.create` | request | `src/main/ipc/sessions.ts` | 1 | done |
 | `sessions.rename` | request | `src/main/ipc/sessions.ts` | 1 | todo |
-| `sessions.open` | request | `src/main/ipc/sessions.ts` | 1 | todo |
+| `sessions.open` | request | `src/main/ipc/sessions.ts` | 1 | done |
 | `sessions.archive` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.restore` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.deleteCheck` | request | `src/main/ipc/sessions.ts` | later | todo |
@@ -39,7 +39,7 @@ per tasks.md Phase 4).
 | `sessions.stopAgent` | request | `src/main/ipc/sessions.ts` | 1 | todo |
 | `sessions.keepWaitingForStart` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.cancelStart` | request | `src/main/ipc/sessions.ts` | later | todo |
-| `sessions.setVisible` | request | `src/main/ipc/sessions.ts` | 1 | todo |
+| `sessions.setVisible` | request | `src/main/ipc/sessions.ts` | 1 | done |
 | `sessions.diffStat` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.revealWorktree` | request | `src/main/ipc/sessions.ts` | later | todo |
 | `sessions.revealFile` | request | `src/main/ipc/files.ts` | later | todo |
@@ -48,12 +48,12 @@ per tasks.md Phase 4).
 | `conversations.list` | request | `src/main/ipc/conversations.ts` | 1 | todo |
 | `conversations.startNew` | request | `src/main/ipc/conversations.ts` | 1 | todo |
 | `conversations.open` | request | `src/main/ipc/conversations.ts` | 1 | todo |
-| `chat.send` | request | `src/main/ipc/chat.ts` | 1 | todo |
+| `chat.send` | request | `src/main/ipc/chat.ts` | 1 | done |
 | `chat.stop` | request | `src/main/ipc/chat.ts` | 1 | todo |
 | `chat.removeQueued` | request | `src/main/ipc/chat.ts` | later | todo |
 | `chat.sendNow` | request | `src/main/ipc/chat.ts` | later | todo |
-| `chat.answer` | request | `src/main/ipc/chat.ts` | 1 | todo |
-| `chat.commands` | request | `src/main/ipc/chat.ts` | 1 | todo |
+| `chat.answer` | request | `src/main/ipc/chat.ts` | 1 | partial (a `write` tool approval was raised and `request:pending` reached the renderer, but the turn settled with the tool call stuck at "Running" and no file written -- `chat.answer` itself was never exercised because no actionable Approve/Deny card rendered in time; root cause not found before hand-off, see final report "US5" note) |
+| `chat.commands` | request | `src/main/ipc/chat.ts` | 1 | done |
 | `chat.predictWord` | request | `src/main/ipc/chat.ts` | later | todo |
 | `chat.predictWordFeedback` | request | `src/main/ipc/chat.ts` | later | todo |
 | `chat.setVisibleSubagent` | request | `src/main/ipc/chat.ts` | later | todo |
@@ -69,7 +69,7 @@ per tasks.md Phase 4).
 | `fileExplorer.copyPath` | request | `src/main/ipc/fileExplorer.ts` | later | todo |
 | `fileExplorer.stopWatching` | request | `src/main/ipc/fileExplorer.ts` | later | todo |
 | `fileExplorer.ensureWatching` | request | `src/main/ipc/fileExplorer.ts` | later | todo |
-| `settings.get` | request | `src/main/ipc/settings.ts` | 1 | todo |
+| `settings.get` | request | `src/main/ipc/settings.ts` | 1 | done |
 | `settings.setApprovalMode` | request | `src/main/ipc/settings.ts` | 1 | todo |
 | `settings.setReadoutVisibility` | request | `src/main/ipc/settings.ts` | later | todo |
 | `settings.setSplit` | request | `src/main/ipc/settings.ts` | later | todo |
@@ -132,7 +132,7 @@ per tasks.md Phase 4).
 
 | Channel | Kind | Electron source file | Milestone | Rust status |
 |---|---|---|---|---|
-| `theme:bootstrap` | bootstrap | `src/main/ipc/theme.ts` | 1 | todo |
+| `theme:bootstrap` | bootstrap | `src/main/ipc/theme.ts` | 1 | done |
 
 ## Totals
 
