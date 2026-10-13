@@ -130,15 +130,12 @@ impl SessionAgent {
                 }
             }
             DialogClassification::Request(request) => {
-                let payload = serde_json::to_value(&request)
-                    .expect("PendingRequest is always JSON-serialisable");
-                let request_id = request.request_id().to_string();
-                // Port of `addPendingRequest` (SessionAgent.ts:1641-1644), which does emit; the
-                // push-then-`NeedsYou` sequence is factored into `push_pending_request` (`mod.rs`)
-                // so a lane can register its own pending request the same way.
+                // Port of `addPendingRequest` (SessionAgent.ts:1641-1644): push+`NeedsYou`+
+                // transcript row+`request:pending` emit all happen inside `push_pending_request`
+                // (`mod.rs`) so a lane can register its own pending request the same way, in one
+                // call (code-review finding, 2026-10-14: this arm used to duplicate the row
+                // upsert and event emit instead of calling the accessor).
                 self.push_pending_request(request).await;
-                self.upsert_request_row(&request_id, None).await;
-                self.events.emit_request_pending(&self.session_id, &payload);
             }
         }
     }

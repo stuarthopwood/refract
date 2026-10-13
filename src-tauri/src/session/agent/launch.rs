@@ -333,9 +333,31 @@ impl SessionAgent {
             loop {
                 match rx.recv().await {
                     Some(ProcessEvent::Frame(frame)) => agent.handle_frame(frame).await,
-                    Some(ProcessEvent::StartProgress { .. }) => {}
+                    Some(ProcessEvent::StartProgress { stage, elapsed_ms }) => {
+                        // Issue #784 ("Pre-declare per-lane Rust files"): the one extension point
+                        // for every not-yet-landed lane's start-progress handling, same shape as
+                        // `frame.rs`'s own `on_frame` fan-out.
+                        crate::session::model::on_start_progress(&agent, stage, elapsed_ms).await;
+                        crate::session::readout::on_start_progress(&agent, stage, elapsed_ms).await;
+                        crate::session::side_chat::on_start_progress(&agent, stage, elapsed_ms)
+                            .await;
+                        crate::session::start_queue::on_start_progress(&agent, stage, elapsed_ms)
+                            .await;
+                        crate::session::subagents::on_start_progress(&agent, stage, elapsed_ms)
+                            .await;
+                        crate::session::termination::on_start_progress(&agent, stage, elapsed_ms)
+                            .await;
+                    }
                     Some(ProcessEvent::Exit { code, requested }) => {
                         agent.handle_exit(&proc, code, requested).await;
+                        // Issue #784: the same extension point for every not-yet-landed lane's
+                        // exit handling, same shape as `frame.rs`'s own `on_frame` fan-out.
+                        crate::session::model::on_exit(&agent, code, requested).await;
+                        crate::session::readout::on_exit(&agent, code, requested).await;
+                        crate::session::side_chat::on_exit(&agent, code, requested).await;
+                        crate::session::start_queue::on_exit(&agent, code, requested).await;
+                        crate::session::subagents::on_exit(&agent, code, requested).await;
+                        crate::session::termination::on_exit(&agent, code, requested).await;
                         break;
                     }
                     // The unbounded `mpsc` channel never lags; it only closes when the process

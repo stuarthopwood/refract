@@ -25,23 +25,26 @@
 // Issue #784 ("Pre-declare per-lane Rust files") pre-declares the above scope cuts as their own
 // empty sibling files -- `model.rs`, `readout.rs`, `side_chat.rs`, `start_queue.rs`,
 // `subagents.rs`, `termination.rs` -- so each lane (RM, R5, R6, R3) adds its behaviour inside its
-// own file only, never here: the `on_frame(agent, frame_type, &frame)` call `agent::frame`'s own
-// `handle_frame` makes per lane module, the lane's own `State` slot inside `AgentState` (reached
-// only through its `with_<lane>_state` accessor below), and the narrow status/events/transcript/
-// request accessors below are the only things a lane ever needs.
+// own file only, never here: the `on_frame(agent, frame_type, &frame)`, `on_exit(agent, code,
+// requested)`, and `on_start_progress(agent, stage, elapsed_ms)` calls `agent::frame`'s own
+// `handle_frame` and `agent::launch`'s own `spawn_frame_listener` make per lane module, the
+// lane's own `State` slot inside `AgentState` (reached only through its `with_<lane>_state`
+// accessor below), and the narrow status/events/transcript/request/`session_id()` accessors
+// below are the only things a lane ever needs.
 //
 // This module is itself split across `session/agent/` by concern (code-review finding,
 // 2026-10-13: a single ~1,900-line `agent.rs` violated issue #784's own 600-line-per-file
 // criterion): `mod.rs` (core state/status/transcript), `launch.rs` (start/attach/reattach),
 // `frame.rs` (frame dispatch), `requests.rs` (dialog classification), `chat.rs`
 // (send/stop/removeQueued), `conversations.rs` (startNew/open), `commands.rs` (slash-command
-// tables). `mod agent;` in `session/mod.rs` still resolves here, so `crate::session::agent` and
-// every external import of it are unchanged.
+// tables), `types.rs` (`AgentError`/`PendingRequest`/`SessionStatus`, split out round 2,
+// 2026-10-14, so `mod.rs` keeps headroom under its own 600-line limit). `mod agent;` in
+// `session/mod.rs` still resolves here, so `crate::session::agent` and every external import of
+// it are unchanged.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex, Weak};
 
-use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::sync::{watch, Mutex as AsyncMutex};
 
@@ -58,9 +61,11 @@ mod conversations;
 mod frame;
 mod launch;
 mod requests;
+mod types;
 
 pub use commands::{classify_slash_invocation, parse_slash_command, SlashInvocationClassification};
 pub use requests::is_chat_answer;
+pub use types::{AgentError, PendingRequest, SessionStatus};
 
 /// Mirrors `OmpProcess.ts`'s own `DEFAULT_REQUEST_TIMEOUT_MS`; not exported by `omp::process`
 /// (private there), so re-declared here with the same value for every `request()` call this
@@ -77,76 +82,6 @@ const MAX_MODEL_FIELD_LENGTH: usize = 256;
 
 pub type SharedRegistry = Arc<AsyncMutex<RegistryStore>>;
 pub type SharedSettings = Arc<AsyncMutex<SettingsStore>>;
-
-/// `src/shared/model.ts`'s own `SessionStatus` union.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SessionStatus {
-    Idle,
-    Working,
-    NeedsYou,
-    Stopped,
-}
-
-/// Errors a `SessionAgent` method can produce; `code` matches one of `src/shared/ipc.ts`'s
-/// `IpcErrorCode` values (`ipc::chat::map_chat_error`/`ipc::map_session_thrown`-equivalent
-/// mapping happens at the IPC layer, not here).
-#[derive(Debug)]
-pub struct AgentError {
-    pub code: &'static str,
-    pub message: String,
-}
-
-impl AgentError {
-    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for AgentError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for AgentError {}
-
-/// `src/shared/model.ts`'s own `PendingRequest` union (`dialogs.ts`'s `classifyDialog` output).
-/// `rename_all_fields` (not `rename_all`, which only renames variants) gives the camelCase field
-/// names the renderer matches on (`requestId`, `optionDetails`, `inputKind`).
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "kind", rename_all_fields = "camelCase")]
-pub enum PendingRequest {
-    #[serde(rename = "approval")]
-    Approval {
-        request_id: String,
-        tool: String,
-        target: String,
-        details: Vec<String>,
-    },
-    #[serde(rename = "question")]
-    Question {
-        request_id: String,
-        title: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        message: Option<String>,
-        options: Vec<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        option_details: Option<Vec<Option<String>>>,
-        input_kind: &'static str,
-    },
-}
-
-impl PendingRequest {
-    fn request_id(&self) -> &str {
-        match self {
-            Self::Approval { request_id, .. } | Self::Question { request_id, .. } => request_id,
-        }
-    }
-}
 
 struct AgentState {
     status: SessionStatus,
@@ -527,6 +462,14 @@ impl SessionAgent {
         &self.events
     }
 
+    /// Narrow accessor so a lane can build its own per-session event payload (for example
+    /// `{"sessionId": agent.session_id(), ...}` before calling `agent.events().send(...)`)
+    /// without reaching into `SessionAgent`'s private `session_id` field.
+    #[allow(dead_code)]
+    pub(super) fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
     /// Generic transcript upsert a lane can call from its own `on_frame`, the same sequence
     /// `upsert_request_row` above factors through for its own `kind: 'request'` rows.
     pub(super) async fn upsert_transcript_item(&self, item: TranscriptItem) {
@@ -540,14 +483,21 @@ impl SessionAgent {
     }
 
     /// Registers a pending request the same way `handle_frame`'s own `DialogClassification::
-    /// Request` arm does: pushes onto `state.pending` and moves the Session to `NeedsYou`.
-    pub(super) async fn push_pending_request(&self, request: PendingRequest) -> bool {
+    /// Request` arm used to inline (code-review finding, 2026-10-14): pushes onto
+    /// `state.pending`, moves the Session to `NeedsYou`, upserts the transcript `kind: 'request'`
+    /// row (`upsert_request_row`), and emits `request:pending` -- the full sequence in one call,
+    /// so a lane can register its own pending request the same way `frame.rs` does.
+    pub(super) async fn push_pending_request(&self, request: PendingRequest) {
+        let payload =
+            serde_json::to_value(&request).expect("PendingRequest is always JSON-serialisable");
+        let request_id = request.request_id().to_string();
         {
             let mut state = self.state.lock().await;
             state.pending.push(request);
         }
         self.set_status(SessionStatus::NeedsYou, None, None).await;
-        true
+        self.upsert_request_row(&request_id, None).await;
+        self.events.emit_request_pending(&self.session_id, &payload);
     }
 
     #[allow(dead_code)]

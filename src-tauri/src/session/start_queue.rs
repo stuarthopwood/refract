@@ -3,10 +3,14 @@
 // per-lane Rust files").
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
-// decoded frame (one call per lane module, cheap and allocation-free as a no-op); lane R3 adds
-// its start queue behaviour inside this function, never inside any file under `session/agent/`.
+// decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
+// `on_start_progress` for the ready-wait banner (same listener) -- one call per lane module each,
+// cheap and allocation-free as a no-op; lane R3 adds its start queue behaviour inside these
+// functions, never inside any file under `session/agent/`.
 
 use serde_json::Value;
+
+use crate::omp::process::ReadyWaitStage;
 
 use super::agent::SessionAgent;
 
@@ -19,5 +23,17 @@ pub(super) struct State {
 }
 
 pub(super) async fn on_frame(_agent: &SessionAgent, _frame_type: &str, _frame: &Value) {
+    // No-op until lane R3 (#786) lands.
+}
+
+pub(super) async fn on_exit(_agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
+    // No-op until lane R3 (#786) lands.
+}
+
+pub(super) async fn on_start_progress(
+    _agent: &SessionAgent,
+    _stage: ReadyWaitStage,
+    _elapsed_ms: u64,
+) {
     // No-op until lane R3 (#786) lands.
 }
