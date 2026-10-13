@@ -46,17 +46,24 @@ async function resolveAttachmentPath(worktreeRoot: string, token: string): Promi
   if (path.isAbsolute(token)) {
     const walked = await resolveNoFollowUnrooted(token);
     if (!walked.ok) return { ok: false, reason: 'not-found' };
-    // Only now, with every link along the way already individually vetted, does this call
-    // `fs.realpath` -- it canonicalises casing/8.3 short names only; nothing is left in
-    // `walked.path` for it to follow (same reasoning `resolveInWorktree`'s own final
-    // `fs.realpath` call documents for the worktree-relative branch below).
-    let realPath: string;
-    try {
-      realPath = await fs.realpath(walked.path);
-    } catch {
-      return { ok: false, reason: 'not-found' };
-    }
-    return { ok: true, realPath };
+    // PR #723 gate round 2 fix (Sec2 Low, Verif2 Medium): this used to call `fs.realpath
+    // (walked.path)` here "only to canonicalise casing/8.3 short names" -- but `fs.realpath`
+    // FOLLOWS LINKS, and `walked.path` is already link-free, so that call bought nothing except
+    // a second, unvetted chance for a link swapped in between the walk and this call to be
+    // followed (round 1's own SMB/NTLM class of bug, reopened as a race). `walked.path` is
+    // handed to `readImageFile` as-is now; `fs.open` below is the only further filesystem call
+    // that touches it.
+    //
+    // **Accepted residual risk (PR #723 gate round 2, Sec2/Verif2 Low/Medium, reproduced:
+    // 1/1228 runs under a tight symlink-swap loop)**: a window still exists between this walk's
+    // last `fs.lstat` and `readImageFile`'s own `fs.open` -- a link swapped into an
+    // already-checked segment in that window could still be followed by `fs.open`. This mirrors
+    // the EXACT accepted residual `resolveNoFollow`'s own doc comment (`files.ts`) already
+    // documents for the worktree-relative branch below; winning it requires a process with
+    // symlink-creation privilege already running locally as the user racing a paste/drop, i.e.
+    // the same local attacker who could already reach a UNC path directly -- accepted, not
+    // mitigated, same as the relative branch's own identical window.
+    return { ok: true, realPath: walked.path };
   }
   const resolved = await resolveInWorktree(worktreeRoot, token);
   if (!resolved.ok) return { ok: false, reason: 'not-found' };
@@ -91,11 +98,19 @@ async function readImageFile(worktreeRoot: string, token: string): Promise<Resul
         error: { code: 'image-too-large', message: `Image is too large to attach (over the ${Math.round(MAX_IMAGE_INPUT_BYTES / (1024 * 1024))} MiB limit); nothing was attached.` }
       };
     }
-    // Reads at most cap+1 bytes: if the file GREW past the cap between the stat above and this
-    // read, the extra byte still trips the bytesRead check below rather than silently reading an
-    // unbounded amount.
-    const capped = Buffer.alloc(MAX_IMAGE_INPUT_BYTES + 1);
+    // PR #723 gate round 2 fix (Sec2 Low): sized from the REAL on-disk size (capped at the byte
+    // limit), not a flat `MAX_IMAGE_INPUT_BYTES + 1` allocation every time -- a 1 KB file no
+    // longer zero-fills 20 MiB. `+ 1` still over-reads by one byte so a file that GREW past the
+    // cap between the stat above and this read is caught by `bytesRead > stat.size` below,
+    // exactly like the previous version's own `bytesRead > MAX_IMAGE_INPUT_BYTES` check, but
+    // phrased against this read's own expectation rather than the global cap a second time.
+    const capped = Buffer.alloc(Math.min(stat.size, MAX_IMAGE_INPUT_BYTES) + 1);
     const { bytesRead } = await handle.read(capped, 0, capped.length, 0);
+    if (bytesRead > stat.size) {
+      // The file changed size between the stat and this read -- refuse rather than trust a
+      // read that no longer matches what was size-checked.
+      return notFound('That file could not be read.');
+    }
     if (bytesRead > MAX_IMAGE_INPUT_BYTES) {
       return {
         ok: false,

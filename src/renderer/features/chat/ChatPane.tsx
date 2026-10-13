@@ -935,14 +935,24 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     const skipped = failedFiles.length + overflowCount
     if (skipped > 0) {
       const only = failedFiles[0]
+      // PR #723 gate round 2 fix (A11y2 Low): a zero-slots overflow used to read "Only 0 more
+      // images could be attached", and a drop that had BOTH overflow and read failures silently
+      // dropped the failure half of the sentence. Both now stated precisely.
+      const overflowText =
+        overflowCount > 0
+          ? remainingSlots === 0
+            ? 'This message already has the maximum of 10 images; nothing more was attached.'
+            : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
+          : null
+      const failureText =
+        failedFiles.length === 1 && only
+          ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
+          : failedFiles.length > 1
+            ? `${failedFiles.length} other file${failedFiles.length === 1 ? '' : 's'} could not be attached as images.`
+            : null
       notify({
         code: 'invalid-argument',
-        message:
-          overflowCount > 0
-            ? `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
-            : failedFiles.length === 1 && only
-              ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
-              : `${failedFiles.length} files could not be attached as images.`
+        message: [overflowText, failureText].filter(Boolean).join(' ')
       })
     }
   }

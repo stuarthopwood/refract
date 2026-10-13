@@ -202,6 +202,20 @@ as `resolveNoFollow` already does for the relative/worktree-contained branch, wh
 the link's ultimate, fully-vetted target to live anywhere on disk. "User-initiated" now describes
 only the ACT of pasting/dragging, never a trust claim about the text's own origin.
 
+**Addendum (PR #723 gate round 2, Sec2 Low/Verif2 Medium)**: round 1's fix above still called
+`fs.realpath(walked.path)` after the segment-by-segment walk, "only to canonicalise casing/8.3
+short names" -- but `fs.realpath` follows links, and `walked.path` is already link-free, so that
+call bought nothing except a second, unvetted chance for a link swapped in between the walk and
+this call to be followed. Removed; `walked.path` is handed to the reader as-is. **Accepted
+residual risk** (reproduced: 1/1228 runs under a tight symlink-swap loop): a window still exists
+between the walk's last `fs.lstat` and the reader's own `fs.open` -- a link swapped into an
+already-checked segment in that window could still be followed. This is the exact same accepted
+residual `resolveNoFollow`'s own doc comment (`files.ts`) already documents for the
+worktree-relative branch; winning it requires a process with symlink-creation privilege already
+running locally as the user racing a paste/drop, i.e. the same local attacker who could already
+reach a UNC path directly -- accepted, not mitigated, identically to the relative branch's own
+window.
+
 ## 12. Pixel-count cap: parsed from the image's own header bytes, no new npm dependency
 
 **Decision**: `shared/images.ts` gains `readImageDimensions(bytes, mimeType)`, a pure function that

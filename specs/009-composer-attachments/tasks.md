@@ -483,7 +483,7 @@ image does, reusing Phase 6's shared reader end to end.
 **A11y/docs**: chip labels now read "image N of M" when more than one is pending (previously
 identical "Remove pasted image" on every one); refusal toasts now name the reason and (for a
 drop) the file's own basename, never a full path; `ChatDisplaySection.tsx`'s intro text now
-mentions pasted-content handling; the WCAG 2.5.7 single-pointer-alternative gap (drag has no
+mentions pasted-content handling; the WCAG 2.2 AA 2.5.7 single-pointer-alternative gap (drag has no
 non-drag equivalent of its own; paste remains the full keyboard/screen-reader route) is a
 disclosed residual, not fixed this round -- a follow-up issue for an attach (file-picker) button
 is filed separately, not built here. `spec.md` FR-020/FR-021/research.md Decision 11 corrected
@@ -499,5 +499,57 @@ clean), `vitest` 376/376 (no new tests), `check:indent` 0 odd-indent lines acros
 cleaned afterward, literal path). **Still not live-verified** (T023 above) -- machine free RAM has
 repeatedly dropped under 1 GB this session (Stuart's own live Refract instance, not another lane);
 deferred rather than risking a crash, disclosed in the PR body's own "not verified live" list.
+
+### Round 2 gate fixes (Sec2/Code2/A11y2/Verif2 FAIL, against the round 1 head)
+
+**3 LOW/MEDIUM (security):** `shared/images.ts`'s `matchesImageSignature` checked only a 4-byte
+prefix for PNG and GIF, accepting any file that merely started with `\x89PNG` or `GIF8` --
+strengthened to the full 8-byte PNG signature plus the fixed-offset "IHDR" tag (PNG spec 11.2.2:
+always the first chunk) and the full 6-byte "GIF87a"/"GIF89a" signature including the version.
+`readImageDimensions`'s GIF case trusted the Logical Screen Descriptor's own nominal canvas size,
+which a crafted file can under-declare (even 1x1) while its first Image Descriptor describes a far
+larger frame that real-world decoders (including Chromium's) expand the canvas to fit -- fixed to
+walk to the first Image Descriptor and take the max of screen and frame extent, closing a pixel-cap
+bypass. `attachments.ts`'s absolute-path branch still called `fs.realpath(walked.path)` after the
+segment-by-segment walk "only to canonicalise casing" -- but `walked.path` is already link-free and
+`fs.realpath` follows links, so that call bought nothing except a second, unvetted chance for a
+link swapped in between the walk and this call to be followed. Removed (research.md Decision 11
+addendum); a residual TOCTOU window between the walk's last `fs.lstat` and the reader's own
+`fs.open` is accepted, not mitigated, reproduced at 1/1228 runs under a tight symlink-swap loop --
+identical to `resolveNoFollow`'s own already-accepted residual for the relative branch, and
+requiring the same local symlink-creation privilege an attacker who could already reach a UNC path
+directly would already have. `attachments.ts`'s `readImageFile` also no longer zero-fills a flat
+`MAX_IMAGE_INPUT_BYTES + 1` buffer for every read regardless of the file's real size -- sized from
+the actual on-disk size (capped at the limit) instead, so a 1 KB file no longer allocates 20 MiB.
+
+**6 MEDIUM/LOW (code/a11y):** `draft-store.ts`'s plain `EMPTY_DRAFT` overwrite (on send, and on
+`/btw`) reset `pendingAttachmentReads` to 0 even while a background path/drop read was still in
+flight, reopening the exact Enter-mid-read race the counter exists to close -- fixed to preserve
+the in-flight count across a clear. `MessageInput.tsx`'s path-only paste fallback captured
+`start`/`end` synchronously (round 1 fix) but not the textarea's own live text at that moment --
+if the developer typed during the IPC round trip, splicing at the stale offsets could delete or
+duplicate characters just typed; fixed to capture `before` alongside `start`/`end` and insert at
+the current caret (or text end) instead of the stale offsets when a mismatch is detected. The
+mixed-paste background branch silently dropped an over-cap or unresolved path with no notice at
+all, contradicting FR-026's own "quiet notice" requirement -- fixed to notify with the same wording
+the path-only branch already uses. No visible or announced reason was given while Send/Enter were
+refused during an in-flight background read -- fixed with a one-time "Attaching image…" text line
+and a single announcement per 0-to-positive transition of `pendingAttachmentReads` (never on every
+re-render, never again on an already-covered 0-to-0 no-op). Removing a pending image's own remove
+button unmounted it with no focus management and no announcement (WCAG 2.4.3, reachable up to 10x
+per message now that #514/#432 can produce more than one or two pending images) -- fixed to move
+focus to the next remaining remove button (or the textarea if none remain) and announce the
+removal. `ChatPane.tsx`'s drop-overflow notice read "Only 0 more images could be attached" for a
+zero-slots overflow, and silently dropped the failure half of its own message when a drop had BOTH
+an overflow and a resolve failure at once -- both now stated precisely.
+
+**Wording**: `AttachmentStrip.tsx`'s single-image labels ("View pasted image" / "Remove pasted
+image") are now generic ("View image" / "Remove image"), since a path-attached or dropped image
+was never actually pasted; the multi-image "image N of M" labels (round 1) were already generic.
+
+**Checkpoint**: same full gate, combined final code including this round's fixes: `pnpm typecheck`
+(both tsconfigs clean), `vitest` 376/376 (no new tests), `check:indent` 0/327, `check:ui-text`
+0/371, `check:theme-contrast` 313/313 (no new tokens), `check:drag-regions` 0/110, `pnpm build`
+succeeded (`out/` cleaned afterward, literal path). Live verification: see PR body.
 
 ---

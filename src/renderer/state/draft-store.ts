@@ -67,8 +67,16 @@ export const useDraftStore = create<DraftState>((set, get) => ({
     const attachments = typeof updater === 'function' ? updater(current.attachments) : updater
     set({ bySession: { ...get().bySession, [sessionId]: { ...current, attachments } } })
   },
+  // PR #723 gate round 2 fix (Code2 Medium): a plain `EMPTY_DRAFT` overwrite used to reset
+  // `pendingAttachmentReads` to 0 even while a background read was still in flight (a
+  // path-only paste mid-`await chat.send`, or `/btw`'s own unconditional clear) -- reopening
+  // exactly the Enter-mid-read race the counter exists to close, since the NEXT keystroke's
+  // `handleSend` guard would then read a false "nothing pending". The counter now survives a
+  // clear; the read that decrements it later still runs against the correct (now-cleared)
+  // session entry.
   clear: (sessionId) => {
-    set({ bySession: { ...get().bySession, [sessionId]: EMPTY_DRAFT } })
+    const current = get().bySession[sessionId]
+    set({ bySession: { ...get().bySession, [sessionId]: { ...EMPTY_DRAFT, pendingAttachmentReads: current?.pendingAttachmentReads ?? 0 } } })
   },
   announceAttachment: (sessionId, message) => {
     const current = get().bySession[sessionId] ?? EMPTY_DRAFT

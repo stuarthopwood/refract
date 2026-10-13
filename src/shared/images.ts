@@ -29,11 +29,41 @@ export const LARGE_PASTE_CHIP_THRESHOLD = 800;
 export function matchesImageSignature(bytes: Uint8Array, mimeType: SupportedImageMimeType): boolean {
   switch (mimeType) {
     case 'image/png':
-      return bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+      // PR #723 gate round 2 fix (Sec2 Low): the full 8-byte PNG signature plus the "IHDR" tag at
+      // its fixed offset (PNG spec 11.2.2: the first chunk after the signature is ALWAYS IHDR) --
+      // the previous 4-byte check alone accepted any file merely starting with `\x89PNG`,
+      // including non-PNG content a prefix happened to share.
+      return (
+        bytes.length >= 16 &&
+        bytes[0] === 0x89 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x4e &&
+        bytes[3] === 0x47 &&
+        bytes[4] === 0x0d &&
+        bytes[5] === 0x0a &&
+        bytes[6] === 0x1a &&
+        bytes[7] === 0x0a &&
+        bytes[12] === 0x49 && // 'I'
+        bytes[13] === 0x48 && // 'H'
+        bytes[14] === 0x44 && // 'D'
+        bytes[15] === 0x52 // 'R'
+      );
     case 'image/jpeg':
       return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
     case 'image/gif':
-      return bytes.length >= 4 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38;
+      // PR #723 gate round 2 fix (Sec2 Low): the full "GIF87a"/"GIF89a" signature (6 bytes,
+      // including the version) -- the previous 4-byte check alone accepted any file merely
+      // starting with "GIF8" (probed: a plain text file beginning "GIF8 this is any text"
+      // passed as a "GIF" before this fix).
+      return (
+        bytes.length >= 6 &&
+        bytes[0] === 0x47 && // 'G'
+        bytes[1] === 0x49 && // 'I'
+        bytes[2] === 0x46 && // 'F'
+        bytes[3] === 0x38 && // '8'
+        (bytes[4] === 0x37 || bytes[4] === 0x39) && // '7' or '9'
+        bytes[5] === 0x61 // 'a'
+      );
     case 'image/webp':
       return (
         bytes.length >= 12 &&
@@ -85,10 +115,60 @@ export function readImageDimensions(bytes: Uint8Array, mimeType: SupportedImageM
       return { width: view.getUint32(16, false), height: view.getUint32(20, false) };
     }
     case 'image/gif': {
-      // 6-byte "GIF87a"/"GIF89a" signature, then width/height as two little-endian uint16s
-      // (GIF89a spec section 18, Logical Screen Descriptor).
-      if (bytes.length < 10) return null;
-      return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
+      // 6-byte "GIF87a"/"GIF89a" signature, then the 7-byte Logical Screen Descriptor:
+      // width:2/height:2 (little-endian), a packed byte (bit 0x80: Global Color Table present,
+      // low 3 bits: its size as 2^(n+1) RGB triples), background colour index, pixel aspect
+      // ratio (GIF89a spec section 18).
+      //
+      // PR #723 gate round 2 fix (Sec2 Medium): the Logical Screen Descriptor's own width/height
+      // is only the NOMINAL canvas size -- a crafted file can declare a tiny screen (even 1x1)
+      // while its first Image Descriptor's own left/top/width/height describe a far larger
+      // frame; real-world GIF decoders (including Chromium's) commonly EXPAND the canvas to fit
+      // an over-sized first frame rather than clipping it, so checking only the screen size let
+      // a decompression-bomb-shaped frame bypass the pixel cap entirely. This now walks past the
+      // optional Global Color Table and any Extension blocks (0x21, sub-blocks terminated by a
+      // 0-length block) to the first Image Descriptor (0x2C) and reports
+      // `max(screen, frameLeft+frameWidth)` / `max(screen, frameTop+frameHeight)` instead -- the
+      // worst-case canvas size a non-strict decoder could actually allocate. A walk that cannot
+      // find an Image Descriptor (malformed, truncated, or the Trailer `0x3B` reached first)
+      // fails closed (`null`), same as every other parser gap in this file.
+      if (bytes.length < 13) return null;
+      const screenWidth = view.getUint16(6, true);
+      const screenHeight = view.getUint16(8, true);
+      const packed = view.getUint8(10);
+      let offset = 13;
+      if (packed & 0x80) {
+        const gctEntries = 2 ** ((packed & 0x07) + 1);
+        offset += gctEntries * 3;
+      }
+      while (offset < bytes.length) {
+        const blockType = view.getUint8(offset);
+        if (blockType === 0x21) {
+          // Extension: introducer(1) + label(1), then sub-blocks each [size:1][data:size],
+          // terminated by a size-0 block.
+          offset += 2;
+          while (offset < bytes.length) {
+            const subBlockSize = view.getUint8(offset);
+            offset += 1 + subBlockSize;
+            if (subBlockSize === 0) break;
+          }
+          continue;
+        }
+        if (blockType === 0x2c) {
+          if (offset + 9 > bytes.length) return null;
+          const frameLeft = view.getUint16(offset + 1, true);
+          const frameTop = view.getUint16(offset + 3, true);
+          const frameWidth = view.getUint16(offset + 5, true);
+          const frameHeight = view.getUint16(offset + 7, true);
+          return {
+            width: Math.max(screenWidth, frameLeft + frameWidth),
+            height: Math.max(screenHeight, frameTop + frameHeight)
+          };
+        }
+        // Trailer (0x3B) or any other unexpected byte: no Image Descriptor found at all.
+        return null;
+      }
+      return null;
     }
     case 'image/jpeg': {
       // Scans marker segments from byte 2 (past the 0xFFD8 SOI marker) looking for a Start Of
