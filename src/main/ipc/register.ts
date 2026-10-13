@@ -14,6 +14,7 @@ import { registerClipboard } from './clipboard';
 import { registerConversations } from './conversations';
 import { registerFileExplorer } from './fileExplorer';
 import { registerFilesIpc } from './files';
+import { registerImagesIpc } from './images';
 import { registerModelRoles } from './modelRoles';
 import { registerReadiness } from './readiness';
 import { registerPullRequests } from './pullRequests';
@@ -31,6 +32,7 @@ export function registerIpc(manager: SessionManager, getWindow: () => BrowserWin
   registerSessions(manager);
   registerFilesIpc(manager);
   registerAttachmentsIpc(manager);
+  registerImagesIpc(manager);
   registerFileExplorer(manager, getWindow);
   registerPullRequests(manager);
   registerConversations(manager);

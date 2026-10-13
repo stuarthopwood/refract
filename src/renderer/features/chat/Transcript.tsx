@@ -14,6 +14,7 @@ import { EMPTY_TRANSCRIPT, useChatScrollStore, usePendingRequestsStore, useSessi
 import { STARTUP_NOTICE_PREFIX, type PendingRequest, type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { SCROLL_LANDING_MAX_FRAMES, SCROLL_LANDING_STABLE_FRAMES, SCROLL_PERTURBATION_TOLERANCE_PX, isAtScrollEnd, resolveLandingScrollTop } from './scrollLanding'
 import { LinkContext, Markdown } from './Markdown'
+import { TranscriptImages } from './TranscriptImages'
 import { AgentMessageRow } from './AgentMessageRow'
 import { AdvisoryRow } from './AdvisoryRow'
 import { CollapsedLine } from './CollapsedLine'
@@ -169,7 +170,12 @@ function TranscriptRow({ item, sessionId, pending, userName, resolvedAskByReques
           </MessageAvatar>
           <MessageContent className="w-fit max-w-[85%] rounded-lg bg-accent/50 px-3 py-2">
             <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
-            <Markdown id={item.id} text={item.text} className="text-chat-foreground" />
+            {/* Issue #513: images render above the text, inside the SAME bubble, only on a
+             * `user` item (never an Ask line or Subagent view). A message with only images has
+             * `item.text === ''`, so `Markdown` is skipped entirely rather than rendering an
+             * empty text block (it does not no-op on empty text itself). */}
+            {sessionId && item.images && item.images.length > 0 && <TranscriptImages sessionId={sessionId} images={item.images} />}
+            {item.text.length > 0 && <Markdown id={item.id} text={item.text} className="text-chat-foreground" />}
           </MessageContent>
         </Message>
       )

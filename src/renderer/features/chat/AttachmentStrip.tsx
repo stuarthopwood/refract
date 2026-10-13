@@ -33,7 +33,8 @@ export function AttachmentStrip({ images, textChips, onRemoveImage, containerRef
       {images.map((image, index) => (
         <div key={image.id} className="group relative">
           <ImagePreviewModal
-            attachment={image}
+            images={[{ src: image.previewUrl, byteLength: image.byteLength }]}
+            titlePrefix="Pasted image"
             trigger={
               <button
                 type="button"

@@ -17,6 +17,7 @@ import type {
   PullRequestListResult,
   RefractApi,
   Readiness,
+  ResolvedImage,
   Result,
   SessionSnapshot,
   SessionStatusEvent,
@@ -107,6 +108,10 @@ const refract: RefractApi = {
   attachments: {
     readImageFile: (sessionId, path) => request<AttachmentImageFile>(IPC_REQUESTS.ATTACHMENTS_READ_IMAGE_FILE, sessionId, path),
     getPathForFile: (file) => webUtils.getPathForFile(file)
+  },
+
+  images: {
+    get: (sessionId, imageId, mimeType, size) => request<ResolvedImage>(IPC_REQUESTS.IMAGES_GET, sessionId, imageId, mimeType, size)
   },
 
   clipboard: {

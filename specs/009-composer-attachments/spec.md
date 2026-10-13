@@ -136,6 +136,46 @@ and a thumbnail appears in the attachment strip after the drop.
 
 ---
 
+### User Story 5 - Show attached images in the sent message bubble (#513, Priority: P2)
+
+A developer who attached one or more images to a message (Story 1, 3, or 4) sees those images
+rendered inside their own sent message bubble, above the text, at a responsive thumbnail size,
+and can click one (or reach it by keyboard and press Enter/Space) to view it larger. Reopening an
+earlier Session shows the same images from OMP's own saved reference, not a locally-cached copy;
+a reference that no longer resolves shows a clear placeholder instead of a broken image.
+
+**Why this priority**: Describing a UI bug, an error dialog, or a diagram in words after already
+seeing the picture is friction the developer should never have to repeat; this is the display
+half of #431/#513's split (the save-to-disk half stays #431's own scope, out of this round).
+
+**Independent Test**: Can be fully tested by sending a message with one image and confirming a
+thumbnail renders above the text in that same bubble and opens a larger view on click; sending a
+message with 3 or more images and confirming a responsive grid with a "+N" tile past the shown
+limit; reopening the Session and confirming the same images render from the reopened history.
+
+**Acceptance Scenarios**:
+
+1. **Given** a message sent with exactly one image, **When** it appears in the transcript, **Then**
+   a single responsive thumbnail renders above the message text inside the same bubble, capped at
+   320px height, never upscaled past its own natural size.
+2. **Given** a message sent with more than one image, **When** it appears in the transcript,
+   **Then** the images render as a 2-across grid (3-across once the pane is wide enough), with a
+   "+N" overlay on the last visible tile once more than 4 images are attached.
+3. **Given** a rendered image thumbnail, **When** the developer clicks it or presses Enter/Space
+   while it is focused, **Then** a modal opens showing that image at up to the viewport size, with
+   Esc and a close button to dismiss it and return focus to the thumbnail; Left/Right arrow keys
+   move to the next/previous image when the message has more than one.
+4. **Given** a Session reopened after a restart, **When** its earlier history includes a message
+   with images, **Then** those same images render from OMP's own saved `blob:sha256:` reference; a
+   reference that no longer resolves (a missing or invalid file) shows a clear "Image no longer
+   available" placeholder instead of a broken image.
+5. **Given** a message sent with only images and no text, **When** it renders, **Then** the bubble
+   shows no empty text block below the images.
+6. **Given** the answered Ask line or the Subagent view, **When** either renders a message, **Then**
+   no image ever appears there, even if the underlying turn carried one.
+
+---
+
 ### Edge Cases
 
 - A clipboard paste that offers both an image and a plain-text representation at once (for example, a spreadsheet cell) is handled as an image paste; the text representation is not also turned into a chip.
@@ -183,6 +223,16 @@ and a thumbnail appears in the attachment strip after the drop.
 - **FR-028** (#432): A drop onto a Session that is not currently accepting input (stopped, and not in its own first `not-started` state) MUST be refused with a visible notice, never silently swallowed.
 - **FR-029** (#514, #432): Nothing from either path -- the resolved file path, parent folder names, or any other filesystem metadata -- is ever exposed to the renderer beyond the validated image bytes themselves (mirrors FR-006's existing "never a file path" rule for the wire-level `images` field, extended here to the IPC response shape too).
 - **FR-030** (#432): A dropped file that is not one of the four supported image types (PNG, JPEG, GIF, WebP) is rejected the same way an unsupported pasted image would be; this spec adds no new attachment kind for a dropped non-image file.
+- **FR-031** (#513): Each image attached to a sent message (Story 1, 3, or 4) MUST render inside that same message's own chat bubble, above its text, in the order it was attached; a message sent with only images and no text MUST NOT render an empty text block below them.
+- **FR-032** (#513): A message's images MUST render responsively within the existing `max-w-[85%]` bubble: one image at its own natural proportions up to the bubble's width and a 320px maximum height, never upscaled past its natural size; two or more images MUST render as an equal-sized grid, 2 across by default and 3 across once the pane is wide enough, with no horizontal overflow at any pane width down to 320px.
+- **FR-033** (#513): A message with more than 4 images MUST show only the first 4 as full thumbnails, with a "+N" overlay on the last visible tile for the remaining count; the hidden images are never individually fetched until actually shown (Technical notes, "a 40 MB history with many images must not stall opening").
+- **FR-034** (#513): Clicking a rendered image thumbnail, or giving it keyboard focus and pressing Enter or Space, MUST open a modal viewer showing that image at up to the viewport size, along with its file type and decoded byte size once known; Esc and a visible close control MUST close it and return focus to the thumbnail that opened it, matching FR-004/FR-016's existing modal conventions.
+- **FR-035** (#513): A message with more than one image MUST let the viewer move to the next/previous image (Left/Right arrow keys) without closing and reopening the modal.
+- **FR-036** (#513): Reopening a Session MUST show the images of its earlier messages, resolved from OMP's own saved reference (research.md Decision 17) through a new main-process-only IPC call; a reference that fails to resolve (missing file, oversized, or a magic-byte mismatch against its own recorded mime type) MUST render as a clear "Image no longer available" placeholder, never a broken `<img>` or a thrown error.
+- **FR-037** (#513): Each image thumbnail MUST be a real `<button>` with an accessible name describing its position, format, and size once resolved (for example "Image 1 of 3 attached to your message, PNG, 240 KB. Open larger view"), falling back to a generic but non-empty name while resolution is pending; the inner `<img>` itself carries `alt=""` (the button carries the name). Each thumbnail MUST have a visible 1px border (preserved in forced-colors mode) and a minimum 24px hit target (WCAG 2.5.8).
+- **FR-038** (#513): Opening the image viewer MUST NOT play a zoom or scale-in animation beyond the existing dialog's own default fade/scale transition already used by every other dialog in the app (reduced-motion requirement) -- this spec adds no new transition.
+- **FR-039** (#513): An image's `mimeType`, whether reported live or read from a saved reference, MUST be checked against the existing 4-entry supported mime list and the resolved bytes' own magic-byte signature before it is ever rendered; an unrecognised or mismatched mime type MUST resolve to the same "Image no longer available" placeholder as a missing file, and MUST NEVER be rendered as an `<img src>` with an unchecked source. A `blob:` URL MUST NEVER be constructed for any rendered image (the app's CSP allows only `img-src 'self' data:`).
+- **FR-040** (#513): Images never render anywhere other than a `user` chat bubble in the main transcript: not in the answered Ask line, and not in the Subagent view, even for a turn that otherwise carried one.
 
 ### Key Entities
 
@@ -190,6 +240,7 @@ and a thumbnail appears in the attachment strip after the drop.
 - **Pending text chip**: a clipboard-pasted block of text over the chip threshold, not yet sent; held in the renderer with its full original text, a short label, and the position in the draft its label currently occupies.
 - **Attachment strip**: the shared row above the message box holding every pending image and text chip for the draft currently being composed.
 - **Path-based/dropped image attachment** (#514, #432): the exact same Pending image attachment shape above, built by the main-process reader (FR-020) instead of a browser `File` blob from the clipboard -- never a separate entity or a separate strip/remove/preview UI.
+- **Transcript image reference** (#513): one image attached to an already-sent `user` message, held on its `TranscriptItem` as a content-addressed sha256 id and mime type, plus -- when knowable without a disk read -- its decoded byte size and pixel dimensions; the full image bytes are never held in the transcript store itself, only fetched on demand through `images.get` when the viewer opens.
 
 ## Success Criteria *(mandatory)*
 
@@ -202,6 +253,8 @@ and a thumbnail appears in the attachment strip after the drop.
 - **SC-005**: A non-vision model's extra admission delay for a vision-description call (up to 20 seconds) never produces a visible error or a stalled appearance in the composer.
 - **SC-006**: Removing one pending attachment never alters the draft's other text or any other pending attachment.
 - **SC-007** (#514, #432): Every image attached via a resolvable path (paste or drop; typing: #727) reaches the agent as a real image attachment on that message, 100% of the time, the same measurement SC-001 already uses; a path/file that fails validation is left as text (paste) or skipped (drop) with a quiet notice, never sent as a broken/empty attachment.
+- **SC-008** (#513): Every image attached to a sent message renders inside that message's own bubble, both for a message just sent in the current live Session and for a message reopened from an earlier Session's saved history, 100% of the time a resolvable reference exists; a reference that no longer resolves always shows the placeholder, never a broken image or a thrown error.
+- **SC-009** (#513): No image ever renders in the answered Ask line or the Subagent view, verified by reading both renderers' own code paths (neither one constructs the new image-row component).
 
 ## Assumptions
 
@@ -215,3 +268,7 @@ and a thumbnail appears in the attachment strip after the drop.
 - No automated tests; Refract is a prototype verified by hand per quickstart.md, consistent with specs 001 and 008.
 - No telemetry is added by this spec.
 - Probe-before-design (constitution Principle IV) is already satisfied for the OMP wire-level facts this spec relies on: the `images` field, the `ImageContent` shape, the 20 MiB cap, the supported mime types, and the vision-description admission delay were all read directly from OMP's own `rpc.md` and source this morning (research.md Decisions 1 to 4), not assumed; no new probe task is scheduled for them.
+- Issue #513 is this spec's display slice of #431 (save-to-disk is explicitly out of scope here: OMP's own blob store already keeps a copy, research.md Decision 17); #431 keeps the save-to-disk/path-in-prompt half.
+- Zoom/pan in the image viewer and rendering images from assistant/tool-result content are explicitly out of scope for this round (Stuart's own decision comment on #513, 2026-10-13): a documented follow-up, not silently dropped.
+- Thumbnail generation serves the SAME bytes for both `'thumbnail'` and `'full'` `images.get` requests (no new image-decode/resize dependency was added for v1, since none already in `package.json` fit cleanly) -- a future round may add real downscaling without changing the IPC shape.
+

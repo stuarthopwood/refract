@@ -27,7 +27,24 @@ export interface OmpToolCallPart {
   intent?: string;
 }
 
-export type OmpMessageContentPart = OmpTextPart | OmpThinkingPart | OmpToolCallPart;
+/** Issue #513 (research.md Decision 17, probed live on `omp/18.10.1`): an `image` content part
+ * on a `user` message. `data` is EITHER the exact inline base64 string Refract originally sent
+ * (the live `message_start`/`message_end` frame and an immediate `get_messages` against the same
+ * live process), OR `blob:sha256:<64 hex>` (every message once persisted to and reloaded from
+ * OMP's own on-disk session store, `~/.omp/agent/blobs/<hash>`) -- `transcript.ts`'s own
+ * `extractUserImages` branches on the VALUE's own prefix, never on which path produced it, since
+ * a single history `get_messages` read can mix both shapes across older/newer messages.
+ * `mimeType` is `string`, not `SupportedImageMimeType`: OMP may echo back any mime string it was
+ * given, or (never observed, but not ruled out) one of its own choosing -- an unrecognised value
+ * is handled defensively downstream (no width/height/byteLength computed, main-process
+ * resolution refuses it), never treated as a parse failure for the whole message. */
+export interface OmpImagePart {
+  type: 'image';
+  data: string;
+  mimeType: string;
+}
+
+export type OmpMessageContentPart = OmpTextPart | OmpThinkingPart | OmpToolCallPart | OmpImagePart;
 
 // ---------------------------------------------------------------------------
 // OMP messages (as returned by get_messages and carried on message_start/end)

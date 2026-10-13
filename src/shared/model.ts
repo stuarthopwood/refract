@@ -401,9 +401,32 @@ export interface SubagentSummary {
   durationMs?: number; // present once status is finished, failed, or exited; absent when startedAt was never genuinely known (issue #489 gate finding 8)
 }
 
+/** Issue #513: one image attached to a `user` message, built by `transcript.ts`'s
+ * `extractUserImages` (shared by the live `applyMessageSnapshot` path and `fromHistory`) from an
+ * `OmpImagePart`'s own `data`/`mimeType` -- never the base64 payload itself (data-model.md "Do
+ * not put full-size base64 in the transcript store"). `id` is the content's own sha256 hex (OMP's
+ * own blob hash for a `blob:sha256:<hash>` history reference, or computed by `transcript.ts` from
+ * the decoded bytes for a live inline-base64 part), content-addressed so a live `SessionAgent`
+ * cache write and a later resolved blob read agree on the identical value for identical bytes.
+ * `byteLength`/`width`/`height` are only ever knowable PURELY (no I/O, no decode library) for the
+ * live inline-base64 case, computed once here from the base64 string/decoded header bytes; for a
+ * `blob:sha256:` reference they are unknown until the renderer's `images.get` IPC call resolves
+ * them, so they stay `undefined` at parse time (the renderer reserves a default box size and
+ * fills these in once resolved -- a one-time layout shift on first resolve for a history image is
+ * an accepted v1 limitation, not built around). `mimeType` is `string`, matching `OmpImagePart`'s
+ * own doc comment: an unrecognised value is never rendered, only ever resolved to the "Image no
+ * longer available" placeholder. */
+export interface TranscriptImageRef {
+  id: string;
+  mimeType: string;
+  byteLength?: number;
+  width?: number;
+  height?: number;
+}
+
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
-  | { kind: 'user'; id: string; text: string; at: number }
+  | { kind: 'user'; id: string; text: string; at: number; images?: TranscriptImageRef[] }
   | { kind: 'assistant-text'; id: string; text: string; streaming: boolean }
   | {
       kind: 'thinking';

@@ -6,9 +6,11 @@
 // Pure: no I/O, no Electron imports. `applyFrame` never mutates its `items` argument; it
 // returns a new array, replacing only the items that changed, so callers can diff by identity.
 
+import { createHash } from 'node:crypto';
 import type {
   Frame,
   OmpCustomMessage,
+  OmpImagePart,
   OmpMessage,
   OmpMessageContentPart,
   OmpTextPart,
@@ -18,8 +20,11 @@ import type {
   ToolExecutionStartFrame,
 } from '../../shared/frames';
 import { isKnownFrame } from '../../shared/frames';
+import type { SupportedImageMimeType } from '../../shared/frames';
 import { HIDDEN_TOOLS, HIDDEN_TOOL_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX } from '../../shared/model';
-import type { Session, TranscriptItem } from '../../shared/model';
+import type { Session, TranscriptImageRef, TranscriptItem } from '../../shared/model';
+import { MAX_IMAGE_PIXELS, readImageDimensions, SUPPORTED_IMAGE_MIME_TYPES } from '../../shared/images';
+import { decodedBase64ByteLength } from './images';
 
 /** Issue #489 hardening: `registry.json` is hand-editable disk state (gate fixes 3, section h
  * finding (e)) and goes through no runtime validation on load -- a `currentTurnSubagents` field
@@ -126,6 +131,48 @@ function joinText(parts: OmpMessageContentPart[]): string {
     .filter((part): part is OmpTextPart => part.type === 'text')
     .map((part) => part.text)
     .join('');
+}
+
+function isSupportedImageMimeType(value: string): value is SupportedImageMimeType {
+  return (SUPPORTED_IMAGE_MIME_TYPES as readonly string[]).includes(value);
+}
+
+/** Issue #513 (research.md Decision 17): the `user` TranscriptItem image `id` -- sha256 of the
+ * DECODED bytes for a live inline-base64 content part, computed here so it agrees with OMP's
+ * own blob hash for the identical bytes once persisted (`SessionAgent`'s live image cache uses
+ * this same function to key its own cache, so a cache lookup and a resolved blob read can never
+ * disagree on which id names which content). Pure/sync (`node:crypto`), no I/O. */
+export function hashImageBytes(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+const BLOB_REF_RE = /^blob:sha256:([0-9a-f]{64})$/;
+
+/** Issue #513: builds a `user` TranscriptItem's `images` from its own `OmpImagePart`s, shared by
+ * `applyMessageSnapshot`'s live case and `fromHistory`'s case so the two paths can never drift.
+ * Branches on `data`'s own prefix (`blob:sha256:` vs. inline base64), never on which path
+ * produced it (a single history read can mix both shapes). `byteLength`/`width`/`height` are
+ * only ever computed for the inline-base64 case (pure: decoded-length arithmetic plus a
+ * fixed-offset header read, both already-shared helpers, no decode library) -- for a blob
+ * reference they stay `undefined` until `images.get` resolves them. An unrecognised `mimeType`
+ * still gets an id/mimeType entry (so a conservative "unavailable" placeholder can render) but
+ * never a width/height read.`undefined` when the message carries no image part at all. */
+function extractUserImages(parts: OmpMessageContentPart[]): TranscriptImageRef[] | undefined {
+  const imageParts = parts.filter((part): part is OmpImagePart => part.type === 'image');
+  if (imageParts.length === 0) return undefined;
+  return imageParts.map((part): TranscriptImageRef => {
+    const blobMatch = BLOB_REF_RE.exec(part.data);
+    if (blobMatch) return { id: blobMatch[1]!, mimeType: part.mimeType };
+    const decoded = Buffer.from(part.data, 'base64');
+    const id = hashImageBytes(decoded);
+    const byteLength = decodedBase64ByteLength(part.data);
+    if (!isSupportedImageMimeType(part.mimeType)) return { id, mimeType: part.mimeType, byteLength };
+    const dimensions = readImageDimensions(decoded, part.mimeType);
+    if (!dimensions || dimensions.width * dimensions.height > MAX_IMAGE_PIXELS) {
+      return { id, mimeType: part.mimeType, byteLength };
+    }
+    return { id, mimeType: part.mimeType, byteLength, width: dimensions.width, height: dimensions.height };
+  });
 }
 
 function isToolItem(item: TranscriptItem): item is ToolItem {
@@ -698,7 +745,8 @@ function applyMessageSnapshot(
     case 'user': {
       const text = joinText(message.content);
       const at = typeof message.timestamp === 'number' ? message.timestamp : Date.now();
-      return replaceMessageItems(items, messageId, [{ kind: 'user', id: messageId, text, at }]);
+      const images = extractUserImages(message.content);
+      return replaceMessageItems(items, messageId, [{ kind: 'user', id: messageId, text, at, ...(images ? { images } : {}) }]);
     }
     case 'custom': {
       const asyncResult = tryApplyAsyncResult(items, message);
@@ -987,7 +1035,8 @@ export function fromHistory(
       case 'user': {
         const text = joinText(message.content);
         const at = typeof message.timestamp === 'number' ? message.timestamp : 0;
-        items = [...items, { kind: 'user', id: messageId, text, at }];
+        const images = extractUserImages(message.content);
+        items = [...items, { kind: 'user', id: messageId, text, at, ...(images ? { images } : {}) }];
         return;
       }
       case 'custom': {

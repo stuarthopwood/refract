@@ -13,7 +13,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { OmpProcess, ReadyCeilingError } from './OmpProcess';
 import type { ReadyWaitStage } from './readyWait';
-import { applyFrame, currentTurnKeys, fromHistory, tryBuildAgentMessageFromUnknownFrame } from './transcript';
+import { applyFrame, currentTurnKeys, fromHistory, hashImageBytes, tryBuildAgentMessageFromUnknownFrame } from './transcript';
 import { classifyDialog, buildDialogResponse } from './dialogs';
 import { AgentNotRunningError, PromptFailedError, ReattachFailedError, SessionNotIdleError } from './errors';
 import { diffTranscript, finalizeLiveTranscript, mergeLiveTranscript } from './transcriptDiff';
@@ -38,6 +38,8 @@ import type {
   GetBtwHistoryResponseData,
   GetStateResponseData,
   ImageContent,
+  MessageEndFrame,
+  MessageStartFrame,
   NoticeFrame,
   PredictWordResponseData,
   QueueKind,
@@ -340,6 +342,21 @@ export class SessionAgent extends EventEmitter {
     if (this.visibleSubagentId === null) return;
     this.emit('subagentPatch', { sessionId: this.sessionId, subagentId: this.visibleSubagentId, ops });
   });
+  /** Issue #513: a just-sent LIVE image's DECODED bytes, keyed by `hashImageBytes` (the same id
+   * `transcript.ts`'s `extractUserImages` computes for that content), so `images.get` can serve
+   * it the instant it is sent -- before OMP's own on-disk blob-store write has necessarily
+   * landed -- without waiting on a disk read at all. Populated by `cacheLiveImageParts` the
+   * moment `applyTranscriptFrame` observes a `message_start`/`message_end` for a `user` message
+   * carrying an inline-base64 image part (never a `blob:sha256:` reference, which is already on
+   * disk). Bounded by both entry count and total bytes (a long session sending many large
+   * images must not grow this without limit); cleared in `onExit` so nothing outlives the
+   * process that received it ("release the data when a Session is evicted", issue's own words --
+   * approximated here by process exit, the nearest existing lifecycle hook, rather than a
+   * separate Session-eviction signal this class has no other reason to listen for). */
+  private readonly liveImageCache = new Map<string, { bytes: Buffer; mimeType: string }>();
+  private liveImageCacheBytes = 0;
+  private static readonly LIVE_IMAGE_CACHE_MAX_ENTRIES = 32;
+  private static readonly LIVE_IMAGE_CACHE_MAX_BYTES = 200 * 1024 * 1024;
 
   constructor(opts: SessionAgentOptions) {
     super();
@@ -1377,6 +1394,11 @@ export class SessionAgent extends EventEmitter {
   private async onExit(info: { code: number | null; requested: boolean }): Promise<void> {
     this.process = undefined;
     this.finalizeLiveItems();
+    // Issue #513: "release the data when a Session is evicted" -- approximated by process exit
+    // (see `liveImageCache`'s own doc comment); nothing a NEW process for this Session sends
+    // was ever decoded into this map, so there is nothing stale to carry across a restart.
+    this.liveImageCache.clear();
+    this.liveImageCacheBytes = 0;
     // Gate-fix (round 9, Code9/Sec9/A11y9/Verif9 Medium): `sideChatTopicEpoch` is bounded by
     // settledness, not by age (see `onFrame`'s own `btw_record` case) -- a topic whose terminal
     // frame never arrives at all (the process dies mid-question) would otherwise sit in the map
@@ -1625,11 +1647,54 @@ export class SessionAgent extends EventEmitter {
   }
 
   private applyTranscriptFrame(frame: Frame): void {
+    this.cacheLiveImageParts(frame);
     const next = applyFrame(this.runtime.transcript, frame, this.hasUserActed);
     if (next === this.runtime.transcript) return;
     const ops = diffTranscript(this.runtime.transcript, next);
     this.runtime = { ...this.runtime, transcript: next };
     if (ops.length > 0) this.queuePatch(ops);
+  }
+
+  /** Issue #513: seeds `liveImageCache` from a `message_start`/`message_end` frame's own `user`
+   * content parts, BEFORE `applyFrame` turns them into the transcript's own (byte-free)
+   * `TranscriptImageRef`s -- this is the one place the actual decoded bytes are ever available
+   * in this class, since `transcript.ts` stays pure (no bytes retained). Only an inline-base64
+   * part is cached (a `blob:sha256:` reference is already on disk, nothing to seed); re-caching
+   * an id already present is a no-op (`message_start` and `message_end` for the SAME message
+   * both carry it). */
+  private cacheLiveImageParts(frame: Frame): void {
+    if (frame.type !== 'message_start' && frame.type !== 'message_end') return;
+    // Same reason as `onFrame`'s other cases (e.g. `QueueUpdateFrame`): `type` narrowing alone
+    // can't isolate this, because `UnknownFrame`'s index signature accepts any key.
+    const messageFrame = frame as MessageStartFrame | MessageEndFrame;
+    if (messageFrame.message.role !== 'user') return;
+    for (const part of messageFrame.message.content) {
+      if (part.type !== 'image' || part.data.startsWith('blob:sha256:')) continue;
+      const bytes = Buffer.from(part.data, 'base64');
+      this.cacheLiveImage(hashImageBytes(bytes), bytes, part.mimeType);
+    }
+  }
+
+  private cacheLiveImage(id: string, bytes: Buffer, mimeType: string): void {
+    if (this.liveImageCache.has(id)) return;
+    this.liveImageCache.set(id, { bytes, mimeType });
+    this.liveImageCacheBytes += bytes.length;
+    while (
+      this.liveImageCache.size > SessionAgent.LIVE_IMAGE_CACHE_MAX_ENTRIES ||
+      this.liveImageCacheBytes > SessionAgent.LIVE_IMAGE_CACHE_MAX_BYTES
+    ) {
+      const oldestKey = this.liveImageCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      const oldest = this.liveImageCache.get(oldestKey);
+      this.liveImageCache.delete(oldestKey);
+      if (oldest) this.liveImageCacheBytes -= oldest.bytes.length;
+    }
+  }
+
+  /** `images.get`'s (`src/main/ipc/images.ts`) own first lookup, before falling back to a blob-
+   * store disk read -- see `liveImageCache`'s own doc comment. */
+  getCachedImage(id: string): { bytes: Buffer; mimeType: string } | undefined {
+    return this.liveImageCache.get(id);
   }
 
   private setQueue(followUp: string[], steering: string[]): void {

@@ -779,3 +779,56 @@ see the PR body's own Gates section for this round's exact results. No live app 
 attempted this round (code-level fix plus a read-only probe only); scenarios 1-3 and 6-26 remain
 not completed; a manual pass by Stuart in a normal Session is still requested. Still open pending
 that manual pass.
+
+## Phase 8: User Story 5 - Show attached images in the sent message bubble (#513, Priority: P2)
+
+- [X] T024 (#513) [P] [US5] Shared types and the pure extraction helper: `OmpImagePart` added to
+  `OmpMessageContentPart` (`src/shared/frames.ts`, `mimeType: string` -- OMP may echo back any
+  value, handled defensively downstream, never a parse failure); `TranscriptImageRef` and the
+  `user` `TranscriptItem`'s new `images?: TranscriptImageRef[]` field (`src/shared/model.ts`);
+  `transcript.ts`'s new `extractUserImages`/`hashImageBytes` (branches on the `data` prefix --
+  `blob:sha256:` vs. inline base64 -- never on which path produced it), wired into both
+  `applyMessageSnapshot`'s live `user` case and `fromHistory`'s `user` case so the two paths can
+  never drift; reuses the existing pure `decodedBase64ByteLength`/`readImageDimensions` helpers,
+  no new decode library, `transcript.ts` stays pure (no I/O, no Electron import).
+  Built: `src/shared/frames.ts`, `src/shared/model.ts`, `src/main/omp/transcript.ts` (`hashImageBytes` exported for `SessionAgent`'s own live cache to reuse the identical id scheme).
+- [X] T025 (#513) [US5] Main-process blob resolution and the live-image cache: new
+  `src/main/omp/blobStore.ts` exporting `resolveImage(id, mimeType, size, cached)` -- strict
+  `^[0-9a-f]{64}$` id validation, the fixed `~/.omp/agent/blobs/<id>` path (never built from a
+  transcript-supplied path/filename), a capped TOCTOU-safe read matching `attachments.ts`'s own
+  `readImageFile` pattern, then the existing `matchesImageSignature`/`readImageDimensions`/
+  `MAX_IMAGE_PIXELS` checks against the CALLER's own already-recorded `mimeType`; `SessionAgent`'s
+  new bounded `liveImageCache` (keyed by `hashImageBytes`, seeded by `cacheLiveImageParts` the
+  moment `applyTranscriptFrame` sees a `message_start`/`message_end` carrying a fresh inline-
+  base64 user image, capped by both entry count and total bytes, cleared on process exit).
+  Built: `src/main/omp/blobStore.ts`, `SessionAgent.ts` (`cacheLiveImageParts`, `cacheLiveImage`, `getCachedImage`, cache clear in `onExit`). `size: 'thumbnail' | 'full'` currently serves the SAME bytes either way (Assumptions: no new image-decode/resize dependency for v1).
+- [X] T026 (#513) [P] [US5] New `images.get` IPC surface, following `attachments.ts`'s own
+  registration pattern exactly: `IPC_REQUESTS.IMAGES_GET`, the `ResolvedImage` payload type, and
+  `RefractApi.images.get` (`src/shared/ipc.ts`); `registerImagesIpc` (new
+  `src/main/ipc/images.ts`, wired into `register.ts`) shape-checks every argument off the wire
+  and maps a failed resolution to the same `not-found`/`invalid-argument` `Result` either way (a
+  malformed id and a missing blob are never distinguishable to the caller); the `images.get`
+  bridge method in `src/preload/index.ts`.
+  Built: `src/shared/ipc.ts`, `src/main/ipc/images.ts`, `src/main/ipc/register.ts`, `src/preload/index.ts`.
+- [X] T027 (#513) [US5] Renderer: generalised `ImagePreviewModal.tsx` from a composer-only
+  `PendingImageAttachment` viewer to any `ViewerImage[]` with Left/Right navigation (additive --
+  a single image, every existing composer call site, is unchanged); new
+  `TranscriptImages.tsx` (the responsive image row/grid above a `user` bubble's text, resolving
+  each visible tile on demand via `images.get`, a static "Image no longer available" placeholder
+  for an unresolvable one, a real accessible name per FR-037 once resolved); `Transcript.tsx`'s
+  `case 'user':` renders it above `Markdown` (skipped entirely when `item.text === ''`, FR-031);
+  `AttachmentStrip.tsx` updated to the new `ImagePreviewModal` props (same rendered title text as
+  before, `"Pasted image (…)"`).
+  Built: `src/renderer/features/chat/ImagePreviewModal.tsx`, `TranscriptImages.tsx` (new), `Transcript.tsx`, `AttachmentStrip.tsx`.
+- [X] T028 (#513) Spec amendment: this spec's own User Story 5, FR-031 to FR-040, SC-008/SC-009,
+  the `TranscriptImageRef`/`images.get` entries in data-model.md, and this Phase 8.
+- [ ] T029 (#513) Gates + draft PR: `pnpm typecheck` (both tsconfigs), existing `vitest` (no new
+  tests), `check:indent`, `pnpm build` then `check:ui-text`/`check:theme-contrast`/
+  `check:drag-regions`; open one draft PR against `origin/main`.
+- [ ] T030 (#513) Live verification in an isolated scratch Electron instance: a message with 1 and
+  with 3+ images shows live bubble thumbnails; a seeded history session shows the same from a
+  `blob:sha256:` reference, including the "unavailable" placeholder for a deliberately-missing
+  hash; keyboard Enter opens the viewer, arrow keys move between images, Esc returns focus; a
+  no-image message is pixel-for-pixel unchanged; no `blob:` URL ever appears in a rendered
+  `<img src>`.
+

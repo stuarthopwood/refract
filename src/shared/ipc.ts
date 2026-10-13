@@ -123,6 +123,18 @@ export interface AttachmentImageFile {
   byteLength: number;
 }
 
+/** Issue #513: `images.get`'s success payload -- a small, ready-to-render `data:` URL (never
+ * `blob:`, which the CSP forbids) plus the dimensions/byte count the caller may not have known
+ * yet (a `blob:sha256:` history reference's `TranscriptImageRef` carries none of these until this
+ * resolves). */
+export interface ResolvedImage {
+  dataUrl: string;
+  mimeType: SupportedImageMimeType;
+  byteLength: number;
+  width: number;
+  height: number;
+}
+
 export interface Readiness {
   git: Check;
   omp: Check;
@@ -412,6 +424,7 @@ export const IPC_REQUESTS = {
   ACCOUNTS_OMP_SIGN_OUT: 'accounts.omp.signOut',
   ACCOUNTS_OMP_ANSWER: 'accounts.omp.answer',
   APP_OPEN_RELEASE_NOTES: 'app.openReleaseNotes',
+  IMAGES_GET: 'images.get',
 } as const;
 
 export const IPC_EVENTS = {
@@ -552,6 +565,17 @@ export interface RefractApi {
      * `File` object's own already-resolved path locally in the renderer process (no main-process
      * involvement, no new attack surface) -- this is simply where its one call site lives. */
     getPathForFile(file: File): string;
+  };
+
+  images: {
+    /** Issue #513: resolves a `TranscriptImageRef.id` to a small, ready-to-render `data:` URL --
+     * either from that Session's own just-sent live cache or from OMP's on-disk blob store,
+     * never a `blob:` URL (the CSP forbids it). `mimeType` is the TranscriptItem's own already-
+     * recorded value, re-validated against the resolved bytes' real magic-byte signature before
+     * ever being served; `size` currently makes no difference to the bytes returned (see
+     * `src/main/omp/blobStore.ts`'s own header comment). Error `not-found`/`invalid-argument`
+     * (never a thrown error) becomes the renderer's "Image no longer available" placeholder. */
+    get(sessionId: string, imageId: string, mimeType: string, size: 'thumbnail' | 'full'): Promise<Result<ResolvedImage>>;
   };
 
   clipboard: {

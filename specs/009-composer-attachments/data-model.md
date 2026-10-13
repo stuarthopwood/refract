@@ -134,6 +134,29 @@ into an ordinary `PendingImageAttachment` (a fresh `id`, a `previewUrl` built fr
 preview, announce) is the exact same code whether the image came from a clipboard paste, a typed/
 pasted path, or a drop.
 
+### `TranscriptImageRef` (new, #513, `src/shared/model.ts`)
+
+```ts
+export interface TranscriptImageRef {
+  id: string;
+  mimeType: string;
+  byteLength?: number;
+  width?: number;
+  height?: number;
+}
+```
+
+Held on a `user` `TranscriptItem`'s new optional `images?: TranscriptImageRef[]` field, built in
+the main process (`transcript.ts`'s `extractUserImages`, shared by the live and history paths) from
+an `OmpImagePart`'s own `data`/`mimeType` -- never the full base64 payload (research.md Decision 17:
+"do not put full-size base64 in the transcript store"). `id` is the content's own sha256 hex: OMP's
+own blob hash for a `blob:sha256:<hash>` history reference, or computed from the decoded bytes for
+a live inline-base64 part (`transcript.ts`'s `hashImageBytes`), so the two cases agree on the
+identical value for identical content. `byteLength`/`width`/`height` are only ever computed PURELY
+(the existing `decodedBase64ByteLength`/`readImageDimensions` helpers, no decode library) for the
+live inline-base64 case; a history reference carries none of these until the renderer resolves them
+through `images.get` below.
+
 ### `AttachmentsState` (per Session, alongside the existing draft/queue state)
 
 ```ts
@@ -170,11 +193,20 @@ attachments.getPathForFile(file: File): string
 // New (#514): the Settings switch FR-024 adds, same immediate-apply shape every other Settings
 // toggle in this app already uses (`settings.setShowSampleData`, spec 013).
 settings.setDetectImagePathsOnPaste(enabled: boolean): Result<Settings>
+
+// New (#513): resolves a `TranscriptImageRef.id` to a small, ready-to-render `data:` URL.
+// `mimeType` is the caller's own already-recorded value (re-validated against the resolved
+// bytes' real magic-byte signature before ever being served); `size` is accepted but both
+// values currently return the SAME bytes (no image-resize dependency added for v1, Assumptions).
+images.get(sessionId: string, imageId: string, mimeType: string, size: 'thumbnail' | 'full'): Result<ResolvedImage>
 ```
 
 New error codes: `unsupported-image-type`, `image-too-large` (contracts/ipc.md) -- both already
 existed for `chat.send`'s own re-validation (FR-018) and are reused as-is by `readImageFile`
-(FR-020), never a second pair of codes for the same two failure shapes.
+(FR-020), never a second pair of codes for the same two failure shapes. `images.get` (#513) reuses
+the existing `invalid-argument`/`not-found` codes -- both a malformed id/mimeType and a missing or
+invalid blob collapse to the SAME renderer-facing "Image no longer available" placeholder, never a
+distinguishable error the caller could use to probe which blob hashes exist on disk.
 
 ## Changed entities
 
@@ -183,12 +215,18 @@ existed for `chat.send`'s own re-validation (FR-018) and are reused as-is by `re
   `transcriptDisplay` (issue #457) already uses (lazy in-memory correction on a missing/malformed
   key, no raw/lazy-correction split needed). Persisted in `settings.json` like every other
   `Settings` field; everything else in this spec stays entirely in-memory (see below).
+- **`TranscriptItem`** (specs/001 data-model.md), the `user` variant (#513): gains one optional
+  field, `images?: TranscriptImageRef[]`, built by `transcript.ts` from the content parts of the
+  SAME OMP message every other `user` field already comes from -- no new wire read, no new
+  persisted file. Every other `TranscriptItem` variant is unchanged.
 
 ## No change to existing entities
 
-- `Session`, `Repository`, `SessionRuntime`, `TranscriptItem`, `PendingRequest`,
-  `ConversationInfo` (specs/001) are unchanged by this spec.
+- `Session`, `Repository`, `SessionRuntime`, `PendingRequest`, `ConversationInfo` (specs/001) are
+  unchanged by this spec.
 - `registry.json`, `processes.json` are unchanged. `settings.json` gains exactly the one new
   field above; nothing else in this spec is persisted across a restart -- a pending attachment on
   an in-progress draft is simply gone if Refract restarts, the same as the draft text itself
-  already is.
+  already is. The `images` field above is likewise never persisted by Refract itself (OMP's own
+  session store already persists the underlying message); it is re-derived from `fromHistory` on
+  every reattach/reopen, exactly like every other `TranscriptItem` field.
