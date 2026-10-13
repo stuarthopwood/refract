@@ -78,7 +78,11 @@ from the Electron CDP recipe above.
   real-`omp` CDP session wherever the flow you need is already covered by its fixtures
   (`scripts/fixtures/omp-frames/README.md`); fall back to a real `omp` only for a flow the
   fixtures do not cover yet.
-- Driving a real `omp` against the Rust build still needs `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=
-  --remote-debugging-port=<port>` set on the `pnpm dev:tauri` process only, same as the Electron
-  recipe's own isolation discipline: a scratch data directory, a scratch repository, never
-  Stuart's real `%APPDATA%\refract-tauri`.
+- **Never `pnpm dev:tauri` for a live check (2026-10-13 live-run convention).** It holds Vite's
+  fixed port 5174, and the running exe lives under the shared `CARGO_TARGET_DIR`, so two lanes'
+  own dev servers or running binaries collide. Instead: `pnpm exec tauri build --debug --no-bundle`
+  (bakes the renderer in, no dev server, no port), copy
+  `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to your own scratch dir, and run that copy with
+  your own `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` and
+  `REFRACT_DATA_DIR` pointing at a scratch data directory, never Stuart's real
+  `%APPDATA%\refract-tauri`. `scripts/verify-tauri.mjs` already does this.

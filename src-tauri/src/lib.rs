@@ -47,13 +47,27 @@ pub fn data_dir() -> PathBuf {
 
 /// Security LOW finding: restricts same-window navigation to the app's own origin -- the
 /// Electron build's equivalent is `denyForeignNavigation`. `Url::origin()` compares
-/// scheme+host+port as one unit, so neither a lookalike host nor a stray port can pass. Dev
-/// builds navigate to the Vite dev server (`tauri.conf.json`'s own `devUrl`); release builds
-/// navigate to Tauri's own custom protocol, served as `http://tauri.localhost` on this build's
-/// Windows-only target (`use_https_scheme` is left at its default `false`).
+/// scheme+host+port as one unit, so neither a lookalike host nor a stray port can pass.
+///
+/// Checks BOTH legitimate origins unconditionally, rather than branching on
+/// `cfg!(debug_assertions)` (found live, 2026-10-13, R12a's own verification harness): a
+/// `cargo build`/`tauri build` invoked with `--debug` -- the live-run convention every Phase R
+/// lane now uses to avoid the shared Vite port and the shared `CARGO_TARGET_DIR` exe race (no
+/// `tauri dev`, no dev server) -- still has `debug_assertions` true, so the old `cfg!` branch
+/// expected the Vite dev server's origin even though this binary serves `frontendDist` over the
+/// custom protocol exactly like a release build. That mismatch made the very first navigation
+/// (from `about:blank` to the app's own real content) look "foreign" and silently denied it,
+/// leaving the window permanently blank with no visible error. Allowing both origins always is
+/// no weaker a guarantee: neither is attacker-controlled, and only one is ever actually reachable
+/// in a given run (`devUrl` is loaded only when a dev server is actually serving it).
 fn is_allowed_navigation_url(url: &Url) -> bool {
-    let allowed = if cfg!(debug_assertions) { "http://localhost:5174" } else { "http://tauri.localhost" };
-    url.origin() == Url::parse(allowed).expect("allowed navigation origin is a valid URL").origin()
+    let origin = url.origin();
+    [
+        Url::parse("http://localhost:5174").expect("dev-server navigation origin is a valid URL"),
+        Url::parse("http://tauri.localhost").expect("custom-protocol navigation origin is a valid URL"),
+    ]
+    .iter()
+    .any(|allowed| allowed.origin() == origin)
 }
 
 /// State `.manage()`d once at startup: the one `Dispatcher` every `refract_request` call routes

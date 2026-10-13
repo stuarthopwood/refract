@@ -67,6 +67,11 @@ cost and no network. `pnpm verify:tauri --real-omp` runs the readiness half of t
 against a real, signed-in `omp` on `PATH` instead. See `scripts/fixtures/omp-frames/README.md`
 for the fixture format and how to re-record them.
 
+It builds with `tauri build --debug --no-bundle` and runs a copy of the resulting exe, never
+`pnpm dev:tauri`: only one Phase R lane can hold Vite's fixed port 5174 at a time, and two lanes'
+own `cargo run` processes under the shared `CARGO_TARGET_DIR` can otherwise overwrite each
+other's running binary. Follow the same convention for any other live check against this build.
+
 ## Where things live
 
 | What | Where |

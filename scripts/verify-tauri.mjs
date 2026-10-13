@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // `pnpm verify:tauri` (issue #795 part 1, R12a): CDP-driven proof for the Tauri/WebView2 build.
-// Launches `pnpm run dev:tauri` against a scratch data directory and a scratch git repository,
-// with the recorded-frame fake `omp` (scripts/verify-tauri-fake-omp.mjs) first on PATH by
-// default, attaches over CDP, and drives:
+// Builds once with `pnpm exec tauri build --debug --no-bundle` (no dev server, so no shared
+// Vite port 5174 -- a live-run convention all Phase R lanes share, since only one lane can hold
+// that port at a time and `cargo run`'s own exe under the shared CARGO_TARGET_DIR can otherwise
+// be overwritten mid-run by another lane's build), copies the resulting
+// `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to a scratch dir, and runs THAT COPY directly
+// against a scratch data directory and a scratch git repository, with the recorded-frame fake
+// `omp` (scripts/verify-tauri-fake-omp.mjs) first on PATH by default. Drives:
 //
 //   US1 (window, readiness): the window paints, the readiness checklist goes green, "Add
 //       repository" becomes enabled.
@@ -15,16 +19,17 @@
 // `get_available_models`/`get_login_providers` round trip (ipc/readiness.rs), never `prompt`.
 //
 // Every process this script starts is tracked by pid and torn down in a `finally` block, tree-
-// killed (`taskkill /PID <pid> /T /F`) so the Vite dev server, `cargo`/the Tauri CLI, and the
-// built `refract-tauri.exe` (and, for the real-omp run, the `omp.exe` it spawns) all go with it --
-// never a kill by name, per AGENTS.md's destructive-operations rule applied to processes.
+// swept (every live descendant of that pid is found and force-killed, even one orphaned from an
+// already-exited wrapper -- see `stopProcess`'s own doc comment) -- never a kill by name, per
+// AGENTS.md's destructive-operations rule applied to processes.
 //
 // Shared disk note: every cargo/tauri invocation here runs with `CARGO_TARGET_DIR` pointed at the
 // shared, already-populated target dir (see this repo's own worktree instructions) -- never a
-// fresh `src-tauri/target`.
+// fresh `src-tauri/target`. The build step itself still briefly uses the shared target dir's own
+// lock (builds serialise there machine-wide); only the copied exe runs concurrently with others.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,8 +77,8 @@ function buildOmpShim(dir) {
   return out;
 }
 
-function spawnSync_(cmd, args) {
-  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
+function spawnSync_(cmd, args, opts = {}) {
+  return spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, ...opts });
 }
 
 /** A minimal scratch git repository to add as a Repository: one commit on `main`, nothing else.
@@ -86,18 +91,62 @@ function makeScratchRepo(dir) {
   return dir;
 }
 
-function launchDevTauri({ port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
+/** Builds the Rust app once with no dev server (the live-run convention, 2026-10-13): `tauri
+ * build --debug --no-bundle` runs the renderer's own production build plus `cargo build`
+ * (never `cargo run`), so it never touches Vite's shared port 5174 and finishes with a plain
+ * exe under the shared `CARGO_TARGET_DIR`, not a running process. Takes a few minutes the first
+ * time; the shared target dir makes a rebuild fast once most crates are already compiled. */
+function buildTauriDebugNoBundle() {
+  // The shared `CARGO_TARGET_DIR` means another lane's own running exe (built from the same
+  // crate) can transiently hold `debug/refract-tauri.exe` open, so `cargo build`'s own rename-
+  // over-the-old-binary step fails with "Access is denied" until that lane's process exits.
+  // Retried, not treated as this run's own failure.
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, CARGO_TARGET_DIR },
+      timeout: 20 * 60 * 1000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (result.status === 0) return;
+    const locked = /Access is denied/i.test(result.stderr ?? '') || /Access is denied/i.test(result.stdout ?? '');
+    if (!locked || attempt === maxAttempts) {
+      throw new Error(`buildTauriDebugNoBundle: build failed (exit ${result.status}):\n${result.stdout}\n${result.stderr}`);
+    }
+    console.warn(`verify-tauri: build exe locked by another process (shared CARGO_TARGET_DIR), retrying in 30s (attempt ${attempt}/${maxAttempts})...`);
+    spawnSync_('powershell', ['-NoProfile', '-Command', 'Start-Sleep -Seconds 30']);
+  }
+}
+
+/** Copies the just-built exe to its own scratch dir, so two lanes' own runs (and a later build
+ * overwriting the shared target dir's own copy) never collide with a process already running. */
+function copyBuiltExe(destDir) {
+  mkdirSync(destDir, { recursive: true });
+  const dest = path.join(destDir, 'refract-tauri.exe');
+  copyFileSync(path.join(CARGO_TARGET_DIR, 'debug', 'refract-tauri.exe'), dest);
+  return dest;
+}
+
+/** Runs the already-built, already-copied exe directly -- no wrapper process, so the pid this
+ * returns IS the app (no orphaning risk the old `cmd.exe /c pnpm run dev:tauri` wrapper had).
+ * `WEBVIEW2_USER_DATA_FOLDER` (a documented WebView2 env var) gets its own scratch subfolder
+ * next to the copied exe: WebView2's default user-data-folder resolution can collide across
+ * concurrently running instances sharing an identity, surfacing as `HRESULT(0x8007139F)`
+ * ("the group or resource is not in the correct state") -- seen live when another lane's own
+ * Tauri instance was running at the same time. */
+function launchBuiltExe(exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
+  const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
+  mkdirSync(webview2DataDir, { recursive: true });
   const env = {
     ...process.env,
-    CARGO_TARGET_DIR,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+    WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
     REFRACT_DATA_DIR: dataDir,
     ...extraEnv,
   };
   if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
-  // `cmd.exe /c` wraps pnpm's own `.cmd` shim; the resulting pid is the root of the whole tree
-  // (vite, the tauri CLI, cargo, the built exe) for a single tree-kill at shutdown.
-  const child = spawn('cmd.exe', ['/c', 'pnpm', 'run', 'dev:tauri'], { cwd: REPO_ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(exePath, [], { cwd: path.dirname(exePath), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   if (logFile) {
     const stream = createWriteStream(logFile);
     child.stdout.pipe(stream, { end: false });
@@ -115,7 +164,14 @@ async function withEvidenceDir(name) {
 /** US1: readiness goes green and "Add repository" becomes enabled. Works against either the fake
  * or a real `omp`: the readiness checklist is the same RPC round trip either way. */
 async function proveUs1(cdp, evidenceDir) {
-  await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+  try {
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+  } catch (err) {
+    const diag = await cdp.evaluate(`({ title: document.title, readyState: document.readyState, href: location.href, bodyText: document.body?.innerText?.slice(0, 500), bodyHtml: document.body?.innerHTML?.slice(0, 1000) })`);
+    console.error('verify-tauri: Readiness screen never mounted; page diagnostics:', JSON.stringify(diag, null, 2));
+    await cdp.screenshot(path.join(evidenceDir, 'us1-00-diag-failure.png'));
+    throw err;
+  }
   await cdp.screenshot(path.join(evidenceDir, 'us1-01-readiness-loading.png'));
   try {
     await cdp.waitFor(
@@ -145,13 +201,25 @@ async function proveUs4(cdp, evidenceDir, { repoDir, message }) {
   await cdp.screenshot(path.join(evidenceDir, 'us4-01-repository-added.png'));
 
   await cdp.clickByLabel('New session from a branch in ', { prefix: true });
-  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session')`, {
-    timeoutMs: 15_000,
-    label: 'New session dialog open',
-  });
+  await cdp.waitFor(
+    `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`,
+    { timeoutMs: 15_000, label: 'New session dialog open, branches loaded, Create session enabled' },
+  );
+  await cdp.screenshot(path.join(evidenceDir, 'us4-01b-new-session-dialog.png'));
+  const buttonState = await cdp.evaluate(
+    `(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); if (!b) return null; const r = b.getBoundingClientRect(); return { disabled: b.disabled, ariaDisabled: b.getAttribute('aria-disabled'), rect: { x: r.x, y: r.y, w: r.width, h: r.height } }; })()`,
+  );
+  console.log('verify-tauri: Create session button state before click:', JSON.stringify(buttonState));
   await cdp.clickByText('Create session', { inDialog: true });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await cdp.screenshot(path.join(evidenceDir, 'us4-01c-after-create-click.png'));
+  const dialogStillOpen = await cdp.evaluate(`!!document.querySelector('[role="dialog"]')`);
+  console.log('verify-tauri: dialog still open after Create session click:', dialogStillOpen);
 
-  await cdp.waitFor(`!!document.querySelector('[aria-label="Message"]')`, { timeoutMs: 60_000, label: 'Session opened, composer mounted' });
+  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, {
+    timeoutMs: 60_000,
+    label: 'Session opened, agent attached, composer enabled',
+  });
   await cdp.screenshot(path.join(evidenceDir, 'us4-02-session-opened.png'));
 
   await cdp.typeIntoByLabel('Message', message);
@@ -163,10 +231,25 @@ async function proveUs4(cdp, evidenceDir, { repoDir, message }) {
   );
   await cdp.screenshot(path.join(evidenceDir, 'us4-03-sent-message.png'));
 
+  // The scenario's `write` tool call raises an approval card (always-ask mode); answering it
+  // sends `extension_ui_response`, the gate the session fixture's tape is waiting on.
   await cdp.waitFor(
-    `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && /\\bok\\b/.test(t.textContent); })()`,
-    { timeoutMs: 60_000, label: 'US4: streamed assistant reply ("ok") rendered in transcript' },
+    `!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`,
+    { timeoutMs: 30_000, label: 'US4: approval card rendered' },
   );
+  await cdp.clickByText('Approve');
+
+  try {
+    await cdp.waitFor(
+      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); return !!t && t.textContent.trim().endsWith('ok'); })()`,
+      { timeoutMs: 60_000, label: 'US4: streamed assistant reply ("ok") rendered in transcript' },
+    );
+  } catch (err) {
+    const text = await cdp.evaluate(`document.querySelector('[aria-label="Transcript"]')?.textContent ?? '(no Transcript element)'`);
+    console.error('verify-tauri: streamed reply never matched; transcript textContent:', JSON.stringify(text));
+    await cdp.screenshot(path.join(evidenceDir, 'us4-04-diag-failure.png'));
+    throw err;
+  }
   await cdp.screenshot(path.join(evidenceDir, 'us4-04-streamed-reply.png'));
   console.log('US4 PASS: message sent and streamed reply read back from the transcript DOM.');
 }
@@ -175,6 +258,7 @@ async function runFakeOmpProof() {
   const shimDir = mkdtempSync(path.join(tmpdir(), 'refract-r12a-shim-'));
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-r12a-data-'));
   const repoDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-r12a-repo-')));
+  const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-r12a-exe-'));
   const evidenceDir = await withEvidenceDir('fake-omp');
   const port = DEFAULT_PORT;
 
@@ -184,12 +268,16 @@ async function runFakeOmpProof() {
   console.log(`verify-tauri: evidence dir ${evidenceDir}`);
 
   buildOmpShim(shimDir);
+  console.log('verify-tauri: building (tauri build --debug --no-bundle, no dev server)...');
+  buildTauriDebugNoBundle();
+  const exePath = copyBuiltExe(exeDir);
+  console.log(`verify-tauri: built exe copied to ${exePath}`);
 
-  const child = launchDevTauri({
+  const child = launchBuiltExe(exePath, {
     port,
     dataDir,
     pathPrepend: shimDir,
-    logFile: path.join(evidenceDir, 'dev-tauri.log'),
+    logFile: path.join(evidenceDir, 'app.log'),
     extraEnv: {
       REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
       REFRACT_FAKE_OMP_NODE: process.execPath,
@@ -198,7 +286,7 @@ async function runFakeOmpProof() {
   });
   let cdp;
   try {
-    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 180_000 });
+    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
     cdp = await CdpSession.connect(wsUrl);
     await proveUs1(cdp, evidenceDir);
     await proveUs4(cdp, evidenceDir, { repoDir, message: 'Reply with the single word ok' });
@@ -209,22 +297,29 @@ async function runFakeOmpProof() {
     await safeRmSync(shimDir);
     await safeRmSync(dataDir);
     await safeRmSync(repoDir);
+    await safeRmSync(exeDir);
   }
 }
 
 /** The one real-omp proof: US1 only, no model turn (ipc/readiness.rs never calls `prompt`). */
 async function runRealOmpProof() {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-r12a-real-data-'));
+  const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-r12a-real-exe-'));
   const evidenceDir = await withEvidenceDir('real-omp');
   const port = DEFAULT_PORT + 1;
 
   console.log(`verify-tauri: data dir ${dataDir}`);
   console.log(`verify-tauri: evidence dir ${evidenceDir}`);
 
-  const child = launchDevTauri({ port, dataDir });
+  console.log('verify-tauri: building (tauri build --debug --no-bundle, no dev server)...');
+  buildTauriDebugNoBundle();
+  const exePath = copyBuiltExe(exeDir);
+  console.log(`verify-tauri: built exe copied to ${exePath}`);
+
+  const child = launchBuiltExe(exePath, { port, dataDir, logFile: path.join(evidenceDir, 'app.log') });
   let cdp;
   try {
-    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 180_000 });
+    const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
     cdp = await CdpSession.connect(wsUrl);
     await proveUs1(cdp, evidenceDir);
     const omp = await cdp.evaluate(`document.body.innerText`);
@@ -234,6 +329,7 @@ async function runRealOmpProof() {
     cdp?.close();
     await stopProcess(child);
     await safeRmSync(dataDir);
+    await safeRmSync(exeDir);
   }
 }
 
