@@ -128,3 +128,95 @@ async fn is_registered_but_hand_emptied_true_only_when_git_entry_is_gone() {
         .await
         .unwrap());
 }
+
+/// A `..` built into the path, lexically resolving one level ABOVE the real worktrees root --
+/// never silently treated as `Inside` just because the on-the-wire string starts with the
+/// root's own path.
+#[tokio::test]
+async fn assert_within_worktrees_root_refuses_a_dotdot_escape_above_the_root() {
+    let repo = init_repo().await;
+    let escaping = worktrees_root(&repo)
+        .join("..")
+        .join(format!("escape-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&escaping).await.unwrap();
+    let result = assert_within_worktrees_root(&repo, &escaping).await;
+    assert!(!matches!(result, Ok(RootContainment::Inside)));
+    assert!(
+        result.is_err(),
+        "an escaping path that exists must be refused outright, never silently permitted"
+    );
+}
+
+/// A sibling folder named `<root>-evil` shares a string prefix with the real worktrees root
+/// (e.g. if root is `.../pinion-worktrees/pinion` then `.../pinion-worktrees/pinion-evil`) but
+/// is NOT nested inside it. This is exactly why the containment check appends
+/// `MAIN_SEPARATOR` before its own `starts_with` -- a naive unseparated prefix match would
+/// wrongly call this `Inside`.
+#[tokio::test]
+async fn assert_within_worktrees_root_treats_a_string_prefix_lookalike_sibling_as_outside() {
+    let repo = init_repo().await;
+    let root = worktrees_root(&repo);
+    let lookalike = root.with_file_name(format!(
+        "{}-evil",
+        root.file_name().unwrap().to_string_lossy()
+    ));
+    let inside_lookalike = lookalike.join("some-session");
+    let result = assert_within_worktrees_root(&repo, &inside_lookalike).await;
+    assert!(
+        !matches!(result, Ok(RootContainment::Inside)),
+        "a naive starts_with on the unseparated string would wrongly treat {} as inside {}",
+        inside_lookalike.display(),
+        root.display()
+    );
+}
+
+/// A junction living ABOVE the worktrees root (pointing somewhere unrelated) must not break
+/// containment for a real worktree underneath: `comparable_path` is purely lexical (see this
+/// crate's own `worktree_validity.rs` header), so it never follows the junction at all. Skips
+/// gracefully outside CI (sandbox/non-admin environments commonly refuse junction creation),
+/// but fails outright in CI so the loss of coverage is never silent there.
+#[tokio::test]
+async fn assert_within_worktrees_root_is_unaffected_by_a_junction_above_it() {
+    let repo = init_repo().await;
+    let root = worktrees_root(&repo);
+    tokio::fs::create_dir_all(&root).await.unwrap();
+    let junction_target =
+        std::env::temp_dir().join(format!("refract-junction-target-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&junction_target).await.unwrap();
+    let junction = root
+        .parent()
+        .unwrap()
+        .join(format!("unrelated-junction-{}", uuid::Uuid::new_v4()));
+    let status = tokio::process::Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            &junction.to_string_lossy(),
+            &junction_target.to_string_lossy(),
+        ])
+        .status()
+        .await;
+    let succeeded = matches!(status, Ok(s) if s.success());
+    if !succeeded {
+        if std::env::var("CI").is_ok() {
+            panic!("junction creation failed in CI: mklink /J {junction:?} {junction_target:?}");
+        }
+        eprintln!("skipping junction test: mklink refused (sandbox restriction, not CI)");
+        return;
+    }
+    let real_worktree = root.join("real-session");
+    tokio::fs::create_dir_all(&real_worktree).await.unwrap();
+    let result = assert_within_worktrees_root(&repo, &real_worktree).await;
+    assert!(matches!(result, Ok(RootContainment::Inside)));
+}
+
+/// Windows paths are already case-insensitive via `comparable_path`'s own lowercasing: a
+/// same-named path differing only in drive-letter case must compare equal.
+#[test]
+fn comparable_path_is_case_insensitive_for_a_differently_cased_drive_letter() {
+    assert_eq!(
+        comparable_path("C:/Repos/example/worktree"),
+        comparable_path("c:/repos/EXAMPLE/Worktree")
+    );
+}

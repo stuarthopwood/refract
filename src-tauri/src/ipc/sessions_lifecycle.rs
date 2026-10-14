@@ -29,6 +29,7 @@ use crate::git::worktrees::{
     add_worktree_with_generated_name, branch_exists, list_branches, recreate_worktree,
     remove_worktree,
 };
+use crate::process::executables::explorer_exe_path;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::{
@@ -308,6 +309,19 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             (session, repository)
         };
 
+        // CRITICAL fix (gate round 1): the live agent (if any) must be shut down BEFORE the
+        // worktree is removed -- same ordering `sessions.archive` already uses, same ordering
+        // `sessions.ts`'s own SESSIONS_DELETE handler uses (`await manager.getOrCreateAgent(id)
+        // .shutdown()` before `removeSessionWorktree`). A still-running omp process holds its
+        // cwd (and open file handles) inside the worktree; removing it out from under a live
+        // process is exactly the EBUSY/EPERM class `git::worktree_delete`'s own `wrap_fs_error`
+        // exists to explain, not something this handler should ever risk causing.
+        state
+            .session_manager
+            .get_or_create_agent(&id)
+            .shutdown()
+            .await;
+
         remove_session_worktree(
             Path::new(&repository.path),
             Path::new(&session.worktree_path),
@@ -410,8 +424,10 @@ pub fn sessions_diff_stat(state: AppState, args: Vec<Value>) -> HandlerFuture {
 /// `sessions.revealWorktree` (T068): looks the worktree up by Session id in the registry, never
 /// a path handed in by the renderer (constitution V). No `tauri_plugin_opener`/`shell.openPath`
 /// equivalent is called from Rust elsewhere in this crate yet, so this spawns Windows'
-/// `explorer` directly (this build is Windows-only, per `git::git`'s own `CREATE_NO_WINDOW`
-/// comment).
+/// `explorer.exe` via its fixed `%SystemRoot%` path (`process::executables::explorer_exe_path`),
+/// never the bare name `"explorer"` -- same PATH/cwd-search-avoidance reasoning `git::git`'s own
+/// `which` doc comment documents. This build is Windows-only, per `git::git`'s own
+/// `CREATE_NO_WINDOW` comment.
 pub fn sessions_reveal_worktree(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -439,7 +455,7 @@ pub fn sessions_reveal_worktree(state: AppState, args: Vec<Value>) -> HandlerFut
                 format!("Worktree missing: {}", session.worktree_path),
             ));
         }
-        match tokio::process::Command::new("explorer")
+        match tokio::process::Command::new(explorer_exe_path())
             .arg(&session.worktree_path)
             .spawn()
         {
@@ -506,3 +522,7 @@ async fn delete_session_conversations(session_dir: &str) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "sessions_lifecycle_tests.rs"]
+mod tests;
