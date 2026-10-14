@@ -24,6 +24,22 @@ const SAMPLE_INTERVAL_MS: u64 = 5_000;
 pub(crate) const LOW_MEMORY_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const REPEAT_WHILE_LOW_MS: u64 = 60_000;
 
+/// Issue #788 (lane R5): kept here, not in `session/manager.rs` (a shared, not lane-R5-owned
+/// file), since this is this module's own `memory:warning` payload need, not core
+/// `SessionManager` surface. Mirrors `SessionManager.ts`'s own `liveAgentCount()`: agents whose
+/// status isn't `stopped`.
+impl SessionManager {
+    pub(crate) async fn live_agent_count(&self) -> usize {
+        let mut count = 0;
+        for agent in self.live_agents() {
+            if agent.status().await != crate::session::SessionStatus::Stopped {
+                count += 1;
+            }
+        }
+        count
+    }
+}
+
 /// Issue #512 requirement 5's start-queue memory defer (`session::start_queue`) and this
 /// module's own sampler both call this: a cheap synchronous check, `None` (Windows API failure)
 /// always reading as "not low" rather than wrongly deferring/warning on an unreadable reading.

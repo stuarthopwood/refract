@@ -139,9 +139,9 @@ impl SessionManager {
         }
 
         let mut summary = RoleChangeSummary::default();
-        // Gate-fix (round 7, perf, MEDIUM): fetch `modelRoles` ONCE for the sweep, not once per
-        // Session -- every task needs the SAME record, and reads now queue on
-        // `OMP_INVOCATION_LOCK`. A failed fetch falls back to `None` (each task fetches its own).
+        // Gate-fix (round 7, perf, MEDIUM): fetch `modelRoles` ONCE for the sweep (every task
+        // needs the SAME record; reads now queue on `OMP_INVOCATION_LOCK`), not once per
+        // Session. A failed fetch falls back to `None` (each task fetches its own).
         let shared_model_roles = crate::ipc::model_roles::get_model_roles_reliable()
             .await
             .map(Arc::new)
@@ -211,16 +211,12 @@ impl SessionManager {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
                                     // Gate-fix (round 6, HIGH): became working again between
-                                    // the ready-check just above and this retry's own send --
-                                    // OMP itself is still mid-turn even though Refract's OWN
-                                    // status already looked idle (the narrower race
-                                    // `apply_role_now`'s own `isStreaming` check targets
-                                    // elsewhere). `queue_role_reapply_or_ready` does NOT set
-                                    // `pending_role_reapply` for a `false` result (it means
-                                    // "apply now yourself"), so if THIS retry also failed
-                                    // not-idle, set it directly ourselves (same pattern
-                                    // `on_frame`'s own fallback uses, `model.rs`) -- never
-                                    // report `Queued` unless something is actually queued.
+                                    // the ready-check and this retry's own send -- OMP itself is
+                                    // still mid-turn even though Refract's own status already
+                                    // looked idle. `queue_role_reapply_or_ready` does NOT set
+                                    // `pending_role_reapply` for a `false` result ("apply now
+                                    // yourself"), so if this retry ALSO failed not-idle, set it
+                                    // directly (same fallback pattern `on_frame` uses).
                                     if !agent.queue_role_reapply_or_ready(&role).await {
                                         agent
                                             .with_model_state(|s| {
@@ -278,18 +274,6 @@ impl SessionManager {
 
     pub fn notify_list_changed(&self) {
         self.events.emit_session_list_changed();
-    }
-
-    /// Issue #788 (lane R5): `shell::memory`'s own `memory:warning` payload. Mirrors
-    /// `SessionManager.ts`'s own `liveAgentCount()`: agents whose status isn't `stopped`.
-    pub async fn live_agent_count(&self) -> usize {
-        let mut count = 0;
-        for agent in self.live_agents() {
-            if agent.status().await != crate::session::SessionStatus::Stopped {
-                count += 1;
-            }
-        }
-        count
     }
 
     pub fn emit_settings_changed(&self, settings: &Value) {
