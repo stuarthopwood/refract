@@ -33,7 +33,7 @@ const MAX_PREDICT_TEXT_LENGTH: usize = 10_000;
 fn validate_predict_cursor(text: &str, cursor: i64) -> Result<(), super::IpcError> {
     if text.len() > MAX_PREDICT_TEXT_LENGTH {
         return Err(invalid_argument(format!(
-            "predictWord text must not exceed {MAX_PREDICT_TEXT_LENGTH} characters"
+            "predictWord text must not exceed {MAX_PREDICT_TEXT_LENGTH} bytes"
         )));
     }
     let max_cursor = text.encode_utf16().count() as i64;

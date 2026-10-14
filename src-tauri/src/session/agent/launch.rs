@@ -88,7 +88,9 @@ impl SessionAgent {
         self.launch(&session, "").await
     }
 
-    /// Port of `conversationSwitch.ts`'s `startStoppedSessionOnConversation` gate-fix: resets side chat only after `launch()` succeeds.
+    /// Port of `conversationSwitch.ts`'s `startStoppedSessionOnConversation` gate-fix (round 2
+    /// HIGH): resets side chat right after the registry write succeeds, before `launch()` runs,
+    /// so it fires even if the start itself then fails (matches Electron's own ordering).
     pub async fn start_with_conversation(&self, file: Option<String>) -> Result<(), AgentError> {
         // Gate-fix (round 6, HIGH): mirrors `start()`'s own identical guard above.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
@@ -115,9 +117,8 @@ impl SessionAgent {
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
-        let mut prev = None;
         if tokio::fs::metadata(&session.worktree_path).await.is_ok() {
-            prev = Some(self.current_conversation_path().await);
+            let prev = self.current_conversation_path().await;
             let patch = SessionPatch {
                 current_conversation: Some(file.clone()),
                 last_message_count: Some(None),
@@ -129,11 +130,10 @@ impl SessionAgent {
                 .update_session(&self.session_id, patch)
                 .await
                 .map_err(|err| AgentError::new("git-failed", registry_store_error_message(err)))?;
+            reset_after_start_with_conversation(self, file.as_deref(), Some(prev)).await;
         }
         let session = self.require_session().await?;
-        self.launch(&session, "").await?;
-        reset_after_start_with_conversation(self, file.as_deref(), prev).await;
-        Ok(())
+        self.launch(&session, "").await
     }
 
     pub(super) async fn launch(

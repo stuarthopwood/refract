@@ -27,10 +27,12 @@ export const DEFAULT_SETTINGS: Settings = {
   watermarkEnabled: true,
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
-  detectImagePathsOnPaste: true,
-  // Issue #772 (Rust build only): off by default -- see `Settings.wordPredictionEnabled`'s own
-  // doc comment for the memory-cost evidence.
-  wordPredictionEnabled: false
+  detectImagePathsOnPaste: true
+  // Issue #772 (Rust build only, FINDINGS item 28): `wordPredictionEnabled` is deliberately
+  // ABSENT here (not `false`) -- `MessageInput.tsx`'s own `!== false` read treats an absent
+  // value as enabled, so this client-only placeholder never flickers ghost text off for
+  // Electron (whose real `settings.get()` never returns the field at all) during the brief
+  // window before the real Settings row arrives.
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({

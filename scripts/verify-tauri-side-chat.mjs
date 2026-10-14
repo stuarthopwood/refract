@@ -203,10 +203,18 @@ async function installEventCollectors(cdp) {
   `);
 }
 
-async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoStoppedDir, debugLogPath }) {
+async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoStoppedDir, debugLogPath, dataDir }) {
   await installEventCollectors(cdp);
 
   const liveId = await createSession(cdp, repoLiveDir, { open: true });
+  // Isolation verification (refract-tauri-live-check-isolation skill, gate-fix round 2 LOW):
+  // `registry.json` is only ever WRITTEN on the first mutating call (`RegistryStore::open` only
+  // reads, with an empty-registry fallback, so it does not exist on a truly fresh scratch dir
+  // until now) -- checked right after the FIRST repository/session is created, the earliest
+  // point this is a meaningful check, and before any further session is trusted.
+  if (!existsSync(path.join(dataDir, 'registry.json'))) {
+    throw new Error(`verify-tauri-side-chat: registry.json never appeared under the scratch data dir ${dataDir} -- REFRACT_DATA_DIR override was not honoured, aborting`);
+  }
   const peerId = await createSession(cdp, repoPeerDir, { open: true });
   const stoppedId = await createSession(cdp, repoStoppedDir, { open: false });
   console.log(`verify-tauri-side-chat: live=${liveId} peer=${peerId} stopped=${stoppedId}`);
@@ -414,15 +422,7 @@ async function main() {
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 60_000, label: 'readiness green' },
     );
-    const { liveId } = await runLiveChecks(cdp1, evidenceDir, { repoLiveDir, repoPeerDir, repoStoppedDir, debugLogPath });
-    // Isolation verification (refract-tauri-live-check-isolation skill): abort if the resolved
-    // data dir was not actually our scratch `dataDir` -- `RegistryStore::open` only ever writes
-    // `registry.json` under whatever `data_dir()` resolved to, so its presence here is direct
-    // proof the override took effect (a relative/invalid override is otherwise silently ignored
-    // and the run would use the REAL profile instead).
-    if (!existsSync(path.join(dataDir, 'registry.json'))) {
-      throw new Error(`verify-tauri-side-chat: registry.json never appeared under the scratch data dir ${dataDir} -- REFRACT_DATA_DIR override was not honoured, aborting`);
-    }
+    const { liveId } = await runLiveChecks(cdp1, evidenceDir, { repoLiveDir, repoPeerDir, repoStoppedDir, debugLogPath, dataDir });
 
     cdp1.close();
     cdp1 = null;

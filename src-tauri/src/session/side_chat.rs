@@ -36,11 +36,23 @@ pub(super) struct State {
     conversation_epoch: u64,
     /// Port of `SessionAgent.ts`'s own `sideChatTopicEpoch`, keyed by a topic's root id (never a
     /// flattened follow-up's own synthetic id, never `leafId`). Gate-fix (round 9): bounded by
-    /// SETTLEDNESS, not by age -- `on_frame`'s own `btw_record` case deletes an entry once that
-    /// topic's LATEST TURN reaches a terminal status, regardless of how many Conversation
-    /// switches have happened since it was stamped; `on_exit` clears the whole map unconditionally
-    /// on every process exit (nothing stamped here survives into a new process's own history).
+    /// SETTLEDNESS, not by age -- `apply_frame`'s own `btw_record` case deletes an entry (moving
+    /// it to `terminal_topic_epoch` below) once that topic's LATEST TURN reaches a terminal
+    /// status; `on_exit` clears the whole map unconditionally on every process exit.
     topic_epoch: std::collections::HashMap<String, u64>,
+    /// Gate-fix (2026-10-14 gate review round 2 HIGH, a REAL cross-Conversation leak; Electron
+    /// has the identical hole, issue #789's own "port the fixed behaviour" note filed against it):
+    /// a terminal/cancelled topic's `topic_epoch` entry above is removed to bound memory, but a
+    /// late frame for that SAME `record_id` arriving after a Conversation switch must still be
+    /// recognised as belonging to the OLD Conversation -- `unwrap_or(conversation_epoch)` alone
+    /// cannot tell "never asked this session" (correctly never stale) from "asked, went terminal,
+    /// entry removed" (must stay stale forever after a switch) once both cases return the same
+    /// "not found" lookup. This tombstone keeps the epoch a now-terminal topic belonged to;
+    /// `apply_frame` checks it as a second fallback before `conversation_epoch`.
+    /// `on_conversation_reset` retains only the CURRENT generation's tombstones (the ones that
+    /// still need protecting against a frame straggling in from the Conversation just left) and
+    /// drops anything older, so this stays bounded across a long session; `on_exit` clears it.
+    terminal_topic_epoch: std::collections::HashMap<String, u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +161,21 @@ fn should_forward_side_chat_patch(has_record_or_notice: bool, is_visible: bool) 
     has_record_or_notice || is_visible
 }
 
+/// Resolves the epoch a topic belongs to for a staleness check: the ACTIVE `topic_epoch` entry
+/// if the topic is still running; else its tombstoned `terminal_topic_epoch` entry if it already
+/// went terminal (gate-fix round 2 HIGH: without this fallback, a late frame for an
+/// already-terminal topic falls through to `conversation_epoch` itself and is wrongly treated as
+/// current/never-stale); else `conversation_epoch` (a topic never stamped this process instance
+/// at all -- loaded from history -- which must NOT be treated as stale).
+fn resolve_topic_epoch(state: &State, topic_id: &str) -> u64 {
+    state
+        .topic_epoch
+        .get(topic_id)
+        .or_else(|| state.terminal_topic_epoch.get(topic_id))
+        .copied()
+        .unwrap_or(state.conversation_epoch)
+}
+
 /// What `on_frame` must forward to the renderer as a `side-chat:patch`, if anything -- the
 /// decision `apply_frame` below makes.
 #[derive(Debug, PartialEq)]
@@ -188,11 +215,7 @@ pub(super) fn apply_frame(
         "btw_delta" => {
             let record_id = frame.get("recordId").and_then(Value::as_str)?;
             let delta = frame.get("delta").and_then(Value::as_str)?;
-            let topic_epoch = state
-                .topic_epoch
-                .get(record_id)
-                .copied()
-                .unwrap_or(state.conversation_epoch);
+            let topic_epoch = resolve_topic_epoch(state, record_id);
             if topic_frame_is_stale(topic_epoch, state.conversation_epoch) {
                 return None;
             }
@@ -204,16 +227,13 @@ pub(super) fn apply_frame(
         "btw_record" => {
             let record = frame.get("record")?;
             let topic_id = record.get("id").and_then(Value::as_str)?.to_string();
-            let topic_epoch = state
-                .topic_epoch
-                .get(&topic_id)
-                .copied()
-                .unwrap_or(state.conversation_epoch);
+            let topic_epoch = resolve_topic_epoch(state, &topic_id);
             let stale = topic_frame_is_stale(topic_epoch, state.conversation_epoch);
             let turn = latest_turn(record);
             let status = turn.get("status").and_then(Value::as_str).unwrap_or("");
             if turn_reached_terminal(status) {
                 state.topic_epoch.remove(&topic_id);
+                state.terminal_topic_epoch.insert(topic_id, topic_epoch);
             }
             if stale {
                 return None;
@@ -251,13 +271,14 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
 /// Port of `SessionAgent.ts`'s own `onExit`: fired unconditionally, before any other exit
 /// handling (see `SessionAgentEvents.sideChatInterrupted`'s own doc comment for exactly which
 /// exit path this closes) -- a side-chat record left `running` must never block Send/Retry/`/btw`
-/// forever once a NEW process starts. `topic_epoch` is cleared unconditionally too: a brand-new
-/// process for this Session always starts a brand-new history store, so nothing this map could
-/// still protect survives a restart.
+/// forever once a NEW process starts. Both maps are cleared unconditionally too: a brand-new
+/// process for this Session always starts a brand-new history store, so nothing stamped or
+/// tombstoned here survives into it.
 pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
     agent
         .with_side_chat_state(|s| {
             s.topic_epoch.clear();
+            s.terminal_topic_epoch.clear();
         })
         .await;
     agent
@@ -280,10 +301,17 @@ pub(super) async fn on_start_progress(
 /// `open_conversation` (only when the Conversation actually changed), and from
 /// `session::agent::launch`'s `start_with_conversation` via `reset_after_start_with_conversation`
 /// below (only when the Conversation actually changed) -- same call sites TS's own
-/// `startNewConversation`/`openConversation`/`startStoppedSessionOnConversation` use.
+/// `startNewConversation`/`openConversation`/`startStoppedSessionOnConversation` use. Gate-fix
+/// (2026-10-14 gate review round 2 HIGH): before bumping the epoch, retains only
+/// `terminal_topic_epoch` tombstones from the generation JUST ENDING (the ones that still need
+/// to catch a straggling frame from the Conversation this call is leaving) and drops anything
+/// older -- so the tombstone map never grows past one generation's worth of now-terminal topics.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_side_chat_state(|s| {
+            let retiring_epoch = s.conversation_epoch;
+            s.terminal_topic_epoch
+                .retain(|_, epoch| *epoch == retiring_epoch);
             s.conversation_epoch = s.conversation_epoch.wrapping_add(1);
         })
         .await;
@@ -297,11 +325,14 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
 /// available while `status == Stopped` -- without it a stopped Session kept the previous
 /// Conversation's side-chat rows/epoch, so the next question's topic id was rejected with
 /// "Unknown /btw topic" (the defect `open_conversation`'s own guard already fixed for a LIVE
-/// Session). `previous_conversation` is `None` when `start_with_conversation` never wrote the
-/// registry at all (worktree missing); `Some(None)` means it wrote but there was no earlier
-/// Conversation. Skipped when `file` IS `previous_conversation` (reopening the same Conversation,
-/// its topics are still valid); always resets for `file: None` (a brand-new Conversation),
-/// matching `start_new_conversation`'s own unconditional reset.
+/// Session). Called right AFTER the registry write succeeds and BEFORE `launch()` runs (round 2
+/// gate-fix: matches `conversationSwitch.ts`'s own `prepare` callback ordering), so it fires even
+/// if the subsequent start itself fails. `previous_conversation` is `None` when
+/// `start_with_conversation` never wrote the registry at all (worktree missing); `Some(None)`
+/// means it wrote but there was no earlier Conversation. Skipped when `file` IS
+/// `previous_conversation` (reopening the same Conversation, its topics are still valid); always
+/// resets for `file: None` (a brand-new Conversation), matching `start_new_conversation`'s own
+/// unconditional reset.
 pub(crate) async fn reset_after_start_with_conversation(
     agent: &SessionAgent,
     file: Option<&str>,
@@ -334,6 +365,16 @@ fn stamp_continuation_before_ask(state: &mut State, record_id: Option<&str>) -> 
     epoch
 }
 
+/// `ask`'s own post-response stamp (gate-fix round 6, Code6/Sec6/A11y6/Verif6 HIGH defense in
+/// depth): stamps the TOPIC's own root id (never the latest turn's own flattened id) with the
+/// epoch `stamp_continuation_before_ask` captured BEFORE the request was sent -- never a value
+/// re-read after the response resolves. Factored out of `ask` (not inlined) so a test can drive a
+/// REAL `on_conversation_reset` bump between the capture and this stamp, reproducing the exact
+/// race the epoch guard protects against.
+fn stamp_topic_after_response(state: &mut State, thread_id: String, epoch: u64) {
+    state.topic_epoch.insert(thread_id, epoch);
+}
+
 /// `sideChat.ask` (contracts/ipc.md "Side chat"): issues `btw`, returning the new (`running`)
 /// record's own whole shape immediately -- the answer itself arrives over `side-chat:patch` as a
 /// terminal `btw_record` (`on_frame`'s own case above), never this call's return value.
@@ -354,7 +395,7 @@ pub async fn ask(
     let res = match agent.request_rpc(cmd, REQUEST_TIMEOUT_MS).await {
         Ok(res) => res,
         Err(err) => {
-            forget_topic_epoch(agent, &record_id).await;
+            forget_topic_epoch(agent, &record_id, epoch).await;
             return Err(err);
         }
     };
@@ -363,43 +404,45 @@ pub async fn ask(
             .get("error")
             .and_then(Value::as_str)
             .unwrap_or("unknown error");
-        forget_topic_epoch(agent, &record_id).await;
+        forget_topic_epoch(agent, &record_id, epoch).await;
         return Err(AgentError::new(
             "prompt-failed",
             format!("btw failed: {message}"),
         ));
     }
     let Some(thread) = res.get("data").and_then(|d| d.get("record")) else {
-        forget_topic_epoch(agent, &record_id).await;
+        forget_topic_epoch(agent, &record_id, epoch).await;
         return Err(AgentError::new(
             "prompt-failed",
             "btw succeeded but returned no record",
         ));
     };
-    // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH defense in depth): stamps the TOPIC's own
-    // root id (never the latest turn's own flattened id) with the epoch captured above.
     let thread_id = thread
         .get("id")
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
     agent
-        .with_side_chat_state(|s| {
-            s.topic_epoch.insert(thread_id, epoch);
-        })
+        .with_side_chat_state(|s| stamp_topic_after_response(s, thread_id, epoch))
         .await;
     Ok(json!({ "record": latest_turn(thread) }))
 }
 
-/// Gate-fix (2026-10-14 gate review MEDIUM): `ask`'s own pre-insert of `record_id`'s epoch above
-/// (continuing an existing topic) must not leak a dead entry into `topic_epoch` forever when the
-/// `btw` request then fails -- nothing else cleans up a continuation's entry for a topic that
-/// never got a terminal `btw_record` frame to trigger `on_frame`'s own settledness-bounded delete.
-async fn forget_topic_epoch(agent: &SessionAgent, record_id: &Option<String>) {
+/// Gate-fix (2026-10-14 gate review MEDIUM; round 2 tightened to compare-and-remove): `ask`'s own
+/// pre-insert of `record_id`'s epoch above (continuing an existing topic) must not leak a dead
+/// entry into `topic_epoch` forever when the `btw` request then fails -- nothing else cleans up a
+/// continuation's entry for a topic that never got a terminal `btw_record` frame to trigger
+/// `apply_frame`'s own settledness-bounded delete. Removes the entry ONLY if it still holds the
+/// exact epoch THIS `ask` call stamped -- a later, successful `ask` for the same `record_id`
+/// (racing in before this failed call's own cleanup runs) must never have ITS entry wiped by an
+/// earlier call's own failure.
+async fn forget_topic_epoch(agent: &SessionAgent, record_id: &Option<String>, epoch: u64) {
     if let Some(record_id) = record_id {
         agent
             .with_side_chat_state(|s| {
-                s.topic_epoch.remove(record_id);
+                if s.topic_epoch.get(record_id) == Some(&epoch) {
+                    s.topic_epoch.remove(record_id);
+                }
             })
             .await;
     }

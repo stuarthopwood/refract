@@ -43,7 +43,10 @@ export function ChatDisplaySection() {
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
         Chat
       </h2>
-      <p className="mb-4 text-sm text-muted-foreground">Choose what the chat transcript shows, how pasted content is handled, and whether word suggestions appear while you type.</p>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Choose what the chat transcript shows and how pasted content is handled
+        {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
+      </p>
       <div className="flex flex-col divide-y divide-border">
         <div className="flex items-center justify-between gap-4 py-3">
           <div className="flex flex-col gap-0.5">
