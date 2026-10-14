@@ -72,8 +72,12 @@ fn is_switch_argument_token_rejects_whitespace() {
 }
 
 #[test]
-fn is_switch_argument_token_rejects_a_flag_like_argument() {
-    assert!(!is_switch_argument_token("--help"));
+fn is_switch_argument_token_accepts_a_dash_led_token() {
+    // The issue's own charset (`letters, digits and ._:/@-`) includes `-`, so a token that is
+    // otherwise flag-shaped (`--help`) is a syntactically valid single token -- it simply fails
+    // to resolve as a real model (FINDINGS item 53: OMP's own `/switch` silently no-ops on an
+    // unresolvable argument), not a shape this charset check itself rejects.
+    assert!(is_switch_argument_token("--help"));
 }
 
 #[test]

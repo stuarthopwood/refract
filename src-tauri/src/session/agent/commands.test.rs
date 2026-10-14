@@ -432,11 +432,14 @@ fn classify_switch_refuses_a_second_argument() {
 }
 
 #[test]
-fn classify_switch_refuses_a_flag_like_argument() {
+fn classify_switch_accepts_a_dash_led_single_token() {
+    // The issue's own charset includes `-`, so a flag-shaped single token is syntactically
+    // Supported here -- it simply fails to resolve as a real model downstream (FINDINGS item
+    // 53), which this classifier never claims to validate.
     let commands = vec![json!({ "name": "switch", "source": "builtin" })];
     assert!(matches!(
         classify_slash_invocation("switch", "--help", &commands),
-        SlashInvocationClassification::UnsupportedArguments
+        SlashInvocationClassification::Supported
     ));
 }
 
