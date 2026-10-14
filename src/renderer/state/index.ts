@@ -22,6 +22,7 @@ import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MAX_WIDTH_PX, RIGHT_PANE_MIN_WI
 import { useSplitStore } from './split-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useThemeStore } from './theme-store'
+import { useUpdateStore } from './update-store'
 
 export { initStores }
 export { notify }
@@ -50,6 +51,7 @@ export { useSplitStore }
 export { usePullRequestsStore }
 export type { PullRequestsRepoState } from './pull-requests-store'
 export { useThemeStore, activeThemeId, useActiveThemeId, themeClassName, initThemeStore } from './theme-store'
+export { useUpdateStore }
 
 /** The zustand store hooks exposed on `window.__refractStores` in dev builds. */
 export interface RefractDevStores {
@@ -75,6 +77,7 @@ export interface RefractDevStores {
   split: typeof useSplitStore
   pullRequests: typeof usePullRequestsStore
   theme: typeof useThemeStore
+  updates: typeof useUpdateStore
 }
 
 declare global {
@@ -109,6 +112,7 @@ if (import.meta.env.DEV) {
     rightPane: useRightPaneStore,
     split: useSplitStore,
     pullRequests: usePullRequestsStore,
-    theme: useThemeStore
+    theme: useThemeStore,
+    updates: useUpdateStore
   }
 }

@@ -11,6 +11,8 @@
 // do not apply -- this build has no start queue or memory defer to starve behind in the first
 // place (`omp::process`'s own module header), so only the ready-wait ceiling itself is ported.
 
+use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -18,11 +20,14 @@ use serde_json::Value;
 
 use crate::git::git::git_raw;
 use crate::omp::process::{ApprovalMode, OmpProcess, OmpProcessOptions};
+use crate::updates::dependency_install::{self, Dependency, DependencyInstallProgress};
+use crate::updates::gh_client::{self, GithubCliStatus};
 
-use super::{AppState, Dispatcher, HandlerFuture};
+use super::{AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
     d.register("readiness.check", readiness_check);
+    d.register("readiness.installDependency", readiness_install_dependency);
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -59,14 +64,21 @@ const PROBE_REQUEST_TIMEOUT_MS: u64 = 60_000;
 /// Perf: `omp --version` had no bound at all (gate finding), unlike every other `omp`/`git`
 /// child this build spawns. A hung PATH-resolved binary must not hang `readiness.check` forever.
 const OMP_VERSION_PROBE_TIMEOUT_MS: u64 = 10_000;
-
 pub fn readiness_check(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let (git, omp, omp_signed_in) =
-            tokio::join!(check_git(), check_omp(), check_omp_signed_in());
-        let readiness = serde_json::json!({ "git": git, "omp": omp, "ompSignedIn": omp_signed_in });
-        Ok(readiness)
-    })
+    Box::pin(async move { Ok(compute_readiness().await) })
+}
+
+/// Shared by the `readiness.check` handler above and `readiness_install_dependency`'s own
+/// post-install re-check below (contracts/ipc.md: "On success, main re-runs `readiness.check()`
+/// and emits `readiness:changed` itself").
+async fn compute_readiness() -> Value {
+    let (git, omp, omp_signed_in, github) = tokio::join!(
+        check_git(),
+        check_omp(),
+        check_omp_signed_in(),
+        check_github_cli()
+    );
+    serde_json::json!({ "git": git, "omp": omp, "ompSignedIn": omp_signed_in, "github": github })
 }
 
 async fn check_git() -> Check {
@@ -411,4 +423,116 @@ async fn signed_in_failure_hint(proc: &OmpProcess) -> String {
         unauthenticated.join(", "),
         SIGNED_IN_HINT
     )
+}
+
+/// contracts/ipc.md "Readiness": `gh --version` resolves on PATH and `gh auth status` reports a
+/// signed-in account; never required for `allPass` (FR-008, data-model.md "Dependency") --
+/// missing or signed-out GitHub CLI only blocks updates (spec 006) and pull-request access
+/// (spec 003 FR-027), never Add repository/readiness itself.
+async fn check_github_cli() -> Check {
+    match gh_client::github_cli_status(&std::env::temp_dir()).await {
+        GithubCliStatus::Ok => Check {
+            ok: true,
+            ..Default::default()
+        },
+        GithubCliStatus::NotInstalled => Check {
+            ok: false,
+            hint: Some(
+                "The GitHub CLI (gh) is not installed. Use Install, or install it yourself and choose Re-check. Optional -- only needed for updates and pull request access."
+                    .to_string(),
+            ),
+            ..Default::default()
+        },
+        GithubCliStatus::NotSignedIn => Check {
+            ok: false,
+            // Gate finding (round 2, Medium): this `gh` may have just been installed via the
+            // portable-zip Install action (`dependency_install::install_github_cli`), not onto
+            // PATH a user's own terminal resolves to -- "Run gh auth login" could sign a
+            // DIFFERENT `gh` in, or fail to find a terminal at all. Refract already has its own
+            // sign-in flow (Manage accounts' "Sign in to GitHub…"), which always drives this
+            // exact binary -- point there instead.
+            hint: Some(
+                "gh is installed but not signed in. Sign in via Manage accounts, then Re-check."
+                    .to_string(),
+            ),
+            ..Default::default()
+        },
+        GithubCliStatus::Offline => Check {
+            ok: false,
+            hint: Some("gh could not reach GitHub. Check your network connection, then Re-check.".to_string()),
+            ..Default::default()
+        },
+    }
+}
+
+/// contracts/ipc.md "Readiness": starts `dependency`'s vendor installer in the background and
+/// awaits the whole install before resolving, so the caller can show a spinner from one `await`;
+/// progress also arrives incrementally on `readiness:install-progress`. On success, re-runs
+/// `readiness.check()` and emits `readiness:changed` itself -- the caller never needs to poll. A
+/// failed install never leaves the checklist stuck: this handler always resolves (never
+/// rejects), reporting `dependency-install-failed` instead (FR-010).
+fn readiness_install_dependency(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let Some(raw) = args.first().and_then(Value::as_str) else {
+            return Err(IpcError::new(
+                "invalid-argument",
+                "readiness.installDependency expects one of 'git' | 'omp' | 'github-cli'",
+            ));
+        };
+        let dependency = match raw {
+            "git" => Dependency::Git,
+            "omp" => Dependency::Omp,
+            "github-cli" => Dependency::GithubCli,
+            _ => {
+                return Err(IpcError::new(
+                    "invalid-argument",
+                    "readiness.installDependency expects one of 'git' | 'omp' | 'github-cli'",
+                ))
+            }
+        };
+
+        // Quality-gate remediation (ported from the mined `ipc/readiness.ts`'s own
+        // `installsInFlight` guard, Medium "no per-dependency lock stops two Install clicks
+        // overlapping"): a second call for a dependency already installing returns a busy error
+        // Result instead of starting a second concurrent install (and a second download to a
+        // second temp file) for the same dependency.
+        static IN_FLIGHT: LazyLock<StdMutex<HashSet<String>>> =
+            LazyLock::new(|| StdMutex::new(HashSet::new()));
+        let key = raw.to_string();
+        {
+            let mut in_flight = IN_FLIGHT.lock().expect("in-flight set mutex poisoned");
+            if !in_flight.insert(key.clone()) {
+                return Err(IpcError::new(
+                    "not-idle",
+                    format!("An install for '{raw}' is already running."),
+                ));
+            }
+        }
+
+        let session_manager = state.session_manager.clone();
+        let on_progress = move |progress: DependencyInstallProgress| {
+            let value = serde_json::to_value(progress)
+                .expect("DependencyInstallProgress is always JSON-serialisable");
+            session_manager.emit_readiness_install_progress(&value);
+        };
+
+        let result = match dependency {
+            Dependency::Git => dependency_install::install_git(on_progress).await,
+            Dependency::Omp => dependency_install::install_omp(on_progress).await,
+            Dependency::GithubCli => dependency_install::install_github_cli(on_progress).await,
+        };
+
+        IN_FLIGHT
+            .lock()
+            .expect("in-flight set mutex poisoned")
+            .remove(&key);
+
+        if let Err(message) = result {
+            return Err(IpcError::new("dependency-install-failed", message));
+        }
+
+        let readiness = compute_readiness().await;
+        state.session_manager.emit_readiness_changed(&readiness);
+        Ok(Value::Null)
+    })
 }

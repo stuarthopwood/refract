@@ -128,6 +128,21 @@ impl SessionManager {
         self.events.emit_settings_changed(settings);
     }
 
+    /// Lane R11b (issue #794): pass-throughs so `ipc::readiness`/`ipc::updates` (and `lib.rs`'s
+    /// own install-on-quit/startup hooks) can broadcast without reaching into `events::EventSink`
+    /// directly -- the same shape every other IPC-triggered broadcast in this file already uses.
+    pub fn emit_readiness_install_progress(&self, progress: &Value) {
+        self.events.emit_readiness_install_progress(progress);
+    }
+
+    pub fn emit_readiness_changed(&self, readiness: &Value) {
+        self.events.emit_readiness_changed(readiness);
+    }
+
+    pub fn emit_updates_state_changed(&self, state: &Value) {
+        self.events.emit_updates_state_changed(state);
+    }
+
     /// `sessions.list()`'s live-runtime fields, merged over the registry-only `Session` row
     /// (data-model.md: "absent until the first `get_state`" for a Session with no agent this
     /// run, matching `SessionManager.summaries()`'s own no-runtime branch exactly). Lane R3
