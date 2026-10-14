@@ -1,0 +1,5 @@
+# CHANGELOG.md is read and prepended-to as plain text by scripts/release.mjs and
+# scripts/release-changelog.mjs (header/section-boundary matching against literal `\n`). Pinning
+# eol=lf keeps its on-disk bytes LF regardless of a checkout's core.autocrlf setting, in addition
+# to the CRLF-normalisation those scripts already do on read -- belt and braces, not an either/or.
+CHANGELOG.md text eol=lf

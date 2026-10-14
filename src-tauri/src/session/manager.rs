@@ -128,7 +128,11 @@ impl SessionManager {
     /// agent entry (e.g. a prior open, or a `model.listRoles` probe) but whose live status is
     /// `Stopped` lands in `skipped_stopped` instead, rather than being counted as failed
     /// (gate-fix, HIGH/tests).
-    pub async fn apply_role_change(&self, role: &str) -> crate::session::model::RoleChangeSummary {
+    pub async fn apply_role_change(
+        &self,
+        role: &str,
+        model_roles: std::collections::HashMap<String, String>,
+    ) -> crate::session::model::RoleChangeSummary {
         use crate::session::model::{apply_role_now, current_selection, RoleChangeSummary};
         use crate::session::SessionStatus;
 
@@ -139,17 +143,17 @@ impl SessionManager {
         }
 
         let mut summary = RoleChangeSummary::default();
-        // Gate-fix (round 7, perf, MEDIUM): fetch `modelRoles` ONCE for the sweep (every task
-        // needs the SAME record; reads now queue on `OMP_INVOCATION_LOCK`), not once per
-        // Session. A failed fetch falls back to `None` (each task fetches its own).
-        let shared_model_roles = crate::ipc::model_roles::get_model_roles_reliable()
-            .await
-            .map(Arc::new)
-            .ok();
+        // Gate-fix (round 10, MEDIUM): the caller already read this map in its own
+        // `set_model_role` write -- re-reading raced a second `modelRoles.set` mid-sweep.
+        // Shared via `Arc` for cheap cloning across every spawned task below. `stale_retry`
+        // (round 11): a shared `OnceCell`, so at most ONE re-read happens for the WHOLE sweep
+        // if a cached-map mismatch fires, not one per mismatching Session.
+        let shared_model_roles = Arc::new(model_roles);
+        let stale_retry: Arc<tokio::sync::OnceCell<std::collections::HashMap<String, String>>> =
+            Arc::new(tokio::sync::OnceCell::new());
         // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
-        // one at a time -- each makes up to three RPCs (a `get_state` before, the `/switch
-        // @role` send, a `get_state` after), so a serial sweep's worst case grows with the
-        // Session count.
+        // one at a time -- each makes up to three RPCs, so a serial sweep's worst case grows
+        // with the Session count.
         const CONCURRENCY: usize = 4;
         let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
         let mut idle_tasks = Vec::new();
@@ -189,34 +193,34 @@ impl SessionManager {
             let semaphore = semaphore.clone();
             let role = role.to_string();
             let shared_model_roles = shared_model_roles.clone();
+            let stale_retry = stale_retry.clone();
             idle_tasks.push(tokio::spawn(async move {
                 let _permit = semaphore
                     .acquire_owned()
                     .await
                     .expect("semaphore never closed");
-                let model_roles_ref = shared_model_roles.as_deref();
-                let outcome = match apply_role_now(&agent, &role, true, model_roles_ref).await {
+                let roles_ref = Some(shared_model_roles.as_ref());
+                let retry = Some(stale_retry.as_ref());
+                let outcome = match apply_role_now(&agent, &role, true, roles_ref, retry).await {
                     Ok(_) => RoleApplyOutcome::Moved,
                     Err(err) if err.code == "not-idle" => {
-                        // Gate-fix (MEDIUM): became working between the atomic queue-or-ready
-                        // check above and this task's own `send_if_idle` call. Re-run the SAME
-                        // atomic decision right here rather than waiting for the sequential loop
-                        // below to notice minutes later -- if the Session has ALREADY settled
-                        // back to idle by now, apply right away instead of queuing for a whole
-                        // extra turn.
+                        // Gate-fix (MEDIUM): became working between the atomic
+                        // queue-or-ready check and this task's own `send_if_idle` call.
+                        // Re-run the SAME atomic decision now instead of waiting for the
+                        // sequential loop to notice minutes later.
                         if agent.queue_role_reapply_or_ready(&role).await {
                             RoleApplyOutcome::Queued
                         } else {
-                            match apply_role_now(&agent, &role, true, model_roles_ref).await {
+                            match apply_role_now(&agent, &role, true, roles_ref, retry).await {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
-                                    // Gate-fix (round 6, HIGH): became working again between
-                                    // the ready-check and this retry's own send -- OMP itself is
-                                    // still mid-turn even though Refract's own status already
+                                    // Gate-fix (round 6, HIGH): became working again between the
+                                    // ready-check above and this retry's own send -- OMP is
+                                    // still mid-turn even though Refract's OWN status already
                                     // looked idle. `queue_role_reapply_or_ready` does NOT set
-                                    // `pending_role_reapply` for a `false` result ("apply now
-                                    // yourself"), so if this retry ALSO failed not-idle, set it
-                                    // directly (same fallback pattern `on_frame` uses).
+                                    // `pending_role_reapply` for a `false` result, so if THIS
+                                    // retry also failed not-idle, set it directly ourselves --
+                                    // never report `Queued` unless something is actually queued.
                                     if !agent.queue_role_reapply_or_ready(&role).await {
                                         agent
                                             .with_model_state(|s| {

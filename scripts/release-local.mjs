@@ -55,10 +55,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { extractChangelogSection } from './release-changelog.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TAURI_CONF_PATH = path.join(REPO_ROOT, 'src-tauri', 'tauri.conf.json');
+const CHANGELOG_PATH = path.join(REPO_ROOT, 'CHANGELOG.md');
 const CERT_PATH = path.join(REPO_ROOT, 'src-tauri', 'certs', 'refract-codesign.cer');
 
 // `certs/refract-codesign.cer`'s SHA-1 thumbprint, used to select the signing certificate in
@@ -68,6 +70,11 @@ const CERT_PATH = path.join(REPO_ROOT, 'src-tauri', 'certs', 'refract-codesign.c
 const CERT_THUMBPRINT = '31B95999D331BD33210126432FAB3FF18ECA5DBD';
 const TIMESTAMP_URL = 'http://timestamp.digicert.com';
 const DRY_RUN = process.argv.includes('--dry-run');
+// `pnpm release`'s own final step (lane: release pipeline): sources the GitHub release's notes
+// from the `## vX.Y.Z` section `release.mjs` just committed to CHANGELOG.md, instead of `gh
+// release create`'s own `--generate-notes` (which would re-summarise commits/PRs a second,
+// differently-formatted way).
+const NOTES_FROM_CHANGELOG = process.argv.includes('--notes-from-changelog');
 
 // Absolute, never `PATH`-resolved (gate finding, PR #837 round 1, Low): Node's `spawnSync` also
 // searches the current working directory first on Windows, so even a bare command name is not
@@ -477,11 +484,30 @@ function verifyRemoteTagMatchesHead(tag) {
   }
 }
 
+// Resolves what `gh release create` should use for release notes: GitHub's own `--generate-notes`
+// by default, or (with `--notes-from-changelog`) the `## vX.Y.Z` section `release.mjs` already
+// wrote to CHANGELOG.md for this exact version, written out to a scratch file under this run's
+// own `releaseDir` (already cleaned up by `safeRemoveReleaseDir` either way, so no extra cleanup
+// is needed here).
+function resolveReleaseNotesArgs(version, releaseDir) {
+  if (!NOTES_FROM_CHANGELOG) return ['--generate-notes'];
+  if (!existsSync(CHANGELOG_PATH)) fail(`--notes-from-changelog: ${CHANGELOG_PATH} does not exist.`);
+  const changelog = readFileSync(CHANGELOG_PATH, 'utf8');
+  const section = extractChangelogSection(changelog, version);
+  if (!section) fail(`--notes-from-changelog: CHANGELOG.md has no "## v${version}" section.`);
+  // Strip the leading `## vX.Y.Z (date)` heading itself -- `gh release create` already shows the
+  // tag/version as the release's own title; the notes file is just the body beneath it.
+  const body = section.replace(/^## .+\n+/, '');
+  const notesPath = path.join(releaseDir, 'release-notes.md');
+  writeFileSync(notesPath, body);
+  return ['--notes-file', notesPath];
+}
+
 // `--verify-tag` (gate finding, PR #837 round 1, Medium): aborts instead of creating the tag at
 // the remote default branch's tip if `tag` was never pushed -- the release must point at the
 // EXACT commit this script built and signed, never a different one `gh` created on its own.
-function publishRelease(tag, assets) {
-  const result = run('gh', ['release', 'create', tag, ...assets, '--verify-tag', '--generate-notes'], {
+function publishRelease(tag, assets, notesArgs) {
+  const result = run('gh', ['release', 'create', tag, ...assets, '--verify-tag', ...notesArgs], {
     cwd: REPO_ROOT,
     stdio: 'inherit',
   });
@@ -515,8 +541,17 @@ function main() {
 
     const nsisChecksum = writeChecksum(nsisSetup);
 
+    // Resolved BEFORE the dry-run return (gate fix, round 2): `pnpm release:local -- --dry-run
+    // --notes-from-changelog` must still exercise the CHANGELOG.md extraction/notes-file write,
+    // not skip it until the one real, unrepeatable release run. Only `publishRelease` itself
+    // (the actual `gh release create`) is gated on `DRY_RUN` below.
+    const notesArgs = resolveReleaseNotesArgs(conf.version, releaseDir);
+
     if (DRY_RUN) {
       console.log('release-local: --dry-run, built and signed but not publishing.');
+      if (NOTES_FROM_CHANGELOG) {
+        console.log(`release-local: --dry-run with --notes-from-changelog -- would publish with: ${notesArgs.join(' ')}`);
+      }
       return;
     }
 
@@ -526,7 +561,7 @@ function main() {
     // downloads (`src-tauri/src/updates/installer.rs`) or verifies
     // (`src-tauri/src/updates/signature.rs`) -- `refract-tauri.exe` is signed so the copy NSIS
     // installs onto disk carries a valid signature too, but it is never its own release asset.
-    publishRelease(tag, [nsisSetup, nsisChecksum]);
+    publishRelease(tag, [nsisSetup, nsisChecksum], notesArgs);
   } finally {
     safeRemoveReleaseDir(releaseDir, conf.version);
   }

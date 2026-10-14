@@ -262,7 +262,7 @@ async fn run_omp(
     match timeout_result {
         Ok(Ok((status, stdout_buf, stderr_buf))) => {
             log::debug!(
-                "omp config: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} exit_code={:?} timed_out=false stdout_len={}",
+                "omp: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} exit_code={:?} timed_out=false stdout_len={}",
                 cwd.display(),
                 status.code(),
                 stdout_buf.len(),
@@ -271,7 +271,7 @@ async fn run_omp(
         }
         Ok(Err(err)) => {
             log::debug!(
-                "omp config: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=false read_error={}",
+                "omp: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=false read_error={}",
                 cwd.display(),
                 err.message,
             );
@@ -279,7 +279,7 @@ async fn run_omp(
         }
         Err(_) => {
             log::debug!(
-                "omp config: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=true",
+                "omp: args={logged_args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=true",
                 cwd.display(),
             );
             Err(timeout_error())
@@ -378,8 +378,10 @@ fn map_run_result(
         let stderr_text = String::from_utf8_lossy(stderr);
         let trimmed = stderr_text.trim();
         if !trimmed.is_empty() {
-            let logged: String = trimmed.chars().take(500).collect();
-            log::warn!("omp config call failed: {logged}");
+            // Gate-fix (round 11, LOW, security): only the LENGTH is logged now, at debug --
+            // not even a first line, since a YAML parse error can echo a local path (this
+            // file's own header notes) directly in that first line too.
+            log::debug!("omp call failed: stderr_len={}", trimmed.len());
         }
         return Err(OmpConfigError::new(
             OmpConfigErrorCode::OmpFailed,
