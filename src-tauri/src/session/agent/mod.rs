@@ -99,11 +99,11 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    turn_settle_handled: bool,
+    // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
+    turn_generation: u64,
     stop_requested: bool,
     shutdown_generation: u64,
-    // Issue #784: each lane owns its own `State` (defined in its own file), reachable only via
-    // its `with_<lane>_state` accessor below; still empty/unread until a lane lands.
+    // Issue #784: each lane owns its own `State` (own file), via its `with_<lane>_state` accessor below; empty/unread until a lane lands.
     #[allow(dead_code)]
     model: crate::session::model::State,
     #[allow(dead_code)]
@@ -193,7 +193,7 @@ impl SessionAgent {
                 pending: Vec::new(),
                 commands: Vec::new(),
                 process: None,
-                turn_settle_handled: false,
+                turn_generation: 1, // odd/"not yet settled", not 0 (gate-fix #856)
                 stop_requested: false,
                 shutdown_generation: 0,
                 model: Default::default(),

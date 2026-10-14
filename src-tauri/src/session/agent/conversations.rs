@@ -16,7 +16,7 @@ impl SessionAgent {
     /// (a `stopped` Session instead goes through `start_with_conversation`).
     pub async fn start_new_conversation(&self) -> Result<(), AgentError> {
         let proc = {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.process.is_none() {
                 return Err(AgentError::new(
                     "not-idle",
@@ -26,6 +26,12 @@ impl SessionAgent {
                     ),
                 ));
             }
+            // Gate-fix (#856, round 2 MEDIUM): bumped here, BEFORE the `new_session` RPC/
+            // registry clear below (not after, inside the transcript-reset block that used to
+            // be this bump's only home) -- a settle-time reply still in flight from a turn that
+            // just ended must already be stale (`sync_from_state`'s own `>= 2` rule) well before
+            // this reset's own patch/registry write can land, not race it.
+            state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
         let res = proc
@@ -70,7 +76,7 @@ impl SessionAgent {
         {
             if res.get("success").and_then(Value::as_bool) == Some(true) {
                 if let Some(data) = res.get("data") {
-                    self.sync_from_state(data).await;
+                    self.sync_from_state(data, None).await;
                 }
             }
         }
@@ -85,7 +91,7 @@ impl SessionAgent {
     /// try-the-previous-Conversation-first recovery.
     pub async fn open_conversation(&self, file: String) -> Result<(), AgentError> {
         let proc = {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.process.is_none() {
                 return Err(AgentError::new(
                     "not-idle",
@@ -95,6 +101,9 @@ impl SessionAgent {
                     ),
                 ));
             }
+            // Gate-fix (#856, round 2 MEDIUM): see `start_new_conversation`'s own identical
+            // comment -- bumped here, before `switch_session` below, not after.
+            state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
         let switch_res = proc
@@ -179,7 +188,7 @@ impl SessionAgent {
         // above for the identical reasoning).
         crate::session::readout::on_conversation_reset(self).await;
         crate::session::subagents::on_conversation_reset(self).await;
-        self.sync_from_state(&data).await;
+        self.sync_from_state(&data, None).await;
         self.emit_patch_reset().await;
         Ok(())
     }

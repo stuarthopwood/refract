@@ -20,13 +20,20 @@
 // not one instantaneous final paint); `{"__exit__": {"code": n}}` exits the process immediately
 // (simulates OMP crashing/exiting unexpectedly).
 //
-// Scenario selection: `REFRACT_FAKE_OMP_SCENARIO` names a fixture (without `.jsonl`) under
-// `scripts/fixtures/omp-frames/`. When unset, `--no-session` on argv selects `readiness` (the
-// Rust readiness probe's own scratch, non-Session OmpProcess); otherwise `session` (a real
-// Session's lifecycle: attach, fetch history, one streamed chat turn with a tool call and an
-// approval). `scripts/verify-tauri.mjs` never sets this env var itself, so only `readiness` and
-// `session` are ever driven by `pnpm verify:tauri`; `side-chat`/`subagents`/`failure`/`exit` are
-// fixtures for a future lane to drive directly once it ports the matching channel.
+// Scenario selection: `--no-session` on argv ALWAYS selects `readiness` (the Rust readiness
+// probe's own scratch, non-Session OmpProcess) -- a real app launches that probe and a real
+// Session's own `OmpProcess` as two separate child processes sharing this script's whole
+// environment, so a per-launch `REFRACT_FAKE_OMP_SCENARIO` override meant for the Session must
+// never also redirect the unrelated readiness probe onto a tape it was never scripted against
+// (issue #856 live-check gate-fix: this used to let the env var win regardless of `--no-session`,
+// hanging the readiness probe on a `session`-shaped tape's own command expectations). Without
+// `--no-session`, `REFRACT_FAKE_OMP_SCENARIO` names a fixture (without `.jsonl`) under
+// `scripts/fixtures/omp-frames/` for the Session's own `OmpProcess`; unset, that defaults to
+// `session` (a real Session's lifecycle: attach, fetch history, one streamed chat turn with a
+// tool call and an approval). `scripts/verify-tauri.mjs` itself never sets this env var, so only
+// `readiness` and plain `session` are ever driven by `pnpm verify:tauri`; `side-chat`/
+// `subagents`/`failure`/`exit` are fixtures for a future lane to drive directly once it ports
+// the matching channel.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -90,7 +97,7 @@ async function main() {
     process.exit(0);
   }
 
-  const scenarioName = process.env.REFRACT_FAKE_OMP_SCENARIO || (argv.noSession ? 'readiness' : 'session');
+  const scenarioName = argv.noSession ? 'readiness' : (process.env.REFRACT_FAKE_OMP_SCENARIO || 'session');
   const tape = loadScenario(scenarioName);
   debugLog(`pid=${process.pid} scenario=${scenarioName} tapeLength=${tape.length}`);
 

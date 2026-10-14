@@ -318,7 +318,7 @@ impl SessionAgent {
         }
         crate::session::subagents::on_attach_reconcile(self).await;
         crate::session::readout::on_launch(self).await;
-        self.sync_from_state(&state_data).await;
+        self.sync_from_state(&state_data, None).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;
@@ -405,8 +405,13 @@ impl SessionAgent {
 
     /// Runs after the initial `get_state` and after every `session_settled` (port of
     /// `SessionAgent.ts`'s own `syncFromState`): persists `sessionDir`/`currentConversation`/
-    /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`.
-    pub(super) async fn sync_from_state(&self, state: &Value) {
+    /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`. `stale_if`
+    /// (settle-time callers) is checked by `settle_is_stale` both here and again right before the
+    /// write below, so a later settle/reset landing in the gap can never write stale data over it.
+    pub(super) async fn sync_from_state(&self, state: &Value, stale_if: Option<(u64, u64)>) {
+        if self.settle_is_stale(stale_if).await {
+            return;
+        }
         let session_file = state
             .get("sessionFile")
             .and_then(Value::as_str)
@@ -455,6 +460,10 @@ impl SessionAgent {
                         Some(thinking_level.map(|t| truncate(t, MAX_MODEL_FIELD_LENGTH)));
                 }
             }
+        }
+        // Gate-fix (#856, round 2): re-checked again, right before the write -- the entry check's only remaining gap.
+        if self.settle_is_stale(stale_if).await {
+            return;
         }
         if self
             .registry

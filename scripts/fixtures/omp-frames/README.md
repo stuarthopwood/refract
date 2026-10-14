@@ -53,9 +53,11 @@ skipped; they are not part of the OMP wire format itself.
 
 ## Scenario selection
 
-`REFRACT_FAKE_OMP_SCENARIO=<name>` selects `<name>.jsonl`. Unset, the engine picks `readiness`
-when argv carries `--no-session` (the Rust readiness probe's own scratch, non-Session
-`OmpProcess`) or `session` otherwise (a real Session's `OmpProcess`).
+`--no-session` on argv ALWAYS selects `readiness` (the Rust readiness probe's own scratch,
+non-Session `OmpProcess`), regardless of `REFRACT_FAKE_OMP_SCENARIO` (issue #856: a live check's
+override for the Session's own `OmpProcess` must never also hijack the unrelated readiness
+probe's tape). Otherwise, `REFRACT_FAKE_OMP_SCENARIO=<name>` selects `<name>.jsonl`; unset, that
+defaults to `session` (a real Session's `OmpProcess`).
 
 **`scripts/verify-tauri.mjs` never sets this env var itself.** It only ever drives two scenarios,
 chosen implicitly by which kind of `OmpProcess` the Rust code itself spawns: `readiness` (the
@@ -80,6 +82,9 @@ the documented contract -- a run being green proves only what its own row says i
 | `subagents-background-turn.jsonl` | Synthesized from `src/shared/frames.ts`'s `ToolExecutionEndFrame`, `transcript.ts`'s own `jobsFromDetails`/`applyAsyncResultJobs`, and the vendored `scripts/fixtures/omp-schema/rpc-wire.schema.json`'s `SubagentStatus`/`GetSubagentsResult` defs | No live capture: a genuinely async, multi-turn `task()` batch was out of the tiny-prompt budget. Exercises a subagent still `running` when turn 1 settles, surviving into turn 2, settled only by a later `wait` tool call's own `jobs[]` -- for the R5 lane (#788, #712) live-check round 2. |
 | `failure.jsonl` | Synthesized from `src/shared/frames.ts`'s `PromptResultFrame`/`PromptResultError` and contracts/omp-usage.md's "Frames Refract consumes" table; same genuinely-recorded preamble as `session.jsonl` | No live capture of a real provider error: forcing one was out of scope for the tiny-prompt budget. Not driven by `verify-tauri.mjs`. |
 | `exit.jsonl` | Synthesized (the `__exit__` engine directive, not an OMP frame) | For the R3 lane (#786, termination/recovery as a typed state machine). Not driven by `verify-tauri.mjs`. |
+| `session-two-turns-answered.jsonl` | Hand-extended copy of `session.jsonl` (issue #856 live-check) | Identical through `session.jsonl`'s own final `get_state` response; appends a second `prompt`/`agent_start`/streamed-reply/`session_settled`/`get_state` cycle so a manual two-`chat.send` check can confirm turn 2 still streams once the first turn's settle-time `get_state` IS answered. Not driven by `verify-tauri.mjs`'s own committed proof (a scratch driver selects it via `REFRACT_FAKE_OMP_SCENARIO`). |
+| `session-two-turns-withheld.jsonl` | Hand-extended copy of `session.jsonl` (issue #856 live-check) | Same as `session-two-turns-answered.jsonl` except the first turn's post-`session_settled` `get_state` is never waited for at all (the tape moves straight to waiting for the second `prompt`), so that command is simply dropped by `verify-tauri-fake-omp.mjs`'s own "not waiting for this type" branch -- proving turn 2 still streams even when that reply never arrives. Not driven by `verify-tauri.mjs`'s own committed proof. |
+| `session-settle-before-start.jsonl` | Hand-extended copy of `session.jsonl` (issue #856 live-check, round 1) | Identical through `session.jsonl`'s own `get_messages_page` response, then injects a `session_settled` frame (and its own `get_state` wait/response) BEFORE the first `prompt`/`agent_start` -- the attach-time edge case `AgentState.turn_generation`'s initial value (odd, "not yet settled") exists to handle; the rest of the tape is `session.jsonl`'s own single-turn flow, unmodified. Not driven by `verify-tauri.mjs`'s own committed proof. |
 
 No real chat text, file paths, account identifiers, or provider names from any recording session
 are checked in anywhere in this directory; every string that came from a live model turn was

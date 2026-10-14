@@ -90,10 +90,11 @@ rule), not an oversight.
 
 The final registry-level resync (`SessionAgent::on_session_settled`'s own trailing `get_state`,
 which persists `lastMessageCount`/`lastModel`/`lastThinkingLevel` back onto the Session row) runs
-on the background frame-listener task with no IPC call this test can block on to know it has
-finished -- so, to keep this test non-racy, no `sessions.list` call is captured after the turn
-settles. That final persisted-registry-state path is already covered by this crate's own
-`ipc::sessions_lifecycle_tests` (registry-only, synthetic `Session` rows), not duplicated here.
+on a spawned task (issue #856: no longer the frame-listener task itself, so it never blocks
+later frame delivery) with no IPC call this test can block on to know it has finished -- so, to
+keep this test non-racy, no `sessions.list` call is captured after the turn settles. That final
+persisted-registry-state path is already covered by this crate's own `ipc::sessions_lifecycle_tests`
+(registry-only, synthetic `Session` rows), not duplicated here.
 
 ## Regenerating the golden file
 
