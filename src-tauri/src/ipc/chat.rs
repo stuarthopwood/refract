@@ -1,14 +1,18 @@
 // IPC handlers for `chat.*` (contracts/ipc.md "Chat", tasks.md T026). Ports `chat.send`
 // (including the native `/new` slash-command routing and the allowlisted-commands validation,
-// `src/main/ipc/chat.ts`), `.stop`, `.answer`, `.removeQueued`, and `.commands`. `.sendNow`,
-// `.predictWord`, `.predictWordFeedback`, `.setVisibleSubagent`, and `.subagentSnapshot` are not
-// ported (model roles/subagents/predict-word are out of this slice's scope, `session::agent`'s
-// own header).
+// `src/main/ipc/chat.ts`), `.stop`, `.answer`, `.removeQueued`, `.commands`, and `.sendNow`
+// (issue #540, lane R4). `.predictWord`, `.predictWordFeedback`, `.setVisibleSubagent`, and
+// `.subagentSnapshot` are not ported (model roles/subagents/predict-word are out of this
+// slice's scope, `session::agent`'s own header).
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
+use crate::omp::images::{
+    validate_image_attachment_decoded, validate_image_attachment_shape, ImageValidationError,
+};
 use crate::session::agent::{
     classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
+    NATIVE_RESERVED_COMMANDS,
 };
 use crate::session::SessionManager;
 
@@ -18,28 +22,30 @@ pub fn register(d: &mut Dispatcher) {
     d.register("chat.send", chat_send);
     d.register("chat.stop", chat_stop);
     d.register("chat.removeQueued", chat_remove_queued);
+    d.register("chat.sendNow", chat_send_now);
     d.register("chat.answer", chat_answer);
     d.register("chat.commands", chat_commands);
 }
 
-/// Maximum accepted decoded image size (spec 009 research.md Decision 3), mirrored from
-/// `src/shared/images.ts`'s own `MAX_IMAGE_INPUT_BYTES` (20 MiB) -- not a declared dependency of
-/// this crate's `shared/` tree, so re-declared here.
-const MAX_IMAGE_INPUT_BYTES: u64 = 20 * 1024 * 1024;
+/// Pure (gate-fix, testability): `name` is one of Refract's own native/reserved commands
+/// (`session::agent::commands`'s own `NATIVE_RESERVED_COMMANDS`, the one shared copy).
+fn is_native_reserved(name: &str) -> bool {
+    NATIVE_RESERVED_COMMANDS.contains(&name)
+}
 
-/// Port of `src/shared/slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS`: Refract's own
-/// native/reserved command names (constitution I), refused locally even if OMP later recognizes
-/// one of them as a real command -- never forwarded as a literal prompt.
-const NATIVE_RESERVED_COMMANDS: &[&str] = &[
-    "new",
-    "resume",
-    "plan",
-    "fork",
-    "settings",
-    "pause",
-    "plan-review",
-    "btw",
-];
+/// Pure (gate-fix, testability): the only two queue values OMP's `remove_queued_message`/the
+/// chip model recognise.
+fn is_valid_queue_kind(queue: &str) -> bool {
+    queue == "followUp" || queue == "steering"
+}
+
+/// Pure (gate-fix, testability): the `(sessionId, text)` positional pair every `chat.send`/
+/// `.sendNow` call needs, or `None` if either is missing or not a string.
+fn parse_session_id_and_text(args: &[Value]) -> Option<(&str, &str)> {
+    let session_id = args.first()?.as_str()?;
+    let text = args.get(1)?.as_str()?;
+    Some((session_id, text))
+}
 
 fn manager(state: &AppState) -> &std::sync::Arc<SessionManager> {
     &state.session_manager
@@ -52,121 +58,41 @@ fn map_chat_error(err: crate::session::AgentError) -> IpcError {
     IpcError::new(err.code, err.message)
 }
 
-/// Decoded byte length of a base64 string, computed from the string's own length (never a live
-/// decode), port of `images.ts`'s own `decodedBase64ByteLength`.
-fn decoded_base64_byte_length(data: &str) -> u64 {
-    let len = data.len() as u64;
-    if len == 0 {
-        return 0;
-    }
-    let padding = if data.ends_with("==") {
-        2
-    } else if data.ends_with('=') {
-        1
-    } else {
-        0
-    };
-    (len * 3 / 4).saturating_sub(padding)
-}
-
-/// Decodes the first 24 base64 characters (18 bytes) of `data` -- enough to cover every
-/// supported format's magic-byte signature with headroom (port of `validateImageAttachment`'s
-/// own prefix decode).
-fn decode_base64_prefix(data: &str) -> Vec<u8> {
-    let prefix: String = data.chars().take(24).collect();
-    let stripped: Vec<u8> = prefix
-        .bytes()
-        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
-        .collect();
-    let value = |byte: u8| -> Option<u8> {
-        match byte {
-            b'A'..=b'Z' => Some(byte - b'A'),
-            b'a'..=b'z' => Some(byte - b'a' + 26),
-            b'0'..=b'9' => Some(byte - b'0' + 52),
-            b'+' => Some(62),
-            b'/' => Some(63),
-            _ => None,
-        }
-    };
-    let mut out = Vec::with_capacity(stripped.len() * 3 / 4 + 3);
-    let mut group = [0u8; 4];
-    let mut group_len = 0usize;
-    for byte in stripped {
-        let Some(v) = value(byte) else { break };
-        group[group_len] = v;
-        group_len += 1;
-        if group_len == 4 {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-            out.push((group[2] << 6) | group[3]);
-            group_len = 0;
-        }
-    }
-    match group_len {
-        2 => out.push((group[0] << 2) | (group[1] >> 4)),
-        3 => {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-        }
-        _ => {}
-    }
-    out
-}
-
-/// Port of `shared/images.ts`'s own `matchesImageSignature`.
-fn matches_image_signature(bytes: &[u8], mime_type: &str) -> bool {
-    match mime_type {
-        "image/png" => {
-            bytes.len() >= 16
-                && bytes[0..8] == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
-                && bytes[12..16] == [0x49, 0x48, 0x44, 0x52]
-        }
-        "image/jpeg" => {
-            bytes.len() >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff
-        }
-        "image/gif" => {
-            bytes.len() >= 6
-                && bytes[0..4] == *b"GIF8"
-                && (bytes[4] == 0x37 || bytes[4] == 0x39)
-                && bytes[5] == 0x61
-        }
-        "image/webp" => bytes.len() >= 12 && bytes[0..4] == *b"RIFF" && bytes[8..12] == *b"WEBP",
-        _ => false,
-    }
-}
-
-const SUPPORTED_IMAGE_MIME_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
-
-/// Port of `omp/images.ts`'s own `validateImageAttachment` (FR-018, constitution Principle V):
-/// re-validates every `images` entry independently of the renderer's own paste-time check.
-fn validate_image_attachment(image: &Value) -> Result<(), IpcError> {
-    let mime_type = image.get("mimeType").and_then(Value::as_str).unwrap_or("");
-    if !SUPPORTED_IMAGE_MIME_TYPES.contains(&mime_type) {
-        return Err(IpcError::new(
+/// Maps the omp::images classification to the exact message each reason gets at this call site
+/// (shared by both the shape and the decoded validation failures below).
+fn image_validation_ipc_error(err: ImageValidationError, mime_type: &str) -> IpcError {
+    match err {
+        ImageValidationError::UnsupportedImageType => IpcError::new(
             "unsupported-image-type",
             format!("Unsupported image type: {mime_type}"),
-        ));
+        ),
+        ImageValidationError::ByteSizeTooLarge => {
+            IpcError::new("image-too-large", "Image exceeds the 20 MiB limit")
+        }
+        // #771: a distinct message from the byte-size cap above -- a tiny file can still
+        // declare an enormous pixel count in its header.
+        ImageValidationError::PixelCountTooLarge => {
+            IpcError::new("image-too-large", "Image exceeds the maximum pixel count")
+        }
     }
-    let data = image.get("data").and_then(Value::as_str).unwrap_or("");
-    if decoded_base64_byte_length(data) > MAX_IMAGE_INPUT_BYTES {
-        return Err(IpcError::new(
-            "image-too-large",
-            "Image exceeds the 20 MiB limit",
-        ));
-    }
-    let prefix = decode_base64_prefix(data);
-    if !matches_image_signature(&prefix, mime_type) {
-        return Err(IpcError::new(
-            "unsupported-image-type",
-            format!("Unsupported image type: {mime_type}"),
-        ));
-    }
-    Ok(())
 }
 
 /// Port of `chat.ts`'s own `parseImagesArgument`: shape-checks, then independently re-validates
-/// every entry (FR-018) before ever building the outgoing `prompt` command.
-fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, IpcError> {
+/// every entry (FR-018) before ever building the outgoing `prompt` command. Gate-fix (Critical,
+/// security): builds a FRESH `{ type: "image", data, mimeType }` object containing ONLY the
+/// three validated fields, never the caller's whole object -- a compromised/buggy renderer could
+/// otherwise attach extra fields (`providerFile`, `url`, `detail`) that OMP's own real handling
+/// acts on, reaching a privileged provider-file/remote-URL fetch despite every shape/mime/size
+/// check here passing (mirrors `chat.ts`'s own `parseImagesArgument`, lines 57-81). Gate-fix
+/// (perf): `validate_image_attachment_shape` runs on the BORROWED `&str` first -- a mime-type or
+/// over-declared-size rejection never pays for the clone the blocking-pool call below needs.
+/// Only once shape passes does ownership of `data`/`mimeType` move into `spawn_blocking` (the
+/// full base64 decode plus header walk is CPU work, not I/O, and a 20 MiB image's worth of it
+/// should never run on an async executor thread); the same owned Strings come back out to build
+/// the fresh entry above, so each image's text is copied exactly once. A `JoinError` (the
+/// blocking task panicking on some input this parser itself cannot anticipate) is mapped to a
+/// fail-closed `unsupported-image-type`, never an `.expect()` panic reaching the IPC caller.
+async fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, IpcError> {
     let Some(images) = images else {
         return Ok(None);
     };
@@ -194,26 +120,45 @@ fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, I
         if data.is_empty() {
             return Err(invalid_argument("chat.send: image data must not be empty"));
         }
-        let image = entry.clone();
-        validate_image_attachment(&image)?;
-        parsed.push(image);
+        let Some(mime_type) = candidate.get("mimeType").and_then(Value::as_str) else {
+            return Err(invalid_argument(
+                "chat.send: image mimeType must be a string",
+            ));
+        };
+        if let Err(err) = validate_image_attachment_shape(data, mime_type) {
+            return Err(image_validation_ipc_error(err, mime_type));
+        }
+        let data_owned = data.to_string();
+        let mime_owned = mime_type.to_string();
+        let (data_owned, mime_owned, validation) = tokio::task::spawn_blocking(move || {
+            let result = validate_image_attachment_decoded(&data_owned, &mime_owned);
+            (data_owned, mime_owned, result)
+        })
+        .await
+        .map_err(|_join_err| {
+            IpcError::new(
+                "unsupported-image-type",
+                "That image could not be validated; nothing was attached.",
+            )
+        })?;
+        if let Err(err) = validation {
+            return Err(image_validation_ipc_error(err, &mime_owned));
+        }
+        // Built fresh from only the three validated, owned fields -- see this function's own
+        // doc comment; never the caller's original `entry`.
+        parsed.push(json!({ "type": "image", "data": data_owned, "mimeType": mime_owned }));
     }
     Ok(Some(parsed))
 }
 
 pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let Some(session_id) = args.first().and_then(Value::as_str) else {
+        let Some((session_id, text)) = parse_session_id_and_text(&args) else {
             return Err(invalid_argument(
                 "chat.send expects (sessionId, text) strings",
             ));
         };
-        let Some(text) = args.get(1).and_then(Value::as_str) else {
-            return Err(invalid_argument(
-                "chat.send expects (sessionId, text) strings",
-            ));
-        };
-        let parsed_images = parse_images_argument(args.get(2))?;
+        let parsed_images = parse_images_argument(args.get(2)).await?;
         if state
             .registry
             .lock()
@@ -236,7 +181,7 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
             // Port of `slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS` (chat.ts:125-130):
             // refused locally before classification, never forwarded to OMP even if a future
             // OMP version later recognizes one of these names as a real command.
-            if NATIVE_RESERVED_COMMANDS.contains(&name.as_str()) {
+            if is_native_reserved(name.as_str()) {
                 let suffix = if rest.is_empty() {
                     String::new()
                 } else {
@@ -261,14 +206,9 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     ));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
-                    let suffix = if rest.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {rest}")
-                    };
                     return Err(IpcError::new(
                         "unsupported-arguments",
-                        format!("/{name}{suffix} doesn't support arguments yet."),
+                        format!("/{name} doesn't support arguments yet. Try /{name} on its own."),
                     ));
                 }
                 SlashInvocationClassification::Supported => {
@@ -318,7 +258,7 @@ pub fn chat_remove_queued(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(invalid_argument("chat.removeQueued expects (sessionId, text, queue) with queue 'followUp' or 'steering'"));
         };
         let queue = args.get(2).and_then(Value::as_str).unwrap_or("");
-        if queue != "followUp" && queue != "steering" {
+        if !is_valid_queue_kind(queue) {
             return Err(invalid_argument("chat.removeQueued expects (sessionId, text, queue) with queue 'followUp' or 'steering'"));
         }
         if state
@@ -400,3 +340,35 @@ pub fn chat_commands(state: AppState, args: Vec<Value>) -> HandlerFuture {
         Ok(Value::Array(commands))
     })
 }
+
+// Issue #540: no `images` argument here at all -- OMP keeps the queued message's own images
+// with it (`promote_queued_message` moves the existing message, attachments included, rather
+// than reprocessing it, so a resend never needs images supplied by the caller).
+pub fn chat_send_now(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let Some((session_id, text)) = parse_session_id_and_text(&args) else {
+            return Err(invalid_argument(
+                "chat.sendNow expects (sessionId, text) strings",
+            ));
+        };
+        if state
+            .registry
+            .lock()
+            .await
+            .get_session(session_id)
+            .is_none()
+        {
+            return Err(not_found(format!("Session not found: {session_id}")));
+        }
+        let result = manager(&state)
+            .get_or_create_agent(session_id)
+            .send_now(text.to_string())
+            .await
+            .map_err(map_chat_error)?;
+        Ok(result)
+    })
+}
+
+#[cfg(test)]
+#[path = "chat.test.rs"]
+mod tests;

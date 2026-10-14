@@ -271,3 +271,7 @@ pub fn is_chat_answer(value: &Value) -> bool {
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
         || obj.get("cancelled") == Some(&Value::Bool(true))
 }
+
+#[cfg(test)]
+#[path = "requests.test.rs"]
+mod tests;

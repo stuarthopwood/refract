@@ -99,9 +99,22 @@ export const NATIVE_RESERVED_COMMANDS: Readonly<Record<string, true>> = {
  * 014 FR-007: opens the Side chat panel and issues a `btw` request with the text after it).
  * Listed here, not just handled in `chat.send`, so the menu shows both (FR-032). */
 export const NATIVE_BUILT_COMMANDS: readonly SlashCommandDescriptor[] = [
-  { name: 'new', description: 'Start a new Conversation in this Session' },
-  { name: 'btw', description: 'Ask the agent a side question' },
+  { name: 'new', description: 'Start a new Conversation in this Session', source: 'native' },
+  { name: 'btw', description: 'Ask the agent a side question', source: 'native' },
 ];
+
+/** Issue #760 probe (FINDINGS item 57): OMP's own `source` field is `'builtin'` for its native
+ * commands, `'file'` for a project/user command (OMP does not distinguish them further), and
+ * `'skill'` for a `/skill:<name>` entry. A command whose `source` is anything other than one of
+ * the two confirmed non-builtin values -- including a missing field entirely -- is treated as
+ * builtin-restricted: fail closed towards the stricter, already-verified policy rather than
+ * trusting an unprobed future `source` value with free-form arguments. Mirrors
+ * `session::agent::commands.rs`'s own `is_builtin_source` (the Rust port of this same policy,
+ * kept here too since Electron's `chat.ts` imports `filterSupportedCommands`/
+ * `classifySlashInvocation` from this shared file unchanged). */
+function isBuiltinSource(source: string | undefined): boolean {
+  return source !== 'file' && source !== 'skill';
+}
 
 /** Keeps only the subcommands this command actually has verified (`SUPPORTED_OMP_COMMANDS`);
  * an unverified subcommand (e.g. `todo`'s `copy`/`edit`/`import`/`export`/`drop`, `session`'s
@@ -114,16 +127,37 @@ function pruneSubcommands(command: SlashCommandDescriptor): SlashCommandDescript
 }
 
 /** Filters OMP's raw `available_commands_update` / `get_available_commands` list down to
- * `SUPPORTED_OMP_COMMANDS` (a command not listed is hidden, per FR-032), prunes each surviving
- * descriptor's `subcommands` to the verified set, then prepends Refract's own built native
- * commands so both show up in the same menu and the same `chat.send` validation
- * (`classifySlashInvocation` reads this same filtered-and-pruned list). */
+ * `SUPPORTED_OMP_COMMANDS` for builtin-sourced commands (hidden unless verified, per FR-032),
+ * prunes each surviving descriptor's `subcommands` to the verified set, then prepends Refract's
+ * own built native commands so both show up in the same menu and the same `chat.send`
+ * validation. Issue #760: a raw command whose `source` is NOT builtin (a project/user `'file'`
+ * command, or a `'skill'`) is listed exactly as OMP reports it, with no allowlist pruning -- the
+ * user wrote it, so `SUPPORTED_OMP_COMMANDS` does not apply. Gate-fix (High, security): a
+ * file/skill entry whose name or alias collides with ANY raw builtin-sourced entry -- allow-
+ * listed or not -- is dropped entirely here, before the allow-list pruning below ever has a
+ * chance to remove the builtin's own trace from the list a downstream shadow check might see. */
 export function filterSupportedCommands(commands: readonly SlashCommandDescriptor[]): SlashCommandDescriptor[] {
+  // Gate-fix: also seeded with `NATIVE_RESERVED_COMMANDS` -- a file/skill command named `plan`,
+  // `resume`, etc. is refused unconditionally at `chat.send` regardless of source, so listing it
+  // in the menu at all would be misleading (it can never actually run).
+  const builtinClaimed = new Set<string>(Object.keys(NATIVE_RESERVED_COMMANDS));
+  for (const command of commands) {
+    if (!isBuiltinSource(command.source)) continue;
+    builtinClaimed.add(command.name);
+    for (const alias of command.aliases ?? []) builtinClaimed.add(alias);
+  }
   return [
     ...NATIVE_BUILT_COMMANDS,
-    ...commands
-      .filter((command) => Object.prototype.hasOwnProperty.call(SUPPORTED_OMP_COMMANDS, command.name))
-      .map(pruneSubcommands),
+    ...commands.flatMap((command) => {
+      if (!isBuiltinSource(command.source)) {
+        const shadowsABuiltin =
+          builtinClaimed.has(command.name) || (command.aliases ?? []).some((alias) => builtinClaimed.has(alias));
+        return shadowsABuiltin ? [] : [command];
+      }
+      return Object.prototype.hasOwnProperty.call(SUPPORTED_OMP_COMMANDS, command.name)
+        ? [pruneSubcommands(command)]
+        : [];
+    }),
   ];
 }
 
@@ -155,22 +189,37 @@ export function parseSlashCommand(text: string): ParsedSlashCommand | undefined 
  * distinct message instead of conflating it with "never heard of this command". */
 export type SlashInvocationClassification = 'supported' | 'unknown-command' | 'unsupported-arguments';
 
-/** Classifies `parsed` against `commands` (already run through `filterSupportedCommands`, so
- * subcommands are pruned to the verified set). Every supported command was verified in exactly
- * one of two shapes -- the bare name, or the name plus exactly one of its listed subcommands,
- * never with any further argument text -- so anything else on an otherwise-recognized command is
+function matchesName(descriptor: SlashCommandDescriptor, name: string): boolean {
+  return descriptor.name === name || (descriptor.aliases ?? []).includes(name);
+}
+
+function classifyAgainstBuiltin(descriptor: SlashCommandDescriptor, rest: string): SlashInvocationClassification {
+  const spaceIdx = rest.indexOf(' ');
+  const subName = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
+  const extra = spaceIdx === -1 ? '' : rest.slice(spaceIdx + 1).trim();
+  if (extra !== '') return 'unsupported-arguments';
+  return (descriptor.subcommands ?? []).some((sub) => sub.name === subName) ? 'supported' : 'unsupported-arguments';
+}
+
+/** Classifies `parsed` against `commands` (already run through `filterSupportedCommands`).
+ * Issue #760: a non-builtin-sourced descriptor (project/user `'file'`, or `'skill'`) runs with
+ * free-form arguments once its bare name is recognized; a builtin descriptor was verified in
+ * exactly one of two shapes -- the bare name, or the name plus exactly one of its listed
+ * subcommands, never with any further argument text -- so anything else on it is
  * `'unsupported-arguments'`, not `'unknown-command'` (Critical remediation, issue #129, refined
- * to distinguish the two refusal reasons). */
+ * to distinguish the two refusal reasons). Gate-fix (High/Medium, security): a file/skill
+ * command sharing a NAME OR ALIAS with a builtin must never inherit the free-form policy -- the
+ * whole list is scanned for any builtin-sourced entry matching the name first, rather than
+ * trusting whichever single descriptor the first `find` happens to pick. */
 export function classifySlashInvocation(
   parsed: ParsedSlashCommand,
   commands: readonly SlashCommandDescriptor[]
 ): SlashInvocationClassification {
-  const descriptor = commands.find((c) => c.name === parsed.name || (c.aliases ?? []).includes(parsed.name));
+  const descriptor = commands.find((c) => matchesName(c, parsed.name));
   if (!descriptor) return 'unknown-command';
   if (parsed.rest === '') return 'supported';
-  const spaceIdx = parsed.rest.indexOf(' ');
-  const subName = spaceIdx === -1 ? parsed.rest : parsed.rest.slice(0, spaceIdx);
-  const extra = spaceIdx === -1 ? '' : parsed.rest.slice(spaceIdx + 1).trim();
-  if (extra !== '') return 'unsupported-arguments';
-  return (descriptor.subcommands ?? []).some((sub) => sub.name === subName) ? 'supported' : 'unsupported-arguments';
+  const shadowedBuiltin = commands.find((c) => matchesName(c, parsed.name) && isBuiltinSource(c.source));
+  if (shadowedBuiltin) return classifyAgainstBuiltin(shadowedBuiltin, parsed.rest);
+  if (!isBuiltinSource(descriptor.source)) return 'supported';
+  return classifyAgainstBuiltin(descriptor, parsed.rest);
 }
