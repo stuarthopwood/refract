@@ -394,3 +394,119 @@ async fn sessions_delete_on_a_never_started_session_succeeds_with_a_harmless_no_
 async fn sessions_archive_refuses_a_session_that_is_mid_start_or_mid_resume() {
     unimplemented!("blocked on lane R3/#786's sessions.resume in-flight marker")
 }
+
+/// Gate round 2 (#657/#658): the reclaim hook fires exactly on the success path of both
+/// `sessions.archive` and `sessions.delete`, never on a refused/failed call -- a global atomic
+/// counter (parallel-test-safe: only a monotonic increase is asserted, never an exact value)
+/// is the simplest observable proxy for "the hook ran" without building fake reclaim policy.
+#[tokio::test]
+async fn sessions_archive_fires_the_worktree_released_hook_on_success() {
+    let dir = temp_registry_dir("archive-fires-hook");
+    let state = make_state(&dir).await;
+    state
+        .registry
+        .lock()
+        .await
+        .add_repository(make_repository("repo-1", "C:/nowhere/repo"))
+        .await
+        .expect("add_repository");
+    let session = make_session(
+        "session-hook-archive",
+        "repo-1",
+        "C:/nowhere/worktree",
+        "feature",
+    );
+    state
+        .registry
+        .lock()
+        .await
+        .add_session(session.clone())
+        .await
+        .expect("add_session");
+
+    let before = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    let args = vec![Value::String(session.id.clone())];
+    sessions_archive(state, args)
+        .await
+        .expect("archive must succeed");
+    let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    assert!(
+        after > before,
+        "a successful archive must fire the reclaim hook"
+    );
+}
+
+#[tokio::test]
+async fn sessions_archive_on_an_unknown_id_never_fires_the_hook() {
+    let dir = temp_registry_dir("archive-not-found-no-hook");
+    let state = make_state(&dir).await;
+    let before = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    let args = vec![Value::String("missing-id".to_string())];
+    let _ = sessions_archive(state, args).await;
+    let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    assert_eq!(
+        after, before,
+        "a refused archive must never fire the reclaim hook"
+    );
+}
+
+#[tokio::test]
+async fn sessions_delete_fires_the_worktree_released_hook_on_success() {
+    let dir = temp_registry_dir("delete-fires-hook");
+    let state = make_state(&dir).await;
+    let repo = init_repo().await;
+    state
+        .registry
+        .lock()
+        .await
+        .add_repository(make_repository("repo-1", &repo.to_string_lossy()))
+        .await
+        .expect("add_repository");
+    let added = add_worktree_with_generated_name(&repo, "main")
+        .await
+        .expect("create worktree");
+    let session = make_session(
+        "session-hook-delete",
+        "repo-1",
+        &added.worktree_path.to_string_lossy(),
+        &added.branch,
+    );
+    state
+        .registry
+        .lock()
+        .await
+        .add_session(session.clone())
+        .await
+        .expect("add_session");
+
+    let before = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    let args = vec![
+        Value::String(session.id.clone()),
+        serde_json::json!({ "confirmed": true }),
+    ];
+    sessions_delete(state, args)
+        .await
+        .expect("delete must succeed");
+    let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    assert!(
+        after > before,
+        "a successful delete must fire the reclaim hook"
+    );
+}
+
+#[tokio::test]
+async fn sessions_delete_on_an_unknown_id_never_fires_the_hook() {
+    let dir = temp_registry_dir("delete-not-found-no-hook");
+    let state = make_state(&dir).await;
+    let before = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    let args = vec![
+        Value::String("missing-id".to_string()),
+        serde_json::json!({ "confirmed": true }),
+    ];
+    let _ = sessions_delete(state, args).await;
+    let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
+    assert_eq!(
+        after, before,
+        "a refused delete must never fire the reclaim hook"
+    );
+}

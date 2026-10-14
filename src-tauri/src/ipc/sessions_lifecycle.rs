@@ -201,6 +201,12 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
             )
             .await
             .map_err(map_registry_error)?;
+        // Issue #657/#658 (disk hygiene on archive and PR merge): the single call point future
+        // reclaim logic attaches to once an archived Session's worktree becomes eligible for
+        // GC -- the actual POLICY (whether/when to reclaim) stays deferred to those issues;
+        // this hook only ships the point itself, so a later lane never has to rediscover where
+        // archive finishes. Fires only on success, never on an early `?` return above.
+        on_worktree_released(&id);
         state.session_manager.notify_list_changed();
         Ok(Value::Null)
     })
@@ -349,6 +355,10 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(map_registry_error)?;
         state.session_manager.remove_agent(&id);
+        // Issue #657/#658: same reclaim hook `sessions_archive` fires, called here too since
+        // delete releases a worktree exactly as finally as an archive does. Fires only on
+        // success (every earlier failure path returns via `?` before reaching this line).
+        on_worktree_released(&id);
         state.session_manager.notify_list_changed();
         Ok(Value::Null)
     })
@@ -463,6 +473,30 @@ pub fn sessions_reveal_worktree(state: AppState, args: Vec<Value>) -> HandlerFut
             Err(err) => Err(IpcError::new("worktree-failed", err.to_string())),
         }
     })
+}
+
+/// Issues #657/#658 (gate round 2: a reviewer found this bullet in #785 asks only for a call
+/// point plus a test, never the 5-slice reclaim POLICY those two issues themselves scope --
+/// this hook is exactly that call point, nothing more): the single place future worktree/branch
+/// reclaim logic for a Session whose worktree is no longer needed (archived, or deleted)
+/// attaches to, so a later lane implementing #657's slice 1 or #658's reap step never has to
+/// rediscover where `sessions.archive`/`sessions.delete` finish releasing a worktree. A no-op
+/// today -- the decision on WHETHER/WHEN to reclaim stays with #657/#658, not this lane.
+fn on_worktree_released(_session_id: &str) {
+    #[cfg(test)]
+    WORKTREE_RELEASED_HOOK_CALLS.with(|calls| calls.set(calls.get() + 1));
+}
+
+// Thread-local, not a global atomic (gate round 2): `#[tokio::test]`'s default current-thread
+// runtime keeps one whole test's execution on a single OS thread from start to finish, and the
+// std test harness never runs two different tests concurrently on that SAME thread -- so a
+// thread-local counter isolates each test's own "did the hook fire" observation from every
+// OTHER test running in parallel on a different thread, which a single process-wide atomic
+// could not (a concurrently running, unrelated archive/delete call firing the hook would have
+// made a "never fires on failure" assertion flaky).
+#[cfg(test)]
+thread_local! {
+    static WORKTREE_RELEASED_HOOK_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Security: a Session's `session_dir` is learned from OMP's own `get_state`, but the registry
