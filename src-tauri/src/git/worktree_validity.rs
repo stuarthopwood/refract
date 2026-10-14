@@ -87,7 +87,7 @@ pub(crate) fn comparable_path(p: &str) -> String {
 /// uncanonicalized path on failure (the path may not exist on disk, e.g. a relative gitdir
 /// record that is itself a relative reference) rather than erroring out. Runs on a blocking-pool
 /// thread since `dunce::canonicalize` is a synchronous filesystem call.
-async fn canonical_comparable_path(p: &Path) -> String {
+pub(crate) async fn canonical_comparable_path(p: &Path) -> String {
     let owned = p.to_path_buf();
     let canonical = tokio::task::spawn_blocking(move || dunce::canonicalize(&owned))
         .await

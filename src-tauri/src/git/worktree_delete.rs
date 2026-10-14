@@ -1,23 +1,20 @@
 // Port of `src/main/git/worktrees.ts`'s issue #599 safe-delete path (folded into lane R2, #785):
-// `removeSessionWorktree`. Decides purely from live git/filesystem state (never trusts a stale
-// caller-supplied flag), is idempotent (a retry re-reads state from scratch rather than trusting
-// anything cached), and never deletes anything outside `worktrees_root(repo)` nor anything `git
-// worktree list` does not itself account for. `deleteCheck`/`deleteCheckForMissingWorktree`/
-// `deleteCheckForSession` live in the sibling `worktree_delete_check.rs` (same 600-line-per-file
-// split reason).
+// `removeSessionWorktree`. Decides purely from live git/filesystem state, idempotent (a retry
+// re-reads state from scratch), never deletes anything outside `worktrees_root(repo)` nor
+// anything `git worktree list` does not account for. `deleteCheck`/`deleteCheckForMissingWorktree`
+// /`deleteCheckForSession` live in the sibling `worktree_delete_check.rs` (600-line cap split).
 //
-// Simplification from the TS source: path comparisons use `worktree_validity::comparable_path`
-// (a lexical `.`/`..`-collapse + lowercase, no filesystem touch) instead of TS's
-// `fs.realpath`-based `canonicalPath` walk -- the same simplification `store::registry`'s own
-// path comparisons already make. A worktree reached only through a separately aliased
-// junction/symlink is not specially detected here; every path this module compares is either a
-// literal `git worktree list --porcelain` value, a `.git` `gitdir:` record, or the registry's
-// own `Session.worktreePath`, never user-supplied.
+// Path comparisons use `worktree_validity`'s lexical `comparable_path` EXCEPT
+// `is_repo_readable`/`dot_git_points_to`, which canonicalize via `canonical_comparable_path`
+// (gate round 2 CI fix: GitHub Actions' Windows runners alias `%TEMP%` through an 8.3 short
+// name `git rev-parse` never reports).
 
 use std::path::{Path, PathBuf};
 
 use super::git::{git, git_raw, normalize_git_path, GitError, GitErrorCode};
-use super::worktree_validity::{comparable_path, is_worktree_registered};
+use super::worktree_validity::{
+    canonical_comparable_path, comparable_path, is_worktree_registered,
+};
 use super::worktrees::{branch_exists, worktrees_root};
 
 enum OrphanRefusalReason {
@@ -68,8 +65,7 @@ fn admin_entry_refusal_message(worktree_path: &Path) -> String {
 
 /// Mirrors `worktrees.ts`'s own `isLockLikeError`/`wrapFsError`: a Windows sharing violation
 /// (`ERROR_SHARING_VIOLATION`, 32) or access-denied (`ERROR_ACCESS_DENIED`, 5) gets dedicated
-/// plain-language wording naming the worktree path; any other I/O error is wrapped generically
-/// rather than leaking a raw OS error message.
+/// wording naming the worktree path; any other I/O error is wrapped generically.
 fn wrap_fs_error(err: std::io::Error, worktree_path: &Path) -> GitError {
     let wt = worktree_path.display();
     match err.raw_os_error() {
@@ -107,8 +103,10 @@ async fn git_common_dir(repo: &Path) -> Result<PathBuf, GitError> {
     Ok(PathBuf::from(normalize_git_path(&abs.to_string_lossy())))
 }
 
-/// See this file's own header: resolves a relative `gitdir:` record lexically against `dir`
-/// itself (TS resolves against `dir`'s realpath instead).
+/// See this file's own header: resolves both sides through `canonical_comparable_path` before
+/// comparing -- a relative `gitdir:` record resolved lexically against `dir` would otherwise
+/// never match `expected` whenever `dir` is reached through an alias (a junction, or a Windows
+/// 8.3 short name such as `RUNNER~1`, the gate round 2 CI failure this fixes).
 async fn dot_git_points_to(dir: &Path, expected: &str) -> bool {
     let dot_git_path = dir.join(".git");
     let Ok(meta) = tokio::fs::symlink_metadata(&dot_git_path).await else {
@@ -132,19 +130,23 @@ async fn dot_git_points_to(dir: &Path, expected: &str) -> bool {
     } else {
         dir.join(recorded_raw)
     };
-    comparable_path(&recorded_abs.to_string_lossy()) == comparable_path(expected)
+    canonical_comparable_path(&recorded_abs).await
+        == canonical_comparable_path(Path::new(expected)).await
 }
 
 /// Verifies `repo` is its own git toplevel (never an ancestor repository) and that git's own
 /// `--absolute-git-dir`/`--git-common-dir` answers tie back to `repo`'s own `.git` entry, not
-/// merely to each other. Read-only throughout.
+/// merely to each other. Canonicalizes every comparison for the same reason `dot_git_points_to`
+/// above does.
 pub(crate) async fn is_repo_readable(repo: &Path) -> bool {
     let toplevel_result = git_raw(repo, &["rev-parse", "--show-toplevel"], None).await;
     if toplevel_result.code != 0 {
         return false;
     }
     let toplevel = toplevel_result.stdout.trim();
-    if toplevel.is_empty() || comparable_path(toplevel) != comparable_path(&repo.to_string_lossy())
+    if toplevel.is_empty()
+        || canonical_comparable_path(Path::new(toplevel)).await
+            != canonical_comparable_path(repo).await
     {
         return false;
     }
@@ -172,24 +174,28 @@ pub(crate) async fn is_repo_readable(repo: &Path) -> bool {
         repo.join(common_dir_raw).to_string_lossy().into_owned()
     };
 
-    if comparable_path(&git_dir_raw) == comparable_path(&common_dir_abs) {
-        let expected_dot_git = repo.join(".git").to_string_lossy().into_owned();
-        if comparable_path(&common_dir_abs) == comparable_path(&expected_dot_git) {
+    if canonical_comparable_path(Path::new(&git_dir_raw)).await
+        == canonical_comparable_path(Path::new(&common_dir_abs)).await
+    {
+        let expected_dot_git = repo.join(".git");
+        if canonical_comparable_path(Path::new(&common_dir_abs)).await
+            == canonical_comparable_path(&expected_dot_git).await
+        {
             return true;
         }
         return dot_git_points_to(repo, &common_dir_abs).await;
     }
 
-    let worktrees_admin_root = Path::new(&common_dir_abs)
-        .join("worktrees")
-        .to_string_lossy()
-        .into_owned();
+    let worktrees_admin_root = Path::new(&common_dir_abs).join("worktrees");
     let prefix = format!(
         "{}{}",
-        comparable_path(&worktrees_admin_root),
+        canonical_comparable_path(&worktrees_admin_root).await,
         std::path::MAIN_SEPARATOR
     );
-    if !comparable_path(&git_dir_raw).starts_with(&prefix) {
+    if !canonical_comparable_path(Path::new(&git_dir_raw))
+        .await
+        .starts_with(&prefix)
+    {
         return false;
     }
     dot_git_points_to(repo, &git_dir_raw).await
@@ -202,10 +208,9 @@ enum RootContainment {
 
 /// Shared by both the registered and orphan removal paths: a corrupted or hand-edited registry
 /// entry naming a path outside this repository's own worktrees can never reach either removal
-/// path. `OutsideMissing` (rather than permitting the call to continue) is returned when the
-/// path is outside the root AND does not exist -- the caller must never run `git worktree remove
-/// --force` on a path outside the root that git still has registered (for example a worktree on
-/// a disconnected drive), which would otherwise delete that OTHER worktree's entire admin entry.
+/// path. `OutsideMissing` is returned (rather than letting the call continue) when the path is
+/// outside the root AND does not exist -- the caller must never force-remove a path outside the
+/// root that git still has registered (e.g. a disconnected drive), destroying another worktree.
 async fn assert_within_worktrees_root(
     repo: &Path,
     worktree_path: &Path,
@@ -232,9 +237,8 @@ async fn assert_within_worktrees_root(
     }
 }
 
-/// A folder can be REGISTERED yet already emptied by hand: its `.git` pointer file deleted while
-/// the folder and its git registration both remain. True only when the folder exists, is a real
-/// directory, and has no `.git` entry at all.
+/// A folder can be REGISTERED yet already emptied by hand (its `.git` pointer deleted, folder
+/// and registration both remain). True only when a real directory exists with no `.git` entry.
 async fn is_registered_but_hand_emptied(worktree_path: &Path) -> Result<bool, GitError> {
     let Some(meta) = lstat_optional(worktree_path).await? else {
         return Ok(false);
