@@ -114,17 +114,14 @@ pub fn model_list_roles(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        // Gate-fix (MEDIUM, perf): the two `omp` CLI reads run concurrently instead of one
-        // after the other -- each spawns its own process with its own ~15s timeout, so a serial
-        // "cycleOrder then modelRoles" ordering doubled the worst-case wait for no reason.
-        let (known_roles, model_roles) = tokio::try_join!(
-            async { model::known_role_list().await.map_err(map_model_error) },
-            async {
-                crate::ipc::model_roles::get_model_roles()
-                    .await
-                    .map_err(|err| IpcError::new("omp-probe-failed", err.to_string()))
-            }
-        )?;
+        // Gate-fix (round 6): reverted from a `try_join!` concurrent version -- `session::model`'s
+        // own `known_chat_role_list` hit an intermittent incomplete-read race running these same
+        // two `omp` CLI reads concurrently against one profile (cause not fully confirmed); this
+        // handler runs the identical pair of reads, so it is made sequential for the same reason.
+        let known_roles = model::known_role_list().await.map_err(map_model_error)?;
+        let model_roles = crate::ipc::model_roles::get_model_roles()
+            .await
+            .map_err(|err| IpcError::new("omp-probe-failed", err.to_string()))?;
         let (pinned, current_role) = model::current_selection(&agent).await;
         let roles: Vec<Value> = known_roles
             .iter()

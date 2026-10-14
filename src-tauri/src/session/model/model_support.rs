@@ -155,11 +155,15 @@ pub(super) async fn post_notice(agent: &SessionAgent, level: NoticeLevel, text: 
 /// already present in `roles` on entry).
 const CORE_CHAT_ROLE_IDS: [&str; 3] = ["default", "smol", "slow"];
 
-/// Every role id `/role`/`/switch @<role>` must NEVER treat as a chat role: the five
-/// MODEL-KIND roles (`image`, `web`, `speech`, `dictation`, `judge`) and the six WORKLOAD roles
-/// #766 excludes. Anything ELSE actually configured in `modelRoles` is a genuinely CUSTOM
+/// Role ids the `modelRoles`-driven addition below must NEVER treat as a CUSTOM chat role: the
+/// five MODEL-KIND roles (`image`, `web`, `speech`, `dictation`, `judge`) and the six WORKLOAD
+/// roles #766 excludes. A `modelRoles` key that is NEITHER of these is a genuinely CUSTOM
 /// chat-role name (`omp://models.md`: "Custom role names can be introduced through
-/// `modelRoles`... they use chat models").
+/// `modelRoles`... they use chat models"). Does NOT filter `cycleOrder` itself -- that list is
+/// the user's own explicit Ctrl+R-cycling config, already adopted unfiltered as
+/// `known_chat_role_list`'s own baseline (so a workload role a user puts directly in their own
+/// `cycleOrder` would still pass through that path, not this one; an unlikely config in
+/// practice -- `cycleOrder` is documented as a chat-model cycling list).
 const NON_CHAT_ROLE_IDS: [&str; 11] = [
     "image",
     "web",
@@ -175,20 +179,25 @@ const NON_CHAT_ROLE_IDS: [&str; 11] = [
 ];
 
 /// Pure merge step for `model.rs`'s own `known_chat_role_list`: `roles` (already `cycleOrder` +
-/// `plan`) plus the three CORE chat roles plus every `modelRoles` key that is not a model-kind
-/// or workload role. `pub(super)`: only `known_chat_role_list` calls this.
+/// `plan`) plus the three CORE chat roles (gate-fix, round 6, MEDIUM: ONLY when actually
+/// configured in `modelRoles` -- an UNSET core role, e.g. `smol` with no `modelRoles.smol`
+/// entry, is never added here, so it is refused as `Unknown role` at validation time rather
+/// than reaching `apply_role_now`'s own same-model check and wrongly reporting "could not be
+/// applied" for a role this lane has no selector to compare against) plus every `modelRoles`
+/// key that is not a model-kind or workload role. `pub(super)`: only `known_chat_role_list`
+/// calls this.
 pub(super) fn merge_chat_roles(
     mut roles: Vec<String>,
-    model_role_keys: impl Iterator<Item = String>,
+    model_roles: &std::collections::HashMap<String, String>,
 ) -> Vec<String> {
     for id in CORE_CHAT_ROLE_IDS {
-        if !roles.iter().any(|r| r == id) {
+        if model_roles.contains_key(id) && !roles.iter().any(|r| r == id) {
             roles.push(id.to_string());
         }
     }
-    for key in model_role_keys {
-        if !NON_CHAT_ROLE_IDS.contains(&key.as_str()) && !roles.iter().any(|r| r == &key) {
-            roles.push(key);
+    for key in model_roles.keys() {
+        if !NON_CHAT_ROLE_IDS.contains(&key.as_str()) && !roles.iter().any(|r| r == key) {
+            roles.push(key.clone());
         }
     }
     roles

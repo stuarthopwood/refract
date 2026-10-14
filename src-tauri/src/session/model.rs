@@ -5,12 +5,10 @@
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
 // decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
-// `on_start_progress` for the ready-wait banner (same listener) -- one call per lane module each,
-// cheap and allocation-free as a no-op; lane RM adds its model behaviour inside these functions,
-// never inside any file under `session/agent/`.
+// `on_start_progress` for the ready-wait banner (same listener) -- cheap, allocation-free
+// no-ops; lane RM adds its model behaviour inside these functions, never under `session/agent/`.
 //
-// Design summary (FINDINGS "RM0 probe", items 51-57, `omp` 18.10.1; the full reasoning is in
-// this lane's PR body under "Decisions"):
+// Design summary (FINDINGS "RM0 probe", items 51-57, `omp` 18.10.1; full reasoning in the PR body "Decisions"):
 // - `set_model`/`cycle_model` are session-scoped RPC calls (FINDINGS item 51/54): neither writes
 //   any role string other than `"default"` (or none), and `cycle_model` steps through literal,
 //   version-adjacent catalog MODELS, never `cycleOrder`'s configured roles. Both PIN the Session
@@ -18,11 +16,11 @@
 //   two, so no before/after verification is needed beyond it.
 // - A role switch (`/role`, Ctrl+R, `/switch @<role>`) is forwarded to OMP's own native
 //   `/switch @<role>` text command (FINDINGS item 54: proven to resolve the role alias
-//   correctly) rather than Refract re-resolving `modelRoles`/`cycleOrder` itself (constitution
-//   I's preference). Unlike `set_model`/`cycle_model`, OMP's native `/switch` text command
-//   reports success even when it SILENTLY DOES NOTHING on an unresolvable argument (FINDINGS
-//   item 53) -- so every text-command path reads `get_state` before and after, via the shared
-//   `refresh_state_or_refuse`/same-model check, and only pins/records a genuine change.
+//   correctly) rather than Refract re-resolving `modelRoles`/`cycleOrder` itself. Unlike
+//   `set_model`/`cycle_model`, OMP's native `/switch` reports success even when it SILENTLY
+//   DOES NOTHING on an unresolvable argument (FINDINGS item 53) -- every text-command path
+//   reads `get_state` before/after (`refresh_state_or_refuse`/same-model check) and only
+//   pins/records a genuine change.
 // - Mid-turn safety is NOT provably safe (FINDINGS item 57's unnumbered closing entry: a clean
 //   18.8.0 pass regressed to a provider 400 on 18.10.1 switching between two different real
 //   models) -- every user-initiated switch (`set_model`, `cycle_model`, `/switch`, `/role`)
@@ -288,24 +286,27 @@ pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
     Ok(model_support::build_role_list(&cycle_order))
 }
 
-/// Gate-fix (round 5, #766): the ONE validation set for both `/role <role>` and `/switch
-/// @<role>` (previously two different lists) -- `cycleOrder` + `plan` + the core chat roles
-/// (so e.g. `/role smol` still validates with `smol` removed from `cycleOrder`) + any genuinely
-/// CUSTOM role actually configured in `modelRoles`, filtered by `model_support::merge_chat_roles`
-/// (workload/model-kind roles #766 excludes, own doc comment there). Ctrl+R stays narrower
-/// (`known_role_list` above, decided) -- TEXT commands only. The two `omp` config reads run
-/// SEQUENTIALLY, not concurrently: a `try_join!` version raced two simultaneous `omp config
-/// get` calls against the same profile and intermittently returned an incomplete `cycleOrder`
-/// read live; a rare text-command path, not a hot poll, so correctness wins here.
+/// Gate-fix (round 5, #766): the ONE validation set for `/role <role>` and `/switch @<role>`
+/// -- `cycleOrder` + `plan` + the core chat roles (only when configured in `modelRoles`, so
+/// `/role smol` still validates with `smol` removed from `cycleOrder`) + any CUSTOM role
+/// configured in `modelRoles`, filtered by `model_support::merge_chat_roles` (workload/
+/// model-kind roles #766 excludes, own doc comment there). Ctrl+R stays narrower
+/// (`known_role_list` above, decided). A custom role name with a character outside
+/// `is_switch_argument_token`'s own charset validates here (list membership only) but is
+/// refused by `/switch @<name>` (whose charset check covers the whole token) -- a real
+/// asymmetry, not a bug.
+///
+/// The two `omp` config reads run SEQUENTIALLY: a `try_join!` version intermittently excluded
+/// a role this function should have added anyway -- the mechanism is NOT confirmed (the
+/// `cycleOrder`-race explanation does not hold up alone, since CORE roles are added
+/// independently of that read); `ipc::model::model_list_roles` runs the same pair
+/// sequentially too, same reason.
 pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
     let roles = known_role_list().await?;
     let model_roles = crate::ipc::model_roles::get_model_roles()
         .await
         .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
-    Ok(model_support::merge_chat_roles(
-        roles,
-        model_roles.into_keys(),
-    ))
+    Ok(model_support::merge_chat_roles(roles, &model_roles))
 }
 
 // ---------------------------------------------------------------------------

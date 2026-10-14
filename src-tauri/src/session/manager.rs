@@ -201,14 +201,26 @@ impl SessionManager {
                             match apply_role_now(&agent, &role, true).await {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
-                                    // Gate-fix (round 5): a SECOND race -- became working again
-                                    // between the ready-check just above and this retry's own
-                                    // send. Call the SAME atomic decision again rather than
-                                    // hand-setting `pending_role_reapply` directly; its return
-                                    // value is not chased further (one retry is enough -- an
-                                    // unbounded chase could spin on a Session that keeps
-                                    // starting new turns), so this is always `Queued` either way.
-                                    agent.queue_role_reapply_or_ready(&role).await;
+                                    // Gate-fix (round 6, HIGH): became working again between
+                                    // the ready-check just above and this retry's own send --
+                                    // OMP itself is still mid-turn even though Refract's OWN
+                                    // status already looked idle (the narrower race
+                                    // `apply_role_now`'s own `isStreaming` check targets
+                                    // elsewhere). `queue_role_reapply_or_ready` does NOT set
+                                    // `pending_role_reapply` for a `false` result (it means
+                                    // "apply now yourself"), so if THIS retry also failed
+                                    // not-idle, set it directly ourselves (same pattern
+                                    // `on_frame`'s own fallback uses, `model.rs`) -- never
+                                    // report `Queued` unless something is actually queued.
+                                    if !agent.queue_role_reapply_or_ready(&role).await {
+                                        agent
+                                            .with_model_state(|s| {
+                                                if s.pending_role_reapply.is_none() {
+                                                    s.pending_role_reapply = Some(role.clone());
+                                                }
+                                            })
+                                            .await;
+                                    }
                                     RoleApplyOutcome::Queued
                                 }
                                 Err(_) => RoleApplyOutcome::Failed,
