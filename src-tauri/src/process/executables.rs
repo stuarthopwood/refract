@@ -43,6 +43,18 @@ pub fn taskkill_path() -> PathBuf {
         .join("taskkill.exe")
 }
 
+/// `%SystemRoot%\explorer.exe`: a fixed system path, never a PATH/cwd search -- same reasoning
+/// this file's own header gives for `resolve_omp`/`taskkill_path` (and `git::git`'s own `which`
+/// doc comment): a worktree that happened to contain e.g. `explorer.exe` at its root could
+/// otherwise run instead of the real one via Windows' `CreateProcess` cwd-before-PATH search
+/// order for a bare name. Used by `ipc::sessions_lifecycle::sessions_reveal_worktree`.
+pub fn explorer_exe_path() -> PathBuf {
+    let system_root = env::var("SystemRoot")
+        .or_else(|_| env::var("windir"))
+        .unwrap_or_else(|_| "C:\\Windows".to_string());
+    Path::new(&system_root).join("explorer.exe")
+}
+
 /// Gate-fixes a LOW security finding: `lib.rs`'s `run()` now sets this env var process-wide as
 /// its very first action, before the window, any handler, or any spawn exists -- matching the
 /// Electron build's own unconditional top-of-file line (`src/main/index.ts`), so a `git` child

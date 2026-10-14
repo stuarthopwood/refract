@@ -3022,6 +3022,7 @@ name = "refract-tauri"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "dunce",
  "log",
  "serde",
  "serde_json",
