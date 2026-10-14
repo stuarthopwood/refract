@@ -323,7 +323,9 @@ fn is_valid_owner_or_repo_segment(segment: &str) -> bool {
     !segment.is_empty()
         && segment != "."
         && segment != ".."
-        && segment.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+        && segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
 /// Parses `owner/repo` out of a `github.com` HTTPS or SSH remote URL, case-insensitively on the
