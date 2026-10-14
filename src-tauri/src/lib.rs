@@ -141,9 +141,16 @@ pub fn run() {
     let settings = std::sync::Arc::new(tokio::sync::Mutex::new(settings));
     let app_handle_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::AppHandle>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
-    let events = events::EventSink::new(app_handle_slot.clone());
+    // Issue #793: `shell::notifications::on_session_status` (called from `emit_session_status`)
+    // needs the registry too, for the Session's live display name -- the same `Arc` every
+    // agent-backed handler already shares, never a second store instance.
+    let events = events::EventSink::new(app_handle_slot.clone(), registry.clone());
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     let session_manager_for_exit = session_manager.clone();
+    // Issue #623: cloned before `data_dir` moves into `AppState` below -- the setup closure
+    // applies the saved window state, and the final `ExitRequested` handler writes it back.
+    let data_dir_for_setup = data_dir.clone();
+    let data_dir_for_exit = data_dir.clone();
 
     let app_state = AppState {
         data_dir,
@@ -156,6 +163,20 @@ pub fn run() {
     ipc::register_handlers(&mut dispatcher);
 
     let app = tauri::Builder::default()
+        // Issue #793: registered first, ahead of every other plugin -- a second launch should
+        // exit (after focusing the first window) as early as possible, doing no other startup
+        // work. No JS capability needed (`capabilities/default.json`'s own doc comment): this
+        // plugin has no JavaScript API at all.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let Some(window) = app.get_webview_window("main") else {
+                return;
+            };
+            if window.is_minimized().unwrap_or(false) {
+                let _ = window.unminimize();
+            }
+            let _ = window.show();
+            let _ = window.set_focus();
+        }))
         .plugin(
             tauri_plugin_log::Builder::new()
                 // Security: Debug level also writes envelopes (now channel+outcome only, see
@@ -172,6 +193,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        // Issue #793: OS notification on needs-you/finished, click-to-focus
+        // (`shell::notifications`).
+        .plugin(tauri_plugin_notification::init())
         .manage(ManagedState {
             app_state,
             dispatcher,
@@ -199,9 +223,10 @@ pub fn run() {
             );
 
             // One main window, native decorations (spec.md Assumptions: no custom caption
-            // parity in milestone 1), same initial size as the Electron build's own
-            // `BrowserWindow` (`src/main/index.ts`'s `width: 1280, height: 800`). Like Electron,
-            // no minimum size, so the window still fits and reflows at 150-200% display scaling.
+            // parity in milestone 1; spike section 1 confirms no visible gap either, issue
+            // #793). Initially hidden (issue #623, mirrors Electron's own `show: false` ->
+            // `ready-to-show`): the saved window state is applied below before the first paint,
+            // so there is no flash at the default size/position first.
             // `tauri.vite.config.ts` keeps Vite's default root (the repository root, not
             // `tauri/`) so this build's HTML entry can reference the sibling
             // `src/tauri-bridge/` tree by an ordinary root-relative script `src` -- the built
@@ -209,18 +234,42 @@ pub fn run() {
             // `index.html`, in both `frontendDist` (`out/tauri-web/tauri/index.html`) and the
             // dev server (`http://localhost:5174/tauri/index.html`, `devUrl`'s origin plus this
             // same relative path).
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
-                .title("Refract (Rust preview)")
-                .inner_size(1280.0, 800.0)
-                .decorations(true)
-                .initialization_script(&init_script)
-                // Security LOW finding: matches the Electron build's `denyForeignNavigation` --
-                // same-window navigation to a remote page would otherwise replace the app UI
-                // (remote origins can already not reach `refract_request`, and wry denies new
-                // windows with no `on_new_window` handler set, but a same-window navigation
-                // away is a separate hole neither of those closes).
-                .on_navigation(is_allowed_navigation_url)
-                .build()?;
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
+                    .title("Refract (Rust preview)")
+                    .inner_size(1280.0, 800.0)
+                    .decorations(true)
+                    .visible(false)
+                    .initialization_script(&init_script)
+                    // Security LOW finding: matches the Electron build's `denyForeignNavigation`
+                    // -- same-window navigation to a remote page would otherwise replace the app
+                    // UI (remote origins can already not reach `refract_request`, and wry denies
+                    // new windows with no `on_new_window` handler set, but a same-window
+                    // navigation away is a separate hole neither of those closes).
+                    .on_navigation(is_allowed_navigation_url)
+                    .build()?;
+
+            // Issue #623: reads and applies the saved position/size/maximised state (a
+            // one-off, startup-only blocking wait, same justification as the registry/settings
+            // opens above), then keeps it current for the rest of the run and manages the
+            // tracker so the final `ExitRequested` handler below can reach it to flush it.
+            let window_state_tracker = tauri::async_runtime::block_on(
+                shell::window_state::apply_on_startup(&data_dir_for_setup, &window),
+            );
+            {
+                let tracker = window_state_tracker.clone();
+                let window_for_events = window.clone();
+                window.on_window_event(move |event| {
+                    tracker.on_window_event(&window_for_events, event)
+                });
+            }
+            app.manage(window_state_tracker);
+
+            // Issue #793: the one global notification click handler, registered before any
+            // notification is ever shown (`shell::notifications::init`'s own doc comment).
+            shell::notifications::init(app.handle());
+
+            window.show()?;
 
             Ok(())
         })
@@ -233,16 +282,26 @@ pub fn run() {
     // shutdown until that finishes or a 15 s bound elapses, whichever comes first -- a stuck
     // child must never hold the whole app open forever (the kill-on-close Job Object, already
     // joined before `run()` was ever called, is the final belt-and-braces guarantee regardless).
-    app.run(move |_app_handle, event| {
+    app.run(move |app_handle, event| {
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
             api.prevent_exit();
             let session_manager = session_manager_for_exit.clone();
+            let app_handle = app_handle.clone();
+            let data_dir = data_dir_for_exit.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(15),
                     session_manager.stop_all(),
                 )
                 .await;
+                // Issue #623: the final, awaited window-state write -- a fire-and-forget write
+                // racing the `std::process::exit` below could lose the last resize or move.
+                if let (Some(tracker), Some(window)) = (
+                    app_handle.try_state::<std::sync::Arc<shell::window_state::Tracker>>(),
+                    app_handle.get_webview_window("main"),
+                ) {
+                    tracker.save(&data_dir, &window).await;
+                }
                 std::process::exit(0);
             });
         }

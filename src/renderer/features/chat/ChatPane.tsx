@@ -40,6 +40,7 @@ import { MessageInput } from './MessageInput'
 import { SessionStartNotice } from './SessionStartNotice'
 import { pickStartingMessageIndex, STARTING_MESSAGES, STARTING_MESSAGE_EMOJI } from './startingMessages'
 import { isConversationStarted, Transcript } from './Transcript'
+import { useTauriFileDrop } from './useTauriFileDrop'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -854,6 +855,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // first message, exactly like the composer itself) is refused with a notice, never silently
   // swallowed (#432's own requirement).
   const composerDisabled = session.status === 'stopped' && effectiveStopReason !== 'not-started'
+  useTauriFileDrop({ sessionId, paneRef: chatPaneRef, composerDisabled, dragDepthRef, setIsDraggingFiles })
 
   function hasFilesPayload(event: ReactDragEvent): boolean {
     return Array.from(event.dataTransfer.types).includes('Files')
@@ -906,10 +908,8 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
         let filePath: string
         try {
           // A browser-dragged image with no on-disk backing file (spec US4 says "or a browser")
-          // returns `''` here -- `buildImagePathAttachment` below refuses it the same way any
-          // other unresolvable path is refused (resolves to the worktree root itself, `file-
-          // missing`), never a silent drop; disclosed as unsupported in the PR body rather than
-          // given its own bespoke message.
+          // returns `''`, refused like any other unresolvable path below (never a silent drop).
+          if (!window.refract.attachments.getPathForFile) throw new Error('getPathForFile is not available')
           filePath = window.refract.attachments.getPathForFile(file)
         } catch {
           failedFiles.push({ name: file.name })
