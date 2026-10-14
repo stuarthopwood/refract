@@ -18,6 +18,43 @@ pub enum SessionStatus {
     Stopped,
 }
 
+/// Port of `exitVerdictGuard.ts`'s own `shouldApplyCrashExitVerdict`, narrowed to the
+/// `statusNow !== 'stopped'` half of its two-part guard: the other half (`lifeEpochNow ===
+/// epochAtExit`) guards a `restart()`/mode-change-respawn race this build does not implement
+/// (see `mod.rs`'s own header: "no restart()/approval-mode-change auto-restart"), so there is no
+/// `lifeEpoch` concept here for it to compare -- a real, intentional scope cut, not a silently
+/// dropped port. Used by `mod.rs`'s own `set_stopped_unless_already_stopped` (`handle_exit`'s
+/// crash branch): skips the verdict once something more authoritative (a synchronous `launch()`
+/// failure path) already moved the Session to `stopped` for this same life.
+pub(super) fn should_apply_crash_exit_verdict(status_now: SessionStatus) -> bool {
+    status_now != SessionStatus::Stopped
+}
+
+#[cfg(test)]
+mod exit_verdict_guard_tests {
+    use super::{should_apply_crash_exit_verdict, SessionStatus};
+
+    #[test]
+    fn skips_the_verdict_once_already_stopped() {
+        assert!(!should_apply_crash_exit_verdict(SessionStatus::Stopped));
+    }
+
+    #[test]
+    fn applies_the_verdict_from_idle() {
+        assert!(should_apply_crash_exit_verdict(SessionStatus::Idle));
+    }
+
+    #[test]
+    fn applies_the_verdict_from_working() {
+        assert!(should_apply_crash_exit_verdict(SessionStatus::Working));
+    }
+
+    #[test]
+    fn applies_the_verdict_from_needs_you() {
+        assert!(should_apply_crash_exit_verdict(SessionStatus::NeedsYou));
+    }
+}
+
 /// Errors a `SessionAgent` method can produce; `code` matches one of `src/shared/ipc.ts`'s
 /// `IpcErrorCode` values (`ipc::chat::map_chat_error`/`ipc::map_session_thrown`-equivalent
 /// mapping happens at the IPC layer, not here).

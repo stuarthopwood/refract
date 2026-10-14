@@ -430,6 +430,20 @@ async fn marker_valid_when_conversation_and_size_both_match() {
 }
 
 #[tokio::test]
+async fn marker_invalid_when_the_conversation_file_no_longer_exists() {
+    let file = std::env::temp_dir().join(format!(
+        "refract-marker-gone-{}.jsonl",
+        uuid::Uuid::new_v4()
+    ));
+    let session = make_session(
+        Some(&file.to_string_lossy()),
+        Some(&file.to_string_lossy()),
+        Some(0),
+    );
+    assert!(!is_stopped_on_request_marker_valid(&session).await);
+}
+
+#[tokio::test]
 async fn marker_invalid_once_the_file_has_grown() {
     let file = write_scratch("hello").await;
     let size = tokio::fs::metadata(&file).await.unwrap().len() as i64;
