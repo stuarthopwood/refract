@@ -67,7 +67,10 @@ function ensureFakeModel(profile) {
   mkdirSync(agentDir, { recursive: true });
   // Two DISTINCT fake models (not one reused for every role): so a real role switch
   // (`/switch @smol`) has a genuinely different model to move to and the verify-effect check
-  // (get_state before/after) can observe a real change, not just the one configured role.
+  // (get_state before/after) can observe a real change, not just the one configured role. A
+  // THIRD model's own `id` contains a colon (round 5, Ollama `llama3:8b`/Bedrock `...-v1:0`
+  // style) -- `selector_matches_model` must not mistake its own colon for a `:thinkingLevel`
+  // suffix and wrongly truncate it.
   const yml = [
     'providers:',
     '  probe-fake:',
@@ -82,6 +85,11 @@ function ensureFakeModel(profile) {
     '        maxTokens: 1000',
     '      - id: probe-fake-model-2',
     '        name: Probe Fake Model Two',
+    '        api: openai-completions',
+    '        contextWindow: 8000',
+    '        maxTokens: 1000',
+    '      - id: "probe-fake-model:v8"',
+    '        name: Probe Fake Model Colon Id',
     '        api: openai-completions',
     '        contextWindow: 8000',
     '        maxTokens: 1000',
@@ -493,6 +501,53 @@ async function main() {
         '/role smol validates with smol removed from cycleOrder (known_chat_role_list)',
         roleSmolRes.ok === true && roleSmolRes.value?.queued === false,
         roleSmolRes,
+      );
+    }
+
+    // --- #766 round 5: /switch @<role> now validates against the SAME wider list /role uses
+    // (previously two different lists) -- prove it too accepts `smol` with `smol` removed from
+    // `cycleOrder`. ---
+    const switchSmolId = await createSweepSession('switch-at-smol-validation candidate');
+    if (switchSmolId) {
+      await openAndWaitIdle(switchSmolId, 'switch-at-smol-validation candidate');
+      const switchSmolRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(switchSmolId)}, '/switch @smol')`);
+      record(
+        '/switch @smol accepted with smol removed from cycleOrder (unified role-validation list)',
+        switchSmolRes.ok === true && switchSmolRes.value?.queued === false,
+        switchSmolRes,
+      );
+    }
+
+    // --- #766 round 5: a WORKLOAD role (not a conversation role, "not in scope" per #766's
+    // own acceptance) is refused by `/role`, never silently accepted even if configured. ---
+    const workloadRoleId = await createSweepSession('workload-role-refusal candidate');
+    if (workloadRoleId) {
+      await openAndWaitIdle(workloadRoleId, 'workload-role-refusal candidate');
+      const workloadRoleRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(workloadRoleId)}, '/role vision')`);
+      record(
+        '/role vision (a workload role, #766 "not in scope") refused',
+        workloadRoleRes.ok === false && workloadRoleRes.error?.code === 'invalid-argument',
+        workloadRoleRes,
+      );
+    }
+
+    // --- round 5: `selector_matches_model` must not mistake a model id's OWN colon (Ollama
+    // `llama3:8b`/Bedrock `...-v1:0` style) for a `:thinkingLevel` suffix -- re-picking the
+    // SAME colon-id model must be accepted as a valid no-op, not truncated at the wrong colon
+    // and wrongly reported "Model unchanged". ---
+    const colonModelId = await createSweepSession('colon-id same-model candidate');
+    if (colonModelId) {
+      await openAndWaitIdle(colonModelId, 'colon-id same-model candidate');
+      const firstColonSwitchRes = await cdp.evaluate(
+        `window.refract.chat.send(${JSON.stringify(colonModelId)}, '/switch probe-fake/probe-fake-model:v8')`,
+      );
+      const secondColonSwitchRes = await cdp.evaluate(
+        `window.refract.chat.send(${JSON.stringify(colonModelId)}, '/switch probe-fake/probe-fake-model:v8')`,
+      );
+      record(
+        '/switch <same colon-id model> twice: both accepted, not truncated at its own colon',
+        firstColonSwitchRes.ok === true && secondColonSwitchRes.ok === true,
+        { firstColonSwitchRes, secondColonSwitchRes },
       );
     }
   } catch (err) {

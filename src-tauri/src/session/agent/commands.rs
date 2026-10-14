@@ -248,7 +248,7 @@ fn classify_against_builtin(descriptor: &Value, rest: &str) -> SlashInvocationCl
         // bare id, a thinking suffix, or a role alias `@role`), never OMP's own (absent)
         // `subcommands` table -- `supported_omp_subcommands`'s own `Some(&[])` entry for
         // `"switch"` exists only to keep it listed in the menu, not to gate this argument.
-        return if crate::session::model::is_switch_argument_token(rest) {
+        return if crate::session::model::model_support::is_switch_argument_token(rest) {
             SlashInvocationClassification::Supported
         } else {
             SlashInvocationClassification::UnsupportedArguments

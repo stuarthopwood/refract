@@ -54,16 +54,16 @@ use crate::omp::transcript::NoticeLevel;
 
 use super::agent::{AgentError, SessionAgent};
 
-mod model_support;
+pub(in crate::session) mod model_support;
 
-// `is_switch_argument_token` stays restricted to `crate::session` at THIS path
-// (`session::agent::commands`/`agent::mod` are its only outside callers); the
-// formatting/notice/selector helpers below are used only by this file's own action functions.
-// `current_selection`/`known_role_list` are defined directly below instead of in
-// `model_support` (gate-fix, round 4): both are called from outside this module's own tree, so
-// a re-export added indirection with no benefit over just keeping them here.
-pub(in crate::session) use model_support::is_switch_argument_token;
-use model_support::{friendly_model_text, model_value, post_notice, selector_matches_model};
+// Gate-fix (round 5): `is_switch_argument_token` is no longer re-exported at this path --
+// `session::agent::commands`'s own `classify_against_builtin` imports it directly from its real
+// module (`crate::session::model::model_support::is_switch_argument_token`, reachable now that
+// `mod model_support` above is `pub(in crate::session)`). Every other helper below is used only
+// by this file's own action functions, never re-exported.
+use model_support::{
+    friendly_model_text, is_switch_argument_token, model_value, post_notice, selector_matches_model,
+};
 
 /// Mirrors `agent::mod`'s own `DEFAULT_REQUEST_TIMEOUT_MS` (private there); re-declared here
 /// with the same value, same convention `omp::process.rs` itself documents for a value it does
@@ -288,28 +288,24 @@ pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
     Ok(model_support::build_role_list(&cycle_order))
 }
 
-/// omp://models.md's documented "Chat roles" subset of `modelRoles` ids, excluding the five
-/// MODEL-KIND roles `/role` never switches (`image`, `web`, `speech`, `dictation`, `judge`).
-const CHAT_ROLE_IDS: [&str; 10] = [
-    "default", "smol", "slow", "vision", "plan", "commit", "tiny", "memory", "task", "advisor",
-];
-
-/// Gate-fix (round 4, #766): `/role <role>`'s own TEXT validation accepts a WIDER set than
-/// Ctrl+R's own cycling list above -- `cycleOrder` + `plan` + every OTHER chat role actually
-/// configured in `modelRoles` (so `/role smol` still validates with `smol` removed from
-/// `cycleOrder`, as long as it keeps its own `modelRoles` entry). Only for the typed `/role
-/// <role>` command (`ipc::chat`'s own interception); Ctrl+R stays narrower, decided.
+/// Gate-fix (round 5, #766): the ONE validation set for both `/role <role>` and `/switch
+/// @<role>` (previously two different lists) -- `cycleOrder` + `plan` + the core chat roles
+/// (so e.g. `/role smol` still validates with `smol` removed from `cycleOrder`) + any genuinely
+/// CUSTOM role actually configured in `modelRoles`, filtered by `model_support::merge_chat_roles`
+/// (workload/model-kind roles #766 excludes, own doc comment there). Ctrl+R itself stays
+/// narrower (`known_role_list` above, cycleOrder + plan only, decided) -- this is only for the
+/// TEXT commands. The two `omp` config reads run concurrently (same `try_join!` pattern
+/// `ipc::model::model_list_roles` already uses).
 pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
-    let mut roles = known_role_list().await?;
-    let model_roles = crate::ipc::model_roles::get_model_roles()
-        .await
-        .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
-    for id in CHAT_ROLE_IDS {
-        if model_roles.contains_key(id) && !roles.iter().any(|r| r == id) {
-            roles.push(id.to_string());
-        }
-    }
-    Ok(roles)
+    let (roles, model_roles) = tokio::try_join!(known_role_list(), async {
+        crate::ipc::model_roles::get_model_roles()
+            .await
+            .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))
+    })?;
+    Ok(model_support::merge_chat_roles(
+        roles,
+        model_roles.into_keys(),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +556,10 @@ pub async fn handle_switch_text(agent: &SessionAgent, arg: &str) -> Result<Value
         return agent.send_if_idle("/switch".to_string(), None).await;
     }
     if let Some(role) = arg.strip_prefix('@') {
-        let known_roles = known_role_list().await?;
+        // Gate-fix (round 5, #766): the SAME validation set `/role <role>` uses, not the
+        // narrower Ctrl+R cycling list -- a `@role` alias forward should accept exactly what
+        // the text command does.
+        let known_roles = known_chat_role_list().await?;
         apply_role(agent, role, &known_roles).await?;
         return Ok(json!({ "queued": false }));
     }

@@ -201,20 +201,14 @@ impl SessionManager {
                             match apply_role_now(&agent, &role, true).await {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
-                                    // Gate-fix (round 4): a SECOND race -- became working again
+                                    // Gate-fix (round 5): a SECOND race -- became working again
                                     // between the ready-check just above and this retry's own
-                                    // send. Set `pending_role_reapply` directly (the same state
-                                    // `queue_role_reapply_or_ready` itself would have set) so
-                                    // `on_frame`'s settle hook still picks it up, rather than
-                                    // reporting failure for a Session that was never actually
-                                    // idle long enough to apply.
-                                    agent
-                                        .with_model_state(|s| {
-                                            if s.pending_role_reapply.is_none() {
-                                                s.pending_role_reapply = Some(role.clone());
-                                            }
-                                        })
-                                        .await;
+                                    // send. Call the SAME atomic decision again rather than
+                                    // hand-setting `pending_role_reapply` directly; its return
+                                    // value is not chased further (one retry is enough -- an
+                                    // unbounded chase could spin on a Session that keeps
+                                    // starting new turns), so this is always `Queued` either way.
+                                    agent.queue_role_reapply_or_ready(&role).await;
                                     RoleApplyOutcome::Queued
                                 }
                                 Err(_) => RoleApplyOutcome::Failed,
