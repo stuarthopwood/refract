@@ -2,6 +2,8 @@
 // specs/001-core-session-workspace/contracts/ipc.md. Imported by main, preload, and
 // renderer; this is the only file that may cross that boundary (constitution V).
 
+import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
+
 import type {
   ApprovalMode,
   CatalogKind,
@@ -37,6 +39,7 @@ import type {
   ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
+import type { UpdatesApi } from './updates';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
@@ -92,7 +95,8 @@ export type IpcErrorCode =
   | 'not-mergeable'
   | 'checkout-failed'
   | 'disabled'
-  | 'session-archived';
+  | 'session-archived'
+  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch'; // lane R11b (#794)
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -129,7 +133,6 @@ export interface Readiness {
   omp: Check;
   ompSignedIn: Check;
 }
-
 /** `sessions.list()` row: a Session plus its live-runtime view. `lastModel`/`lastThinkingLevel`
  * (T062) come straight through from `Session`: the last known provider/model/thinking level,
  * absent until the first `get_state`. */
@@ -252,40 +255,6 @@ export interface SessionStatusEvent {
   unread: boolean;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
-}
-
-/** spec 008 data-model.md: one GitHub CLI account across every signed-in host; never includes
- * a token (FR-012, constitution V). `displayName`/`avatarDataUrl` come from `profileCache.json`,
- * refreshed opportunistically (research.md decision 5) -- both `null` until first fetched, in
- * which case the UI shows `login` and initials respectively. */
-export interface GitHubAccount {
-  host: string;
-  login: string;
-  active: boolean;
-  state: string;
-  /** Why `state` is not 'success', classified in the main process from gh's own per-account error
-   * text (never shown raw): the token was rejected, gh could not reach the host, or the cause is
-   * unknown. Absent when `state` is 'success'. */
-  problem?: 'expired' | 'unreachable' | 'unknown';
-  displayName: string | null;
-  avatarDataUrl: string | null;
-}
-
-/** spec 008 data-model.md, User Story 3: one OMP provider's sign-in state, read live from
- * `get_login_providers` over a scratch management `OmpProcess` -- never persisted (contracts/
- * ipc.md "OMP provider sign-in"), unlike `GitHubAccount`'s cached display fields. */
-export interface OmpProviderState {
-  id: string;
-  authenticated: boolean;
-}
-
-/** spec 008 contracts/ipc.md `accounts:github-add-progress`: the add-account flow's one-time
- * code and progress (FR-009), pushed until the flow completes, is cancelled, or fails. */
-export interface GitHubAddFlowProgress {
-  flowId: string;
-  code: string;
-  status: 'waiting' | 'completed' | 'cancelled' | 'failed';
-  detail?: string;
 }
 
 // Pull request management (specs/003-pull-request-management/contracts/ipc.md). Entity types
@@ -424,6 +393,11 @@ export const IPC_REQUESTS = {
   ACCOUNTS_OMP_SIGN_OUT: 'accounts.omp.signOut',
   ACCOUNTS_OMP_ANSWER: 'accounts.omp.answer',
   APP_OPEN_RELEASE_NOTES: 'app.openReleaseNotes',
+  READINESS_INSTALL_DEPENDENCY: 'readiness.installDependency',
+  UPDATES_CHECK: 'updates.check',
+  UPDATES_GET_STATE: 'updates.getState',
+  UPDATES_INSTALL: 'updates.install',
+  APP_GET_VERSION: 'app.getVersion',
 } as const;
 
 export const IPC_EVENTS = {
@@ -447,6 +421,9 @@ export const IPC_EVENTS = {
   FILE_EXPLORER_RESET: 'file-explorer:reset',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
+  READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
+  READINESS_CHANGED: 'readiness:changed',
+  UPDATES_STATE_CHANGED: 'updates:state-changed',
 } as const;
 
 /** Spec 007 contracts/ipc.md "Bootstrap": the one channel in the app that is not
@@ -464,11 +441,7 @@ export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 /** An unsubscribe function returned by every `on*` event subscription. */
 export type Unsubscribe = () => void;
 
-export interface RefractApi {
-  readiness: {
-    check(): Promise<Result<Readiness>>;
-  };
-
+export interface RefractApi extends UpdatesApi {
   repositories: {
     /** Issue #528, gate round 3 fix (Medium): returns immediately with `remote: { kind:
      * 'unknown' }` on every entry -- the per-repository remote check used to run inline here
@@ -868,7 +841,9 @@ export interface RefractApi {
    * link already uses (constitution V); never opened inside an app window. */
   app: {
     openReleaseNotes(): Promise<Result<void>>;
+    getVersion(): Promise<Result<string>>; // lane R11b (#794): for the update badge
   };
+
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;
   onSessionListChanged(handler: () => void): Unsubscribe;
   onTranscriptPatch(handler: (payload: { sessionId: string; ops: TranscriptOp[] }) => void): Unsubscribe;

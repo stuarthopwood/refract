@@ -32,6 +32,10 @@ pub const FILE_EXPLORER_PATCH: &str = "file-explorer:patch";
 pub const FILE_EXPLORER_RESET: &str = "file-explorer:reset";
 pub const ACCOUNTS_GITHUB_CHANGED: &str = "accounts:github-changed";
 pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
+// Lane R11b (issue #794, spec 006 "Installer and updates").
+pub const READINESS_INSTALL_PROGRESS: &str = "readiness:install-progress";
+pub const READINESS_CHANGED: &str = "readiness:changed";
+pub const UPDATES_STATE_CHANGED: &str = "updates:state-changed";
 
 /// Wire-identical to `transcript:patch`'s payload shape (`{ sessionId, ops }`), borrowed instead
 /// of built through `serde_json::Value` (performance finding, 2026-10-13): lets `app.emit`
@@ -142,6 +146,26 @@ impl EventSink {
     /// `Settings` row, already serialised by the caller.
     pub fn emit_settings_changed(&self, settings: &serde_json::Value) {
         self.send(SETTINGS_CHANGED, settings.clone());
+    }
+
+    /// `readiness:install-progress` (lane R11b, issue #794): drives the Install button's
+    /// progress and outcome text on the first-run readiness screen.
+    pub fn emit_readiness_install_progress(&self, progress: &serde_json::Value) {
+        self.send(READINESS_INSTALL_PROGRESS, progress.clone());
+    }
+
+    /// `readiness:changed` (lane R11b, issue #794): pushed after
+    /// `readiness.installDependency` finishes its own automatic re-check, so the caller does
+    /// not need to call `readiness.check()` itself to pick up the result.
+    pub fn emit_readiness_changed(&self, readiness: &serde_json::Value) {
+        self.send(READINESS_CHANGED, readiness.clone());
+    }
+
+    /// `updates:state-changed` (lane R11b, issue #794): drives the update badge in the status
+    /// bar. The whole `UpdateState` row, already serialised and already stripped of its
+    /// main-only `installerPath` by the caller (`ipc::updates`'s own `to_renderer_state`).
+    pub fn emit_updates_state_changed(&self, state: &serde_json::Value) {
+        self.send(UPDATES_STATE_CHANGED, state.clone());
     }
 }
 

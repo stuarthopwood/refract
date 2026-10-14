@@ -4,6 +4,7 @@
 // list/search/view/staleness/files surface lives in `gh_pull_requests.rs`.
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -211,6 +212,7 @@ pub async fn comment_on_pull_request(
             body,
         ],
         None,
+        Duration::from_millis(super::gh::TIMEOUT_MS),
     )
     .await?;
     if result.code != 0 {
@@ -262,7 +264,13 @@ pub async fn submit_review(
     let owner_repo = format!("{owner}/{repo}");
     let owned_args = build_review_argv(number, &owner_repo, verdict, body);
     let args: Vec<&str> = owned_args.iter().map(String::as_str).collect();
-    let result = gh_raw(repo_path, &args, None).await?;
+    let result = gh_raw(
+        repo_path,
+        &args,
+        None,
+        Duration::from_millis(super::gh::TIMEOUT_MS),
+    )
+    .await?;
     if result.code != 0 {
         return Err(map_gh_failure(&result.stderr, &result.stdout));
     }
@@ -399,7 +407,13 @@ pub async fn merge_pull_request(
     let owner_repo = format!("{owner}/{repo}");
     let owned_args = build_merge_argv(number, &owner_repo, method, head_sha);
     let args: Vec<&str> = owned_args.iter().map(String::as_str).collect();
-    let result = gh_raw(repo_path, &args, None).await?;
+    let result = gh_raw(
+        repo_path,
+        &args,
+        None,
+        Duration::from_millis(super::gh::TIMEOUT_MS),
+    )
+    .await?;
     if result.code != 0 {
         return Err(classify_merge_failure(&result.stderr, &result.stdout));
     }
