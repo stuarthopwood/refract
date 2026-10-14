@@ -5,14 +5,16 @@
 // respectively.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex as StdMutex};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
+use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
 use tauri_plugin_dialog::DialogExt;
+use tokio::sync::{OnceCell, Semaphore};
 
 use crate::git::git::{git_raw, repo_info};
-use crate::git::remote::repository_remote;
+use crate::git::remote::{repository_remote, RepositoryRemoteKind};
 use crate::git::worktrees::{default_branch, list_branches};
 use crate::store::registry::{Repository, Session, REPOSITORY_HAS_SESSIONS_MESSAGE};
 
@@ -143,7 +145,10 @@ fn branch_entries(
     entries
 }
 
-fn with_unknown_remote(repository: &Repository) -> Value {
+/// Embeds `remote` into `repository`'s own JSON shape (`Repository` itself has no `remote` field
+/// -- the wire `Repository` type does, per `src/shared/model.ts`). Shared by every handler that
+/// returns a `Repository` alongside a remote value, real or placeholder.
+fn with_remote(repository: &Repository, remote: &RepositoryRemoteKind) -> Value {
     let mut value =
         serde_json::to_value(repository).expect("Repository is always JSON-serialisable");
     value
@@ -151,9 +156,13 @@ fn with_unknown_remote(repository: &Repository) -> Value {
         .expect("Repository serialises to a JSON object")
         .insert(
             "remote".to_string(),
-            serde_json::json!({ "kind": "unknown" }),
+            serde_json::to_value(remote).expect("RepositoryRemoteKind is always JSON-serialisable"),
         );
     value
+}
+
+fn with_unknown_remote(repository: &Repository) -> Value {
+    with_remote(repository, &RepositoryRemoteKind::Unknown)
 }
 
 pub fn repositories_list(state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -346,31 +355,122 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(map_registry_error)?;
         state.session_manager.notify_list_changed();
-        // Same placeholder `repositories.add` already returns rather than computing the real
-        // remote inline (`repositories.remotes` is the dedicated, bounded call for that).
-        Ok(with_unknown_remote(&updated))
+        // Issue #528 parity: `repositories.ts`'s own `.rename` recomputes the real remote
+        // inline the same way `.add` does, rather than returning the `unknown` placeholder
+        // `repositories.list` uses for every entry -- `None` (this call's own 3s timeout fired)
+        // falls back to `unknown`, same as the Electron handler's `?? { kind: 'unknown' }`.
+        let remote = repository_remote(std::path::Path::new(&updated.path))
+            .await
+            .unwrap_or(RepositoryRemoteKind::Unknown);
+        Ok(with_remote(&updated, &remote))
     })
 }
 
-pub fn repositories_remotes(state: AppState, _args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let repositories = state.registry.lock().await.snapshot().repositories;
-        let mut remotes = serde_json::Map::new();
-        // Sequential, not the TS worker-pool/concurrency-cap: an acceptable simplification given
-        // this build has no shared-deadline pool yet -- each `repository_remote` call is already
-        // bounded by its own 3s timeout, so the loop stays bounded too, just slower for many
-        // repositories. A future `tokio::spawn`-per-repository pool is a reasonable follow-up.
-        for repository in &repositories {
+/// `repositories.remotes`'s own concurrency cap (`repositories.ts`'s `REMOTE_CONCURRENCY`):
+/// however many repositories are registered, at most this many `git` child processes ever run
+/// at once for one sweep.
+const REMOTE_CONCURRENCY: usize = 8;
+
+/// `repositories.remotes`'s own deadline for the WHOLE sweep (`repositories.ts`'s
+/// `REMOTE_DEADLINE_MS`), not per repository -- each `repository_remote` call already has its
+/// own 3s cap; this bounds the aggregate regardless of how many repositories are registered.
+const REMOTE_DEADLINE: Duration = Duration::from_secs(10);
+
+/// Issue #528 gate round 3/4 fix, ported from `repositories.ts`'s own `remotesBounded`: every
+/// repository's remote check runs concurrently, capped at `REMOTE_CONCURRENCY` simultaneous `git`
+/// spawns via the semaphore below, all sharing one `REMOTE_DEADLINE` for the whole sweep. A
+/// repository the deadline cuts off mid-flight is left OUT of the result entirely -- never
+/// backfilled with the `unknown` placeholder -- so a slow sweep can never overwrite an
+/// already-confirmed `has`/`none` with a wrong `unknown` (gate round 4 fix); whatever already
+/// settled before the deadline is kept. Checks still running past the deadline are aborted
+/// outright (`JoinHandle::abort`) so no orphaned `git` child lingers once the response has gone
+/// out -- `git_raw`'s own `kill_on_drop` then reaps it the moment its future is dropped.
+async fn remotes_bounded(repositories: Vec<Repository>) -> Value {
+    let semaphore = Arc::new(Semaphore::new(REMOTE_CONCURRENCY));
+    let remotes = Arc::new(StdMutex::new(serde_json::Map::new()));
+    let mut handles = Vec::with_capacity(repositories.len());
+    for repository in repositories {
+        let semaphore = semaphore.clone();
+        let remotes = remotes.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = match semaphore.acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => return,
+            };
             let path = std::path::Path::new(&repository.path);
             // Only a genuinely settled check (`Some`) is recorded -- `None` means this
-            // repository's own timeout fired, so the caller keeps whatever value it already had.
+            // repository's own 3s timeout fired, so it is left out, same as a sweep-deadline cut.
             if let Some(kind) = repository_remote(path).await {
-                let value: Value = serde_json::to_value(kind)
+                let value = serde_json::to_value(kind)
                     .expect("RepositoryRemoteKind is always JSON-serialisable");
-                remotes.insert(repository.id.clone(), value);
+                remotes
+                    .lock()
+                    .expect("remotes mutex poisoned")
+                    .insert(repository.id, value);
             }
+        }));
+    }
+
+    let wait_all = async {
+        for handle in &mut handles {
+            // A `JoinError` (panic or abort) just means that one repository contributes nothing;
+            // every other handle is still awaited.
+            let _ = handle.await;
         }
-        Ok(Value::Object(remotes))
+    };
+    if tokio::time::timeout(REMOTE_DEADLINE, wait_all)
+        .await
+        .is_err()
+    {
+        for handle in &handles {
+            handle.abort();
+        }
+    }
+
+    let collected = remotes.lock().expect("remotes mutex poisoned").clone();
+    Value::Object(collected)
+}
+
+/// Gate round 4 fix (Low, security-auditor), ported from `repositories.ts`'s own
+/// `remotesInFlight`: a second `repositories.remotes` call that arrives while a sweep is already
+/// running shares that SAME sweep's result instead of starting a second full pool of `git` spawns
+/// concurrently with the first. This crate has no `futures::FutureExt::shared()` dependency to
+/// reach for (`futures` is not in `Cargo.toml`); `tokio::sync::OnceCell` gives the same "whoever
+/// gets there first runs the init future, every other caller awaits that same run and gets its
+/// result" semantics with no new dependency. `StdMutex`, not an async `tokio::sync::Mutex`: the
+/// guarded section below never awaits while holding the lock, so the cheaper std primitive is
+/// enough (same convention as this file's own `USER_NAME_CACHE`).
+static REMOTES_IN_FLIGHT: LazyLock<StdMutex<Option<Arc<OnceCell<Value>>>>> =
+    LazyLock::new(|| StdMutex::new(None));
+
+pub fn repositories_remotes(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let cell = {
+            let mut in_flight = REMOTES_IN_FLIGHT
+                .lock()
+                .expect("remotes in-flight mutex poisoned");
+            match in_flight.as_ref() {
+                Some(existing) => existing.clone(),
+                None => {
+                    let fresh = Arc::new(OnceCell::new());
+                    *in_flight = Some(fresh.clone());
+                    fresh
+                }
+            }
+        };
+        let repositories = state.registry.lock().await.snapshot().repositories;
+        let result = cell
+            .get_or_init(|| async move {
+                let computed = remotes_bounded(repositories).await;
+                // Clear the slot once settled so the NEXT distinct call starts its own fresh
+                // sweep rather than reusing this (now-stale) one forever.
+                *REMOTES_IN_FLIGHT
+                    .lock()
+                    .expect("remotes in-flight mutex poisoned") = None;
+                computed
+            })
+            .await;
+        Ok(result.clone())
     })
 }
 
@@ -453,133 +553,5 @@ pub fn repositories_user_name(state: AppState, args: Vec<Value>) -> HandlerFutur
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::events::EventSink;
-    use crate::session::SessionManager;
-    use crate::store::registry::RegistryStore;
-    use crate::store::settings::SettingsStore;
-    use std::sync::{Arc, Mutex as StdMutex};
-    use tokio::sync::Mutex as AsyncMutex;
-
-    fn temp_dir(label: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "refract-repositories-rename-test-{label}-{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&dir).expect("create temp dir");
-        dir
-    }
-
-    async fn make_state(dir: &std::path::Path) -> AppState {
-        let registry = RegistryStore::open(dir).await.expect("open registry");
-        let settings = SettingsStore::open(dir).await.expect("open settings");
-        let registry = Arc::new(AsyncMutex::new(registry));
-        let settings = Arc::new(AsyncMutex::new(settings));
-        let app_handle_slot: Arc<StdMutex<Option<tauri::AppHandle>>> =
-            Arc::new(StdMutex::new(None));
-        let events = EventSink::new(app_handle_slot.clone());
-        let session_manager = SessionManager::new(registry.clone(), settings.clone(), events);
-        AppState {
-            data_dir: dir.to_path_buf(),
-            registry,
-            settings,
-            app_handle: app_handle_slot,
-            session_manager,
-        }
-    }
-
-    // Port of `renameRepository.test.ts`'s own pure-function coverage, against this crate's
-    // `validate_repository_name`/`resolve_repository_name` (the `repositoryName.ts` port).
-
-    #[test]
-    fn trims_surrounding_whitespace_before_validating() {
-        let trimmed = "  My Repo  ".trim();
-        assert_eq!(trimmed, "My Repo");
-        assert!(validate_repository_name(trimmed).is_none());
-        assert_eq!(resolve_repository_name(trimmed, "basename"), "My Repo");
-    }
-
-    #[test]
-    fn resolves_an_empty_post_trim_name_to_the_folder_basename_not_an_error() {
-        assert!(validate_repository_name("").is_none());
-        assert_eq!(resolve_repository_name("", "my-repo"), "my-repo");
-    }
-
-    #[test]
-    fn resolves_a_zero_width_joiner_only_name_to_the_folder_basename_not_an_error() {
-        let name = "\u{200D}\u{200C}";
-        assert!(validate_repository_name(name).is_none());
-        assert_eq!(resolve_repository_name(name, "my-repo"), "my-repo");
-    }
-
-    #[test]
-    fn rejects_an_over_length_name_with_an_unprefixed_inline_safe_message() {
-        let name = "x".repeat(61);
-        let error = validate_repository_name(&name).expect("over-length name must be rejected");
-        assert!(error.contains("too long"));
-        assert!(!error.contains("repositories.rename"));
-    }
-
-    #[test]
-    fn rejects_control_characters() {
-        let name = "bad\u{0007}name";
-        let error = validate_repository_name(name).expect("control character must be rejected");
-        assert_eq!(error, "name must not contain control characters");
-    }
-
-    // Port of `renameRepository.test.ts`'s own handler-level coverage, against this crate's
-    // `repositories_rename` (the `renameRepositoryCore` port) and a real temp-dir `RegistryStore`
-    // (same pattern the TS tests themselves use: never cleaned up).
-
-    #[tokio::test]
-    async fn repositories_rename_returns_not_found_for_an_unknown_repository_id() {
-        let dir = temp_dir("not-found");
-        let state = make_state(&dir).await;
-        let args = vec![
-            Value::String("missing-id".to_string()),
-            Value::String("New name".to_string()),
-        ];
-        let err = repositories_rename(state, args)
-            .await
-            .expect_err("unknown repository id must error");
-        assert_eq!(err.code, "not-found");
-    }
-
-    #[tokio::test]
-    async fn repositories_rename_notifies_the_list_and_returns_the_updated_repository() {
-        let dir = temp_dir("success");
-        let state = make_state(&dir).await;
-        let repository = Repository {
-            id: "repo-1".to_string(),
-            path: dir.to_string_lossy().into_owned(),
-            name: "old-name".to_string(),
-            default_branch: "main".to_string(),
-            added_at: "2026-01-01T00:00:00.000Z".to_string(),
-        };
-        state
-            .registry
-            .lock()
-            .await
-            .add_repository(repository.clone())
-            .await
-            .expect("add_repository");
-        let args = vec![
-            Value::String("repo-1".to_string()),
-            Value::String("  Renamed  ".to_string()),
-        ];
-        let result = repositories_rename(state.clone(), args)
-            .await
-            .expect("rename must succeed");
-        assert_eq!(result.get("name").and_then(Value::as_str), Some("Renamed"));
-        let persisted_name = state
-            .registry
-            .lock()
-            .await
-            .get_repository("repo-1")
-            .expect("repository must still exist")
-            .name
-            .clone();
-        assert_eq!(persisted_name, "Renamed");
-    }
-}
+#[path = "repositories_tests.rs"]
+mod tests;

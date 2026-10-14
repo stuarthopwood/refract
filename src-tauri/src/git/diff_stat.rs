@@ -125,31 +125,26 @@ async fn compute_diff_stat(worktree_path: &Path, base_branch: &str) -> Option<Di
     // Plumbing, not porcelain `git diff`: `diff-index` never refreshes or writes the index, so a
     // concurrent `git add`/`git commit` in the same worktree cannot race it on `index.lock`.
     // `--no-ext-diff --no-textconv` stop a diff driver from git config running arbitrary commands.
-    let numstat_result = git_raw(
-        worktree_path,
-        &[
-            "diff-index",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--numstat",
-            &merge_base,
-        ],
-        None,
-    )
-    .await;
+    // No data dependency between this call and the untracked-file listing below (neither reads
+    // the other's output; only `merge_base` above feeds into this one), so they run concurrently
+    // via `tokio::join!` rather than one after another -- halves the wall-clock git-spawn cost
+    // for this step without touching the existing overall 3s timeout in `diff_stat` below, which
+    // already wraps the whole of `compute_diff_stat`.
+    let diff_index_args = [
+        "diff-index",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--numstat",
+        merge_base.as_str(),
+    ];
+    let untracked_args = ["ls-files", "-z", "--others", "--exclude-standard"];
+    let (numstat_result, untracked_result) = tokio::join!(
+        git_raw(worktree_path, &diff_index_args, None),
+        git_raw(worktree_path, &untracked_args, None)
+    );
     if numstat_result.code != 0 {
         return None;
     }
-
-    // `-z` NUL-delimits entries with no C-style quoting, so non-ASCII/special-character paths
-    // (e.g. `café.txt`, which git would otherwise print as a quoted `"caf\303\251.txt"`) and
-    // paths with real leading/trailing spaces survive intact.
-    let untracked_result = git_raw(
-        worktree_path,
-        &["ls-files", "-z", "--others", "--exclude-standard"],
-        None,
-    )
-    .await;
     if untracked_result.code != 0 {
         return None;
     }
