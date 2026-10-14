@@ -1,11 +1,12 @@
 // Port of `src/main/git/worktrees.ts`: worktree lifecycle for a Session (data-model.md
-// `Session.worktreePath`/`branch`, tasks.md T011, T016). One Session = one git worktree, created
-// under `<repo>/../pinion-worktrees/<repoName>/<name>`. Only the slice this build's milestone 1
-// needs is ported: repository-validity support (`repo_info` in `git.rs`), the branch-listing CLI
-// wrapper `repositories.branches` uses, and the worktree-create path `sessions.create` uses --
-// not the full Electron file's delete/recreate/pull-request helpers, which no milestone-1
-// channel in this build calls.
+// `Session.worktreePath`/`branch`, tasks.md T011, T016, and lane R2's own #785, folding in
+// #729/#656). One Session = one git worktree, created under
+// `<repo>/../pinion-worktrees/<repoName>/<name>`. Creation (this file), the #599 safe-delete
+// path (`git/worktree_delete.rs`), and the #729 validity check (`git/worktree_validity.rs`)
+// are split across three files to stay under the 600-line soft cap each; recreation
+// (`recreate_worktree`, below) stays here since it is a creation operation, not a removal one.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::git::{git, git_raw, GitError, GitErrorCode};
@@ -113,13 +114,28 @@ pub async fn default_branch(repo: &Path) -> Result<String, GitError> {
     ))
 }
 
-/// Picks a readable adjective-noun name (e.g. "swift-otter"), unique against the repository's
-/// local branches and the folders already under its worktrees root.
-pub async fn generate_name(repo: &Path) -> Result<String, GitError> {
-    let branches: std::collections::HashSet<String> =
-        list_branches(repo).await?.into_iter().collect();
+pub struct AddWorktreeResult {
+    pub worktree_path: PathBuf,
+    pub branch: String,
+}
 
-    let mut existing_folders = std::collections::HashSet::new();
+/// Issue #656 (folded into lane R2, #785): creates a worktree with a freshly generated, unique
+/// name, replacing the former two-step `generateName` then `addWorktree` -- a gap between
+/// picking a candidate name and creating it let two concurrent Session creates settle on the
+/// SAME candidate, and the loser's own failure cleanup then force-removed the WINNER'S
+/// just-created worktree and branch (`git worktree remove --force` + `branch -D` on a name this
+/// attempt never actually created -- real data loss). Fixed by making `git branch <candidate>
+/// <base>` itself the atomic reservation: git's own ref lock lets at most one concurrent caller
+/// ever create a given branch name, so a collision is detected with NOTHING yet created by the
+/// losing attempt (nothing to clean up, no risk of deleting someone else's worktree); only
+/// after that reservation succeeds does this attach the worktree to the now-exclusively-owned
+/// branch (no `-b`), and only a failure PAST that point is ever this attempt's own to clean up.
+pub async fn add_worktree_with_generated_name(
+    repo: &Path,
+    base_branch: &str,
+) -> Result<AddWorktreeResult, GitError> {
+    let existing_branches: HashSet<String> = list_branches(repo).await?.into_iter().collect();
+    let mut existing_folders = HashSet::new();
     match tokio::fs::read_dir(worktrees_root(repo)).await {
         Ok(mut entries) => {
             while let Some(entry) = entries.next_entry().await? {
@@ -132,91 +148,91 @@ pub async fn generate_name(repo: &Path) -> Result<String, GitError> {
         Err(err) => return Err(err.into()),
     }
 
-    let attempts = ADJECTIVES.len() * NOUNS.len();
-    for _ in 0..attempts {
-        let adjective = ADJECTIVES[random_index(ADJECTIVES.len())];
-        let noun = NOUNS[random_index(NOUNS.len())];
-        let candidate = format!("{adjective}-{noun}");
-        if !branches.contains(&candidate) && !existing_folders.contains(&candidate) {
-            return Ok(candidate);
-        }
-    }
-
-    // All 1,600 combinations are taken (practically unreachable): disambiguate with a short
-    // suffix (the Rust equivalent of the TS `randomBytes(2).toString('hex')`, via `uuid` -- the
-    // only randomness source already in this crate's dependencies).
-    let adjective = ADJECTIVES[random_index(ADJECTIVES.len())];
-    let noun = NOUNS[random_index(NOUNS.len())];
-    let suffix = uuid::Uuid::new_v4().simple().to_string();
-    Ok(format!("{adjective}-{noun}-{}", &suffix[0..4]))
-}
-
-pub struct AddWorktreeResult {
-    pub worktree_path: PathBuf,
-    pub branch: String,
-}
-
-/// Creates `<repo>/../pinion-worktrees/<repoName>/<name>` with a new branch `name` off
-/// `base_branch`. On any failure, removes the worktree and branch it created (no half-created
-/// Session) and fails with a `GitError` mapped to `base-missing`, `path-too-long`, or
-/// `worktree-failed`.
-pub async fn add_worktree(
-    repo: &Path,
-    name: &str,
-    base_branch: &str,
-) -> Result<AddWorktreeResult, GitError> {
-    let worktree_path = worktrees_root(repo).join(name);
-
-    if let Some(parent) = worktree_path.parent() {
-        if let Err(err) = tokio::fs::create_dir_all(parent).await {
-            if is_path_too_long_error(&err.to_string(), err.raw_os_error()) {
-                return Err(GitError::new(
-                    GitErrorCode::PathTooLong,
-                    format!("Worktree path too long: {}", worktree_path.display()),
-                ));
+    let max_attempts = ADJECTIVES.len() * NOUNS.len();
+    for attempt in 0..max_attempts.max(64) {
+        let candidate = if attempt < max_attempts {
+            // First pass: prefer a name neither local branches nor the worktrees-root folder
+            // already show, purely as a faster first hit -- the reservation below is what
+            // actually makes the choice safe, not this pre-filter.
+            loop {
+                let adjective = ADJECTIVES[random_index(ADJECTIVES.len())];
+                let noun = NOUNS[random_index(NOUNS.len())];
+                let generated = format!("{adjective}-{noun}");
+                if !existing_branches.contains(&generated) && !existing_folders.contains(&generated) {
+                    break generated;
+                }
             }
-            return Err(err.into());
+        } else {
+            // All 1,600 combinations are contended (practically unreachable): disambiguate with
+            // a short random suffix, same as the former `generateName`'s own fallback.
+            let adjective = ADJECTIVES[random_index(ADJECTIVES.len())];
+            let noun = NOUNS[random_index(NOUNS.len())];
+            let suffix = uuid::Uuid::new_v4().simple().to_string();
+            format!("{adjective}-{noun}-{}", &suffix[0..4])
+        };
+
+        let reservation = git_raw(repo, &["branch", "--", &candidate, base_branch], None).await;
+        if reservation.code != 0 {
+            if is_branch_exists_error(&reservation.stderr) {
+                continue; // Someone else owns this name; nothing of ours to clean up.
+            }
+            return Err(map_add_worktree_error(
+                &reservation.stderr,
+                &worktrees_root(repo).join(&candidate),
+            ));
         }
+
+        // We now exclusively own the branch `candidate`: any failure from here is ours alone to
+        // clean up, never another attempt's.
+        let worktree_path = worktrees_root(repo).join(&candidate);
+        if let Some(parent) = worktree_path.parent() {
+            if let Err(err) = tokio::fs::create_dir_all(parent).await {
+                git_raw(repo, &["branch", "-D", "--", &candidate], None).await;
+                if is_path_too_long_error(&err.to_string(), err.raw_os_error()) {
+                    return Err(GitError::new(
+                        GitErrorCode::PathTooLong,
+                        format!("Worktree path too long: {}", worktree_path.display()),
+                    ));
+                }
+                return Err(err.into());
+            }
+        }
+        let worktree_path_str = worktree_path.to_string_lossy().into_owned();
+        let result = git_raw(
+            repo,
+            &["worktree", "add", "--", &worktree_path_str, &candidate],
+            None,
+        )
+        .await;
+        if result.code != 0 {
+            git_raw(
+                repo,
+                &["worktree", "remove", "--force", "--", &worktree_path_str],
+                None,
+            )
+            .await;
+            let _ = tokio::fs::remove_dir_all(&worktree_path).await;
+            git_raw(repo, &["branch", "-D", "--", &candidate], None).await;
+            return Err(map_add_worktree_error(&result.stderr, &worktree_path));
+        }
+        return Ok(AddWorktreeResult {
+            worktree_path,
+            branch: candidate,
+        });
     }
 
-    let worktree_path_str = worktree_path.to_string_lossy().into_owned();
-    let result = git_raw(
-        repo,
-        &[
-            "worktree",
-            "add",
-            "-b",
-            name,
-            "--",
-            &worktree_path_str,
-            base_branch,
-        ],
-        None,
-    )
-    .await;
-    if result.code != 0 {
-        cleanup_failed_worktree(repo, name, &worktree_path).await;
-        return Err(map_add_worktree_error(&result.stderr, &worktree_path));
-    }
-
-    Ok(AddWorktreeResult {
-        worktree_path,
-        branch: name.to_string(),
-    })
+    Err(GitError::new(
+        GitErrorCode::WorktreeFailed,
+        "Could not find a free Session name: every candidate is already taken".to_string(),
+    ))
 }
 
-async fn cleanup_failed_worktree(repo: &Path, name: &str, worktree_path: &Path) {
-    let worktree_path_str = worktree_path.to_string_lossy().into_owned();
-    git_raw(
-        repo,
-        &["worktree", "remove", "--force", "--", &worktree_path_str],
-        None,
-    )
-    .await;
-    // Best effort: leave the directory behind rather than mask the original git failure.
-    let _ = tokio::fs::remove_dir_all(worktree_path).await;
-    git_raw(repo, &["worktree", "prune"], None).await;
-    git_raw(repo, &["branch", "-D", "--", name], None).await;
+/// True when `git branch`'s own failure means "this name is already taken" -- the one collision
+/// class worth retrying a fresh candidate for; any other failure (an invalid base branch, a
+/// corrupt repository) is a real error the caller should surface immediately rather than
+/// silently retry up to 1,600 times.
+fn is_branch_exists_error(stderr: &str) -> bool {
+    stderr.to_lowercase().contains("already exists")
 }
 
 fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
@@ -257,8 +273,8 @@ fn is_path_too_long_error(message: &str, raw_os_error: Option<i32>) -> bool {
 
 /// Removes the worktree with `git worktree remove --force`, then the branch only when asked.
 /// Used by `sessions.create`'s own rollback path when `RegistryStore::add_session` fails after
-/// `add_worktree` already succeeded (a Repository removed mid-flight, the same race
-/// `RegistryStore::add_session`'s own doc comment describes).
+/// `add_worktree_with_generated_name` already succeeded (a Repository removed mid-flight, the
+/// same race `RegistryStore::add_session`'s own doc comment describes).
 pub async fn remove_worktree(
     repo: &Path,
     worktree_path: &Path,
@@ -285,6 +301,56 @@ pub async fn remove_worktree(
     }
     if delete_branch {
         git(repo, &["branch", "-D", "--", branch]).await?;
+    }
+    Ok(())
+}
+
+/// Recreates a worktree at its original path, attaching the existing `branch` (no `-b`): used
+/// when the worktree folder has disappeared but the branch is intact (tasks.md T043, issue
+/// #785's `sessions.recreateWorktree`). Callers check `branch_exists` first; this only maps the
+/// `git worktree add` failure itself. `-f` is required (not merely permissive): git still has
+/// the original worktree registered under `.git/worktrees/<name>/` even though its directory is
+/// gone, and a plain `add` refuses with "is a missing but already registered worktree" until
+/// `-f`, `prune`, or `remove` clears it.
+pub async fn recreate_worktree(
+    repo: &Path,
+    worktree_path: &Path,
+    branch: &str,
+) -> Result<(), GitError> {
+    if let Some(parent) = worktree_path.parent() {
+        if let Err(err) = tokio::fs::create_dir_all(parent).await {
+            if is_path_too_long_error(&err.to_string(), err.raw_os_error()) {
+                return Err(GitError::new(
+                    GitErrorCode::PathTooLong,
+                    format!("Worktree path too long: {}", worktree_path.display()),
+                ));
+            }
+            return Err(err.into());
+        }
+    }
+
+    let worktree_path_str = worktree_path.to_string_lossy().into_owned();
+    let result = git_raw(
+        repo,
+        &["worktree", "add", "-f", "--", &worktree_path_str, branch],
+        None,
+    )
+    .await;
+    if result.code != 0 {
+        let path_str = worktree_path.to_string_lossy();
+        if is_path_too_long_error(&result.stderr, None) || path_str.len() >= 260 {
+            return Err(GitError::new(
+                GitErrorCode::PathTooLong,
+                format!("Worktree path too long: {path_str}"),
+            ));
+        }
+        let detail = result.stderr.trim();
+        let message = if detail.is_empty() {
+            format!("git worktree add failed for {path_str}")
+        } else {
+            detail.to_string()
+        };
+        return Err(GitError::new(GitErrorCode::WorktreeFailed, message));
     }
     Ok(())
 }

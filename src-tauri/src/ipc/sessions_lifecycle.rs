@@ -10,7 +10,7 @@
 
 use serde_json::Value;
 
-use crate::git::worktrees::{add_worktree, generate_name, list_branches, remove_worktree};
+use crate::git::worktrees::{add_worktree_with_generated_name, list_branches, remove_worktree};
 use crate::store::registry::Session;
 
 use super::{
@@ -72,15 +72,14 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             ));
         }
 
-        let name = generate_name(repo_path).await.map_err(map_git_error)?;
-        let added = add_worktree(repo_path, &name, &base_branch)
+        let added = add_worktree_with_generated_name(repo_path, &base_branch)
             .await
             .map_err(map_git_error)?;
         let now = now_iso8601();
         let session = Session {
             id: uuid::Uuid::new_v4().to_string(),
             repository_id: repository_id.clone(),
-            name,
+            name: added.branch.clone(),
             branch: added.branch.clone(),
             base_branch,
             worktree_path: added.worktree_path.to_string_lossy().into_owned(),
@@ -105,8 +104,9 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
         {
             // Security remediation (Medium, ported from `sessions.ts`): the Repository may have
-            // been removed while `list_branches`/`generate_name`/`add_worktree` above were still
-            // in flight -- roll back the worktree/branch just created so it is not stranded.
+            // been removed while `list_branches`/`add_worktree_with_generated_name` above were
+            // still in flight -- roll back the worktree/branch just created so it is not
+            // stranded.
             let _ = remove_worktree(repo_path, &added.worktree_path, &added.branch, true).await;
             return Err(map_registry_error(err));
         }

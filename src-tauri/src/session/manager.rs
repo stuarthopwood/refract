@@ -11,11 +11,13 @@
 // every agent's `EventSink`-backed patch coalescer reads to decide whether to forward a patch.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde_json::Value;
 
 use crate::events::EventSink;
+use crate::git::worktree_validity::worktree_is_valid;
 use crate::session::agent::{SharedRegistry, SharedSettings};
 use crate::session::SessionAgent;
 
@@ -81,7 +83,9 @@ impl SessionManager {
     /// port `detectUnexpectedTermination`'s own tail read (`terminatedUnexpectedly` is always
     /// absent, see `session::agent`'s own header).
     pub async fn summaries(&self) -> Vec<Value> {
-        let sessions = self.registry.lock().await.snapshot().sessions;
+        let snapshot = self.registry.lock().await.snapshot();
+        let sessions = snapshot.sessions;
+        let repositories = snapshot.repositories;
         let launched_mode = serde_json::to_value(self.settings.lock().await.get().approval_mode)
             .expect("ApprovalMode is always JSON-serialisable");
 
@@ -103,8 +107,22 @@ impl SessionManager {
                     }
                 }
                 None => {
-                    let worktree_exists = tokio::fs::metadata(&session.worktree_path).await.is_ok();
-                    let stop_reason = if worktree_exists {
+                    // Issue #729 (lane R2, #785): registered with git AND has its own `.git`
+                    // pointer, not merely `fs::metadata` succeeding -- a hand-emptied or
+                    // orphaned-but-still-present folder both satisfied the old `exists()` check
+                    // while being unusable.
+                    let repository = repositories.iter().find(|r| r.id == session.repository_id);
+                    let worktree_valid = match repository {
+                        Some(repository) => {
+                            worktree_is_valid(
+                                Path::new(&repository.path),
+                                Path::new(&session.worktree_path),
+                            )
+                            .await
+                        }
+                        None => false,
+                    };
+                    let stop_reason = if worktree_valid {
                         "not-started"
                     } else {
                         "worktree-missing"
@@ -122,6 +140,17 @@ impl SessionManager {
             summaries.push(summary);
         }
         summaries
+    }
+
+    /// `sessions.delete` (issue #785, lane R2): drops the live agent from the map once its
+    /// Session is removed from the registry, so a later `get_or_create_agent` call for the same
+    /// (now-deleted) id can never resurrect a process over a worktree `sessions.delete` just
+    /// removed. Callers stop the agent (`shutdown()`) themselves first; this only forgets it.
+    pub fn remove_agent(&self, session_id: &str) {
+        self.agents
+            .lock()
+            .expect("agents mutex poisoned")
+            .remove(session_id);
     }
 
     /// `sessions.setVisible` (T036/T037, spec 005 Decision 2): selects which Sessions' patches
