@@ -197,11 +197,15 @@ pub async fn add_worktree_with_generated_name(
     ))
 }
 
-/// Test-only seam (gate round 1, HIGH #656): drives the same reserve-then-create path as
-/// `add_worktree_with_generated_name` above, but against a caller-supplied candidate sequence
-/// instead of the random generator, so a test can force a specific collision (a pre-created
-/// branch/worktree at an exact name) and assert the loser's cleanup never touches it.
-#[cfg(test)]
+/// Drives the same reserve-then-create path as `add_worktree_with_generated_name` above, but
+/// against a caller-supplied candidate sequence instead of the random generator. Originally a
+/// test-only seam (gate round 1, HIGH #656) so a test could force a specific collision and
+/// assert the loser's cleanup never touches the winner's artefacts; promoted to a shared,
+/// always-compiled engine (gate round 3, HIGH #656 regression, 2026-10-14) for
+/// `add_worktree_from_pull_request_branch`'s own deterministic `pr-<n>`/`pr-<n>-2`/... sequence
+/// -- that caller needs EXACTLY this function's atomic-reservation safety against a concurrent
+/// racer, which a separate "is this name free" pre-check plus a name-based fetch destination
+/// does not provide (see that function's own doc comment for the incident this fixed).
 pub(crate) async fn add_worktree_with_candidates(
     repo: &Path,
     base_branch: &str,
@@ -327,9 +331,14 @@ async fn cleanup_reserved_branch(repo: &Path, candidate: &str) {
 /// True when `git branch`'s own failure means "this name is already taken" -- the one collision
 /// class worth retrying a fresh candidate for; any other failure (an invalid base branch, a
 /// corrupt repository) is a real error the caller should surface immediately rather than
-/// silently retry up to 1,600 times.
+/// silently retry up to 1,600 times. Also treats "cannot lock ref" as a collision (LOW finding,
+/// gate round 4, 2026-10-14): many concurrent `git branch` calls against the same repository
+/// (several Sessions created in a burst) can trip git's own ref-lock contention transiently --
+/// that is not a real failure, and the exact same retry-the-next-candidate behaviour already
+/// used for a genuine name collision resolves it just as well.
 fn is_branch_exists_error(stderr: &str) -> bool {
-    stderr.to_lowercase().contains("already exists")
+    let text = stderr.to_lowercase();
+    text.contains("already exists") || text.contains("cannot lock ref")
 }
 
 fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
@@ -341,7 +350,10 @@ fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
     {
         return GitError::new(
             GitErrorCode::BaseMissing,
-            format!("Base branch not found: {}", stderr.trim()),
+            format!(
+                "Base branch not found: {}",
+                crate::omp::redact::redact_secrets(stderr.trim())
+            ),
         );
     }
     let path_str = worktree_path.to_string_lossy();
@@ -351,11 +363,11 @@ fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
             format!("Worktree path too long: {path_str}"),
         );
     }
-    let detail = stderr.trim();
+    let detail = crate::omp::redact::redact_secrets(stderr.trim());
     let message = if detail.is_empty() {
         format!("git worktree add failed for {path_str}")
     } else {
-        detail.to_string()
+        detail
     };
     GitError::new(GitErrorCode::WorktreeFailed, message)
 }
@@ -386,11 +398,11 @@ pub async fn remove_worktree(
     )
     .await;
     if result.code != 0 {
-        let detail = if !result.stderr.trim().is_empty() {
+        let detail = crate::omp::redact::redact_secrets(if !result.stderr.trim().is_empty() {
             result.stderr.trim()
         } else {
             result.stdout.trim()
-        };
+        });
         return Err(GitError::new(
             GitErrorCode::WorktreeFailed,
             format!("git worktree remove failed: {detail}"),
@@ -400,6 +412,71 @@ pub async fn remove_worktree(
         git(repo, &["branch", "-D", "--", branch]).await?;
     }
     Ok(())
+}
+
+/// Port of `worktrees.ts`'s own `addWorktreeFromPullRequestBranch` (lane R9, issue #792).
+///
+/// Gate round 3 HIGH regression (code review, 2026-10-14): the previous version pre-checked a
+/// candidate name (`pr-<n>`, `pr-<n>-2`, ...) was free via `unique_pull_request_branch_name`
+/// (now deleted), then fetched the pull request's head STRAIGHT INTO that chosen name as a real
+/// branch. The pre-check reserved nothing: two concurrent `newSessionFromPullRequest` calls for
+/// the SAME pull request could both see `pr-<n>` as free, both fetch into it (the identical
+/// commit, so neither fetch ever conflicts), and then whichever `git worktree add` lost would
+/// run this function's own cleanup -- `remove_worktree`'s `git worktree remove --force` +
+/// `branch -D` -- against the name the WINNER had just finished creating, destroying its live
+/// worktree and branch.
+///
+/// Fixed by never giving the fetch a name-based destination at all: the pull request's head is
+/// fetched into a call-scoped temporary ref (`refs/pinion/tmp/<uuid>`, deleted again
+/// unconditionally before returning), then `add_worktree_with_candidates` runs the SAME
+/// atomic-reservation engine `add_worktree_with_generated_name` already relies on
+/// (`try_reserve_and_create`: `git branch <candidate> <base>` IS the reservation -- git's own
+/// ref lock lets at most one concurrent caller ever create a given branch name, so a collision
+/// is detected with nothing yet created by the losing attempt) over the exact `pr-<n>`,
+/// `pr-<n>-2`, ... sequence the deleted pre-check used to generate. A loser now simply moves on
+/// to the next candidate, the same as two concurrent generated-name Session creates already do.
+pub async fn add_worktree_from_pull_request_branch(
+    repo: &Path,
+    number: u64,
+) -> Result<AddWorktreeResult, GitError> {
+    let temp_ref = format!("refs/pinion/tmp/{}", uuid::Uuid::new_v4());
+    let fetch_result = git_raw(
+        repo,
+        &["fetch", "origin", &format!("pull/{number}/head:{temp_ref}")],
+        None,
+    )
+    .await;
+    let result = if fetch_result.code != 0 {
+        Err(GitError::new(
+            GitErrorCode::CheckoutFailed,
+            if fetch_result.stderr.trim().is_empty() {
+                format!("Could not fetch pull request #{number}'s head branch.")
+            } else {
+                crate::omp::redact::redact_secrets(fetch_result.stderr.trim())
+            },
+        ))
+    } else {
+        let base = format!("pr-{number}");
+        const MAX_ATTEMPTS: u32 = 1000;
+        let candidates = std::iter::once(base.clone())
+            .chain((2..=MAX_ATTEMPTS).map(move |suffix| format!("{base}-{suffix}")));
+        add_worktree_with_candidates(repo, &temp_ref, candidates).await
+    };
+
+    // Scratch space for this one fetch attempt only, never a Session's real branch -- deleted
+    // unconditionally (LOW finding, gate round 4, 2026-10-14: this used to run only on the
+    // success/candidate-reservation path, skipped entirely by an early return when the fetch
+    // itself failed) regardless of whether the fetch failed before the ref ever existed, the
+    // candidate reservation failed, or everything succeeded -- `update-ref -d` on a ref that
+    // was never created is a routine, expected outcome here, not a real problem, so it is logged
+    // at debug level only. Never `branch -D`: this ref was never created under `refs/heads/`.
+    if let Err(err) = git(repo, &["update-ref", "-d", &temp_ref]).await {
+        log::debug!(
+            "add_worktree_from_pull_request_branch: no temporary fetch ref {temp_ref} to remove (or removal failed): {err}"
+        );
+    }
+
+    result
 }
 
 /// Recreates a worktree at its original path, attaching the existing `branch` (no `-b`): used

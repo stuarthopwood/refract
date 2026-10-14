@@ -118,10 +118,58 @@ async fn a_create_skips_a_colliding_candidate_and_never_touches_the_winners_arti
     );
 }
 
+/// Gate round 3, HIGH #656 regression lock (reopened by the PR-worktree path):
+/// `add_worktree_from_pull_request_branch` generates the exact deterministic `pr-<n>`,
+/// `pr-<n>-2`, ... sequence under test here via `add_worktree_with_candidates` -- the same
+/// engine it calls in production, just with its real network fetch skipped (an existing local
+/// branch stands in for the fetched commit). Simulates two concurrent
+/// `newSessionFromPullRequest` calls for the SAME pull request number both settling on
+/// `pr-<n>`: the winner creates it first (branch, worktree, and a marker file inside); a loser
+/// forced to retry the identical sequence must skip straight to `pr-<n>-2` and leave every one
+/// of the winner's artefacts completely untouched -- the bug this round fixed had the loser's
+/// own cleanup `git worktree remove --force` + `branch -D` the WINNER's name instead.
+#[tokio::test]
+async fn a_concurrent_pr_worktree_create_skips_the_winners_pr_branch_and_never_touches_it() {
+    let repo = init_repo().await;
+    let number = 999u64;
+    let base = format!("pr-{number}");
+
+    let winner = add_worktree_with_candidates(&repo, "main", vec![base.clone()])
+        .await
+        .expect("create the 'winning' pr-999 worktree");
+    assert_eq!(winner.branch, base);
+    let marker = winner.worktree_path.join("marker.txt");
+    tokio::fs::write(&marker, b"winner's file").await.unwrap();
+
+    // The exact candidate sequence `add_worktree_from_pull_request_branch` itself generates for
+    // the same pull request number: `pr-999`, `pr-999-2`, `pr-999-3`, ...
+    let candidates = std::iter::once(base.clone()).chain((2..=5u32).map(|n| format!("{base}-{n}")));
+    let loser = add_worktree_with_candidates(&repo, "main", candidates)
+        .await
+        .expect("falls back to pr-999-2");
+
+    assert_eq!(loser.branch, format!("{base}-2"));
+    assert!(
+        tokio::fs::metadata(&marker).await.is_ok(),
+        "the winner's marker file must survive untouched"
+    );
+    assert!(
+        branch_exists(&repo, &winner.branch).await,
+        "the winner's pr-999 branch must survive"
+    );
+    assert!(
+        tokio::fs::metadata(&winner.worktree_path).await.is_ok(),
+        "the winner's pr-999 worktree must survive"
+    );
+}
+
 #[test]
 fn is_branch_exists_error_recognises_gits_own_wording() {
     assert!(is_branch_exists_error(
         "fatal: a branch named 'foo' already exists"
+    ));
+    assert!(is_branch_exists_error(
+        "fatal: cannot lock ref 'refs/heads/foo': unable to resolve reference"
     ));
     assert!(!is_branch_exists_error(
         "fatal: not a valid object name: 'bogus'"
