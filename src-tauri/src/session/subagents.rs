@@ -22,13 +22,20 @@
 // all. `on_exit` now settles every `Running` entry to `Exited` immediately (not only on the next
 // `launch()`), so a crash or a deliberate stop clears the pill without waiting for a reattach.
 //
-// Not implemented this round (disclosed, see the PR body): `get_subagents`/`subagent_lifecycle`/
-// `set_subagent_subscription` were not probed against a real `omp` (no live model budget this
-// round); the standalone live `custom`/`async-result` MESSAGE frame (as opposed to a
-// `tool_execution_end`'s own `result.details.jobs[]`, which IS handled) was not identified with
-// confidence in the time available and so is not separately handled; `on_attach_reconcile` still
-// does not settle the transcript's own `subagent` rows or add a "No live output" notice for an
-// empty stream (Electron gate findings 4 and 6).
+// Not implemented this round (disclosed, see the PR body and FINDINGS.md item 58, a live probe
+// against the real signed-in `omp 18.10.1`, 2026-10-14): `get_subagents` is confirmed real but
+// cannot help a reattach (a fresh process's own registry is always empty, even onto the SAME
+// Conversation a prior process's genuinely-running subagent used), so this file correctly never
+// calls it. `set_subagent_subscription({level:"progress"})` is confirmed real and, once active,
+// OMP pushes STANDALONE top-level `subagent_lifecycle`/`subagent_progress` frames -- a stronger,
+// proactive background-completion channel than the `wait`-tool `jobs[]` path `apply_jobs` already
+// uses, needing no explicit `wait()` call at all -- but this build does not subscribe, so it never
+// receives them; adopting that channel is a concrete next step for a follow-up round, not done
+// here. `on_attach_reconcile` adds the "No live output" notice for an empty stream (Electron gate
+// finding 6) but still does not re-derive historical finished/failed candidates from the
+// reattached transcript's own `subagent` rows the way TS's fuller version does (Electron gate
+// finding 4, a persisted `currentTurnSubagents` durable-turn-marker concept this build has no
+// equivalent of).
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
 // decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
@@ -210,14 +217,37 @@ pub(super) async fn on_start_progress(
     // No-op: the start-progress banner is `session::start_queue`'s own concern.
 }
 
+/// Settles every `Running` summary to `Exited` (gate finding ("in on_exit, settle Running to
+/// exited") and, for `on_attach_reconcile`'s own call site, Electron gate finding 6: a summary
+/// with no live stream at all when it settles (nothing ever arrived for it this run) gets a
+/// one-row "No live output" notice, port of `reconcileSubagentsOnAttach`'s own placeholder --
+/// scoped to exactly the `Running`->`Exited` transition this function performs; a summary that
+/// was already `Finished`/`Failed` before this call is untouched, and this does not re-derive
+/// historical candidates from the reattached transcript's own `subagent` rows the way TS's fuller
+/// version does (Electron gate finding 4, still disclosed as not ported -- see the PR body).
 async fn settle_running_to_exited(agent: &SessionAgent) {
     let summaries_value = agent
         .with_subagents_state(|s| {
             let mut changed = false;
+            let mut settled_ids = Vec::new();
             for entry in &mut s.summaries {
                 if entry.status == SummaryStatus::Running {
                     entry.status = SummaryStatus::Exited;
                     changed = true;
+                    settled_ids.push(entry.id.clone());
+                }
+            }
+            for id in settled_ids {
+                let is_empty = s.streams.get(&id).map(|rows| rows.is_empty()).unwrap_or(true);
+                if is_empty {
+                    let notice = json!({
+                        "kind": "notice",
+                        "id": format!("{id}:reattach-notice"),
+                        "level": "info",
+                        "text": "No live output: this subagent had already exited when Refract reattached.",
+                    });
+                    s.streams.insert(id.clone(), vec![notice]);
+                    s.stream_ids.insert(id, HashSet::new());
                 }
             }
             changed.then(|| summaries_to_value(&s.summaries))
@@ -233,10 +263,11 @@ async fn settle_running_to_exited(agent: &SessionAgent) {
 /// #489): resolves every summary THIS `SessionAgent` instance still remembers as `Running` to
 /// `Exited` (a fresh `OmpProcess` is about to attach -- or just did -- and has no way to confirm
 /// the old one's in-flight work survived it), covering the common "Resume/Recover after a crash,
-/// same app run" case. Does NOT re-derive historical finished/failed candidates from the
-/// reattached transcript's own `subagent` rows the way TS's fuller version does, and does not add
-/// the "No live output" notice for an empty stream (Electron gate findings 4 and 6) -- disclosed
-/// simplifications, see the PR body's own "Open problems".
+/// same app run" case, and seeds the "No live output" notice for any of those with no stream
+/// (Electron gate finding 6, via `settle_running_to_exited`). Does NOT re-derive historical
+/// finished/failed candidates from the reattached transcript's own `subagent` rows the way TS's
+/// fuller version does (Electron gate finding 4) -- disclosed simplification, see the PR body's
+/// own "Open problems".
 pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
     settle_running_to_exited(agent).await;
 }
