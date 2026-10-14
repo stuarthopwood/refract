@@ -210,16 +210,14 @@ fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(not_found("No window to show the menu on"));
         };
 
-        // Deadlock fix (live-check, 2026-10-14): `build_menus` and `popup_menu_at` each end in
-        // Tauri's `run_main_thread!`/`run_item_main_thread!` macros, which block the CALLING
-        // thread on a `std::sync::mpsc` `rx.recv()` until the main thread's event loop services
-        // the posted task. Calling them inline inside this `async` handler (as the first version
-        // of this file did) blocks a Tokio async-worker thread with a synchronous recv -- under
-        // load that starves the worker pool the main thread itself needs to hand work back
-        // through, hanging forever (reproduced live: a CDP-driven `window.popupMenu` call never
-        // returned even after a 90s wait). Both blocking calls now run via
-        // `tauri::async_runtime::spawn_blocking`, Tokio's dedicated blocking-task pool, which
-        // can't be exhausted by this handler's own worker-pool usage.
+        // `build_menus` runs via `tauri::async_runtime::spawn_blocking` rather than inline:
+        // `MenuItemBuilder::build`/`SubmenuBuilder::build` end in Tauri's `run_main_thread!`
+        // macro, which blocks the calling thread on a `std::sync::mpsc` `rx.recv()` until the
+        // main thread's event loop services the posted task. This call itself is quick (no modal
+        // loop, unlike `popup_menu_at` below) so it was never the cause of the deadlock this
+        // handler used to have -- `spawn_blocking` here is standard good practice (never block a
+        // Tokio async-worker thread with a synchronous channel recv), not the fix for that hang.
+        // The real fix is at the `popup_menu_at` call below.
         let app_handle_for_menus = app_handle.clone();
         let menus = MENUS
             .get_or_try_init(|| async move {
