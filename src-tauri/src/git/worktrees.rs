@@ -288,3 +288,114 @@ pub async fn remove_worktree(
     }
     Ok(())
 }
+
+/// Port of `worktrees.ts`'s own `uniquePullRequestBranchName` (lane R9, issue #792): picks a
+/// free local name for pull request `number`'s worktree/branch, starting at `pr-<number>` and
+/// falling back to `pr-<number>-2`, `pr-<number>-3`, ... up to 1000 attempts -- an earlier
+/// Session for the same pull request, or a failed prior attempt that left a branch or folder
+/// behind, must never collide with a fresh `newSessionFromPullRequest` call.
+pub async fn unique_pull_request_branch_name(
+    repo: &Path,
+    number: u64,
+) -> Result<String, GitError> {
+    let base = format!("pr-{number}");
+    let branches: std::collections::HashSet<String> =
+        list_branches(repo).await?.into_iter().collect();
+
+    let mut existing_folders = std::collections::HashSet::new();
+    match tokio::fs::read_dir(worktrees_root(repo)).await {
+        Ok(mut entries) => {
+            while let Some(entry) = entries.next_entry().await? {
+                if let Some(name) = entry.file_name().to_str() {
+                    existing_folders.insert(name.to_string());
+                }
+            }
+        }
+        Err(err) if crate::store::atomic_json::is_enoent(&err) => {}
+        Err(err) => return Err(err.into()),
+    }
+
+    if !branches.contains(&base) && !existing_folders.contains(&base) {
+        return Ok(base);
+    }
+    const MAX_ATTEMPTS: u32 = 1000;
+    for suffix in 2..=MAX_ATTEMPTS {
+        let candidate = format!("{base}-{suffix}");
+        if !branches.contains(&candidate) && !existing_folders.contains(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    Err(GitError::new(
+        GitErrorCode::WorktreeFailed,
+        format!(
+            "Could not find a free local name for pull request #{number}'s worktree: every \"{base}\"/\"{base}-2\"..\"{base}-{MAX_ATTEMPTS}\" is already taken."
+        ),
+    ))
+}
+
+/// Port of `worktrees.ts`'s own `addWorktreeFromPullRequestBranch` (lane R9, issue #792):
+/// `git fetch origin pull/<number>/head:<local_branch_name>` (works for both same-repository and
+/// fork pull requests), then attaches a new worktree to that fetched branch (no `-b`: the branch
+/// already exists after the fetch). On any failed step after the fetch succeeds, removes
+/// whatever this attempt already created (branch and/or worktree directory) -- the same
+/// all-or-nothing contract `add_worktree` keeps. `local_branch_name` MUST already be
+/// collision-checked by the caller (`unique_pull_request_branch_name` above); this function's
+/// own cleanup-on-failure is only safe for a name this exact attempt created.
+pub async fn add_worktree_from_pull_request_branch(
+    repo: &Path,
+    number: u64,
+    local_branch_name: &str,
+) -> Result<AddWorktreeResult, GitError> {
+    let fetch_result = git_raw(
+        repo,
+        &[
+            "fetch",
+            "origin",
+            &format!("pull/{number}/head:{local_branch_name}"),
+        ],
+        None,
+    )
+    .await;
+    if fetch_result.code != 0 {
+        // Nothing was created yet (the fetch itself failed): no cleanup needed.
+        return Err(GitError::new(
+            GitErrorCode::CheckoutFailed,
+            if fetch_result.stderr.trim().is_empty() {
+                format!("Could not fetch pull request #{number}'s head branch.")
+            } else {
+                fetch_result.stderr.trim().to_string()
+            },
+        ));
+    }
+
+    let worktree_path = worktrees_root(repo).join(local_branch_name);
+    if let Some(parent) = worktree_path.parent() {
+        if let Err(err) = tokio::fs::create_dir_all(parent).await {
+            git_raw(repo, &["branch", "-D", "--", local_branch_name], None).await;
+            if is_path_too_long_error(&err.to_string(), err.raw_os_error()) {
+                return Err(GitError::new(
+                    GitErrorCode::PathTooLong,
+                    format!("Worktree path too long: {}", worktree_path.display()),
+                ));
+            }
+            return Err(err.into());
+        }
+    }
+
+    let worktree_path_str = worktree_path.to_string_lossy().into_owned();
+    let add_result = git_raw(
+        repo,
+        &["worktree", "add", "--", &worktree_path_str, local_branch_name],
+        None,
+    )
+    .await;
+    if add_result.code != 0 {
+        cleanup_failed_worktree(repo, local_branch_name, &worktree_path).await;
+        return Err(map_add_worktree_error(&add_result.stderr, &worktree_path));
+    }
+
+    Ok(AddWorktreeResult {
+        worktree_path,
+        branch: local_branch_name.to_string(),
+    })
+}
