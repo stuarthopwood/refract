@@ -103,16 +103,6 @@ struct AgentState {
     process: Option<Arc<OmpProcess>>,
     turn_settle_handled: bool,
     stop_requested: bool,
-    /// Lane R3 (issue #786, gate-fix round 5, code review HIGH): bumped by `shutdown()` under
-    /// the SAME lock acquisition that sets `stop_requested = true`, BEFORE it ever awaits
-    /// `start_lock`. `start()`/`start_with_conversation()` snapshot this BEFORE their own
-    /// `start_lock` await and re-check it right after acquiring that lock -- a mismatch means a
-    /// `shutdown()` landed while this call was still waiting, so it must bail out
-    /// (`stopped`/`not-started`) instead of resetting `stop_requested` back to `false` and
-    /// running a full launch a `shutdown()` already considers superseded. Closes the race where
-    /// a start queued behind an in-flight one won the `start_lock` race against `shutdown()`'s
-    /// own wait, undid `stop_requested`, and finished as a live `Idle` agent `shutdown()`'s own
-    /// later `proc_after.stop()` then force-killed as an unrequested-looking exit.
     shutdown_generation: u64,
     // Issue #784: each lane owns its own `State` (defined in its own file), reachable only via
     // its `with_<lane>_state` accessor below; still empty/unread until a lane lands.
@@ -262,16 +252,14 @@ impl SessionAgent {
     }
 
     /// Lane R3 (issue #786): `session::start_queue`'s own `acquire_slot` needs to honour a
-    /// `shutdown()` that races a brand-new `start()` (gate-fix, TS cycles 2/3), not only an
-    /// explicit `cancelStart()`.
+    /// `shutdown()` racing a brand-new `start()`, not only an explicit `cancelStart()`.
     pub(super) async fn stop_requested(&self) -> bool {
         self.state.lock().await.stop_requested
     }
 
-    /// Lane R3 (issue #786, gate-fix FR-038): a deliberate stop (`shutdown()`) racing a start in
-    /// flight ends as `stopped`/`not-started` with no failure notice -- `session::start_queue`'s
-    /// own `bail_if_stop_requested`/`end_cancelled_attempt` need this exact status, not
-    /// `record_start_failure`'s `start-failed` (reserved for a plain `cancelStart()` alone).
+    /// Lane R3 (issue #786, gate-fix FR-038): a deliberate stop racing a start in flight ends
+    /// as `stopped`/`not-started` with no failure notice, not `record_start_failure`'s own
+    /// `start-failed` (reserved for a plain `cancelStart()` alone).
     pub(super) async fn mark_stopped_not_started(&self) {
         self.set_status(SessionStatus::Stopped, Some("not-started"), None)
             .await;

@@ -73,6 +73,29 @@ fn resolve_data_dir_override(raw: Option<String>) -> Option<PathBuf> {
     Some(path)
 }
 
+/// Electron's own pinned `userData` directory (`src/main/index.ts`): `%APPDATA%\pinion`. The
+/// one-time data import's read-only source (`store::import`, issue #796 acceptance item 6,
+/// lane R13a) -- never written or deleted by this build.
+///
+/// Debug builds only, the same security posture as `REFRACT_DATA_DIR` above (a packaged release
+/// build must never honour an env var that redirects where it reads session data):
+/// `REFRACT_IMPORT_SOURCE_DIR` overrides this with an absolute path, so a live check can point
+/// the import at a scratch copy of a real Electron profile instead of Stuart's real
+/// `%APPDATA%\pinion`. Unset in every normal run; always a no-op in a release build.
+fn electron_source_dir() -> PathBuf {
+    #[cfg(debug_assertions)]
+    {
+        if let Some(path) =
+            resolve_data_dir_override(std::env::var("REFRACT_IMPORT_SOURCE_DIR").ok())
+        {
+            return path;
+        }
+    }
+    dirs::data_dir()
+        .expect("refract-tauri: no platform data directory available")
+        .join("pinion")
+}
+
 #[cfg(test)]
 mod data_dir_tests {
     use super::resolve_data_dir_override;
@@ -204,12 +227,24 @@ pub fn run() {
     // turn needs `AppState`/`SessionManager` already built from `registry`/`settings`) -- a
     // second, about-to-be-rejected launch still pays for this read. Accepted: `RegistryStore::
     // open`/`SettingsStore::open` only ever READ (`atomic_json::read_json_file`); neither one
-    // writes anything to disk until an explicit mutation calls its own `persist()`, so two
-    // instances racing this same read is never a corruption risk, only a redundant one.
-    let (registry, settings, update_state) = tauri::async_runtime::block_on(async {
-        // Lane R3 (issue #786, FR-005's fallback): reaps any `omp` root process orphaned by a
-        // previous crash before this run ever spawns a new one -- must run before any Session's
-        // `SessionAgent` ever attaches (`process::pid_records`'s own doc comment).
+    // writes anything to disk until an explicit mutation calls its own `persist()`.
+    // `store::import::import_once` immediately below DOES write (the one-time Electron import,
+    // issue #796 acceptance item 6, lane R13a). Its own `ImportLock`, if this launch wins it,
+    // is kept alive in `_import_lock` below for the REST OF THIS PROCESS'S LIFETIME, never
+    // dropped early: a launch that merely reads a pre-merge registry snapshot here and later
+    // calls an ordinary `persist()` could otherwise silently overwrite a completed import once
+    // it lands, however much later that `persist()` happens to fire (`store::import`'s own
+    // module doc comment has the full reasoning). A launch that finds the lock held by a PID
+    // still running does not wait -- it skips its own import entirely and opens the stores
+    // exactly as if this feature did not exist for that launch.
+    let (registry, settings, update_state, _import_lock) = tauri::async_runtime::block_on(async {
+        let (import_outcome, import_lock) =
+            store::import::import_once(&data_dir, &electron_source_dir()).await;
+        store::import::log_outcome(&import_outcome);
+
+        // Lane R3 (issue #786, FR-005's fallback): reaps any orphaned `omp` root process before
+        // this run spawns a new one -- must run before any Session's `SessionAgent` attaches
+        // (no ordering dependency on the import above: it never touches `processes.json`).
         process::pid_records::init_and_reap(&data_dir).await;
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
@@ -221,7 +256,7 @@ pub fn run() {
         // `UpdateState::default()` on any read/parse problem, same as `registry`/`settings`'s
         // own corrected-default-in-memory stance) -- no `unwrap_or_else`/`panic!` needed here.
         let update_state = updates::state::UpdateStateStore::open(&data_dir).await;
-        (registry, settings, update_state)
+        (registry, settings, update_state, import_lock)
     });
 
     // FR-010/FR-011: the theme as `SettingsStore::open`'s own FR-013 lazy-correction already
