@@ -389,8 +389,11 @@ pub fn model_roles_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // Issue #740 (lane RM): a role change made here must reach every open Session already
         // on that role ("Changing a role's model does not affect current Sessions" -- this is
         // the fix). Runs only once the write itself succeeded; a failed/overridden write never
-        // touches a live Session. `propagation` is a short summary for the Settings page's own
-        // polite one-line result ("Moved N Sessions..., left M pinned, K waiting").
+        // touches a live Session. AWAITED here: this IPC call's own reply does not go out until
+        // the whole sweep finishes (`apply_role_change`'s own doc comment -- gate-fix, the sweep
+        // is concurrent and bounded ACROSS Sessions, not off this reply path). `propagation` is
+        // a short summary for the Settings page's own polite one-line result ("Moved N
+        // Sessions..., left M pinned, K waiting").
         let propagation = state.session_manager.apply_role_change(&role).await;
         out.insert(
             "propagation".to_string(),

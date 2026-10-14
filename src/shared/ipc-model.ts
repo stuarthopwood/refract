@@ -26,8 +26,11 @@ export interface RoleChangeSummary {
   moved: string[];
   queued: string[];
   skippedPinned: string[];
-  /** A Session with no live agent this run (never opened, or stopped): resumes its own saved
-   * model on its next real start, not counted as a failure. */
+  /** A Session whose live status is `Stopped` lands here: resumes its own saved model on its
+   * next real start, not counted as a failure. This requires an agent entry to already exist
+   * (a prior open, or even a read-only model probe) -- a Session with NO entry at all (truly
+   * untouched this run) is invisible to the sweep and is absent from every bucket, not this one,
+   * though the outcome for it is the same: it resumes its own saved model on its next start. */
   skippedStopped: string[];
   failed: string[];
 }

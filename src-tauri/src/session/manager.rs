@@ -114,17 +114,29 @@ impl SessionManager {
     }
 
     /// Issue #740 (lane RM): called by `ipc::model_roles::model_roles_set` after a role's
-    /// config value changes. Moves every live, non-pinned, non-stopped Session whose tracked
-    /// role is `role` onto its freshly-resolved model -- immediately if idle (concurrently,
-    /// bounded, gate-fix MEDIUM/perf), queued for its own next settle if working (Stuart's
-    /// decision, 2026-10-13: "automatic at the next idle moment", no prompt, never refused); a
-    /// Session pinned by `/switch`/the composer picker (#454) is skipped, and a Session with no
-    /// live agent (never opened this run, or stopped) is skipped rather than counted as failed
-    /// (gate-fix, HIGH/tests: it resumes its saved model on its own next start, same "new
-    /// Sessions only" note the role page already carries for a start-time-only role).
+    /// config value changes, AWAITED before that IPC call replies (gate-fix: an earlier
+    /// comment/PR-body wording implied this runs "off the reply path" -- it does not; only the
+    /// sweep's OWN work across Sessions is concurrent and bounded, the whole sweep still
+    /// completes before `modelRoles.set`'s response is sent). Moves every live, non-pinned,
+    /// non-stopped Session whose tracked role is `role` onto its freshly-resolved model --
+    /// immediately if idle (concurrently, bounded, gate-fix MEDIUM/perf), queued for its own
+    /// next settle if working (Stuart's decision, 2026-10-13: "automatic at the next idle
+    /// moment", no prompt, never refused); a Session pinned by `/switch`/the composer picker
+    /// (#454) is skipped. A Session with NO entry at all in `self.agents` (never opened or
+    /// probed this run) is invisible to `live_agents()` and so is not counted in ANY bucket --
+    /// it simply resumes its own saved model on its own next start. A Session that DOES have an
+    /// agent entry (e.g. a prior open, or a `model.listRoles` probe) but whose live status is
+    /// `Stopped` lands in `skipped_stopped` instead, rather than being counted as failed
+    /// (gate-fix, HIGH/tests).
     pub async fn apply_role_change(&self, role: &str) -> crate::session::model::RoleChangeSummary {
         use crate::session::model::{apply_role_now, current_selection, RoleChangeSummary};
         use crate::session::SessionStatus;
+
+        enum RoleApplyOutcome {
+            Moved,
+            Queued,
+            Failed,
+        }
 
         let mut summary = RoleChangeSummary::default();
         // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
@@ -144,13 +156,16 @@ impl SessionManager {
                 .map(|s| s.name.clone())
                 .unwrap_or_else(|| agent.session_id().to_string());
 
-            if agent.status().await == SessionStatus::Stopped {
-                summary.skipped_stopped.push(name);
-                continue;
-            }
+            // Gate-fix (MEDIUM): check which role this Session is ON before checking whether it
+            // is Stopped, not the other way around -- checking Stopped first put EVERY Stopped
+            // Session in `skipped_stopped` for ANY role change, including one it was never on.
             let (pinned, current_role) = current_selection(&agent).await;
             let effective = current_role.as_deref().unwrap_or("default");
             if effective != role {
+                continue;
+            }
+            if agent.status().await == SessionStatus::Stopped {
+                summary.skipped_stopped.push(name);
                 continue;
             }
             if pinned {
@@ -171,28 +186,40 @@ impl SessionManager {
                     .acquire_owned()
                     .await
                     .expect("semaphore never closed");
-                let result = apply_role_now(&agent, &role, true).await;
-                (name, agent, result)
+                let outcome = match apply_role_now(&agent, &role, true).await {
+                    Ok(_) => RoleApplyOutcome::Moved,
+                    Err(err) if err.code == "not-idle" => {
+                        // Gate-fix (MEDIUM): became working between the atomic queue-or-ready
+                        // check above and this task's own `send_if_idle` call. Re-run the SAME
+                        // atomic decision right here rather than waiting for the sequential loop
+                        // below to notice minutes later -- if the Session has ALREADY settled
+                        // back to idle by now, apply right away instead of queuing for a whole
+                        // extra turn.
+                        if agent.queue_role_reapply_or_ready(&role).await {
+                            RoleApplyOutcome::Queued
+                        } else {
+                            match apply_role_now(&agent, &role, true).await {
+                                Ok(_) => RoleApplyOutcome::Moved,
+                                Err(_) => RoleApplyOutcome::Failed,
+                            }
+                        }
+                    }
+                    Err(_) => RoleApplyOutcome::Failed,
+                };
+                (name, outcome)
             }));
         }
         for task in idle_tasks {
             match task.await {
-                Ok((name, _agent, Ok(_))) => summary.moved.push(name),
-                Ok((name, agent, Err(err))) if err.code == "not-idle" => {
-                    // Race: became working between the atomic queue-or-ready check above and
-                    // `apply_role_now`'s own `send_if_idle` -- re-queue rather than fail (#740's
-                    // own acceptance: "never refused").
-                    agent
-                        .with_model_state(|s| {
-                            if s.pending_role_reapply.is_none() {
-                                s.pending_role_reapply = Some(role.to_string());
-                            }
-                        })
-                        .await;
-                    summary.queued.push(name);
+                Ok((name, RoleApplyOutcome::Moved)) => summary.moved.push(name),
+                Ok((name, RoleApplyOutcome::Queued)) => summary.queued.push(name),
+                Ok((name, RoleApplyOutcome::Failed)) => summary.failed.push(name),
+                Err(join_err) => {
+                    // Gate-fix (MEDIUM): a panicked task used to be silently dropped, with the
+                    // affected Session absent from every bucket and the Settings page none the
+                    // wiser.
+                    log::error!("apply_role_change: a role-reapply task panicked: {join_err}");
                 }
-                Ok((name, _agent, Err(_))) => summary.failed.push(name),
-                Err(_join_err) => {}
             }
         }
         summary

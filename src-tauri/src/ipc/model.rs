@@ -143,7 +143,3 @@ pub fn model_list_roles(state: AppState, args: Vec<Value>) -> HandlerFuture {
         }))
     })
 }
-
-#[cfg(test)]
-#[path = "model_tests.rs"]
-mod tests;

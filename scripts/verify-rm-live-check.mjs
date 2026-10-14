@@ -124,15 +124,16 @@ async function main() {
   ensureFakeModel(profile);
   // Give the isolated profile a resolvable default (`omp config set modelRoles`, the same CLI
   // path `ipc::model_roles`/`known_role_list` already use) -- `models.yml` alone registers the
-  // providers; `modelRoles` is what omp's startup check actually reads. `smol` maps to a
-  // DIFFERENT model than `default` so `/switch @smol` has a real change to make.
+  // providers; `modelRoles` is what omp's startup check actually reads. `smol`/`slow` both map
+  // to the SAME, DIFFERENT-from-`default` model so `/switch @smol`/`/role slow` each have a
+  // real change to make while `default` is still on the other one.
   run('omp', [
     '--profile',
     profile,
     'config',
     'set',
     'modelRoles',
-    '{"default":"probe-fake/probe-fake-model","smol":"probe-fake/probe-fake-model-2"}',
+    '{"default":"probe-fake/probe-fake-model","smol":"probe-fake/probe-fake-model-2","slow":"probe-fake/probe-fake-model-2"}',
     '--json',
   ]);
 
@@ -188,9 +189,21 @@ async function main() {
       record('session reached idle', false, { error: String(err), diag });
     }
 
-    // --- model.listRoles ---
+    // --- model.listRoles: exact designed shape, not just `ok` ---
     const listRolesRes = await cdp.evaluate(`window.refract.model.listRoles(${JSON.stringify(sessionId)})`);
-    record('model.listRoles', listRolesRes.ok === true, listRolesRes);
+    const listRolesRoleNames = listRolesRes.ok ? listRolesRes.value.roles.map((r) => r.role) : [];
+    record(
+      'model.listRoles returns cycleOrder+plan, each role.model and the pinned/currentRole flags',
+      listRolesRes.ok === true
+        && listRolesRoleNames.join(',') === 'smol,default,slow,plan'
+        && listRolesRes.value.pinned === false
+        && listRolesRes.value.currentRole === null
+        && listRolesRes.value.roles.find((r) => r.role === 'default')?.model === 'probe-fake/probe-fake-model'
+        && listRolesRes.value.roles.find((r) => r.role === 'smol')?.model === 'probe-fake/probe-fake-model-2'
+        && listRolesRes.value.roles.find((r) => r.role === 'slow')?.model === 'probe-fake/probe-fake-model-2'
+        && listRolesRes.value.roles.find((r) => r.role === 'plan')?.model === null,
+      listRolesRes,
+    );
 
     // --- /plan stays refused ---
     const planRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, '/plan')`);
@@ -212,34 +225,74 @@ async function main() {
     const modelBareRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, '/model')`);
     record('/model bare (rewritten to /switch)', modelBareRes.ok === true, modelBareRes.ok ? undefined : modelBareRes);
 
-    // --- /switch @<role from cycleOrder>: role alias forward, a LIVE agent ---
-    const roles = listRolesRes.ok ? listRolesRes.value.roles.map((r) => r.role) : [];
+    // --- /switch @<role from cycleOrder>: role alias forward, a LIVE agent -- asserts the
+    // model ids actually recorded, not only `ok` (`smol` -> probe-fake-model-2). ---
+    const roles = listRolesRoleNames;
     const firstRole = roles.find((r) => r !== 'plan') ?? roles[0];
+    let firstRoleExpectedId;
     if (firstRole) {
+      firstRoleExpectedId = listRolesRes.value.roles.find((r) => r.role === firstRole)?.model?.split('/').pop();
       const switchRoleRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, ${JSON.stringify(`/switch @${firstRole}`)})`);
-      record(`/switch @${firstRole} on a live agent`, switchRoleRes.ok === true, switchRoleRes.ok ? undefined : switchRoleRes);
+      const afterSwitchList = await cdp.evaluate(`window.refract.sessions.list()`);
+      const afterSwitchModel = afterSwitchList.ok ? afterSwitchList.value.find((s) => s.id === sessionId)?.lastModel : undefined;
+      record(
+        `/switch @${firstRole} on a live agent moves to its configured model (${firstRoleExpectedId})`,
+        switchRoleRes.ok === true && afterSwitchModel?.id === firstRoleExpectedId,
+        { switchRoleRes, afterSwitchModel },
+      );
     } else {
       record('/switch @<role>', false, 'no role available from listRoles to try');
     }
 
-    // --- model.applyRole on a LIVE agent ---
+    // --- model.applyRole on a LIVE agent (back to "default") ---
     const secondRole = roles.find((r) => r !== 'plan' && r !== firstRole) ?? firstRole;
     if (secondRole) {
       const applyRoleRes = await cdp.evaluate(`window.refract.model.applyRole(${JSON.stringify(sessionId)}, ${JSON.stringify(secondRole)})`);
       record(`model.applyRole(${secondRole}) on a live agent`, applyRoleRes.ok === true, applyRoleRes.ok ? undefined : applyRoleRes);
     }
 
+    // --- #766: /role <role> switching directly, {queued:false} wire shape, and the resulting
+    // currentRole/pinned fields in SessionSummary (#741) -- the Session is on "default" (model
+    // 1) from the previous check, "slow" resolves to model 2, a real change. ---
+    const slowRoleRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(sessionId)}, '/role slow')`);
+    const afterSlowList = await cdp.evaluate(`window.refract.sessions.list()`);
+    const afterSlowSummary = afterSlowList.ok ? afterSlowList.value.find((s) => s.id === sessionId) : undefined;
+    record(
+      '/role slow switches directly, returns {queued:false}, and SessionSummary reflects it',
+      slowRoleRes.ok === true
+        && slowRoleRes.value?.queued === false
+        && afterSlowSummary?.pinned === false
+        && afterSlowSummary?.currentRole === 'slow'
+        && afterSlowSummary?.lastModel?.id === 'probe-fake-model-2',
+      { slowRoleRes, afterSlowSummary },
+    );
+
     // --- model.setModel on a LIVE agent, with the seeded fake model (the only one this
-    // isolated profile has) -- proves the real success path, not only the failure path. ---
+    // isolated profile has) -- proves the real success path, not only the failure path. Pins
+    // the Session (Decision 1). ---
     const setModelRes = await cdp.evaluate(`window.refract.model.setModel(${JSON.stringify(sessionId)}, 'probe-fake', 'probe-fake-model')`);
     record('model.setModel(probe-fake/probe-fake-model) on a live agent', setModelRes.ok === true, setModelRes.ok ? undefined : setModelRes);
 
-    // --- model.cycleModel on a LIVE agent (only one catalog model exists on this isolated
-    // profile, so this exercises the real RPC round trip; a single-model catalog may report
-    // the request itself failed or simply return the same model -- either way, proves the
-    // call reaches a live agent and gets a real, well-shaped response, not a crash/hang). ---
+    // --- #766/Decision 1: choosing a role again un-pins a previously-pinned Session ---
+    const unpinRes = await cdp.evaluate(`window.refract.model.applyRole(${JSON.stringify(sessionId)}, 'smol')`);
+    const afterUnpinList = await cdp.evaluate(`window.refract.sessions.list()`);
+    const afterUnpinSummary = afterUnpinList.ok ? afterUnpinList.value.find((s) => s.id === sessionId) : undefined;
+    record(
+      'choosing a role again un-pins a previously pinned Session',
+      unpinRes.ok === true && afterUnpinSummary?.pinned === false && afterUnpinSummary?.currentRole === 'smol',
+      { unpinRes, afterUnpinSummary },
+    );
+
+    // --- model.cycleModel on a LIVE agent: the seeded catalog has TWO models, so this must
+    // both succeed AND move to the other one, not just return a well-shaped envelope. ---
+    const beforeCycleList = await cdp.evaluate(`window.refract.sessions.list()`);
+    const beforeCycleModelId = beforeCycleList.ok ? beforeCycleList.value.find((s) => s.id === sessionId)?.lastModel?.id : undefined;
     const cycleRes = await cdp.evaluate(`window.refract.model.cycleModel(${JSON.stringify(sessionId)})`);
-    record('model.cycleModel on a live agent (well-shaped response)', typeof cycleRes === 'object' && cycleRes !== null, cycleRes);
+    record(
+      'model.cycleModel on a live agent succeeds and moves to the other catalog model',
+      cycleRes.ok === true && !!cycleRes.value?.model?.id && cycleRes.value.model.id !== beforeCycleModelId,
+      { cycleRes, beforeCycleModelId },
+    );
 
     // --- #740 sweep: build four more Sessions in the four distinct states the sweep must
     // treat differently, then change the "default" role to the OTHER seeded fake model and
@@ -288,16 +341,63 @@ async function main() {
 
     const namesRes = await cdp.evaluate(`window.refract.sessions.list()`);
     const nameOf = (id) => (namesRes.ok ? namesRes.value.find((s) => s.id === id)?.name : undefined);
+    const summaryOf = (id) => (namesRes.ok ? namesRes.value.find((s) => s.id === id) : undefined);
     const pinnedName = nameOf(sessionId);
     const movedName = nameOf(movedId);
     const otherRoleName = nameOf(otherRoleId);
     const stoppedName = nameOf(stoppedId);
     const workingName = nameOf(workingId);
+    record(
+      "SessionSummary.pinned/currentRole reflect the pinned and other-role candidates' real state",
+      summaryOf(sessionId)?.pinned === true && summaryOf(otherRoleId)?.currentRole === 'smol',
+      { pinned: summaryOf(sessionId), otherRole: summaryOf(otherRoleId) },
+    );
+
+    // --- Decision 1: mid-turn refusal, on its OWN dedicated Session (never the sweep's own
+    // `workingId` below -- four extra round trips on the SAME Session reliably outlasted the
+    // narrow window before the unreachable fake model's connection failure settles the turn,
+    // observed live). All four calls are dispatched CONCURRENTLY (`Promise.all`, not one
+    // `await` after another) so the whole group needs only one round trip's worth of the
+    // window, not four. ---
+    const midTurnId = await createSweepSession('mid-turn candidate');
+    if (midTurnId) {
+      await openAndWaitIdle(midTurnId, 'mid-turn candidate');
+      const midTurnPromise = cdp
+        .evaluate(`window.refract.chat.send(${JSON.stringify(midTurnId)}, 'hello')`)
+        .catch((err) => ({ ok: false, error: String(err) }));
+      // Wait for Refract's own status to genuinely flip to `working` (set only once OMP's
+      // `agent_start` frame arrives, not synchronously on `chat.send`) before firing the
+      // refusal checks below -- racing them immediately after `chat.send` itself (no wait)
+      // left `setModel`'s own atomic check landing before that flip on a fast, local,
+      // immediately-connection-refused turn, observed live.
+      try {
+        await cdp.waitFor(
+          `window.refract.sessions.list().then(r => r.ok && r.value.find(s => s.id === ${JSON.stringify(midTurnId)})?.status === 'working')`,
+          { timeoutMs: 5_000, label: 'mid-turn candidate working' },
+        );
+      } catch (err) {
+        record('mid-turn candidate reached working status', false, String(err));
+      }
+      const [midSwitch, midSetModel, midApplyRole, midRole] = await Promise.all([
+        cdp.evaluate(`window.refract.chat.send(${JSON.stringify(midTurnId)}, '/switch @smol')`),
+        cdp.evaluate(`window.refract.model.setModel(${JSON.stringify(midTurnId)}, 'probe-fake', 'probe-fake-model-2')`),
+        cdp.evaluate(`window.refract.model.applyRole(${JSON.stringify(midTurnId)}, 'smol')`),
+        cdp.evaluate(`window.refract.chat.send(${JSON.stringify(midTurnId)}, '/role smol')`),
+      ]);
+      record('mid-turn /switch refused (not-idle)', midSwitch.ok === false && midSwitch.error?.code === 'not-idle', midSwitch);
+      record('mid-turn setModel refused (not-idle)', midSetModel.ok === false && midSetModel.error?.code === 'not-idle', midSetModel);
+      record('mid-turn applyRole refused (not-idle)', midApplyRole.ok === false && midApplyRole.error?.code === 'not-idle', midApplyRole);
+      record('mid-turn /role refused (not-idle)', midRole.ok === false && midRole.error?.code === 'not-idle', midRole);
+      await midTurnPromise;
+    } else {
+      record('mid-turn candidate sessions.create', false, 'could not create the mid-turn Session');
+    }
 
     // Fire a chat turn on the "working" candidate without awaiting it, racing the role-change
     // propagation below against a Session genuinely mid-turn (the seeded fake model's endpoint
-    // is unreachable, so the turn stays in-flight for several seconds -- long enough to land the
-    // race the same way every run instead of flaking on timing).
+    // is unreachable, so the turn stays in-flight briefly -- immediately followed by
+    // `modelRoles.set` below with NO other call in between, the same minimal-latency pattern
+    // that reliably lands the race).
     const workingTurn = workingId
       ? cdp.evaluate(`window.refract.chat.send(${JSON.stringify(workingId)}, 'hello')`).catch((err) => ({ ok: false, error: String(err) }))
       : null;
@@ -330,13 +430,42 @@ async function main() {
       }
     }
 
-    // --- model.setModel with a made-up, unresolvable provider/id: the failure path ---
+    // #740's settle-time reapply (the queued working candidate actually moving once its turn
+    // ends) is NOT live-checked here: the unreachable fake provider's own retry/backoff makes a
+    // real turn's full settlement take long enough that this harness either times out waiting
+    // (observed: 60s and 180s both insufficient) or the WebView2 host itself becomes unstable
+    // first (observed: `CdpSession: send(...) after the connection closed` partway through a
+    // 180s wait). Disclosed as an open acceptance item in the PR body rather than left in as a
+    // check that would misreport an infrastructure timeout/crash as a product defect.
+
+    // --- model.setModel with a made-up, unresolvable provider/id: the failure path, exact
+    // code and message, not just `ok === false`. ---
     const badSetModelRes = await cdp.evaluate(
       `window.refract.model.setModel(${JSON.stringify(sessionId)}, 'no-such-provider', 'no-such-model-xyz')`,
     );
-    record('model.setModel (unresolvable model, failure path)', badSetModelRes.ok === false, badSetModelRes);
+    record(
+      'model.setModel (unresolvable model, failure path)',
+      badSetModelRes.ok === false
+        && badSetModelRes.error?.code === 'prompt-failed'
+        && badSetModelRes.error?.message === 'Model not found: no-such-provider/no-such-model-xyz',
+      badSetModelRes,
+    );
+
+    // --- #762: /switch <unknown model> leaves the model unchanged (text-command path, distinct
+    // from the dedicated model.setModel RPC checked above) ---
+    const switchUnknownRes = await cdp.evaluate(
+      `window.refract.chat.send(${JSON.stringify(sessionId)}, '/switch no-such-provider/no-such-model-xyz')`,
+    );
+    record(
+      '/switch <unknown model> refused, model left unchanged',
+      switchUnknownRes.ok === false
+        && switchUnknownRes.error?.code === 'prompt-failed'
+        && switchUnknownRes.error?.message?.includes('Model unchanged'),
+      switchUnknownRes,
+    );
   } catch (err) {
     console.error('verify-rm-live-check: aborted early:', err);
+    process.exitCode = 1;
   } finally {
     if (cdp) cdp.close();
     await stopLauncher(child).catch(() => {});

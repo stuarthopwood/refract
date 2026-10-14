@@ -53,19 +53,25 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::omp::process::ReadyWaitStage;
-use crate::omp::transcript::{NoticeLevel, TranscriptItem};
+use crate::omp::transcript::NoticeLevel;
 
 use super::agent::{AgentError, SessionAgent};
+
+mod model_support;
+
+// Re-exported at THIS path unchanged: `ipc::model`/`ipc::chat`/`session::manager` already call
+// `crate::session::model::current_selection`/`known_role_list`. `is_switch_argument_token` stays
+// restricted to `crate::session` (`session::agent::commands`/`agent::mod` are its only outside
+// callers); the formatting/notice helpers below are used only by this file's own action
+// functions, never re-exported further.
+pub(in crate::session) use model_support::is_switch_argument_token;
+pub use model_support::{current_selection, known_role_list};
+use model_support::{friendly_model_text, model_selector_string, model_value, post_notice};
 
 /// Mirrors `agent::mod`'s own `DEFAULT_REQUEST_TIMEOUT_MS` (private there); re-declared here
 /// with the same value, same convention `omp::process.rs` itself documents for a value it does
 /// not export.
 const REQUEST_TIMEOUT_MS: u64 = 60_000;
-
-/// Gate-fix (HIGH, #762): `/switch`'s own verified argument shape is a single TOKEN, not an
-/// arbitrary string -- caps length the same way `agent::mod`'s own `MAX_MODEL_FIELD_LENGTH`
-/// bounds a model field elsewhere in this build.
-const MAX_SWITCH_ARGUMENT_LENGTH: usize = 256;
 
 /// Lane RM's own runtime state, held inside `AgentState` by `agent/mod.rs` without that file
 /// ever needing to change when this lane adds a field here. Reachable through `SessionAgent`'s
@@ -86,6 +92,12 @@ pub(super) struct State {
     /// Settings (#740's decided design: "automatic at the next idle moment", never refused).
     /// Applied by `on_frame` below at the Session's own next settle, then cleared.
     pub(super) pending_role_reapply: Option<String>,
+    /// Gate-fix (HIGH, perf): the Conversation file path `current_selection` already probed and
+    /// found NO `model_change` entry in, so a Session nobody has ever changed the model/role on
+    /// is not re-read and re-parsed on every later `sessions.list()` poll. Distinct from
+    /// `current_role` (which caches a FOUND role) -- this caches the negative result, keyed by
+    /// path so a later Conversation (a genuinely new file) is still probed fresh.
+    pub(super) role_probed_path: Option<String>,
     /// Monotonic id source for this lane's own transcript notices (`upsert_transcript_item`
     /// needs a stable, unique id per row; this lane posts no OMP frame of its own to derive one
     /// from the way `apply_frame`'s internal counter does for a `notice` frame).
@@ -103,11 +115,17 @@ pub struct RoleChangeSummary {
     pub moved: Vec<String>,
     pub queued: Vec<String>,
     pub skipped_pinned: Vec<String>,
-    /// Gate-fix (HIGH, tests): a Session with no live agent (never opened this run, or stopped)
-    /// is neither moved nor failed -- it simply resumes its saved model on its own next start,
-    /// the same "new Sessions only" note the role-assignment page already carries for a
-    /// start-time-only role. Tracked separately so the Settings summary never reports a
-    /// misleading failure for a Session nobody has opened.
+    /// Gate-fix (HIGH, tests): a Session whose live status is `Stopped` lands here -- neither
+    /// moved nor failed, it simply resumes its saved model on its own next start, the same "new
+    /// Sessions only" note the role-assignment page already carries for a start-time-only role.
+    /// Tracked separately so the Settings summary never reports a misleading failure for a
+    /// Session that is not actually running right now. This requires the Session to already
+    /// have an AGENT ENTRY (a prior `.open()`, or even just a `model.listRoles`/`model.*` probe
+    /// that called `get_or_create_agent` without starting it) -- a Session with no entry at all
+    /// (truly untouched this run) is invisible to `apply_role_change`'s own `live_agents()` scan
+    /// and so is not counted in ANY bucket here, moved/queued/skipped/failed alike; it still
+    /// resumes its saved model on its own next real start, the same as a registered-but-stopped
+    /// one.
     pub skipped_stopped: Vec<String>,
     pub failed: Vec<String>,
 }
@@ -133,17 +151,23 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
         // `on_session_settled`, which this deliberately does NOT add to).
         let agent = agent.arc();
         tokio::spawn(async move {
-            // Best-effort: a failed automatic reapply re-queues itself for the Session's own
-            // NEXT settle rather than being silently lost (gate-fix, HIGH: the old code took
-            // the pending flag unconditionally and dropped it on any failure).
-            if apply_role_now(&agent, &role, true).await.is_err() {
-                agent
-                    .with_model_state(|s| {
-                        if s.pending_role_reapply.is_none() {
-                            s.pending_role_reapply = Some(role);
-                        }
-                    })
-                    .await;
+            // Gate-fix (HIGH, round 2): re-queue ONLY on `not-idle` (a genuine race -- the
+            // Session started a new turn between the settle frame and this spawned task's own
+            // `send_if_idle` call). Any OTHER error (the role's model is unavailable, not signed
+            // in, or already current and unresolvable some other way) is FINAL: `apply_role_now`
+            // has already posted its own Error notice for it, so re-queuing would repeat that
+            // notice and the RPC round trip at every settle for the rest of the run instead of
+            // surfacing it once.
+            if let Err(err) = apply_role_now(&agent, &role, true).await {
+                if err.code == "not-idle" {
+                    agent
+                        .with_model_state(|s| {
+                            if s.pending_role_reapply.is_none() {
+                                s.pending_role_reapply = Some(role);
+                            }
+                        })
+                        .await;
+                }
             }
         });
     }
@@ -161,161 +185,6 @@ pub(super) async fn on_start_progress(
     _elapsed_ms: u64,
 ) {
     // No-op: this lane has no start-progress banner content.
-}
-
-// ---------------------------------------------------------------------------
-// Pure helpers (unit tested in `model_tests.rs`).
-// ---------------------------------------------------------------------------
-
-/// Issue #766, decided by Stuart 2026-10-13: Ctrl+R (and `/role` bare) cycles `cycleOrder`'s
-/// roles plus the literal `"plan"` role, deduplicated, `cycleOrder`'s own order preserved.
-pub fn build_role_list(cycle_order: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = cycle_order.to_vec();
-    if !out.iter().any(|r| r == "plan") {
-        out.push("plan".to_string());
-    }
-    out
-}
-
-/// Issue #762's own verified `/switch` argument shape: one token, no whitespace, limited to
-/// letters, digits, and `._:/@-`, never starting with `-` (gate-fix, HIGH: `--help` is a
-/// syntactically valid token under the bare charset alone, which let a flag-shaped argument
-/// through; #762's acceptance names "a second argument or a flag" as refused, so a leading `-`
-/// is refused here even though `-` is otherwise an allowed interior character, e.g.
-/// `claude-sonnet-5.5`), and capped at `MAX_SWITCH_ARGUMENT_LENGTH`. Empty is handled by the
-/// caller separately (a bare `/switch` is always read-only, never checked against this).
-pub fn is_switch_argument_token(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= MAX_SWITCH_ARGUMENT_LENGTH
-        && !value.starts_with('-')
-        && !value.contains(' ')
-        && value
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '/' | '@' | '-'))
-}
-
-fn friendly_model_text(get_state_data: &Value) -> String {
-    let model = get_state_data.get("model");
-    let name = model.and_then(|m| m.get("name")).and_then(Value::as_str);
-    let provider = model
-        .and_then(|m| m.get("provider"))
-        .and_then(Value::as_str);
-    let id = model.and_then(|m| m.get("id")).and_then(Value::as_str);
-    match (name, provider, id) {
-        (Some(name), ..) => name.to_string(),
-        (None, Some(provider), Some(id)) => format!("{provider}/{id}"),
-        (None, None, Some(id)) => id.to_string(),
-        _ => "the selected model".to_string(),
-    }
-}
-
-/// `None` for a missing/absent `model` field (treated as "could not confirm", gate-fix HIGH:
-/// never surfaced as a successful `{model: null}` response -- see every caller below).
-fn model_value(get_state_data: &Value) -> Option<Value> {
-    get_state_data
-        .get("model")
-        .cloned()
-        .filter(|m| !m.is_null())
-}
-
-async fn next_notice_id(agent: &SessionAgent) -> String {
-    let seq = agent
-        .with_model_state(|s| {
-            s.notice_seq += 1;
-            s.notice_seq
-        })
-        .await;
-    format!("model-notice:{}:{seq}", agent.session_id())
-}
-
-async fn post_notice(agent: &SessionAgent, level: NoticeLevel, text: String) {
-    let id = next_notice_id(agent).await;
-    agent
-        .upsert_transcript_item(TranscriptItem::Notice { id, level, text })
-        .await;
-}
-
-/// Reads the Session's own current Conversation file (if any) for its LATEST `model_change`
-/// entry's `role` (FINDINGS item 51: `set_model`/`open_session`-override always write an
-/// explicit `role:"default"`; `cycle_model` omits `role` entirely -- both reconstruct to
-/// `"default"` per the same finding). `None` when the file has no `model_change` entry at all
-/// (nothing has ever touched this Session's model this Conversation) or cannot be read --
-/// callers must not guess `"default"` for that case (#741: "if the role cannot be established,
-/// show nothing rather than a guess"). Reads the whole file once (gate-fix note: cached by the
-/// caller into `State.current_role` so this never repeats for the same Session/Conversation).
-async fn read_role_from_session_file(conversation_path: &str) -> Option<String> {
-    let content = tokio::fs::read_to_string(conversation_path).await.ok()?;
-    let mut latest: Option<String> = None;
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(Value::as_str) == Some("model_change") {
-            latest = Some(
-                value
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .unwrap_or("default")
-                    .to_string(),
-            );
-        }
-    }
-    latest
-}
-
-/// Read access to this lane's own per-Session state, for `ipc::model` (the role selector's
-/// listing), `session::manager` (the #740 propagation sweep), and `ipc::chat` (the `/role`
-/// interception) -- all outside this module's own tree, so this wraps `with_model_state` in a
-/// `pub` function rather than widening the `State` struct's own fields to `pub`. Lazily seeds
-/// `current_role` from the Session's own Conversation file on the first call this run (gate-fix,
-/// HIGH, #741: never a guessed `"default"`), then returns the cached value on every later call.
-pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
-    let (pinned, cached_role) = agent
-        .with_model_state(|s| (s.pinned, s.current_role.clone()))
-        .await;
-    if pinned || cached_role.is_some() {
-        return (pinned, cached_role);
-    }
-    let Some(path) = agent.current_conversation_path().await else {
-        return (pinned, None);
-    };
-    let role = read_role_from_session_file(&path).await;
-    if let Some(role) = role.clone() {
-        agent
-            .with_model_state(|s| {
-                if s.current_role.is_none() {
-                    s.current_role = Some(role);
-                }
-            })
-            .await;
-    }
-    (pinned, role)
-}
-
-/// `cycleOrder` (read fresh every call -- it is a small, infrequently-changed config array, not
-/// worth caching) plus `"plan"` (#766). Used by `/role <role>`'s own validation (FINDINGS item
-/// 53's own documented gap: OMP's native `/switch @<role>` silently no-ops on an unresolvable
-/// argument rather than erroring, so Refract must validate client-side first) and by the Ctrl+R
-/// selector's listing.
-pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
-    let response = crate::omp::config::get_config("cycleOrder", &[])
-        .await
-        .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
-    let cycle_order: Vec<String> = response
-        .get("value")
-        .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(build_role_list(&cycle_order))
 }
 
 // ---------------------------------------------------------------------------
@@ -449,7 +318,34 @@ pub async fn apply_role_now(
     role: &str,
     settings_triggered: bool,
 ) -> Result<Value, AgentError> {
+    // Gate-fix (LOW, security): `role` only has to match a `cycleOrder` entry from the user's
+    // own global OMP config (`apply_role`'s own validation, and the settle/sweep callers below,
+    // never check characters) before reaching here -- an entry containing whitespace or another
+    // disallowed character would otherwise forward free text past the allow-list this lane's
+    // own `/switch` path enforces everywhere else.
+    if !is_switch_argument_token(&format!("@{role}")) {
+        return Err(AgentError::new(
+            "invalid-argument",
+            format!("Role \"{role}\" contains characters `/switch` cannot forward."),
+        ));
+    }
     let before = agent.refresh_from_state().await.ok();
+    // Gate-fix (MEDIUM): `send_if_idle`'s own atomic check only sees Refract's own status,
+    // which is set to `Working` only once the `agent_start` frame arrives -- a prompt just
+    // admitted by OMP but not yet reflected in that status would still look idle here. The
+    // `get_state` just fetched above is live, so refuse on its own `isStreaming` flag too,
+    // closing that narrower window.
+    if before
+        .as_ref()
+        .and_then(|v| v.get("isStreaming"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return Err(AgentError::new(
+            "not-idle",
+            "Session is busy: a response is still streaming.",
+        ));
+    }
     let before_text = before.as_ref().map(friendly_model_text);
     agent.send_if_idle(format!("/switch @{role}"), None).await?;
     let after = agent.refresh_from_state().await.map_err(|err| {
@@ -466,14 +362,32 @@ pub async fn apply_role_now(
     })?;
     let before_model = before.as_ref().and_then(model_value);
     if before_model.as_ref() == Some(&after_model) {
-        let message = format!(
-            "Role \"{role}\" could not be applied: the model is still {}.",
-            friendly_model_text(&after)
-        );
-        if settings_triggered {
-            post_notice(agent, NoticeLevel::Error, message.clone()).await;
+        // Gate-fix (HIGH): not necessarily a failure -- picking a role whose own configured
+        // model is already the live one (Ctrl+R onto the current role, or two roles mapped to
+        // the same selector) is a valid no-op switch, and #766's "choosing a role again
+        // un-pins" must still succeed for it. Only report failure when the role's own
+        // `modelRoles` selector does NOT match the model that is actually live -- the genuine
+        // case OMP's native `/switch` silently no-ops on (FINDINGS item 53).
+        let role_resolves_to_current = match (
+            crate::ipc::model_roles::get_model_roles()
+                .await
+                .ok()
+                .and_then(|roles| roles.get(role).cloned()),
+            model_selector_string(&after_model),
+        ) {
+            (Some(selector), Some(current)) => selector == current,
+            _ => false,
+        };
+        if !role_resolves_to_current {
+            let message = format!(
+                "Role \"{role}\" could not be applied: the model is still {}.",
+                friendly_model_text(&after)
+            );
+            if settings_triggered {
+                post_notice(agent, NoticeLevel::Error, message.clone()).await;
+            }
+            return Err(AgentError::new("prompt-failed", message));
         }
-        return Err(AgentError::new("prompt-failed", message));
     }
     agent
         .with_model_state(|s| {
@@ -550,6 +464,20 @@ pub async fn handle_switch_text(agent: &SessionAgent, arg: &str) -> Result<Value
         return Ok(json!({ "queued": false }));
     }
     let before = agent.refresh_from_state().await.ok();
+    // Gate-fix (MEDIUM): same narrower race `apply_role_now` closes above -- `send_if_idle`'s
+    // own atomic check only sees Refract's own status, not OMP's live `isStreaming` flag, which
+    // the `get_state` just fetched above already carries.
+    if before
+        .as_ref()
+        .and_then(|v| v.get("isStreaming"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return Err(AgentError::new(
+            "not-idle",
+            "Session is busy: a response is still streaming.",
+        ));
+    }
     agent.send_if_idle(format!("/switch {arg}"), None).await?;
     let after = agent.refresh_from_state().await.map_err(|err| {
         AgentError::new(
@@ -562,10 +490,20 @@ pub async fn handle_switch_text(agent: &SessionAgent, arg: &str) -> Result<Value
     })?;
     let before_model = before.as_ref().and_then(model_value);
     if before_model.as_ref() == Some(&after_model) {
-        return Err(AgentError::new(
-            "prompt-failed",
-            format!("Model unchanged: \"{arg}\" could not be resolved."),
-        ));
+        // Gate-fix (HIGH): a token that already names the live model (retyping the current
+        // model, or the same selector with a thinking-level suffix OMP accepted without
+        // changing the model itself) is a valid no-op, not a failure -- only a token that does
+        // NOT match the live model at all is the genuine "could not be resolved" case (FINDINGS
+        // item 53: OMP's native `/switch` silently no-ops on an unresolvable argument).
+        let base_token = arg.split(':').next().unwrap_or(arg);
+        let token_resolves_to_current =
+            model_selector_string(&after_model).as_deref() == Some(base_token);
+        if !token_resolves_to_current {
+            return Err(AgentError::new(
+                "prompt-failed",
+                format!("Model unchanged: \"{arg}\" could not be resolved."),
+            ));
+        }
     }
     agent
         .with_model_state(|s| {
@@ -576,7 +514,3 @@ pub async fn handle_switch_text(agent: &SessionAgent, arg: &str) -> Result<Value
         .await;
     Ok(json!({ "queued": false }))
 }
-
-#[cfg(test)]
-#[path = "model_tests.rs"]
-mod tests;
