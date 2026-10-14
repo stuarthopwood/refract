@@ -72,6 +72,29 @@ fn resolve_data_dir_override(raw: Option<String>) -> Option<PathBuf> {
     Some(path)
 }
 
+/// Electron's own pinned `userData` directory (`src/main/index.ts`): `%APPDATA%\pinion`. The
+/// one-time data import's read-only source (`store::import`, issue #796 acceptance item 6,
+/// lane R13a) -- never written or deleted by this build.
+///
+/// Debug builds only, the same security posture as `REFRACT_DATA_DIR` above (a packaged release
+/// build must never honour an env var that redirects where it reads session data):
+/// `REFRACT_IMPORT_SOURCE_DIR` overrides this with an absolute path, so a live check can point
+/// the import at a scratch copy of a real Electron profile instead of Stuart's real
+/// `%APPDATA%\pinion`. Unset in every normal run; always a no-op in a release build.
+fn electron_source_dir() -> PathBuf {
+    #[cfg(debug_assertions)]
+    {
+        if let Some(path) =
+            resolve_data_dir_override(std::env::var("REFRACT_IMPORT_SOURCE_DIR").ok())
+        {
+            return path;
+        }
+    }
+    dirs::data_dir()
+        .expect("refract-tauri: no platform data directory available")
+        .join("pinion")
+}
+
 #[cfg(test)]
 mod data_dir_tests {
     use super::resolve_data_dir_override;
@@ -205,7 +228,37 @@ pub fn run() {
     // open`/`SettingsStore::open` only ever READ (`atomic_json::read_json_file`); neither one
     // writes anything to disk until an explicit mutation calls its own `persist()`, so two
     // instances racing this same read is never a corruption risk, only a redundant one.
+    // `store::import::import_once` immediately below DOES write (the one-time Electron import,
+    // issue #796 acceptance item 6, lane R13a) -- but only before its own marker file exists,
+    // and every step it takes (the registry merge, the settings/profile-cache copy-if-absent)
+    // is additive/idempotent, so two launches racing this is, at worst, redundant work, never
+    // data loss or corruption; the marker write itself lands via the same atomic
+    // temp-then-rename every other store write here already uses.
     let (registry, settings) = tauri::async_runtime::block_on(async {
+        match store::import::import_once(&data_dir, &electron_source_dir()).await {
+            store::import::ImportOutcome::AlreadyDecided => {}
+            store::import::ImportOutcome::NoElectronRegistry => {
+                log::info!(
+                    "refract-tauri: data import: no Electron registry.json found, nothing to import"
+                );
+            }
+            store::import::ImportOutcome::Imported {
+                repositories_added,
+                sessions_added,
+                settings_imported,
+                profile_cache_imported,
+            } => {
+                log::info!(
+                    "refract-tauri: data import: added {repositories_added} Repositories and {sessions_added} Sessions from Electron's registry.json (settings.json imported: {settings_imported}, profileCache.json imported: {profile_cache_imported})"
+                );
+            }
+            store::import::ImportOutcome::Failed(err) => {
+                log::error!(
+                    "refract-tauri: data import failed, starting with this build's own existing data only: {err}"
+                );
+            }
+        }
+
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
             .unwrap_or_else(|err| panic!("refract-tauri: failed to open registry.json: {err}"));
