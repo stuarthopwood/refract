@@ -378,21 +378,10 @@ fn map_run_result(
         let stderr_text = String::from_utf8_lossy(stderr);
         let trimmed = stderr_text.trim();
         if !trimmed.is_empty() {
-            // Gate-fix (round 10, LOW, security): only the LENGTH and the FIRST LINE are logged
-            // now, at debug (not the full up-to-500-char, possibly-multi-line stderr text at
-            // warn) -- a YAML parse error can echo a local path (this file's own header notes),
-            // and a multi-line echo is more than this diagnostic needs.
-            let first_line: String = trimmed
-                .lines()
-                .next()
-                .unwrap_or("")
-                .chars()
-                .take(500)
-                .collect();
-            log::debug!(
-                "omp call failed: stderr_len={} first_line={first_line}",
-                trimmed.len()
-            );
+            // Gate-fix (round 11, LOW, security): only the LENGTH is logged now, at debug --
+            // not even a first line, since a YAML parse error can echo a local path (this
+            // file's own header notes) directly in that first line too.
+            log::debug!("omp call failed: stderr_len={}", trimmed.len());
         }
         return Err(OmpConfigError::new(
             OmpConfigErrorCode::OmpFailed,

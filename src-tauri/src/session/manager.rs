@@ -144,10 +144,13 @@ impl SessionManager {
 
         let mut summary = RoleChangeSummary::default();
         // Gate-fix (round 10, MEDIUM): the caller already read this map in its own
-        // `set_model_role` write -- re-reading raced a second `modelRoles.set` mid-sweep
-        // (`apply_role_now`'s own check re-reads fresh once on a mismatch, see there). Shared
-        // via `Arc` for cheap cloning across every spawned task below.
+        // `set_model_role` write -- re-reading raced a second `modelRoles.set` mid-sweep.
+        // Shared via `Arc` for cheap cloning across every spawned task below. `stale_retry`
+        // (round 11): a shared `OnceCell`, so at most ONE re-read happens for the WHOLE sweep
+        // if a cached-map mismatch fires, not one per mismatching Session.
         let shared_model_roles = Arc::new(model_roles);
+        let stale_retry: Arc<tokio::sync::OnceCell<std::collections::HashMap<String, String>>> =
+            Arc::new(tokio::sync::OnceCell::new());
         // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
         // one at a time -- each makes up to three RPCs, so a serial sweep's worst case grows
         // with the Session count.
@@ -190,35 +193,34 @@ impl SessionManager {
             let semaphore = semaphore.clone();
             let role = role.to_string();
             let shared_model_roles = shared_model_roles.clone();
+            let stale_retry = stale_retry.clone();
             idle_tasks.push(tokio::spawn(async move {
                 let _permit = semaphore
                     .acquire_owned()
                     .await
                     .expect("semaphore never closed");
-                let model_roles_ref = Some(shared_model_roles.as_ref());
-                let outcome = match apply_role_now(&agent, &role, true, model_roles_ref).await {
+                let roles_ref = Some(shared_model_roles.as_ref());
+                let retry = Some(stale_retry.as_ref());
+                let outcome = match apply_role_now(&agent, &role, true, roles_ref, retry).await {
                     Ok(_) => RoleApplyOutcome::Moved,
                     Err(err) if err.code == "not-idle" => {
-                        // Gate-fix (MEDIUM): became working between the atomic queue-or-ready
-                        // check above and this task's own `send_if_idle` call. Re-run the SAME
-                        // atomic decision right here rather than waiting for the sequential loop
-                        // below to notice minutes later -- if the Session has ALREADY settled
-                        // back to idle by now, apply right away instead of queuing for a whole
-                        // extra turn.
+                        // Gate-fix (MEDIUM): became working between the atomic
+                        // queue-or-ready check and this task's own `send_if_idle` call.
+                        // Re-run the SAME atomic decision now instead of waiting for the
+                        // sequential loop to notice minutes later.
                         if agent.queue_role_reapply_or_ready(&role).await {
                             RoleApplyOutcome::Queued
                         } else {
-                            match apply_role_now(&agent, &role, true, model_roles_ref).await {
+                            match apply_role_now(&agent, &role, true, roles_ref, retry).await {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
                                     // Gate-fix (round 6, HIGH): became working again between the
                                     // ready-check above and this retry's own send -- OMP is
                                     // still mid-turn even though Refract's OWN status already
                                     // looked idle. `queue_role_reapply_or_ready` does NOT set
-                                    // `pending_role_reapply` for a `false` result ("apply now
-                                    // yourself"), so if THIS retry also failed not-idle, set it
-                                    // directly ourselves -- never report `Queued` unless
-                                    // something is actually queued.
+                                    // `pending_role_reapply` for a `false` result, so if THIS
+                                    // retry also failed not-idle, set it directly ourselves --
+                                    // never report `Queued` unless something is actually queued.
                                     if !agent.queue_role_reapply_or_ready(&role).await {
                                         agent
                                             .with_model_state(|s| {

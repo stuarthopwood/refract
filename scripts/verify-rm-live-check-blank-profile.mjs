@@ -95,35 +95,15 @@ async function main() {
       '',
     ].join('\n'),
   );
-  // ONLY `modelRoles.default` set -- the minimum `omp --mode rpc-ui` needs to start (FINDINGS:
-  // no default at all exits immediately with "No default model selected"). `smol`/`slow`/
-  // `vision`/any custom role are left COMPLETELY UNCONFIGURED -- `omp config get modelRoles
-  // --json` must report `{"default": "..."}`, a genuinely sparse (not literally `{}`, but far
-  // short of "every role") record. `cycleOrder` is never set, so it reads as OMP's own built-in
-  // default `["smol","default","slow"]`.
-  run('omp', [
-    '--profile',
-    profile,
-    'config',
-    'set',
-    'modelRoles',
-    '--json',
-    '--',
-    JSON.stringify({ default: 'probe-fake/probe-fake-model' }),
-  ]);
-
-  const results = [];
-  function record(name, ok, detail) {
-    results.push({ name, ok, detail });
-    console.log(`${ok ? 'PASS' : 'FAIL'}: ${name}${detail ? ' -- ' + JSON.stringify(detail) : ''}`);
-  }
-
-  // Gate-fix (round 10, LOW, security): strip every `PI_*`/`OMP_*` key from the copied parent
-  // environment before spawning -- an ambient override already set in the invoking shell (for
-  // example `PI_SMOL_MODEL`) could silently supply a role selector this script's own sparse
-  // `modelRoles` record is specifically testing the ABSENCE of, making a check pass for the
-  // wrong reason. `OMP_PROFILE` is re-added explicitly afterward, the one override this script
-  // itself needs.
+  // Gate-fix (round 10/11, LOW, security): strip every `PI_*`/`OMP_*` key from the copied
+  // parent environment before spawning OR seeding -- an ambient override already set in the
+  // invoking shell (for example `PI_SMOL_MODEL`) could silently supply a role selector this
+  // script's own sparse `modelRoles` record is specifically testing the ABSENCE of, making a
+  // check pass for the wrong reason. `OMP_PROFILE` and `PI_CONFIG_DIR` are re-added explicitly
+  // afterward: `PI_CONFIG_DIR` is pinned to the SAME `CONFIG_DIR_NAME` this script's own
+  // bookkeeping already uses (so a custom value set in the host shell does not make the
+  // launched app resolve a DIFFERENT profile directory than this script writes
+  // `models.yml`/seeds `modelRoles` into).
   const filteredParentEnv = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith('PI_') && !key.startsWith('OMP_')),
   );
@@ -134,7 +114,37 @@ async function main() {
     REFRACT_DATA_DIR: dataDir,
     REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
     OMP_PROFILE: profile,
+    PI_CONFIG_DIR: CONFIG_DIR_NAME,
   };
+
+  // ONLY `modelRoles.default` set -- the minimum `omp --mode rpc-ui` needs to start (FINDINGS:
+  // no default at all exits immediately with "No default model selected"). `smol`/`slow`/
+  // `vision`/any custom role are left COMPLETELY UNCONFIGURED -- `omp config get modelRoles
+  // --json` must report `{"default": "..."}`, a genuinely sparse (not literally `{}`, but far
+  // short of "every role") record. `cycleOrder` is never set, so it reads as OMP's own built-in
+  // default `["smol","default","slow"]`. Seeded with the SAME filtered `env` the app itself
+  // launches with (round 11) -- an un-stripped ambient `PI_PROFILE`/`OMP_PROFILE` could
+  // otherwise point this CLI call at a DIFFERENT profile than `--profile` names.
+  run(
+    'omp',
+    [
+      '--profile',
+      profile,
+      'config',
+      'set',
+      'modelRoles',
+      '--json',
+      '--',
+      JSON.stringify({ default: 'probe-fake/probe-fake-model' }),
+    ],
+    { env },
+  );
+
+  const results = [];
+  function record(name, ok, detail) {
+    results.push({ name, ok, detail });
+    console.log(`${ok ? 'PASS' : 'FAIL'}: ${name}${detail ? ' -- ' + JSON.stringify(detail) : ''}`);
+  }
 
   const { child } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: exeDir, env });
   const logLines = [];
