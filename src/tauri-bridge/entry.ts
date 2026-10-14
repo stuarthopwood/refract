@@ -11,7 +11,12 @@
 // exists to guarantee. The dynamic `import()` below is the only way to defer evaluation of
 // `main.tsx` until after that assignment has actually run.
 import { refract } from './index'
+import { installExternalLinkHandler } from './externalLinks'
 
 window.refract = refract
+// Issue #793 security baseline: external-link policy (only http/https through the opener
+// plugin), wired before the renderer mounts so the very first rendered `<a target="_blank">`
+// is already covered.
+installExternalLinkHandler()
 
 await import('../renderer/main')
