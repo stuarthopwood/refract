@@ -27,10 +27,11 @@ impl SessionAgent {
                     // "settled" (see `handle_turn_settled`'s own doc comment). `| 1` forces the
                     // result odd regardless of the value coming in (robust even against a
                     // defensive double `agent_start` with no intervening settle), so this both
-                    // starts a fresh turn and invalidates any `on_session_settled` reply still
-                    // in flight from the previous turn's settle -- that round trip now runs on a
-                    // spawned task (see `handle_turn_settled`), so its reply can land after this
-                    // point; the generation no longer matching lets it recognise itself as stale.
+                    // starts a fresh turn; `on_session_settled`'s own `get_state` round trip now
+                    // runs on a spawned task (see `handle_turn_settled`), so its reply can land
+                    // after this point -- `sync_from_state`'s own staleness check (its doc
+                    // comment) only drops it once a FULL LATER settle has also happened, not
+                    // merely because this new turn started.
                     state.turn_generation = state.turn_generation.wrapping_add(1) | 1;
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
@@ -153,7 +154,7 @@ impl SessionAgent {
     /// `handleTurnSettled`): resolves any still-pending requests, moves to `idle`, then
     /// re-syncs from a fresh `get_state`.
     async fn handle_turn_settled(&self) {
-        let generation = {
+        let (generation, shutdown_generation) = {
             let mut state = self.state.lock().await;
             // Even `turn_generation` means this turn is already settled (see the `agent_start`
             // arm's own doc comment for the odd/even encoding) -- a duplicate `session_settled`/
@@ -162,7 +163,7 @@ impl SessionAgent {
                 return;
             }
             state.turn_generation = state.turn_generation.wrapping_add(1);
-            state.turn_generation
+            (state.turn_generation, state.shutdown_generation)
         };
         self.settle_turn_pending().await;
         self.set_status(SessionStatus::Idle, None, None).await;
@@ -170,12 +171,14 @@ impl SessionAgent {
         // `DEFAULT_REQUEST_TIMEOUT_MS`, 60s) used to run inline here, on the SAME task that
         // `spawn_frame_listener`'s own `rx.recv()` loop calls `handle_frame` from -- nothing
         // read another frame (including the NEXT turn's own `agent_start`) until it returned.
-        // Spawned instead, tagged with this turn's `turn_generation`: `on_session_settled`
-        // re-checks the generation under the state lock before applying anything, so a reply
-        // that lands after a newer turn has already started (bumping the generation in the
-        // `agent_start` arm above) is dropped rather than clobbering that newer turn's state.
+        // Spawned instead, tagged with this turn's `turn_generation` and `shutdown_generation`:
+        // `sync_from_state` re-checks both (see its own doc comment) before applying anything,
+        // so a reply landing after a NEWER SETTLE (not merely a newer turn starting) or a
+        // stop/restart is dropped rather than clobbering fresher state.
         let agent = self.arc();
-        tokio::spawn(async move { agent.on_session_settled(generation).await });
+        tokio::spawn(async move {
+            agent.on_session_settled(generation, shutdown_generation).await
+        });
     }
 
     /// Port of `SessionAgent.ts`'s own `settleTurnPendingRequests`: every still-pending request
@@ -198,7 +201,7 @@ impl SessionAgent {
         }
     }
 
-    async fn on_session_settled(&self, generation: u64) {
+    async fn on_session_settled(&self, generation: u64, shutdown_generation: u64) {
         let proc = { self.state.lock().await.process.clone() };
         let Some(proc) = proc else { return };
         if let Ok(res) = proc
@@ -207,17 +210,8 @@ impl SessionAgent {
         {
             if res.get("success").and_then(Value::as_bool) == Some(true) {
                 if let Some(data) = res.get("data") {
-                    // Gate-fix (#856): dropped, not applied, once a newer turn has started
-                    // while this request was in flight -- see `handle_turn_settled`'s own doc
-                    // comment for the mechanism. `sync_from_state` writes the registry's
-                    // `lastMessageCount`/`lastModel`/`lastThinkingLevel`/`currentConversation`
-                    // and (via `readout::on_sync_from_state`) `contextUsage`/`todoPhases`; a
-                    // stale reply applying any of those over a newer turn's own fresher values
-                    // would be a real (if narrower) regression of its own.
-                    if self.state.lock().await.turn_generation != generation {
-                        return;
-                    }
-                    self.sync_from_state(data).await;
+                    self.sync_from_state(data, Some((generation, shutdown_generation)))
+                        .await;
                 }
             }
         }

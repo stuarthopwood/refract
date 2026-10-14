@@ -57,6 +57,12 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.transcript = TranscriptState::new();
+            // Gate-fix (#856): +2 keeps parity (odd stays odd, even stays even -- see
+            // `agent::frame`'s own doc comment for the encoding) while making any settle-time
+            // `get_state` reply still in flight from the PREVIOUS Conversation stale by
+            // `sync_from_state`'s own `>= 2` rule, so it can never write that Conversation's
+            // `currentConversation` over this brand-new one's.
+            state.turn_generation = state.turn_generation.wrapping_add(2);
         }
         self.emit_patch_reset().await;
         // Lane R5 (issue #577, #712): clears the PREVIOUS Conversation's readout/subagent state
@@ -70,7 +76,7 @@ impl SessionAgent {
         {
             if res.get("success").and_then(Value::as_bool) == Some(true) {
                 if let Some(data) = res.get("data") {
-                    self.sync_from_state(data).await;
+                    self.sync_from_state(data, None).await;
                 }
             }
         }
@@ -173,13 +179,16 @@ impl SessionAgent {
             } else {
                 TranscriptState::new()
             };
+            // Gate-fix (#856): see `start_new_conversation`'s own identical comment -- this is
+            // also a Conversation reset.
+            state.turn_generation = state.turn_generation.wrapping_add(2);
         }
         // Lane R5 (issue #577, #712): this is a DIFFERENT Conversation's history, so the
         // previous one's readout/subagent state never carries over (see `start_new_conversation`
         // above for the identical reasoning).
         crate::session::readout::on_conversation_reset(self).await;
         crate::session::subagents::on_conversation_reset(self).await;
-        self.sync_from_state(&data).await;
+        self.sync_from_state(&data, None).await;
         self.emit_patch_reset().await;
         Ok(())
     }

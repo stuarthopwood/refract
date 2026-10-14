@@ -53,9 +53,11 @@ skipped; they are not part of the OMP wire format itself.
 
 ## Scenario selection
 
-`REFRACT_FAKE_OMP_SCENARIO=<name>` selects `<name>.jsonl`. Unset, the engine picks `readiness`
-when argv carries `--no-session` (the Rust readiness probe's own scratch, non-Session
-`OmpProcess`) or `session` otherwise (a real Session's `OmpProcess`).
+`--no-session` on argv ALWAYS selects `readiness` (the Rust readiness probe's own scratch,
+non-Session `OmpProcess`), regardless of `REFRACT_FAKE_OMP_SCENARIO` (issue #856: a live check's
+override for the Session's own `OmpProcess` must never also hijack the unrelated readiness
+probe's tape). Otherwise, `REFRACT_FAKE_OMP_SCENARIO=<name>` selects `<name>.jsonl`; unset, that
+defaults to `session` (a real Session's `OmpProcess`).
 
 **`scripts/verify-tauri.mjs` never sets this env var itself.** It only ever drives two scenarios,
 chosen implicitly by which kind of `OmpProcess` the Rust code itself spawns: `readiness` (the

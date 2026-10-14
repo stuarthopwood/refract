@@ -173,7 +173,7 @@ impl SessionAgent {
             return Err(AgentError::new("prompt-failed", "get_state failed"));
         }
         let data = res.get("data").cloned().unwrap_or(Value::Null);
-        self.sync_from_state(&data).await;
+        self.sync_from_state(&data, None).await;
         Ok(data)
     }
 

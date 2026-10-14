@@ -318,7 +318,7 @@ impl SessionAgent {
         }
         crate::session::subagents::on_attach_reconcile(self).await;
         crate::session::readout::on_launch(self).await;
-        self.sync_from_state(&state_data).await;
+        self.sync_from_state(&state_data, None).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;
@@ -405,8 +405,17 @@ impl SessionAgent {
 
     /// Runs after the initial `get_state` and after every `session_settled` (port of
     /// `SessionAgent.ts`'s own `syncFromState`): persists `sessionDir`/`currentConversation`/
-    /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`.
-    pub(super) async fn sync_from_state(&self, state: &Value) {
+    /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`. `stale_if`
+    /// (settle-time callers), re-checked HERE: diff `>= 2` is a FULL later settle (`== 1` is just a newer turn starting, never stale).
+    pub(super) async fn sync_from_state(&self, state: &Value, stale_if: Option<(u64, u64)>) {
+        if let Some((generation, shutdown_generation)) = stale_if {
+            let s = self.state.lock().await;
+            if s.turn_generation.wrapping_sub(generation) >= 2
+                || s.shutdown_generation != shutdown_generation
+            {
+                return;
+            }
+        }
         let session_file = state
             .get("sessionFile")
             .and_then(Value::as_str)
