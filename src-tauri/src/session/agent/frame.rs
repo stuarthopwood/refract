@@ -205,14 +205,20 @@ impl SessionAgent {
         proc: &Arc<OmpProcess>,
         code: Option<i32>,
         requested: bool,
-    ) -> (bool, bool) {
-        let (is_current, stop_requested, exited_pid) = {
+    ) -> (bool, bool, bool) {
+        let (is_current, stop_requested, was_already_stopped, exited_pid) = {
             let mut state = self.state.lock().await;
             let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
+            let was_already_stopped = state.status == SessionStatus::Stopped;
             if is_current {
                 state.process = None;
             }
-            (is_current, state.stop_requested, proc.pid())
+            (
+                is_current,
+                state.stop_requested,
+                was_already_stopped,
+                proc.pid(),
+            )
         };
         if is_current {
             // Lane R3 (issue #786, #515): the pid-record fallback for orphan reaping. Awaited
@@ -226,7 +232,7 @@ impl SessionAgent {
             }
         }
         if !is_current {
-            return (false, stop_requested);
+            return (false, stop_requested, was_already_stopped);
         }
         // Finalizes every still-live row before settling pending requests (code-review finding,
         // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
@@ -246,11 +252,11 @@ impl SessionAgent {
                 // A `launch()`-internal cleanup stop (failed handshake/attach), never the user
                 // asking to stop -- `launch()`'s own catch paths already recorded the real
                 // stopped/start-failed status for this; nothing further to do here.
-                return (is_current, stop_requested);
+                return (is_current, stop_requested, was_already_stopped);
             }
             self.set_status(SessionStatus::Stopped, Some("not-started"), None)
                 .await;
-            return (is_current, stop_requested);
+            return (is_current, stop_requested, was_already_stopped);
         }
         let detail = match code {
             Some(c) => format!("exit code {c}"),
@@ -258,6 +264,6 @@ impl SessionAgent {
         };
         self.set_stopped_unless_already_stopped("agent-exited", Some(detail))
             .await;
-        (is_current, stop_requested)
+        (is_current, stop_requested, was_already_stopped)
     }
 }

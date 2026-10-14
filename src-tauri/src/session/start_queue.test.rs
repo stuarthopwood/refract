@@ -98,6 +98,7 @@ fn to_wire_never_puts_cancelled_on_the_wire() {
         stage: Some(StartStage::Cancelled),
         elapsed_ms: 42,
         cancel: None,
+        ready_wait_active: false,
     };
     assert_eq!(state.to_wire(), None);
 }

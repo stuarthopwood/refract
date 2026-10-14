@@ -1,6 +1,7 @@
-// Start / reattach (port of `SessionAgent.ts`'s `start`/`doStart`/`launch`/`attachAndVerify`),
-// plus the free functions only this flow needs (`reattachVerification.ts`'s `verifyReattach`,
-// `fetchAllMessages.ts`). See `mod.rs`'s own header for this module's place in the `agent/`
+// Start / reattach (port of `SessionAgent.ts`'s `start`/`doStart`/`launch`/`attachAndVerify`).
+// The free functions this flow needs (`reattachVerification.ts`'s `verifyReattach`,
+// `fetchAllMessages.ts`) live in the sibling `launch_support.rs` (split out round 4, 2026-10-14,
+// issue #806 600-line cap). See `mod.rs`'s own header for this module's place in the `agent/`
 // split and the lane extension contract.
 
 use std::path::{Path, PathBuf};
@@ -9,15 +10,14 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
-use crate::omp::process::{
-    ApprovalMode as ProcApprovalMode, OmpProcess, OmpProcessOptions, ProcessEvent,
-};
+use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
 use crate::store::registry::{Session, SessionPatch};
-use crate::store::settings::ApprovalMode;
 
+use super::launch_support::{
+    fetch_all_messages, registry_store_error_message, to_process_mode, truncate, verify_reattach,
+};
 use super::{
-    AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MESSAGE_PAGES,
-    MAX_MODEL_FIELD_LENGTH, MESSAGES_PAGE_SIZE,
+    AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH,
 };
 
 impl SessionAgent {
@@ -131,9 +131,13 @@ impl SessionAgent {
 
         // Lane R3 (issue #786, "one hook" this lane adds to core `agent.rs`): the process-wide
         // start-slot gate and low-memory defer (`startQueue.ts`'s own `acquireStartSlot`/
-        // `deferStartIfMemoryLow`), held for the rest of this attempt's scope so the slot is
-        // freed exactly once, on every return path below.
-        let _slot_guard = crate::session::start_queue::acquire_slot(self).await?;
+        // `deferStartIfMemoryLow`).
+        let slot_guard = crate::session::start_queue::acquire_slot(self).await?;
+        // Gate-fix (code review HIGH, round 2): covers the WHOLE rest of this attempt (every
+        // return path below, success included -- `clear_stage` is idempotent) so a start that
+        // fails during `wait_ready` (ceiling, or the process exiting before ready) can never
+        // leave its `waiting`/`prompt` stage stuck on the wire the way a success-only clear did.
+        let _stage_guard = crate::session::start_queue::guard_stage_for_attempt(self);
 
         let proc = match OmpProcess::connect(&opts).await {
             Ok(p) => p,
@@ -150,7 +154,7 @@ impl SessionAgent {
         // correctness review): strictly orders this write before any later `remove_process_
         // record` for the same pid (`handle_exit`) could possibly run, and a JSON write here is
         // cheap next to the ready-wait this attempt is about to pay regardless.
-        let _spawned_guard = crate::session::start_queue::mark_spawned();
+        let spawned_guard = crate::session::start_queue::mark_spawned();
         if let Some(pid) = proc.pid() {
             crate::process::pid_records::record_process(pid, &self.session_id).await;
         }
@@ -162,8 +166,17 @@ impl SessionAgent {
         // Lane R3 (issue #786, #656): a cancel landing from here on must stop the now-spawned
         // process, not just abandon the wait -- `acquire_slot`'s own cancel check above only
         // covers the queued/memory-deferred phase, before any process existed to leak.
-        let _cancel_watch = crate::session::start_queue::watch_for_cancel(self, proc.clone()).await;
-        if let Err(err) = proc.wait_ready(&opts).await {
+        let cancel_watch = crate::session::start_queue::watch_for_cancel(self, proc.clone()).await;
+        let wait_result = proc.wait_ready(&opts).await;
+        // Gate-fix (code review MEDIUM, round 3): both released right here, matching TS's own
+        // `OmpProcess.start()` scope (`acquireStartSlot`/`markSpawned` are process-level, never
+        // held across the Session-level reattach/history-fetch below) -- held any longer, a
+        // Cancel or `shutdown()` landing during `attach_and_verify`/`fetch_all_messages` would
+        // still reach `watch_for_cancel`'s own handler and kill an agent that is already ready.
+        drop(cancel_watch);
+        drop(slot_guard);
+        drop(spawned_guard);
+        if let Err(err) = wait_result {
             let detail = format!("{failure_prefix}{}", err.message);
             self.record_start_failure(&detail).await;
             return Err(AgentError::new("start-failed", detail));
@@ -399,7 +412,7 @@ impl SessionAgent {
                             .await;
                     }
                     Some(ProcessEvent::Exit { code, requested }) => {
-                        let (is_current, stop_requested) =
+                        let (is_current, stop_requested, was_already_stopped) =
                             agent.handle_exit(&proc, code, requested).await;
                         // Issue #784: the same extension point for every not-yet-landed lane's
                         // exit handling, same shape as `frame.rs`'s own `on_frame` fan-out.
@@ -409,15 +422,26 @@ impl SessionAgent {
                         crate::session::subagents::on_exit(&agent, code, requested).await;
                         // Lane R3 (issue #786, gate-fix): gated on `is_current` -- a stale exit
                         // for an already-superseded life must never clear a NEWER attempt's own
-                        // cancel handle/stage or recompute its termination verdict. Passed
-                        // `stop_requested` (the Session's own flag), not the raw `requested`
-                        // above, which `is_current` and `handle_exit`'s own crash-tail
-                        // detection both need instead (see each hook's own doc comment).
+                        // cancel handle/stage or recompute its termination verdict.
+                        // `start_queue::on_exit` is passed `stop_requested` (the Session's own
+                        // flag), never the raw `requested` above. `termination::on_exit` needs
+                        // BOTH the raw `requested` (its own `requested && !stop_requested` early
+                        // return, a launch()-internal cleanup stop) AND `was_already_stopped`
+                        // (skips recomputing a crash verdict entirely once something more
+                        // authoritative already settled this life's status before this exit
+                        // event was even processed, the same race `should_apply_crash_exit_
+                        // verdict` guards for `handle_exit`'s own status write).
                         if is_current {
                             crate::session::start_queue::on_exit(&agent, code, stop_requested)
                                 .await;
-                            crate::session::termination::on_exit(&agent, code, stop_requested)
-                                .await;
+                            crate::session::termination::on_exit(
+                                &agent,
+                                code,
+                                requested,
+                                stop_requested,
+                                was_already_stopped,
+                            )
+                            .await;
                         }
                         break;
                     }
@@ -462,123 +486,4 @@ impl SessionAgent {
             proc.stop().await;
         }
     }
-}
-
-/// `RegistryStoreError` has no `Display` impl (only its `Registry` variant's inner
-/// `RegistryError` does); mirrors `ipc::map_registry_error`'s own match for the message half.
-fn registry_store_error_message(err: crate::store::registry::RegistryStoreError) -> String {
-    match err {
-        crate::store::registry::RegistryStoreError::Registry(e) => e.message,
-        crate::store::registry::RegistryStoreError::Io(e) => e.to_string(),
-    }
-}
-
-fn to_process_mode(mode: ApprovalMode) -> ProcApprovalMode {
-    match mode {
-        ApprovalMode::Ask => ProcApprovalMode::Ask,
-        ApprovalMode::EditFreely => ProcApprovalMode::EditFreely,
-        ApprovalMode::Auto => ProcApprovalMode::Auto,
-    }
-}
-
-/// Also used by `agent::requests`'s own `pick_approval_target` to bound approval-dialog target
-/// strings; kept here with the rest of this module's field-length truncation.
-pub(super) fn truncate(s: &str, max_len: usize) -> String {
-    s.chars().take(max_len).collect()
-}
-
-/// Port of `reattachVerification.ts`'s own `verifyReattach`. Windows paths are compared
-/// case-insensitively without canonicalisation (both sides are already absolute paths from the
-/// registry/OMP itself, unlike `path.resolve`'s own relative-path handling).
-pub(super) fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), String> {
-    let session_file = state
-        .get("sessionFile")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if session_file.to_lowercase() != expected_file.to_lowercase() {
-        return Err(format!("Reattach verification failed: sessionFile mismatch (expected {expected_file}, got {session_file})"));
-    }
-    let message_count = state
-        .get("messageCount")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    if message_count <= 0 {
-        return Err(format!("Reattach verification failed: messageCount is {message_count}, expected greater than 0"));
-    }
-    Ok(())
-}
-
-/// Port of `fetchAllMessages.ts`: bounded `get_messages_page` pagination, falling back to a
-/// single plain `get_messages` call if the very first page fails. Never fails outright -- an
-/// incomplete fetch (`complete: false`) returns whatever was already accumulated.
-pub(super) async fn fetch_all_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
-    let mut all: Vec<Value> = Vec::new();
-    let mut cursor: Option<String> = None;
-    for page in 0..MAX_MESSAGE_PAGES {
-        let mut cmd = json!({ "type": "get_messages_page", "limit": MESSAGES_PAGE_SIZE });
-        if let Some(cursor) = &cursor {
-            cmd["cursor"] = Value::String(cursor.clone());
-        }
-        let res = match proc.request(cmd, DEFAULT_REQUEST_TIMEOUT_MS).await {
-            Ok(res) => res,
-            Err(_) if page == 0 => return fallback_to_get_messages(proc).await,
-            Err(_) => return (all, false),
-        };
-        if res.get("success").and_then(Value::as_bool) != Some(true) {
-            if page == 0 {
-                return fallback_to_get_messages(proc).await;
-            }
-            return (all, false);
-        }
-        let data = res.get("data");
-        let messages = data
-            .and_then(|d| d.get("messages"))
-            .and_then(Value::as_array);
-        let total_messages = data
-            .and_then(|d| d.get("totalMessages"))
-            .and_then(Value::as_u64);
-        let (Some(messages), Some(total_messages)) = (messages, total_messages) else {
-            if page == 0 {
-                return fallback_to_get_messages(proc).await;
-            }
-            return (all, false);
-        };
-        let next_cursor = data
-            .and_then(|d| d.get("nextCursor"))
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        if next_cursor.is_some() && (messages.is_empty() || next_cursor == cursor) {
-            return (all, false);
-        }
-        all.extend(messages.iter().cloned());
-        if all.len() as u64 >= total_messages {
-            return (all, true);
-        }
-        let Some(next_cursor) = next_cursor else {
-            return (all, false);
-        };
-        cursor = Some(next_cursor);
-    }
-    (all, false)
-}
-
-async fn fallback_to_get_messages(proc: &OmpProcess) -> (Vec<Value>, bool) {
-    let res = match proc
-        .request(
-            json!({ "type": "get_messages" }),
-            DEFAULT_REQUEST_TIMEOUT_MS,
-        )
-        .await
-    {
-        Ok(res) => res,
-        Err(_) => return (Vec::new(), false),
-    };
-    let messages = res
-        .get("data")
-        .and_then(|d| d.get("messages"))
-        .and_then(Value::as_array);
-    if res.get("success").and_then(Value::as_bool) != Some(true) || messages.is_none() {
-        return (Vec::new(), false);
-    }
-    (messages.unwrap().clone(), true)
 }

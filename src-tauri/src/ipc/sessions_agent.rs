@@ -10,15 +10,22 @@
 // lane R3 (#786, agent start/recovery/resume as a typed state machine) is the only lane that
 // ever edits this file; the registry-only `.list`/`.create`/`.rename` arms live in the sibling
 // `ipc/sessions_lifecycle.rs` instead (lane R2, #785).
+//
+// `ResumableAgent`/`AttachableAgent` (gate-fix, code review + test-review HIGH): the 2-5
+// operations `resume_session_core`/`attach_snapshot_decision` need, abstracted so both are
+// unit-testable against a plain fake -- port of `resumeSession.ts`'s own `ResumableAgent` and
+// `attachSnapshot.ts`'s own `AttachableAgent` interfaces. The registry-specific glue neither
+// trait knows about (reading/re-reading the `Session` row, building the real `SessionSnapshot`)
+// stays in the IPC handlers themselves (`sessions_resume`/`attach_snapshot_core`), which adapt
+// the real `Arc<SessionAgent>` + `AppState` to each trait.
 
 use std::collections::HashSet;
-use std::sync::{LazyLock, Mutex as StdMutex};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
 use serde_json::Value;
 
 use crate::session::termination::TerminationDetectionResult;
-use crate::session::{SessionAgent, SessionStatus};
-use crate::store::registry::Session;
+use crate::session::{AgentError, SessionAgent, SessionStatus};
 
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture};
 
@@ -117,9 +124,7 @@ const DEFAULT_RESUME_INSTRUCTION: &str = "resume";
 /// concurrent IPC calls, not just one function's own stack frame. Issue #603 quality-gate
 /// follow-up: `sessions.archive`/`.delete` (`ipc::sessions_lifecycle`, lane R2) are meant to hold
 /// this SAME lock set for their own shutdown()+write duration, not just a resume in progress --
-/// `try_lock_resuming` below is exposed (`pub(crate)`) for exactly that; wiring R2's own handlers
-/// to call it is that lane's own follow-up, not done here (R3 owns this file, not
-/// `sessions_lifecycle.rs`).
+/// `try_lock_resuming` below is exposed (`pub(crate)`) for exactly that.
 static RESUMING_IDS: LazyLock<StdMutex<HashSet<String>>> =
     LazyLock::new(|| StdMutex::new(HashSet::new()));
 
@@ -161,10 +166,242 @@ fn stop_reason_of(runtime: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+// -------------------------------------------------------------------------------------------
+// Resume (`sessions.resume`): injectable core (gate-fix, code review + test-review HIGH)
+// -------------------------------------------------------------------------------------------
+
+/// Minimal seam `resume_session_core` needs -- port of `resumeSession.ts`'s own `ResumableAgent`.
+pub(crate) trait ResumableAgent {
+    async fn status(&self) -> SessionStatus;
+    async fn stop_reason(&self) -> Option<String>;
+    async fn resolve_termination(&self) -> TerminationDetectionResult;
+    async fn start(&self) -> Result<(), AgentError>;
+    async fn notify_list_changed(&self);
+    /// Sends the configured resume instruction as a real turn. The real adapter also re-checks
+    /// (right here, the last moment before this irreversible step) that the Session has not been
+    /// archived/deleted since eligibility was checked, shutting the just-started agent back down
+    /// and refusing instead of sending into a Session this call is about to report as ineligible.
+    async fn send_resume_instruction(&self) -> Result<(), AgentError>;
+}
+
+pub(crate) enum ResumeCoreError {
+    Refused(&'static str),
+    PromptFailed(String),
+}
+
+/// Port of `resumeSession.ts`'s own `resumeSessionCore`'s decision body: the one atomic busy-lock
+/// claim, eligibility (status/stop-reason/a FRESH `resolve_termination` -- never a cached, stale
+/// `terminatedUnexpectedly`), start, the "did the restart actually come back" check, and send --
+/// everything that does NOT need live registry/`build_snapshot` access, which stays in the IPC
+/// handler (`sessions_resume`) as the thin, registry-specific glue this trait does not know
+/// about. Gate-fix (code review LOW): the lock is claimed BEFORE the eligibility check now (TS
+/// checks busy first too), closing the window a check-then-claim order left open. Returns `Ok(())`
+/// whether or not the instruction was actually sent (same as the TS `Result<SessionSnapshot>`
+/// shape this feeds -- the caller rebuilds the snapshot from the registry either way); tests
+/// observe the fake's own `send_called` flag instead of an extra wrapper type here.
+pub(crate) async fn resume_session_core<A: ResumableAgent>(
+    agent: &A,
+    id: &str,
+    archived: bool,
+) -> Result<(), ResumeCoreError> {
+    let Some(_guard) = try_lock_resuming(id) else {
+        return Err(ResumeCoreError::Refused("busy"));
+    };
+    let status = agent.status().await;
+    let stop_reason = agent.stop_reason().await;
+    let detection = agent.resolve_termination().await;
+    if let Some(code) = check_resume_eligible(
+        status,
+        stop_reason.as_deref(),
+        detection.terminated_unexpectedly,
+        archived,
+    ) {
+        return Err(ResumeCoreError::Refused(code));
+    }
+    let _ = agent.start().await;
+    agent.notify_list_changed().await;
+    if agent.status().await == SessionStatus::Stopped {
+        // The restart itself failed (e.g. start-failed): never send the instruction into a
+        // Session that did not actually come back.
+        return Ok(());
+    }
+    match agent.send_resume_instruction().await {
+        Ok(()) => Ok(()),
+        Err(err) => Err(ResumeCoreError::PromptFailed(err.message)),
+    }
+}
+
+struct ResumeAgentAdapter<'a> {
+    state: &'a AppState,
+    agent: Arc<SessionAgent>,
+    id: String,
+}
+
+impl ResumableAgent for ResumeAgentAdapter<'_> {
+    async fn status(&self) -> SessionStatus {
+        self.agent.status().await
+    }
+
+    async fn stop_reason(&self) -> Option<String> {
+        stop_reason_of(&self.agent.runtime_view().await)
+    }
+
+    async fn resolve_termination(&self) -> TerminationDetectionResult {
+        self.agent.resolve_termination().await
+    }
+
+    async fn start(&self) -> Result<(), AgentError> {
+        self.agent.start().await
+    }
+
+    async fn notify_list_changed(&self) {
+        self.state.session_manager.notify_list_changed();
+    }
+
+    async fn send_resume_instruction(&self) -> Result<(), AgentError> {
+        // Belt-and-braces re-check right before the one irreversible step: a concurrent
+        // archive/delete could have landed during `start()`'s own await. No fallback to an
+        // earlier snapshot on a miss -- a deleted Session must never be treated as the stale,
+        // non-archived copy.
+        let before_send = self
+            .state
+            .registry
+            .lock()
+            .await
+            .get_session(&self.id)
+            .cloned();
+        match before_send {
+            Some(session) if session.archived_at.is_none() => {}
+            _ => {
+                self.agent.shutdown().await;
+                return Err(AgentError::new(
+                    "not-eligible",
+                    "Session is not eligible to resume.",
+                ));
+            }
+        }
+        self.agent
+            .send(DEFAULT_RESUME_INSTRUCTION.to_string(), None)
+            .await
+            .map(|_| ())
+    }
+}
+
+/// `sessions.resume` (issue #509/#786): recover (if needed) then send
+/// `DEFAULT_RESUME_INSTRUCTION` as a real turn, atomically and server-side-locked per Session id.
+pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let Some(id) = args.first().and_then(Value::as_str).map(str::to_string) else {
+            return Err(invalid_argument("sessions.resume expects a string id"));
+        };
+        let Some(session) = state.registry.lock().await.get_session(&id).cloned() else {
+            return Err(not_found(format!("Session not found: {id}")));
+        };
+        // An archived Session whose agent crashed this run before being archived keeps
+        // `stopReason: 'agent-exited'`, which the eligibility check below would otherwise
+        // accept -- refused before the tail read (never worth a 256 KiB read for a Session
+        // Resume can never apply to).
+        if session.archived_at.is_some() {
+            return Err(invalid_argument(resume_refusal_message("not-eligible")));
+        }
+        let agent = state.session_manager.get_or_create_agent(&id);
+        let adapter = ResumeAgentAdapter {
+            state: &state,
+            agent: agent.clone(),
+            id: id.clone(),
+        };
+        let decision = resume_session_core(&adapter, &id, session.archived_at.is_some()).await;
+        match decision {
+            Err(ResumeCoreError::Refused(code)) => {
+                Err(invalid_argument(resume_refusal_message(code)))
+            }
+            Err(ResumeCoreError::PromptFailed(message)) => {
+                Err(super::IpcError::new("prompt-failed", message))
+            }
+            Ok(()) => {
+                let refreshed = state
+                    .registry
+                    .lock()
+                    .await
+                    .get_session(&id)
+                    .cloned()
+                    .unwrap_or(session);
+                Ok(super::conversations::build_snapshot(&refreshed, &agent, None).await)
+            }
+        }
+    })
+}
+
+// -------------------------------------------------------------------------------------------
+// Attach/open/recover (`sessions.open`/`.recover`): injectable core
+// -------------------------------------------------------------------------------------------
+
+/// Minimal seam `attach_snapshot_decision` needs -- port of `attachSnapshot.ts`'s own
+/// `AttachableAgent`.
+pub(crate) trait AttachableAgent {
+    async fn status(&self) -> SessionStatus;
+    async fn stop_reason(&self) -> Option<String>;
+    async fn resolve_termination(&self) -> TerminationDetectionResult;
+    async fn start(&self) -> Result<(), AgentError>;
+    async fn notify_list_changed(&self);
+}
+
+/// Port of `ipc/attachSnapshot.ts`'s own `attachSnapshotCore`'s decision body: `force_start`
+/// restarts regardless of reason (including `agent-exited`); a passive open only starts when
+/// `can_auto_start` says the Session was never wrong to begin with. Returns the FRESH
+/// `TerminationDetectionResult` to thread into `build_snapshot` whenever (and only whenever) the
+/// Session actually was `Stopped` (`None` otherwise: nothing needed computing, same as the
+/// previous shape) -- never `runtime_view()`'s own cached value, which only ever reflects a
+/// crash THIS live agent's own `on_exit` actually observed.
+pub(crate) async fn attach_snapshot_decision<A: AttachableAgent>(
+    agent: &A,
+    force_start: bool,
+) -> Option<TerminationDetectionResult> {
+    if agent.status().await != SessionStatus::Stopped {
+        return None;
+    }
+    // A requested stop is never read from the tail at all (`resolve_termination` honours the
+    // in-memory `stoppedOnRequest` flag and the persisted marker alike): FR-038 ("stopAgent
+    // reattaches when reopened") needs this, otherwise a tool call still outstanding when a
+    // deliberate stop fired looks identical, from the file alone, to a crash.
+    let detection = agent.resolve_termination().await;
+    let stop_reason = agent.stop_reason().await;
+    if force_start || can_auto_start(stop_reason.as_deref(), detection.terminated_unexpectedly) {
+        let _ = agent.start().await;
+        agent.notify_list_changed().await;
+    }
+    Some(detection)
+}
+
+struct AttachAgentAdapter<'a> {
+    state: &'a AppState,
+    agent: Arc<SessionAgent>,
+}
+
+impl AttachableAgent for AttachAgentAdapter<'_> {
+    async fn status(&self) -> SessionStatus {
+        self.agent.status().await
+    }
+
+    async fn stop_reason(&self) -> Option<String> {
+        stop_reason_of(&self.agent.runtime_view().await)
+    }
+
+    async fn resolve_termination(&self) -> TerminationDetectionResult {
+        self.agent.resolve_termination().await
+    }
+
+    async fn start(&self) -> Result<(), AgentError> {
+        self.agent.start().await
+    }
+
+    async fn notify_list_changed(&self) {
+        self.state.session_manager.notify_list_changed();
+    }
+}
+
 /// Shared by `sessions.open` (`force_start = false`) and `sessions.recover` (`force_start =
-/// true`): port of `ipc/attachSnapshot.ts`'s own `attachSnapshotCore`. `force_start` restarts
-/// regardless of reason (including `agent-exited`); a passive open only starts when
-/// `can_auto_start` says the Session was never wrong to begin with.
+/// true`).
 async fn attach_snapshot_core(
     state: &AppState,
     id: &str,
@@ -174,31 +411,11 @@ async fn attach_snapshot_core(
         return Err(not_found(format!("Session not found: {id}")));
     };
     let agent = state.session_manager.get_or_create_agent(id);
-    let mut detection: Option<TerminationDetectionResult> = None;
-    if agent.status().await == SessionStatus::Stopped {
-        // A requested stop is never read from the tail at all (`SessionAgent::resolve_termination`
-        // honours the in-memory `stoppedOnRequest` flag and the persisted marker alike): FR-038
-        // ("stopAgent reattaches when reopened") needs this, otherwise a tool call still
-        // outstanding when a deliberate stop fired looks identical, from the file alone, to a
-        // crash.
-        let computed = agent.resolve_termination().await;
-        let stop_reason = agent
-            .runtime_view()
-            .await
-            .get("stopReason")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        if force_start || can_auto_start(stop_reason.as_deref(), computed.terminated_unexpectedly) {
-            let _ = agent.start().await;
-            state.session_manager.notify_list_changed();
-        }
-        // Gate-fix: threaded into `build_snapshot` below instead of trusting `runtime_view()`'s
-        // own cached `terminatedUnexpectedly` -- that cache only ever reflects a crash THIS
-        // live agent's own `on_exit` actually observed; a Session that crashed in a PREVIOUS run
-        // (no live agent yet existed to see it) still has its own tail genuinely read, right
-        // here, by `resolve_termination()` just above, every single time this is called.
-        detection = Some(computed);
-    }
+    let adapter = AttachAgentAdapter {
+        state,
+        agent: agent.clone(),
+    };
+    let detection = attach_snapshot_decision(&adapter, force_start).await;
     let refreshed = state
         .registry
         .lock()
@@ -233,107 +450,6 @@ pub fn sessions_recover(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
         attach_snapshot_core(&state, &id, true).await
     })
-}
-
-/// `sessions.resume` (issue #509/#786): recover (if needed) then send
-/// `DEFAULT_RESUME_INSTRUCTION` as a real turn, atomically and server-side-locked per Session id
-/// -- port of `resumeSession.ts`'s own `resumeSessionCore`.
-pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let Some(id) = args.first().and_then(Value::as_str).map(str::to_string) else {
-            return Err(invalid_argument("sessions.resume expects a string id"));
-        };
-        let Some(session) = state.registry.lock().await.get_session(&id).cloned() else {
-            return Err(not_found(format!("Session not found: {id}")));
-        };
-        // An archived Session whose agent crashed this run before being archived keeps
-        // `stopReason: 'agent-exited'`, which the eligibility check below would otherwise
-        // accept -- refused before the tail read (never worth a 256 KiB read for a Session
-        // Resume can never apply to).
-        if session.archived_at.is_some() {
-            return Err(invalid_argument(resume_refusal_message("not-eligible")));
-        }
-        let agent = state.session_manager.get_or_create_agent(&id);
-        let detection = agent.resolve_termination().await;
-        // Re-read fresh: `session` above was read before the `resolve_termination` await, during
-        // which a concurrent `sessions.archive`/`.delete` could have landed.
-        let Some(fresh) = state.registry.lock().await.get_session(&id).cloned() else {
-            return Err(invalid_argument(resume_refusal_message("not-eligible")));
-        };
-        if fresh.archived_at.is_some() {
-            return Err(invalid_argument(resume_refusal_message("not-eligible")));
-        }
-        let status = agent.status().await;
-        let runtime = agent.runtime_view().await;
-        if let Some(code) = check_resume_eligible(
-            status,
-            stop_reason_of(&runtime).as_deref(),
-            detection.terminated_unexpectedly,
-            fresh.archived_at.is_some(),
-        ) {
-            return Err(invalid_argument(resume_refusal_message(code)));
-        }
-        // The one atomic busy claim, taken as late as possible (right before the irreversible
-        // work) and held for `resume_locked`'s entire duration via RAII (`_guard`'s `Drop`
-        // releases it exactly once, on every return path below).
-        let Some(_guard) = try_lock_resuming(&id) else {
-            return Err(invalid_argument(resume_refusal_message("busy")));
-        };
-        resume_locked(&state, &id, &agent, fresh).await
-    })
-}
-
-/// The locked body of `sessions.resume`, run while `id` is held in `RESUMING_IDS` (via the
-/// caller's own `_guard`, released on every return path including this function's own, matching
-/// the TS port's own `finally { resumingIds.delete(id) }`).
-async fn resume_locked(
-    state: &AppState,
-    id: &str,
-    agent: &std::sync::Arc<SessionAgent>,
-    fresh: Session,
-) -> Result<Value, super::IpcError> {
-    let _ = agent.start().await;
-    state.session_manager.notify_list_changed();
-    let refreshed = state
-        .registry
-        .lock()
-        .await
-        .get_session(id)
-        .cloned()
-        .unwrap_or(fresh);
-    let snapshot = super::conversations::build_snapshot(&refreshed, agent, None).await;
-    if snapshot
-        .get("runtime")
-        .and_then(|r| r.get("status"))
-        .and_then(Value::as_str)
-        == Some("stopped")
-    {
-        // The restart itself failed (e.g. start-failed): never send the instruction into a
-        // Session that did not actually come back.
-        return Ok(snapshot);
-    }
-    // Belt-and-braces re-check right before the one irreversible step: a concurrent archive/
-    // delete could have landed during `build_snapshot`'s own await. No fallback to `refreshed`
-    // on a miss -- a deleted Session must never be treated as the stale, non-archived copy.
-    let before_send = state.registry.lock().await.get_session(id).cloned();
-    match before_send {
-        Some(session) if session.archived_at.is_none() => {}
-        _ => {
-            agent.shutdown().await;
-            return Err(invalid_argument(resume_refusal_message("not-eligible")));
-        }
-    }
-    if let Err(err) = agent
-        .send(DEFAULT_RESUME_INSTRUCTION.to_string(), None)
-        .await
-    {
-        return Err(super::IpcError::new("prompt-failed", err.message));
-    }
-    let post_send = state.registry.lock().await.get_session(id).cloned();
-    match post_send {
-        Some(session) => Ok(super::conversations::build_snapshot(&session, agent, None).await),
-        None => Ok(snapshot),
-    }
 }
 
 /// `sessions.keepWaitingForStart` (issue #512's "Keep waiting" button): a no-op (still `ok:

@@ -164,3 +164,285 @@ fn try_lock_resuming_releases_on_drop_allowing_a_later_claim() {
         "released once the guard dropped, so a later claim succeeds"
     );
 }
+
+// -------------------------------------------------------------------------------------------
+// `resume_session_core`/`attach_snapshot_decision` against plain fakes (gate-fix, code review +
+// test-review HIGH): the whole point of the `ResumableAgent`/`AttachableAgent` seam is that
+// these decision bodies are testable without a real `SessionAgent`/process. `StdMutex` (not a
+// bare `Cell`) only because the trait methods take `&self` through a shared reference the real
+// adapter also uses that way; `#[tokio::test]`'s default current-thread runtime never touches
+// these fakes from a second OS thread, so the extra lock is cheap insurance, not a requirement.
+
+struct FakeResumableAgent {
+    status: SessionStatus,
+    status_after_start: Option<SessionStatus>,
+    stop_reason: Option<String>,
+    terminated_unexpectedly: bool,
+    send_fails: bool,
+    start_called: StdMutex<bool>,
+    notify_called: StdMutex<bool>,
+    send_called: StdMutex<bool>,
+}
+
+impl ResumableAgent for FakeResumableAgent {
+    async fn status(&self) -> SessionStatus {
+        if *self.start_called.lock().unwrap() {
+            self.status_after_start.unwrap_or(self.status)
+        } else {
+            self.status
+        }
+    }
+
+    async fn stop_reason(&self) -> Option<String> {
+        self.stop_reason.clone()
+    }
+
+    async fn resolve_termination(&self) -> TerminationDetectionResult {
+        TerminationDetectionResult {
+            terminated_unexpectedly: self.terminated_unexpectedly,
+            ..Default::default()
+        }
+    }
+
+    async fn start(&self) -> Result<(), AgentError> {
+        *self.start_called.lock().unwrap() = true;
+        Ok(())
+    }
+
+    async fn notify_list_changed(&self) {
+        *self.notify_called.lock().unwrap() = true;
+    }
+
+    async fn send_resume_instruction(&self) -> Result<(), AgentError> {
+        *self.send_called.lock().unwrap() = true;
+        if self.send_fails {
+            Err(AgentError::new("prompt-failed", "boom"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn fake_resumable(
+    status: SessionStatus,
+    status_after_start: Option<SessionStatus>,
+    stop_reason: Option<&str>,
+    terminated_unexpectedly: bool,
+    send_fails: bool,
+) -> FakeResumableAgent {
+    FakeResumableAgent {
+        status,
+        status_after_start,
+        stop_reason: stop_reason.map(str::to_string),
+        terminated_unexpectedly,
+        send_fails,
+        start_called: StdMutex::new(false),
+        notify_called: StdMutex::new(false),
+        send_called: StdMutex::new(false),
+    }
+}
+
+#[tokio::test]
+async fn resume_session_core_refuses_busy_while_another_call_holds_the_lock() {
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let _guard = try_lock_resuming(&id).expect("first claim must succeed");
+    let agent = fake_resumable(
+        SessionStatus::Stopped,
+        None,
+        Some("agent-exited"),
+        false,
+        false,
+    );
+    let result = resume_session_core(&agent, &id, false).await;
+    assert!(matches!(result, Err(ResumeCoreError::Refused("busy"))));
+    assert!(
+        !*agent.start_called.lock().unwrap(),
+        "a refused-busy call must never touch the agent at all"
+    );
+}
+
+#[tokio::test]
+async fn resume_session_core_refuses_when_not_eligible_without_starting_the_agent() {
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let agent = fake_resumable(
+        SessionStatus::Working,
+        None,
+        Some("agent-exited"),
+        false,
+        false,
+    );
+    let result = resume_session_core(&agent, &id, false).await;
+    assert!(matches!(
+        result,
+        Err(ResumeCoreError::Refused("not-stopped"))
+    ));
+    assert!(!*agent.start_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn resume_session_core_refuses_an_archived_session() {
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let agent = fake_resumable(
+        SessionStatus::Stopped,
+        None,
+        Some("agent-exited"),
+        false,
+        false,
+    );
+    let result = resume_session_core(&agent, &id, true).await;
+    assert!(matches!(
+        result,
+        Err(ResumeCoreError::Refused("not-eligible"))
+    ));
+    assert!(!*agent.start_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn resume_session_core_starts_notifies_and_sends_when_eligible_and_restart_succeeds() {
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let agent = fake_resumable(
+        SessionStatus::Stopped,
+        Some(SessionStatus::Working),
+        Some("agent-exited"),
+        false,
+        false,
+    );
+    let result = resume_session_core(&agent, &id, false).await;
+    assert!(
+        result.is_ok(),
+        "an eligible resume whose restart succeeds must succeed"
+    );
+    assert!(*agent.start_called.lock().unwrap());
+    assert!(*agent.notify_called.lock().unwrap());
+    assert!(
+        *agent.send_called.lock().unwrap(),
+        "a Session that came back must get the resume instruction"
+    );
+}
+
+#[tokio::test]
+async fn resume_session_core_never_sends_when_the_restart_itself_fails() {
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let agent = fake_resumable(
+        SessionStatus::Stopped,
+        Some(SessionStatus::Stopped),
+        Some("agent-exited"),
+        false,
+        false,
+    );
+    let result = resume_session_core(&agent, &id, false).await;
+    assert!(result.is_ok(), "a failed restart is still Ok, just unsent");
+    assert!(*agent.start_called.lock().unwrap());
+    assert!(
+        !*agent.send_called.lock().unwrap(),
+        "never send the resume instruction into a Session that did not actually come back"
+    );
+}
+
+#[tokio::test]
+async fn resume_session_core_propagates_a_send_failure_as_prompt_failed() {
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let agent = fake_resumable(
+        SessionStatus::Stopped,
+        Some(SessionStatus::Working),
+        Some("agent-exited"),
+        false,
+        true,
+    );
+    let result = resume_session_core(&agent, &id, false).await;
+    match result {
+        Err(ResumeCoreError::PromptFailed(message)) => assert_eq!(message, "boom"),
+        other => panic!("expected PromptFailed, got is_ok={}", other.is_ok()),
+    }
+}
+
+struct FakeAttachableAgent {
+    status: SessionStatus,
+    stop_reason: Option<String>,
+    terminated_unexpectedly: bool,
+    start_called: StdMutex<bool>,
+    notify_called: StdMutex<bool>,
+}
+
+impl AttachableAgent for FakeAttachableAgent {
+    async fn status(&self) -> SessionStatus {
+        self.status
+    }
+
+    async fn stop_reason(&self) -> Option<String> {
+        self.stop_reason.clone()
+    }
+
+    async fn resolve_termination(&self) -> TerminationDetectionResult {
+        TerminationDetectionResult {
+            terminated_unexpectedly: self.terminated_unexpectedly,
+            ..Default::default()
+        }
+    }
+
+    async fn start(&self) -> Result<(), AgentError> {
+        *self.start_called.lock().unwrap() = true;
+        Ok(())
+    }
+
+    async fn notify_list_changed(&self) {
+        *self.notify_called.lock().unwrap() = true;
+    }
+}
+
+fn fake_attachable(
+    status: SessionStatus,
+    stop_reason: Option<&str>,
+    terminated_unexpectedly: bool,
+) -> FakeAttachableAgent {
+    FakeAttachableAgent {
+        status,
+        stop_reason: stop_reason.map(str::to_string),
+        terminated_unexpectedly,
+        start_called: StdMutex::new(false),
+        notify_called: StdMutex::new(false),
+    }
+}
+
+#[tokio::test]
+async fn attach_snapshot_decision_is_none_and_never_starts_when_not_stopped() {
+    let agent = fake_attachable(SessionStatus::Working, Some("agent-exited"), false);
+    let detection = attach_snapshot_decision(&agent, false).await;
+    assert!(detection.is_none());
+    assert!(!*agent.start_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn attach_snapshot_decision_force_start_restarts_even_an_agent_exited_reason() {
+    let agent = fake_attachable(SessionStatus::Stopped, Some("agent-exited"), false);
+    let detection = attach_snapshot_decision(&agent, true).await;
+    assert!(detection.is_some());
+    assert!(
+        *agent.start_called.lock().unwrap(),
+        "sessions.recover (force_start) restarts regardless of stopReason"
+    );
+    assert!(*agent.notify_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn attach_snapshot_decision_passive_open_never_auto_starts_an_agent_exited_session() {
+    let agent = fake_attachable(SessionStatus::Stopped, Some("agent-exited"), false);
+    let detection = attach_snapshot_decision(&agent, false).await;
+    assert!(
+        detection.is_some(),
+        "the snapshot still reports the FRESH detection either way"
+    );
+    assert!(
+        !*agent.start_called.lock().unwrap(),
+        "a passive open must never auto-start a crashed/failed agent (FR-034)"
+    );
+}
+
+#[tokio::test]
+async fn attach_snapshot_decision_passive_open_auto_starts_when_nothing_is_wrong() {
+    let agent = fake_attachable(SessionStatus::Stopped, Some("not-started"), false);
+    let detection = attach_snapshot_decision(&agent, false).await;
+    assert!(detection.is_some());
+    assert!(*agent.start_called.lock().unwrap());
+    assert!(*agent.notify_called.lock().unwrap());
+}

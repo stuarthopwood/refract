@@ -1,10 +1,14 @@
-// Agent termination and orphan reaping (#515, #656 races), recovery and resume as a typed state
-// machine (lane R3, issue #786). Pre-declared so lane R3 is the only lane that ever edits this
-// file (issue #784, "Pre-declare per-lane Rust files").
+// Agent termination (#656 races), recovery and resume as a typed state machine (lane R3, issue
+// #786). Pre-declared so lane R3 is the only lane that ever edits this file (issue #784,
+// "Pre-declare per-lane Rust files"). NOTE: #515 ("a reattach that fails with 'Could not
+// restore model' is surfaced and offers another model") is NOT covered here or anywhere in this
+// PR -- see the PR body's own "Open problems" and the comment on issue #786:
+// https://github.com/stuarthopwood/refract/issues/786#issuecomment-6159934897
 //
 // Port of three Electron modules: `src/main/omp/terminationDetection.ts` (tail-only crash
-// detection, issue #510), `src/main/omp/stoppedOnRequestMarker.ts` (the persisted "this stop was
-// requested, not a crash" marker and the shared `resolveTermination` gate), and the
+// detection, issue #510, split into the sibling `termination_detection.rs` round 4, 2026-10-14,
+// issue #806 600-line cap), `src/main/omp/stoppedOnRequestMarker.ts` (the persisted "this stop
+// was requested, not a crash" marker and the shared `resolveTermination` gate), and the
 // `SessionAgent.onExit` requested/crash branches that drive both (ported here, not in
 // `agent/frame.rs`, per this lane's own extension-point contract -- see `agent/mod.rs`'s header).
 //
@@ -14,24 +18,16 @@
 // cheap and allocation-free as a no-op; lane R3 adds its termination/recovery behaviour inside
 // these functions, never inside any file under `session/agent/`.
 
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex as StdMutex};
-use std::time::UNIX_EPOCH;
-
 use serde_json::Value;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use crate::omp::process::ReadyWaitStage;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::agent::SessionAgent;
 
-/// Never read more than this many bytes from the tail of a Conversation file on the first pass
-/// (issue #510: "no whole-file read"). Mirrors `terminationDetection.ts`'s own `TAIL_BYTES`.
-const TAIL_BYTES: u64 = 256 * 1024;
-/// Mirrors `terminationDetection.ts`'s own `MAX_TAIL_BYTES`: the doubling cap for the
-/// single-oversized-line case.
-const MAX_TAIL_BYTES: u64 = TAIL_BYTES * 8;
+#[path = "termination_detection.rs"]
+mod termination_detection;
+pub(crate) use termination_detection::detect_unexpected_termination;
 
 /// Lane R3's own runtime state, held inside `AgentState` by `agent/mod.rs` without that file
 /// ever needing to change when this lane adds a field here. Reachable through `SessionAgent`'s
@@ -47,6 +43,14 @@ pub(super) struct State {
     pub(super) stopped_on_request: bool,
     pub(super) terminated_unexpectedly: bool,
     pub(super) pending_tool_names: Vec<String>,
+    /// Gate-fix (code review MEDIUM, round 3): bumped by `clear_stopped_on_request_marker`
+    /// (every `launch()` attempt, i.e. every new "life"). `record_stopped_on_request_marker`
+    /// captures this BEFORE its own `fs::metadata` await and re-checks it AFTER, so a
+    /// `on_exit(requested=true)` racing a quick `Recover`'s own `clear` (which runs while this
+    /// call's stat is still in flight) can never re-arm the marker for the NEW life that clear
+    /// started -- the `stillCurrent`/`lifeEpoch` guard `stoppedOnRequestMarker.ts` has, this
+    /// port previously lacked.
+    epoch: u64,
 }
 
 /// Port of `terminationDetection.ts`'s own `TerminationDetectionResult`, narrowed to the two
@@ -66,315 +70,6 @@ impl TerminationDetectionResult {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Tail-only crash detection (port of `terminationDetection.ts`)
-// ---------------------------------------------------------------------------------------------
-
-/// One raw `.jsonl` tail line, classified down to only the fields this module reads -- every
-/// field access is narrowed against the actual JSON, never cast to an assumed interface, since a
-/// stored Conversation line is disk content at the same trust level as `registry.json`.
-enum TailLine {
-    SessionExit {
-        reason: Option<String>,
-        pending_tool_calls: Option<Vec<String>>,
-    },
-    Assistant {
-        tool_calls: Vec<(String, String)>,
-    },
-    ToolResult {
-        tool_call_id: String,
-    },
-    User,
-    Other,
-}
-
-fn parse_tail_line(line: &str) -> Option<TailLine> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    // Only the file's true last line can land here as a parse failure (see `read_tail_lines`): a
-    // genuinely truncated write, treated as inconclusive rather than asserted as a specific
-    // reason -- the caller still sees whatever earlier, fully-parsed lines in the window found.
-    let parsed: Value = serde_json::from_str(trimmed).ok()?;
-    let obj = parsed.as_object()?;
-
-    if obj.get("type").and_then(Value::as_str) == Some("session_exit") {
-        let reason = obj
-            .get("reason")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-        let pending_tool_calls = obj
-            .get("pendingToolCalls")
-            .and_then(Value::as_array)
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|entry| entry.as_str().map(str::to_string))
-                    .collect::<Vec<_>>()
-            });
-        return Some(TailLine::SessionExit {
-            reason,
-            pending_tool_calls,
-        });
-    }
-
-    if obj.get("type").and_then(Value::as_str) != Some("message") {
-        return Some(TailLine::Other);
-    }
-    let Some(message) = obj.get("message").and_then(Value::as_object) else {
-        return Some(TailLine::Other);
-    };
-    match message.get("role").and_then(Value::as_str) {
-        Some("assistant") => {
-            let mut tool_calls = Vec::new();
-            if let Some(content) = message.get("content").and_then(Value::as_array) {
-                for part in content {
-                    let Some(part_obj) = part.as_object() else {
-                        continue;
-                    };
-                    if part_obj.get("type").and_then(Value::as_str) != Some("toolCall") {
-                        continue;
-                    }
-                    if let (Some(id), Some(name)) = (
-                        part_obj.get("id").and_then(Value::as_str),
-                        part_obj.get("name").and_then(Value::as_str),
-                    ) {
-                        tool_calls.push((id.to_string(), name.to_string()));
-                    }
-                }
-            }
-            Some(TailLine::Assistant { tool_calls })
-        }
-        Some("toolResult") => message
-            .get("toolCallId")
-            .and_then(Value::as_str)
-            .map(|id| TailLine::ToolResult {
-                tool_call_id: id.to_string(),
-            })
-            .or(Some(TailLine::Other)),
-        Some("user") => Some(TailLine::User),
-        _ => Some(TailLine::Other),
-    }
-}
-
-struct Window {
-    lines: Vec<String>,
-    started_at_zero: bool,
-}
-
-/// Reads one window of `handle`, `window_bytes` wide, ending at its current size. Port of
-/// `readWindow`.
-async fn read_window(handle: &mut tokio::fs::File, window_bytes: u64) -> Option<Window> {
-    let metadata = handle.metadata().await.ok()?;
-    if !metadata.is_file() || metadata.len() == 0 {
-        return Some(Window {
-            lines: Vec::new(),
-            started_at_zero: true,
-        });
-    }
-    let size = metadata.len();
-    let start = size.saturating_sub(window_bytes);
-    let length = usize::try_from(size - start).ok()?;
-    handle.seek(std::io::SeekFrom::Start(start)).await.ok()?;
-    let mut buffer = vec![0u8; length];
-    let mut read_total = 0usize;
-    while read_total < length {
-        match handle.read(&mut buffer[read_total..]).await {
-            Ok(0) => break,
-            Ok(n) => read_total += n,
-            Err(_) => return None,
-        }
-    }
-    let text = String::from_utf8_lossy(&buffer[..read_total]);
-    let lines = text.split('\n').map(str::to_string).collect();
-    Some(Window {
-        lines,
-        started_at_zero: start == 0,
-    })
-}
-
-/// Reads at most `TAIL_BYTES` (doubling up to `MAX_TAIL_BYTES` only for the pathological
-/// single-oversized-line case) from the tail of `file`. Port of `readTailLines`. Never panics: a
-/// missing, empty, or unreadable file (including a read that fails partway through) yields `[]`.
-async fn read_tail_lines(file: &str) -> Vec<String> {
-    let Ok(mut handle) = tokio::fs::File::open(file).await else {
-        return Vec::new();
-    };
-    let mut window_bytes = TAIL_BYTES;
-    loop {
-        let Some(window) = read_window(&mut handle, window_bytes).await else {
-            return Vec::new();
-        };
-        if window.started_at_zero {
-            return window.lines;
-        }
-        // The window's own first line is always dropped here: it may be a fragment of an
-        // earlier, larger line, never real evidence either way.
-        let candidate: Vec<String> = window.lines.into_iter().skip(1).collect();
-        let has_real_content = candidate.iter().any(|line| !line.trim().is_empty());
-        if has_real_content || window_bytes >= MAX_TAIL_BYTES {
-            return candidate;
-        }
-        window_bytes *= 2;
-    }
-}
-
-async fn compute_detection(file: &str) -> TerminationDetectionResult {
-    let lines = read_tail_lines(file).await;
-
-    struct ExitRecord {
-        reason: Option<String>,
-        pending_tool_calls: Option<Vec<String>>,
-    }
-    let mut exit_record: Option<ExitRecord> = None;
-    // `(toolCallId, toolName)`, insertion order preserved like the TS port's own `Map` -- a
-    // repeated id updates its existing entry in place rather than moving to the end (`Map.set`'s
-    // own semantics).
-    let mut outstanding: Vec<(String, String)> = Vec::new();
-
-    for line in &lines {
-        let Some(parsed) = parse_tail_line(line) else {
-            continue;
-        };
-        match parsed {
-            TailLine::SessionExit {
-                reason,
-                pending_tool_calls,
-            } => {
-                // This life's own exit record and its own evidence -- never inherit an EARLIER
-                // life's still-outstanding calls into it (those were this record's business, and
-                // this record already carries its own `pendingToolCalls`).
-                exit_record = Some(ExitRecord {
-                    reason,
-                    pending_tool_calls,
-                });
-                outstanding.clear();
-            }
-            TailLine::Assistant { tool_calls } => {
-                // An assistant turn after an exit record means that crash was resumed and
-                // superseded -- no longer the TRAILING entry this detector cares about.
-                exit_record = None;
-                for (id, name) in tool_calls {
-                    if let Some(entry) =
-                        outstanding.iter_mut().find(|(existing, _)| existing == &id)
-                    {
-                        entry.1 = name;
-                    } else {
-                        outstanding.push((id, name));
-                    }
-                }
-            }
-            TailLine::ToolResult { tool_call_id } => {
-                exit_record = None;
-                outstanding.retain(|(id, _)| id != &tool_call_id);
-            }
-            TailLine::User => {
-                // A new user prompt cannot follow an unanswered tool call within one healthy
-                // process life -- an earlier life's orphaned call is judged on its own, never
-                // carried into this one (quality-gate fix, `terminationDetection.ts` cycle 2).
-                exit_record = None;
-                outstanding.clear();
-            }
-            TailLine::Other => {}
-        }
-    }
-
-    let pending_tool_names: Vec<String> = outstanding.into_iter().map(|(_, name)| name).collect();
-
-    if let Some(exit) = exit_record {
-        let reason_value = exit.reason.unwrap_or_else(|| "unknown".to_string());
-        let record_pending = exit.pending_tool_calls.unwrap_or(pending_tool_names);
-        if reason_value == "dispose" {
-            return TerminationDetectionResult::clean();
-        }
-        return TerminationDetectionResult {
-            terminated_unexpectedly: true,
-            pending_tool_names: record_pending,
-        };
-    }
-
-    if !pending_tool_names.is_empty() {
-        return TerminationDetectionResult {
-            terminated_unexpectedly: true,
-            pending_tool_names,
-        };
-    }
-
-    TerminationDetectionResult::clean()
-}
-
-struct CacheEntry {
-    size: u64,
-    mtime_ms: i64,
-    result: TerminationDetectionResult,
-}
-
-/// Caches by `(file, size, mtimeMs)`: an unrelated Session's status refresh costs a cheap `stat`
-/// instead of a repeat 256 KiB read for a Conversation that has not changed since the last call.
-/// Simplification from the TS port (which caches the in-flight `Promise` itself, de-duplicating
-/// two concurrent calls for the very same unchanged file): this caches the completed `result`
-/// only, so two calls racing before either finishes both read the file once each -- a minor
-/// perf-only difference, never a correctness one.
-static CACHE: LazyLock<StdMutex<HashMap<String, CacheEntry>>> =
-    LazyLock::new(|| StdMutex::new(HashMap::new()));
-
-/// Issue #510 slice 1: the sole entry point. `file` absent (no Conversation has ever been
-/// started) is always clean with no file access attempted.
-pub(crate) async fn detect_unexpected_termination(
-    file: Option<&str>,
-) -> TerminationDetectionResult {
-    let Some(file) = file else {
-        return TerminationDetectionResult::clean();
-    };
-    let metadata = match tokio::fs::metadata(file).await {
-        Ok(metadata) => metadata,
-        Err(_) => {
-            CACHE
-                .lock()
-                .expect("termination cache mutex poisoned")
-                .remove(file);
-            return TerminationDetectionResult::clean();
-        }
-    };
-    let size = metadata.len();
-    let mtime_ms = metadata
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    {
-        let cache = CACHE.lock().expect("termination cache mutex poisoned");
-        if let Some(entry) = cache.get(file) {
-            if entry.size == size && entry.mtime_ms == mtime_ms {
-                return entry.result.clone();
-            }
-        }
-    }
-    let result = compute_detection(file).await;
-    {
-        let mut cache = CACHE.lock().expect("termination cache mutex poisoned");
-        // Perf gate-fix: one entry per distinct Conversation path ever seen this run would grow
-        // unbounded across a very long-lived process with many archived Sessions. A real desktop
-        // user's own Session count stays small (realistically dozens, not thousands), so a
-        // coarse "clear everything past this bound" is enough -- the next call for any
-        // still-relevant file just re-populates its own entry, same cost as a cold cache.
-        const CACHE_MAX_ENTRIES: usize = 500;
-        if cache.len() >= CACHE_MAX_ENTRIES {
-            cache.clear();
-        }
-        cache.insert(
-            file.to_string(),
-            CacheEntry {
-                size,
-                mtime_ms,
-                result: result.clone(),
-            },
-        );
-    }
-    result
-}
-
-// ---------------------------------------------------------------------------------------------
 // Persisted stopped-on-request marker (port of `stoppedOnRequestMarker.ts`)
 // ---------------------------------------------------------------------------------------------
 
@@ -383,13 +78,30 @@ pub(crate) async fn detect_unexpected_termination(
 /// count. A missing/unreadable Conversation (the agent stopped before its first turn) sets no
 /// marker. Never fails the caller: a write failure here must not crash the exit handler it runs
 /// from.
-async fn record_stopped_on_request_marker(agent: &SessionAgent, conversation: Option<&str>) {
+///
+/// `epoch_at_exit` (gate-fix, code review MEDIUM, round 3): captured by the caller BEFORE this
+/// function's own `fs::metadata` await; re-checked against the live `State::epoch` AFTER it,
+/// closing the race where a quick `Recover`'s own `clear_stopped_on_request_marker` (which bumps
+/// `epoch`) runs while this call's stat is still in flight -- without the re-check, this call
+/// would then re-arm the marker for the NEW life `clear` just started protecting, rather than
+/// leave it cleared.
+async fn record_stopped_on_request_marker(
+    agent: &SessionAgent,
+    conversation: Option<&str>,
+    epoch_at_exit: u64,
+) {
     let Some(conversation) = conversation else {
         return;
     };
     let Ok(metadata) = tokio::fs::metadata(conversation).await else {
         return;
     };
+    let still_current = agent
+        .with_termination_state(|s| s.epoch == epoch_at_exit)
+        .await;
+    if !still_current {
+        return;
+    }
     let patch = SessionPatch {
         stopped_on_request_conversation: Some(Some(conversation.to_string())),
         stopped_on_request_at_size: Some(Some(metadata.len() as i64)),
@@ -466,6 +178,9 @@ impl SessionAgent {
     /// applies to THIS one.
     pub(super) async fn clear_stopped_on_request_marker(&self) {
         self.with_termination_state(|s| {
+            // Gate-fix (code review MEDIUM, round 3): bumped BEFORE anything else below -- see
+            // `State::epoch`'s own doc comment for the race this closes.
+            s.epoch = s.epoch.wrapping_add(1);
             s.stopped_on_request = false;
             // Gate-fix: a new life starting means whatever the PREVIOUS life's crash banner
             // showed no longer applies either -- `on_exit` will recompute a fresh verdict for
@@ -520,12 +235,32 @@ pub(super) async fn on_frame(_agent: &SessionAgent, _frame_type: &str, _frame: &
 /// dispatch gates this call on `is_current` (never invoked for a stale exit belonging to an
 /// already-superseded life).
 ///
-/// `stop_requested` (the Session's OWN flag, set only by `shutdown()`), NOT the raw
-/// `ProcessEvent::Exit`'s own `requested` (gate-fix, TS cycle-6: the process-level `requested`
-/// flag is ALSO true for `launch()`'s own internal cleanup stop and for `watch_for_cancel`'s
-/// cancel-triggered `proc.stop()` -- neither is a genuine user-requested stop, and wrongly
-/// recording a stopped-on-request marker for either would mask a real problem as a clean exit).
-pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, stop_requested: bool) {
+/// `requested`/`stop_requested` (gate-fix, code review round 3): BOTH are needed, not just
+/// `stop_requested` alone. `requested && !stop_requested` (the raw `ProcessEvent::Exit`'s own
+/// flag true, but the Session's own `stop_requested` false) is a `launch()`-internal cleanup
+/// stop (failed handshake/attach, or a plain `cancelStart()`'s own `proc.stop()`) -- `handle_exit`
+/// itself already returns early for exactly this case (its own doc comment), and this hook must
+/// too: neither a clean-stop marker NOR a crash-tail read applies to it, `launch()`'s own catch
+/// path already recorded the real status. `was_already_stopped` (status read at the very top of
+/// `handle_exit`, before anything else) skips this hook entirely once something MORE
+/// authoritative already settled this life's status before this exit event was even processed --
+/// the same race `should_apply_crash_exit_verdict`/`set_stopped_unless_already_stopped` guards
+/// for `handle_exit`'s own write, which this hook did not previously consult at all (it could
+/// still read a stale tail and set `terminatedUnexpectedly` on top of an unrelated
+/// `reattach-failed`/`start-failed`).
+pub(super) async fn on_exit(
+    agent: &SessionAgent,
+    _code: Option<i32>,
+    requested: bool,
+    stop_requested: bool,
+    was_already_stopped: bool,
+) {
+    if requested && !stop_requested {
+        return;
+    }
+    if was_already_stopped {
+        return;
+    }
     let session = agent
         .registry()
         .lock()
@@ -533,6 +268,7 @@ pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, stop_reque
         .get_session(agent.session_id())
         .cloned();
     if stop_requested {
+        let epoch_at_exit = agent.with_termination_state(|s| s.epoch).await;
         agent
             .with_termination_state(|s| {
                 s.stopped_on_request = true;
@@ -541,7 +277,12 @@ pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, stop_reque
             })
             .await;
         if let Some(session) = &session {
-            record_stopped_on_request_marker(agent, session.current_conversation.as_deref()).await;
+            record_stopped_on_request_marker(
+                agent,
+                session.current_conversation.as_deref(),
+                epoch_at_exit,
+            )
+            .await;
         }
     } else {
         agent

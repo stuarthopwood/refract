@@ -1,6 +1,6 @@
-// PID record bookkeeping for orphan reaping (#515, #656 races), part of agent termination (lane
-// R3, issue #786). Pre-declared so lane R3 is the only lane that ever edits this file (issue
-// #784, "Pre-declare per-lane Rust files").
+// PID record bookkeeping for orphan reaping (#656 races), part of agent termination (lane R3,
+// issue #786). Pre-declared so lane R3 is the only lane that ever edits this file (issue #784,
+// "Pre-declare per-lane Rust files").
 //
 // Port of `src/main/process/pidRecords.ts`: tracks pids of running `omp` root processes across
 // an app restart, so a fresh Refract process can detect and force-kill processes orphaned by a
@@ -41,6 +41,12 @@ struct ProcessRecord {
     pid: u32,
     start_time: u64,
     session_id: String,
+    // Gate-fix (security review LOW): `#[serde(default)]` so a record written by an EARLIER
+    // version of this file (before `image_path` existed) deserialises as an empty string
+    // instead of quarantining the whole `processes.json` file -- an empty path never matches
+    // `identity_matches`' own comparisons (fails closed: that record is just never reaped,
+    // never wrongly matched against something else).
+    #[serde(default)]
     image_path: String,
 }
 
