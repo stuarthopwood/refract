@@ -206,6 +206,54 @@ impl EventSink {
             serde_json::json!({ "sessionId": session_id, "subagentId": subagent_id, "ops": ops }),
         );
     }
+
+    /// `side-chat:patch` (lane R6, issue #789): a `btw_delta` (`delta`/`recordId` set -- gated on
+    /// visibility by the caller, `session::side_chat`'s own `on_frame`, the same discipline every
+    /// other live-stream patch follows).
+    pub fn emit_side_chat_patch_delta(&self, session_id: &str, delta: &str, record_id: &str) {
+        self.send(
+            SIDE_CHAT_PATCH,
+            serde_json::json!({ "sessionId": session_id, "delta": delta, "recordId": record_id }),
+        );
+    }
+
+    /// `side-chat:patch` (lane R6, issue #789): a terminal `btw_record` (`record` set) --
+    /// gate-fix round 2 Verif2 LOW: forwarded regardless of visibility, by the caller never
+    /// gating this one.
+    pub fn emit_side_chat_patch_record(&self, session_id: &str, record: &serde_json::Value) {
+        self.send(
+            SIDE_CHAT_PATCH,
+            serde_json::json!({ "sessionId": session_id, "record": record }),
+        );
+    }
+
+    /// `side-chat:patch` (lane R6, issue #789): a `btw-history` save-failure notice (`notice`
+    /// set) -- gate-fix round 4 Code4 Medium: forwarded regardless of visibility.
+    pub fn emit_side_chat_patch_notice(&self, session_id: &str, notice: &str) {
+        self.send(
+            SIDE_CHAT_PATCH,
+            serde_json::json!({ "sessionId": session_id, "notice": notice }),
+        );
+    }
+
+    /// `side-chat:interrupted` (lane R6, issue #789): fired unconditionally on every process
+    /// exit (`session::side_chat`'s own `on_exit`), regardless of visibility.
+    pub fn emit_side_chat_interrupted(&self, session_id: &str) {
+        self.send(
+            SIDE_CHAT_INTERRUPTED,
+            serde_json::json!({ "sessionId": session_id }),
+        );
+    }
+
+    /// `side-chat:conversation-changed` (lane R6, issue #789): fired from
+    /// `session::side_chat::on_conversation_reset`, regardless of visibility -- any side-chat
+    /// topic/history the renderer is still showing belongs to the PREVIOUS Conversation.
+    pub fn emit_side_chat_conversation_changed(&self, session_id: &str) {
+        self.send(
+            SIDE_CHAT_CONVERSATION_CHANGED,
+            serde_json::json!({ "sessionId": session_id }),
+        );
+    }
 }
 
 /// Emits `event` with `payload` to every window, mirroring the Electron build's own

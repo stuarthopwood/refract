@@ -34,6 +34,11 @@ impl SessionAgent {
             state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
+        // Lane R6 (issue #789), defense in depth: normally a no-op, since OMP's own
+        // `RpcBtwController.close()` already cancels any running side question before
+        // `new_session` itself runs. Best-effort: a failure here must never block starting the
+        // new Conversation.
+        let _ = crate::session::side_chat::cancel(self).await;
         let res = proc
             .request(json!({ "type": "new_session" }), DEFAULT_REQUEST_TIMEOUT_MS)
             .await
@@ -70,6 +75,9 @@ impl SessionAgent {
         // left showing a stale reading if that request itself fails.
         crate::session::readout::on_conversation_reset(self).await;
         crate::session::subagents::on_conversation_reset(self).await;
+        // Lane R6 (issue #789): a brand-new Conversation always means a brand-new side-chat
+        // history store too -- unconditional, matching the readout/subagents resets above.
+        crate::session::side_chat::on_conversation_reset(self).await;
         if let Ok(res) = proc
             .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
             .await
@@ -106,6 +114,14 @@ impl SessionAgent {
             state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
+        // Lane R6 (issue #789): captured BEFORE the switch below, so the side-chat conversation-
+        // changed notification (below) can tell a genuine Conversation change from a reopen of
+        // the SAME Conversation (whose side-chat topics are still valid, nothing to drop).
+        let previous_conversation = self.current_conversation_path().await;
+        // Lane R6 (issue #789), defense in depth: normally a no-op, since OMP's own
+        // `RpcBtwController.close()` already cancels any running side question before
+        // `switch_session` itself runs.
+        let _ = crate::session::side_chat::cancel(self).await;
         let switch_res = proc
             .request(
                 json!({ "type": "switch_session", "sessionPath": file }),
@@ -188,6 +204,13 @@ impl SessionAgent {
         // above for the identical reasoning).
         crate::session::readout::on_conversation_reset(self).await;
         crate::session::subagents::on_conversation_reset(self).await;
+        // Lane R6 (issue #789): OMP's own `btw` topics are scoped to the OMP session FILE just
+        // switched away from, so any side-chat topic/history the renderer still holds belongs to
+        // `previous_conversation`, not `file` -- skipped when `file` IS `previous_conversation`
+        // (reopening the same Conversation: its side-chat topics are still valid).
+        if previous_conversation.as_deref() != Some(file.as_str()) {
+            crate::session::side_chat::on_conversation_reset(self).await;
+        }
         self.sync_from_state(&data, None).await;
         self.emit_patch_reset().await;
         Ok(())

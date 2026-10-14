@@ -13,6 +13,7 @@ interface SettingsState {
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
+  setWordPredictionEnabled(enabled: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -27,6 +28,11 @@ export const DEFAULT_SETTINGS: Settings = {
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
   detectImagePathsOnPaste: true
+  // Issue #772 (Rust build only, FINDINGS item 28): `wordPredictionEnabled` is deliberately
+  // ABSENT here (not `false`) -- `MessageInput.tsx`'s own `!== false` read treats an absent
+  // value as enabled, so this client-only placeholder never flickers ghost text off for
+  // Electron (whose real `settings.get()` never returns the field at all) during the brief
+  // window before the real Settings row arrives.
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -80,6 +86,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setDetectImagePathsOnPaste: async (enabled) => {
     const result = await window.refract.settings.setDetectImagePathsOnPaste(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setWordPredictionEnabled: async (enabled) => {
+    const result = await window.refract.settings.setWordPredictionEnabled(enabled)
     if (result.ok) {
       set({ settings: result.value })
     } else {

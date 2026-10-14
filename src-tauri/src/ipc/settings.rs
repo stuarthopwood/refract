@@ -39,6 +39,15 @@ pub fn register(d: &mut Dispatcher) {
         "settings.setDetectImagePathsOnPaste",
         settings_set_detect_image_paths_on_paste,
     );
+    // Issue #772, lane R6: the underlying `word_prediction_enabled` field belongs to the
+    // `chat.predictWord*` prediction feature lane R6 owns, but the channel itself follows every
+    // other `settings.set*` channel's own naming -- registered here (not `side_chat.rs`) to keep
+    // every `settings.*` channel in one place, same reasoning `ipc/mod.rs`'s own module split
+    // documents for every other per-area file.
+    d.register(
+        "settings.setWordPredictionEnabled",
+        settings_set_word_prediction_enabled,
+    );
 }
 
 pub fn settings_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
@@ -257,6 +266,27 @@ pub fn settings_set_detect_image_paths_on_paste(
             .lock()
             .await
             .set_detect_image_paths_on_paste(enabled)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// `settings.setWordPredictionEnabled` (issue #772, Rust-only -- no Electron implementation):
+/// persists the whole `Settings` row and broadcasts `settings:changed`, the same pattern every
+/// other setter above uses; `ipc/side_chat.rs`'s own `chat.predictWord`/`.predictWordFeedback`
+/// read `store::settings::SettingsStore::word_prediction_enabled()` to gate before ever reaching
+/// a live process.
+pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let enabled = require_bool(&args, 0, "settings.setWordPredictionEnabled", "enabled")?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_word_prediction_enabled(enabled)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");

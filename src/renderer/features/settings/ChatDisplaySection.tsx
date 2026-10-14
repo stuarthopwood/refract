@@ -14,6 +14,13 @@
 // object spread from the current render), so toggling the second switch before the first save
 // returns can no longer revert it -- the merge happens in main against the persisted row, the
 // same per-field pattern the existing readout toggles already use.
+//
+// Issue #772 (lane R6, Rust build only; Main's review decision 2026-10-14): the word-prediction
+// (ghost-text) toggle below calls `settings.setWordPredictionEnabled`, which has no Electron
+// implementation -- `Settings.wordPredictionEnabled` stays `undefined` there forever (Electron's
+// `settings.ts` never sets it), so the toggle is simply never rendered on Electron (no
+// "unsupported" toast to show); Electron keeps ghost text always on instead (`MessageInput.tsx`'s
+// own `wordPredictionEnabled !== false` read treats absent as enabled).
 import { useEffect, useRef } from 'react'
 import { Switch } from '@/components/ui/switch'
 import { useSettingsStore } from '@/state'
@@ -23,6 +30,8 @@ export function ChatDisplaySection() {
   const setTranscriptDisplay = useSettingsStore((state) => state.setTranscriptDisplay)
   const detectImagePathsOnPaste = useSettingsStore((state) => state.settings.detectImagePathsOnPaste)
   const setDetectImagePathsOnPaste = useSettingsStore((state) => state.setDetectImagePathsOnPaste)
+  const wordPredictionEnabled = useSettingsStore((state) => state.settings.wordPredictionEnabled)
+  const setWordPredictionEnabled = useSettingsStore((state) => state.setWordPredictionEnabled)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
@@ -34,7 +43,10 @@ export function ChatDisplaySection() {
       <h2 ref={headingRef} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
         Chat
       </h2>
-      <p className="mb-4 text-sm text-muted-foreground">Choose what the chat transcript shows and how pasted content is handled.</p>
+      <p className="mb-4 text-sm text-muted-foreground">
+        Choose what the chat transcript shows and how pasted content is handled
+        {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
+      </p>
       <div className="flex flex-col divide-y divide-border">
         <div className="flex items-center justify-between gap-4 py-3">
           <div className="flex flex-col gap-0.5">
@@ -84,6 +96,25 @@ export function ChatDisplaySection() {
             onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
           />
         </div>
+        {wordPredictionEnabled !== undefined && (
+          <div className="flex items-center justify-between gap-4 py-3">
+            <div className="flex flex-col gap-0.5">
+              <label htmlFor="word-prediction-enabled" className="text-sm font-medium">
+                Word prediction (ghost text)
+              </label>
+              <span id="word-prediction-enabled-description" className="text-xs text-muted-foreground">
+                Suggests how to finish the word you're typing in the message box. Off by default: the shared prediction
+                engine can use several hundred MB of memory once started.
+              </span>
+            </div>
+            <Switch
+              id="word-prediction-enabled"
+              aria-describedby="word-prediction-enabled-description"
+              checked={wordPredictionEnabled}
+              onCheckedChange={(checked) => void setWordPredictionEnabled(checked)}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

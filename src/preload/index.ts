@@ -182,7 +182,10 @@ const refract: RefractApi = {
     setWatermarkEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, enabled),
     setTranscriptDisplay: (field, visible) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, field, visible),
     setShowSampleData: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, enabled),
-    setDetectImagePathsOnPaste: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE, enabled)
+    setDetectImagePathsOnPaste: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE, enabled),
+    // Issue #772, lane R6: see this file's own header comment above `UNSUPPORTED_IN_ELECTRON`
+    // -- Rust-only, new main-process feature, never implemented on Electron.
+    setWordPredictionEnabled: () => Promise.resolve(UNSUPPORTED_IN_ELECTRON)
   },
 
   modelRoles: {

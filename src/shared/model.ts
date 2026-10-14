@@ -112,9 +112,9 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   // #514: lets the developer turn off path-based image-attach detection entirely (every pasted
-  // image path still works until turned off here); default true, same migration shape as
-  // `transcriptDisplay` (plain immediate-apply boolean, no raw/lazy-correction split needed).
+  // image path still works until turned off here); default true, immediate-apply, no migration.
   detectImagePathsOnPaste: boolean;
+  wordPredictionEnabled?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation.
 }
 
 /** Issue #457: two independent view filters for the chat transcript, applied in the renderer

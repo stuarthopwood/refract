@@ -83,13 +83,21 @@ pub struct Settings {
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
+    /// Issue #772 (lane R6): the word-prediction ghost-text off switch -- Rust-only (Electron
+    /// main-process features are frozen, epic #797), so this field has no TypeScript
+    /// counterpart. Default `false`: the shared prediction daemon measured 463 MB private commit
+    /// with two live Sessions (more than Electron's whole main process), starts lazily on the
+    /// first `predict_word` call and is never otherwise probed to confirm it is reliably shared
+    /// machine-wide rather than per-profile -- "default to OFF when the evidence is unclear"
+    /// (per the issue's own decision rule).
+    pub word_prediction_enabled: bool,
     /// Quality-gate correction (code review, 2026-10-14): Electron's `this.data` is an untyped
     /// JS object, so an unrecognised settings.json key rides along through every
     /// `{...this.data, ...}` spread into `settings.get`'s reply and every `settings:changed`
     /// broadcast with no code needed for it. `#[serde(flatten)]` reproduces that on the wire:
     /// every entry here is merged into the TOP-LEVEL serialised object (never nested under its
     /// own `"extra"` key), so a caller sees the exact same shape Electron's reply has. Never
-    /// overlaps a known field above (`SettingsStore::open` excludes all nine by name).
+    /// overlaps a known field above (`SettingsStore::open` excludes all ten by name).
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -217,7 +225,14 @@ impl SettingsStore {
             .and_then(Value::as_bool)
             .unwrap_or(true);
 
-        const KNOWN_FIELDS: [&str; 9] = [
+        // Issue #772: default `false` -- see `Settings::word_prediction_enabled`'s own doc
+        // comment for the memory-cost evidence behind that default.
+        let word_prediction_enabled = object
+            .get("wordPredictionEnabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+
+        const KNOWN_FIELDS: [&str; 10] = [
             "version",
             "approvalMode",
             "sessionReadout",
@@ -227,6 +242,7 @@ impl SettingsStore {
             "transcriptDisplay",
             "showSampleData",
             "detectImagePathsOnPaste",
+            "wordPredictionEnabled",
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -244,6 +260,7 @@ impl SettingsStore {
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
+            word_prediction_enabled,
             extra,
         };
 
@@ -258,6 +275,12 @@ impl SettingsStore {
 
     pub fn get(&self) -> Settings {
         self.data.clone()
+    }
+
+    /// Issue #772 (gate-fix, perf): `chat.predictWord`/`.predictWordFeedback` read this on every
+    /// keystroke-debounced call -- a plain bool read, never `get()`'s own whole-`Settings` clone.
+    pub fn word_prediction_enabled(&self) -> bool {
+        self.data.word_prediction_enabled
     }
 
     /// Mirrors `settings.ts`'s own `serialize`: every setter that persists the WHOLE row writes
@@ -297,8 +320,12 @@ impl SettingsStore {
             "detectImagePathsOnPaste".to_string(),
             json!(self.data.detect_image_paths_on_paste),
         );
+        map.insert(
+            "wordPredictionEnabled".to_string(),
+            json!(self.data.word_prediction_enabled),
+        );
         // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
-        // never overwrites a known key above (by construction, `data.extra` excludes all nine of
+        // never overwrites a known key above (by construction, `data.extra` excludes all ten of
         // them), so a renderer feature's own not-yet-ported setting survives every save. Also now
         // the same field `settings.get`/`settings:changed` flatten into the wire shape (see
         // `Settings::extra`'s own doc comment).
@@ -426,6 +453,20 @@ impl SettingsStore {
     ) -> std::io::Result<Settings> {
         let next = Settings {
             detect_image_paths_on_paste: enabled,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// `settings.setWordPredictionEnabled(enabled)` (issue #772, lane R6): no raw/lazy-correction
+    /// tracking needed, the same plain-boolean migration shape `set_detect_image_paths_on_paste`
+    /// above uses.
+    pub async fn set_word_prediction_enabled(
+        &mut self,
+        enabled: bool,
+    ) -> std::io::Result<Settings> {
+        let next = Settings {
+            word_prediction_enabled: enabled,
             ..self.data.clone()
         };
         self.persist_whole(next).await
