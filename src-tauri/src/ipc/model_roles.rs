@@ -6,13 +6,22 @@
 // file, rather than `omp/config.rs`, only to keep that file's generic engine under this build's
 // 600-line-per-file cap -- every function below is still a direct, faithful port of its
 // `config.ts` namesake.
+//
+// Every public entry point re-checks its own role id / catalog kind (`is_model_role_id`/
+// `is_catalog_kind`) even though the IPC handlers below already validate first -- the same
+// independent-second-layer convention `config.ts` itself uses (`setModelRole`'s own redundant
+// `isModelRoleId` check), so a future caller reaching these functions directly (bypassing the
+// handler) can never put an unvalidated value on `omp`'s argv.
 
 use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::omp::config::{get_config, set_config, OmpConfigError, OmpConfigErrorCode};
+use crate::omp::config::{
+    get_config_with, run_json_with, set_config_with, OmpConfigError, OmpConfigErrorCode,
+    OmpExecutor, RealOmpExecutor,
+};
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -76,7 +85,11 @@ pub struct ModelCatalogEntry {
 /// Security-audit finding (unconfirmed-but-defended, FINDINGS item 48's "env override probe"):
 /// stripped from both the merge-read and the `config set` call so a runtime role override never
 /// folds into what this module reads back as the persisted baseline. The public, display-only
-/// `get_model_roles` deliberately does NOT strip these.
+/// `get_model_roles` deliberately does NOT strip these. Passed to `omp::config`'s own
+/// `strip_env_vars: &[&str]` parameter (`Command::env_remove` per name), never built into a
+/// replacement `HashMap` from `std::env::vars()` -- that panics on a non-UTF-8 environment
+/// variable and silently drops any `OsString`-only one (code-review finding; `git.rs` already
+/// avoids this with its own `vars_os` loop).
 const ROLE_OVERRIDE_ENV_VARS: [&str; 4] = [
     "PI_SMOL_MODEL",
     "PI_SLOW_MODEL",
@@ -84,8 +97,9 @@ const ROLE_OVERRIDE_ENV_VARS: [&str; 4] = [
     "PI_CONFIG_FILES",
 ];
 
-/// Case-insensitive (Windows environment variable names are case-insensitive). Exported for
-/// direct unit testing.
+/// Pure reference implementation of the stripping rule above, kept for direct unit testing of the
+/// case-insensitive matching logic (Windows environment variable names are case-insensitive);
+/// not on the production call path, which strips directly on the `Command` via `strip_env_vars`.
 pub fn env_without_role_overrides(env: &HashMap<String, String>) -> HashMap<String, String> {
     env.iter()
         .filter(|(key, _)| {
@@ -95,10 +109,6 @@ pub fn env_without_role_overrides(env: &HashMap<String, String>) -> HashMap<Stri
         })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
-}
-
-fn current_env() -> HashMap<String, String> {
-    std::env::vars().collect()
 }
 
 /// Validates that `value` is a plain, non-array object (the shape `omp config get/set modelRoles`
@@ -153,19 +163,26 @@ pub fn merge_model_role(
     }
 }
 
-async fn read_model_roles_raw(
-    env_override: Option<&HashMap<String, String>>,
+async fn read_model_roles_raw_with(
+    executor: &dyn OmpExecutor,
+    strip_env_vars: &[&str],
 ) -> Result<Map<String, Value>, OmpConfigError> {
-    let response = get_config("modelRoles", env_override).await?;
+    let response = get_config_with(executor, "modelRoles", strip_env_vars).await?;
     let inner = response.get("value").cloned().unwrap_or(Value::Null);
     raw_model_roles_record(&inner)
 }
 
 /// `omp config get modelRoles --json`: the whole record as the TRUE effective value (environment
 /// overrides included -- for display, not for merging-before-write).
-pub async fn get_model_roles() -> Result<HashMap<String, String>, OmpConfigError> {
-    let raw = read_model_roles_raw(None).await?;
+pub async fn get_model_roles_with(
+    executor: &dyn OmpExecutor,
+) -> Result<HashMap<String, String>, OmpConfigError> {
+    let raw = read_model_roles_raw_with(executor, &[]).await?;
     Ok(string_entries_only(&raw))
+}
+
+pub async fn get_model_roles() -> Result<HashMap<String, String>, OmpConfigError> {
+    get_model_roles_with(&RealOmpExecutor).await
 }
 
 const MAX_ROLE_VALUE_LENGTH: usize = 512;
@@ -206,24 +223,38 @@ pub fn assert_valid_selector(value: &str) -> Result<(), OmpConfigError> {
 static MODEL_ROLES_WRITE_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
 /// Sets or clears one role. `value: None` clears it (deletes the key) rather than writing a JSON
-/// `null`. Validates the selector shape before ever entering the write lock.
-pub async fn set_model_role(
+/// `null`. Validates the role id and the selector shape before ever entering the write lock.
+pub async fn set_model_role_with(
+    executor: &dyn OmpExecutor,
     role: &str,
     value: Option<&str>,
 ) -> Result<SetModelRoleResult, OmpConfigError> {
+    if !is_model_role_id(role) {
+        return Err(OmpConfigError::new(
+            OmpConfigErrorCode::InvalidValue,
+            format!("Unknown model role: {role}"),
+        ));
+    }
     if let Some(selector) = value {
         assert_valid_selector(selector)?;
     }
     let _guard = MODEL_ROLES_WRITE_LOCK.lock().await;
-    set_model_role_now(role, value).await
+    set_model_role_now_with(executor, role, value).await
 }
 
-async fn set_model_role_now(
+pub async fn set_model_role(
     role: &str,
     value: Option<&str>,
 ) -> Result<SetModelRoleResult, OmpConfigError> {
-    let stripped_env = env_without_role_overrides(&current_env());
-    let current = read_model_roles_raw(Some(&stripped_env)).await?;
+    set_model_role_with(&RealOmpExecutor, role, value).await
+}
+
+async fn set_model_role_now_with(
+    executor: &dyn OmpExecutor,
+    role: &str,
+    value: Option<&str>,
+) -> Result<SetModelRoleResult, OmpConfigError> {
+    let current = read_model_roles_raw_with(executor, &ROLE_OVERRIDE_ENV_VARS).await?;
     let next = match merge_model_role(&current, role, value) {
         None => {
             return Ok(SetModelRoleResult {
@@ -233,14 +264,21 @@ async fn set_model_role_now(
         }
         Some(next) => next,
     };
-    let response = set_config("modelRoles", &Value::Object(next), Some(&stripped_env)).await?;
+    let response = set_config_with(
+        executor,
+        "modelRoles",
+        &Value::Object(next),
+        &ROLE_OVERRIDE_ENV_VARS,
+    )
+    .await?;
     let overridden_by = response
         .get("overriddenBy")
         .and_then(Value::as_str)
         .map(str::to_string);
-    // Always re-read the TRUE effective record (full environment) after a successful write,
-    // rather than trusting the write response -- matches `config.ts`'s own quality-gate fix.
-    let roles = get_model_roles().await?;
+    // Always re-read the TRUE effective record (full environment, no stripping) after a
+    // successful write, rather than trusting the write response -- matches `config.ts`'s own
+    // quality-gate fix.
+    let roles = get_model_roles_with(executor).await?;
     Ok(SetModelRoleResult {
         roles,
         overridden_by,
@@ -293,14 +331,29 @@ pub fn parse_catalog_response(value: &Value) -> Result<Vec<ModelCatalogEntry>, O
 }
 
 /// `omp models --kind <kind> --json`: a read-only catalog listing, independent of any live RPC
-/// session (how the Role picker gets model options).
-pub async fn list_catalog_models(kind: &str) -> Result<Vec<ModelCatalogEntry>, OmpConfigError> {
-    let response = crate::omp::config::run_json(
+/// session (how the Role picker gets model options). Re-checks `kind` even though the IPC handler
+/// already did (see module header).
+pub async fn list_catalog_models_with(
+    executor: &dyn OmpExecutor,
+    kind: &str,
+) -> Result<Vec<ModelCatalogEntry>, OmpConfigError> {
+    if !is_catalog_kind(kind) {
+        return Err(OmpConfigError::new(
+            OmpConfigErrorCode::InvalidValue,
+            format!("Unknown catalog kind: {kind}"),
+        ));
+    }
+    let response = run_json_with(
+        executor,
         &["models", "--kind", kind, "--json"],
         "Could not read the model catalog from omp.",
     )
     .await?;
     parse_catalog_response(&response)
+}
+
+pub async fn list_catalog_models(kind: &str) -> Result<Vec<ModelCatalogEntry>, OmpConfigError> {
+    list_catalog_models_with(&RealOmpExecutor, kind).await
 }
 
 // ---------------------------------------------------------------------------
@@ -324,10 +377,12 @@ pub fn model_roles_set(_state: AppState, args: Vec<Value>) -> HandlerFuture {
                 ))
             }
         };
-        let value_arg = args.get(1).cloned().unwrap_or(Value::Null);
-        let value = match &value_arg {
-            Value::Null => None,
-            Value::String(text) => Some(text.clone()),
+        // A missing second argument is `invalid-argument`, same as any other malformed call --
+        // only an explicit `null` (clear the role) or a `string` (set it) are accepted, matching
+        // `config.ts`'s own `value !== null && typeof value !== 'string'` guard exactly.
+        let value = match args.get(1) {
+            Some(Value::Null) => None,
+            Some(Value::String(text)) => Some(text.clone()),
             _ => {
                 return Err(invalid_argument(
                     "modelRoles.set expects a string value or null",

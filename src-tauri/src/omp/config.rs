@@ -21,10 +21,25 @@
 // `get_config`/`set_config` take no lock of their own (same as `config.ts`'s own `run`/
 // `ompRaw`): a caller with a real read-merge-write transaction (today, only `ipc::model_roles`'s
 // `set_model_role`) holds its own lock across the whole sequence, mirroring `enqueueWrite`.
+//
+// `OmpExecutor` is the one seam a test can swap: `get_config_with`/`set_config_with`/
+// `run_json_with` take `&dyn OmpExecutor` so a lane's own read-merge-write ordering (e.g.
+// `ipc::model_roles`'s `set_model_role`) can be proven against a fake that records call order and
+// simulates a slow write, without spawning a real `omp` process. `get_config`/`set_config`/
+// `run_json` are the production callers, always using `RealOmpExecutor`.
+//
+// Quality-gate finding (code review, 2026-10-14): `omp`'s own CLI argument parser treats a
+// `config set` value starting with `-` as an unknown flag (confirmed live, isolated profile:
+// `config set k -1` -> "Unknown option '-1'"); `omp`'s own error message recommends `-- <value>`,
+// but `--` is sticky for the REST of the command line (also confirmed live: `-- <value> --json`
+// swallows `--json` into the value instead of parsing it as a flag, and `get -- <key> --json`
+// degrades the response to `{}`). The only live-confirmed-safe ordering is flags first, then
+// `--`, then the value last: `config set <key> --json -- <value>`.
 
-use std::collections::HashMap;
+use std::future::Future;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -47,18 +62,6 @@ pub enum OmpConfigErrorCode {
     Timeout,
     ParseFailed,
     InvalidValue,
-}
-
-impl OmpConfigErrorCode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::OmpNotFound => "omp-not-found",
-            Self::OmpFailed => "omp-failed",
-            Self::Timeout => "timeout",
-            Self::ParseFailed => "parse-failed",
-            Self::InvalidValue => "invalid-value",
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -90,7 +93,9 @@ impl std::error::Error for OmpConfigError {}
 
 static SCRATCH_DIR: AsyncMutex<Option<PathBuf>> = AsyncMutex::const_new(None);
 
-async fn ensure_scratch_dir() -> Result<PathBuf, OmpConfigError> {
+/// Exported (not only `pub(super)`) so a test can assert a removed scratch directory is
+/// transparently recreated on the next call, the same retry guarantee `ensureScratchDir` gives.
+pub async fn ensure_scratch_dir() -> Result<PathBuf, OmpConfigError> {
     let mut guard = SCRATCH_DIR.lock().await;
     if let Some(dir) = guard.as_ref() {
         if tokio::fs::try_exists(dir).await.unwrap_or(false) {
@@ -116,14 +121,44 @@ async fn ensure_scratch_dir() -> Result<PathBuf, OmpConfigError> {
 }
 
 // ---------------------------------------------------------------------------
-// Raw `omp` invocation (mirrors `ompRaw`/`run`).
+// Raw `omp` invocation (mirrors `ompRaw`/`run`) and the injectable executor seam.
 // ---------------------------------------------------------------------------
+
+/// One `omp` invocation: `args` (every argument after the binary path), a caller-facing
+/// `failure_message` for a non-zero exit, and `strip_env_vars` (variable NAMES removed from the
+/// inherited environment before spawning -- never a replacement map, so every other inherited
+/// variable, Unicode or not, survives untouched).
+pub trait OmpExecutor: Send + Sync {
+    fn call<'a>(
+        &'a self,
+        args: &'a [String],
+        failure_message: &'a str,
+        strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>>;
+}
+
+pub struct RealOmpExecutor;
+
+impl OmpExecutor for RealOmpExecutor {
+    fn call<'a>(
+        &'a self,
+        args: &'a [String],
+        failure_message: &'a str,
+        strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        Box::pin(async move {
+            let cwd = ensure_scratch_dir().await?;
+            let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            run_omp(&arg_refs, failure_message, strip_env_vars, &cwd).await
+        })
+    }
+}
 
 async fn run_omp(
     args: &[&str],
     failure_message: &str,
-    env_override: Option<&HashMap<String, String>>,
-    cwd: &std::path::Path,
+    strip_env_vars: &[&str],
+    cwd: &Path,
 ) -> Result<String, OmpConfigError> {
     let omp_path =
         resolve_omp().map_err(|err| OmpConfigError::new(OmpConfigErrorCode::OmpNotFound, err))?;
@@ -133,11 +168,16 @@ async fn run_omp(
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // A timed-out `omp` must not keep running past this call: the `MODEL_ROLES_WRITE_LOCK`
+        // guard is released the instant this future is dropped (the `tokio::time::timeout` below
+        // drops it on expiry), and an orphaned process could still land a late write afterwards
+        // -- exactly the lost update the lock exists to prevent.
+        .kill_on_drop(true);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW.0);
-    if let Some(env) = env_override {
-        command.env_clear().envs(env);
+    for var in strip_env_vars {
+        command.env_remove(var);
     }
     let child = command.spawn().map_err(|err| {
         OmpConfigError::new(
@@ -163,27 +203,43 @@ async fn run_omp(
                 ))
             }
         };
-    if !output.status.success() {
-        let stderr_text = String::from_utf8_lossy(&output.stderr);
+    map_run_result(
+        output.status.success(),
+        &output.stdout,
+        &output.stderr,
+        failure_message,
+    )
+}
+
+/// Pure post-spawn decision, split out of `run_omp` for direct unit testing (no real process
+/// needed): nonzero exit -> `OmpFailed` (with the caller's own `failure_message`, never the raw
+/// stderr -- a YAML parse error can echo a local path); a logged stderr tail is trimmed by
+/// Unicode scalar, not byte index (a byte cut can land inside a multi-byte character and panic).
+fn map_run_result(
+    success: bool,
+    stdout: &[u8],
+    stderr: &[u8],
+    failure_message: &str,
+) -> Result<String, OmpConfigError> {
+    if !success {
+        let stderr_text = String::from_utf8_lossy(stderr);
         let trimmed = stderr_text.trim();
         if !trimmed.is_empty() {
-            log::warn!(
-                "omp config call failed: {}",
-                &trimmed[..trimmed.len().min(500)]
-            );
+            let logged: String = trimmed.chars().take(500).collect();
+            log::warn!("omp config call failed: {logged}");
         }
         return Err(OmpConfigError::new(
             OmpConfigErrorCode::OmpFailed,
             failure_message,
         ));
     }
-    if output.stdout.len() > MAX_STDOUT_BYTES {
+    if stdout.len() > MAX_STDOUT_BYTES {
         return Err(OmpConfigError::new(
             OmpConfigErrorCode::ParseFailed,
             "omp returned output exceeding the output size limit.",
         ));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(String::from_utf8_lossy(stdout).into_owned())
 }
 
 fn parse_object_json(stdout: &str) -> Result<Value, OmpConfigError> {
@@ -202,61 +258,208 @@ fn parse_object_json(stdout: &str) -> Result<Value, OmpConfigError> {
     Ok(value)
 }
 
+/// `^[A-Za-z][A-Za-z0-9]*$` (`omp config`'s own dotted-key rejection means a key never contains
+/// `.` either): rejects anything that could reach `omp`'s argv looking like a flag (a key is
+/// always a fixed, short identifier -- `modelRoles`, `composer.predictions`-style dotted keys are
+/// already rejected by `omp` itself as "Unknown setting", confirmed live).
+fn validate_config_key(key: &str) -> Result<(), OmpConfigError> {
+    let mut chars = key.chars();
+    let valid = chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric());
+    if !valid {
+        return Err(OmpConfigError::new(
+            OmpConfigErrorCode::InvalidValue,
+            "omp config key must match ^[A-Za-z][A-Za-z0-9]*$.",
+        ));
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
-// Generic `omp config get/set` (#691): any key, typed as a raw `Value`, serialised only at the
-// caller's own read-merge-write transaction (see module header).
+// Generic `omp config get/set` (#691): any key, typed as a raw `Value`.
 // ---------------------------------------------------------------------------
 
 /// `omp config get <key> --json`: the full decoded `{key, value, type, description?}` object, so
 /// a future caller can feature-detect by key (does `type`/`description` exist at all) as well as
 /// read the effective value.
-pub async fn get_config(
+pub async fn get_config_with(
+    executor: &dyn OmpExecutor,
     key: &str,
-    env_override: Option<&HashMap<String, String>>,
+    strip_env_vars: &[&str],
 ) -> Result<Value, OmpConfigError> {
-    let cwd = ensure_scratch_dir().await?;
-    let stdout = run_omp(
-        &["config", "get", key, "--json"],
-        "Could not read omp config.",
-        env_override,
-        &cwd,
-    )
-    .await?;
+    validate_config_key(key)?;
+    let args = vec![
+        "config".to_string(),
+        "get".to_string(),
+        key.to_string(),
+        "--json".to_string(),
+    ];
+    let stdout = executor
+        .call(&args, "Could not read omp config.", strip_env_vars)
+        .await?;
     parse_object_json(&stdout)
 }
 
-/// `omp config set <key> '<json>' --json`: always writes the GLOBAL `config.yml` (confirmed live,
-/// FINDINGS item 48); returns the full decoded response object, including `overriddenBy` when a
-/// higher-priority layer still supplies the effective value.
+pub async fn get_config(key: &str, strip_env_vars: &[&str]) -> Result<Value, OmpConfigError> {
+    get_config_with(&RealOmpExecutor, key, strip_env_vars).await
+}
+
+/// `omp config set <key> --json -- <json>`: always writes the GLOBAL `config.yml` (confirmed
+/// live, FINDINGS item 48); returns the full decoded response object, including `overriddenBy`
+/// when a higher-priority layer still supplies the effective value. The `--json -- <value>`
+/// ordering (flags before `--`, the value last) is the one live-confirmed-safe shape: `--` is
+/// sticky for the rest of the command line, so a flag placed after it is swallowed into the
+/// value instead of being parsed (see module header).
+pub async fn set_config_with(
+    executor: &dyn OmpExecutor,
+    key: &str,
+    value: &Value,
+    strip_env_vars: &[&str],
+) -> Result<Value, OmpConfigError> {
+    validate_config_key(key)?;
+    let value_arg = serde_json::to_string(value).expect("Value is always JSON-serialisable");
+    let args = vec![
+        "config".to_string(),
+        "set".to_string(),
+        key.to_string(),
+        "--json".to_string(),
+        "--".to_string(),
+        value_arg,
+    ];
+    let stdout = executor
+        .call(&args, "Could not save omp config.", strip_env_vars)
+        .await?;
+    parse_object_json(&stdout)
+}
+
 pub async fn set_config(
     key: &str,
     value: &Value,
-    env_override: Option<&HashMap<String, String>>,
+    strip_env_vars: &[&str],
 ) -> Result<Value, OmpConfigError> {
-    let cwd = ensure_scratch_dir().await?;
-    let value_arg = serde_json::to_string(value).expect("Value is always JSON-serialisable");
-    let stdout = run_omp(
-        &["config", "set", key, &value_arg, "--json"],
-        "Could not save omp config.",
-        env_override,
-        &cwd,
-    )
-    .await?;
-    parse_object_json(&stdout)
+    set_config_with(&RealOmpExecutor, key, value, strip_env_vars).await
 }
 
 /// Runs an arbitrary `omp` subcommand (not `config get/set` specifically -- `ipc::model_roles`'s
-/// own `omp models --kind <kind> --json` is the one other caller) against the same scratch cwd
-/// and returns the raw parsed JSON, accepting either a top-level array or object (unlike
-/// `get_config`/`set_config`'s own `parse_object_json`, which rejects a non-object -- `omp
-/// models` can return a bare array).
-pub async fn run_json(args: &[&str], failure_message: &str) -> Result<Value, OmpConfigError> {
-    let cwd = ensure_scratch_dir().await?;
-    let stdout = run_omp(args, failure_message, None, &cwd).await?;
+/// own `omp models --kind <kind> --json` is the one other caller) and returns the raw parsed
+/// JSON, accepting either a top-level array or object (unlike `get_config`/`set_config`'s own
+/// `parse_object_json`, which rejects a non-object -- `omp models` can return a bare array).
+pub async fn run_json_with(
+    executor: &dyn OmpExecutor,
+    args: &[&str],
+    failure_message: &str,
+) -> Result<Value, OmpConfigError> {
+    let owned_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let stdout = executor.call(&owned_args, failure_message, &[]).await?;
     serde_json::from_str(&stdout).map_err(|_| {
         OmpConfigError::new(
             OmpConfigErrorCode::ParseFailed,
             "omp returned output that was not valid JSON.",
         )
     })
+}
+
+pub async fn run_json(args: &[&str], failure_message: &str) -> Result<Value, OmpConfigError> {
+    run_json_with(&RealOmpExecutor, args, failure_message).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_config_key_accepts_plain_identifiers_and_rejects_flags_and_dotted_keys() {
+        assert!(validate_config_key("modelRoles").is_ok());
+        assert!(validate_config_key("cycleOrder").is_ok());
+        assert!(validate_config_key("-1").is_err());
+        assert!(validate_config_key("--json").is_err());
+        assert!(validate_config_key("composer.predictions").is_err());
+        assert!(validate_config_key("").is_err());
+    }
+
+    #[test]
+    fn map_run_result_maps_nonzero_exit_and_oversized_stdout() {
+        let err = map_run_result(false, b"", b"boom", "custom failure message").unwrap_err();
+        assert_eq!(err.code, OmpConfigErrorCode::OmpFailed);
+        assert_eq!(err.message, "custom failure message");
+
+        let huge = vec![0u8; MAX_STDOUT_BYTES + 1];
+        let err = map_run_result(true, &huge, b"", "unused").unwrap_err();
+        assert_eq!(err.code, OmpConfigErrorCode::ParseFailed);
+    }
+
+    #[test]
+    fn map_run_result_truncates_a_non_ascii_stderr_tail_by_character_not_byte() {
+        // A byte-index cut at 500 could land inside a multi-byte character; this stderr is all
+        // multi-byte so any byte-based slice would panic, while the char-based one never does.
+        let stderr = "✗".repeat(600);
+        let result = map_run_result(false, b"", stderr.as_bytes(), "msg");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn ensure_scratch_dir_recreates_after_external_removal() {
+        let first = ensure_scratch_dir().await.unwrap();
+        assert!(tokio::fs::try_exists(&first).await.unwrap());
+        tokio::fs::remove_dir(&first).await.unwrap();
+        let second = ensure_scratch_dir().await.unwrap();
+        assert!(tokio::fs::try_exists(&second).await.unwrap());
+    }
+
+    /// A minimal fake executor proving `get_config_with`/`set_config_with` build the exact argv
+    /// the module header documents, including the `--json -- <value>` ordering.
+    struct RecordingExecutor {
+        calls: AsyncMutex<Vec<Vec<String>>>,
+        response: String,
+    }
+
+    impl OmpExecutor for RecordingExecutor {
+        fn call<'a>(
+            &'a self,
+            args: &'a [String],
+            _failure_message: &'a str,
+            _strip_env_vars: &'a [&'a str],
+        ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+            Box::pin(async move {
+                self.calls.lock().await.push(args.to_vec());
+                Ok(self.response.clone())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn get_config_with_and_set_config_with_build_the_documented_argv() {
+        let executor = RecordingExecutor {
+            calls: AsyncMutex::new(Vec::new()),
+            response: r#"{"key":"x","value":1}"#.to_string(),
+        };
+        get_config_with(&executor, "cycleOrder", &[]).await.unwrap();
+        set_config_with(
+            &executor,
+            "cycleOrder",
+            &Value::String("-1".to_string()),
+            &[],
+        )
+        .await
+        .unwrap();
+        let calls = executor.calls.lock().await;
+        assert_eq!(calls[0], vec!["config", "get", "cycleOrder", "--json"]);
+        assert_eq!(
+            calls[1],
+            vec!["config", "set", "cycleOrder", "--json", "--", "\"-1\""]
+        );
+    }
+
+    #[tokio::test]
+    async fn get_config_rejects_an_invalid_key_before_ever_calling_the_executor() {
+        let executor = RecordingExecutor {
+            calls: AsyncMutex::new(Vec::new()),
+            response: String::new(),
+        };
+        let err = get_config_with(&executor, "--json", &[]).await.unwrap_err();
+        assert_eq!(err.code, OmpConfigErrorCode::InvalidValue);
+        assert!(executor.calls.lock().await.is_empty());
+    }
 }

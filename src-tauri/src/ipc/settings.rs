@@ -135,6 +135,7 @@ pub fn settings_set_readout_visibility(state: AppState, args: Vec<Value>) -> Han
 /// already distinct `serde_json` variants (unlike JS's `typeof [] === 'object'`), so no separate
 /// array rejection is needed; every field is read by direct key lookup and only a freshly-built
 /// `SplitLayout` is ever persisted, never the caller's own object verbatim.
+const SPLIT_NOT_OBJECT_MESSAGE: &str = "settings.setSplit expects a SplitLayout or null";
 const SPLIT_SHAPE_MESSAGE: &str = "settings.setSplit expects { sessionIds: [string, string] (distinct), dividerPercent: 0-100, focusedIndex: 0 | 1 } or null";
 
 fn parse_split_arg(value: &Value) -> Result<Option<SplitLayout>, super::IpcError> {
@@ -143,7 +144,7 @@ fn parse_split_arg(value: &Value) -> Result<Option<SplitLayout>, super::IpcError
     }
     let object = match value.as_object() {
         Some(object) => object,
-        None => return Err(invalid_argument(SPLIT_SHAPE_MESSAGE)),
+        None => return Err(invalid_argument(SPLIT_NOT_OBJECT_MESSAGE)),
     };
     let session_ids = object.get("sessionIds").and_then(Value::as_array);
     let first = session_ids
@@ -262,4 +263,66 @@ pub fn settings_set_detect_image_paths_on_paste(
         state.session_manager.emit_settings_changed(&value_json);
         Ok(value_json)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn require_bool_accepts_true_and_false_rejects_non_bool_and_missing() {
+        assert!(require_bool(
+            &[Value::Bool(true)],
+            0,
+            "settings.setWatermarkEnabled",
+            "enabled"
+        )
+        .unwrap());
+        assert!(!require_bool(
+            &[Value::Bool(false)],
+            0,
+            "settings.setWatermarkEnabled",
+            "enabled"
+        )
+        .unwrap());
+        assert!(require_bool(
+            &[Value::String("yes".into())],
+            0,
+            "settings.setWatermarkEnabled",
+            "enabled"
+        )
+        .is_err());
+        assert!(require_bool(&[], 0, "settings.setWatermarkEnabled", "enabled").is_err());
+    }
+
+    #[test]
+    fn parse_split_arg_accepts_null_and_a_valid_layout() {
+        assert!(parse_split_arg(&Value::Null).unwrap().is_none());
+        let valid = serde_json::json!({ "sessionIds": ["a", "b"], "dividerPercent": 50.0, "focusedIndex": 0 });
+        let layout = parse_split_arg(&valid).unwrap().unwrap();
+        assert_eq!(layout.session_ids, ["a".to_string(), "b".to_string()]);
+        assert_eq!(layout.divider_percent, 50.0);
+        assert_eq!(layout.focused_index, 0);
+    }
+
+    #[test]
+    fn parse_split_arg_rejects_a_non_object_with_the_short_message() {
+        let err = parse_split_arg(&Value::String("nope".into())).unwrap_err();
+        assert_eq!(err.message, SPLIT_NOT_OBJECT_MESSAGE);
+        let err = parse_split_arg(&serde_json::json!([])).unwrap_err();
+        assert_eq!(err.message, SPLIT_NOT_OBJECT_MESSAGE);
+    }
+
+    #[test]
+    fn parse_split_arg_rejects_malformed_fields_with_the_long_shape_message() {
+        let duplicate_ids = serde_json::json!({ "sessionIds": ["a", "a"], "dividerPercent": 50.0, "focusedIndex": 0 });
+        let err = parse_split_arg(&duplicate_ids).unwrap_err();
+        assert_eq!(err.message, SPLIT_SHAPE_MESSAGE);
+
+        let out_of_range = serde_json::json!({ "sessionIds": ["a", "b"], "dividerPercent": 150.0, "focusedIndex": 0 });
+        assert!(parse_split_arg(&out_of_range).is_err());
+
+        let bad_focused_index = serde_json::json!({ "sessionIds": ["a", "b"], "dividerPercent": 50.0, "focusedIndex": 2 });
+        assert!(parse_split_arg(&bad_focused_index).is_err());
+    }
 }

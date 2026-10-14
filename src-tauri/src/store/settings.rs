@@ -83,6 +83,15 @@ pub struct Settings {
     pub transcript_display: TranscriptDisplaySettings,
     pub show_sample_data: bool,
     pub detect_image_paths_on_paste: bool,
+    /// Quality-gate correction (code review, 2026-10-14): Electron's `this.data` is an untyped
+    /// JS object, so an unrecognised settings.json key rides along through every
+    /// `{...this.data, ...}` spread into `settings.get`'s reply and every `settings:changed`
+    /// broadcast with no code needed for it. `#[serde(flatten)]` reproduces that on the wire:
+    /// every entry here is merged into the TOP-LEVEL serialised object (never nested under its
+    /// own `"extra"` key), so a caller sees the exact same shape Electron's reply has. Never
+    /// overlaps a known field above (`SettingsStore::open` excludes all nine by name).
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 /// Spec 005 data-model.md "Validation"/"Migration": a present-but-malformed `split` (hand-edited,
@@ -130,14 +139,6 @@ pub struct SettingsStore {
     raw_theme: Option<ThemeId>,
     raw_watermark_enabled: Option<bool>,
     raw_show_sample_data: Option<bool>,
-    /// Rust-necessitated adaptation (issue #791 acceptance: "unknown keys round-trip untouched
-    /// so renderer features can add fields later"): `settings.ts`'s own `this.data` is an
-    /// untyped JS object, so an unrecognised key from a hand-edited or future-build
-    /// `settings.json` simply rides along through every `{...this.data, ...}` spread with no
-    /// code needed for it. `Settings` here is a real struct with no such slot, so every key NOT
-    /// one of the nine known fields is captured here at `open()` and re-inserted verbatim by
-    /// `serialize_for_disk` on every write, instead of being silently dropped.
-    unknown_fields: Map<String, Value>,
 }
 
 impl SettingsStore {
@@ -227,7 +228,7 @@ impl SettingsStore {
             "showSampleData",
             "detectImagePathsOnPaste",
         ];
-        let unknown_fields: Map<String, Value> = object
+        let extra: Map<String, Value> = object
             .iter()
             .filter(|(key, _)| !KNOWN_FIELDS.contains(&key.as_str()))
             .map(|(key, value)| (key.clone(), value.clone()))
@@ -243,6 +244,7 @@ impl SettingsStore {
             transcript_display,
             show_sample_data,
             detect_image_paths_on_paste,
+            extra,
         };
 
         Ok(Self {
@@ -251,7 +253,6 @@ impl SettingsStore {
             raw_theme,
             raw_watermark_enabled,
             raw_show_sample_data,
-            unknown_fields,
         })
     }
 
@@ -297,9 +298,11 @@ impl SettingsStore {
             json!(self.data.detect_image_paths_on_paste),
         );
         // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
-        // never overwrites a known key above (by construction, `unknown_fields` excludes all
-        // nine of them), so a renderer feature's own not-yet-ported setting survives every save.
-        for (key, value) in &self.unknown_fields {
+        // never overwrites a known key above (by construction, `data.extra` excludes all nine of
+        // them), so a renderer feature's own not-yet-ported setting survives every save. Also now
+        // the same field `settings.get`/`settings:changed` flatten into the wire shape (see
+        // `Settings::extra`'s own doc comment).
+        for (key, value) in &self.data.extra {
             map.insert(key.clone(), value.clone());
         }
         Value::Object(map)
@@ -561,6 +564,19 @@ mod tests {
                 .unwrap();
         assert_eq!(
             on_disk.get("aFutureFeature"),
+            Some(&json!({ "enabled": true }))
+        );
+        // The nine known fields are still written correctly alongside the unknown key, not
+        // displaced by it.
+        assert_eq!(on_disk.get("showSampleData"), Some(&json!(true)));
+        assert_eq!(on_disk.get("approvalMode"), Some(&json!("ask")));
+
+        // Quality-gate correction: `settings.get`'s own wire shape (what `serde_json::to_value`
+        // produces for the IPC reply and every `settings:changed` broadcast) must ALSO carry the
+        // unknown key -- `#[serde(flatten)]` on `Settings::extra` is what makes this true.
+        let wire = serde_json::to_value(store.get()).unwrap();
+        assert_eq!(
+            wire.get("aFutureFeature"),
             Some(&json!({ "enabled": true }))
         );
 

@@ -9,11 +9,24 @@
 // Alt+F4 so Ctrl+W reaches the renderer's own close-chat-pane handler instead of closing the
 // window (#621); the custom `MenuItem`s below do the same.
 //
-// Not ported: `Undo`/`Redo` (Electron's Edit submenu -- `PredefinedMenuItem::undo`/`redo` are
-// documented unsupported on Windows/Linux, tauri 2.12.3 docs.rs) and Reload/Force Reload/Toggle
-// DevTools/Zoom (Electron's dev-only View items -- this build wires no reload/devtools/zoom
-// action anywhere else, so there is nothing for those items to do yet). A native edit shortcut
-// (Ctrl+C/V/X/A) already works directly against the focused WebView2 control without any menu.
+// Quality-gate correction (code review, 2026-10-14): `PredefinedMenuItem::undo`/`redo`/
+// `fullscreen` are each documented "Windows/Linux: Unsupported" on their own BUILDER method
+// (`tauri::menu::SubmenuBuilder`), but `PredefinedMenuItem::fullscreen` itself (used directly, as
+// below) still creates an item muda actually runs on Windows via a simulated accelerator the same
+// way Cut/Copy do -- `Undo`/`Redo` really do nothing there, confirmed against muda 0.20.0's own
+// Windows `run_predefined` match (no `Undo`/`Redo` arm at all, falling through to a no-op; `Cut`/
+// `Copy`/`Paste`/`SelectAll` and the window-state items DO have arms). So: `Undo`/`Redo` stay out
+// (genuinely dead), but `Fullscreen` needed a different fix -- it is a custom `MenuItem` below
+// calling `window.set_fullscreen(!is_fullscreen)` in `on_menu_event`, not the predefined item.
+// Reset Zoom / Zoom In / Zoom Out ship in Electron's PRODUCTION build (`menu.ts`; only Reload,
+// Force Reload and Toggle DevTools are gated on `isDev`) -- ported here as three more custom
+// items driving `WebviewWindow::set_zoom` against a tracked `ZOOM_FACTOR` (no getter exists on
+// this Tauri version), with `window.popupMenu`'s own x/y multiplied by that same factor before
+// building the popup position, mirroring `window.ts`'s own `webContents.getZoomFactor()` multiply
+// exactly. Reload/Force Reload/Toggle DevTools stay out: nothing else in this build wires a
+// reload/devtools action for them to drive.
+
+use std::sync::Mutex as StdMutex;
 
 use serde_json::Value;
 use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, Submenu, SubmenuBuilder};
@@ -23,6 +36,15 @@ use tokio::sync::OnceCell;
 use crate::ipc::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
 const MENU_IDS: [&str; 4] = ["file", "edit", "view", "window"];
+
+const ZOOM_STEP: f64 = 1.1;
+const ZOOM_MIN: f64 = 0.25;
+const ZOOM_MAX: f64 = 3.0;
+
+/// Page zoom level the View menu's Reset/In/Out items track (`WebviewWindow` has no zoom getter
+/// on this Tauri version), separate from `Position::Logical`'s own OS-DPI scaling -- this is the
+/// CSS-pixel page zoom `window.ts` also tracks via `webContents.getZoomFactor()`.
+static ZOOM_FACTOR: StdMutex<f64> = StdMutex::new(1.0);
 
 pub fn register(d: &mut Dispatcher) {
     d.register("window.popupMenu", window_popup_menu);
@@ -45,11 +67,22 @@ fn submenu_for<'a>(menus: &'a AppMenus, id: &str) -> Option<&'a Submenu<Wry>> {
     }
 }
 
+fn apply_zoom(app: &tauri::AppHandle, new_factor: f64) {
+    let clamped = new_factor.clamp(ZOOM_MIN, ZOOM_MAX);
+    *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned") = clamped;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_zoom(clamped);
+    }
+}
+
 static MENUS: OnceCell<AppMenus> = OnceCell::const_new();
 
-/// Builds the four submenus and registers the one `on_menu_event` listener their custom
-/// (non-predefined) items need -- `Cut`/`Copy`/`Paste`/`SelectAll`/`Minimize`/`Fullscreen` are
-/// `PredefinedMenuItem`s and fire their native OS/WebView2 action with no handler of ours.
+/// Builds the four submenus and registers the one app-wide `on_menu_event` listener their custom
+/// (non-predefined) items need. Registered on the `AppHandle`, not a specific window (low-sev
+/// code-review finding): a window-keyed listener would be silently replaced by any other lane
+/// that also registers one for the same window label, where the app-wide listener is additive.
+/// `Cut`/`Copy`/`Paste`/`SelectAll`/`Minimize` are `PredefinedMenuItem`s and fire their native
+/// OS/WebView2 action with no handler of ours.
 fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
     let file_close = MenuItemBuilder::with_id("file-close", "Close")
         .accelerator("Alt+F4")
@@ -59,14 +92,30 @@ fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
         .build()?;
 
     let edit = SubmenuBuilder::with_id(app, "edit", "Edit")
+        .undo()
+        .redo()
+        .separator()
         .cut()
         .copy()
         .paste()
         .select_all()
         .build()?;
 
+    let view_fullscreen =
+        MenuItemBuilder::with_id("view-toggle-fullscreen", "Toggle Full Screen").build(app)?;
+    let view_reset_zoom = MenuItemBuilder::with_id("view-reset-zoom", "Reset Zoom").build(app)?;
+    let view_zoom_in = MenuItemBuilder::with_id("view-zoom-in", "Zoom In")
+        .accelerator("Ctrl+=")
+        .build(app)?;
+    let view_zoom_out = MenuItemBuilder::with_id("view-zoom-out", "Zoom Out")
+        .accelerator("Ctrl+-")
+        .build(app)?;
     let view = SubmenuBuilder::with_id(app, "view", "View")
-        .item(&PredefinedMenuItem::fullscreen(app, None)?)
+        .item(&view_reset_zoom)
+        .item(&view_zoom_in)
+        .item(&view_zoom_out)
+        .separator()
+        .item(&view_fullscreen)
         .build()?;
 
     let window_maximize = MenuItemBuilder::with_id("window-maximize", "Maximize").build(app)?;
@@ -80,8 +129,11 @@ fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
         .item(&window_close)
         .build()?;
 
-    if let Some(window_handle) = app.get_webview_window("main") {
-        window_handle.on_menu_event(move |window, event| match event.id().0.as_str() {
+    app.on_menu_event(move |app, event| {
+        let Some(window) = app.get_webview_window("main") else {
+            return;
+        };
+        match event.id().0.as_str() {
             "file-close" | "window-close" => {
                 let _ = window.close();
             }
@@ -93,9 +145,23 @@ fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
                     let _ = window.maximize();
                 }
             },
+            "view-toggle-fullscreen" => {
+                if let Ok(is_fullscreen) = window.is_fullscreen() {
+                    let _ = window.set_fullscreen(!is_fullscreen);
+                }
+            }
+            "view-reset-zoom" => apply_zoom(app, 1.0),
+            "view-zoom-in" => {
+                let current = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
+                apply_zoom(app, current * ZOOM_STEP);
+            }
+            "view-zoom-out" => {
+                let current = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
+                apply_zoom(app, current / ZOOM_STEP);
+            }
             _ => {}
-        });
-    }
+        }
+    });
 
     Ok(AppMenus {
         file,
@@ -107,9 +173,10 @@ fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
 
 /// `window.popupMenu(menuId, x, y)` (FR-057): pops one top-level item's real submenu at `x`/`y`
 /// (window-content-relative logical pixels, matching `popup_menu_at`'s own documented coordinate
-/// space). Unlike Electron's handler, no zoom-factor multiply: this build's webview has no page
-/// zoom control wired anywhere else, so the renderer's raw `getBoundingClientRect()` values are
-/// used as-is.
+/// space), multiplied by the current page zoom factor -- the same adjustment Electron's own
+/// handler makes with `webContents.getZoomFactor()` before calling `Menu.popup`, since neither
+/// API auto-adjusts for in-page CSS zoom (distinct from OS DPI scaling, which `Position::Logical`
+/// already handles on its own).
 fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let menu_id = match args.first().and_then(Value::as_str) {
@@ -157,8 +224,12 @@ fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(not_found(format!("Menu '{menu_id}' has no submenu")));
         };
 
+        let zoom = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
         window
-            .popup_menu_at(submenu, Position::Logical(LogicalPosition::new(x, y)))
+            .popup_menu_at(
+                submenu,
+                Position::Logical(LogicalPosition::new(x * zoom, y * zoom)),
+            )
             .map_err(|err| IpcError::new("not-found", format!("Could not show the menu: {err}")))?;
         Ok(Value::Null)
     })

@@ -1,11 +1,16 @@
 // Test suite for `ipc::model_roles` (lane R8, issue #791), split into this sibling file via
 // `#[path]` only to keep `model_roles.rs` itself under this build's 600-line-per-file cap. Ports
-// `src/main/ipc/modelRoles.test.ts`'s `toIpcError` cases and `src/main/omp/config.test.ts`'s pure
-// function cases (rawModelRolesRecord, stringEntriesOnly, mergeModelRole, parseCatalogResponse,
-// assertValidSelector -- including the "thinking-suffix" selector case -- envWithoutRoleOverrides,
-// and the enqueueWrite serialisation guarantee).
+// `src/main/ipc/modelRoles.test.ts`'s `toIpcError` cases, `src/main/omp/config.test.ts`'s pure
+// function cases, and `src/main/omp/config.cli.test.ts`'s real-code behavioural guarantees
+// (serialised read-merge-write, role/kind rejected before `omp` runs, `overriddenBy` carried
+// through, env stripping asymmetry) via `FakeModelRolesExecutor`, a fake `OmpExecutor` that never
+// spawns a real process.
 use super::*;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex as TokioMutex;
 
 #[test]
 fn to_ipc_error_maps_timeout() {
@@ -64,6 +69,7 @@ fn raw_model_roles_record_shallow_copies_and_rejects_non_objects() {
         OmpConfigErrorCode::ParseFailed
     );
     assert!(raw_model_roles_record(&serde_json::json!(42)).is_err());
+    assert!(raw_model_roles_record(&Value::String("nope".into())).is_err());
 }
 
 #[test]
@@ -234,38 +240,172 @@ fn env_without_role_overrides_strips_case_insensitively() {
     assert!(env_without_role_overrides(&HashMap::new()).is_empty());
 }
 
-/// Proves the serialisation primitive `MODEL_ROLES_WRITE_LOCK` uses (a `tokio::sync::Mutex` held
-/// across the whole operation) runs two queued tasks strictly in acquire order, never overlapping
-/// -- the same guarantee `enqueueWrite`'s own TS test proved for its promise chain. Uses a fresh
-/// local mutex (not the real static) so this never contends with other concurrently-running
-/// tests.
-#[tokio::test]
-async fn write_lock_runs_two_queued_tasks_strictly_in_order_and_releases_after_each() {
-    let lock = std::sync::Arc::new(AsyncMutex::new(()));
-    let events = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::<&'static str>::new()));
+// ---------------------------------------------------------------------------
+// `FakeModelRolesExecutor`: a fake `OmpExecutor` simulating `omp config get/set modelRoles` in
+// memory (no real process), letting these tests prove the REAL `set_model_role`/
+// `MODEL_ROLES_WRITE_LOCK`/`list_catalog_models` behave correctly -- not a stand-in primitive.
+struct FakeModelRolesExecutor {
+    state: TokioMutex<Map<String, Value>>,
+    calls: TokioMutex<Vec<(Vec<String>, Vec<String>)>>,
+    set_delay_ms: u64,
+    overridden_by: Option<String>,
+}
 
-    let (lock_a, events_a) = (lock.clone(), events.clone());
+impl FakeModelRolesExecutor {
+    fn new(set_delay_ms: u64, overridden_by: Option<&str>) -> Self {
+        Self {
+            state: TokioMutex::new(Map::new()),
+            calls: TokioMutex::new(Vec::new()),
+            set_delay_ms,
+            overridden_by: overridden_by.map(str::to_string),
+        }
+    }
+}
+
+impl OmpExecutor for FakeModelRolesExecutor {
+    fn call<'a>(
+        &'a self,
+        args: &'a [String],
+        _failure_message: &'a str,
+        strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.calls.lock().await.push((
+                args.to_vec(),
+                strip_env_vars.iter().map(|s| s.to_string()).collect(),
+            ));
+            if args.get(1).map(String::as_str) == Some("set") {
+                if self.set_delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(self.set_delay_ms)).await;
+                }
+                let value_json = args.last().expect("set call always carries a value");
+                let value: Value = serde_json::from_str(value_json)
+                    .expect("fake only ever receives JSON its own caller built");
+                *self.state.lock().await = value.as_object().cloned().unwrap_or_default();
+                let mut response = serde_json::json!({ "key": args[2], "value": value });
+                if let Some(overridden_by) = &self.overridden_by {
+                    response["overriddenBy"] = Value::String(overridden_by.clone());
+                }
+                return Ok(response.to_string());
+            }
+            let state = self.state.lock().await;
+            Ok(serde_json::json!({ "key": args.get(2).cloned().unwrap_or_default(), "value": Value::Object(state.clone()), "type": "record", "description": "" }).to_string())
+        })
+    }
+}
+
+/// Ports `config.cli.test.ts`'s "setModelRole keeps the whole read-merge-write inside the
+/// enqueued task": a slow first SET must delay the second role's own READ, and the second SET
+/// must carry both keys (proving the second task's merge read the first task's ALREADY-WRITTEN
+/// value, not a stale pre-lock copy) -- against the real `set_model_role_with`/
+/// `MODEL_ROLES_WRITE_LOCK`, not a stand-in mutex. No sleep decides which task runs first: the
+/// assertions hold for whichever task wins that race, because they check group-of-three call
+/// ordering (get, set, re-read) never interleaves across tasks, not a specific interleaving.
+#[tokio::test]
+async fn set_model_role_with_serialises_two_concurrent_calls_and_merges_both_writes() {
+    let fake = Arc::new(FakeModelRolesExecutor::new(30, None));
+
+    let fake_a = fake.clone();
     let task_a = tokio::spawn(async move {
-        let _guard = lock_a.lock().await;
-        events_a.lock().await.push("A-start");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        events_a.lock().await.push("A-end");
+        set_model_role_with(fake_a.as_ref(), "task", Some("anthropic/claude-sonnet-4-5")).await
     });
-    tokio::time::sleep(Duration::from_millis(1)).await; // ensure A acquires first.
-    let (lock_b, events_b) = (lock.clone(), events.clone());
+    let fake_b = fake.clone();
     let task_b = tokio::spawn(async move {
-        let _guard = lock_b.lock().await;
-        events_b.lock().await.push("B-start");
-        events_b.lock().await.push("B-end");
+        set_model_role_with(fake_b.as_ref(), "smol", Some("openai/gpt-4.1-mini")).await
     });
-    let _ = tokio::join!(task_a, task_b);
+
+    let (result_a, result_b) = tokio::join!(task_a, task_b);
+    let result_a = result_a.unwrap().unwrap();
+    let result_b = result_b.unwrap().unwrap();
+
+    // By the time BOTH calls have returned, both roles are present in whichever result reflects
+    // the later write.
+    let final_roles = if result_a.roles.len() >= result_b.roles.len() {
+        result_a.roles
+    } else {
+        result_b.roles
+    };
     assert_eq!(
-        *events.lock().await,
-        vec!["A-start", "A-end", "B-start", "B-end"]
+        final_roles.get("task"),
+        Some(&"anthropic/claude-sonnet-4-5".to_string())
+    );
+    assert_eq!(
+        final_roles.get("smol"),
+        Some(&"openai/gpt-4.1-mini".to_string())
     );
 
-    // A guard dropped after an early return (simulating `set_model_role_now` failing partway
-    // through) must never wedge a later acquire behind it.
-    let acquired = tokio::time::timeout(Duration::from_millis(50), lock.lock()).await;
-    assert!(acquired.is_ok());
+    let calls = fake.calls.lock().await;
+    assert_eq!(calls.len(), 6, "each set_model_role call makes exactly 3 omp calls (stripped-get, stripped-set, full re-read)");
+    // Calls 0,1,2 belong to whichever task ran first; 3,4,5 to the other. If the lock did not
+    // cover the whole read-merge-write, the second task's own GET could land at index 1 (where
+    // the first task's SET belongs) instead -- this is exactly what the assertion below rules out.
+    assert_eq!(calls[0].0[1], "get");
+    assert_eq!(
+        calls[1].0[1], "set",
+        "no interleaving: the second call in each group of three must be that SAME task's own set"
+    );
+    assert_eq!(calls[2].0[1], "get");
+    assert_eq!(calls[3].0[1], "get");
+    assert_eq!(calls[4].0[1], "set");
+    assert_eq!(calls[5].0[1], "get");
+    // The second SET (whichever task it belongs to) carries BOTH roles -- its merge-read saw the
+    // first task's already-written value.
+    let second_set_value = calls[4].0.last().unwrap();
+    assert!(second_set_value.contains("anthropic/claude-sonnet-4-5"));
+    assert!(second_set_value.contains("openai/gpt-4.1-mini"));
+    // Env stripping asymmetry: both the merge-read (index 0) and the set (index 1) strip the
+    // four role-override variables; the final re-read (index 2) uses the full environment.
+    assert_eq!(calls[0].1, ROLE_OVERRIDE_ENV_VARS.to_vec());
+    assert_eq!(calls[1].1, ROLE_OVERRIDE_ENV_VARS.to_vec());
+    assert!(calls[2].1.is_empty());
+}
+
+#[tokio::test]
+async fn set_model_role_with_rejects_an_unknown_role_before_ever_calling_omp() {
+    let fake = FakeModelRolesExecutor::new(0, None);
+    let err = set_model_role_with(&fake, "not-a-real-role", Some("x/y"))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, OmpConfigErrorCode::InvalidValue);
+    assert!(fake.calls.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn list_catalog_models_with_rejects_an_unknown_kind_before_ever_calling_omp() {
+    let fake = FakeModelRolesExecutor::new(0, None);
+    let err = list_catalog_models_with(&fake, "not-a-real-kind")
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, OmpConfigErrorCode::InvalidValue);
+    assert!(fake.calls.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn set_model_role_with_passes_overridden_by_through() {
+    let fake = FakeModelRolesExecutor::new(0, Some("project"));
+    let result = set_model_role_with(&fake, "task", Some("anthropic/claude-sonnet-4-5"))
+        .await
+        .unwrap();
+    assert_eq!(result.overridden_by, Some("project".to_string()));
+}
+
+#[tokio::test]
+async fn set_model_role_with_carries_a_thinking_suffix_through_merge_and_write() {
+    let fake = FakeModelRolesExecutor::new(0, None);
+    let result = set_model_role_with(&fake, "task", Some("anthropic/claude-sonnet-4-5:high"))
+        .await
+        .unwrap();
+    assert_eq!(
+        result.roles.get("task"),
+        Some(&"anthropic/claude-sonnet-4-5:high".to_string())
+    );
+}
+
+#[tokio::test]
+async fn set_model_role_with_clearing_an_already_unset_role_skips_the_set_call() {
+    let fake = FakeModelRolesExecutor::new(0, None);
+    let result = set_model_role_with(&fake, "task", None).await.unwrap();
+    assert!(result.roles.is_empty());
+    // Only the one stripped-env merge-read ran; no `set` and no re-read, since nothing changed.
+    assert_eq!(fake.calls.lock().await.len(), 1);
 }
