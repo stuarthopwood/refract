@@ -399,6 +399,10 @@ const REQUEST_LANES = {
   ACCOUNTS_OMP_SIGN_OUT: 'R9',
   ACCOUNTS_OMP_ANSWER: 'R9',
   APP_OPEN_RELEASE_NOTES: 'R9', // "release notes" in R9's own work description
+  MODEL_SET_MODEL: 'RM', // #454/#740/#741/#762/#766/#760, ipc/model.rs
+  MODEL_CYCLE_MODEL: 'RM',
+  MODEL_APPLY_ROLE: 'RM',
+  MODEL_LIST_ROLES: 'RM',
 };
 
 const EVENT_LANES = {
