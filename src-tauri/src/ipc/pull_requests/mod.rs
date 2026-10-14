@@ -95,9 +95,14 @@ pub(super) fn parse_filter_tab(value: &str) -> Option<FilterTab> {
 
 /// "Also fix" remediation (ported from `pullRequests.ts`): `number` must be a positive integer
 /// representable without precision loss, never `NaN`/negative/non-integer straight through to
-/// `gh` argv construction.
+/// `gh` argv construction. Capped at `i32::MAX`, not just "any `u64`": every mutation that needs
+/// this number as a GraphQL variable sends it as an `Int` (`GraphqlValue::Int(number as i64)`),
+/// GraphQL's own 32-bit signed integer type -- a number above that bound would silently wrap
+/// when cast, never reaching `gh` as the value the renderer actually asked for.
 pub(super) fn valid_pull_request_number(args: &[Value], index: usize) -> Option<u64> {
-    args.get(index).and_then(Value::as_u64).filter(|&n| n > 0)
+    args.get(index)
+        .and_then(Value::as_u64)
+        .filter(|&n| n > 0 && n <= i32::MAX as u64)
 }
 
 pub(super) async fn repo_path_for(
@@ -197,17 +202,24 @@ pub(super) async fn list_pull_requests(
     // tab result counts. `owner/repo` is resolved ONCE here, not per row.
     let (owner, repo) = gh::owner_repo_for(repo_path).await?;
     let owner_repo = format!("{owner}/{repo}");
-    let numbers: Vec<u64> = entries.iter().map(|entry| entry.number).collect();
+    let numbers_and_updated_at: Vec<(u64, String)> = entries
+        .iter()
+        .map(|entry| (entry.number, entry.updated_at.clone()))
+        .collect();
     let repo_path_owned = repo_path.to_path_buf();
-    let check_states = with_bounded_concurrency(numbers, CHECK_STATE_CONCURRENCY, move |number| {
-        let repo_path = repo_path_owned.clone();
-        let owner_repo = owner_repo.clone();
-        async move {
-            gh_pull_requests::view_check_state(&repo_path, &owner_repo, number)
-                .await
-                .unwrap_or(None)
-        }
-    })
+    let check_states = with_bounded_concurrency(
+        numbers_and_updated_at,
+        CHECK_STATE_CONCURRENCY,
+        move |(number, updated_at)| {
+            let repo_path = repo_path_owned.clone();
+            let owner_repo = owner_repo.clone();
+            async move {
+                gh_pull_requests::view_check_state(&repo_path, &owner_repo, number, &updated_at)
+                    .await
+                    .unwrap_or(None)
+            }
+        },
+    )
     .await;
 
     Ok(entries
@@ -324,9 +336,17 @@ pub(super) async fn build_detail(
     let methods_fut = gh_mutations::get_allowed_merge_methods(repo_path);
     let owner_repo_fut = gh::owner_repo_for(repo_path);
 
-    let (view, threads_and_timeline, allowed_merge_methods, owner_repo) =
-        tokio::try_join!(view_fut, threads_fut, methods_fut, owner_repo_fut)?;
-    let files_with_patch = files_fut.await;
+    // Perf finding (code review, 2026-10-14): `files_fut` (an REST `--paginate` call, often the
+    // slowest of the five) used to run only after every other detail call had already finished,
+    // adding a full extra `gh` spawn plus API round trip to detail latency. It cannot join the
+    // `GhError`-typed futures above directly (`get_changed_files_with_patch` never fails the
+    // caller -- it resolves to `None` instead, so every caller falls back to the porcelain
+    // `files` field), so the two futures run under a plain `tokio::join!` instead.
+    let (result, files_with_patch) = tokio::join!(
+        async { tokio::try_join!(view_fut, threads_fut, methods_fut, owner_repo_fut) },
+        files_fut
+    );
+    let (view, threads_and_timeline, allowed_merge_methods, owner_repo) = result?;
 
     let state = map_pull_request_state(&view.state, view.is_draft);
     let mergeable_state = map_mergeable_state(&view.mergeable);
@@ -365,7 +385,7 @@ pub(super) async fn build_detail(
         updated_at: view.updated_at.clone(),
         head_sha: view.head_ref_oid.clone(),
         is_fork: view.is_cross_repository,
-        head_repository_owner: view.head_repository_owner.as_ref().map(|a| a.login.clone()),
+        head_repository_owner: view.head_repository_owner.and_then(|a| a.login),
     })
 }
 
@@ -392,14 +412,28 @@ mod tests {
     }
 
     #[test]
-    fn valid_pull_request_number_accepts_positive_and_max_u64() {
+    fn valid_pull_request_number_accepts_positive_up_to_i32_max() {
         assert_eq!(
             valid_pull_request_number(&[serde_json::json!(1)], 0),
             Some(1)
         );
         assert_eq!(
+            valid_pull_request_number(&[serde_json::json!(i32::MAX)], 0),
+            Some(i32::MAX as u64)
+        );
+    }
+
+    #[test]
+    fn valid_pull_request_number_rejects_above_i32_max_and_u64_max() {
+        // GraphQL's `Int` is a 32-bit signed integer; every value above `i32::MAX` is rejected
+        // here rather than silently wrapping when later cast to `i64` for a GraphQL variable.
+        assert_eq!(
+            valid_pull_request_number(&[serde_json::json!(i32::MAX as u64 + 1)], 0),
+            None
+        );
+        assert_eq!(
             valid_pull_request_number(&[serde_json::json!(u64::MAX)], 0),
-            Some(u64::MAX)
+            None
         );
     }
 

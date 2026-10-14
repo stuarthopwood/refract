@@ -182,12 +182,11 @@ fn sample_pr_view_detail(files: Vec<GhRestFileLite>) -> GhPrViewDetail {
         number: 42,
         state: "OPEN".to_string(),
         author: GhActor {
-            login: "octocat".to_string(),
+            login: Some("octocat".to_string()),
             name: None,
         },
         base_ref_name: "main".to_string(),
         head_ref_name: "feature".to_string(),
-        reviews: Vec::new(),
         review_requests: Vec::new(),
         assignees: Vec::new(),
         labels: Vec::new(),
@@ -286,7 +285,7 @@ fn gh_timeline_node_comment(id: &str, login: &str, body: &str, created_at: &str)
         commit: None,
         id: Some(id.to_string()),
         author: Some(GhActor {
-            login: login.to_string(),
+            login: Some(login.to_string()),
             name: None,
         }),
         body: Some(body.to_string()),
@@ -308,7 +307,7 @@ fn gh_timeline_node_review(
         commit: None,
         id: Some(id.to_string()),
         author: Some(GhActor {
-            login: login.to_string(),
+            login: Some(login.to_string()),
             name: None,
         }),
         body: Some(body.to_string()),
@@ -337,7 +336,7 @@ fn build_timeline_sorts_commit_review_comment_and_thread_chronologically() {
                     nodes: vec![GhReviewThreadComment {
                         id: "thread-comment-1".to_string(),
                         author: Some(GhActor {
-                            login: "reviewer".to_string(),
+                            login: Some("reviewer".to_string()),
                             name: None,
                         }),
                         body: "Please fix this.".to_string(),

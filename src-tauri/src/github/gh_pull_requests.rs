@@ -3,7 +3,9 @@
 // timed `gh` wrapper (`gh_raw`/`gh_json`/`gh_graphql`/`owner_repo_for`) lives in `gh.rs`; the
 // review-thread/timeline/comment/review/merge surface lives in `gh_mutations.rs`.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{LazyLock, Mutex as StdMutex};
 
 use serde::Deserialize;
 
@@ -124,22 +126,43 @@ struct GhCheckStateResult {
     status_check_rollup: Option<Vec<GhCheckRun>>,
 }
 
-/// The search surface has no `statusCheckRollup`; fetched per-row via a second
-/// `gh pr view --json statusCheckRollup` call for the non-Open tabs only (small result counts).
-/// Takes an already-resolved `owner/repo` so the caller resolves it ONCE per request, not once
-/// per row.
+/// Perf finding (code review, 2026-10-14): cached per `(owner_repo, number)`, invalidated the
+/// instant `updated_at` moves -- a non-Open tab used to spawn one `gh pr view` process per row
+/// on EVERY list refresh, even when nothing about that pull request had changed since the last
+/// refresh. The search surface has no `statusCheckRollup`; fetched per-row for these smaller,
+/// non-Open tab result counts. Takes an already-resolved `owner/repo` so the caller resolves it
+/// ONCE per request, not once per row.
+struct CachedCheckState {
+    updated_at: String,
+    status_check_rollup: Option<Vec<GhCheckRun>>,
+}
+
+static CHECK_STATE_CACHE: LazyLock<StdMutex<HashMap<(String, u64), CachedCheckState>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
+
 pub async fn view_check_state(
     repo_path: &Path,
     owner_repo: &str,
     number: u64,
+    updated_at: &str,
 ) -> Result<Option<Vec<GhCheckRun>>, GhError> {
-    let number = number.to_string();
+    let key = (owner_repo.to_string(), number);
+    if let Some(cached) = CHECK_STATE_CACHE
+        .lock()
+        .expect("CHECK_STATE_CACHE mutex poisoned")
+        .get(&key)
+    {
+        if cached.updated_at == updated_at {
+            return Ok(cached.status_check_rollup.clone());
+        }
+    }
+    let number_str = number.to_string();
     let result: GhCheckStateResult = gh_json(
         repo_path,
         &[
             "pr",
             "view",
-            &number,
+            &number_str,
             "--repo",
             owner_repo,
             "--json",
@@ -147,19 +170,26 @@ pub async fn view_check_state(
         ],
     )
     .await?;
+    CHECK_STATE_CACHE
+        .lock()
+        .expect("CHECK_STATE_CACHE mutex poisoned")
+        .insert(
+            key,
+            CachedCheckState {
+                updated_at: updated_at.to_string(),
+                status_check_rollup: result.status_check_rollup.clone(),
+            },
+        );
     Ok(result.status_check_rollup)
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GhReview {
-    pub id: String,
-    pub author: GhActor,
-    pub state: String,
-    pub body: String,
-    pub submitted_at: String,
-}
-
+/// "Also fix" remediation (code review, 2026-10-14): `GhReview`/`reviews` used to carry
+/// `gh pr view --json reviews`'s submitted-review history, but nothing in `mapping.rs` ever read
+/// it (the Overview timeline's reviews come from `gh_mutations`'s own GraphQL `timelineItems`
+/// query instead) -- and `submittedAt` is `null` for a pending (not-yet-submitted) review, which
+/// a required `String` field can never deserialise, breaking `detail()` outright whenever the
+/// viewer has an in-progress review open in the GitHub web UI. Removed rather than made
+/// `Option<String>`: dead code that can also crash is strictly worse than no code.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GhCommit {
@@ -189,7 +219,6 @@ pub struct GhPrViewDetail {
     pub author: GhActor,
     pub base_ref_name: String,
     pub head_ref_name: String,
-    pub reviews: Vec<GhReview>,
     pub review_requests: Vec<GhActor>,
     pub assignees: Vec<GhActor>,
     pub labels: Vec<GhLabel>,
@@ -212,7 +241,7 @@ pub struct GhPrViewDetail {
     pub head_repository_owner: Option<GhActor>,
 }
 
-const VIEW_FIELDS: &str = "title,number,state,author,baseRefName,headRefName,reviews,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner";
+const VIEW_FIELDS: &str = "title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner";
 
 pub async fn view_pull_request_detail(
     repo_path: &Path,

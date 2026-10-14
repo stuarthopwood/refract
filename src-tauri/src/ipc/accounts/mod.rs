@@ -27,7 +27,7 @@ mod types;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
 use tokio::sync::{Mutex as AsyncMutex, OnceCell};
@@ -80,7 +80,15 @@ static ADD_FLOW_SEQ: AtomicU64 = AtomicU64::new(0);
 /// switch/signOut it is only once the CLI mutation has already settled and the post-mutation
 /// reconcile is about to start. Whichever round's ticket was acquired most recently always wins,
 /// so an earlier round's now-stale result can never overwrite it.
-static LATEST_BROADCAST_TICKET: AtomicU64 = AtomicU64::new(0);
+///
+/// "Also fix" remediation (code review, 2026-10-14): a plain `AtomicU64` let `acquire`/`load` and
+/// the later `emit` race across two separate atomic steps on tokio's multi-threaded runtime --
+/// task A could pass its "am I still current" check, then task B could acquire a newer ticket
+/// and finish its own emit first, so A's now-stale emit still landed last. A `StdMutex` held
+/// across the whole acquire, and across the whole check-and-emit, makes the two operations
+/// mutually exclusive: whichever one gets the lock runs to completion (ticket bump, or the
+/// current-ness check plus the emit it guards) before the other can start.
+static LATEST_BROADCAST_TICKET: StdMutex<u64> = StdMutex::new(0);
 
 /// Opened lazily on first use and reused afterward (the same single-store-instance pattern
 /// `RegistryStore`/`SettingsStore` get via `AppState`, just owned by this module instead, since
@@ -98,7 +106,11 @@ async fn get_profile_cache(
 }
 
 fn acquire_broadcast_ticket() -> u64 {
-    LATEST_BROADCAST_TICKET.fetch_add(1, Ordering::SeqCst) + 1
+    let mut ticket = LATEST_BROADCAST_TICKET
+        .lock()
+        .expect("LATEST_BROADCAST_TICKET mutex poisoned");
+    *ticket += 1;
+    *ticket
 }
 
 /// Never fails: a destroyed-or-not-yet-created window simply drops the event, mirroring
@@ -125,10 +137,15 @@ fn broadcast_github_changed_if_current(
     app_handle: &Arc<StdMutex<Option<tauri::AppHandle>>>,
     accounts: &[GitHubAccount],
 ) {
-    if ticket != LATEST_BROADCAST_TICKET.load(Ordering::SeqCst) {
+    let latest = LATEST_BROADCAST_TICKET
+        .lock()
+        .expect("LATEST_BROADCAST_TICKET mutex poisoned");
+    if ticket != *latest {
         return;
     }
     broadcast_github_changed(app_handle, accounts);
+    // `latest` stays locked until here: no ticket bump (and so no "I am the current one" check
+    // by another caller) can interleave with this emit.
 }
 
 fn broadcast_add_progress(
@@ -178,12 +195,20 @@ async fn refresh_profile_cache(
         // account must never even have its token read for this.
         return;
     }
-    {
+    let previous_avatar_data_url = {
         let cache = cache_cell.lock().await;
         if !force && !types::is_profile_refresh_due(cache.get(host, login), now_epoch_millis()) {
             return;
         }
-    }
+        cache
+            .get(host, login)
+            .and_then(|e| e.avatar_data_url.clone())
+    };
+    // Perf finding (code review, 2026-10-14): the lock above is released before either network
+    // call below -- `accounts.github.list`'s own read, and a switch/signOut's post-mutation
+    // reconcile, must never wait behind a 10s-per-hop avatar fetch (FR-010's 1s budget, this
+    // module's own "list() never blocks on a live fetch" contract). Re-locked only once more,
+    // below, to write the finished entry.
     let profile = match fetch_profile(host, login).await {
         Ok(profile) => profile,
         Err(_) => {
@@ -191,10 +216,7 @@ async fn refresh_profile_cache(
             return;
         }
     };
-    let mut cache = cache_cell.lock().await;
-    let mut avatar_data_url = cache
-        .get(host, login)
-        .and_then(|e| e.avatar_data_url.clone());
+    let mut avatar_data_url = previous_avatar_data_url;
     if let Some(avatar_url) = &profile.avatar_url {
         match fetch_avatar(avatar_url).await {
             Ok(data_url) => avatar_data_url = Some(data_url),
@@ -203,6 +225,7 @@ async fn refresh_profile_cache(
             }
         }
     }
+    let mut cache = cache_cell.lock().await;
     let _ = cache
         .set(
             host,

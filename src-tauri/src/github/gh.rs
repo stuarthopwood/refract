@@ -10,7 +10,9 @@
 // its own small `gh`/owner-repo plumbing rather than share this module's, matching the TS file
 // layout this ports).
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex as StdMutex};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -274,7 +276,24 @@ pub enum GraphqlValue<'a> {
 /// `owner/repo`, inferred from the repository's `origin` remote URL. Handles both the HTTPS
 /// (`https://github.com/<owner>/<repo>.git`) and SSH (`git@github.com:<owner>/<repo>.git`)
 /// forms; `.git` suffix and any trailing slash are stripped.
+///
+/// Perf finding (code review, 2026-10-14): cached per `repo_path`, keyed by the owning
+/// `PathBuf` -- every caller (`list`, every non-Open-tab row, `detail`, every mutation) used to
+/// spawn a fresh `git remote get-url` process plus re-parse the result for a value that never
+/// changes for a given repository while this process runs. A repository's `origin` remote
+/// changing mid-session (rare) is not detected until the next process restart; this matches the
+/// same "worth caching, acceptable to go stale until restart" trade-off `resolve_gh`/
+/// `resolve_gh_for_spawn` already make for the `gh` binary path.
 pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhError> {
+    static CACHE: LazyLock<StdMutex<HashMap<PathBuf, (String, String)>>> =
+        LazyLock::new(|| StdMutex::new(HashMap::new()));
+    if let Some(cached) = CACHE
+        .lock()
+        .expect("owner/repo cache mutex poisoned")
+        .get(repo_path)
+    {
+        return Ok(cached.clone());
+    }
     let remote = git_raw(repo_path, &["remote", "get-url", "origin"], None).await;
     if remote.code != 0 {
         return Err(GhError::new(
@@ -282,12 +301,17 @@ pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhErro
             "This repository has no \"origin\" remote.",
         ));
     }
-    parse_owner_repo(remote.stdout.trim()).ok_or_else(|| {
+    let owner_repo = parse_owner_repo(remote.stdout.trim()).ok_or_else(|| {
         GhError::new(
             GhErrorCode::NoGithubRemote,
             "This repository's origin remote is not a github.com remote.",
         )
-    })
+    })?;
+    CACHE
+        .lock()
+        .expect("owner/repo cache mutex poisoned")
+        .insert(repo_path.to_path_buf(), owner_repo.clone());
+    Ok(owner_repo)
 }
 
 /// Parses `owner/repo` out of a `github.com` HTTPS or SSH remote URL, case-insensitively on the
@@ -344,9 +368,14 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
 // Shared wire primitives (used by `gh_pull_requests.rs` and `gh_mutations.rs` alike)
 // ---------------------------------------------------------------------------
 
+/// `login` is absent when the actor is a Team (`gh`/GraphQL sends `{"__typename":"Team","name":
+/// ...,"slug":...}` for a team review request or assignee, with no `login` field at all) --
+/// `map_actor` falls back to `'unknown'` for that case, exactly like the ported TS's own
+/// `actor?.login ?? 'unknown'` (a plain optional-chain, not a runtime-validated shape).
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhActor {
-    pub login: String,
+    #[serde(default)]
+    pub login: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
 }

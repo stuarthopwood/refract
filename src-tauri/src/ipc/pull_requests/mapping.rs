@@ -217,15 +217,11 @@ pub fn map_pull_request_state(state: &str, is_draft: bool) -> PullRequestState {
 }
 
 pub fn map_actor(actor: Option<&GhActor>) -> PullRequestActor {
-    match actor {
-        Some(actor) => PullRequestActor {
-            login: actor.login.clone(),
-            name: actor.name.clone(),
-        },
-        None => PullRequestActor {
-            login: "unknown".to_string(),
-            name: None,
-        },
+    PullRequestActor {
+        login: actor
+            .and_then(|a| a.login.clone())
+            .unwrap_or_else(|| "unknown".to_string()),
+        name: actor.and_then(|a| a.name.clone()),
     }
 }
 
@@ -332,18 +328,33 @@ pub fn map_review_verdict(state: Option<&str>) -> Option<ReviewVerdict> {
     }
 }
 
+/// FR-011: once the running total of patch bytes across a pull request's changed files would
+/// exceed this, every remaining file's patch is dropped (the existing per-file `patch: None`
+/// truncation signal, same banner the whole-call REST-failure fallback below already uses) --
+/// `get_changed_files_with_patch`'s own `--paginate` has no upper bound on file count or
+/// per-file patch size, so an unusually large pull request could otherwise send megabytes of
+/// diff text over IPC in one payload (performance finding, code review 2026-10-14).
+const MAX_TOTAL_PATCH_BYTES: usize = 2 * 1024 * 1024;
+
 pub fn map_changed_files(
     view: &GhPrViewDetail,
     rest_files: Option<&[GhRestFile]>,
 ) -> Vec<ChangedFile> {
     if let Some(rest_files) = rest_files {
+        let mut total_patch_bytes = 0usize;
         return rest_files
             .iter()
-            .map(|file| ChangedFile {
-                path: file.filename.clone(),
-                additions: file.additions,
-                deletions: file.deletions,
-                patch: file.patch.clone(),
+            .map(|file| {
+                let keep_patch = file.patch.as_ref().is_some_and(|patch| {
+                    total_patch_bytes += patch.len();
+                    total_patch_bytes <= MAX_TOTAL_PATCH_BYTES
+                });
+                ChangedFile {
+                    path: file.filename.clone(),
+                    additions: file.additions,
+                    deletions: file.deletions,
+                    patch: if keep_patch { file.patch.clone() } else { None },
+                }
             })
             .collect();
     }
