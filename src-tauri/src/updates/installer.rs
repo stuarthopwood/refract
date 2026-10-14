@@ -38,6 +38,24 @@ const REPO: &str = "stuarthopwood/refract";
 /// minutes instead.
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+/// Shared cap for any raw `gh` error text this module ever surfaces (release-view JSON errors
+/// and the download path's own stderr/stdout pick alike) -- an unbounded `gh` response must
+/// never persist/display in full.
+const MAX_ERROR_LEN: usize = 500;
+
+/// Truncates `detail` to `MAX_ERROR_LEN` chars, appending `...` when it was cut -- the one
+/// shared helper both the `release view` error path and the download error path route through,
+/// so the cap can never drift between the two.
+fn cap_error(detail: impl Into<String>) -> String {
+    let detail = detail.into();
+    if detail.chars().count() > MAX_ERROR_LEN {
+        let truncated: String = detail.chars().take(MAX_ERROR_LEN).collect();
+        format!("{truncated}...")
+    } else {
+        detail
+    }
+}
+
 #[derive(Deserialize)]
 struct GhReleaseAsset {
     name: String,
@@ -168,7 +186,7 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         ],
     )
     .await
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| cap_error(err.to_string()))?;
     // Gate finding (round 2, Medium): this header comment already claimed a release with more
     // than one `.exe` asset is rejected, but the code only ever `.find()`-picked the first match
     // silently -- fixed for real here: `.filter()` collects every `.exe` asset, and anything
@@ -233,23 +251,16 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         // Security fix (gate round 2, Medium): routed through the shared, redacting
         // `github::gh::non_empty_or` (never echoes a credential-shaped substring verbatim)
         // rather than the deleted `gh_client::capped_failure_text`'s own unredacted
-        // stderr/stdout pick; `non_empty_or` does not cap length, so the result is also
-        // truncated here to `MAX_ERROR_LEN` chars, matching the deleted function's own cap --
+        // stderr/stdout pick; capped via the shared `cap_error` helper (also used by the
+        // `release view` error path above), matching the deleted function's own cap --
         // redaction alone is not sufficient, an unbounded `gh` response must never
         // persist/display in full.
-        const MAX_ERROR_LEN: usize = 500;
         let detail = non_empty_or(
             &result.stderr,
             &result.stdout,
             &format!("gh command failed: gh {args_joined}"),
         );
-        let capped = if detail.chars().count() > MAX_ERROR_LEN {
-            let truncated: String = detail.chars().take(MAX_ERROR_LEN).collect();
-            format!("{truncated}...")
-        } else {
-            detail
-        };
-        return Err(capped);
+        return Err(cap_error(detail));
     }
 
     // Gate finding (round 2, Medium): `installer_name`/`checksum_name` are release-asset names
