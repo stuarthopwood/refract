@@ -539,9 +539,19 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     agent.shutdown().await;
 
     // --- Normalize and compare against the frozen golden trace. ---
+    // Windows note (found via a real CI failure, 2026-10-14): `repo_dir` (built from
+    // `std::env::temp_dir()`, the literal string this test passes as `repositories.add`'s raw
+    // argument) and `repo_path` (the SAME directory, but read back from that handler's own
+    // response, which canonicalizes it) are not always byte-identical strings for the identical
+    // physical path -- a Windows account whose profile directory has an 8.3 short name (seen on
+    // a GitHub Actions runner: `RUNNER~1`) can make `temp_dir()` return the short form while
+    // canonicalization expands it back to the long form, or vice versa. Both raw forms are
+    // substituted here so neither the recorded `args` (always the raw, pre-canonicalization
+    // string) nor any canonicalized echo of the same path is ever left un-normalized.
     let mut dynamic: Vec<(String, &'static str)> = vec![
         (worktree_path, "<WORKTREE_PATH>"),
         (repo_path, "<REPO_DIR>"),
+        (repo_dir.to_string_lossy().into_owned(), "<REPO_DIR>"),
         (repo_name, "<REPO_NAME>"),
         (branch_name, "<BRANCH_NAME>"),
         (session_id, "<SESSION_ID>"),
