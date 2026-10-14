@@ -222,3 +222,24 @@ pub(super) fn parse_cycle_order_response(response: &Value) -> Result<Vec<String>
         })
         .unwrap_or_default())
 }
+
+/// `omp://models.md`'s own "Role aliases and settings": "Unset `smol` and `slow` inherit an
+/// explicitly configured `default` before their built-in priority lists." `apply_role_now`'s own
+/// same-model check must resolve a role the SAME way OMP itself does, or a genuinely
+/// unconfigured `smol`/`slow` that OMP legitimately no-ops onto the live `default` model reads
+/// as a false "could not be applied" (caught live, round 8: `modelRoles={"default": "..."}`,
+/// `/switch @smol` on a session already on `default`'s model). No other role has this built-in
+/// inheritance -- a genuinely custom or workload role with no `modelRoles` entry stays
+/// unresolved, same as before.
+pub(super) fn resolve_role_selector<'a>(
+    model_roles: &'a std::collections::HashMap<String, String>,
+    role: &str,
+) -> Option<&'a str> {
+    model_roles.get(role).map(String::as_str).or_else(|| {
+        if role == "smol" || role == "slow" {
+            model_roles.get("default").map(String::as_str)
+        } else {
+            None
+        }
+    })
+}

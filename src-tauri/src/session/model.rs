@@ -461,9 +461,10 @@ pub async fn apply_role_now(
         // Gate-fix (HIGH): a role whose own model is already live (Ctrl+R onto the current
         // role, two roles mapped to one selector) is a valid no-op, not a failure; #766's
         // "choosing a role again un-pins" must still succeed for it. Only fails when the role's
-        // own `modelRoles` selector does NOT match the live model (FINDINGS item 53). Gate-fix
-        // (round 7): a FAILED read no longer swallows into that message, surfacing via `?`
-        // instead. `cached_model_roles` (the #740 sweep's single fetch) is used when present.
+        // own selector (`model_support::resolve_role_selector`, below) does NOT match the live
+        // model (FINDINGS item 53). Gate-fix (round 7): a FAILED read no longer swallows into
+        // that message, surfacing via `?`. `cached_model_roles` (the #740 sweep's single fetch)
+        // is used when present.
         let fetched;
         let model_roles = match cached_model_roles {
             Some(map) => map,
@@ -474,8 +475,7 @@ pub async fn apply_role_now(
                 &fetched
             }
         };
-        let role_resolves_to_current = model_roles
-            .get(role)
+        let role_resolves_to_current = model_support::resolve_role_selector(model_roles, role)
             .is_some_and(|selector| selector_matches_model(selector, &after_model));
         if !role_resolves_to_current {
             let message = format!(

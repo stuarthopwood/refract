@@ -449,8 +449,13 @@ pub async fn get_config_with(
         key.to_string(),
         "--json".to_string(),
     ];
-    let stdout = call_config_locked(executor, &args, "Could not read omp config.", strip_env_vars)
-        .await?;
+    let stdout = call_config_locked(
+        executor,
+        &args,
+        "Could not read omp config.",
+        strip_env_vars,
+    )
+    .await?;
     parse_object_json(&stdout)
 }
 
@@ -480,8 +485,13 @@ pub async fn set_config_with(
         "--".to_string(),
         value_arg,
     ];
-    let stdout = call_config_locked(executor, &args, "Could not save omp config.", strip_env_vars)
-        .await?;
+    let stdout = call_config_locked(
+        executor,
+        &args,
+        "Could not save omp config.",
+        strip_env_vars,
+    )
+    .await?;
     parse_object_json(&stdout)
 }
 
