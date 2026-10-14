@@ -26,22 +26,28 @@
 // 5. Requires the build to have produced exactly `<productName>_<version>_x64-setup.exe` -- any
 //    other name (a stale bundle, an unexpected version string) is a hard failure, never silently
 //    picked.
-// 6. Re-signs the loose `refract-tauri.exe` copy directly (Tauri's own bundler restores the
-//    build-tree binary to its unsigned, unpatched state once bundling finishes, by design, so it
-//    can run bundling again for a second package type without the first's patches): `signtool`,
-//    located at a fixed Windows SDK install root (never `PATH`, chosen by the highest PARSED SDK
-//    version actually present), using
-//    `/sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /td SHA256`.
-// 7. Verifies the loose exe and the installer with `Get-AuthenticodeSignature`, requiring
-//    `Status -eq 'Valid'`, the signer certificate's own SHA-256 to equal the pin (computed from
-//    the committed `certs/refract-codesign.cer`, not a second hardcoded copy), and a trusted
-//    timestamp to be present.
+// 6. Verifies the installer with `Get-AuthenticodeSignature`, requiring `Status -eq 'Valid'`,
+//    the signer certificate's own SHA-256 to equal the pin (computed from the committed
+//    `certs/refract-codesign.cer`, not a second hardcoded copy), and a trusted timestamp to be
+//    present. The loose build-tree `refract-tauri.exe` is NOT separately re-signed or verified
+//    (gate finding, round 2, Medium): Tauri's own bundler restores it to unsigned once bundling
+//    finishes (by design), and that copy never ships anywhere -- only the copy NSIS already
+//    packed into the installer (signed, per step 4 above) matters.
+// 7. Verifies that SAME embedded copy, not just the installer's own outer signature: if 7-Zip is
+//    present at its fixed default install path, extracts `refract-tauri.exe` from the signed
+//    installer and runs the same `Get-AuthenticodeSignature` check against it; otherwise this
+//    step is skipped (logged, not a failure) and only the installer's own outer signature
+//    (step 6) stands as evidence.
 // 8. Writes a `<asset>.sha256` checksum sidecar for the installer.
-// 9. Unless `--dry-run`, publishes the installer (and its checksum) to a new GitHub release via
-//    `gh release create v<version> --verify-tag` (requires the tag to already exist on the
-//    remote -- push the tagged commit before running this without `--dry-run`).
-// 10. Deletes the fresh per-release temp directory by its own literal path, whether or not the
-//     run published.
+// 9. Unless `--dry-run`, first confirms `origin`'s own `refs/tags/v<version>` points at this
+//    exact `HEAD` commit (`git ls-remote`), then publishes the installer (and its checksum) to a
+//    new GitHub release via `gh release create v<version> --verify-tag`.
+// 10. Deletes the fresh per-release temp directory (which holds the build, the installer, and
+//     any embedded-copy extraction from step 7) by its own literal, hard-guarded path
+//     (`safeRemoveReleaseDir`) -- always, whether this run published, failed, or was
+//     `--dry-run`. There is no `--keep` flag: inspect the installer's own
+//     `Get-AuthenticodeSignature` output this script already prints, or re-run without
+//     `--dry-run` once ready to publish.
 
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -70,6 +76,10 @@ const SYSTEM_ROOT = process.env.SystemRoot || 'C:\\Windows';
 const POWERSHELL_EXE = path.join(SYSTEM_ROOT, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const CERTUTIL_EXE = path.join(SYSTEM_ROOT, 'System32', 'certutil.exe');
 const CMD_EXE = path.join(SYSTEM_ROOT, 'System32', 'cmd.exe');
+// Fixed default install path for 7-Zip (gate finding, PR #837 round 2, Medium): used ONLY for
+// the best-effort embedded-copy check -- if it isn't present here, that one check is skipped
+// (logged, not a failure), never resolved via `PATH`.
+const SEVEN_ZIP_EXE = 'C:\\Program Files\\7-Zip\\7z.exe';
 
 // Restricted `PSModulePath` (observed on Stuart's own workstation, 2026-10-14): when a user
 // profile's `PSModulePath` also lists a PowerShell 7 install's `Modules` directory alongside
@@ -84,9 +94,13 @@ const RESTRICTED_PSMODULEPATH = [
   path.join(SYSTEM_ROOT, 'System32', 'WindowsPowerShell', 'v1.0', 'Modules'),
 ].join(';');
 
+// Throws rather than calling `process.exit` directly (gate finding, PR #837 round 2, Low): a
+// `finally` block does not run after `process.exit`, so a bare exit here would skip `main`'s own
+// release-dir cleanup on every failure path. `main()`'s own caller at the bottom of this file
+// catches the throw, prints it with the same `release-local: ` prefix, and exits 1 -- by then
+// every `finally` between here and there has already run.
 function fail(message) {
-  console.error(`release-local: ${message}`);
-  process.exit(1);
+  throw new Error(message);
 }
 
 function run(cmd, args, opts = {}) {
@@ -301,12 +315,6 @@ function buildRelease(releaseDir, signtoolPath, conf) {
   return cargoTargetDir;
 }
 
-function locateMainExe(cargoTargetDir) {
-  const exe = path.join(cargoTargetDir, 'release', 'refract-tauri.exe');
-  if (!existsSync(exe)) fail(`built exe not found at ${exe}`);
-  return exe;
-}
-
 // Requires the EXACT expected name (gate finding, PR #837 round 1, High: a glob/`.find()` over a
 // shared, persistent bundle directory could previously pick a leftover installer from an older
 // version) -- the release dir is fresh per `freshReleaseDir`, so only this build's own output can
@@ -324,24 +332,60 @@ function locateNsisSetup(cargoTargetDir, productName, version) {
   return path.join(dir, expectedName);
 }
 
-function signAsset(signtool, assetPath) {
-  const args = [
-    'sign',
-    '/sha1',
-    CERT_THUMBPRINT,
-    '/fd',
-    'SHA256',
-    '/tr',
-    TIMESTAMP_URL,
-    '/td',
-    'SHA256',
-    assetPath,
-  ];
-  const result = run(signtool, args);
-  if (result.status !== 0) {
-    fail(`signtool sign failed for ${assetPath} (exit ${result.status}):\n${result.stdout}${result.stderr}`);
+// Best-effort proof that the copy of `refract-tauri.exe` NSIS actually packed inside the signed
+// installer is itself signed (gate finding, PR #837 round 2, Medium) -- not just that the
+// installer's own outer signature is valid. Needs 7-Zip (NSIS archives are a format 7-Zip knows
+// how to list/extract); if it isn't present at its fixed path, this check is skipped (logged,
+// not a failure) and the installer's own signature (checked by the caller just before this) is
+// the only evidence. Extracts into a subdirectory of `extractParentDir` (this script's own
+// per-run release dir), cleaned up by the caller's `safeRemoveReleaseDir` either way.
+function verifyEmbeddedMainExeSignature(installerPath, extractParentDir, expectedPinHex) {
+  if (!existsSync(SEVEN_ZIP_EXE)) {
+    console.log(
+      `release-local: 7-Zip not found at ${SEVEN_ZIP_EXE}; skipping the embedded-copy check ` +
+        '(the installer itself is already verified above).',
+    );
+    return;
   }
-  console.log(result.stdout.trim());
+
+  const extractDir = path.join(extractParentDir, 'embedded-check');
+  rmSync(extractDir, { recursive: true, force: true });
+  mkdirSync(extractDir, { recursive: true });
+
+  const result = run(SEVEN_ZIP_EXE, ['x', installerPath, `-o${extractDir}`, '-y']);
+  if (result.status !== 0) {
+    console.log(
+      `release-local: 7z could not extract the installer (exit ${result.status}); skipping the ` +
+        `embedded-copy check.\n${result.stdout}${result.stderr}`,
+    );
+    return;
+  }
+
+  const embeddedExe = findFileRecursive(extractDir, 'refract-tauri.exe');
+  if (!embeddedExe) {
+    console.log(
+      `release-local: no refract-tauri.exe found under the extracted installer at ${extractDir}; ` +
+        'skipping the embedded-copy check.',
+    );
+    return;
+  }
+
+  console.log(`release-local: verifying the embedded copy at ${embeddedExe}`);
+  verifySignature(embeddedExe, expectedPinHex);
+}
+
+function findFileRecursive(dir, name) {
+  const lowerName = name.toLowerCase();
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = findFileRecursive(full, name);
+      if (found) return found;
+    } else if (entry.name.toLowerCase() === lowerName) {
+      return full;
+    }
+  }
+  return null;
 }
 
 // Pin computed from the committed certificate file itself, not a second hardcoded copy, so this
@@ -397,6 +441,42 @@ function writeChecksum(assetPath) {
   return checksumPath;
 }
 
+// Extra defense beyond `--verify-tag` below (gate finding, PR #837 round 2, Low): `--verify-tag`
+// only confirms the tag EXISTS on `origin`, not that it points at the exact commit this script
+// just built and signed -- a local re-tag of `HEAD` without re-pushing, or the remote tag having
+// moved, would otherwise slip through. Compares `origin`'s own `refs/tags/<tag>` against local
+// `HEAD` directly; for an ANNOTATED tag, `ls-remote` lists both the tag object's own sha and a
+// peeled `^{}` line with the commit it points to -- the peeled line is what must match `HEAD`,
+// a lightweight tag has only the one line, which already names the commit.
+function verifyRemoteTagMatchesHead(tag) {
+  const remote = run('git', ['ls-remote', 'origin', `refs/tags/${tag}`, `refs/tags/${tag}^{}`], {
+    cwd: REPO_ROOT,
+  });
+  if (remote.status !== 0) {
+    fail(`"git ls-remote origin refs/tags/${tag}" failed (exit ${remote.status}):\n${remote.stderr}`);
+  }
+  const lines = remote.stdout.split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) {
+    fail(`origin has no tag ${tag} -- push the tagged commit before publishing without --dry-run.`);
+  }
+  const peeled = lines.find((line) => line.endsWith(`refs/tags/${tag}^{}`));
+  const remoteSha = (peeled ?? lines[0]).split(/\s+/)[0];
+
+  const head = run('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT });
+  if (head.status !== 0) {
+    fail(`"git rev-parse HEAD" failed (exit ${head.status}):\n${head.stderr}`);
+  }
+  const headSha = head.stdout.trim();
+
+  if (remoteSha !== headSha) {
+    fail(
+      `origin's tag ${tag} points at ${remoteSha}, but HEAD is ${headSha} -- push the current ` +
+        'commit (and re-tag/re-push) before publishing, so the published release matches what ' +
+        'this script actually built and signed.',
+    );
+  }
+}
+
 // `--verify-tag` (gate finding, PR #837 round 1, Medium): aborts instead of creating the tag at
 // the remote default branch's tip if `tag` was never pushed -- the release must point at the
 // EXACT commit this script built and signed, never a different one `gh` created on its own.
@@ -421,20 +501,17 @@ function main() {
   try {
     const signtool = locateSigntool();
     const cargoTargetDir = buildRelease(releaseDir, signtool, conf);
-
-    const mainExe = locateMainExe(cargoTargetDir);
     const nsisSetup = locateNsisSetup(cargoTargetDir, conf.productName, conf.version);
 
-    // Tauri's own bundler already signed `nsisSetup` (and the main binary copy it embedded)
-    // through the `signCommand` overlay above; it restores the loose `mainExe` on disk back to
-    // its unsigned, unpatched state once bundling finishes (by design, so a second package type
-    // in the same run never sees the first's patches) -- re-signed here directly so the
-    // standalone exe this script also reports on is a real, independently-usable signed asset.
-    signAsset(signtool, mainExe);
-
+    // Tauri's own bundler already signed `nsisSetup` (and the main binary copy it packed inside
+    // it) through the `signCommand` overlay above. The loose build-tree `refract-tauri.exe` is
+    // deliberately NOT separately re-signed or verified (gate finding, round 2, Medium): Tauri
+    // restores it to unsigned once bundling finishes, by design, and that copy never ships --
+    // only the installer (verified below) and the copy it actually embeds (verified by
+    // `verifyEmbeddedMainExeSignature`) matter.
     const expectedPin = expectedSignerPin();
-    verifySignature(mainExe, expectedPin);
     verifySignature(nsisSetup, expectedPin);
+    verifyEmbeddedMainExeSignature(nsisSetup, releaseDir, expectedPin);
 
     const nsisChecksum = writeChecksum(nsisSetup);
 
@@ -442,6 +519,8 @@ function main() {
       console.log('release-local: --dry-run, built and signed but not publishing.');
       return;
     }
+
+    verifyRemoteTagMatchesHead(tag);
 
     // Only the installer (and its checksum) are published: it is the only asset the updater ever
     // downloads (`src-tauri/src/updates/installer.rs`) or verifies
@@ -453,4 +532,9 @@ function main() {
   }
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  console.error(`release-local: ${err.message}`);
+  process.exit(1);
+}

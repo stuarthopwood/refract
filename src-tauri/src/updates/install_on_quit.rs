@@ -35,7 +35,7 @@ use std::time::Duration;
 use tokio::process::Command;
 
 use super::checksum::{checksum_matches, hex_digest_file};
-use super::signature::verify_installer_signature;
+use super::signature::{verify_installer_signature, SIGNATURE_REJECTED_MESSAGE};
 use super::state::{UpdatePhase, UpdateState, UpdateStateStore};
 
 /// Windows-only: `CREATE_NO_WINDOW`, the same flag `git/git.rs` uses -- no console window flashes
@@ -97,10 +97,15 @@ pub async fn verify_installer_before_quit(
     {
         Ok(result) => result?,
         Err(_) => {
-            return Err(format!(
+            // Gate finding (PR #837 round 2, Low): returns the same constant message every other
+            // rejected signature does, logging the real detail instead -- a timeout is just
+            // another reason `verify_installer_signature` didn't resolve `Ok`, not a distinct
+            // oracle for the renderer's badge UI to surface.
+            log::error!(
                 "signature verification of {} timed out after {SIGNATURE_VERIFY_TIMEOUT:?}",
                 installer_path.display()
-            ));
+            );
+            return Err(SIGNATURE_REJECTED_MESSAGE.to_string());
         }
     }
 
