@@ -80,6 +80,44 @@ outside this repository (`C:/Users/shopwood/.omp/agent/managed-skills/`), so the
 in this PR's diff. They were updated alongside this change to flag themselves Electron-only and
 point at `pnpm verify:tauri`/`verify-refract-tauri-build-live` instead.
 
+## Releasing
+
+There is a packaged NSIS installer (lane R11d, follow-up to #794), signed locally with a
+self-signed code-signing certificate Stuart created in his own `Cert:\CurrentUser\My` store:
+
+- Subject `CN=Stuart Hopwood (Refract Code Signing)`, RSA 3072, code-signing EKU only,
+  `CA:false`, SHA-1 thumbprint `31B95999D331BD33210126432FAB3FF18ECA5DBD`.
+- The private key is **not exportable** and lives only on that one workstation -- CI never signs
+  anything (`.github/workflows/release.yml` builds and verifies the bundle on every `v*` tag
+  push, but never publishes). The public half is committed at
+  `src-tauri/certs/refract-codesign.cer`; its SHA-256 is pinned in
+  `src-tauri/src/updates/signature.rs`'s `SIGNING_CERT_SHA256`, which every downloaded update
+  installer is checked against (alongside its SHA-256 checksum) before Refract will install it.
+- The certificate is trusted only on Stuart's own machine (added to its local trusted-root/people
+  store); every OTHER machine's own Windows installation reports `CERT_E_UNTRUSTEDROOT` for an
+  Authenticode signature made with it. `signature.rs` accepts that one specific trust-chain
+  outcome, but ONLY when the signer certificate's own SHA-256 still matches the pin above -- any
+  other outcome, or any pin mismatch, is rejected.
+- **Expires 2031-10-14.** Renewing: create a new self-signed code-signing certificate in
+  `Cert:\CurrentUser\My` (code-signing EKU, non-exportable private key), replace
+  `src-tauri/certs/refract-codesign.cer` with its public half, recompute
+  `SIGNING_CERT_SHA256` (the new certificate's own DER SHA-256) in `signature.rs`, update
+  `CERT_THUMBPRINT` in `scripts/release-local.mjs`, and trust the new certificate on Stuart's
+  machine the same way the current one is trusted. An installer signed with an expired or
+  rotated-away certificate fails `signature.rs`'s pin check and every update install fails
+  closed.
+
+To cut a release: bump `src-tauri/tauri.conf.json`'s `version`, commit, tag the commit
+`v<version>`, then run `pnpm release:local` (`scripts/release-local.mjs`) from Stuart's own
+workstation. It fails unless the signing certificate is present, fails unless `HEAD`'s tag
+matches `tauri.conf.json`'s version, builds the full NSIS bundle (`pnpm tauri build`), signs both
+`refract-tauri.exe` and the generated installer with `signtool.exe` (located at a fixed Windows
+SDK path, never `PATH`) using
+`/sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /td SHA256`, verifies both with
+`Get-AuthenticodeSignature`, writes a `.sha256` checksum sidecar for each, then publishes the
+installer and its checksum to a new GitHub release (`gh release create v<version>`).
+`pnpm release:local -- --dry-run` builds and signs but skips the publish step.
+
 ## Where things live
 
 | What | Where |

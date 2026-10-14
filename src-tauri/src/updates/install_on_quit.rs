@@ -34,6 +34,7 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 use super::checksum::{checksum_matches, hex_digest_file};
+use super::signature::verify_installer_signature;
 use super::state::{UpdatePhase, UpdateState, UpdateStateStore};
 
 /// Windows-only: `CREATE_NO_WINDOW`, the same flag `git/git.rs` uses -- no console window flashes
@@ -43,9 +44,12 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Quality-gate remediation (LOW, security): re-verifies a `downloaded` installer immediately
 /// before scheduling it, rather than trusting `updateState.json`'s possibly-stale `installerPath`
 /// at face value -- the file must still live directly inside `updates_dir` (`<userData>/updates`,
-/// never anywhere a stale/tampered `installerPath` could have redirected it to) and its SHA-256
+/// never anywhere a stale/tampered `installerPath` could have redirected it to), its SHA-256
 /// must still match the `.sha256` sibling file (not a new `UpdateChecker` download, that sibling
-/// file is this app's one persisted copy of "the expected hash").
+/// file is this app's one persisted copy of "the expected hash"), and (lane R11d, follow-up to
+/// #794) its Authenticode signature and pinned signer certificate must still verify -- the same
+/// two checks `installer.rs` makes right after download, re-run here in case the file on disk
+/// changed between then and quit.
 pub async fn verify_installer_before_quit(
     installer_path: &Path,
     updates_dir: &Path,
@@ -75,6 +79,8 @@ pub async fn verify_installer_before_quit(
             installer_path.display()
         ));
     }
+
+    verify_installer_signature(installer_path).await?;
 
     Ok(())
 }
