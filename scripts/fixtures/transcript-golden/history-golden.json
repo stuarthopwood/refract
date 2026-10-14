@@ -2,7 +2,7 @@
   {
     "kind": "user",
     "id": "h0",
-    "text": "Please write a note, then update it to say \"hi there\".",
+    "text": "Please write a note.",
     "at": 0
   },
   {
@@ -23,31 +23,9 @@
     "output": "Successfully wrote 2 bytes to note.txt"
   },
   {
-    "kind": "tool",
-    "id": "h3:0",
-    "toolCallId": "call-2",
-    "tool": "edit",
-    "target": "note.txt",
-    "status": "done",
-    "args": {
-      "input": "[note.txt#A1B2]\nPUT 1.=1:\n+hi there"
-    },
-    "output": "Edited note.txt",
-    "details": {
-      "path": "note.txt",
-      "oldText": "hi",
-      "newText": "hi there"
-    },
-    "edit": {
-      "path": "note.txt",
-      "oldText": "hi",
-      "newText": "hi there"
-    }
-  },
-  {
     "kind": "assistant-text",
-    "id": "h5:0",
-    "text": "Done - I wrote note.txt and then updated it to say hi there.",
+    "id": "h3:0",
+    "text": "Done - I wrote note.txt.",
     "streaming": false
   }
 ]

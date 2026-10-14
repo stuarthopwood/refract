@@ -1,7 +1,7 @@
 [
   {
     "role": "user",
-    "content": [{ "type": "text", "text": "Please write a note, then update it to say \"hi there\"." }],
+    "content": [{ "type": "text", "text": "Please write a note." }],
     "timestamp": 0
   },
   {
@@ -27,29 +27,7 @@
   },
   {
     "role": "assistant",
-    "content": [
-      {
-        "type": "toolCall",
-        "id": "call-2",
-        "name": "edit",
-        "arguments": { "input": "[note.txt#A1B2]\nPUT 1.=1:\n+hi there" },
-        "intent": "Updating note.txt"
-      }
-    ],
-    "timestamp": 0
-  },
-  {
-    "role": "toolResult",
-    "toolCallId": "call-2",
-    "toolName": "edit",
-    "content": [{ "type": "text", "text": "Edited note.txt" }],
-    "details": { "path": "note.txt", "oldText": "hi", "newText": "hi there" },
-    "isError": false,
-    "timestamp": 0
-  },
-  {
-    "role": "assistant",
-    "content": [{ "type": "text", "text": "Done - I wrote note.txt and then updated it to say hi there." }],
+    "content": [{ "type": "text", "text": "Done - I wrote note.txt." }],
     "timestamp": 0
   }
 ]

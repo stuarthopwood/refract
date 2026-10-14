@@ -2066,6 +2066,13 @@ impl TranscriptState {
         self.has_user_acted = true;
     }
 
+    /// Sets the flag `settle_interrupted_tool_rows` reads (`SessionAgent`'s own
+    /// `detectUnexpectedTermination` result, threaded in by the caller -- this struct has no way
+    /// to detect it itself). Port of `fromHistory`'s own `terminatedUnexpectedly` parameter.
+    pub fn set_terminated_unexpectedly(&mut self, value: bool) {
+        self.terminated_unexpectedly = value;
+    }
+
     /// Port of `settleInterruptedToolRows`, using the flag set by `set_terminated_unexpectedly`.
     /// Returns `true` when any row changed.
     pub fn settle_interrupted_tool_rows(&mut self) -> bool {
