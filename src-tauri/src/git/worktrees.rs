@@ -331,9 +331,14 @@ async fn cleanup_reserved_branch(repo: &Path, candidate: &str) {
 /// True when `git branch`'s own failure means "this name is already taken" -- the one collision
 /// class worth retrying a fresh candidate for; any other failure (an invalid base branch, a
 /// corrupt repository) is a real error the caller should surface immediately rather than
-/// silently retry up to 1,600 times.
+/// silently retry up to 1,600 times. Also treats "cannot lock ref" as a collision (LOW finding,
+/// gate round 4, 2026-10-14): many concurrent `git branch` calls against the same repository
+/// (several Sessions created in a burst) can trip git's own ref-lock contention transiently --
+/// that is not a real failure, and the exact same retry-the-next-candidate behaviour already
+/// used for a genuine name collision resolves it just as well.
 fn is_branch_exists_error(stderr: &str) -> bool {
-    stderr.to_lowercase().contains("already exists")
+    let text = stderr.to_lowercase();
+    text.contains("already exists") || text.contains("cannot lock ref")
 }
 
 fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
@@ -441,29 +446,33 @@ pub async fn add_worktree_from_pull_request_branch(
         None,
     )
     .await;
-    if fetch_result.code != 0 {
-        return Err(GitError::new(
+    let result = if fetch_result.code != 0 {
+        Err(GitError::new(
             GitErrorCode::CheckoutFailed,
             if fetch_result.stderr.trim().is_empty() {
                 format!("Could not fetch pull request #{number}'s head branch.")
             } else {
                 crate::omp::redact::redact_secrets(fetch_result.stderr.trim())
             },
-        ));
-    }
+        ))
+    } else {
+        let base = format!("pr-{number}");
+        const MAX_ATTEMPTS: u32 = 1000;
+        let candidates = std::iter::once(base.clone())
+            .chain((2..=MAX_ATTEMPTS).map(move |suffix| format!("{base}-{suffix}")));
+        add_worktree_with_candidates(repo, &temp_ref, candidates).await
+    };
 
-    let base = format!("pr-{number}");
-    const MAX_ATTEMPTS: u32 = 1000;
-    let candidates = std::iter::once(base.clone())
-        .chain((2..=MAX_ATTEMPTS).map(move |suffix| format!("{base}-{suffix}")));
-    let result = add_worktree_with_candidates(repo, &temp_ref, candidates).await;
-
-    // Scratch space for this one fetch only, never a Session's real branch -- deleted
-    // unconditionally, success or failure, and never via `branch -D` (it was never created
-    // under `refs/heads/`, so that command would not even find it).
+    // Scratch space for this one fetch attempt only, never a Session's real branch -- deleted
+    // unconditionally (LOW finding, gate round 4, 2026-10-14: this used to run only on the
+    // success/candidate-reservation path, skipped entirely by an early return when the fetch
+    // itself failed) regardless of whether the fetch failed before the ref ever existed, the
+    // candidate reservation failed, or everything succeeded -- `update-ref -d` on a ref that
+    // was never created is a routine, expected outcome here, not a real problem, so it is logged
+    // at debug level only. Never `branch -D`: this ref was never created under `refs/heads/`.
     if let Err(err) = git(repo, &["update-ref", "-d", &temp_ref]).await {
-        log::warn!(
-            "add_worktree_from_pull_request_branch: could not remove the temporary fetch ref {temp_ref}: {err}"
+        log::debug!(
+            "add_worktree_from_pull_request_branch: no temporary fetch ref {temp_ref} to remove (or removal failed): {err}"
         );
     }
 

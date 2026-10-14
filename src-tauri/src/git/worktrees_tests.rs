@@ -168,6 +168,9 @@ fn is_branch_exists_error_recognises_gits_own_wording() {
     assert!(is_branch_exists_error(
         "fatal: a branch named 'foo' already exists"
     ));
+    assert!(is_branch_exists_error(
+        "fatal: cannot lock ref 'refs/heads/foo': unable to resolve reference"
+    ));
     assert!(!is_branch_exists_error(
         "fatal: not a valid object name: 'bogus'"
     ));

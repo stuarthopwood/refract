@@ -1076,6 +1076,12 @@ async fn read_omp_log_tail(pid: u32, spawned_at: SystemTime, max_bytes: u64) -> 
     read_tail_bytes(&path, max_bytes).await
 }
 
+/// Seeking to an arbitrary byte offset (`start`, when the file is larger than `max_bytes`) can
+/// land mid-line -- a credential straddling that point would have an unrecognisable fragment on
+/// the read side, surviving the warn/error filter and redaction downstream unredacted (security
+/// finding, gate round 4, 2026-10-14; the same hazard `build_start_failure`'s own stderr-tail
+/// truncation already guards against). When the seek actually moved, drop everything up to the
+/// first newline in what was read, so only a complete line is ever returned.
 async fn read_tail_bytes(path: &Path, max_bytes: u64) -> Option<String> {
     let mut file = tokio::fs::File::open(path).await.ok()?;
     let len = file.metadata().await.ok()?.len();
@@ -1085,5 +1091,16 @@ async fn read_tail_bytes(path: &Path, max_bytes: u64) -> Option<String> {
     }
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).await.ok()?;
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    if start == 0 {
+        return Some(text);
+    }
+    Some(match text.find('\n') {
+        Some(idx) => text[idx + 1..].to_string(),
+        None => String::new(),
+    })
 }
+
+#[cfg(test)]
+#[path = "process_tests.rs"]
+mod process_tests;
