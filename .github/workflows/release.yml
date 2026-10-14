@@ -1,31 +1,43 @@
-name: Release
+name: Release build verification
 
+# Least privilege: this job only BUILDS and VERIFIES the Tauri NSIS bundle now -- it never
+# publishes a GitHub Release (lane R11d, follow-up to #794). Stuart decided (2026-10-14) to sign
+# releases locally with a self-signed code-signing certificate whose private key lives only in
+# his own `Cert:\CurrentUser\My` store (not exportable, never present on, or copyable to, a CI
+# runner). An installer this workflow produced is unsigned; `src-tauri/src/updates/signature.rs`'s
+# updater pin would reject it on every install anyway, so publishing it here would only ship an
+# asset no client could ever accept. This workflow stays as a build-and-verify smoke check: a tag
+# push still confirms the NSIS bundle builds cleanly on a fresh Windows runner. Real releases are
+# cut locally: `pnpm release:local` (see `scripts/release-local.mjs` and the README's "Releasing"
+# section for the signing certificate's own facts and its renewal note).
 on:
   push:
     tags:
       - "v*"
 
-# Least privilege by default, matching this repo's other workflows; the release job below
-# grants only the `contents: write` it actually needs to create a GitHub Release.
-permissions: {}
+# `contents: read` (not `{}`): this repo is PRIVATE, so `actions/checkout` needs at least read
+# access to clone it at all -- gate finding, PR #837 round 1, High (`{}` made every `v*` tag
+# push fail before any build step ran). `ci.yml` uses the same grant for the same reason.
+permissions:
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-and-release:
-    name: Build installer and publish release
+  build-and-verify:
+    name: Build and verify installer (never published -- see workflow header)
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     env:
       # Workflow-local, NOT the shared dev machine's `C:/Users/shopwood/code-target/refract`
       # convention (scripts/verify-tauri.mjs, CONTEXT.md) -- a CI runner has no other lane
       # contending for the same disk, so there is nothing to coordinate here. CARGO_INCREMENTAL=0
-      # still travels with it: a one-shot release build gains nothing from incremental artefacts
-      # and they only cost disk/IO on a fresh runner.
+      # still travels with it: a one-shot build gains nothing from incremental artefacts and they
+      # only cost disk/IO on a fresh runner.
       CARGO_TARGET_DIR: ${{ github.workspace }}\cargo-target
       CARGO_INCREMENTAL: "0"
     steps:
@@ -35,11 +47,12 @@ jobs:
           persist-credentials: false
 
       # Guards against tag/manifest drift: if a tag is ever pushed whose version doesn't match
-      # tauri.conf.json, the persisted `availableVersion` (sourced from the tag, via this same
-      # release) would never again equal the running binary's own `package_info().version`
-      # (sourced from tauri.conf.json) -- src-tauri/src/updates/install_on_quit.rs's
-      # resolve_installing_state version-match check would then report every install as failed,
-      # forever. Catching the mismatch here, before any build work happens, is cheap and final.
+      # tauri.conf.json, the persisted `availableVersion` (sourced from the tag Stuart's own
+      # local release publishes) would never again equal the running binary's own
+      # `package_info().version` (sourced from tauri.conf.json) --
+      # src-tauri/src/updates/install_on_quit.rs's resolve_installing_state version-match check
+      # would then report every install as failed, forever. Catching the mismatch here, before
+      # any build work happens, is cheap and final.
       - name: Verify tag matches tauri.conf.json version
         shell: pwsh
         env:
@@ -48,7 +61,7 @@ jobs:
           $tagVersion = $env:TAG_REF -replace '^v', ''
           $confVersion = (Get-Content -Raw -Path "src-tauri\tauri.conf.json" | ConvertFrom-Json).version
           if ($tagVersion -ne $confVersion) {
-            Write-Error "Pushed tag '$env:TAG_REF' resolves to version '$tagVersion', but src-tauri/tauri.conf.json's version field is '$confVersion'. Update tauri.conf.json's version to match the tag (or push the correct tag) before releasing."
+            Write-Error "Pushed tag '$env:TAG_REF' resolves to version '$tagVersion', but src-tauri/tauri.conf.json's version field is '$confVersion'. Update tauri.conf.json to match the tag (or push the correct tag) before releasing."
             exit 1
           }
           Write-Host "Tag version '$tagVersion' matches src-tauri/tauri.conf.json version '$confVersion'."
@@ -70,55 +83,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Full release bundle, NSIS only (tauri.conf.json's bundle.targets no longer lists msi --
-      # see specs/016-tauri-rust-build/installer-probes.md's Recommended design for R11b).
+      # Full bundle, NSIS only (tauri.conf.json's bundle.targets no longer lists msi -- see
+      # specs/016-tauri-rust-build/installer-probes.md's Recommended design for R11b). Never
+      # signed here (this workflow's own header comment); `scripts/release-local.mjs` signs and
+      # publishes the real release artefact from Stuart's own workstation.
       - name: Build Tauri release bundle
         run: pnpm tauri build
 
-      - name: Locate built installer
-        id: installer
+      - name: Locate and report built installer
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Path "$env:CARGO_TARGET_DIR\release\bundle\nsis" -Filter "*-setup.exe" -Recurse | Select-Object -First 1
           if (-not $exe) {
             throw "No NSIS installer .exe found under $env:CARGO_TARGET_DIR\release\bundle\nsis"
           }
-          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
-          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
-
-      - name: Checksum installer
-        shell: pwsh
-        env:
-          INSTALLER_PATH: ${{ steps.installer.outputs.path }}
-          INSTALLER_NAME: ${{ steps.installer.outputs.name }}
-        run: |
-          $hash = Get-FileHash -Algorithm SHA256 -Path $env:INSTALLER_PATH
-          # Sibling `.sha256` file next to the `.exe` in the same release, matching the asset-name
-          # pattern the Rust update checker/installer expect (specs/006-installer-and-updates's
-          # research.md decision 4: checksum-verify a downloaded update installer before running
-          # it).
-          "$($hash.Hash.ToLower())  $env:INSTALLER_NAME" | Out-File -FilePath "$env:INSTALLER_PATH.sha256" -Encoding ascii -NoNewline
-
-      # Code signing is explicitly Stuart's own not-yet-made decision
-      # (specs/016-tauri-rust-build/installer-probes.md's "Code signing" section, issue #794) --
-      # there is no signing certificate/secret configured in this repo yet, so this step stays
-      # commented out and inert rather than inventing a call against a secret that does not
-      # exist. When a certificate/secret is chosen, this is where a signing pass over the built
-      # installer would go, before the release step below picks it up.
-      # - name: Sign installer
-      #   shell: pwsh
-      #   env:
-      #     SIGNING_CERTIFICATE: ${{ secrets.SIGNING_CERTIFICATE }}
-      #     SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
-      #   run: |
-      #     signtool sign /f cert.pfx /p $env:SIGNING_CERTIFICATE_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "${{ steps.installer.outputs.path }}"
-
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
-        with:
-          files: |
-            ${{ steps.installer.outputs.path }}
-            ${{ steps.installer.outputs.path }}.sha256
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+          Write-Host "Built (unsigned, never published by CI): $($exe.Name)"

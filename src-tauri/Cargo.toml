@@ -81,10 +81,18 @@ sha2 = "0.10.8"
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
 # Windows-only anyway (spec.md Assumptions), but there is no reason to pull Win32 bindings into a
 # build graph for any other target.
+#
+# Lane R11d (follow-up to #794): `Win32_Security_WinTrust`/`Win32_Security_Cryptography*` add
+# `WinVerifyTrust` and the `WTHelper*` chain-inspection helpers `updates/signature.rs` uses to
+# check the update installer's Authenticode signature and pin its signer certificate.
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62.2", features = [
   "Win32_Foundation",
   "Win32_System_JobObjects",
   "Win32_System_Threading",
   "Win32_Security",
+  "Win32_Security_WinTrust",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Cryptography_Catalog",
+  "Win32_Security_Cryptography_Sip",
 ] }
