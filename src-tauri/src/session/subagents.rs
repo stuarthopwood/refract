@@ -67,8 +67,7 @@ use super::agent::SessionAgent;
 #[path = "subagents_progress.rs"]
 mod subagents_progress;
 use subagents_progress::{
-    apply_jobs, apply_progress_to_batch, emit_subagents_update, queue_patch_ops,
-    summaries_to_value,
+    apply_jobs, apply_progress_to_batch, emit_subagents_update, queue_patch_ops, summaries_to_value,
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
