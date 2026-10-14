@@ -117,19 +117,28 @@ async fn get_config_rejects_an_invalid_key_before_ever_calling_the_executor() {
     assert!(executor.calls.lock().await.is_empty());
 }
 
-/// Regression test for the pipe-drain hang (code review, round 4): a real child process that
-/// writes far past a tiny cap must be killed and reported as `ParseFailed` promptly, never
-/// left running until some outer timeout gives up. Uses a plain `cmd /C` loop rather than a
-/// real `omp` (no real `omp` is needed to exercise this -- the bug is in the generic
-/// pipe-draining code, not anything `omp`-specific), with a 16-byte cap and a 5 s
-/// test-local timeout so a regression fails fast instead of hanging the whole suite for the
-/// production 1 MiB/15 s limits.
+/// Regression test for the pipe-drain hang (code review, round 4): a real child process whose
+/// stdout exceeds a tiny cap must be killed and reported as `ParseFailed` promptly, never left
+/// running until some outer timeout gives up. No real `omp` is needed (the bug is in the
+/// generic pipe-draining code, not anything `omp`-specific): the child writes one line past the
+/// cap, then spends ~29s pinging localhost before exiting on its own (`ping`, not a `for`/`while`
+/// loop -- CI's Windows runner treats a compiled test binary that spawns a hidden-window `cmd.exe`
+/// loop as a resource-exhaustion signature and silently corrupts the EXE on disk, reproduced
+/// live as `STATUS_ENTRYPOINT_NOT_FOUND` on every CI run until this was found and changed; `ping`
+/// as a deliberate delay is already an established pattern in this repo's own probe scripts,
+/// FINDINGS item 11). The old buggy code always awaited `child.wait()` before ever checking the
+/// byte count, so without the fix this test would block for the full ~29s delay and fail the 5s
+/// test-local timeout; with the fix, the capped read resolves within milliseconds of the single
+/// `echo`, `start_kill` fires immediately, and the child never reaches its natural ping-driven
+/// exit.
 #[tokio::test]
-#[ignore = "DIAGNOSTIC ONLY, round-tripping to isolate a CI-only entrypoint failure -- remove before merge"]
 async fn read_capped_output_kills_the_child_and_returns_immediately_once_stdout_exceeds_the_cap() {
     let mut command = Command::new("cmd");
     command
-        .args(["/C", "for /L %i in (1,1,100000) do @echo 0123456789abcdef"])
+        .args([
+            "/C",
+            "echo 0123456789abcdef0123456789abcdef & ping -n 30 127.0.0.1 >nul",
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -145,11 +154,11 @@ async fn read_capped_output_kills_the_child_and_returns_immediately_once_stdout_
         read_capped_output(&mut child, stdout_pipe, stderr_pipe, 16),
     )
     .await
-    .expect("read_capped_output must return well within 5s, not hang");
+    .expect("read_capped_output must return well within 5s, not hang through the ~29s ping delay");
     let err = result.unwrap_err();
     assert_eq!(err.code, OmpConfigErrorCode::ParseFailed);
 
-    // The child must actually have been killed, not left running past this call.
+    // The child must actually have been killed, not left running to finish its own ~29s delay.
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(
         child.try_wait().expect("try_wait").is_some(),
