@@ -89,34 +89,47 @@ point at `pnpm verify:tauri`/`verify-refract-tauri-build-live` instead.
 it with no argument infers the bump itself (see below); `pnpm release patch`, `pnpm release
 minor`, or `pnpm release major` forces that bump level instead. It refuses to run unless the
 working tree is on branch `main`, is fully clean (no tracked changes, no untracked files), and
-`HEAD` equals `origin/main` after a `git fetch origin`. On success it updates the version in
-`package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`
-together (and asserts `Cargo.lock` changed only its own `refract-tauri` version line, nothing
-else); prepends a `## vX.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md`, built from GitHub's own
-generated release notes for that version and grouped into "Breaking changes", "Features",
-"Fixes", and "Other" by each merged PR title's conventional-commit type (a legacy,
-non-conventional title lands verbatim in Other); runs `pnpm ci:local` (see below) on the edited
-tree; and, only if that passes, stages and commits exactly those four version files plus
-`CHANGELOG.md` as `chore: release vX.Y.Z`. If any step up to and including that commit fails --
-including Ctrl+C/SIGTERM, which the script catches specifically so the restore below always
-runs -- it unstages anything already added and restores the tracked release files (never
-`CHANGELOG.md` is removed if it didn't exist before) to their original, pre-release bytes (never
-via `git`), reports that it did so, and exits (130 for an interrupt, 1 otherwise); nothing is
-committed. `git fetch origin` and `ci:local`'s own installs/builds still happened either way --
-only the tracked release files and the git index are guaranteed back to their starting state.
+`HEAD` equals `origin/main` after a `git fetch origin`. On success, if the target version differs
+from the current manifest version (always true except the very first release, which ships the
+current manifest version as-is with nothing to bump), it updates the version in `package.json`,
+`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` together (and
+asserts `Cargo.lock` changed only its own `refract-tauri` version line, nothing else); prepends a
+`## vX.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md`, built from GitHub's own generated release
+notes for that version and grouped into "Breaking changes", "Features", "Fixes", and "Other" by
+each merged PR title's conventional-commit type (a legacy, non-conventional title lands verbatim
+in Other); runs `pnpm ci:local` (see below) on the edited tree; and, only if that passes, stages
+and commits exactly those four version files plus `CHANGELOG.md` as `chore: release vX.Y.Z`. If
+any step up to and including that commit fails -- including Ctrl+C/SIGTERM, which the script
+catches specifically so the restore below always runs -- it unstages anything already added and
+restores the tracked release files (never `CHANGELOG.md` is removed if it didn't exist before)
+to their original, pre-release bytes (never via `git`), and reports that it did so; nothing is
+committed. It exits 130 when the interrupt is the detected cause and 1 for any other failure --
+an interrupt is checked (with one event-loop tick to let the signal handler actually run first)
+immediately before every `git add`/`commit`/`tag`/`push` and before the publish step, so a Ctrl+C
+landing in the gap between two of those steps is always caught there; one landing while
+synchronously blocked inside a child process `ci:local` itself is running still restores
+everything the same way, but surfaces as the ordinary `ci:local`-failed message and exit 1
+instead, since nothing yielded for the handler to run before that catch block already fired.
+`git fetch origin` and `ci:local`'s own installs/builds still happened either way -- only the
+tracked release files and the git index are guaranteed back to their starting state.
 
-Once that commit exists, a failure is handled differently: tagging and pushing use one atomic
-`git push --atomic origin main vX.Y.Z` (so `main` and the tag either both land or neither does --
-two separate pushes could let `origin/main` move during the minutes `ci:local` takes, landing one
-but rejecting the other). The script never restores file bytes or runs `git reset`/`git tag -d`
-once the commit is real; a tag or push failure instead prints the exact commands to retry
+Once that commit exists, a failure is handled differently, and the recovery text matches
+whichever step actually failed: tagging and pushing use one atomic `git push --atomic origin main
+vX.Y.Z` (so `main` and the tag either both land or neither does -- two separate pushes could let
+`origin/main` move during the minutes `ci:local` takes, landing one but rejecting the other). The
+script never restores file bytes or runs `git reset`/`git tag -d` once the commit is real. If
+creating the tag itself fails (for example a leftover local tag from an earlier aborted attempt),
+the tag was never created, so there is nothing to push or delete for it -- the script prints how
+to inspect/remove the stale local tag instead of a push command for a tag that doesn't exist. If
+tagging succeeds but the atomic push fails, it prints the exact commands to retry
 (`git push --atomic origin main vX.Y.Z`) or abandon the release (`git tag -d vX.Y.Z` then
 `git reset --keep HEAD~1`), for Stuart to run himself. After a successful push, it runs
 `node scripts/release-local.mjs --notes-from-changelog` to build, sign, verify, and publish the
 installer, using the `CHANGELOG.md` section it just wrote as the GitHub release's notes instead
-of GitHub's own auto-generated notes. If that publish step fails, the commit, tag, and push have
-already happened -- it prints the exact resume command `pnpm release:local -- --notes-from-changelog`,
-which finishes the release without re-doing the version bump, changelog, commit, or push.
+of GitHub's own auto-generated notes. If that publish step fails (or is interrupted before it
+starts), the commit, tag, and push have already happened -- it prints the exact resume command
+`pnpm release:local -- --notes-from-changelog`, which finishes the release without re-doing the
+version bump, changelog, commit, or push.
 
 `pnpm release --dry-run` runs only the precondition checks (including the `git fetch origin`),
 the version-inference step, a preview of the changelog section (printed to the console, never

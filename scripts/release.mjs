@@ -88,6 +88,25 @@ function installInterruptHandlers() {
   process.on('SIGTERM', onSignal);
 }
 
+// Thrown by `checkInterrupted` so every catch site can tell "the user asked to stop" apart from
+// an ordinary failure, without re-reading the `interrupted` flag a second time.
+class InterruptedError extends Error {}
+
+// `main()` is otherwise fully synchronous, so the signal handler registered above can only ever
+// run on an actual event-loop tick -- a synchronous catch block running immediately after a
+// failed `spawnSync` can read `interrupted` as still `false` even when a real SIGINT already
+// arrived (confirmed empirically: a genuine `GenerateConsoleCtrlEvent` mid `cargo test` still
+// reported the generic ci:local failure, not the interrupt one, because nothing yielded between
+// the failure and the check). Awaiting a `setImmediate` here gives the queued handler callback
+// one real tick to run before this checks the flag -- called immediately before every
+// irreversible step (`git add`, `commit`, `tag`, `push`, the `release-local.mjs` publish step).
+async function checkInterrupted() {
+  await new Promise((resolve) => setImmediate(resolve));
+  if (interrupted) {
+    throw new InterruptedError('interrupted');
+  }
+}
+
 // Unstages the five tracked release files -- best-effort and never throws, since this only ever
 // runs from inside an already-failing path (a reset failure here must never mask or replace the
 // real error being reported). A no-op if `git add` never ran yet.
@@ -280,7 +299,7 @@ function determineNextVersion({ manifestVersion, tag, commits }) {
   return bumpVersion(manifestVersion, level);
 }
 
-function main() {
+async function main() {
   if (unknownArgs.length > 0) fail(`unknown argument(s): ${unknownArgs.join(', ')}`);
 
   checkPreconditions();
@@ -323,12 +342,21 @@ function main() {
   installInterruptHandlers();
 
   try {
-    writeManifestsAndLock(paths, raw, nextVersion);
+    // HIGH gate fix: the very first release (no tag yet, no explicit level) ships the CURRENT
+    // manifest version as-is -- `nextVersion === manifestVersion`, so there is nothing for the
+    // four manifests or `cargo update` to change. Running them anyway left `Cargo.lock`
+    // completely unchanged, which `assertCargoLockOnlyVersionChanged` then correctly treated as
+    // a failure ("expected the version line to change"), aborting every first release. Only
+    // touch the manifests/lock -- and only re-check they still agree -- when a real bump is
+    // happening; CHANGELOG.md, ci:local, and the commit/tag/push below all still run either way.
+    if (nextVersion !== manifestVersion) {
+      writeManifestsAndLock(paths, raw, nextVersion);
 
-    const { versions: after } = readAllVersions(repoRoot);
-    const afterCheck = checkVersionsEqual(after);
-    if (!afterCheck.ok) {
-      fail(`version update left manifests disagreeing: ${afterCheck.entries.map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      const { versions: after } = readAllVersions(repoRoot);
+      const afterCheck = checkVersionsEqual(after);
+      if (!afterCheck.ok) {
+        fail(`version update left manifests disagreeing: ${afterCheck.entries.map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      }
     }
 
     writeFileSync(CHANGELOG_PATH, prependChangelogSection(changelogOriginal, section));
@@ -339,7 +367,9 @@ function main() {
     // lock file failing either of them is still a failure BEFORE the commit exists, so it must
     // unstage and restore exactly like every earlier failure in this block, never leave the five
     // files edited-and-staged with nothing to show for it.
+    await checkInterrupted();
     gitInherit(['add', ...TRACKED_RELEASE_FILES]);
+    await checkInterrupted();
     gitInherit(['commit', '-m', `chore: release v${nextVersion}`]);
   } catch (err) {
     unstageTrackedFiles();
@@ -350,7 +380,7 @@ function main() {
         (changelogExistedBefore ? ', and CHANGELOG.md,' : ', and removed the CHANGELOG.md this run created,') +
         ' to their original state. Nothing was committed.',
     );
-    if (interrupted) {
+    if (err instanceof InterruptedError || interrupted) {
       console.error('release: stopped by SIGINT/SIGTERM, exiting 130.');
       process.exit(130);
     }
@@ -360,16 +390,48 @@ function main() {
   // The commit above now exists: restoring file bytes from here on would contradict real
   // history, so a tag or push failure is handled differently -- never restore, never `git
   // reset`/`git tag -d` automatically, only print the exact commands for Stuart to run himself.
-  // `--atomic` pushes the branch and the tag in one all-or-nothing request: with two separate
-  // pushes, a slow `ci:local` could let `origin/main` move in between, landing `main` but
-  // rejecting the tag (or vice versa), and a re-run would then fail the HEAD==origin/main check
-  // or see the new local tag and report nothing to release.
+  // Tag creation and the push are two SEPARATE try blocks (not one): the recovery text must
+  // match which one actually failed -- if the tag itself was never created (for example a
+  // leftover local tag from an earlier aborted attempt), telling Stuart to push or delete a tag
+  // that doesn't exist would be actively wrong.
   try {
+    await checkInterrupted();
     gitInherit(['tag', '-a', `v${nextVersion}`, '-m', `v${nextVersion}`]);
+  } catch (err) {
+    if (err instanceof InterruptedError) {
+      console.error(
+        `release: stopped by SIGINT/SIGTERM before tagging v${nextVersion} -- "chore: release v${nextVersion}" ` +
+          'is committed locally but not tagged or pushed. Re-run pnpm release to tag and push it, or abandon it ' +
+          'yourself: git reset --keep HEAD~1',
+      );
+      process.exit(130);
+    }
+    console.error(
+      `release: "chore: release v${nextVersion}" was committed locally, but creating the tag v${nextVersion} failed: ${err.message}`,
+    );
+    console.error(
+      'release: this script will NOT retry or reset automatically. The tag was never created, so there is ' +
+        `nothing to push or delete for it. Inspect why tagging failed (for example an existing local tag: ` +
+        `git tag -l v${nextVersion}); remove a stale one yourself (git tag -d v${nextVersion}) and re-run ` +
+        `pnpm release, or abandon this release commit entirely: git reset --keep HEAD~1`,
+    );
+    process.exit(1);
+  }
+
+  try {
+    await checkInterrupted();
     gitInherit(['push', '--atomic', 'origin', 'main', `v${nextVersion}`]);
   } catch (err) {
+    if (err instanceof InterruptedError) {
+      console.error(
+        `release: stopped by SIGINT/SIGTERM before pushing -- "chore: release v${nextVersion}" is committed ` +
+          `and tagged locally but not pushed. Retry: git push --atomic origin main v${nextVersion}. Abandon: ` +
+          `git tag -d v${nextVersion}  (then)  git reset --keep HEAD~1`,
+      );
+      process.exit(130);
+    }
     console.error(
-      `release: "chore: release v${nextVersion}" was committed locally, but tagging/pushing failed: ${err.message}`,
+      `release: "chore: release v${nextVersion}" was committed and tagged locally, but the atomic push failed: ${err.message}`,
     );
     console.error(
       'release: this script will NOT retry or reset automatically. ' +
@@ -380,6 +442,16 @@ function main() {
   }
 
   console.log(`release: committed, tagged, and pushed v${nextVersion}.`);
+
+  try {
+    await checkInterrupted();
+  } catch {
+    console.error(
+      `release: v${nextVersion} was committed, tagged, and pushed, but stopped by SIGINT/SIGTERM before publishing. ` +
+        'Resume with: pnpm release:local -- --notes-from-changelog',
+    );
+    process.exit(130);
+  }
 
   const publish = spawnSync('node', ['scripts/release-local.mjs', '--notes-from-changelog'], {
     cwd: repoRoot,
@@ -396,9 +468,7 @@ function main() {
   console.log(`release: v${nextVersion} published.`);
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   console.error(`release: ${err.message}`);
   process.exit(1);
-}
+});
