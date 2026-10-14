@@ -139,6 +139,13 @@ impl SessionManager {
         }
 
         let mut summary = RoleChangeSummary::default();
+        // Gate-fix (round 7, perf, MEDIUM): fetch `modelRoles` ONCE for the sweep, not once per
+        // Session -- every task needs the SAME record, and reads now queue on
+        // `OMP_INVOCATION_LOCK`. A failed fetch falls back to `None` (each task fetches its own).
+        let shared_model_roles = crate::ipc::model_roles::get_model_roles_reliable()
+            .await
+            .map(Arc::new)
+            .ok();
         // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
         // one at a time -- each makes up to three RPCs (a `get_state` before, the `/switch
         // @role` send, a `get_state` after), so a serial sweep's worst case grows with the
@@ -181,12 +188,14 @@ impl SessionManager {
             }
             let semaphore = semaphore.clone();
             let role = role.to_string();
+            let shared_model_roles = shared_model_roles.clone();
             idle_tasks.push(tokio::spawn(async move {
                 let _permit = semaphore
                     .acquire_owned()
                     .await
                     .expect("semaphore never closed");
-                let outcome = match apply_role_now(&agent, &role, true).await {
+                let model_roles_ref = shared_model_roles.as_deref();
+                let outcome = match apply_role_now(&agent, &role, true, model_roles_ref).await {
                     Ok(_) => RoleApplyOutcome::Moved,
                     Err(err) if err.code == "not-idle" => {
                         // Gate-fix (MEDIUM): became working between the atomic queue-or-ready
@@ -198,7 +207,7 @@ impl SessionManager {
                         if agent.queue_role_reapply_or_ready(&role).await {
                             RoleApplyOutcome::Queued
                         } else {
-                            match apply_role_now(&agent, &role, true).await {
+                            match apply_role_now(&agent, &role, true, model_roles_ref).await {
                                 Ok(_) => RoleApplyOutcome::Moved,
                                 Err(err2) if err2.code == "not-idle" => {
                                     // Gate-fix (round 6, HIGH): became working again between

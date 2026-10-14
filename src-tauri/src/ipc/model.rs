@@ -114,10 +114,9 @@ pub fn model_list_roles(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
         require_session(&state, session_id).await?;
         let agent = manager(&state).get_or_create_agent(session_id);
-        // Gate-fix (round 6): reverted from a `try_join!` concurrent version -- `session::model`'s
-        // own `known_chat_role_list` hit an intermittent incomplete-read race running these same
-        // two `omp` CLI reads concurrently against one profile (cause not fully confirmed); this
-        // handler runs the identical pair of reads, so it is made sequential for the same reason.
+        // These two `omp` CLI reads run sequentially (not concurrently): every real `omp`
+        // invocation is already serialised process-wide by `OMP_INVOCATION_LOCK`
+        // (`omp/config.rs`), so this ordering is incidental, not the safety mechanism.
         let known_roles = model::known_role_list().await.map_err(map_model_error)?;
         let model_roles = crate::ipc::model_roles::get_model_roles()
             .await

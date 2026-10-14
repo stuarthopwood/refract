@@ -153,7 +153,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
             // has already posted its own Error notice for it, so re-queuing would repeat that
             // notice and the RPC round trip at every settle for the rest of the run instead of
             // surfacing it once.
-            if let Err(err) = apply_role_now(&agent, &role, true).await {
+            if let Err(err) = apply_role_now(&agent, &role, true, None).await {
                 if err.code == "not-idle" {
                     agent
                         .with_model_state(|s| {
@@ -270,20 +270,12 @@ pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
 /// 2026-10-13: "Ctrl+R cycles OMP's `cycleOrder` roles plus `plan`") -- the Ctrl+R selector's
 /// own listing and cycling order. Narrower than `known_chat_role_list` below on purpose.
 pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
-    Ok(known_role_list_with_presence().await?.0)
-}
-
-/// Same read as `known_role_list`, also returning whether `cycleOrder` was non-empty before
-/// `"plan"` was added -- the signal `known_chat_role_list` uses for an empty `modelRoles` read.
-async fn known_role_list_with_presence() -> Result<(Vec<String>, bool), AgentError> {
     let response = crate::omp::config::get_config("cycleOrder", &[])
         .await
         .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
     let cycle_order = model_support::parse_cycle_order_response(&response)
         .map_err(|msg| AgentError::new("omp-probe-failed", msg))?;
-    let cycle_order_present = !cycle_order.is_empty();
-    let role_list = model_support::build_role_list(&cycle_order);
-    Ok((role_list, cycle_order_present))
+    Ok(model_support::build_role_list(&cycle_order))
 }
 
 /// Gate-fix (round 5, #766): the ONE validation set for `/role <role>` and `/switch @<role>`
@@ -294,11 +286,14 @@ async fn known_role_list_with_presence() -> Result<(Vec<String>, bool), AgentErr
 /// `is_switch_argument_token`'s own charset validates here but is refused by `/switch @<name>`
 /// (whose charset check covers the whole token) -- a real asymmetry, not a bug.
 /// The two `omp` reads run SEQUENTIALLY (`try_join!` intermittently excluded a role) and go
-/// through `OMP_INVOCATION_LOCK` (process-wide). Round 7: an empty `modelRoles` read while
-/// `cycleOrder` is configured is retried once, then fails closed (`get_model_roles_reliable`).
+/// through `OMP_INVOCATION_LOCK` (process-wide). Round 7: an empty `modelRoles` read is
+/// retried once (`get_model_roles_reliable`); if still empty, accepted as genuine (a real
+/// unconfigured profile) rather than guessed at -- `cycleOrder` always has a non-empty default
+/// regardless of `modelRoles`, so its presence is not a usable "this profile is configured"
+/// signal (round 7 follow-up, caught in review).
 pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
-    let (roles, cycle_order_present) = known_role_list_with_presence().await?;
-    let model_roles = crate::ipc::model_roles::get_model_roles_reliable(cycle_order_present)
+    let roles = known_role_list().await?;
+    let model_roles = crate::ipc::model_roles::get_model_roles_reliable()
         .await
         .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
     let merged = model_support::merge_chat_roles(roles, &model_roles);
@@ -423,26 +418,23 @@ async fn refresh_state_or_refuse(agent: &SessionAgent) -> Result<Value, AgentErr
 /// Shared apply path for every role switch (user-initiated `apply_role` below, and #740's own
 /// automatic settle-time reapply). Always forwards OMP's own native `/switch @<role>` text
 /// command (FINDINGS item 54; constitution I: Refract does not reimplement `modelRoles`/
-/// `cycleOrder` resolution when OMP already does it) rather than calling `set_model` with a
-/// selector Refract resolved itself. Gate-fix (HIGH): reads `get_state` before and after and
-/// only pins/records the role when the model genuinely changed -- OMP's own `/switch` reports
-/// success even when it silently does nothing (FINDINGS item 53), so the ack alone is not proof.
-/// `settings_triggered` controls the EXTRA transcript notice (#740 item 3: "Model changed from X
-/// to Y: the <role> role was changed in Settings") -- the user-initiated path gets no extra
-/// notice of its own, since OMP's `command_output` for `/switch` already confirms a real change
-/// ("Session-only model: ..."). Always goes through `send_if_idle` (gate-fix, HIGH, race): a
-/// `not-idle` result here is not necessarily a hard failure for the settings-triggered caller,
-/// which re-queues on it (see `on_frame`/`SessionManager::apply_role_change`).
+/// `cycleOrder` resolution when OMP already does it). Gate-fix (HIGH): reads `get_state` before
+/// and after and only pins/records the role when the model genuinely changed -- OMP's own
+/// `/switch` reports success even when it silently does nothing (FINDINGS item 53).
+/// `settings_triggered` controls the EXTRA transcript notice (#740 item 3); the user-initiated
+/// path gets no extra notice, since OMP's own `command_output` for `/switch` already confirms a
+/// real change. Always goes through `send_if_idle` (gate-fix, HIGH, race): a `not-idle` result
+/// is not necessarily a hard failure for the settings-triggered caller, which re-queues on it.
 pub async fn apply_role_now(
     agent: &SessionAgent,
     role: &str,
     settings_triggered: bool,
+    cached_model_roles: Option<&std::collections::HashMap<String, String>>,
 ) -> Result<Value, AgentError> {
-    // Gate-fix (LOW, security): `role` only has to match a `cycleOrder` entry from the user's
-    // own global OMP config (`apply_role`'s own validation, and the settle/sweep callers below,
-    // never check characters) before reaching here -- an entry containing whitespace or another
-    // disallowed character would otherwise forward free text past the allow-list this lane's
-    // own `/switch` path enforces everywhere else.
+    // Gate-fix (LOW, security): `role` only has to match a `cycleOrder` entry from the user's own
+    // global OMP config (callers below never check characters) before reaching here -- an entry
+    // with whitespace or another disallowed character would otherwise forward free text past the
+    // allow-list this lane's own `/switch` path enforces everywhere else.
     if !is_switch_argument_token(&format!("@{role}")) {
         return Err(AgentError::new(
             "invalid-argument",
@@ -466,17 +458,25 @@ pub async fn apply_role_now(
     })?;
     let before_model = model_value(&before);
     if before_model.as_ref() == Some(&after_model) {
-        // Gate-fix (HIGH): not necessarily a failure -- picking a role whose own configured
-        // model is already the live one (Ctrl+R onto the current role, or two roles mapped to
-        // the same selector) is a valid no-op switch, and #766's "choosing a role again
-        // un-pins" must still succeed for it. Only report failure when the role's own
-        // `modelRoles` selector does NOT match the model that is actually live -- the genuine
-        // case OMP's native `/switch` silently no-ops on (FINDINGS item 53).
-        let role_resolves_to_current = crate::ipc::model_roles::get_model_roles()
-            .await
-            .ok()
-            .and_then(|roles| roles.get(role).cloned())
-            .is_some_and(|selector| selector_matches_model(&selector, &after_model));
+        // Gate-fix (HIGH): a role whose own model is already live (Ctrl+R onto the current
+        // role, two roles mapped to one selector) is a valid no-op, not a failure; #766's
+        // "choosing a role again un-pins" must still succeed for it. Only fails when the role's
+        // own `modelRoles` selector does NOT match the live model (FINDINGS item 53). Gate-fix
+        // (round 7): a FAILED read no longer swallows into that message, surfacing via `?`
+        // instead. `cached_model_roles` (the #740 sweep's single fetch) is used when present.
+        let fetched;
+        let model_roles = match cached_model_roles {
+            Some(map) => map,
+            None => {
+                fetched = crate::ipc::model_roles::get_model_roles_reliable()
+                    .await
+                    .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
+                &fetched
+            }
+        };
+        let role_resolves_to_current = model_roles
+            .get(role)
+            .is_some_and(|selector| selector_matches_model(selector, &after_model));
         if !role_resolves_to_current {
             let message = format!(
                 "Role \"{role}\" could not be applied: the model is still {}.",
@@ -528,7 +528,7 @@ pub async fn apply_role(
             ),
         ));
     }
-    apply_role_now(agent, role, false).await
+    apply_role_now(agent, role, false, None).await
 }
 
 /// `/switch <arg>` and its `/model <arg>` alias (`ipc::chat` rewrites `/model` to `/switch`
