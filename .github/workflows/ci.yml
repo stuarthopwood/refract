@@ -87,9 +87,8 @@ jobs:
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       # Includes the issue #795 (R12b) Rust integration tests under src-tauri/tests/
-      # (transcript_golden.rs, contract_replay.rs, and the transcript-golden and
-      # terminated-unexpectedly-gating Rust tests) -- Cargo auto-discovers everything under
-      # tests/, so no separate step is needed for them.
+      # (transcript_golden.rs, contract_replay.rs, transcript_terminated_unexpectedly_tests.rs)
+      # -- Cargo auto-discovers everything under tests/, so no separate step is needed for them.
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 

@@ -303,24 +303,23 @@ fn fold_electron_events(events: &[Value]) -> Value {
     Value::Array(transcript)
 }
 
-/// Gate-round-1/round-2 remediation (issue #795 R12b): normalizes away the cross-shell diff's
-/// documented, intentional divergences in place, identically on both sides, so the final
-/// `assert_eq!` only ever fails on a REAL, un-triaged regression:
+/// Gate-round-1/round-2/round-3 remediation (issue #795 R12b): normalizes away the cross-shell
+/// diff's documented, intentional divergences in place, identically on both sides, so the final
+/// `assert_eq!` only ever fails on a REAL, un-triaged regression. One allowlisted divergence
+/// (#835) plus `value:null`-vs-absent tolerance:
 /// - `remote.kind`: `repositories.add` always returns the Rust port's `unknown` placeholder
 ///   (`repositories.rs`'s `with_unknown_remote`) vs the Electron build's eager computation --
 ///   filed as issue #835 rather than fixed here (a real, pre-existing design difference, not a
-///   one-line bug: see that issue for the full citation). This is the ONLY allowlisted
-///   divergence; `details` (round-1 HIGH #3) was fixed at the source (`omp/transcript.rs`) and
-///   is deliberately NOT scrubbed here any more, so a regression back to `details: null` fails
-///   this diff instead of being silently tolerated.
-/// - `value: null` vs an absent `value` key: round 2 reverted `Dispatcher::dispatch`'s global
-///   "omit `value` for `Value::Null`" change (it broke `sessions.diffStat`/
-///   `repositories.pickFolder`/`chat.predictWord` in the live renderer -- see `ipc/mod.rs`'s own
-///   comment), so Rust's `chat.answer` envelope is back to `{ok:true,value:null}` while
-///   Electron's stays `{ok:true}` (`JSON.stringify` drops an `undefined` value). Tolerated ONLY
-///   here, in the cross-shell comparison, by dropping an explicit `value: null` next to
-///   `ok: true` on both sides before comparing -- the wire contract itself is unchanged for
-///   every channel.
+///   one-line bug: see that issue for the full citation). `details` (round-1 HIGH #3) was fixed
+///   at the source (`omp/transcript.rs`) and is deliberately NOT scrubbed here any more, so a
+///   regression back to `details: null` fails this diff instead of being silently tolerated.
+/// - `value: null` vs an absent `value` key: `chat.answer`'s Rust envelope is
+///   `{ok:true,value:null}` while Electron's stays `{ok:true}` (`JSON.stringify` drops an
+///   `undefined` value) -- `Dispatcher::dispatch` always includes `value` (round-2 CRITICAL #1
+///   reverted the global "omit `value` for `Value::Null`" change, which broke `sessions.diffStat`/
+///   `repositories.pickFolder`/`chat.predictWord` in the live renderer). Tolerated ONLY here, in
+///   the cross-shell comparison, by dropping an explicit `value: null` next to `ok: true` on both
+///   sides before comparing -- the wire contract itself is unchanged for every channel.
 fn scrub_known_divergences(value: &mut Value) {
     match value {
         Value::Object(map) => {

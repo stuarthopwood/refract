@@ -183,8 +183,7 @@ so the diff only ever fails on a real, un-triaged regression:
 | Field | Rust | Electron | Status |
 | --- | --- | --- | --- |
 | `repositories.add` response's `value.remote.kind` | `"unknown"` | `"none"` | Filed as [issue #835](https://github.com/stuarthopwood/refract/issues/835) -- a real, pre-existing design difference (`repositories.rs`'s `.add` always returns the `unknown` placeholder, computed lazily later via `.remotes`/`.rename`; the Electron handler computes it eagerly), not fixed here. |
-| tool-call transcript row's `details` field | explicit `null` | key absent entirely | Owned by a sibling fix to `omp/transcript.rs` in this same lane (issue #795 R12b); tolerated in either state so this diff never races that fix landing. |
-| `chat.answer` response envelope | was `{"ok":true,"value":null}` | `{"ok":true}` | **Fixed in this PR**: `ipc/mod.rs`'s `Dispatcher::dispatch` now omits the `value` key entirely when a handler resolves `Value::Null`, matching the Electron build's `JSON.stringify`-drops-`undefined` convention (the same one `transcript.rs`'s own header comment documents for the `args` field). No longer allowlisted -- both sides already agree. |
+| `chat.answer` response envelope | `{"ok":true,"value":null}` | `{"ok":true}` | Tolerated by the `value:null` scrub in `scrub_known_divergences` (an explicit `value:null` next to `ok:true` is dropped on both sides before comparing); the production wire contract itself is unchanged for every channel. |
 
 A Session this test never calls `sessions.setVisible` on would also show a different final
 `unread` flag (see "Normalization rules" above) -- the Electron fixture's own driving script DOES

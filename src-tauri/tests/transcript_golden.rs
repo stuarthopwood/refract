@@ -29,8 +29,8 @@ fn read_json(name: &str) -> Value {
 }
 
 // Wall-clock fields are never reproducible across runs/languages; see the fixture README's
-// "Wall-clock fields are normalized, not golden" section. Identical walk in
-// transcript.golden.test.ts's own `normalizeTiming`.
+// "Wall-clock fields are normalized, not golden" section. Same normalization the now-deleted
+// `transcript.golden.test.ts` originally used, before this file became the sole reader.
 fn normalize_timing(value: Value) -> Value {
     match value {
         Value::Array(items) => Value::Array(items.into_iter().map(normalize_timing).collect()),

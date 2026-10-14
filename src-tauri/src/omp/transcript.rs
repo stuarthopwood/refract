@@ -2058,12 +2058,12 @@ impl TranscriptState {
             None => self.items.push(Arc::new(item)),
         }
     }
-
     /// Marks the user has sent a prompt/slash command at least once (`SessionAgent.hasUserActed`); one-directional.
     pub fn mark_user_acted(&mut self) {
         self.has_user_acted = true;
     }
     /// Sets the flag `settle_interrupted_tool_rows` reads; port of `fromHistory`'s `terminatedUnexpectedly` param.
+    /// No production caller yet (R3/#786 wires `detectUnexpectedTermination`'s result in after both PRs merge); exercised only by this file's own ported tests for now.
     pub fn set_terminated_unexpectedly(&mut self, value: bool) {
         self.terminated_unexpectedly = value;
     }

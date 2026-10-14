@@ -31,15 +31,20 @@ trace to a real named case, not be invented from reading the implementation.
 
 ## Provenance
 
-`history-scenario.json`/`live-frames-scenario.json` are reshaped from real recorded traffic in
+`history-scenario.json`/`live-frames-scenario.json` reshape the real recorded traffic in
 `scripts/fixtures/omp-frames/session.jsonl` (R12a, issue #795 part 2, see that directory's own
-README for how `session.jsonl` was captured against a real signed-in `omp`): the same `write`
-tool call/result pair and the same streaming `"xy"` -> `"xyzzy9"` assistant reply that tape
-records. No other message/frame shapes are invented; every field name matches
-`src/shared/frames.ts`. (`history-scenario.json` previously also invented an extra `edit` tool
-call/result pair not present in `session.jsonl`, to exercise `buildEditField`/`build_edit_field`
--- removed during gate-round-2 remediation for the same reason as the 7 scenarios above; the
-fixture is now a faithful reshape of the single `write` call the real tape drives, nothing more.)
+README for how `session.jsonl` was captured against a real signed-in `omp`) -- the same single
+`write` tool call/result SHAPE that tape drives, every field name matching `src/shared/frames.ts`,
+no other message/frame shape invented. The TEXT content differs from the tape on purpose: the
+tape's own prompt is the sentinel `$lastMessage` (substituted at replay time, never a fixed
+string) and its real reply is just the bare reply token `"xyzzy9"` -- neither makes a readable
+fixture, so `history-scenario.json` uses its own representative prompt/reply text instead;
+`live-frames-scenario.json`'s message deltas DO use the tape's own literal `"xy"` -> `"xyzzy9"`
+streaming text, since that scenario is specifically about the streaming mechanism, not prompt
+wording. (`history-scenario.json` previously also invented an extra `edit` tool call/result pair
+not present in `session.jsonl`, to exercise `buildEditField`/`build_edit_field` -- removed during
+gate-round-2 remediation for the same reason as the 7 scenarios above; the fixture is now
+shaped after the single `write` call the real tape drives, nothing more.)
 
 ## Fixed: `details` null-vs-absent divergence (PR #834 gate-round-1 HIGH #3)
 
