@@ -3,16 +3,16 @@
 // `.test.rs` name), mirroring the `ipc::sessions_agent.rs` -> `sessions_agent.test.rs` split.
 //
 // Ports `verify_reattach`'s own 4 cases from `reattachVerification.test.ts`'s `describe('verifyReattach', ...)`
-// block, and all 19 `fetchAllMessages.test.ts` cases against `fetch_all_messages_core`/
-// `fallback_to_get_messages_core` (the generic `_core` functions `MessagesPageRequester` makes
-// testable without a real spawned `omp` process -- see `launch_support.rs`'s own doc comment on
-// that trait for the refactor this required).
+// block, `reattach_rebaseline_notice`'s own 3 cases from that same file's `describe(
+// 'reattachRebaselineNotice', ...)` block, and all 19 `fetchAllMessages.test.ts` cases against
+// `fetch_all_messages_core`/`fallback_to_get_messages_core` (the generic `_core` functions
+// `MessagesPageRequester` makes testable without a real spawned `omp` process -- see
+// `launch_support.rs`'s own doc comment on that trait for the refactor this required).
 //
-// NOT ported: `reattachVerification.test.ts`'s own `reattachRebaselineNotice` (3 cases) and
-// `assertConversationFileExists` (2 cases) describe blocks. Neither has a standalone Rust
-// function in this file to test -- see this file's final report for the exact gap/inlining
-// finding for each (not this task's to implement; test-porting only covers functions that
-// already exist).
+// NOT ported: `reattachVerification.test.ts`'s own `assertConversationFileExists` (2 cases).
+// Its exact behaviour is already inlined directly in `launch.rs`'s `attach_and_verify` (a plain
+// `tokio::fs::metadata` check before `switch_session`), never extracted as its own function in
+// this file -- nothing here to unit-test in isolation.
 use super::*;
 use std::sync::Mutex as StdMutex;
 
@@ -49,6 +49,61 @@ fn verify_reattach_fails_on_a_zero_message_count() {
     let state = json!({ "sessionFile": "C:/sessions/swift-otter/conv.jsonl", "messageCount": 0 });
     let err = verify_reattach("C:/sessions/swift-otter/conv.jsonl", &state).unwrap_err();
     assert!(err.contains("messageCount is 0"), "{err}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// reattach_rebaseline_notice -- port of reattachVerification.test.ts's own
+// `describe('reattachRebaselineNotice', ...)` block
+// ---------------------------------------------------------------------------------------------
+
+fn make_session_for_notice(last_message_count: Option<i64>) -> crate::store::registry::Session {
+    crate::store::registry::Session {
+        id: "session-1".to_string(),
+        repository_id: "repo-1".to_string(),
+        name: "test".to_string(),
+        branch: "feat/test".to_string(),
+        base_branch: "main".to_string(),
+        worktree_path: "C:/repos/x".to_string(),
+        session_dir: None,
+        current_conversation: Some("C:/sessions/swift-otter/conv.jsonl".to_string()),
+        last_message_count,
+        last_model: None,
+        last_thinking_level: None,
+        created_at: "2026-10-14T00:00:00.000Z".to_string(),
+        last_activity_at: "2026-10-14T00:00:00.000Z".to_string(),
+        archived_at: None,
+        current_turn_subagents: None,
+        stopped_on_request_conversation: None,
+        stopped_on_request_at_size: None,
+    }
+}
+
+#[test]
+fn reattach_rebaseline_notice_is_silent_when_last_message_count_is_null() {
+    let session = make_session_for_notice(None);
+    let state = json!({ "messageCount": 10 });
+    assert_eq!(reattach_rebaseline_notice(&session, &state), None);
+}
+
+#[test]
+fn reattach_rebaseline_notice_is_silent_when_the_count_did_not_drop() {
+    let session = make_session_for_notice(Some(446));
+    assert_eq!(
+        reattach_rebaseline_notice(&session, &json!({ "messageCount": 446 })),
+        None
+    );
+    assert_eq!(
+        reattach_rebaseline_notice(&session, &json!({ "messageCount": 500 })),
+        None
+    );
+}
+
+#[test]
+fn reattach_rebaseline_notice_names_both_counts_when_compaction_lowers_the_observed_count() {
+    let session = make_session_for_notice(Some(446));
+    let notice = reattach_rebaseline_notice(&session, &json!({ "messageCount": 300 })).unwrap();
+    assert!(notice.contains("300 messages"), "{notice}");
+    assert!(notice.contains("446"), "{notice}");
 }
 
 // ---------------------------------------------------------------------------------------------

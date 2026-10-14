@@ -14,7 +14,8 @@ use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
 use crate::store::registry::{Session, SessionPatch};
 
 use super::launch_support::{
-    fetch_all_messages, registry_store_error_message, to_process_mode, truncate, verify_reattach,
+    fetch_all_messages, reattach_rebaseline_notice, registry_store_error_message, to_process_mode,
+    truncate, verify_reattach,
 };
 use super::{
     AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH,
@@ -242,6 +243,14 @@ impl SessionAgent {
                 return Err(AgentError::new("reattach-failed", detail));
             }
         };
+        // Constitution v1.9.0 / FINDINGS item 44: computed from the PRE-launch `session`
+        // parameter (the registry's last known `last_message_count`) vs the freshly observed
+        // `state_data`, before `sync_from_state` re-baselines it below -- see
+        // `reattach_rebaseline_notice`'s own doc comment.
+        let rebaseline_notice = session
+            .current_conversation
+            .as_ref()
+            .and_then(|_| reattach_rebaseline_notice(session, &state_data));
 
         if self.state.lock().await.stop_requested {
             proc.stop().await;
@@ -280,6 +289,11 @@ impl SessionAgent {
                 state.transcript.merge_from_history(&messages);
                 let _ = state.transcript.settle_interrupted_tool_rows();
             }
+        }
+        // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
+        // and BEFORE `sync_from_state` re-baselines `last_message_count` to the observed value.
+        if let Some(notice) = rebaseline_notice {
+            self.append_notice(notice, "info").await;
         }
 
         self.sync_from_state(&state_data).await;

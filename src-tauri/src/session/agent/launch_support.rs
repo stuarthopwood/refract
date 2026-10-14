@@ -9,6 +9,7 @@
 use serde_json::{json, Value};
 
 use crate::omp::process::{ApprovalMode as ProcApprovalMode, OmpProcess};
+use crate::store::registry::Session;
 use crate::store::settings::ApprovalMode;
 
 use super::{DEFAULT_REQUEST_TIMEOUT_MS, MAX_MESSAGE_PAGES, MESSAGES_PAGE_SIZE};
@@ -57,6 +58,28 @@ pub(super) fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), 
         return Err(format!("Reattach verification failed: messageCount is {message_count}, expected greater than 0"));
     }
     Ok(())
+}
+
+/// Port of `reattachVerification.ts`'s own `reattachRebaselineNotice` (Constitution v1.9.0 /
+/// FINDINGS item 44): when a reattach's observed `messageCount` comes back BELOW the Session's
+/// last known count, this build re-baselines `lastMessageCount` to the observed value
+/// (`sync_from_state`'s own job) rather than treating it as a failure -- see `verify_reattach`'s
+/// own doc comment for why a drop is never itself a failure. The caller must tell the user this
+/// happened, once, in product wording naming both counts; this only computes that text so it is
+/// never fabricated ad hoc at the call site. Returns `None` when there is nothing to report (no
+/// prior count, or the observed count did not drop).
+pub(super) fn reattach_rebaseline_notice(session: &Session, state: &Value) -> Option<String> {
+    let last_message_count = session.last_message_count?;
+    let message_count = state
+        .get("messageCount")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    if message_count >= last_message_count {
+        return None;
+    }
+    Some(format!(
+        "This conversation reconnected with {message_count} messages, down from the {last_message_count} last seen; the aborted or unsent trailing messages from before it stopped may account for the difference."
+    ))
 }
 
 /// Minimal seam `fetch_all_messages`/`fallback_to_get_messages` need to be unit-tested against a
