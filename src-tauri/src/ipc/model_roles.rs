@@ -156,7 +156,7 @@ async fn read_model_roles_raw_with(
     let response = get_config_with(executor, "modelRoles", strip_env_vars).await?;
     // Gate-fix (round 6): a response with NO `value` field at all is a malformed/incomplete
     // read -- SUSPECTED (not directly observed) to be reachable under heavy concurrent `omp`
-    // load even with `OMP_INVOCATION_LOCK` serialising every invocation this process makes --
+    // load even with `OMP_INVOCATION_LOCK` serialising every `config get/set` this process makes
     // and must fail closed, not be silently read as an empty/unconfigured record the same way a
     // genuine `"value": null` legitimately is.
     let Some(inner) = response.get("value") else {
@@ -424,6 +424,11 @@ pub fn model_roles_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(|err| to_ipc_error(&err))?;
         let mut out = Map::new();
+        // Gate-fix (round 10, MEDIUM): clone before `result.roles` moves into the JSON reply
+        // below -- `apply_role_change` takes the SAME map this write just produced, rather than
+        // issuing its own re-read (which could race a second `modelRoles.set` landing mid-sweep,
+        // `manager.rs`'s own doc comment there).
+        let roles_for_sweep = result.roles.clone();
         out.insert(
             "roles".to_string(),
             serde_json::to_value(result.roles).expect("roles is always JSON-serialisable"),
@@ -439,7 +444,10 @@ pub fn model_roles_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // is concurrent and bounded ACROSS Sessions, not off this reply path). `propagation` is
         // a short summary for the Settings page's own polite one-line result ("Moved N
         // Sessions..., left M pinned, K waiting").
-        let propagation = state.session_manager.apply_role_change(&role).await;
+        let propagation = state
+            .session_manager
+            .apply_role_change(&role, roles_for_sweep)
+            .await;
         out.insert(
             "propagation".to_string(),
             serde_json::to_value(propagation)
