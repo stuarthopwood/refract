@@ -541,13 +541,17 @@ async function main() {
       const firstColonSwitchRes = await cdp.evaluate(
         `window.refract.chat.send(${JSON.stringify(colonModelId)}, '/switch probe-fake/probe-fake-model:v8')`,
       );
+      const afterFirstColonList = await cdp.evaluate(`window.refract.sessions.list()`);
+      const afterFirstColonModelId = afterFirstColonList.ok
+        ? afterFirstColonList.value.find((s) => s.id === colonModelId)?.lastModel?.id
+        : undefined;
       const secondColonSwitchRes = await cdp.evaluate(
         `window.refract.chat.send(${JSON.stringify(colonModelId)}, '/switch probe-fake/probe-fake-model:v8')`,
       );
       record(
         '/switch <same colon-id model> twice: both accepted, not truncated at its own colon',
         firstColonSwitchRes.ok === true && secondColonSwitchRes.ok === true,
-        { firstColonSwitchRes, secondColonSwitchRes },
+        { firstColonSwitchRes, afterFirstColonModelId, secondColonSwitchRes },
       );
     }
   } catch (err) {

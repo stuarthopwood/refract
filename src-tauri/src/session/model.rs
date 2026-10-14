@@ -292,16 +292,16 @@ pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
 /// @<role>` (previously two different lists) -- `cycleOrder` + `plan` + the core chat roles
 /// (so e.g. `/role smol` still validates with `smol` removed from `cycleOrder`) + any genuinely
 /// CUSTOM role actually configured in `modelRoles`, filtered by `model_support::merge_chat_roles`
-/// (workload/model-kind roles #766 excludes, own doc comment there). Ctrl+R itself stays
-/// narrower (`known_role_list` above, cycleOrder + plan only, decided) -- this is only for the
-/// TEXT commands. The two `omp` config reads run concurrently (same `try_join!` pattern
-/// `ipc::model::model_list_roles` already uses).
+/// (workload/model-kind roles #766 excludes, own doc comment there). Ctrl+R stays narrower
+/// (`known_role_list` above, decided) -- TEXT commands only. The two `omp` config reads run
+/// SEQUENTIALLY, not concurrently: a `try_join!` version raced two simultaneous `omp config
+/// get` calls against the same profile and intermittently returned an incomplete `cycleOrder`
+/// read live; a rare text-command path, not a hot poll, so correctness wins here.
 pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
-    let (roles, model_roles) = tokio::try_join!(known_role_list(), async {
-        crate::ipc::model_roles::get_model_roles()
-            .await
-            .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))
-    })?;
+    let roles = known_role_list().await?;
+    let model_roles = crate::ipc::model_roles::get_model_roles()
+        .await
+        .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
     Ok(model_support::merge_chat_roles(
         roles,
         model_roles.into_keys(),
