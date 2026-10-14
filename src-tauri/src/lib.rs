@@ -275,13 +275,15 @@ pub fn run() {
     // needs the registry too, for the Session's live display name -- the same `Arc` every
     // agent-backed handler already shares, never a second store instance.
     let events = events::EventSink::new(app_handle_slot.clone(), registry.clone());
-    let events_for_memory_monitor = events.clone(); // lane R5 (#788): low-memory sampler
+    let events_for_memory_monitor = events.clone();
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     shell::memory::start_monitor(session_manager.clone(), events_for_memory_monitor);
     let session_manager_for_exit = session_manager.clone();
-    // Lane R11b (issue #794): the startup update check runs inside `setup` below; the
-    // install-on-quit hook runs in `ExitRequested` further down -- neither is `AppState::
-    // session_manager`'s own path, so a dedicated clone each (same for `data_dir_for_setup`).
+    // Lane R11b (issue #794): the startup resolve-installing-state-then-check runs inside the
+    // `setup` closure below (after the window is shown, contracts/ipc.md "Startup behaviour");
+    // the install-on-quit hook runs in the `ExitRequested` handler further down. Neither is
+    // `AppState::session_manager`'s own agent-backed path, so a dedicated clone each, same
+    // reasoning as `session_manager_for_exit`/`data_dir_for_setup` just above/below.
     let session_manager_for_updates_startup = session_manager.clone();
     let update_state = std::sync::Arc::new(tokio::sync::Mutex::new(update_state));
     let update_state_for_setup = update_state.clone();
@@ -450,12 +452,10 @@ pub fn run() {
                         .await;
                 });
             }
-
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
-
     // Port of `src/main/index.ts`'s own `before-quit` stop-all (tasks.md T029): every live
     // `omp` process is asked to exit gracefully (and force-killed past its own grace period,
     // `OmpProcess::stop`) before the app itself actually quits. `prevent_exit` defers Tauri's own

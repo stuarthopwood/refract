@@ -3,26 +3,32 @@
 // "Pre-declare per-lane Rust files").
 //
 // Port of `src/main/omp/subagentStream.ts` (`applySubagentProgress`) plus the subagent-tracking
-// half of `SessionAgent.ts` (`handleTaskStart`/`handleTaskUpdate`) -- deliberately NOT
-// `handleTaskEnd`'s own "safety net" (see below) and NOT the full `reconcileSubagentsOnAttach`
-// (a simplified, disclosed subset, see `on_attach_reconcile`'s own doc comment).
+// half of `SessionAgent.ts` (`handleTaskStart`/`handleTaskUpdate`/`handleTaskEnd`) and the
+// authoritative-completion half of `transcript.ts` (`mapProgressStatus`/`applyAsyncResultJobs`,
+// FINDINGS item 22(e)).
 //
-// Issue #712 (the actual fix this lane builds, not the bug): Electron's `handleTaskEnd` marks
-// every still-`running` subagent of an ENDING `task` call `finished`/`failed` as a "safety net" --
-// correct for a SYNCHRONOUS `task` call (which blocks until every subagent truly finishes, so by
-// the time its own `tool_execution_end` arrives, the last `tool_execution_update` has already
-// reported the real terminal status), but WRONG for an ASYNC/background `task` call: OMP's own
-// docs say that call returns (and so fires `tool_execution_end`) the moment the batch is
-// *spawned*, while the subagents keep running in the background -- Electron's safety net then
-// stamps them "finished" within moments of starting, while they are still working (issue #712's
-// own bug report). This Rust port never force-settles on a `tool_execution_end` at all: status
-// comes ONLY from each `tool_execution_update`'s own `progress[].status` field (which keeps
-// streaming for a background batch too, per OMP's own docs), so a background subagent stays
-// `running` for as long as OMP itself reports it is. The list also, deliberately, does NOT clear
-// at the next `agent_start` the way Electron's turn-scoped `runtime.subagents` does (issue #712's
-// "the pill stays visible while any agent runs, across turns"): it is cleared only by
-// `on_conversation_reset` (issue #577) or settled to `Exited` by `on_attach_reconcile` (issue
-// #489) when the OMP process itself is recycled.
+// Round 2 (code review + test review + performance gate, round 1): the status mapping now
+// settles every terminal status OMP actually sends (not only `"completed"`), the `task` call's
+// own END frame (`tool_execution_end`'s `result.details.progress`) is read the same way an
+// update frame is -- applying whatever REAL per-index status it carries, never Electron's own
+// blanket "every still-running becomes Finished/Failed" safety net (issue #712's actual bug: a
+// background/async `task` call's end frame arrives the moment the batch is spawned, long before
+// its subagents are genuinely done, so a blanket override there is exactly the bug, but reading
+// the SAME frame's own real per-index progress is not -- it only ever applies a status OMP
+// itself reported for that index, same as an update frame would) -- and ANY `tool_execution_end`'s
+// `result.details.jobs[]` (the `wait` tool's own completion carrier, `transcript.ts`'s own
+// `jobsFromDetails`/`applyAsyncResultJobs`, matched here by `label === name_or_task` since this
+// build does not track a separate `job_id`) settles a `Running` entry with no `progress` match at
+// all. `on_exit` now settles every `Running` entry to `Exited` immediately (not only on the next
+// `launch()`), so a crash or a deliberate stop clears the pill without waiting for a reattach.
+//
+// Not implemented this round (disclosed, see the PR body): `get_subagents`/`subagent_lifecycle`/
+// `set_subagent_subscription` were not probed against a real `omp` (no live model budget this
+// round); the standalone live `custom`/`async-result` MESSAGE frame (as opposed to a
+// `tool_execution_end`'s own `result.details.jobs[]`, which IS handled) was not identified with
+// confidence in the time available and so is not separately handled; `on_attach_reconcile` still
+// does not settle the transcript's own `subagent` rows or add a "No live output" notice for an
+// empty stream (Electron gate findings 4 and 6).
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
 // decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
@@ -35,8 +41,15 @@
 // `on_attach_reconcile` right before its own `sync_from_state` call (the same point TS's
 // `reconcileSubagentsOnAttach()` runs); `conversations.rs`'s `start_new_conversation`/
 // `open_conversation` each call `on_conversation_reset` before their own `sync_from_state` call.
+//
+// Split round 2 (issue #806, 600-line cap): the progress/jobs application and synthetic-stream
+// helpers live in the sibling `subagents_progress.rs` (`map_progress_status`,
+// `apply_progress_to_batch`, `apply_jobs`, `apply_subagent_progress_in_place`, and the small
+// `tool_item_id`/`tool_args_preview`/`output_text`/`summaries_to_value`/`emit_subagents_update`/
+// `queue_patch_ops` helpers they share) -- this file keeps the data model, the lane hooks, the
+// public IPC-facing entry points, and `handle_task_start`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
@@ -44,10 +57,16 @@ use crate::omp::process::ReadyWaitStage;
 
 use super::agent::SessionAgent;
 
+#[path = "subagents_progress.rs"]
+mod subagents_progress;
+use subagents_progress::{
+    apply_jobs, apply_progress_to_batch, emit_subagents_update, summaries_to_value,
+};
+
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SummaryStatus {
+pub(super) enum SummaryStatus {
     Running,
     Finished,
     Failed,
@@ -66,7 +85,7 @@ impl SummaryStatus {
 }
 
 #[derive(Debug, Clone)]
-struct SummaryEntry {
+pub(super) struct SummaryEntry {
     id: String,
     tool_call_id: String,
     spec_index: u32,
@@ -89,9 +108,17 @@ pub(super) struct State {
     /// `TranscriptItem`-shaped rows), keyed by summary id. The `chat.subagentSnapshot` source and
     /// the `subagent:patch` diff base for whichever id is currently `visible_id`.
     streams: HashMap<String, Vec<Value>>,
+    /// Performance gate round 1: one `HashSet` of row ids per stream, kept alongside `streams`
+    /// so a new `recentTools`/`recentOutput` entry's "already rendered?" check is O(1) instead of
+    /// a linear scan of the (ever-growing) stream vec itself.
+    stream_ids: HashMap<String, HashSet<String>>,
     /// `chat.setVisibleSubagent`'s own selection: `None` = panel closed / nothing selected, so
     /// no `subagent:patch` is ever forwarded.
     visible_id: Option<String>,
+    /// Performance gate round 1 (coalescing): ops accumulated for the CURRENTLY visible subagent
+    /// since the last flush, and whether a flush timer is already pending.
+    pending_patch_ops: Vec<Value>,
+    patch_timer_pending: bool,
 }
 
 fn now_ms() -> i64 {
@@ -103,6 +130,7 @@ fn now_ms() -> i64 {
 
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
     match frame_type {
+        "agent_start" => prune_finished_streams(agent).await,
         "tool_execution_start" => {
             if frame.get("toolName").and_then(Value::as_str) == Some("task") {
                 let tool_call_id = frame
@@ -117,18 +145,61 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
         "tool_execution_update"
             if frame.get("toolName").and_then(Value::as_str) == Some("task") =>
         {
-            handle_task_update(agent, frame).await;
+            let tool_call_id = frame
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if let Some(progress) = frame
+                .get("partialResult")
+                .and_then(|p| p.get("details"))
+                .and_then(|d| d.get("progress"))
+                .and_then(Value::as_array)
+            {
+                apply_progress_to_batch(agent, &tool_call_id, progress, false).await;
+            }
         }
-        // Deliberately no `tool_execution_end` arm: see this file's own header for why
-        // Electron's "mark running finished at call end" safety net is not ported.
+        // Issue #712 (the real fix, not the bug): the `task` call's OWN end frame still applies
+        // whatever REAL per-index status its `result.details.progress` carries (exactly like an
+        // update frame) -- it never force-overrides an index with no matching entry, so a
+        // background batch whose subagents are still genuinely running is untouched here.
+        "tool_execution_end" => {
+            let tool_call_id = frame
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if frame.get("toolName").and_then(Value::as_str) == Some("task") {
+                if let Some(progress) = frame
+                    .get("result")
+                    .and_then(|r| r.get("details"))
+                    .and_then(|d| d.get("progress"))
+                    .and_then(Value::as_array)
+                {
+                    apply_progress_to_batch(agent, &tool_call_id, progress, true).await;
+                }
+            }
+            // `transcript.ts`'s own `jobsFromDetails`/`applyAsyncResultJobs`: the `wait` tool's
+            // own end frame is the other real carrier of per-subagent completion, checked on
+            // EVERY tool_execution_end regardless of the calling tool's name.
+            if let Some(jobs) = frame
+                .get("result")
+                .and_then(|r| r.get("details"))
+                .and_then(|d| d.get("jobs"))
+                .and_then(Value::as_array)
+            {
+                apply_jobs(agent, jobs).await;
+            }
+        }
         _ => {}
     }
 }
 
-pub(super) async fn on_exit(_agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
-    // No-op: a process exit is handled the same way a restart is, through `on_attach_reconcile`
-    // the NEXT time `launch()` runs (Resume/Recover), never here -- matches TS, which only ever
-    // resolves a stale `running` summary on the next attach, never at the exit itself.
+/// Settles every `Running` summary to `Exited` immediately (not only on the next `launch()`'s own
+/// `on_attach_reconcile`): a crash or a deliberate stop must clear the pill right away, matching
+/// the CRITICAL gate finding ("in on_exit, settle Running to exited").
+pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
+    settle_running_to_exited(agent).await;
 }
 
 pub(super) async fn on_start_progress(
@@ -139,16 +210,7 @@ pub(super) async fn on_start_progress(
     // No-op: the start-progress banner is `session::start_queue`'s own concern.
 }
 
-/// `session::agent::launch`'s own hook (see this file's own header), called once per `launch()`
-/// attempt, right before `sync_from_state`. Simplified from `reconcileSubagentsOnAttach` (issue
-/// #489): resolves every summary THIS `SessionAgent` instance still remembers as `Running` to
-/// `Exited` (a fresh `OmpProcess` is about to attach -- or just did -- and has no way to confirm
-/// the old one's in-flight work survived it), covering the common "Resume/Recover after a crash,
-/// same app run" case. Does NOT re-derive historical finished/failed candidates from the
-/// reattached transcript's own `subagent` rows the way TS's fuller version does (a disclosed
-/// simplification for a full APP restart, where this `SessionAgent` instance itself is brand new
-/// and so starts with an empty list regardless -- see the PR body's own "Open problems").
-pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
+async fn settle_running_to_exited(agent: &SessionAgent) {
     let summaries_value = agent
         .with_subagents_state(|s| {
             let mut changed = false;
@@ -162,36 +224,76 @@ pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
         })
         .await;
     if let Some(value) = summaries_value {
-        agent
-            .events()
-            .emit_subagents_update(agent.session_id(), value);
+        emit_subagents_update(agent, value).await;
     }
 }
 
+/// `session::agent::launch`'s own hook (see this file's own header), called once per `launch()`
+/// attempt, right before `sync_from_state`. Simplified from `reconcileSubagentsOnAttach` (issue
+/// #489): resolves every summary THIS `SessionAgent` instance still remembers as `Running` to
+/// `Exited` (a fresh `OmpProcess` is about to attach -- or just did -- and has no way to confirm
+/// the old one's in-flight work survived it), covering the common "Resume/Recover after a crash,
+/// same app run" case. Does NOT re-derive historical finished/failed candidates from the
+/// reattached transcript's own `subagent` rows the way TS's fuller version does, and does not add
+/// the "No live output" notice for an empty stream (Electron gate findings 4 and 6) -- disclosed
+/// simplifications, see the PR body's own "Open problems".
+pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
+    settle_running_to_exited(agent).await;
+}
+
 /// `conversations.rs`'s own hook (issue #577): the previous Conversation's subagents (and their
-/// streams/selection) never belong to the brand-new or just-switched-to one.
+/// streams/selection) never belong to the brand-new or just-switched-to one. Also schedules a
+/// readout update (code-review finding, round 1): the chip's own `subagentCount` must not keep
+/// showing the old Conversation's count if this clear is the only thing that changed.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     let had_any = agent
         .with_subagents_state(|s| {
             let had = !s.summaries.is_empty();
             s.summaries.clear();
             s.streams.clear();
+            s.stream_ids.clear();
             s.visible_id = None;
+            s.pending_patch_ops.clear();
             had
         })
         .await;
     if had_any {
-        agent
-            .events()
-            .emit_subagents_update(agent.session_id(), Value::Array(Vec::new()));
+        emit_subagents_update(agent, Value::Array(Vec::new())).await;
     }
+    super::readout::schedule_readout_update(agent).await;
+}
+
+/// Performance gate round 1 (memory growth): at every `agent_start`, drops the (potentially
+/// large) stream content of every subagent that has both settled (not `Running`) AND is not the
+/// currently visible one -- `summaries` themselves are kept (the panel/pill still needs their
+/// final status), only the heavy per-row stream data is freed. A long Conversation's finished
+/// batches therefore cost a small, bounded summary row each, never an ever-growing stream.
+async fn prune_finished_streams(agent: &SessionAgent) {
+    agent
+        .with_subagents_state(|s| {
+            let visible = s.visible_id.clone();
+            let droppable: Vec<String> = s
+                .summaries
+                .iter()
+                .filter(|e| e.status != SummaryStatus::Running && Some(&e.id) != visible.as_ref())
+                .map(|e| e.id.clone())
+                .collect();
+            for id in droppable {
+                s.streams.remove(&id);
+                s.stream_ids.remove(&id);
+            }
+        })
+        .await;
 }
 
 /// `chat.setVisibleSubagent` (`ipc::subagents`): selects which subagent's live stream is
 /// forwarded as `subagent:patch`.
 pub async fn set_visible(agent: &SessionAgent, subagent_id: Option<String>) {
     agent
-        .with_subagents_state(|s| s.visible_id = subagent_id)
+        .with_subagents_state(|s| {
+            s.visible_id = subagent_id;
+            s.pending_patch_ops.clear();
+        })
         .await;
 }
 
@@ -206,6 +308,16 @@ pub async fn snapshot(agent: &SessionAgent, subagent_id: &str) -> Option<Vec<Val
             }
             Some(s.streams.get(subagent_id).cloned().unwrap_or_default())
         })
+        .await
+}
+
+/// Code-review round 1: `ipc::conversations::build_snapshot`'s own one-line hook, the
+/// `SubagentSummary[]` counterpart to `readout::current_readout_value` -- the live list instead
+/// of the permanent empty seed, so a Session switch/split/resume shows running agents straight
+/// away (matches `util.ts`'s own `agent.runtimeSnapshot.subagents` seed).
+pub async fn current_summaries_value(agent: &SessionAgent) -> Value {
+    agent
+        .with_subagents_state(|s| summaries_to_value(&s.summaries))
         .await
 }
 
@@ -311,237 +423,12 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
         .with_subagents_state(|s| {
             for entry in &created {
                 s.streams.entry(entry.id.clone()).or_default();
+                s.stream_ids.entry(entry.id.clone()).or_default();
             }
             s.summaries.extend(created);
             summaries_to_value(&s.summaries)
         })
         .await;
-    agent
-        .events()
-        .emit_subagents_update(agent.session_id(), summaries_value);
+    emit_subagents_update(agent, summaries_value).await;
     super::readout::schedule_readout_update(agent).await;
-}
-
-fn map_progress_status(status: &str) -> SummaryStatus {
-    if status == "completed" {
-        return SummaryStatus::Finished;
-    }
-    let lower = status.to_lowercase();
-    if lower.contains("failed") || lower.contains("cancelled") || lower.contains("error") {
-        return SummaryStatus::Failed;
-    }
-    SummaryStatus::Running
-}
-
-/// `tool_execution_update` for the `task` tool (port of `handleTaskUpdate`): scoped first to
-/// only this call's own batch (`tool_call_id`), then correlated by `progress[].id` within that
-/// batch, falling back to position when no id match is found -- identical to TS's own
-/// disambiguation (see `handle_task_start`'s own occurrence suffix, the reason a bare id match
-/// can legitimately miss for a duplicate-named batch).
-async fn handle_task_update(agent: &SessionAgent, frame: &Value) {
-    let Some(progress_list) = frame
-        .get("partialResult")
-        .and_then(|p| p.get("details"))
-        .and_then(|d| d.get("progress"))
-        .and_then(Value::as_array)
-    else {
-        return;
-    };
-    if progress_list.is_empty() {
-        return;
-    }
-    let tool_call_id = frame
-        .get("toolCallId")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-
-    let (summaries_value, visible_patch) = agent
-        .with_subagents_state(|s| {
-            let batch_indices: Vec<usize> = s
-                .summaries
-                .iter()
-                .enumerate()
-                .filter(|(_, e)| e.tool_call_id == tool_call_id)
-                .map(|(i, _)| i)
-                .collect();
-            if batch_indices.is_empty() {
-                return (None, None);
-            }
-            let mut changed = false;
-            let mut visible_patch: Option<(String, usize, Vec<Value>)> = None;
-            for (i, progress) in progress_list.iter().enumerate() {
-                let progress_id = progress.get("id").and_then(Value::as_str).unwrap_or("");
-                let composite_id = format!("{tool_call_id}:{progress_id}");
-                let target_index = batch_indices
-                    .iter()
-                    .copied()
-                    .find(|&idx| s.summaries[idx].id == composite_id)
-                    .or_else(|| batch_indices.get(i).copied());
-                let Some(target_index) = target_index else {
-                    continue;
-                };
-                let status_str = progress.get("status").and_then(Value::as_str).unwrap_or("");
-                let new_status = map_progress_status(status_str);
-                let new_duration = progress
-                    .get("durationMs")
-                    .and_then(Value::as_i64)
-                    .filter(|d| *d > 0);
-                let entry = &mut s.summaries[target_index];
-                if entry.status != new_status {
-                    entry.status = new_status;
-                    changed = true;
-                }
-                if new_duration.is_some() && entry.duration_ms != new_duration {
-                    entry.duration_ms = new_duration;
-                    changed = true;
-                }
-
-                let stream_id = entry.id.clone();
-                let is_visible = s.visible_id.as_deref() == Some(stream_id.as_str());
-                let current_stream = s.streams.get(&stream_id).cloned().unwrap_or_default();
-                let next_stream = apply_subagent_progress(&current_stream, &stream_id, progress);
-                if next_stream.len() != current_stream.len() {
-                    if is_visible {
-                        visible_patch =
-                            Some((stream_id.clone(), current_stream.len(), next_stream.clone()));
-                    }
-                    s.streams.insert(stream_id, next_stream);
-                }
-            }
-            let summaries_value = changed.then(|| summaries_to_value(&s.summaries));
-            (summaries_value, visible_patch)
-        })
-        .await;
-
-    if let Some(value) = summaries_value {
-        agent
-            .events()
-            .emit_subagents_update(agent.session_id(), value);
-    }
-    if let Some((stream_id, previous_len, next)) = visible_patch {
-        let ops = diff_stream(previous_len, &next);
-        agent
-            .events()
-            .emit_subagent_patch(agent.session_id(), &stream_id, json!(ops));
-    }
-    super::readout::schedule_readout_update(agent).await;
-}
-
-fn tool_item_id(subagent_id: &str, tool: &str, end_ms: i64) -> String {
-    format!("subagent-tool:{subagent_id}:{end_ms}:{tool}")
-}
-
-fn tool_args_preview(entry: &Value) -> String {
-    if let Some(args) = entry.get("args").and_then(Value::as_str) {
-        return args.to_string();
-    }
-    entry
-        .get("intent")
-        .and_then(Value::as_str)
-        .or_else(|| entry.get("tool").and_then(Value::as_str))
-        .unwrap_or("")
-        .to_string()
-}
-
-/// `recentOutput[]`'s populated element shape was never observed live (FINDINGS item 36): read
-/// defensively -- a plain string, or a common `{text}`/`{content}` wrapper; anything else is
-/// skipped rather than guessed at.
-fn output_text(entry: &Value) -> Option<String> {
-    if let Some(s) = entry.as_str() {
-        return Some(s.to_string());
-    }
-    if entry.is_object() {
-        if let Some(t) = entry.get("text").and_then(Value::as_str) {
-            return Some(t.to_string());
-        }
-        if let Some(c) = entry.get("content").and_then(Value::as_str) {
-            return Some(c.to_string());
-        }
-    }
-    None
-}
-
-/// Port of `applySubagentProgress`: upserts a synthetic `tool`-kind row per new `recentTools[]`
-/// entry and an `assistant-text`-kind row per new `recentOutput[]` entry, both keyed by a stable
-/// id so a call already rendered is never duplicated as the window grows. Only ever APPENDS
-/// (never mutates an existing row), so `diff_stream` below can diff by length alone.
-fn apply_subagent_progress(items: &[Value], subagent_id: &str, progress: &Value) -> Vec<Value> {
-    let mut next = items.to_vec();
-    if let Some(recent_tools) = progress.get("recentTools").and_then(Value::as_array) {
-        for entry in recent_tools {
-            let tool = entry.get("tool").and_then(Value::as_str).unwrap_or("");
-            let end_ms = entry.get("endMs").and_then(Value::as_i64).unwrap_or(0);
-            let id = tool_item_id(subagent_id, tool, end_ms);
-            if next
-                .iter()
-                .any(|item| item.get("id").and_then(Value::as_str) == Some(id.as_str()))
-            {
-                continue;
-            }
-            let is_error = entry
-                .get("isError")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            next.push(json!({
-                "kind": "tool",
-                "id": id,
-                "toolCallId": id,
-                "tool": tool,
-                "target": tool_args_preview(entry),
-                "status": if is_error { "error" } else { "done" },
-                "args": entry.get("args").cloned().unwrap_or(Value::Null),
-            }));
-        }
-    }
-    if let Some(recent_output) = progress.get("recentOutput").and_then(Value::as_array) {
-        for (index, entry) in recent_output.iter().enumerate() {
-            let id = format!("subagent-output:{subagent_id}:{index}");
-            if next
-                .iter()
-                .any(|item| item.get("id").and_then(Value::as_str) == Some(id.as_str()))
-            {
-                continue;
-            }
-            let Some(text) = output_text(entry) else {
-                continue;
-            };
-            next.push(
-                json!({ "kind": "assistant-text", "id": id, "text": text, "streaming": false }),
-            );
-        }
-    }
-    next
-}
-
-/// `subagent:patch`'s own `TranscriptOp[]`: every row past `previous_len` is a brand-new upsert
-/// (`apply_subagent_progress` only ever appends, never mutates in place).
-fn diff_stream(previous_len: usize, next: &[Value]) -> Vec<Value> {
-    next[previous_len..]
-        .iter()
-        .map(|item| json!({ "op": "upsert", "item": item }))
-        .collect()
-}
-
-fn summaries_to_value(summaries: &[SummaryEntry]) -> Value {
-    Value::Array(
-        summaries
-            .iter()
-            .map(|e| {
-                let mut obj = json!({
-                    "id": e.id,
-                    "toolCallId": e.tool_call_id,
-                    "specIndex": e.spec_index,
-                    "nameOrTask": e.name_or_task,
-                    "status": e.status.as_wire(),
-                    "startedAt": e.started_at,
-                });
-                if let Some(duration) = e.duration_ms {
-                    obj.as_object_mut()
-                        .expect("summary entry serialises to a JSON object")
-                        .insert("durationMs".to_string(), json!(duration));
-                }
-                obj
-            })
-            .collect(),
-    )
 }

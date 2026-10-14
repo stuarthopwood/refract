@@ -265,21 +265,11 @@ impl SessionManager {
         self.events.emit_session_list_changed();
     }
 
-    /// Issue #788 (lane R5): the live-agent count `shell::memory`'s own low-memory sampler
-    /// reports in its `memory:warning` payload. Mirrors `SessionManager.ts`'s own
-    /// `liveAgentCount()` exactly: Sessions with a live agent whose status is not `stopped`
-    /// right now (an agent that has merely been opened once and is now idle/stopped again does
-    /// not count as "live" for this purpose).
+    /// Issue #788 (lane R5): `shell::memory`'s own `memory:warning` payload. Mirrors
+    /// `SessionManager.ts`'s own `liveAgentCount()`: agents whose status isn't `stopped`.
     pub async fn live_agent_count(&self) -> usize {
-        let agents: Vec<Arc<SessionAgent>> = self
-            .agents
-            .lock()
-            .expect("agents mutex poisoned")
-            .values()
-            .cloned()
-            .collect();
         let mut count = 0;
-        for agent in agents {
+        for agent in self.live_agents() {
             if agent.status().await != crate::session::SessionStatus::Stopped {
                 count += 1;
             }

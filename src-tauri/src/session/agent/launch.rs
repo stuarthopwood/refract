@@ -311,13 +311,14 @@ impl SessionAgent {
                 let _ = state.transcript.settle_interrupted_tool_rows();
             }
         }
-        // Told once here (after the merge, so it isn't dropped), BEFORE re-baselining below.
+        // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
+        // and BEFORE `sync_from_state` re-baselines `last_message_count` to the observed value.
         if let Some(notice) = rebaseline_notice {
             self.append_notice(notice, "info").await;
         }
-        crate::session::subagents::on_attach_reconcile(self).await; // lane R5 (#788, #489)
+        crate::session::subagents::on_attach_reconcile(self).await;
+        crate::session::readout::on_launch(self).await;
         self.sync_from_state(&state_data).await;
-
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;
@@ -467,7 +468,6 @@ impl SessionAgent {
         }
         crate::session::readout::on_sync_from_state(self, state).await; // lane R5 (#788)
     }
-
     pub(super) fn spawn_frame_listener(
         &self,
         proc: Arc<OmpProcess>,

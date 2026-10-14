@@ -10,6 +10,26 @@
 // state, so it is not part of this file); `session::subagents` owns the subagent list itself --
 // `subagentCount` below is read from its own `subagent_count` accessor, never duplicated here.
 //
+// Round 2 (code review + test review + performance gate, round 1):
+// - The last computed readout is now retained (`State::last_readout`) and exposed via
+//   `current_readout_value` so `ipc::conversations::build_snapshot` (one-line hook) can return the
+//   live value instead of the permanent "nothing read yet" shape (`util.ts:49-71`): the chips,
+//   branch label and subagent count no longer go blank on every Session switch/split/resume.
+// - The PR chip re-poll is back: `on_launch` (a new one-line `launch()` hook) starts a per-agent
+//   60 s timer the first readout after attach + every tick after refreshes it, stopped by
+//   `on_exit` -- matches `SessionAgent.ts`'s own `prPollTimer` (`setInterval`/`clearInterval`).
+// - `refresh_pull_request` is now spawned, never awaited inside `compute_readout`'s own
+//   single-flight run (`void this.refreshPullRequest()`, `SessionAgent.ts:1832`): a `gh` network
+//   call no longer holds back every OTHER chip's own prompt recompute.
+// - A rerun queued while a compute is already in flight now re-arms the FULL debounce (calls
+//   `schedule_readout_update` again) instead of looping with no wait at all, so two emissions are
+//   always at least `READOUT_COALESCE_MS` apart -- the previous "resolve pending immediately" loop
+//   could emit far more often than the acceptance bound under a fast, steady stream of triggers.
+//   `READOUT_COALESCE_MS` itself is now 100 ms (issue #788's own acceptance bound), not 50.
+// - `diff_stat`/`compute_branch` now run concurrently (`tokio::join!`), not one after another.
+// - `readout:update` is no longer pushed for a hidden Session (`transcript:patch`'s own
+//   visibility rule, `SessionManager.ts:125-128`).
+//
 // Issue #712 (folded in): the live checked-out branch and subagent count both read the CURRENT
 // state at compute time, never a turn-scoped snapshot cleared at the next `agent_start` --
 // `session::subagents`'s own doc comment has the full reasoning for why that heuristic is not
@@ -18,10 +38,10 @@
 // only in Rust is acceptable"), computed fresh every readout tick via `git symbolic-ref`/`git
 // rev-parse` against the Session's own worktree (never retained across a transient git failure,
 // same stance `changes` already takes). The issue's own suggested dedicated worktree-HEAD-file
-// watcher is NOT implemented (a disclosed simplification, see the PR body): the issue's own text
-// allows "if the watcher is unreliable [on Windows/OneDrive paths], turn end and tool end is the
-// floor" -- this recomputes on every tool call end (a superset of "every GIT-touching tool call
-// end"), every turn start/end, and every attach, which already exceeds that floor.
+// watcher is NOT implemented this round either (still disclosed, see the PR body): nobody has
+// probed whether it is reliable on Windows/OneDrive paths; this recomputes on every tool call end
+// (a superset of "every GIT-touching tool call end"), every turn start/end, and every attach,
+// which the issue's own text accepts as the floor when the watcher itself is not built.
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
 // decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
@@ -29,18 +49,18 @@
 // cheap and allocation-free as a no-op; lane R5 adds its readout behaviour inside these
 // functions, never inside any file under `session/agent/`.
 //
-// Two small core hooks this lane adds (issue #784, "if you truly need a core change, keep it to
-// one line"): `session::agent::launch`'s own `sync_from_state` calls `on_sync_from_state` right
-// after persisting its own registry patch (the ONE place `contextUsage`/`todoPhases` can be
-// refreshed -- `get_state` syncs at launch, turn settle, new Conversation, and Conversation
-// switch all funnel through it already, closing issue #577's staleness for free); `conversations
-// .rs`'s `start_new_conversation`/`open_conversation` each call `on_conversation_reset` before
-// their own `sync_from_state` call, so a stale `contextUsage`/`todoProgress` reading from the
-// PREVIOUS Conversation never survives into the new one (issue #577) -- `changes`/`pullRequest`
-// deliberately keep working unchanged across that reset (they are worktree-based, not
+// Core hooks this lane adds (issue #784, "if you truly need a core change, keep it to one line"):
+// `session::agent::launch`'s own `launch()` calls `on_launch` right before `sync_from_state` (the
+// PR-poll timer, started once per life); `sync_from_state` itself calls `on_sync_from_state`
+// right after persisting its own registry patch (the ONE place `contextUsage`/`todoPhases` can be
+// refreshed); `conversations.rs`'s `start_new_conversation`/`open_conversation` each call
+// `on_conversation_reset` before their own `sync_from_state` call (issue #577) -- `changes`/
+// `pullRequest` deliberately keep working unchanged across that reset (worktree-based, not
 // Conversation-based, matching #577's own "Changes and Pull request... correctly stay").
 
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -53,11 +73,15 @@ use crate::omp::process::ReadyWaitStage;
 
 use super::agent::SessionAgent;
 
-/// Mirrors `SessionAgent.ts`'s own `READOUT_COALESCE_MS`; issue #788's own acceptance criterion
-/// ("the readout push does not exceed one event per 100 ms per Session under streaming") is a
-/// looser bound than this.
-const READOUT_COALESCE_MS: u64 = 50;
+/// Issue #788's own acceptance criterion: "the readout push does not exceed one event per 100 ms
+/// per Session under streaming" -- test-review/perf gate round 1 finding: the PREVIOUS 50 ms value
+/// plus an immediate-rerun-on-pending loop could exceed this; both are fixed together (this
+/// constant raised to the bound itself, and the rerun path now re-arms the full debounce instead
+/// of looping with no wait -- see `run_readout_update`'s own doc comment).
+const READOUT_COALESCE_MS: u64 = 100;
 const GIT_READ_TIMEOUT: Duration = Duration::from_secs(3);
+/// Mirrors `SessionAgent.ts`'s own `PR_POLL_INTERVAL_MS`.
+const PR_POLL_INTERVAL_MS: u64 = 60_000;
 
 #[derive(Debug, Clone)]
 struct ContextUsageState {
@@ -103,6 +127,15 @@ pub(super) struct State {
     timer_pending: bool,
     in_flight: bool,
     pending: bool,
+    /// Code-review round 1: the last successfully assembled `SessionReadout` wire value, so a
+    /// Session snapshot (`ipc::conversations::build_snapshot`) can return the live reading
+    /// instead of the permanent "nothing read yet" shape. `None` until the first `compute_readout`
+    /// run completes.
+    last_readout: Option<Value>,
+    /// Performance/code-review round 1: bumped by `on_launch` (a new life starting a new PR-poll
+    /// timer) and by `on_exit` (stopping it) -- the spawned timer loop checks this on every tick
+    /// and exits the moment it no longer matches, so at most one timer is ever live per agent.
+    pr_poll_generation: u64,
 }
 
 fn now_ms() -> i64 {
@@ -149,11 +182,14 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
 pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
     // A process exit mid-turn must not leave a phantom "turn running" reading behind forever
     // (the chip otherwise never clears once `agent_start` set it, since no `session_settled`
-    // frame is coming from a process that has already exited).
+    // frame is coming from a process that has already exited). Also stops the PR-poll timer
+    // (code-review round 1): bumping the generation makes the spawned loop's own next check see
+    // a mismatch and return.
     let had_turn = agent
         .with_readout_state(|s| {
             let had = s.turn_started_at.is_some();
             s.turn_started_at = None;
+            s.pr_poll_generation = s.pr_poll_generation.wrapping_add(1);
             had
         })
         .await;
@@ -168,6 +204,44 @@ pub(super) async fn on_start_progress(
     _elapsed_ms: u64,
 ) {
     // No-op: the start-progress banner is `session::start_queue`'s own concern.
+}
+
+/// `session::agent::launch`'s own hook, called once per `launch()` attempt (code-review/HIGH
+/// round 1: "bring back the per-agent 60 s timer, started at launch and stopped at exit"). Starts
+/// a NEW generation's poll loop: an immediate refresh (spawned, not awaited -- matches
+/// `launch()`'s own unconditional first `void this.refreshPullRequest()`), then a refresh every
+/// `PR_POLL_INTERVAL_MS` after that, until `on_exit` bumps the generation this loop was spawned
+/// with past what `State` currently holds.
+pub(super) async fn on_launch(agent: &SessionAgent) {
+    let generation = agent
+        .with_readout_state(|s| {
+            s.pr_poll_generation = s.pr_poll_generation.wrapping_add(1);
+            s.pr_poll_generation
+        })
+        .await;
+    let agent = agent.arc();
+    tokio::spawn(async move {
+        loop {
+            let Some(session) = agent
+                .registry()
+                .lock()
+                .await
+                .get_session(agent.session_id())
+                .cloned()
+            else {
+                return;
+            };
+            refresh_pull_request(&agent, &session.worktree_path, &session.branch).await;
+            schedule_readout_update(&agent).await;
+            tokio::time::sleep(Duration::from_millis(PR_POLL_INTERVAL_MS)).await;
+            let still_current = agent
+                .with_readout_state(|s| s.pr_poll_generation == generation)
+                .await;
+            if !still_current {
+                return;
+            }
+        }
+    });
 }
 
 /// `session::agent::launch`'s own `sync_from_state` hook (one line added there, see this file's
@@ -192,7 +266,10 @@ pub(super) async fn on_sync_from_state(agent: &SessionAgent, state: &Value) {
 /// Conversation's `contextUsage`/`todoProgress` must never be shown as if it were this one's --
 /// cleared here, BEFORE the caller's own `sync_from_state` call publishes the real (possibly
 /// absent) fresh reading. `pull_request`/`pull_request_branch` are deliberately untouched
-/// (#577's own "Changes and Pull request... are worktree-based and correctly stay").
+/// (#577's own "Changes and Pull request... are worktree-based and correctly stay"). Also
+/// schedules a readout update (test-review round 1 MEDIUM finding): if the caller's own
+/// `get_state` fails right after this, the old `contextUsage`/`subagentCount` must not keep
+/// showing on screen, which only a fresh emit (even with the now-cleared values) corrects.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_readout_state(|s| {
@@ -201,6 +278,29 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
             s.todo_phases = None;
         })
         .await;
+    schedule_readout_update(agent).await;
+}
+
+/// Code-review round 1: the last assembled readout, for `ipc::conversations::build_snapshot`'s
+/// own one-line hook. The documented "nothing read yet" empty shape when no `compute_readout` has
+/// ever completed for this agent (matches `EMPTY_READOUT`, never a guessed value).
+pub async fn current_readout_value(agent: &SessionAgent) -> Value {
+    agent
+        .with_readout_state(|s| s.last_readout.clone())
+        .await
+        .unwrap_or_else(empty_readout)
+}
+
+fn empty_readout() -> Value {
+    json!({
+        "changes": Value::Null,
+        "contextUsage": Value::Null,
+        "turnTime": Value::Null,
+        "pullRequest": Value::Null,
+        "subagentCount": Value::Null,
+        "todoProgress": Value::Null,
+        "branch": Value::Null,
+    })
 }
 
 fn parse_context_usage(value: &Value) -> Option<ContextUsageState> {
@@ -243,66 +343,85 @@ fn parse_todo_phases(value: &Value) -> Option<Vec<TodoPhaseState>> {
 /// overlapping one) -- port of `scheduleReadoutUpdate`/`runReadoutUpdate`. `pub(super)` (not
 /// private): `session::subagents`'s own `on_frame` calls this too, the same way
 /// `handleTaskStart`/`handleTaskUpdate` call `this.scheduleReadoutUpdate()` directly in TS.
-pub(super) async fn schedule_readout_update(agent: &SessionAgent) {
-    let should_spawn = agent
+///
+/// A plain `fn` returning an explicitly boxed future, NOT `async fn` (gate-fix, round 2): this
+/// function and `compute_readout` call each other (`compute_readout`'s own branch-changed PR
+/// refresh now re-triggers this), and two mutually-recursive `async fn`s each spawned inside
+/// `tokio::spawn` hit rustc's "cycle detected when computing type of opaque" (E0391) resolving
+/// the generated coroutine's `Send` bound -- the opaque return type of each needs the other's
+/// already resolved. Declaring THIS one's return type concretely up front (not inferred from its
+/// body) breaks the cycle; every call site still just calls it and `.await`s the result exactly
+/// as before.
+pub(super) fn schedule_readout_update(
+    agent: &SessionAgent,
+) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    let agent = agent.arc();
+    Box::pin(async move {
+        let should_spawn = agent
+            .with_readout_state(|s| {
+                if s.timer_pending {
+                    false
+                } else {
+                    s.timer_pending = true;
+                    true
+                }
+            })
+            .await;
+        if !should_spawn {
+            return;
+        }
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(READOUT_COALESCE_MS)).await;
+            agent.with_readout_state(|s| s.timer_pending = false).await;
+            run_readout_update(&agent).await;
+        });
+    })
+}
+
+/// Performance/test-review gate round 1: a trigger arriving while a compute is already running
+/// used to set `pending` and have this function loop straight back into another run with NO
+/// further wait -- under a fast, steady stream of triggers (a streaming turn) that could emit far
+/// more often than `READOUT_COALESCE_MS` apart, breaking issue #788's own "at most one event per
+/// 100 ms" acceptance bound. The rerun now goes back through `schedule_readout_update` instead,
+/// which re-arms the FULL debounce -- so two emissions are always at least `READOUT_COALESCE_MS`
+/// apart, never zero.
+async fn run_readout_update(agent: &Arc<SessionAgent>) {
+    let should_run = agent
         .with_readout_state(|s| {
-            if s.timer_pending {
+            if s.in_flight {
+                s.pending = true;
                 false
             } else {
-                s.timer_pending = true;
+                s.in_flight = true;
                 true
             }
         })
         .await;
-    if !should_spawn {
+    if !should_run {
         return;
     }
-    let agent = agent.arc();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(READOUT_COALESCE_MS)).await;
-        agent.with_readout_state(|s| s.timer_pending = false).await;
-        run_readout_update(&agent).await;
-    });
-}
-
-async fn run_readout_update(agent: &Arc<SessionAgent>) {
-    loop {
-        let should_run = agent
-            .with_readout_state(|s| {
-                if s.in_flight {
-                    s.pending = true;
-                    false
-                } else {
-                    s.in_flight = true;
-                    true
-                }
-            })
-            .await;
-        if !should_run {
-            return;
-        }
-        compute_readout(agent).await;
-        let rerun = agent
-            .with_readout_state(|s| {
-                s.in_flight = false;
-                if s.pending {
-                    s.pending = false;
-                    true
-                } else {
-                    false
-                }
-            })
-            .await;
-        if !rerun {
-            return;
-        }
+    compute_readout(agent).await;
+    let rerun = agent
+        .with_readout_state(|s| {
+            s.in_flight = false;
+            if s.pending {
+                s.pending = false;
+                true
+            } else {
+                false
+            }
+        })
+        .await;
+    if rerun {
+        schedule_readout_update(agent).await;
     }
 }
 
 /// Port of `computeReadout`. A genuine `session.branch` change (never any OTHER trigger -- the
-/// whole point of `cachedPullRequest`, `refreshPullRequest`'s own doc comment) is the only thing
-/// here that pays for a fresh `gh pr list`; everything else reads the retained
-/// `pull_request`/computes fresh from local git/fs state.
+/// whole point of `cachedPullRequest`, `refreshPullRequest`'s own doc comment) still triggers a
+/// fresh `gh pr list`, but SPAWNED now (performance gate round 1 HIGH), never awaited inline: a
+/// `gh` network call (up to a 5 s timeout) must not hold back `changes`/`branch`/`turnTime`/
+/// `subagentCount` while this single-flight run waits on it.
 async fn compute_readout(agent: &Arc<SessionAgent>) {
     let Some(session) = agent
         .registry()
@@ -325,24 +444,42 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
         })
         .await;
     if branch_changed {
-        refresh_pull_request(agent, &session.worktree_path, &session.branch).await;
+        let spawned = agent.clone();
+        let worktree_path = session.worktree_path.clone();
+        let branch = session.branch.clone();
+        tokio::spawn(async move {
+            refresh_pull_request(&spawned, &worktree_path, &branch).await;
+            schedule_readout_update(&spawned).await;
+        });
     }
 
-    let changes = match diff_stat(Path::new(&session.worktree_path), &session.base_branch).await {
+    // Performance gate round 1 LOW: run concurrently, not one after another -- each is its own
+    // independent git/fs read with no data dependency on the other.
+    let (diff_result, branch) = tokio::join!(
+        diff_stat(Path::new(&session.worktree_path), &session.base_branch),
+        compute_branch(&session.worktree_path)
+    );
+    let changes = match diff_result {
         Some(stat) => {
             serde_json::to_value(stat).expect("DiffStatResult is always JSON-serialisable")
         }
         None => Value::String("not-available".to_string()),
     };
-    let branch = compute_branch(&session.worktree_path).await;
     let subagent_count = super::subagents::subagent_count(agent).await;
 
     let readout = agent
-        .with_readout_state(|s| build_readout_value(s, changes, branch, subagent_count))
+        .with_readout_state(|s| {
+            let value = build_readout_value(s, changes, branch, subagent_count);
+            s.last_readout = Some(value.clone());
+            value
+        })
         .await;
-    agent
-        .events()
-        .emit_readout_update(agent.session_id(), readout);
+    // Code-review round 1: `readout:update` follows `transcript:patch`'s own visibility rule.
+    if agent.is_visible() {
+        agent
+            .events()
+            .emit_readout_update(agent.session_id(), readout);
+    }
 }
 
 /// Port of `refreshPullRequest`. Discards a now-stale result the same way TS does: if the

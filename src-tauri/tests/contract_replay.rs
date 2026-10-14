@@ -331,6 +331,14 @@ fn scrub_known_divergences(value: &mut Value) {
                     );
                 }
             }
+            // Lane R5 (issue #788/#724): `readout.branch` is a brand-new, Rust-only field --
+            // Electron's own frozen `readout.ts`/`SessionReadout` never had one (epic #797 rule
+            // 5, "a feature that exists only in Rust is acceptable"), so it never appears on
+            // that shell's side of this diff at all. Dropped from both sides before comparing,
+            // the same pattern `remote.kind` above uses.
+            if map.contains_key("changes") && map.contains_key("contextUsage") {
+                map.remove("branch");
+            }
             if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null))
             {
                 map.remove("value");
