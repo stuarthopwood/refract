@@ -150,11 +150,17 @@ function dateStamp() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function buildChangelogPreview(nextVersion, tag, headSha) {
+// `targetCommitish` is the literal branch name `main`, never a raw commit SHA: GitHub's
+// generate-notes endpoint was observed (release pipeline build, 2026-10-14) to reject a SHA
+// that was only just pushed on a non-default branch with "Invalid target_commitish parameter"
+// even though the same SHA resolves fine via plain git, while the branch name always worked --
+// `checkPreconditions` already guarantees HEAD equals `origin/main`, so `main` names the exact
+// same commit.
+function buildChangelogPreview(nextVersion, tag) {
   const notes = fetchGeneratedNotes({
     repo: REPO_SLUG,
     tagName: `v${nextVersion}`,
-    targetCommitish: headSha,
+    targetCommitish: 'main',
     previousTagName: tag ? tag.tag : undefined,
   });
   const bullets = parseWhatsChangedBullets(notes.body);
@@ -231,11 +237,10 @@ function main() {
   const manifestVersion = versions.packageJson;
 
   const tag = lastTag();
-  const headSha = git(['rev-parse', 'HEAD']);
   const commits = tag ? commitsSince(tag.tag) : [];
 
   const nextVersion = determineNextVersion({ manifestVersion, tag, commits });
-  const section = buildChangelogPreview(nextVersion, tag, headSha);
+  const section = buildChangelogPreview(nextVersion, tag);
 
   if (DRY_RUN) {
     console.log(`release --dry-run: next version v${nextVersion}\n`);
