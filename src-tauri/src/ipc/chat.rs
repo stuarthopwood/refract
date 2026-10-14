@@ -5,7 +5,7 @@
 // `.subagentSnapshot` are not ported (model roles/subagents/predict-word are out of this
 // slice's scope, `session::agent`'s own header).
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::omp::images::{validate_image_attachment, ImageValidationError};
 use crate::session::agent::{
@@ -50,8 +50,18 @@ fn map_chat_error(err: crate::session::AgentError) -> IpcError {
 }
 
 /// Port of `chat.ts`'s own `parseImagesArgument`: shape-checks, then independently re-validates
-/// every entry (FR-018) before ever building the outgoing `prompt` command.
-fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, IpcError> {
+/// every entry (FR-018) before ever building the outgoing `prompt` command. Gate-fix (Critical,
+/// security): builds a FRESH `{ type: "image", data, mimeType }` object containing ONLY the
+/// three validated fields, never the caller's whole object -- a compromised/buggy renderer could
+/// otherwise attach extra fields (`providerFile`, `url`, `detail`) that OMP's own real handling
+/// acts on, reaching a privileged provider-file/remote-URL fetch despite every shape/mime/size
+/// check here passing (mirrors `chat.ts`'s own `parseImagesArgument`, lines 57-81). Runs each
+/// entry's validation on a blocking-pool thread (perf gate-fix): the full base64 decode plus
+/// header walk is CPU work, not I/O, and a 20 MiB image's worth of it should never run on an
+/// async executor thread; ownership of `data`/`mimeType` moves in before validating (gate-fix:
+/// validate before cloning, never clone the untrusted object's other fields at all) and comes
+/// back out to build the fresh entry above, so each image's text is only ever copied once.
+async fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, IpcError> {
     let Some(images) = images else {
         return Ok(None);
     };
@@ -79,13 +89,24 @@ fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, I
         if data.is_empty() {
             return Err(invalid_argument("chat.send: image data must not be empty"));
         }
-        let image = entry.clone();
-        if let Err(err) = validate_image_attachment(&image) {
-            let mime_type = image.get("mimeType").and_then(Value::as_str).unwrap_or("");
+        let Some(mime_type) = candidate.get("mimeType").and_then(Value::as_str) else {
+            return Err(invalid_argument(
+                "chat.send: image mimeType must be a string",
+            ));
+        };
+        let data_owned = data.to_string();
+        let mime_owned = mime_type.to_string();
+        let (data_owned, mime_owned, validation) = tokio::task::spawn_blocking(move || {
+            let result = validate_image_attachment(&data_owned, &mime_owned);
+            (data_owned, mime_owned, result)
+        })
+        .await
+        .expect("image validation task panicked");
+        if let Err(err) = validation {
             return Err(match err {
                 ImageValidationError::UnsupportedImageType => IpcError::new(
                     "unsupported-image-type",
-                    format!("Unsupported image type: {mime_type}"),
+                    format!("Unsupported image type: {mime_owned}"),
                 ),
                 ImageValidationError::ByteSizeTooLarge => {
                     IpcError::new("image-too-large", "Image exceeds the 20 MiB limit")
@@ -97,7 +118,9 @@ fn parse_images_argument(images: Option<&Value>) -> Result<Option<Vec<Value>>, I
                 }
             });
         }
-        parsed.push(image);
+        // Built fresh from only the three validated, owned fields -- see this function's own
+        // doc comment; never the caller's original `entry`.
+        parsed.push(json!({ "type": "image", "data": data_owned, "mimeType": mime_owned }));
     }
     Ok(Some(parsed))
 }
@@ -114,7 +137,7 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "chat.send expects (sessionId, text) strings",
             ));
         };
-        let parsed_images = parse_images_argument(args.get(2))?;
+        let parsed_images = parse_images_argument(args.get(2)).await?;
         if state
             .registry
             .lock()
@@ -169,7 +192,9 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     };
                     return Err(IpcError::new(
                         "unsupported-arguments",
-                        format!("/{name}{suffix} doesn't support arguments yet."),
+                        format!(
+                            "/{name}{suffix} doesn't support arguments yet. Try /{name} on its own."
+                        ),
                     ));
                 }
                 SlashInvocationClassification::Supported => {
@@ -334,3 +359,7 @@ pub fn chat_send_now(state: AppState, args: Vec<Value>) -> HandlerFuture {
         Ok(result)
     })
 }
+
+#[cfg(test)]
+#[path = "chat.test.rs"]
+mod tests;

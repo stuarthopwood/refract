@@ -131,27 +131,20 @@ pub enum SlashInvocationClassification {
     UnsupportedArguments,
 }
 
-pub fn classify_slash_invocation(
-    name: &str,
-    rest: &str,
-    commands: &[Value],
-) -> SlashInvocationClassification {
-    let descriptor = commands.iter().find(|c| {
-        c.get("name").and_then(Value::as_str) == Some(name)
-            || c.get("aliases")
-                .and_then(Value::as_array)
-                .map(|a| a.iter().any(|v| v.as_str() == Some(name)))
-                .unwrap_or(false)
-    });
-    let Some(descriptor) = descriptor else {
-        return SlashInvocationClassification::UnknownCommand;
-    };
-    if rest.is_empty() {
-        return SlashInvocationClassification::Supported;
-    }
-    if !is_builtin_source(descriptor.get("source").and_then(Value::as_str)) {
-        return SlashInvocationClassification::Supported;
-    }
+/// A descriptor matches `name` either as its own `name` or one of its `aliases`.
+fn matches_name(descriptor: &Value, name: &str) -> bool {
+    descriptor.get("name").and_then(Value::as_str) == Some(name)
+        || descriptor
+            .get("aliases")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().any(|v| v.as_str() == Some(name)))
+            .unwrap_or(false)
+}
+
+/// The builtin-restricted half of classification: the bare name/one verified subcommand only,
+/// any further trailing text refused. Shared by both branches of `classify_slash_invocation`
+/// below so the anti-shadow fix never duplicates this logic.
+fn classify_against_builtin(descriptor: &Value, rest: &str) -> SlashInvocationClassification {
     let space_idx = rest.find(' ');
     let sub_name = match space_idx {
         Some(idx) => &rest[..idx],
@@ -178,3 +171,35 @@ pub fn classify_slash_invocation(
         SlashInvocationClassification::UnsupportedArguments
     }
 }
+
+pub fn classify_slash_invocation(
+    name: &str,
+    rest: &str,
+    commands: &[Value],
+) -> SlashInvocationClassification {
+    let Some(descriptor) = commands.iter().find(|c| matches_name(c, name)) else {
+        return SlashInvocationClassification::UnknownCommand;
+    };
+    if rest.is_empty() {
+        return SlashInvocationClassification::Supported;
+    }
+    // Gate-fix (High/Medium, security): a file/skill command sharing a NAME OR ALIAS with a
+    // builtin must never inherit the free-form policy -- scan the WHOLE list for any
+    // builtin-sourced entry matching `name` first, rather than trusting whichever single
+    // descriptor `.find()` above happened to pick (OMP's own command-list ordering, not this
+    // policy, would otherwise decide whether a shadowing custom command bypasses the denylist).
+    let shadowed_builtin = commands.iter().find(|c| {
+        matches_name(c, name) && is_builtin_source(c.get("source").and_then(Value::as_str))
+    });
+    if let Some(builtin_descriptor) = shadowed_builtin {
+        return classify_against_builtin(builtin_descriptor, rest);
+    }
+    if !is_builtin_source(descriptor.get("source").and_then(Value::as_str)) {
+        return SlashInvocationClassification::Supported;
+    }
+    classify_against_builtin(descriptor, rest)
+}
+
+#[cfg(test)]
+#[path = "commands.test.rs"]
+mod tests;

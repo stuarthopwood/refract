@@ -119,25 +119,28 @@ impl SessionAgent {
         Ok(())
     }
 
-    /// `chat.removeQueued` (issue #540): `queue` is the chip's own queue (`'followUp'` or
-    /// `'steering'`) -- OMP's `remove_queued_message` only matches within the exact queue given.
-    pub async fn remove_queued(&self, text: String, queue: &str) -> Result<Value, AgentError> {
+    /// Shared by `remove_queued`/`send_now` (gate-fix, Medium: DRY, same request/success/notice
+    /// shape repeated verbatim in both). Sends `cmd`, requires a live process (erroring with
+    /// `no_process_detail` if none), maps a non-success response to a `prompt-failed`
+    /// `AgentError` labelled with `action` (posted as a transcript notice too, matching both
+    /// callers' own prior behaviour), and returns the response's `data` object on success for
+    /// the caller to pull its own field out of.
+    async fn queue_op(
+        &self,
+        cmd: Value,
+        action: &str,
+        no_process_detail: &str,
+    ) -> Result<Value, AgentError> {
         let proc = {
             self.state.lock().await.process.clone().ok_or_else(|| {
                 AgentError::new(
                     "agent-not-running",
-                    format!(
-                        "SessionAgent {}: cannot remove a queued message, no live process",
-                        self.session_id
-                    ),
+                    format!("SessionAgent {}: {no_process_detail}", self.session_id),
                 )
             })?
         };
         let res = proc
-            .request(
-                json!({ "type": "remove_queued_message", "message": text, "queue": queue }),
-                DEFAULT_REQUEST_TIMEOUT_MS,
-            )
+            .request(cmd, DEFAULT_REQUEST_TIMEOUT_MS)
             .await
             .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         if res.get("success").and_then(Value::as_bool) != Some(true) {
@@ -146,13 +149,25 @@ impl SessionAgent {
                 .and_then(Value::as_str)
                 .unwrap_or("unknown error")
                 .to_string();
-            let detail = format!("remove_queued_message failed: {err_message}");
+            let detail = format!("{action} failed: {err_message}");
             self.append_notice(detail.clone(), "error").await;
             return Err(AgentError::new("prompt-failed", detail));
         }
-        let removed = res
-            .get("data")
-            .and_then(|d| d.get("removed"))
+        Ok(res.get("data").cloned().unwrap_or(Value::Null))
+    }
+
+    /// `chat.removeQueued` (issue #540): `queue` is the chip's own queue (`'followUp'` or
+    /// `'steering'`) -- OMP's `remove_queued_message` only matches within the exact queue given.
+    pub async fn remove_queued(&self, text: String, queue: &str) -> Result<Value, AgentError> {
+        let data = self
+            .queue_op(
+                json!({ "type": "remove_queued_message", "message": text, "queue": queue }),
+                "remove_queued_message",
+                "cannot remove a queued message, no live process",
+            )
+            .await?;
+        let removed = data
+            .get("removed")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         Ok(json!({ "removed": removed }))
@@ -168,37 +183,15 @@ impl SessionAgent {
     /// message). `promoted: false` means it was no longer pending at dispatch time (e.g.
     /// already delivered).
     pub async fn send_now(&self, text: String) -> Result<Value, AgentError> {
-        let proc = {
-            self.state.lock().await.process.clone().ok_or_else(|| {
-                AgentError::new(
-                    "agent-not-running",
-                    format!(
-                        "SessionAgent {}: cannot send now, no live process",
-                        self.session_id
-                    ),
-                )
-            })?
-        };
-        let res = proc
-            .request(
+        let data = self
+            .queue_op(
                 json!({ "type": "promote_queued_message", "message": text }),
-                DEFAULT_REQUEST_TIMEOUT_MS,
+                "promote_queued_message",
+                "cannot send now, no live process",
             )
-            .await
-            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
-        if res.get("success").and_then(Value::as_bool) != Some(true) {
-            let err_message = res
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown error")
-                .to_string();
-            let detail = format!("promote_queued_message failed: {err_message}");
-            self.append_notice(detail.clone(), "error").await;
-            return Err(AgentError::new("prompt-failed", detail));
-        }
-        let promoted = res
-            .get("data")
-            .and_then(|d| d.get("promoted"))
+            .await?;
+        let promoted = data
+            .get("promoted")
             .and_then(Value::as_bool)
             .unwrap_or(false);
         Ok(json!({ "promoted": promoted }))

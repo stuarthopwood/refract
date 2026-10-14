@@ -36,9 +36,10 @@ const MAX_LINK_HOPS: u32 = 32;
 /// Windows reserved device names (case-insensitive, with or without a trailing extension) --
 /// rejected as a path SEGMENT anywhere in the token, before any filesystem call ever touches it.
 /// Defence in depth, not the only thing standing between a reserved name and `fs::open` (every
-/// one of these fails `fs::canonicalize` with not-found in practice). Simplified from `files.ts`'s
-/// own regex (no superscript-digit `COM`/`LPT` variants, no embedded-dot-run edge cases): still
-/// catches the real shapes an attacker or a careless tool would actually produce.
+/// one of these fails `fs::canonicalize` with not-found in practice). Port of `files.ts`'s own
+/// regex, including the superscript-digit `COM`/`LPT` variants Windows itself still recognises
+/// (`COM\u{b9}`-`COM\u{b3}`, `LPT\u{b9}`-`LPT\u{b3}`); no embedded-dot-run edge cases beyond a
+/// single trailing extension.
 fn is_reserved_name(segment: &str) -> bool {
     let upper = segment.to_ascii_uppercase();
     let core_end = upper.find('.').unwrap_or(upper.len());
@@ -48,7 +49,13 @@ fn is_reserved_name(segment: &str) -> bool {
         _ => core
             .strip_prefix("COM")
             .or_else(|| core.strip_prefix("LPT"))
-            .map(|rest| rest.len() == 1 && matches!(rest.chars().next(), Some('1'..='9')))
+            .map(|rest| {
+                let mut chars = rest.chars();
+                matches!(
+                    (chars.next(), chars.next()),
+                    (Some('1'..='9'), None) | (Some('\u{b9}' | '\u{b2}' | '\u{b3}'), None)
+                )
+            })
             .unwrap_or(false),
     }
 }
@@ -96,8 +103,15 @@ fn is_unsafe_token(value: &str) -> bool {
 /// ASCII-only case fold (matches the TS fix for the Kelvin-sign bypass, U+212A, which Unicode
 /// `toLowerCase()` collapses to `'k'` even though NTFS treats them as different characters):
 /// never touches non-ASCII, so this is only ever a pre-filter, never the real security boundary.
+/// Gate-fix (Low): folds only on Windows (`cfg!(target_os = "windows")`), matching `files.ts`'s
+/// own `process.platform === 'win32'` guard -- a non-Windows build (this crate targets Windows
+/// only today, but the guard costs nothing and keeps this function honest if that ever changes).
 fn fold_case(value: &str) -> String {
-    value.chars().map(|c| c.to_ascii_lowercase()).collect()
+    if cfg!(target_os = "windows") {
+        value.chars().map(|c| c.to_ascii_lowercase()).collect()
+    } else {
+        value.to_string()
+    }
 }
 
 fn is_contained_in(value: &str, root: &str) -> bool {
@@ -126,12 +140,15 @@ fn lexical_normalize(p: &Path) -> PathBuf {
 /// Strips Windows' `\\?\` canonical-path prefix (and its UNC variant `\\?\UNC\`) so a
 /// canonicalised path compares lexically the same way Node's `fs.realpath` output already does --
 /// Rust's `std::fs::canonicalize` prepends this verbatim-path marker on Windows; Node never does.
+/// Gate-fix (Low): the prefix match is case-insensitive (`\\?\unc\` would otherwise slip past),
+/// even though `canonicalize` itself only ever emits the upper-case form in practice.
 fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
     let s = path.to_string_lossy().into_owned();
-    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-        PathBuf::from(format!(r"\\{rest}"))
-    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
-        PathBuf::from(rest)
+    let lower = s.to_ascii_lowercase();
+    if lower.starts_with(r"\\?\unc\") {
+        PathBuf::from(format!(r"\\{}", &s[8..]))
+    } else if lower.starts_with(r"\\?\") {
+        PathBuf::from(&s[4..])
     } else {
         path
     }
@@ -524,3 +541,7 @@ pub fn attachments_read_image_file(state: AppState, args: Vec<Value>) -> Handler
         read_image_file(&worktree_root, token).await
     })
 }
+
+#[cfg(test)]
+#[path = "attachments.test.rs"]
+mod tests;

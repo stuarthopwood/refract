@@ -13,8 +13,6 @@
 // buffer, closing the same decompression-bomb class of risk for the base64/clipboard-paste path
 // (`chat.send`'s `images` array) that `attachments.ts` already closed for the file-path read.
 
-use serde_json::Value;
-
 /// OMP's own cap (research.md Decision 3): a decoded image over this is rejected, never shrunk.
 pub const MAX_IMAGE_INPUT_BYTES: u64 = 20 * 1024 * 1024;
 
@@ -47,12 +45,32 @@ pub fn decoded_base64_byte_length(data: &str) -> u64 {
     (len * 3 / 4).saturating_sub(padding)
 }
 
-/// A plain, dependency-free base64 decoder (no `base64` crate in this build's `Cargo.toml`):
-/// stops at the first character outside the alphabet (matching the prior prefix-only decoder's
-/// own lenient stop-on-invalid-char behaviour) rather than erroring, since every caller here
-/// already independently bounds how much it decodes (the byte-length check above, never this
-/// function itself).
-pub fn base64_decode(data: &str) -> Vec<u8> {
+/// A plain, dependency-free, STRICT base64 decoder (no `base64` crate in this build's
+/// `Cargo.toml`). Gate-fix (Medium, security): a PRIOR version stopped silently at the first
+/// character outside the alphabet, truncating rather than rejecting -- the bytes this function
+/// checked (and the dimensions/pixel-count derived from them) could then differ from whatever
+/// OMP's own, possibly more lenient, base64 decoder makes of the SAME string once it is
+/// forwarded on unchanged, letting a crafted payload hide an over-cap image after a single
+/// invalid byte. This decoder instead REJECTS the whole string (`None`) on: any character
+/// outside the base64 alphabet (other than ASCII whitespace, which is always ignored), or `=`
+/// padding appearing anywhere but the final one-or-two characters of the last four-character
+/// group -- so what this module checks is always exactly the bytes a well-formed, non-lenient
+/// decoder would also produce from the same string.
+pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
+    let clean: Vec<u8> = data.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    if clean.is_empty() {
+        return Some(Vec::new());
+    }
+    if !clean.len().is_multiple_of(4) {
+        return None;
+    }
+    let pad_count = clean.iter().rev().take_while(|&&b| b == b'=').count();
+    if pad_count > 2 {
+        return None;
+    }
+    if clean[..clean.len() - pad_count].contains(&b'=') {
+        return None; // a stray '=' outside the final padding run
+    }
     fn value(byte: u8) -> Option<u8> {
         match byte {
             b'A'..=b'Z' => Some(byte - b'A'),
@@ -63,32 +81,35 @@ pub fn base64_decode(data: &str) -> Vec<u8> {
             _ => None,
         }
     }
-    let mut out = Vec::with_capacity(data.len() * 3 / 4 + 3);
-    let mut group = [0u8; 4];
-    let mut group_len = 0usize;
-    for byte in data.bytes() {
-        if byte.is_ascii_whitespace() || byte == b'=' {
-            continue;
+    let mut out = Vec::with_capacity(clean.len() / 4 * 3);
+    for chunk in clean.chunks(4) {
+        let mut vals = [0u8; 4];
+        let mut real = 0usize;
+        for &b in chunk {
+            if b == b'=' {
+                break;
+            }
+            let v = value(b)?;
+            vals[real] = v;
+            real += 1;
         }
-        let Some(v) = value(byte) else { break };
-        group[group_len] = v;
-        group_len += 1;
-        if group_len == 4 {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-            out.push((group[2] << 6) | group[3]);
-            group_len = 0;
+        match real {
+            4 => {
+                out.push((vals[0] << 2) | (vals[1] >> 4));
+                out.push((vals[1] << 4) | (vals[2] >> 2));
+                out.push((vals[2] << 6) | vals[3]);
+            }
+            3 => {
+                out.push((vals[0] << 2) | (vals[1] >> 4));
+                out.push((vals[1] << 4) | (vals[2] >> 2));
+            }
+            2 => {
+                out.push((vals[0] << 2) | (vals[1] >> 4));
+            }
+            _ => return None, // 0 or 1 real chars in a 4-byte group is never valid base64
         }
     }
-    match group_len {
-        2 => out.push((group[0] << 2) | (group[1] >> 4)),
-        3 => {
-            out.push((group[0] << 2) | (group[1] >> 4));
-            out.push((group[1] << 4) | (group[2] >> 2));
-        }
-        _ => {}
-    }
-    out
+    Some(out)
 }
 
 /// Standard base64 (with `=` padding), used by `ipc::attachments`'s own `readImageFile` to
@@ -378,19 +399,24 @@ pub enum ImageValidationError {
 
 /// Port of `omp/images.ts`'s own `validateImageAttachment` (FR-018, constitution Principle V):
 /// re-validates every `chat.send` `images` entry independently of the renderer's own paste-time
-/// check. See this file's own header for the #771 pixel-cap extension beyond the Electron build.
-pub fn validate_image_attachment(image: &Value) -> Result<(), ImageValidationError> {
-    let mime_type = image.get("mimeType").and_then(Value::as_str).unwrap_or("");
+/// check. See this file's own header for the #771 pixel-cap extension beyond the Electron
+/// build. Takes borrowed `data`/`mime_type` (gate-fix, perf: the caller validates before ever
+/// cloning or taking ownership of the untrusted entry, and runs this on a blocking-pool thread
+/// since the full base64 decode plus header walk is CPU, not I/O, work).
+pub fn validate_image_attachment(data: &str, mime_type: &str) -> Result<(), ImageValidationError> {
     if !is_supported_mime_type(mime_type) {
         return Err(ImageValidationError::UnsupportedImageType);
     }
-    let data = image.get("data").and_then(Value::as_str).unwrap_or("");
     if decoded_base64_byte_length(data) > MAX_IMAGE_INPUT_BYTES {
         return Err(ImageValidationError::ByteSizeTooLarge);
     }
     // Safe to decode the FULL payload now: the byte-length check above already bounds it to
-    // MAX_IMAGE_INPUT_BYTES (20 MiB) from the string's own length, never a live decode.
-    let bytes = base64_decode(data);
+    // MAX_IMAGE_INPUT_BYTES (20 MiB) from the string's own length, never a live decode. A
+    // strict-decode failure (gate-fix: invalid characters or misplaced padding) is refused the
+    // same way an unsupported type is -- malformed base64 is never a valid image either way.
+    let Some(bytes) = base64_decode(data) else {
+        return Err(ImageValidationError::UnsupportedImageType);
+    };
     if !matches_image_signature(&bytes, mime_type) {
         return Err(ImageValidationError::UnsupportedImageType);
     }
@@ -402,3 +428,7 @@ pub fn validate_image_attachment(image: &Value) -> Result<(), ImageValidationErr
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "images.test.rs"]
+mod tests;
