@@ -65,6 +65,9 @@ function makeScratchRepo(dir) {
 function ensureFakeModel(profile) {
   const agentDir = path.join(homedir(), CONFIG_DIR_NAME, 'profiles', profile, 'agent');
   mkdirSync(agentDir, { recursive: true });
+  // Two DISTINCT fake models (not one reused for every role): so a real role switch
+  // (`/switch @smol`) has a genuinely different model to move to and the verify-effect check
+  // (get_state before/after) can observe a real change, not just the one configured role.
   const yml = [
     'providers:',
     '  probe-fake:',
@@ -74,6 +77,11 @@ function ensureFakeModel(profile) {
     '    models:',
     '      - id: probe-fake-model',
     '        name: Probe Fake Model',
+    '        api: openai-completions',
+    '        contextWindow: 8000',
+    '        maxTokens: 1000',
+    '      - id: probe-fake-model-2',
+    '        name: Probe Fake Model Two',
     '        api: openai-completions',
     '        contextWindow: 8000',
     '        maxTokens: 1000',
@@ -116,8 +124,17 @@ async function main() {
   ensureFakeModel(profile);
   // Give the isolated profile a resolvable default (`omp config set modelRoles`, the same CLI
   // path `ipc::model_roles`/`known_role_list` already use) -- `models.yml` alone registers the
-  // provider; `modelRoles.default` is what omp's startup check actually reads.
-  run('omp', ['--profile', profile, 'config', 'set', 'modelRoles', '{"default":"probe-fake/probe-fake-model"}', '--json']);
+  // providers; `modelRoles` is what omp's startup check actually reads. `smol` maps to a
+  // DIFFERENT model than `default` so `/switch @smol` has a real change to make.
+  run('omp', [
+    '--profile',
+    profile,
+    'config',
+    'set',
+    'modelRoles',
+    '{"default":"probe-fake/probe-fake-model","smol":"probe-fake/probe-fake-model-2"}',
+    '--json',
+  ]);
 
   const env = {
     ...process.env,
