@@ -10,8 +10,9 @@
 {"__wait__":["get_state"]}
 {"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\subagents\\conversation.json","sessionId":"sess-subagents-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"}}}
 {"__wait__":["get_messages_page","get_messages"]}
-{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"nextCursor":null,"totalMessages":0}}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
 {"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
 {"type":"agent_start"}
 {"type":"tool_execution_start","toolCallId":"task-batch-1","toolName":"task","args":{"tasks":[{"name":"alpha","task":"Investigate alpha"},{"name":"beta","task":"Investigate beta"}]},"intent":"Running two subagents"}
 {"type":"tool_execution_update","toolCallId":"task-batch-1","toolName":"task","args":{"tasks":[{"name":"alpha"},{"name":"beta"}]},"partialResult":{"content":[{"type":"text","text":"2 subagents running"}],"details":{"progress":[{"index":0,"id":"alpha","status":"running","task":"Investigate alpha"},{"index":1,"id":"beta","status":"pending","task":"Investigate beta"}]}}}

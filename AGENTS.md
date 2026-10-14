@@ -110,12 +110,16 @@ from the Electron CDP recipe above.
   second one, and never delete anything under the shared cache except a crate-scoped `cargo
   clean -p <crate>` for a confirmed stale-path error.
 - `scripts/verify-tauri.mjs` (`pnpm verify:tauri`, issue #795) is the CDP harness: a scratch data
-  directory (`REFRACT_DATA_DIR`, since Tauri has no `--user-data-dir` equivalent), a scratch git
-  repository, and a recorded-frame fake `omp` on PATH ahead of the real one, so a UI flow can be
-  driven with no model cost and no network. Use it (or its `--real-omp` mode) instead of a live
-  real-`omp` CDP session wherever the flow you need is already covered by its fixtures
-  (`scripts/fixtures/omp-frames/README.md`); fall back to a real `omp` only for a flow the
-  fixtures do not cover yet.
+  directory (`REFRACT_DATA_DIR`, debug builds only, since Tauri has no `--user-data-dir`
+  equivalent), a scratch git repository, and a recorded-frame fake `omp` on PATH ahead of the
+  real one, so a UI flow can be driven with no model cost and no network. Only `readiness` (US1)
+  and `session` (US4) are ever driven this way; `side-chat`/`subagents`/`failure`/`exit` are
+  fixtures for a lane to select directly once it ports the matching channel
+  (`scripts/fixtures/omp-frames/README.md`). Use the harness instead of a live real-`omp` CDP
+  session wherever the flow you need is already covered; fall back to a real `omp` only for a
+  flow the fixtures do not cover yet. **Not covered by this harness (R12b, #795 part 3 onward):**
+  ported Rust test cases, transcript golden tests, the cross-shell contract replay, generated
+  frame types, the performance/footprint proof.
 - **Never `pnpm dev` for a live check (2026-10-13 live-run convention).** It holds Vite's
   fixed port 5174, and the running exe lives under the shared `CARGO_TARGET_DIR`, so two lanes'
   own dev servers or running binaries collide. Instead: `pnpm exec tauri build --debug --no-bundle`

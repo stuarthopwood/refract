@@ -68,6 +68,18 @@ It builds with `tauri build --debug --no-bundle` and runs a copy of the resultin
 own `cargo run` processes under the shared `CARGO_TARGET_DIR` can otherwise overwrite each
 other's running binary. Follow the same convention for any other live check against this build.
 
+**Not covered (R12b, issue #795 part 3 onward):** ported Rust test cases, the transcript golden
+tests, the cross-shell contract replay, generated frame types, and the performance/footprint
+proof. The harness itself only ever drives `readiness` and `session`
+(`scripts/fixtures/omp-frames/README.md`'s own "Scenario selection" section); `side-chat`,
+`subagents`, `failure` and `exit` are fixtures for a future lane, not exercised here.
+
+Issue #795 part 1 also asked for the Electron-era OMP skills to be updated
+(`verify-refract-ui-via-cdp` and its scratch-instance variants); those are managed skill files
+outside this repository (`C:/Users/shopwood/.omp/agent/managed-skills/`), so they do not appear
+in this PR's diff. They were updated alongside this change to flag themselves Electron-only and
+point at `pnpm verify:tauri`/`verify-refract-tauri-build-live` instead.
+
 ## Where things live
 
 | What | Where |

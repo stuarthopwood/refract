@@ -10,6 +10,23 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
+
+/** Asks the OS for a free TCP port (binds to port 0, reads back the one actually assigned, then
+ * releases it) instead of a fixed guess: a fixed port can already be held by another lane's own
+ * `verify:tauri` run, a stale instance left by a killed run, or anything else on the machine, and
+ * `waitForCdpTarget` would then silently attach to that OTHER instance instead of failing. */
+export async function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+}
 
 /** Polls `http://127.0.0.1:<port>/json/list` until a `page` target's `webSocketDebuggerUrl`
  * appears (WebView2 does not expose one on every target, e.g. a devtools-internal page). */
@@ -38,12 +55,31 @@ function sleep(ms) {
 
 /** Thin wrapper over one CDP WebSocket connection: request/response correlation by id, plus the
  * handful of domain calls this harness needs. Node's global `WebSocket` (Node 24+, per
- * README.md's own prerequisite) -- no extra dependency. */
+ * README.md's own prerequisite) -- no extra dependency.
+ *
+ * Fails closed on a dropped connection (gate-fix, code review HIGH): if the app or WebView2
+ * crashes mid-run, the socket's own `close`/`error` event rejects every request still pending
+ * AND every request sent afterwards, instead of leaving them to hang forever past `waitFor`'s own
+ * timeout (the timeout never fires because the underlying `send()` promise itself never
+ * resolves or rejects without this). Each individual `send()` also carries its own timeout, so a
+ * CDP command that the browser process never answers (not a close, just silence) fails the same
+ * way. */
 export class CdpSession {
-  constructor(ws) {
+  constructor(ws, { requestTimeoutMs = 20_000 } = {}) {
     this.ws = ws;
     this.nextId = 1;
     this.pending = new Map();
+    this.closed = false;
+    this.requestTimeoutMs = requestTimeoutMs;
+    const failAll = (reason) => {
+      if (this.closed) return;
+      this.closed = true;
+      for (const { reject, timer } of this.pending.values()) {
+        clearTimeout(timer);
+        reject(reason instanceof Error ? reason : new Error(String(reason)));
+      }
+      this.pending.clear();
+    };
     ws.addEventListener('message', (event) => {
       let msg;
       try {
@@ -52,12 +88,15 @@ export class CdpSession {
         return;
       }
       if (typeof msg.id === 'number' && this.pending.has(msg.id)) {
-        const { resolve, reject } = this.pending.get(msg.id);
+        const { resolve, reject, timer } = this.pending.get(msg.id);
+        clearTimeout(timer);
         this.pending.delete(msg.id);
         if (msg.error) reject(new Error(`CDP ${msg.error.code}: ${msg.error.message}`));
         else resolve(msg.result);
       }
     });
+    ws.addEventListener('close', () => failAll(new Error('CdpSession: WebSocket closed (the app or WebView2 likely crashed or exited)')));
+    ws.addEventListener('error', (err) => failAll(new Error(`CdpSession: WebSocket error: ${err?.message ?? err}`)));
   }
 
   static async connect(wsUrl, { timeoutMs = 20_000 } = {}) {
@@ -80,9 +119,14 @@ export class CdpSession {
   }
 
   send(method, params = {}) {
+    if (this.closed) return Promise.reject(new Error(`CdpSession: send(${method}) after the connection closed`));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CdpSession: ${method} timed out after ${this.requestTimeoutMs}ms`));
+      }, this.requestTimeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -161,50 +205,75 @@ export class CdpSession {
   }
 }
 
-/** Spawns a process, returning its pid up front (before any CDP work) so the caller can clean up
- * on any later failure; never resolved by waiting for readiness here -- that is the caller's
- * `waitForCdpTarget` call. */
-export function launch(command, args, options) {
-  const child = spawn(command, args, { windowsHide: true, ...options });
-  return child;
-}
-
-/** Snapshots every live process's (pid, parent pid) once via PowerShell/CIM. Windows records a
- * process's parent pid at creation time and never updates it, so this still finds a process
- * whose intermediate ancestor (a `cmd.exe`/pnpm/node wrapper that has already exited, handing
- * off to a long-lived `cargo run` + built exe) is long gone -- the gap `taskkill /PID <pid> /T`
- * cannot cross once `<pid>` itself is no longer resolvable. */
+/** Snapshots every live process's pid, parent pid, command line and creation time (as raw
+ * `DateTime.Ticks`, a plain sortable number -- avoids parsing WMI's own DMTF datetime string
+ * format) via PowerShell/CIM. Tolerates a malformed/empty response (process list queries are
+ * inherently racy) by returning no rows rather than throwing. */
 function liveProcessTree() {
-  const result = spawnSync('powershell', ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress'], {
-    encoding: 'utf8',
-    windowsHide: true,
-  });
+  const script =
+    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine,@{N='CreationTicks';E={ if ($_.CreationDate) { $_.CreationDate.Ticks } else { 0 } }} | ConvertTo-Json -Compress";
+  const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true });
   if (result.status !== 0 || !result.stdout) return [];
-  const parsed = JSON.parse(result.stdout);
-  return Array.isArray(parsed) ? parsed : [parsed];
+  try {
+    const parsed = JSON.parse(result.stdout);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
 }
 
-/** Every currently-live pid transitively descended from `rootPid` (rootPid itself excluded),
- * found by walking the live-process snapshot's recorded parent links -- works even when
- * `rootPid` or an intermediate ancestor has already exited. */
-function liveDescendants(rootPid) {
+/** The live creation-ticks of exactly this pid right now, or `null` if it is not currently a
+ * live process (already exited, or never existed). */
+function creationTicksOf(pid) {
+  const row = liveProcessTree().find((r) => r.ProcessId === pid);
+  return row ? row.CreationTicks : null;
+}
+
+/** Every currently-live process (full row: pid, parent pid, command line, creation ticks)
+ * transitively descended from `rootPid`, validated against `rootCreationTicks` (captured once,
+ * right after this script spawned the root, while it was still known-alive): a parent -> child
+ * link is followed only when the recorded child's own creation time is at or after the parent's
+ * (gate-fix, security review HIGH). Windows never updates a process's own recorded parent pid,
+ * and pids get reused -- without this check, a long-lived, wholly unrelated process (Stuart's
+ * own terminal, a live Refract tree, anything started by a launcher that has since exited) whose
+ * stale recorded parent pid happens to equal a pid this harness used earlier would be
+ * force-killed as if it were "our child". */
+function liveDescendants(rootPid, rootCreationTicks) {
   const rows = liveProcessTree();
   const childrenOf = new Map();
   for (const row of rows) {
     const list = childrenOf.get(row.ParentProcessId) ?? [];
-    list.push(row.ProcessId);
+    list.push(row);
     childrenOf.set(row.ParentProcessId, list);
   }
   const out = [];
-  const queue = [rootPid];
+  const visited = new Set([rootPid]);
+  const queue = [{ pid: rootPid, creationTicks: rootCreationTicks }];
   while (queue.length > 0) {
-    const pid = queue.shift();
-    for (const child of childrenOf.get(pid) ?? []) {
+    const current = queue.shift();
+    for (const child of childrenOf.get(current.pid) ?? []) {
+      if (visited.has(child.ProcessId)) continue;
+      if (typeof child.CreationTicks !== 'number' || typeof current.creationTicks !== 'number') continue;
+      if (child.CreationTicks < current.creationTicks) continue; // stale/reused parent link
+      visited.add(child.ProcessId);
       out.push(child);
-      queue.push(child);
+      queue.push({ pid: child.ProcessId, creationTicks: child.CreationTicks });
     }
   }
   return out;
+}
+
+/** Confirms the process actually listening with `--remote-debugging-port=<port>` on its own
+ * command line is a genuine descendant of `child` (gate-fix, security review MEDIUM): even with
+ * `getFreePort()` removing the usual collision window, this is a belt-and-braces check that the
+ * CDP target `waitForCdpTarget` attached to truly belongs to the process this script launched,
+ * not some other instance that raced onto the same port between the check and the connect. */
+export function isPortOwnedBy(port, child) {
+  const rootCreationTicks = child?.__refractCreationTicks;
+  if (!child?.pid || rootCreationTicks == null) return false;
+  const needle = `--remote-debugging-port=${port}`;
+  const descendants = liveDescendants(child.pid, rootCreationTicks);
+  return descendants.some((row) => typeof row.CommandLine === 'string' && row.CommandLine.includes(needle));
 }
 
 function killByPid(pid) {
@@ -215,26 +284,57 @@ function killByPid(pid) {
   });
 }
 
-/** Stops the process this script itself started: asks it to exit, then force-kills it and every
- * pid still transitively descended from it (see `liveDescendants`'s own doc comment -- needed
- * because a dev-server CLI wrapper (`cmd.exe`/pnpm/the Tauri CLI) can exit on its own once it
- * hands off to a long-lived `cargo run`, orphaning the built app and WebView2 from the pid this
- * script holds). Every kill is a literal, explicit pid -- never a kill by image name -- matching
- * AGENTS.md's destructive-operations rule applied to processes. */
+/** Spawns a process and immediately records its own creation time (while its pid is certainly
+ * still live and certainly still this process), attaching it as `child.__refractCreationTicks`
+ * for `stopProcess` to validate against later. Callers MUST use this (not a bare `spawn`) for
+ * anything `stopProcess` will later tear down. */
+export async function launchTracked(command, args, options) {
+  const child = spawn(command, args, { windowsHide: true, ...options });
+  child.__refractCreationTicks = child.pid ? creationTicksOf(child.pid) : null;
+  return child;
+}
+
+/** Stops the process this script itself started: asks it to exit, then force-kills every
+ * process still transitively descended from it (descendants first, the root last -- see
+ * `liveDescendants`'s own doc comment for why each link is validated by creation time). Every
+ * kill is a literal, explicit pid -- never a kill by image name -- matching AGENTS.md's
+ * destructive-operations rule applied to processes.
+ *
+ * Needed because the launched exe's own WebView2 process tree (and anything further it spawns,
+ * like the fake `omp` shim) must be torn down too: a crash or an already-exited parent leaves
+ * Windows' own parent-pid bookkeeping as the only trace of that relationship, so a plain
+ * `taskkill /T` against an already-dead pid cannot find them.
+ *
+ * Gate-fix (security review HIGH): the root pid itself is force-killed only while this function
+ * can still prove, by BOTH pid and creation time, that it is the exact same process `child` --
+ * never after `child`'s own `exit` event has already fired (the pid may have been reused by an
+ * unrelated process in the meantime), and the creation-time check that gates descendant discovery
+ * applies here too. */
 export async function stopProcess(child, { graceMs = 5000 } = {}) {
   const pid = child?.pid;
   if (!pid) return;
-  if (!child.killed && child.exitCode === null) {
+  // Captured at launch time by `launchTracked`, never re-derived here: by the time this function
+  // runs the pid may already be gone (or reused), so a lazy query here could silently adopt the
+  // wrong process's creation time.
+  const rootCreationTicks = child.__refractCreationTicks ?? null;
+
+  let rootAlreadyExited = child.exitCode !== null || child.killed;
+  if (!rootAlreadyExited) {
     try {
       child.kill();
     } catch {
       // already gone
     }
-    await Promise.race([new Promise((resolve) => child.once('exit', () => resolve(true))), sleep(graceMs).then(() => false)]);
+    rootAlreadyExited = await Promise.race([new Promise((resolve) => child.once('exit', () => resolve(true))), sleep(graceMs).then(() => false)]);
   }
-  const descendants = liveDescendants(pid);
-  for (const descendantPid of descendants) await killByPid(descendantPid);
-  await killByPid(pid);
+
+  if (rootCreationTicks != null) {
+    for (const descendant of liveDescendants(pid, rootCreationTicks)) await killByPid(descendant.ProcessId);
+  }
+
+  if (!rootAlreadyExited && rootCreationTicks != null && creationTicksOf(pid) === rootCreationTicks) {
+    await killByPid(pid);
+  }
 }
 
 export { sleep };

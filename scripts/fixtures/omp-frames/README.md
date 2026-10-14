@@ -8,7 +8,7 @@ same way).
 
 ## Tape syntax
 
-Every non-comment line is JSON. Three shapes:
+Every non-comment line is JSON. Four shapes:
 
 - An ordinary OMP wire frame (has a `type` field): emitted verbatim, after substituting any of the
   three sentinels below.
@@ -16,6 +16,9 @@ Every non-comment line is JSON. Three shapes:
   `type` in this list; anything else is logged to stderr and dropped (a fixed-script replay, not a
   model, so it cannot answer a command it was not written to expect). Resolving a wait sets the
   sentinels for every frame that follows, until the next wait resolves.
+- `{"__delay__": <ms>}`: pause the tape for `ms` milliseconds before continuing. Used so a
+  streamed reply's incremental `message_update` deltas land as genuinely separate renders a
+  polling harness can observe mid-stream, not one instantaneous final paint.
 - `{"__exit__": {"code": <number>}}`: exit the process immediately with this code. Simulates `omp`
   crashing or exiting unexpectedly.
 
@@ -23,7 +26,17 @@ Every non-comment line is JSON. Three shapes:
 (`__wait__: ["negotiate_protocol"]` then its `response`): `omp::process::OmpProcess` sends this
 unconditionally for every connection once `ready.supportedProtocolVersions` includes 2
 (contracts/omp-usage.md "Start-up sequence per Session" step 2), before any other command --
-omitting it stalls the real caller until its 60s/180s ready-wait ceiling with no visible error.
+omitting it stalls the real caller until its 60s/180s ready-wait ceiling with no visible error
+(found live; see `session.jsonl`'s own provenance note).
+
+**Every `prompt` wait is followed by its own `response` ack** (`{"...,"command":"prompt",
+"success":true}`), before any of the turn's own frames: `OmpProcess::request`/`dispatch_frame`
+only resolves a pending request once a matching `response` frame arrives, and `ipc/chat.rs`'s
+`chat.send` waits on exactly that for 60s. A tape that went straight from the `prompt` wait to
+`agent_start` (an earlier draft did) left the real caller's own `chat.send` call hanging for the
+full 60s and then failing with a "prompt failed" notice, even though the harness's own DOM checks
+passed well before that -- `scripts/verify-tauri.mjs`'s `waitForStreamedReply` now also asserts no
+such notice ever appears, so this class of bug fails loudly instead of silently.
 
 ### Sentinels
 
@@ -42,30 +55,42 @@ skipped; they are not part of the OMP wire format itself.
 
 `REFRACT_FAKE_OMP_SCENARIO=<name>` selects `<name>.jsonl`. Unset, the engine picks `readiness`
 when argv carries `--no-session` (the Rust readiness probe's own scratch, non-Session
-`OmpProcess`) or `session` otherwise (a real Session's `OmpProcess`). `scripts/verify-tauri.mjs`
-sets this env var per scenario it drives; see that file's own comments for which scenario backs
-which proof.
+`OmpProcess`) or `session` otherwise (a real Session's `OmpProcess`).
+
+**`scripts/verify-tauri.mjs` never sets this env var itself.** It only ever drives two scenarios,
+chosen implicitly by which kind of `OmpProcess` the Rust code itself spawns: `readiness` (the
+`--no-session` scratch probe `ipc/readiness.rs` runs as part of `readiness.check`, exercised by
+US1) and `session` (a real Session's process, exercised by US4). `side-chat.jsonl`,
+`subagents.jsonl`, `failure.jsonl` and `exit.jsonl` are **not driven by anything in this PR** --
+they exist for the R3/R5/R6 lanes to select directly (by setting the env var themselves) once
+they port the matching channel, and are not proven to work end to end by this harness.
 
 ## Provenance
 
-| File | Source | Notes |
-|---|---|---|
-| `readiness.jsonl` | Recorded live (`get_state`/`get_available_models`/`get_login_providers` against a real, signed-in `omp`, `scripts/verify-tauri-record.mjs`'s readiness variant) | Provider/model ids replaced with placeholders (`example-provider`/`example-model-*`); field names, nesting, and the provider+id match the readiness probe (`ipc/readiness.rs`) checks for are unchanged. |
-| `session.jsonl` | Recorded live (`scripts/verify-tauri-record.mjs` against a real, signed-in `omp`: negotiate, get_state, a one-tool-call turn with a `write` approval, a queued follow-up, a slash command, get_messages) | Chat text, file content, and the model/provider replaced with placeholders; every frame type, field name, and the approval dialog's `"Allow tool: <name>\nPath: ..."` title format are the real wire shapes observed. |
-| `side-chat.jsonl` | Synthesized from `src/shared/frames.ts` (`BtwCommand`/`BtwDeltaFrame`/`BtwRecordFrame`/`BtwHistoryThread`) and spec 014's gate-fix notes | No live capture: the Rust build has no `btw` channel yet (`session/agent/mod.rs`'s own header). For the R6 lane (#789) once it ports one. |
-| `subagents.jsonl` | Synthesized from `src/shared/frames.ts`'s `ToolExecutionUpdateFrame` (spec 004 FR-007/FR-017 to FR-020) | No live capture: a batch `task()` run needing subagents was out of the tiny-prompt budget for the one real recording. For the R5 lane (#788) once it ports subagent rendering. |
-| `failure.jsonl` | Synthesized from `src/shared/frames.ts`'s `PromptResultFrame`/`PromptResultError` and contracts/omp-usage.md's "Frames Refract consumes" table | No live capture: forcing a real provider error was out of scope for the tiny-prompt budget. |
-| `exit.jsonl` | Synthesized (the `__exit__` engine directive, not an OMP frame) | For the R3 lane (#786, termination/recovery as a typed state machine). |
+Every row below states plainly what was actually captured versus what was written by hand against
+the documented contract -- a run being green proves only what its own row says it proves.
 
-No real chat text, file paths, account identifiers, or provider names from the recording session
+| File | Source | What is genuinely recorded vs. hand-written |
+|---|---|---|
+| `readiness.jsonl` | Recorded live with `node scripts/verify-tauri-record.mjs --out <path> --readiness` against a real, signed-in `omp` (`negotiate_protocol`, `get_state`, `get_available_models`, `get_login_providers`, in that order, matching `ipc/readiness.rs`'s own `probe_signed_in` sequence exactly) | Field names, nesting, and the `provider`+`id` match between `get_state.model` and a `get_available_models` entry (what the readiness probe's own `ok`/`ok:false` branch checks for) are all real. Provider/model/account ids replaced with placeholders. |
+| `session.jsonl` | Recorded live with `node scripts/verify-tauri-record.mjs --out <path>` against a real, signed-in `omp`: `negotiate_protocol`, `get_state`, a one-tool-call turn (`write` with a prompted approval), a queued follow-up (`queue_update`), a local slash command (`/tools`, `command_output`), `get_messages`. `get_messages_page`'s own response shape (`{"messages":[],"totalMessages":0}`, no `nextCursor` key at all for an empty page) was separately confirmed live against the same real `omp` (a bare `get_state` + `get_messages_page` round trip, no model turn). **Hand-edited after recording, not a byte-for-byte replay:** the queued follow-up and slash-command exchange were dropped from the shipped tape (the engine's generic `__wait__`/sentinel mechanism still supports scripting them; a later lane can add them back), the chat text and the assistant's own reply were replaced with a placeholder/token (`xyzzy9`, chosen not to collide with the prompt's own wording), and a `{"__delay__": 400}` was inserted between the assistant's two streamed deltas (not present in the real capture, which streamed far more and far smaller deltas) so a CDP poller can observe the reply arriving in more than one piece. `agent_end`'s three fields (`messages`, `isTerminal`, `yielded`) and the `response` ack immediately following the `prompt` wait are both exactly as captured live, not guessed. |
+| `side-chat.jsonl` | Synthesized from `src/shared/frames.ts` (`BtwCommand`/`BtwDeltaFrame`/`BtwRecordFrame`/`BtwHistoryThread`) and spec 014's gate-fix notes | No live capture at all: the Rust build has no `btw` channel yet (`session/agent/mod.rs`'s own header). Not driven by `verify-tauri.mjs`; for the R6 lane (#789) to select directly once it ports the channel. |
+| `subagents.jsonl` | Synthesized from `src/shared/frames.ts`'s `ToolExecutionUpdateFrame` (spec 004 FR-007/FR-017 to FR-020); the `get_state`/`get_messages_page` preamble reuses the same genuinely-recorded shapes as `session.jsonl` | No live capture of the `task()`/subagent frames themselves: a batch run was out of the tiny-prompt budget. Not driven by `verify-tauri.mjs`; for the R5 lane (#788) once it ports subagent rendering. |
+| `failure.jsonl` | Synthesized from `src/shared/frames.ts`'s `PromptResultFrame`/`PromptResultError` and contracts/omp-usage.md's "Frames Refract consumes" table; same genuinely-recorded preamble as `session.jsonl` | No live capture of a real provider error: forcing one was out of scope for the tiny-prompt budget. Not driven by `verify-tauri.mjs`. |
+| `exit.jsonl` | Synthesized (the `__exit__` engine directive, not an OMP frame) | For the R3 lane (#786, termination/recovery as a typed state machine). Not driven by `verify-tauri.mjs`. |
+
+No real chat text, file paths, account identifiers, or provider names from any recording session
 are checked in anywhere in this directory; every string that came from a live model turn was
 replaced with a short placeholder before being committed. The raw, unsanitised capture never left
-the machine it was recorded on (a scratch temp directory, not this repository).
+the machine it was recorded on (a scratch temp directory, never this repository -- `--out` refuses
+to write inside the repo at all).
 
 ## Re-recording
 
-Re-run `node scripts/verify-tauri-record.mjs --out <path>` against a real, signed-in `omp` on
-`PATH` whenever the wire protocol changes (a new `omp` version, a new frame type Refract starts
+Re-run `node scripts/verify-tauri-record.mjs --out <path>` (or `--readiness` for the
+`get_state`/`get_available_models`/`get_login_providers` sequence) against a real, signed-in `omp`
+on `PATH` whenever the wire protocol changes (a new `omp` version, a new frame type Refract starts
 depending on) and diff the result against these fixtures by field name and frame-type sequence,
 never by exact chat text. Update the sanitized `.jsonl` files here by hand; never check in the raw
-capture itself.
+capture itself (and note which lines, if any, were edited after recording in this table, the same
+way `session.jsonl`'s own row does).

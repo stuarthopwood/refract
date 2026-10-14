@@ -28,24 +28,81 @@ use ipc::{AppState, Dispatcher};
 /// `productName` instead), so this path stays exactly `refract-tauri` regardless of whatever
 /// bundle identifier `tauri.conf.json` ends up with.
 ///
-/// Issue #795 (R12a, verification harness): `REFRACT_DATA_DIR` overrides this with a literal
-/// absolute path when set, so `scripts/verify-tauri.mjs` can point a dev instance at a scratch
-/// directory instead of the real profile -- the same role Electron's own `--user-data-dir` CLI
-/// flag plays (README.md "Where state lives"). Tauri has no such flag (the Rust CLI's `--config`
-/// only overlays `tauri.conf.json`, not an arbitrary app-data path), and `dirs::data_dir()` calls
+/// Issue #795 (R12a, verification harness): under `#[cfg(debug_assertions)]` only (gate-fix,
+/// security review MEDIUM: a packaged release build must never honour an env var that redirects
+/// where it reads/writes session data), `REFRACT_DATA_DIR` overrides this with an absolute path
+/// when set, so `scripts/verify-tauri.mjs` can point a dev instance at a scratch directory
+/// instead of the real profile -- the same role Electron's own `--user-data-dir` CLI flag plays
+/// (README.md "Where state lives"). Tauri has no such flag (the Rust CLI's `--config` only
+/// overlays `tauri.conf.json`, not an arbitrary app-data path), and `dirs::data_dir()` calls
 /// `SHGetKnownFolderPath` directly, which does not honour a redirected `%APPDATA%` env var on an
 /// ordinary (non-redirected) Windows profile -- so this override is this build's own env var, not
-/// a side effect of setting `APPDATA` on the child process. Unset in every normal run; this is a
-/// no-op for the packaged app and for `pnpm dev` run without the harness.
+/// a side effect of setting `APPDATA` on the child process. Unset in every normal run; a no-op
+/// for `pnpm dev`/`pnpm build` run without the harness, and always a no-op in a release build
+/// regardless of whether the variable happens to be set.
 pub fn data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("REFRACT_DATA_DIR") {
-        if !dir.trim().is_empty() {
-            return PathBuf::from(dir);
+    #[cfg(debug_assertions)]
+    {
+        if let Some(path) = resolve_data_dir_override(std::env::var("REFRACT_DATA_DIR").ok()) {
+            return path;
         }
     }
     dirs::data_dir()
         .expect("refract-tauri: no platform data directory available")
         .join("refract-tauri")
+}
+
+/// Pure override-resolution logic, factored out of `data_dir()` so it is `#[test]`-able without
+/// touching the real process environment (gate-fix, tests review MEDIUM). Returns `None` (so the
+/// caller falls back to the real data dir) for an unset/empty/whitespace-only value, or for a
+/// relative path (gate-fix, security review LOW: a relative value used to be accepted silently
+/// and resolved against the process's own current directory, which is never what the harness
+/// intends -- it always passes an absolute scratch directory).
+fn resolve_data_dir_override(raw: Option<String>) -> Option<PathBuf> {
+    let raw = raw?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.is_absolute() {
+        eprintln!("refract-tauri: REFRACT_DATA_DIR must be an absolute path, ignoring relative value {trimmed:?}");
+        return None;
+    }
+    Some(path)
+}
+
+#[cfg(test)]
+mod data_dir_tests {
+    use super::resolve_data_dir_override;
+    use std::path::PathBuf;
+
+    #[test]
+    fn absolute_path_is_used() {
+        assert_eq!(
+            resolve_data_dir_override(Some("C:/scratch/refract".to_string())),
+            Some(PathBuf::from("C:/scratch/refract"))
+        );
+    }
+
+    #[test]
+    fn relative_path_is_rejected() {
+        assert_eq!(
+            resolve_data_dir_override(Some("scratch/refract".to_string())),
+            None
+        );
+    }
+
+    #[test]
+    fn empty_or_whitespace_is_ignored() {
+        assert_eq!(resolve_data_dir_override(Some(String::new())), None);
+        assert_eq!(resolve_data_dir_override(Some("   ".to_string())), None);
+    }
+
+    #[test]
+    fn unset_is_none() {
+        assert_eq!(resolve_data_dir_override(None), None);
+    }
 }
 
 /// Security LOW finding: restricts same-window navigation to the app's own origin -- the

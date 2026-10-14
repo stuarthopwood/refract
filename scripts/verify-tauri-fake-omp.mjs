@@ -6,23 +6,27 @@
 // model, so UI flows can be exercised with no model cost and no network.
 //
 // This file is never invoked directly by a developer: it is the payload a tiny native shim
-// (built by scripts/verify-tauri-cdp.mjs, named `omp.exe`, placed first on PATH for the spawned
-// dev instance) execs via `node <this file> <args forwarded verbatim>`, inheriting the shim's own
-// stdio -- which are the real pipes `OmpProcess::connect` set up, so this script's stdout/stdin
-// ARE the wire the Rust backend reads and writes.
+// (built by scripts/verify-tauri.mjs's own `buildOmpShim`, named `omp.exe`, placed first on PATH
+// for the spawned instance) execs via `node <this file> <args forwarded verbatim>`, inheriting
+// the shim's own stdio -- which are the real pipes `OmpProcess::connect` set up, so this
+// script's stdout/stdin ARE the wire the Rust backend reads and writes.
 //
 // Script format: see scripts/fixtures/omp-frames/README.md. In short, a `.jsonl` fixture is a
 // strict LINEAR tape: plain lines are frames to emit verbatim (after substituting the
 // `$lastId`/`$turnId`/`$lastMessage` sentinels described there); a `{"__wait__": [...types]}`
 // line pauses the tape until a command of one of those types arrives on stdin, then resumes;
-// `{"__exit__": {"code": n}}` exits the process immediately (simulates OMP crashing/exiting
-// unexpectedly).
+// `{"__delay__": ms}` pauses the tape for `ms` milliseconds before continuing (used to make a
+// streamed reply's own incremental `message_update` deltas land as genuinely separate renders,
+// not one instantaneous final paint); `{"__exit__": {"code": n}}` exits the process immediately
+// (simulates OMP crashing/exiting unexpectedly).
 //
 // Scenario selection: `REFRACT_FAKE_OMP_SCENARIO` names a fixture (without `.jsonl`) under
 // `scripts/fixtures/omp-frames/`. When unset, `--no-session` on argv selects `readiness` (the
 // Rust readiness probe's own scratch, non-Session OmpProcess); otherwise `session` (a real
-// Session's lifecycle: attach, fetch history, one streamed chat turn with a tool call, an
-// approval, and a queue chip).
+// Session's lifecycle: attach, fetch history, one streamed chat turn with a tool call and an
+// approval). `scripts/verify-tauri.mjs` never sets this env var itself, so only `readiness` and
+// `session` are ever driven by `pnpm verify:tauri`; `side-chat`/`subagents`/`failure`/`exit` are
+// fixtures for a future lane to drive directly once it ports the matching channel.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -103,7 +107,7 @@ async function main() {
     process.stdout.write(line + '\n');
   }
 
-  function advance() {
+  async function advance() {
     while (cursor < tape.length) {
       const line = tape[cursor];
       if (line && typeof line === 'object' && Array.isArray(line.__wait__)) {
@@ -116,13 +120,18 @@ async function main() {
         process.stdin.pause();
         process.exit(process.exitCode);
       }
+      if (line && typeof line === 'object' && typeof line.__delay__ === 'number') {
+        cursor++;
+        await new Promise((resolve) => setTimeout(resolve, line.__delay__));
+        continue;
+      }
       emit(line);
       cursor++;
     }
     waitingFor = null; // tape exhausted
   }
 
-  function handleCommand(cmd) {
+  async function handleCommand(cmd) {
     debugLog(`pid=${process.pid} RECV ${JSON.stringify(cmd)} (waitingFor=${JSON.stringify(waitingFor)})`);
     if (!waitingFor || !waitingFor.includes(cmd.type)) {
       process.stderr.write(`verify-tauri-fake-omp: scenario "${scenarioName}" was not waiting for "${cmd.type}" (waiting for ${JSON.stringify(waitingFor)}); dropped\n`);
@@ -133,11 +142,11 @@ async function main() {
     if (typeof cmd.message === 'string') vars.lastMessage = cmd.message;
     else if (typeof cmd.question === 'string') vars.lastMessage = cmd.question;
     waitingFor = null;
-    advance();
+    await advance();
   }
 
   // Frames the tape emits before the first __wait__ (typically just `ready`) go out immediately.
-  advance();
+  await advance();
 
   const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
   rl.on('line', (line) => {
@@ -150,7 +159,7 @@ async function main() {
       process.stderr.write(`verify-tauri-fake-omp: unparsable stdin line, ignored: ${err.message}\n`);
       return;
     }
-    handleCommand(cmd);
+    void handleCommand(cmd);
   });
   rl.on('close', () => process.exit(0));
 }
