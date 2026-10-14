@@ -6,7 +6,9 @@ use serde_json::{json, Value};
 use crate::omp::transcript::TranscriptState;
 use crate::store::registry::SessionPatch;
 
-use super::launch_support::{fetch_all_messages, verify_reattach};
+use super::launch_support::{
+    fetch_all_messages, terminated_unexpectedly_for_transcript, verify_reattach,
+};
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
@@ -146,10 +148,17 @@ impl SessionAgent {
         }
 
         let (messages, complete) = fetch_all_messages(&proc).await;
+        // Issue #786 follow-up: `file` is the historical Conversation just switched to -- if
+        // ITS tail shows it was abandoned mid tool-call, the row `settle_interrupted_tool_rows`
+        // below settles to `interrupted` rather than leaving it `running` forever once rendered
+        // as history. Port of `SessionAgent.ts`'s `switchConversation` calling
+        // `detectUnexpectedTermination(file)` at this exact point (applied only if `complete`).
+        let terminated_unexpectedly = terminated_unexpectedly_for_transcript(Some(&file)).await;
         {
             let mut state = self.state.lock().await;
             state.transcript = if complete {
                 let mut fresh = TranscriptState::from_history(&messages);
+                fresh.set_terminated_unexpectedly(terminated_unexpectedly);
                 let _ = fresh.settle_interrupted_tool_rows();
                 fresh
             } else {

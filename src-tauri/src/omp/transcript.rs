@@ -2063,7 +2063,7 @@ impl TranscriptState {
         self.has_user_acted = true;
     }
     /// Sets the flag `settle_interrupted_tool_rows` reads; port of `fromHistory`'s `terminatedUnexpectedly` param.
-    /// No production caller yet (R3/#786 wires `detectUnexpectedTermination`'s result in after both PRs merge); exercised only by this file's own ported tests for now.
+    /// Called by `session::agent::launch`/`conversations`'s `open_conversation()` via `session::termination::detect_unexpected_termination_for_transcript`.
     pub fn set_terminated_unexpectedly(&mut self, value: bool) {
         self.terminated_unexpectedly = value;
     }
