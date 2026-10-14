@@ -3,60 +3,45 @@
 // lane (lane R5, issue #788). Pre-declared so lane R5 is the only lane that ever edits this file
 // (issue #784, "Pre-declare per-lane Rust files").
 //
-// Port of `src/main/omp/readout.ts`'s own `assembleReadout` plus the readout-assembly half of
-// `SessionAgent.ts` (`computeReadout`/`scheduleReadoutUpdate`/`runReadoutUpdate`/
-// `refreshPullRequest`/`syncFromState`'s own `lastContextUsage`/`lastTodoPhases` capture, and
-// `turnStartedAt`). `shell::memory` owns the process-wide low-memory sampler (not per-Session
-// state, so it is not part of this file); `session::subagents` owns the subagent list itself --
-// `subagentCount` below is read from its own `subagent_count` accessor, never duplicated here.
+// Port of `src/main/omp/readout.ts`'s own `assembleReadout` plus `SessionAgent.ts`'s own
+// `computeReadout`/`scheduleReadoutUpdate`/`runReadoutUpdate`/`refreshPullRequest`/
+// `syncFromState`'s `lastContextUsage`/`lastTodoPhases`/`turnStartedAt` capture.
+// `shell::memory` owns the low-memory sampler; `session::subagents` owns the subagent list
+// (`subagentCount` reads its own `subagent_count` accessor, never duplicated here).
 //
-// Round 2 (code review + test review + performance gate, round 1):
-// - The last computed readout is now retained (`State::last_readout`) and exposed via
-//   `current_readout_value` so `ipc::conversations::build_snapshot` (one-line hook) can return the
-//   live value instead of the permanent "nothing read yet" shape (`util.ts:49-71`): the chips,
-//   branch label and subagent count no longer go blank on every Session switch/split/resume.
-// - The PR chip re-poll is back: `on_launch` (a new one-line `launch()` hook) starts a per-agent
-//   60 s timer the first readout after attach + every tick after refreshes it, stopped by
-//   `on_exit` -- matches `SessionAgent.ts`'s own `prPollTimer` (`setInterval`/`clearInterval`).
-// - `refresh_pull_request` is now spawned, never awaited inside `compute_readout`'s own
-//   single-flight run (`void this.refreshPullRequest()`, `SessionAgent.ts:1832`): a `gh` network
-//   call no longer holds back every OTHER chip's own prompt recompute.
-// - A rerun queued while a compute is already in flight now re-arms the FULL debounce (calls
-//   `schedule_readout_update` again) instead of looping with no wait at all, so two emissions are
-//   always at least `READOUT_COALESCE_MS` apart -- the previous "resolve pending immediately" loop
-//   could emit far more often than the acceptance bound under a fast, steady stream of triggers.
-//   `READOUT_COALESCE_MS` itself is now 100 ms (issue #788's own acceptance bound), not 50.
-// - `diff_stat`/`compute_branch` now run concurrently (`tokio::join!`), not one after another.
-// - `readout:update` is no longer pushed for a hidden Session (`transcript:patch`'s own
-//   visibility rule, `SessionManager.ts:125-128`).
+// Round 2 (code/test/perf gate round 1): `State::last_readout` is retained, exposed via
+// `current_readout_value` so `build_snapshot` returns the live value, not the permanent empty
+// shape. The PR chip re-poll is back (`on_launch` starts a per-agent 60 s timer, stopped by
+// `on_exit`, matching `SessionAgent.ts`'s own `prPollTimer`); `refresh_pull_request` is spawned,
+// never awaited inline. A rerun queued mid-compute re-arms the FULL `READOUT_COALESCE_MS`
+// (100 ms) debounce. `diff_stat`/`compute_branch` run concurrently; `readout:update` is not
+// pushed for a hidden Session.
+// Gate round 2 (code/perf): `settle_running_to_exited` schedules a readout update on change;
+// `on_launch` seeds `pull_request_branch` before its first refresh (closes a double `gh` lookup)
+// and jitters that first sleep 0-60s; a duration-only progress change no longer re-broadcasts.
 //
 // Issue #712 (folded in): the live checked-out branch and subagent count both read the CURRENT
 // state at compute time, never a turn-scoped snapshot cleared at the next `agent_start` --
 // `session::subagents`'s own doc comment has the full reasoning for why that heuristic is not
-// ported. Issue #724 (folded in): `branch` is a brand-new field (Rust-only; Electron's own
-// `readout.ts`/`SessionReadout` never had one, constitution/epic rule 5 -- "a feature that exists
-// only in Rust is acceptable"), computed fresh every readout tick via `git symbolic-ref`/`git
-// rev-parse` against the Session's own worktree (never retained across a transient git failure,
-// same stance `changes` already takes). The issue's own suggested dedicated worktree-HEAD-file
-// watcher is NOT implemented this round either (still disclosed, see the PR body): nobody has
-// probed whether it is reliable on Windows/OneDrive paths; this recomputes on every tool call end
-// (a superset of "every GIT-touching tool call end"), every turn start/end, and every attach,
-// which the issue's own text accepts as the floor when the watcher itself is not built.
+// ported. Issue #724 (folded in): `branch` is a brand-new, Rust-only field (constitution/epic
+// rule 5), computed fresh every readout tick via `git symbolic-ref`/`git rev-parse` against the
+// Session's own worktree (never retained across a transient git failure, same stance `changes`
+// already takes). The issue's own suggested dedicated worktree-HEAD-file watcher is NOT
+// implemented (still disclosed): this recomputes on every tool-call end, turn start/end, and
+// attach instead, the floor the issue's own text accepts when the watcher isn't built.
 //
 // `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
-// decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
-// `on_start_progress` for the ready-wait banner (same listener) -- one call per lane module each,
-// cheap and allocation-free as a no-op; lane R5 adds its readout behaviour inside these
-// functions, never inside any file under `session/agent/`.
+// decoded frame, `on_exit` for process exit, and `on_start_progress` for the ready-wait banner
+// (same listener) -- one call per lane module each, cheap and allocation-free as a no-op; lane
+// R5 adds its readout behaviour inside these, never inside any file under `session/agent/`.
 //
-// Core hooks this lane adds (issue #784, "if you truly need a core change, keep it to one line"):
-// `session::agent::launch`'s own `launch()` calls `on_launch` right before `sync_from_state` (the
-// PR-poll timer, started once per life); `sync_from_state` itself calls `on_sync_from_state`
-// right after persisting its own registry patch (the ONE place `contextUsage`/`todoPhases` can be
-// refreshed); `conversations.rs`'s `start_new_conversation`/`open_conversation` each call
-// `on_conversation_reset` before their own `sync_from_state` call (issue #577) -- `changes`/
+// Core hooks this lane adds (issue #784, "keep it to one line"): `launch()` calls `on_launch`
+// right before `sync_from_state` (the PR-poll timer, once per life); `sync_from_state` calls
+// `on_sync_from_state` right after persisting its registry patch (where `contextUsage`/
+// `todoPhases` refresh); `conversations.rs`'s `start_new_conversation`/`open_conversation` each
+// call `on_conversation_reset` before their own `sync_from_state` (issue #577) -- `changes`/
 // `pullRequest` deliberately keep working unchanged across that reset (worktree-based, not
-// Conversation-based, matching #577's own "Changes and Pull request... correctly stay").
+// Conversation-based).
 
 use std::future::Future;
 use std::path::Path;
@@ -145,9 +130,8 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Gate round 2 (perf MEDIUM): a pseudo-random 0..`cap_ms` jitter for the PR poll's own FIRST
-/// sleep, so several Sessions launched together never tick their 60s polls in lockstep (a
-/// simple nanosecond-modulo source, not a new `rand` dependency for one timer stagger).
+/// Gate round 2 (perf MEDIUM): 0..`cap_ms` jitter for the PR poll's first sleep, so Sessions
+/// launched together don't tick in lockstep (nanosecond-modulo, no new `rand` dependency).
 fn jitter_ms(cap_ms: u64) -> u64 {
     if cap_ms == 0 {
         return 0;
@@ -219,12 +203,10 @@ pub(super) async fn on_start_progress(
     // No-op: the start-progress banner is `session::start_queue`'s own concern.
 }
 
-/// `session::agent::launch`'s own hook, called once per `launch()` attempt (code-review/HIGH
-/// round 1: "bring back the per-agent 60 s timer, started at launch and stopped at exit"). Starts
-/// a NEW generation's poll loop: an immediate refresh (spawned, not awaited -- matches
-/// `launch()`'s own unconditional first `void this.refreshPullRequest()`), then a refresh every
-/// `PR_POLL_INTERVAL_MS` after that, until `on_exit` bumps the generation this loop was spawned
-/// with past what `State` currently holds.
+/// `session::agent::launch`'s own hook, called once per `launch()` attempt. Starts a NEW
+/// generation's poll loop: an immediate refresh (spawned, matching `launch()`'s own
+/// unconditional first `void this.refreshPullRequest()`), then one every `PR_POLL_INTERVAL_MS`,
+/// until `on_exit` bumps the generation this loop was spawned with past what `State` holds.
 pub(super) async fn on_launch(agent: &SessionAgent) {
     let generation = agent
         .with_readout_state(|s| {
@@ -246,23 +228,18 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
                 return;
             };
             if first {
-                // Gate round 2 (perf MEDIUM): seed `pull_request_branch` BEFORE this first
-                // `refresh_pull_request` call so its own `still_current` check succeeds instead
-                // of discarding this lookup's result -- without this, `compute_readout`'s own
-                // branch-changed detection (still seeing `None`) spawned a SECOND, redundant
-                // `gh` lookup on every launch (the one whose result actually landed), matching
-                // Electron's own `SessionAgent.ts:1861` (`launch()`'s unconditional first
-                // `refreshPullRequest()` sets this before calling it, not after).
+                // Gate round 2 (perf MEDIUM): seed `pull_request_branch` before this first
+                // refresh so its own `still_current` check succeeds instead of being discarded
+                // -- was causing a second, redundant `gh` lookup every launch (Electron's
+                // `SessionAgent.ts:1861` sets this before calling `refreshPullRequest()`).
                 agent
                     .with_readout_state(|s| s.pull_request_branch = Some(session.branch.clone()))
                     .await;
             }
             refresh_pull_request(&agent, &session.worktree_path, &session.branch).await;
             schedule_readout_update(&agent).await;
-            // Gate round 2 (perf MEDIUM): jitter only the FIRST sleep -- several Sessions
-            // launched together (a batch open/resume) must not all tick their 60s PR polls at
-            // the exact same wall-clock moment; every tick after this one keeps the plain
-            // fixed interval, matching `SessionAgent.ts`'s own un-jittered steady-state timer.
+            // Gate round 2 (perf MEDIUM): jitter only the FIRST sleep, so Sessions launched
+            // together don't tick their 60s PR polls together.
             let sleep_ms = if first {
                 jitter_ms(PR_POLL_INTERVAL_MS)
             } else {
