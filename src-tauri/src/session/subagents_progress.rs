@@ -19,10 +19,14 @@ const PATCH_COALESCE_MS: u64 = 50;
 
 /// Gate round 2 (security/perf LOW): Electron's `subagentStream.ts` has no cap of its own to
 /// mirror, so this is a new, deliberately generous bound -- a very long-running or chatty
-/// subagent must not grow its own synthetic stream (and the `stream_ids` dedupe set alongside
-/// it) without limit for the lifetime of the Conversation. Oldest rows are dropped first; the
-/// visible subagent's own `subagent:patch` stream only ever diffs forward from here anyway, so
-/// an already-open panel never sees a row vanish out from under it mid-view.
+/// subagent must not grow its own synthetic CONTENT stream without limit for the lifetime of
+/// the Conversation. Oldest rows are dropped first; the visible subagent's own `subagent:patch`
+/// stream only ever diffs forward from here anyway, so an already-open panel never sees a row
+/// vanish out from under it mid-view. Follow-up fix (#788): the `stream_ids` dedupe set itself
+/// is deliberately NOT capped alongside it -- OMP can re-report an id it already sent, and an
+/// evicted-but-forgotten id would churn straight back into the stream and immediately
+/// re-trigger its own eviction; a dedupe set's own small string ids cost far less memory than
+/// the full content rows they stand for.
 const MAX_STREAM_ROWS: usize = 500;
 
 /// Port of `transcript.ts`'s own `mapProgressStatus`, extended to settle a `SubagentSummary`
@@ -272,13 +276,15 @@ fn apply_subagent_progress_in_place(
             new_rows.push(row);
         }
     }
+    // Follow-up fix (#788): the evicted row's own id must STAY in `ids` -- OMP's own
+    // `recentTools`/`recentOutput` can re-report an id it already sent once before (the
+    // existing "already rendered" dedupe above relies on this), so removing it here let an
+    // evicted-then-re-reported id churn back into the stream, immediately re-triggering its own
+    // eviction next time -- only the CONTENT row is dropped to bound memory; the dedupe
+    // membership itself is permanent for the life of this subagent's stream.
     if stream.len() > MAX_STREAM_ROWS {
         let overflow = stream.len() - MAX_STREAM_ROWS;
-        for evicted in stream.drain(0..overflow) {
-            if let Some(evicted_id) = evicted.get("id").and_then(Value::as_str) {
-                ids.remove(evicted_id);
-            }
-        }
+        stream.drain(0..overflow);
     }
     new_rows
 }
