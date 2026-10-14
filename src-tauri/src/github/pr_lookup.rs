@@ -48,7 +48,11 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
             Some(idx) => (&rest[..idx], &rest[idx + 1..]),
             None => return None,
         };
-        let host = host_and_path.0.rsplit('@').next().unwrap_or(host_and_path.0);
+        let host = host_and_path
+            .0
+            .rsplit('@')
+            .next()
+            .unwrap_or(host_and_path.0);
         if !host.eq_ignore_ascii_case("github.com") {
             return None;
         }

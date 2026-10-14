@@ -60,9 +60,7 @@ impl ProfileCacheStore {
         login: &str,
         entry: ProfileCacheEntry,
     ) -> std::io::Result<()> {
-        self.data
-            .accounts
-            .insert(format!("{host}/{login}"), entry);
+        self.data.accounts.insert(format!("{host}/{login}"), entry);
         write_json_file(&self.file, &self.data).await
     }
 

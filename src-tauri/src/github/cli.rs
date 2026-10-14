@@ -55,7 +55,11 @@ async fn gh(args: &[&str]) -> Result<String, GhError> {
             format!(
                 "gh {} failed: {}",
                 args.join(" "),
-                if detail.is_empty() { "no output" } else { detail }
+                if detail.is_empty() {
+                    "no output"
+                } else {
+                    detail
+                }
             ),
         ));
     }
@@ -184,7 +188,11 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
                 GhErrorCode::GhFailed,
                 format!(
                     "gh auth status --json hosts failed: {}",
-                    if detail.is_empty() { "no output" } else { detail }
+                    if detail.is_empty() {
+                        "no output"
+                    } else {
+                        detail
+                    }
                 ),
             ));
         }
@@ -208,7 +216,10 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
     let mut entries = Vec::new();
     for (host_key, accounts) in parsed.hosts {
         for account in accounts {
-            let state = account.state.clone().unwrap_or_else(|| "unknown".to_string());
+            let state = account
+                .state
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
             entries.push(GhAuthHostEntry {
                 host: account.host.unwrap_or(host_key.clone()),
                 login: account.login.unwrap_or_default(),
@@ -285,7 +296,9 @@ impl FlowShared {
             let after = &line[start + "One-time code (".len()..];
             if let Some(end) = after.find(')') {
                 let code = &after[..end];
-                let _ = self.events_tx.send(GhLoginFlowEvent::Code(code.to_string()));
+                let _ = self
+                    .events_tx
+                    .send(GhLoginFlowEvent::Code(code.to_string()));
             }
         }
     }
@@ -319,14 +332,22 @@ impl FlowShared {
     /// using only the exit code and the stderr tail -- the raw stderr text itself never leaves
     /// this method, is never logged, and is never emitted.
     fn classify_failure(&self) -> String {
-        let tail = self.stderr_tail.lock().expect("stderr_tail mutex poisoned").to_lowercase();
+        let tail = self
+            .stderr_tail
+            .lock()
+            .expect("stderr_tail mutex poisoned")
+            .to_lowercase();
         if tail.contains("expired") {
             return "The code expired.".to_string();
         }
         if tail.contains("declined") || tail.contains("denied") || tail.contains("access_denied") {
             return "GitHub declined the sign-in.".to_string();
         }
-        if tail.contains("network") || tail.contains("timeout") || tail.contains("dial") || tail.contains("enotfound") {
+        if tail.contains("network")
+            || tail.contains("timeout")
+            || tail.contains("dial")
+            || tail.contains("enotfound")
+        {
             return "Couldn't reach GitHub.".to_string();
         }
         "Sign-in did not finish.".to_string()
@@ -379,7 +400,9 @@ pub struct GhLoginFlow {
 impl GhLoginFlow {
     /// Spawns the child and returns the flow plus its event channel; resolves once spawned (not
     /// once signed in -- the flow keeps running).
-    pub async fn start(host: &str) -> Result<(Arc<GhLoginFlow>, mpsc::UnboundedReceiver<GhLoginFlowEvent>), GhError> {
+    pub async fn start(
+        host: &str,
+    ) -> Result<(Arc<GhLoginFlow>, mpsc::UnboundedReceiver<GhLoginFlowEvent>), GhError> {
         let gh_path = resolve_gh_for_spawn().map_err(|_| {
             GhError::new(
                 GhErrorCode::GhNotFound,
@@ -530,7 +553,9 @@ impl GhLoginFlow {
 
 /// Starts a `gh auth login --hostname <host> --web` flow; see `GhLoginFlow` for the event/cancel
 /// contract.
-pub async fn auth_login_start(host: &str) -> Result<(Arc<GhLoginFlow>, mpsc::UnboundedReceiver<GhLoginFlowEvent>), GhError> {
+pub async fn auth_login_start(
+    host: &str,
+) -> Result<(Arc<GhLoginFlow>, mpsc::UnboundedReceiver<GhLoginFlowEvent>), GhError> {
     GhLoginFlow::start(host).await
 }
 

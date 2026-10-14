@@ -11,6 +11,7 @@ use super::gh::{gh_json, owner_repo_for, GhActor, GhCheckRun, GhError, GhLabel};
 
 /// `gh pr list --json <LIST_FIELDS>` (docs/spike/FINDINGS.md row 37).
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhPrListEntry {
     pub number: u64,
     pub title: String,
@@ -53,6 +54,7 @@ pub async fn list_open_pull_requests(repo_path: &Path) -> Result<Vec<GhPrListEnt
 /// `gh search prs --repo <repo> "<qualifier>" --json <SEARCH_FIELDS>` (row 37): a narrower,
 /// documented field set than `gh pr list --json`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhSearchEntry {
     pub number: u64,
     pub title: String,
@@ -117,6 +119,7 @@ pub async fn search_pull_requests(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GhCheckStateResult {
     status_check_rollup: Option<Vec<GhCheckRun>>,
 }
@@ -148,6 +151,7 @@ pub async fn view_check_state(
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhReview {
     pub id: String,
     pub author: GhActor,
@@ -157,6 +161,7 @@ pub struct GhReview {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhCommit {
     pub oid: String,
     #[serde(default)]
@@ -164,6 +169,7 @@ pub struct GhCommit {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhRestFileLite {
     pub path: String,
     pub additions: u64,
@@ -175,6 +181,7 @@ pub struct GhRestFileLite {
 /// `gh pr view --json <VIEW_FIELDS>` (row 38): `mergeable`/`mergeStateStatus` confirmed live as
 /// `"MERGEABLE"`/`"CLEAN"` string enums on a clean PR; `files` never carries `patch`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhPrViewDetail {
     pub title: String,
     pub number: u64,
@@ -207,7 +214,10 @@ pub struct GhPrViewDetail {
 
 const VIEW_FIELDS: &str = "title,number,state,author,baseRefName,headRefName,reviews,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner";
 
-pub async fn view_pull_request_detail(repo_path: &Path, number: u64) -> Result<GhPrViewDetail, GhError> {
+pub async fn view_pull_request_detail(
+    repo_path: &Path,
+    number: u64,
+) -> Result<GhPrViewDetail, GhError> {
     let (owner, repo) = owner_repo_for(repo_path).await?;
     let number_str = number.to_string();
     gh_json(
@@ -240,6 +250,7 @@ pub struct GhStalenessCheck {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GhStalenessCheckWire {
     id: String,
     updated_at: String,
@@ -250,7 +261,10 @@ struct GhStalenessCheckWire {
     state: String,
 }
 
-pub async fn view_staleness_check(repo_path: &Path, number: u64) -> Result<GhStalenessCheck, GhError> {
+pub async fn view_staleness_check(
+    repo_path: &Path,
+    number: u64,
+) -> Result<GhStalenessCheck, GhError> {
     let (owner, repo) = owner_repo_for(repo_path).await?;
     let number_str = number.to_string();
     let result: GhStalenessCheckWire = gh_json(
@@ -299,7 +313,10 @@ pub struct GhRestFile {
     pub status: String,
 }
 
-pub async fn get_changed_files_with_patch(repo_path: &Path, number: u64) -> Option<Vec<GhRestFile>> {
+pub async fn get_changed_files_with_patch(
+    repo_path: &Path,
+    number: u64,
+) -> Option<Vec<GhRestFile>> {
     let (owner, repo) = owner_repo_for(repo_path).await.ok()?;
     gh_json(
         repo_path,

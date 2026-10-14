@@ -5,30 +5,39 @@
 
 use serde_json::Value;
 
-use crate::git::worktrees::{add_worktree_from_pull_request_branch, remove_worktree, unique_pull_request_branch_name};
+use crate::git::worktrees::{
+    add_worktree_from_pull_request_branch, remove_worktree, unique_pull_request_branch_name,
+};
 use crate::github::gh_mutations::{self, MergeMethod, PinnedReview, ReviewVerdict};
 use crate::github::gh_pull_requests;
-use crate::ipc::{invalid_argument, not_found, now_iso8601, map_git_error, map_registry_error, AppState, HandlerFuture, IpcError};
+use crate::ipc::{
+    invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, AppState,
+    HandlerFuture, IpcError,
+};
 use crate::store::registry::Session;
 
-use super::mapping::{self, compute_merge_disabled_reason, compute_review_disabled_reason, map_mergeable_state, map_pull_request_state, PullRequestListResult};
+use super::mapping::{
+    self, compute_merge_disabled_reason, compute_review_disabled_reason, map_mergeable_state,
+    map_pull_request_state, PullRequestListResult,
+};
 use super::{
-    build_detail, check_not_stale, forget_cache, list_pull_requests, map_gh_error, parse_filter_tab,
-    remember_fresh, repo_path_for, stale_error, valid_pull_request_number, STALE_ERROR,
-    STALE_ERROR_DIALOG, STALE_ERROR_DIALOG_MOVED,
+    build_detail, check_not_stale, forget_cache, list_pull_requests, map_gh_error,
+    parse_filter_tab, remember_fresh, repo_path_for, stale_error, valid_pull_request_number,
+    STALE_ERROR, STALE_ERROR_DIALOG, STALE_ERROR_DIALOG_MOVED,
 };
 
 pub(super) fn pull_requests_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let repository_id = args
-            .first()
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid_argument("pullRequests.list expects (repositoryId, tab, query?)"))?;
+        let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
+            invalid_argument("pullRequests.list expects (repositoryId, tab, query?)")
+        })?;
         let tab = args
             .get(1)
             .and_then(Value::as_str)
             .and_then(parse_filter_tab)
-            .ok_or_else(|| invalid_argument("pullRequests.list expects (repositoryId, tab, query?)"))?;
+            .ok_or_else(|| {
+                invalid_argument("pullRequests.list expects (repositoryId, tab, query?)")
+            })?;
         let query = match args.get(2) {
             None | Some(Value::Null) => None,
             Some(Value::String(s)) => Some(s.as_str()),
@@ -46,20 +55,25 @@ pub(super) fn pull_requests_list(state: AppState, args: Vec<Value>) -> HandlerFu
             items,
             fetched_at: now_iso8601(),
         };
-        Ok(serde_json::to_value(result).expect("PullRequestListResult is always JSON-serialisable"))
+        Ok(
+            serde_json::to_value(result)
+                .expect("PullRequestListResult is always JSON-serialisable"),
+        )
     })
 }
 
 pub(super) fn pull_requests_detail(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let repository_id = args
-            .first()
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid_argument("pullRequests.detail expects (repositoryId, number)"))?;
-        let number = valid_pull_request_number(&args, 1)
-            .ok_or_else(|| invalid_argument("pullRequests.detail expects (repositoryId, number)"))?;
+        let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
+            invalid_argument("pullRequests.detail expects (repositoryId, number)")
+        })?;
+        let number = valid_pull_request_number(&args, 1).ok_or_else(|| {
+            invalid_argument("pullRequests.detail expects (repositoryId, number)")
+        })?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
-        let detail = build_detail(&repo_path, number).await.map_err(map_gh_error)?;
+        let detail = build_detail(&repo_path, number)
+            .await
+            .map_err(map_gh_error)?;
         remember_fresh(
             repository_id,
             number,
@@ -72,16 +86,15 @@ pub(super) fn pull_requests_detail(state: AppState, args: Vec<Value>) -> Handler
 
 pub(super) fn pull_requests_comment(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let repository_id = args
-            .first()
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid_argument("pullRequests.comment expects (repositoryId, number, body)"))?;
-        let number = valid_pull_request_number(&args, 1)
-            .ok_or_else(|| invalid_argument("pullRequests.comment expects (repositoryId, number, body)"))?;
-        let body = args
-            .get(2)
-            .and_then(Value::as_str)
-            .ok_or_else(|| invalid_argument("pullRequests.comment expects (repositoryId, number, body)"))?;
+        let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
+            invalid_argument("pullRequests.comment expects (repositoryId, number, body)")
+        })?;
+        let number = valid_pull_request_number(&args, 1).ok_or_else(|| {
+            invalid_argument("pullRequests.comment expects (repositoryId, number, body)")
+        })?;
+        let body = args.get(2).and_then(Value::as_str).ok_or_else(|| {
+            invalid_argument("pullRequests.comment expects (repositoryId, number, body)")
+        })?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
         let (stale, _) = check_not_stale(repository_id, &repo_path, number, false)
             .await
@@ -100,16 +113,24 @@ pub(super) fn pull_requests_comment(state: AppState, args: Vec<Value>) -> Handle
 pub(super) fn pull_requests_reply_to_thread(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.replyToThread expects (repositoryId, number, threadId, body)")
+            invalid_argument(
+                "pullRequests.replyToThread expects (repositoryId, number, threadId, body)",
+            )
         })?;
         let number = valid_pull_request_number(&args, 1).ok_or_else(|| {
-            invalid_argument("pullRequests.replyToThread expects (repositoryId, number, threadId, body)")
+            invalid_argument(
+                "pullRequests.replyToThread expects (repositoryId, number, threadId, body)",
+            )
         })?;
         let thread_id = args.get(2).and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.replyToThread expects (repositoryId, number, threadId, body)")
+            invalid_argument(
+                "pullRequests.replyToThread expects (repositoryId, number, threadId, body)",
+            )
         })?;
         let body = args.get(3).and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.replyToThread expects (repositoryId, number, threadId, body)")
+            invalid_argument(
+                "pullRequests.replyToThread expects (repositoryId, number, threadId, body)",
+            )
         })?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
         let (stale, _) = check_not_stale(repository_id, &repo_path, number, false)
@@ -118,9 +139,10 @@ pub(super) fn pull_requests_reply_to_thread(state: AppState, args: Vec<Value>) -
         if stale {
             return Err(stale_error(STALE_ERROR));
         }
-        let threads_and_timeline = gh_mutations::get_review_threads_and_timeline(&repo_path, number)
-            .await
-            .map_err(map_gh_error)?;
+        let threads_and_timeline =
+            gh_mutations::get_review_threads_and_timeline(&repo_path, number)
+                .await
+                .map_err(map_gh_error)?;
         let thread = threads_and_timeline
             .review_threads
             .nodes
@@ -167,9 +189,10 @@ pub(super) fn pull_requests_resolve_thread(state: AppState, args: Vec<Value>) ->
         }
         // Security remediation (Constitution Principle V): `threadId` must be verified to belong
         // to THIS pull request before the mutation, never trusted straight from the renderer.
-        let threads_and_timeline = gh_mutations::get_review_threads_and_timeline(&repo_path, number)
-            .await
-            .map_err(map_gh_error)?;
+        let threads_and_timeline =
+            gh_mutations::get_review_threads_and_timeline(&repo_path, number)
+                .await
+                .map_err(map_gh_error)?;
         if !threads_and_timeline
             .review_threads
             .nodes
@@ -189,13 +212,19 @@ pub(super) fn pull_requests_resolve_thread(state: AppState, args: Vec<Value>) ->
 pub(super) fn pull_requests_unresolve_thread(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.unresolveThread expects (repositoryId, number, threadId)")
+            invalid_argument(
+                "pullRequests.unresolveThread expects (repositoryId, number, threadId)",
+            )
         })?;
         let number = valid_pull_request_number(&args, 1).ok_or_else(|| {
-            invalid_argument("pullRequests.unresolveThread expects (repositoryId, number, threadId)")
+            invalid_argument(
+                "pullRequests.unresolveThread expects (repositoryId, number, threadId)",
+            )
         })?;
         let thread_id = args.get(2).and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.unresolveThread expects (repositoryId, number, threadId)")
+            invalid_argument(
+                "pullRequests.unresolveThread expects (repositoryId, number, threadId)",
+            )
         })?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
         let (stale, _) = check_not_stale(repository_id, &repo_path, number, false)
@@ -204,9 +233,10 @@ pub(super) fn pull_requests_unresolve_thread(state: AppState, args: Vec<Value>) 
         if stale {
             return Err(stale_error(STALE_ERROR));
         }
-        let threads_and_timeline = gh_mutations::get_review_threads_and_timeline(&repo_path, number)
-            .await
-            .map_err(map_gh_error)?;
+        let threads_and_timeline =
+            gh_mutations::get_review_threads_and_timeline(&repo_path, number)
+                .await
+                .map_err(map_gh_error)?;
         if !threads_and_timeline
             .review_threads
             .nodes
@@ -264,7 +294,9 @@ pub(super) fn pull_requests_submit_review(state: AppState, args: Vec<Value>) -> 
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
-                invalid_argument("pullRequests.submitReview expects expectedHeadSha to be a non-empty string")
+                invalid_argument(
+                    "pullRequests.submitReview expects expectedHeadSha to be a non-empty string",
+                )
             })?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
         // Security remediation: requires a cache entry (`detail()` must have been called for
@@ -306,26 +338,38 @@ pub(super) fn pull_requests_submit_review(state: AppState, args: Vec<Value>) -> 
 pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.merge expects (repositoryId, number, { method, expectedHeadSha })")
+            invalid_argument(
+                "pullRequests.merge expects (repositoryId, number, { method, expectedHeadSha })",
+            )
         })?;
         let number = valid_pull_request_number(&args, 1).ok_or_else(|| {
-            invalid_argument("pullRequests.merge expects (repositoryId, number, { method, expectedHeadSha })")
+            invalid_argument(
+                "pullRequests.merge expects (repositoryId, number, { method, expectedHeadSha })",
+            )
         })?;
         let input = args.get(2).and_then(Value::as_object).ok_or_else(|| {
-            invalid_argument("pullRequests.merge expects (repositoryId, number, { method, expectedHeadSha })")
+            invalid_argument(
+                "pullRequests.merge expects (repositoryId, number, { method, expectedHeadSha })",
+            )
         })?;
         let method = input
             .get("method")
             .and_then(Value::as_str)
             .and_then(MergeMethod::parse)
             .ok_or_else(|| {
-                invalid_argument("pullRequests.merge expects method to be 'merge' | 'squash' | 'rebase'")
+                invalid_argument(
+                    "pullRequests.merge expects method to be 'merge' | 'squash' | 'rebase'",
+                )
             })?;
         let expected_head_sha = input
             .get("expectedHeadSha")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| invalid_argument("pullRequests.merge expects expectedHeadSha to be a non-empty string"))?;
+            .ok_or_else(|| {
+                invalid_argument(
+                    "pullRequests.merge expects expectedHeadSha to be a non-empty string",
+                )
+            })?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
         let (stale, fresh) = check_not_stale(repository_id, &repo_path, number, true)
             .await
@@ -346,7 +390,11 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
             // `reviewDisabledReason`.
             let is_conflict = matches!(mergeable_state, mapping::MergeableState::Conflicting)
                 || fresh.merge_state_status.eq_ignore_ascii_case("DIRTY");
-            let code = if is_conflict { "not-mergeable" } else { "disabled" };
+            let code = if is_conflict {
+                "not-mergeable"
+            } else {
+                "disabled"
+            };
             return Err(IpcError::new(code, reason));
         }
         if matches!(mergeable_state, mapping::MergeableState::Unknown) {
@@ -365,13 +413,20 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
     })
 }
 
-pub(super) fn pull_requests_new_session_from_pull_request(state: AppState, args: Vec<Value>) -> HandlerFuture {
+pub(super) fn pull_requests_new_session_from_pull_request(
+    state: AppState,
+    args: Vec<Value>,
+) -> HandlerFuture {
     Box::pin(async move {
         let repository_id = args.first().and_then(Value::as_str).ok_or_else(|| {
-            invalid_argument("pullRequests.newSessionFromPullRequest expects (repositoryId, number)")
+            invalid_argument(
+                "pullRequests.newSessionFromPullRequest expects (repositoryId, number)",
+            )
         })?;
         let number = valid_pull_request_number(&args, 1).ok_or_else(|| {
-            invalid_argument("pullRequests.newSessionFromPullRequest expects (repositoryId, number)")
+            invalid_argument(
+                "pullRequests.newSessionFromPullRequest expects (repositoryId, number)",
+            )
         })?;
         let repository = {
             let registry = state.registry.lock().await;
@@ -390,7 +445,9 @@ pub(super) fn pull_requests_new_session_from_pull_request(state: AppState, args:
         let added = add_worktree_from_pull_request_branch(repo_path, number, &local_branch_name)
             .await
             .map_err(map_git_error)?;
-        let view = gh_pull_requests::view_pull_request_detail(repo_path, number).await.ok();
+        let view = gh_pull_requests::view_pull_request_detail(repo_path, number)
+            .await
+            .ok();
         let now = now_iso8601();
         let session = Session {
             id: uuid::Uuid::new_v4().to_string(),
@@ -415,7 +472,13 @@ pub(super) fn pull_requests_new_session_from_pull_request(state: AppState, args:
             stopped_on_request_at_size: None,
         };
 
-        if let Err(err) = state.registry.lock().await.add_session(session.clone()).await {
+        if let Err(err) = state
+            .registry
+            .lock()
+            .await
+            .add_session(session.clone())
+            .await
+        {
             // Security remediation (ported): the Repository may have been removed while the
             // worktree-creation steps above were still in flight -- roll back the worktree/
             // branch just created so it is not stranded.

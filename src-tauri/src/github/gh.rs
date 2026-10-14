@@ -242,8 +242,12 @@ pub async fn gh_graphql<T: serde::de::DeserializeOwned>(
     if result.code != 0 {
         return Err(map_gh_failure(&result.stderr, &result.stdout));
     }
-    let parsed: GraphqlResponse<T> = serde_json::from_str(&result.stdout)
-        .map_err(|_| GhError::new(GhErrorCode::GithubFailed, "gh api graphql returned invalid JSON."))?;
+    let parsed: GraphqlResponse<T> = serde_json::from_str(&result.stdout).map_err(|_| {
+        GhError::new(
+            GhErrorCode::GithubFailed,
+            "gh api graphql returned invalid JSON.",
+        )
+    })?;
     if let Some(errors) = &parsed.errors {
         if !errors.is_empty() {
             let joined = errors
@@ -254,9 +258,12 @@ pub async fn gh_graphql<T: serde::de::DeserializeOwned>(
             return Err(GhError::new(GhErrorCode::GithubFailed, joined));
         }
     }
-    parsed
-        .data
-        .ok_or_else(|| GhError::new(GhErrorCode::GithubFailed, "gh api graphql returned no data."))
+    parsed.data.ok_or_else(|| {
+        GhError::new(
+            GhErrorCode::GithubFailed,
+            "gh api graphql returned no data.",
+        )
+    })
 }
 
 pub enum GraphqlValue<'a> {
@@ -288,7 +295,8 @@ pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhErro
 /// TS regexes were.
 fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
     if let Ok(url) = tauri::Url::parse(remote_url) {
-        let scheme_ok = url.scheme().eq_ignore_ascii_case("https") || url.scheme().eq_ignore_ascii_case("http");
+        let scheme_ok =
+            url.scheme().eq_ignore_ascii_case("https") || url.scheme().eq_ignore_ascii_case("http");
         let host_ok = url
             .host_str()
             .map(|h| h.eq_ignore_ascii_case("github.com"))
@@ -316,7 +324,9 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
         return None;
     }
     const SSH_PREFIX: &str = "git@github.com:";
-    if remote_url.len() > SSH_PREFIX.len() && remote_url[..SSH_PREFIX.len()].eq_ignore_ascii_case(SSH_PREFIX) {
+    if remote_url.len() > SSH_PREFIX.len()
+        && remote_url[..SSH_PREFIX.len()].eq_ignore_ascii_case(SSH_PREFIX)
+    {
         let rest = remote_url[SSH_PREFIX.len()..].trim_end_matches('/');
         let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
         if segments.len() == 2 {
@@ -356,3 +366,101 @@ pub struct GhCheckRun {
     pub state: Option<String>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_owner_repo ---
+
+    #[test]
+    fn parses_https_with_git_suffix() {
+        assert_eq!(
+            parse_owner_repo("https://github.com/owner/repo.git"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_https_without_git_suffix_and_trailing_slash() {
+        assert_eq!(
+            parse_owner_repo("https://github.com/owner/repo/"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_ssh_form() {
+        assert_eq!(
+            parse_owner_repo("git@github.com:owner/repo.git"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_mixed_case_host() {
+        assert_eq!(
+            parse_owner_repo("https://GitHub.COM/owner/repo.git"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_non_github_https_host() {
+        assert_eq!(parse_owner_repo("https://gitlab.com/owner/repo.git"), None);
+    }
+
+    #[test]
+    fn rejects_ssh_to_wrong_host() {
+        assert_eq!(parse_owner_repo("git@gitlab.com:owner/repo.git"), None);
+    }
+
+    #[test]
+    fn rejects_query_string() {
+        assert_eq!(parse_owner_repo("https://github.com/owner/repo?x=1"), None);
+    }
+
+    #[test]
+    fn rejects_garbage_string() {
+        assert_eq!(parse_owner_repo("not a url at all"), None);
+    }
+
+    // --- map_gh_failure ---
+
+    #[test]
+    fn maps_rate_limit() {
+        let err = map_gh_failure("API rate limit exceeded for user", "");
+        assert_eq!(err.code, GhErrorCode::RateLimited);
+        assert!(!err.message.is_empty());
+    }
+
+    #[test]
+    fn maps_not_signed_in() {
+        let err = map_gh_failure(
+            "To get started with GitHub CLI, please run: gh auth login",
+            "",
+        );
+        assert_eq!(err.code, GhErrorCode::GhUnavailable);
+        assert!(!err.message.is_empty());
+    }
+
+    #[test]
+    fn maps_network_unreachable() {
+        let err = map_gh_failure("dial tcp: network is unreachable", "");
+        assert_eq!(err.code, GhErrorCode::GhUnavailable);
+        assert!(!err.message.is_empty());
+    }
+
+    #[test]
+    fn maps_other_failure_to_github_failed() {
+        let err = map_gh_failure("some unexpected gh error", "");
+        assert_eq!(err.code, GhErrorCode::GithubFailed);
+        assert!(!err.message.is_empty());
+    }
+
+    #[test]
+    fn non_empty_or_falls_back_in_order() {
+        assert_eq!(non_empty_or("  err  ", "out", "fallback"), "err");
+        assert_eq!(non_empty_or("   ", "out", "fallback"), "out");
+        assert_eq!(non_empty_or("   ", "   ", "fallback"), "fallback");
+    }
+}

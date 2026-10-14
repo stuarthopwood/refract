@@ -7,11 +7,15 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use super::gh::{gh_graphql, gh_json, gh_raw, map_gh_failure, non_empty_or, owner_repo_for, GhActor, GhError, GhErrorCode, GraphqlValue};
+use super::gh::{
+    gh_graphql, gh_json, gh_raw, map_gh_failure, non_empty_or, owner_repo_for, GhActor, GhError,
+    GhErrorCode, GraphqlValue,
+};
 
 /// `reviewThreads`/`timelineItems`: connection shapes confirmed live via introspection plus a
 /// live query. `item_types` filters the timeline to the three kinds this feature renders.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhReviewThreadComment {
     pub id: String,
     pub author: Option<GhActor>,
@@ -25,6 +29,7 @@ pub struct GhReviewThreadComments {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhReviewThreadNode {
     pub id: String,
     pub is_resolved: bool,
@@ -43,6 +48,7 @@ pub struct GhTimelineCommitAuthor {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhTimelineCommit {
     pub oid: String,
     pub message: String,
@@ -52,7 +58,9 @@ pub struct GhTimelineCommit {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhTimelineNode {
+    #[serde(rename = "__typename")]
     pub __typename: String,
     #[serde(default)]
     pub commit: Option<GhTimelineCommit>,
@@ -71,6 +79,7 @@ pub struct GhTimelineNode {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GhReviewThreadsAndTimelineInner {
     pub id: String,
     pub review_threads: GhReviewThreadsNodes,
@@ -122,14 +131,20 @@ pub async fn get_review_threads_and_timeline(
 
 /// Input shapes confirmed via introspection only; never executed live in this session. Variables,
 /// never string interpolation, so a thread id never needs hand-escaping.
-pub async fn resolve_review_thread_mutation(repo_path: &Path, thread_id: &str) -> Result<(), GhError> {
+pub async fn resolve_review_thread_mutation(
+    repo_path: &Path,
+    thread_id: &str,
+) -> Result<(), GhError> {
     let query = "mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id isResolved } } }";
     let _: serde_json::Value =
         gh_graphql(repo_path, query, &[("id", GraphqlValue::Str(thread_id))]).await?;
     Ok(())
 }
 
-pub async fn unresolve_review_thread_mutation(repo_path: &Path, thread_id: &str) -> Result<(), GhError> {
+pub async fn unresolve_review_thread_mutation(
+    repo_path: &Path,
+    thread_id: &str,
+) -> Result<(), GhError> {
     let query = "mutation($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id isResolved } } }";
     let _: serde_json::Value =
         gh_graphql(repo_path, query, &[("id", GraphqlValue::Str(thread_id))]).await?;
@@ -177,7 +192,11 @@ pub async fn reply_to_thread_mutation(
 
 /// A top-level pull request comment, distinct from a thread reply: the documented porcelain
 /// `gh pr comment` command already covers it, no GraphQL mutation needed.
-pub async fn comment_on_pull_request(repo_path: &Path, number: u64, body: &str) -> Result<(), GhError> {
+pub async fn comment_on_pull_request(
+    repo_path: &Path,
+    number: u64,
+    body: &str,
+) -> Result<(), GhError> {
     let (owner, repo) = owner_repo_for(repo_path).await?;
     let number_str = number.to_string();
     let result = gh_raw(
@@ -241,7 +260,8 @@ pub async fn submit_review(
             if let Some(body) = body {
                 variables.push(("body", GraphqlValue::Str(body)));
             }
-            let _: serde_json::Value = gh_graphql(repo_path, ADD_REVIEW_MUTATION, &variables).await?;
+            let _: serde_json::Value =
+                gh_graphql(repo_path, ADD_REVIEW_MUTATION, &variables).await?;
             return Ok(());
         }
     }
@@ -293,6 +313,7 @@ impl MergeMethod {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AllowedMergeMethodsWire {
     merge_commit_allowed: bool,
     squash_merge_allowed: bool,
@@ -380,4 +401,26 @@ pub async fn merge_pull_request(
         return Err(map_gh_failure(&result.stderr, &result.stdout));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_method_round_trips_every_valid_literal() {
+        for (literal, method) in [
+            ("merge", MergeMethod::Merge),
+            ("squash", MergeMethod::Squash),
+            ("rebase", MergeMethod::Rebase),
+        ] {
+            assert_eq!(MergeMethod::parse(literal), Some(method));
+            assert_eq!(method.as_str(), literal);
+        }
+    }
+
+    #[test]
+    fn merge_method_parse_rejects_unknown_literal() {
+        assert_eq!(MergeMethod::parse("bogus"), None);
+    }
 }

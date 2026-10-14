@@ -7,7 +7,9 @@
 use serde::Serialize;
 
 use crate::github::gh::{GhActor, GhCheckRun};
-use crate::github::gh_mutations::{GhThreadsAndTimeline, GhTimelineNode, MergeMethod, ReviewVerdict};
+use crate::github::gh_mutations::{
+    GhThreadsAndTimeline, GhTimelineNode, MergeMethod, ReviewVerdict,
+};
 use crate::github::gh_pull_requests::{GhPrViewDetail, GhRestFile};
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,9 +79,9 @@ pub enum MergeableState {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[allow(dead_code)] // Kept for wire-shape parity with `AutomatedFinding.severity`; this build
-// never constructs a non-empty `findings` list (see that struct's own doc comment), so no
-// variant is ever actually matched/constructed, but the type must still exist and serialise
-// correctly if a future slice starts populating it.
+                    // never constructs a non-empty `findings` list (see that struct's own doc comment), so no
+                    // variant is ever actually matched/constructed, but the type must still exist and serialise
+                    // correctly if a future slice starts populating it.
 pub enum FindingSeverity {
     Low,
     Medium,
@@ -141,7 +143,11 @@ pub struct ReviewThread {
 /// The Overview's ordered timeline (FR-008): commits, general comments, submitted reviews, and
 /// review threads, in chronological order.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
 pub enum TimelineEntry {
     Commit {
         sha: String,
@@ -234,7 +240,13 @@ pub fn map_commit_author(name: Option<&str>) -> PullRequestActor {
 }
 
 const PENDING_STATUSES: &[&str] = &["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED"];
-const FAILED_CONCLUSIONS: &[&str] = &["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED"];
+const FAILED_CONCLUSIONS: &[&str] = &[
+    "FAILURE",
+    "ERROR",
+    "CANCELLED",
+    "TIMED_OUT",
+    "ACTION_REQUIRED",
+];
 
 pub fn map_check_state(runs: Option<&[GhCheckRun]>) -> CheckStateOrNone {
     let Some(runs) = runs else {
@@ -320,7 +332,10 @@ pub fn map_review_verdict(state: Option<&str>) -> Option<ReviewVerdict> {
     }
 }
 
-pub fn map_changed_files(view: &GhPrViewDetail, rest_files: Option<&[GhRestFile]>) -> Vec<ChangedFile> {
+pub fn map_changed_files(
+    view: &GhPrViewDetail,
+    rest_files: Option<&[GhRestFile]>,
+) -> Vec<ChangedFile> {
     if let Some(rest_files) = rest_files {
         return rest_files
             .iter()
@@ -382,7 +397,9 @@ pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
                 }
             }
             "PullRequestReview" => {
-                if let (Some(id), Some(verdict)) = (&node.id, map_review_verdict(node.state.as_deref())) {
+                if let (Some(id), Some(verdict)) =
+                    (&node.id, map_review_verdict(node.state.as_deref()))
+                {
                     let submitted_at = node.submitted_at.clone().unwrap_or_default();
                     let review = Review {
                         id: id.clone(),
@@ -431,10 +448,21 @@ pub fn build_timeline(data: &GhThreadsAndTimeline) -> Vec<TimelineEntry> {
     }
 
     with_timestamps.sort_by(|a, b| a.1.cmp(&b.1));
-    with_timestamps.into_iter().map(|(entry, _)| entry).collect()
+    with_timestamps
+        .into_iter()
+        .map(|(entry, _)| entry)
+        .collect()
 }
 
 /// Narrow helper so `mod.rs`'s `__typename` match above never needs to import `GhTimelineNode`
 /// itself just to reference its type in a doc comment.
 #[allow(dead_code)]
 fn _typename_reference(_: &GhTimelineNode) {}
+
+// Fixture-based tests for the mapping functions above (issue #792's own named ask: "write
+// fixtures from recorded `gh` output for list, detail, review submit and merge"). Split into a
+// sibling file -- the same pattern `session/agent` already uses for splitting a module by
+// concern -- to stay under the 600-line-per-file cap (issue #806).
+#[cfg(test)]
+#[path = "mapping_tests.rs"]
+mod mapping_tests;

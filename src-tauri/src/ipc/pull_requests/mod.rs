@@ -35,10 +35,22 @@ pub fn register(d: &mut Dispatcher) {
     d.register("pullRequests.list", handlers::pull_requests_list);
     d.register("pullRequests.detail", handlers::pull_requests_detail);
     d.register("pullRequests.comment", handlers::pull_requests_comment);
-    d.register("pullRequests.replyToThread", handlers::pull_requests_reply_to_thread);
-    d.register("pullRequests.resolveThread", handlers::pull_requests_resolve_thread);
-    d.register("pullRequests.unresolveThread", handlers::pull_requests_unresolve_thread);
-    d.register("pullRequests.submitReview", handlers::pull_requests_submit_review);
+    d.register(
+        "pullRequests.replyToThread",
+        handlers::pull_requests_reply_to_thread,
+    );
+    d.register(
+        "pullRequests.resolveThread",
+        handlers::pull_requests_resolve_thread,
+    );
+    d.register(
+        "pullRequests.unresolveThread",
+        handlers::pull_requests_unresolve_thread,
+    );
+    d.register(
+        "pullRequests.submitReview",
+        handlers::pull_requests_submit_review,
+    );
     d.register("pullRequests.merge", handlers::pull_requests_merge);
     d.register(
         "pullRequests.newSessionFromPullRequest",
@@ -50,7 +62,8 @@ pub(super) fn map_gh_error(err: GhError) -> IpcError {
     IpcError::new(err.code.as_str(), err.message)
 }
 
-pub(super) const STALE_ERROR: &str = "This pull request has changed on GitHub; refresh before trying again.";
+pub(super) const STALE_ERROR: &str =
+    "This pull request has changed on GitHub; refresh before trying again.";
 pub(super) const STALE_ERROR_DIALOG: &str =
     "This pull request has changed on GitHub; close this dialog, refresh, and try again.";
 pub(super) const STALE_ERROR_DIALOG_MOVED: &str =
@@ -87,7 +100,10 @@ pub(super) fn valid_pull_request_number(args: &[Value], index: usize) -> Option<
     args.get(index).and_then(Value::as_u64).filter(|&n| n > 0)
 }
 
-pub(super) async fn repo_path_for(state: &AppState, repository_id: &str) -> Result<(std::path::PathBuf, String), IpcError> {
+pub(super) async fn repo_path_for(
+    state: &AppState,
+    repository_id: &str,
+) -> Result<(std::path::PathBuf, String), IpcError> {
     let registry = state.registry.lock().await;
     let repository = registry
         .get_repository(repository_id)
@@ -243,18 +259,47 @@ pub(super) async fn check_not_stale(
         .expect("STALE_CACHE mutex poisoned")
         .get(&cache_key(repository_id, number))
         .cloned();
-    let stale = match cached {
-        None => require_cache_entry,
-        Some(cached) => cached.updated_at != fresh.updated_at || cached.head_sha != fresh.head_sha,
-    };
+    let stale = decide_stale(
+        cached.as_ref(),
+        &fresh.updated_at,
+        &fresh.head_sha,
+        require_cache_entry,
+    );
     Ok((stale, fresh))
 }
 
-pub(super) fn remember_fresh(repository_id: &str, number: u64, updated_at: String, head_sha: String) {
-    STALE_CACHE.lock().expect("STALE_CACHE mutex poisoned").insert(
-        cache_key(repository_id, number),
-        StalenessEntry { updated_at, head_sha },
-    );
+/// The FR-021 stale/not-stale decision itself, pulled out of `check_not_stale` as a pure
+/// function so it is unit-testable without a `gh` process: `check_not_stale` has no fixture
+/// seam (it calls `gh_pull_requests::view_staleness_check`, which spawns a real `gh`), but this
+/// decision has no network dependency once the fresh staleness check's result is in hand.
+fn decide_stale(
+    cached: Option<&StalenessEntry>,
+    fresh_updated_at: &str,
+    fresh_head_sha: &str,
+    require_cache_entry: bool,
+) -> bool {
+    match cached {
+        None => require_cache_entry,
+        Some(cached) => cached.updated_at != fresh_updated_at || cached.head_sha != fresh_head_sha,
+    }
+}
+
+pub(super) fn remember_fresh(
+    repository_id: &str,
+    number: u64,
+    updated_at: String,
+    head_sha: String,
+) {
+    STALE_CACHE
+        .lock()
+        .expect("STALE_CACHE mutex poisoned")
+        .insert(
+            cache_key(repository_id, number),
+            StalenessEntry {
+                updated_at,
+                head_sha,
+            },
+        );
 }
 
 /// "Also fix" remediation (ported): the cache used to be re-seeded with the PRE-mutation `fresh`
@@ -269,7 +314,10 @@ pub(super) fn forget_cache(repository_id: &str, number: u64) {
         .remove(&cache_key(repository_id, number));
 }
 
-pub(super) async fn build_detail(repo_path: &Path, number: u64) -> Result<PullRequestDetail, GhError> {
+pub(super) async fn build_detail(
+    repo_path: &Path,
+    number: u64,
+) -> Result<PullRequestDetail, GhError> {
     let view_fut = gh_pull_requests::view_pull_request_detail(repo_path, number);
     let files_fut = gh_pull_requests::get_changed_files_with_patch(repo_path, number);
     let threads_fut = gh_mutations::get_review_threads_and_timeline(repo_path, number);
@@ -295,7 +343,11 @@ pub(super) async fn build_detail(repo_path: &Path, number: u64) -> Result<PullRe
         base_branch: view.base_ref_name.clone(),
         head_branch: view.head_ref_name.clone(),
         author: map_actor(Some(&view.author)),
-        reviewers: view.review_requests.iter().map(|a| map_actor(Some(a))).collect(),
+        reviewers: view
+            .review_requests
+            .iter()
+            .map(|a| map_actor(Some(a)))
+            .collect(),
         assignees: view.assignees.iter().map(|a| map_actor(Some(a))).collect(),
         labels: view.labels.iter().map(|label| label.name.clone()).collect(),
         description: view.body.clone(),
@@ -315,4 +367,161 @@ pub(super) async fn build_detail(repo_path: &Path, number: u64) -> Result<PullRe
         is_fork: view.is_cross_repository,
         head_repository_owner: view.head_repository_owner.as_ref().map(|a| a.login.clone()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_filter_tab_accepts_every_valid_literal() {
+        assert_eq!(parse_filter_tab("open"), Some(FilterTab::Open));
+        assert_eq!(parse_filter_tab("authored"), Some(FilterTab::Authored));
+        assert_eq!(parse_filter_tab("assigned"), Some(FilterTab::Assigned));
+        assert_eq!(parse_filter_tab("involves"), Some(FilterTab::Involves));
+        assert_eq!(
+            parse_filter_tab("review-requested"),
+            Some(FilterTab::ReviewRequested)
+        );
+    }
+
+    #[test]
+    fn parse_filter_tab_rejects_unknown_and_empty() {
+        assert_eq!(parse_filter_tab("bogus"), None);
+        assert_eq!(parse_filter_tab(""), None);
+    }
+
+    #[test]
+    fn valid_pull_request_number_accepts_positive_and_max_u64() {
+        assert_eq!(
+            valid_pull_request_number(&[serde_json::json!(1)], 0),
+            Some(1)
+        );
+        assert_eq!(
+            valid_pull_request_number(&[serde_json::json!(u64::MAX)], 0),
+            Some(u64::MAX)
+        );
+    }
+
+    #[test]
+    fn valid_pull_request_number_rejects_zero_negative_fractional_and_string() {
+        assert_eq!(valid_pull_request_number(&[serde_json::json!(0)], 0), None);
+        assert_eq!(valid_pull_request_number(&[serde_json::json!(-1)], 0), None);
+        assert_eq!(
+            valid_pull_request_number(&[serde_json::json!(1.5)], 0),
+            None
+        );
+        assert_eq!(
+            valid_pull_request_number(&[serde_json::json!("5")], 0),
+            None
+        );
+    }
+
+    #[test]
+    fn valid_pull_request_number_rejects_missing_index() {
+        assert_eq!(valid_pull_request_number(&[serde_json::json!(1)], 1), None);
+    }
+
+    #[test]
+    fn decide_stale_no_cache_entry_respects_require_flag() {
+        assert!(!decide_stale(None, "2024-01-01T00:00:00Z", "sha1", false));
+        assert!(decide_stale(None, "2024-01-01T00:00:00Z", "sha1", true));
+    }
+
+    #[test]
+    fn decide_stale_matching_cache_entry_is_never_stale_regardless_of_require_flag() {
+        let cached = StalenessEntry {
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+            head_sha: "sha1".to_string(),
+        };
+        assert!(!decide_stale(
+            Some(&cached),
+            "2024-01-01T00:00:00Z",
+            "sha1",
+            false
+        ));
+        assert!(!decide_stale(
+            Some(&cached),
+            "2024-01-01T00:00:00Z",
+            "sha1",
+            true
+        ));
+    }
+
+    #[test]
+    fn decide_stale_different_updated_at_is_stale() {
+        let cached = StalenessEntry {
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+            head_sha: "sha1".to_string(),
+        };
+        assert!(decide_stale(
+            Some(&cached),
+            "2024-02-01T00:00:00Z",
+            "sha1",
+            false
+        ));
+    }
+
+    #[test]
+    fn decide_stale_different_head_sha_only_is_stale() {
+        let cached = StalenessEntry {
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+            head_sha: "sha1".to_string(),
+        };
+        assert!(decide_stale(
+            Some(&cached),
+            "2024-01-01T00:00:00Z",
+            "sha2",
+            false
+        ));
+    }
+
+    /// Round-trips `remember_fresh`/`forget_cache`/`cache_key` against the real `STALE_CACHE`
+    /// static. Unique, UUID-like `repository_id`s so this never collides with another test's
+    /// key under parallel execution.
+    #[test]
+    fn remember_fresh_and_forget_cache_are_independent_per_repository() {
+        let repo_a = "11111111-1111-4111-8111-111111111111";
+        let repo_b = "22222222-2222-4222-8222-222222222222";
+        remember_fresh(
+            repo_a,
+            1,
+            "2024-01-01T00:00:00Z".to_string(),
+            "sha-a".to_string(),
+        );
+        remember_fresh(
+            repo_b,
+            1,
+            "2024-06-01T00:00:00Z".to_string(),
+            "sha-b".to_string(),
+        );
+
+        {
+            let cache = STALE_CACHE.lock().expect("STALE_CACHE mutex poisoned");
+            let a = cache
+                .get(&cache_key(repo_a, 1))
+                .expect("repo_a entry present");
+            assert_eq!(a.updated_at, "2024-01-01T00:00:00Z");
+            assert_eq!(a.head_sha, "sha-a");
+            let b = cache
+                .get(&cache_key(repo_b, 1))
+                .expect("repo_b entry present");
+            assert_eq!(b.updated_at, "2024-06-01T00:00:00Z");
+            assert_eq!(b.head_sha, "sha-b");
+        }
+
+        forget_cache(repo_a, 1);
+        {
+            let cache = STALE_CACHE.lock().expect("STALE_CACHE mutex poisoned");
+            assert!(
+                cache.get(&cache_key(repo_a, 1)).is_none(),
+                "repo_a entry forgotten"
+            );
+            assert!(
+                cache.get(&cache_key(repo_b, 1)).is_some(),
+                "repo_b entry untouched"
+            );
+        }
+        forget_cache(repo_b, 1);
+    }
 }

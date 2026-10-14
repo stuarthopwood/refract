@@ -294,10 +294,7 @@ pub async fn remove_worktree(
 /// falling back to `pr-<number>-2`, `pr-<number>-3`, ... up to 1000 attempts -- an earlier
 /// Session for the same pull request, or a failed prior attempt that left a branch or folder
 /// behind, must never collide with a fresh `newSessionFromPullRequest` call.
-pub async fn unique_pull_request_branch_name(
-    repo: &Path,
-    number: u64,
-) -> Result<String, GitError> {
+pub async fn unique_pull_request_branch_name(repo: &Path, number: u64) -> Result<String, GitError> {
     let base = format!("pr-{number}");
     let branches: std::collections::HashSet<String> =
         list_branches(repo).await?.into_iter().collect();
@@ -385,7 +382,13 @@ pub async fn add_worktree_from_pull_request_branch(
     let worktree_path_str = worktree_path.to_string_lossy().into_owned();
     let add_result = git_raw(
         repo,
-        &["worktree", "add", "--", &worktree_path_str, local_branch_name],
+        &[
+            "worktree",
+            "add",
+            "--",
+            &worktree_path_str,
+            local_branch_name,
+        ],
         None,
     )
     .await;

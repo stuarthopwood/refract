@@ -42,7 +42,8 @@ pub async fn request_login_providers(proc: &OmpProcess) -> Option<Vec<OmpLoginPr
     let mut providers = Vec::new();
     for candidate in raw {
         if let Some(id) = candidate.get("id").and_then(Value::as_str) {
-            let authenticated = candidate.get("authenticated").and_then(Value::as_bool) == Some(true);
+            let authenticated =
+                candidate.get("authenticated").and_then(Value::as_bool) == Some(true);
             providers.push(OmpLoginProvider {
                 id: id.to_string(),
                 authenticated,

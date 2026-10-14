@@ -120,7 +120,10 @@ fn describe_request_error(err: &reqwest::Error, context: &str) -> String {
 /// malicious response can never be buffered in full. Deliberately uses `Response::chunk()` rather
 /// than `.bytes()`/`.text()`, which buffer the whole body unconditionally before any cap could
 /// ever apply.
-async fn collect_bounded(mut response: reqwest::Response, max_bytes: usize) -> Result<Vec<u8>, String> {
+async fn collect_bounded(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
     let mut body = Vec::new();
     while let Some(chunk) = response
         .chunk()
@@ -164,7 +167,7 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
     let status = response.status().as_u16();
     let body = collect_bounded(response, MAX_PROFILE_RESPONSE_BYTES)
         .await
-        .map_err(|msg| ProfileFetchError::new(msg))?;
+        .map_err(ProfileFetchError::new)?;
 
     if status != 200 {
         return Err(ProfileFetchError::new(format!(
@@ -173,13 +176,20 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
     }
 
     let parsed: Value = serde_json::from_slice(&body).map_err(|_| {
-        ProfileFetchError::new(format!("GitHub profile response for {login} was not valid JSON"))
+        ProfileFetchError::new(format!(
+            "GitHub profile response for {login} was not valid JSON"
+        ))
     })?;
     let record = parsed.as_object().ok_or_else(|| {
-        ProfileFetchError::new(format!("GitHub profile response for {login} was not a JSON object"))
+        ProfileFetchError::new(format!(
+            "GitHub profile response for {login} was not a JSON object"
+        ))
     })?;
 
-    let display_name = record.get("name").and_then(Value::as_str).map(str::to_owned);
+    let display_name = record
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     let avatar_url = record
         .get("avatar_url")
         .and_then(Value::as_str)
@@ -262,7 +272,7 @@ async fn request_avatar_once(url: &Url) -> Result<AvatarResponse, AvatarFetchErr
         .map(str::to_owned);
     let body = collect_bounded(response, MAX_AVATAR_BYTES)
         .await
-        .map_err(|msg| AvatarFetchError::new(msg))?;
+        .map_err(AvatarFetchError::new)?;
 
     Ok(AvatarResponse {
         status,
@@ -289,11 +299,15 @@ pub async fn fetch_avatar(avatar_url: &str) -> Result<String, AvatarFetchError> 
             break;
         };
         if redirects >= MAX_AVATAR_REDIRECTS {
-            return Err(AvatarFetchError::new("avatar request redirected too many times"));
+            return Err(AvatarFetchError::new(
+                "avatar request redirected too many times",
+            ));
         }
         redirects += 1;
         let next = current.join(location).map_err(|_| {
-            AvatarFetchError::new(format!("avatar redirect target \"{location}\" is not a valid URL"))
+            AvatarFetchError::new(format!(
+                "avatar redirect target \"{location}\" is not a valid URL"
+            ))
         })?;
         current = parse_avatar_url(next.as_str())?;
         response = request_avatar_once(&current).await?;
@@ -318,4 +332,112 @@ pub async fn fetch_avatar(avatar_url: &str) -> Result<String, AvatarFetchError> 
         "data:{mime_type};base64,{}",
         BASE64.encode(&response.body)
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_avatar_url ---
+
+    #[test]
+    fn accepts_https_on_avatar_host() {
+        assert!(parse_avatar_url("https://avatars.githubusercontent.com/u/123").is_ok());
+    }
+
+    #[test]
+    fn rejects_wrong_scheme() {
+        assert!(parse_avatar_url("http://avatars.githubusercontent.com/u/123").is_err());
+    }
+
+    #[test]
+    fn rejects_wrong_host() {
+        assert!(parse_avatar_url("https://evil.example.com/u/123").is_err());
+    }
+
+    #[test]
+    fn rejects_host_confusion_suffix() {
+        assert!(
+            parse_avatar_url("https://avatars.githubusercontent.com.evil.example.com/u/123")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_url() {
+        assert!(parse_avatar_url("not a url").is_err());
+    }
+
+    // --- resolve_avatar_mime_type ---
+
+    #[test]
+    fn resolves_plain_png() {
+        assert_eq!(
+            resolve_avatar_mime_type(Some("image/png")),
+            Some("image/png")
+        );
+    }
+
+    #[test]
+    fn resolves_content_type_with_parameter() {
+        assert_eq!(
+            resolve_avatar_mime_type(Some("image/png; charset=binary")),
+            Some("image/png")
+        );
+    }
+
+    #[test]
+    fn resolves_case_insensitively() {
+        assert_eq!(
+            resolve_avatar_mime_type(Some("IMAGE/JPEG")),
+            Some("image/jpeg")
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_content_type() {
+        assert_eq!(resolve_avatar_mime_type(Some("image/gif")), None);
+    }
+
+    #[test]
+    fn rejects_missing_content_type() {
+        assert_eq!(resolve_avatar_mime_type(None), None);
+    }
+
+    // --- matches_image_signature ---
+
+    fn png_bytes() -> Vec<u8> {
+        let mut bytes = vec![0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes.extend_from_slice(b"IHDR");
+        bytes
+    }
+
+    #[test]
+    fn matches_real_png_signature() {
+        assert!(matches_image_signature(&png_bytes(), "image/png"));
+    }
+
+    #[test]
+    fn rejects_png_bytes_claimed_as_jpeg() {
+        assert!(!matches_image_signature(&png_bytes(), "image/jpeg"));
+    }
+
+    #[test]
+    fn matches_real_jpeg_signature() {
+        let bytes = [0xff, 0xd8, 0xff];
+        assert!(matches_image_signature(&bytes, "image/jpeg"));
+    }
+
+    #[test]
+    fn rejects_too_short_slice() {
+        assert!(!matches_image_signature(&[0x89, 0x50], "image/png"));
+    }
+
+    #[test]
+    fn rejects_random_bytes() {
+        let bytes = [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        assert!(!matches_image_signature(&bytes, "image/png"));
+        assert!(!matches_image_signature(&bytes, "image/jpeg"));
+    }
 }
