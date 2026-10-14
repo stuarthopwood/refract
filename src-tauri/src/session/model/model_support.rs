@@ -112,12 +112,15 @@ const THINKING_LEVEL_SUFFIXES: [&str; 9] = [
 ///   `...-v1:0`) at the FIRST colon, not just a genuine thinking-level suffix.
 /// - Matches a bare `id` (no `provider/` prefix) against the live model's own `id` alone
 ///   (`omp://models.md`'s own resolution order: "exact bare id ... provider inferred").
-/// - A role ALIAS (`@other-role`) or a comma-separated CANDIDATE LIST (`omp://models.md`: "Role
-///   values can contain comma-separated selectors; selection uses the first available match")
-///   would need a real `omp` catalog/config resolution this lane does not have here -- never
-///   guessed as a match (that would wrongly accept a genuine failure) or a mismatch (that would
-///   wrongly fail a genuine no-op); the caller's own unresolved-argument error path applies
-///   unchanged, and this is recorded as an open problem in the PR body, not silently resolved.
+/// - A role ALIAS (`@other-role`) deeper than ONE hop, or a comma-separated CANDIDATE LIST
+///   (`omp://models.md`: "Role values can contain comma-separated selectors; selection uses the
+///   first available match") would need a real `omp` catalog/config resolution this lane does
+///   not have here -- never guessed as a match (that would wrongly accept a genuine failure) or
+///   a mismatch (that would wrongly fail a genuine no-op); the caller's own unresolved-argument
+///   error path applies unchanged. A SINGLE alias hop (`@<role>` or `*`) is resolved before this
+///   function ever sees it -- `resolve_role_selector`, below -- so only a DEEPER chain or a
+///   candidate list reaches this refusal; recorded as an open problem in the PR body, not
+///   silently resolved.
 pub(super) fn selector_matches_model(selector: &str, model: &Value) -> bool {
     let base = match selector.rsplit_once(':') {
         Some((head, suffix)) if THINKING_LEVEL_SUFFIXES.contains(&suffix) => head,
@@ -181,11 +184,12 @@ const NON_CHAT_ROLE_IDS: [&str; 11] = [
 /// Pure merge step for `model.rs`'s own `known_chat_role_list`: `roles` (already `cycleOrder` +
 /// `plan`) plus the three CORE chat roles (gate-fix, round 6, MEDIUM: ONLY when actually
 /// configured in `modelRoles` -- an UNSET core role, e.g. `smol` with no `modelRoles.smol`
-/// entry, is never added here, so it is refused as `Unknown role` at validation time rather
-/// than reaching `apply_role_now`'s own same-model check and wrongly reporting "could not be
-/// applied" for a role this lane has no selector to compare against) plus every `modelRoles`
-/// key that is not a model-kind or workload role. `pub(super)`: only `known_chat_role_list`
-/// calls this.
+/// entry, is never added HERE, so it is refused as `Unknown role` at validation time UNLESS it
+/// is also listed in `cycleOrder` (which includes `smol`/`default`/`slow` by its own built-in
+/// default, `omp://settings.md`) -- rather than reaching `apply_role_now`'s own same-model check
+/// and wrongly reporting "could not be applied" for a role this lane has no selector to compare
+/// against) plus every `modelRoles` key that is not a model-kind or workload role. `pub(super)`:
+/// only `known_chat_role_list` calls this.
 pub(super) fn merge_chat_roles(
     mut roles: Vec<String>,
     model_roles: &std::collections::HashMap<String, String>,
@@ -224,14 +228,10 @@ pub(super) fn parse_cycle_order_response(response: &Value) -> Result<Vec<String>
 }
 
 /// `omp://models.md`'s own "Role aliases and settings": "Unset `smol` and `slow` inherit an
-/// explicitly configured `default` before their built-in priority lists." `apply_role_now`'s own
-/// same-model check must resolve a role the SAME way OMP itself does, or a genuinely
-/// unconfigured `smol`/`slow` that OMP legitimately no-ops onto the live `default` model reads
-/// as a false "could not be applied" (caught live, round 8: `modelRoles={"default": "..."}`,
-/// `/switch @smol` on a session already on `default`'s model). No other role has this built-in
-/// inheritance -- a genuinely custom or workload role with no `modelRoles` entry stays
-/// unresolved, same as before.
-pub(super) fn resolve_role_selector<'a>(
+/// explicitly configured `default` before their built-in priority lists." Used for BOTH the
+/// initial role lookup and an alias hop's own target (below), so e.g. `plan: "@smol"` with
+/// `smol` itself unset still resolves through to `default`, not a bare unresolved `None`.
+fn direct_selector_with_fallback<'a>(
     model_roles: &'a std::collections::HashMap<String, String>,
     role: &str,
 ) -> Option<&'a str> {
@@ -242,4 +242,33 @@ pub(super) fn resolve_role_selector<'a>(
             None
         }
     })
+}
+
+/// `apply_role_now`'s own same-model check must resolve a role the SAME way OMP itself does, or
+/// a genuinely unconfigured `smol`/`slow` that OMP legitimately no-ops onto the live `default`
+/// model reads as a false "could not be applied" (caught live, round 8:
+/// `modelRoles={"default": "..."}`, `/switch @smol` on a session already on `default`'s model).
+/// `omp://models.md`: "Role aliases like `@smol` expand through `settings.modelRoles`; `*`
+/// selects `@default`." `*` is routed through the IDENTICAL one-hop `@default` handling below
+/// (not a separate special case): the self-reference guard and the alias/`*` filter on the hop
+/// result both apply the same way to either spelling. Resolves ONE hop only -- a
+/// self-referential alias or a hop target that is ALSO an alias (a deeper chain) is the cycle
+/// guard: never followed, treated as unresolved rather than guessed at.
+pub(super) fn resolve_role_selector<'a>(
+    model_roles: &'a std::collections::HashMap<String, String>,
+    role: &str,
+) -> Option<&'a str> {
+    let direct = direct_selector_with_fallback(model_roles, role)?;
+    let target = if direct == "*" {
+        "default"
+    } else if let Some(target) = direct.strip_prefix('@') {
+        target
+    } else {
+        return Some(direct);
+    };
+    if target == role {
+        return None;
+    }
+    direct_selector_with_fallback(model_roles, target)
+        .filter(|hop| !hop.starts_with('@') && *hop != "*")
 }
