@@ -154,8 +154,18 @@ async fn read_model_roles_raw_with(
     strip_env_vars: &[&str],
 ) -> Result<Map<String, Value>, OmpConfigError> {
     let response = get_config_with(executor, "modelRoles", strip_env_vars).await?;
-    let inner = response.get("value").cloned().unwrap_or(Value::Null);
-    raw_model_roles_record(&inner)
+    // Gate-fix (round 6): a response with NO `value` field at all is a malformed/incomplete
+    // read -- SUSPECTED (not directly observed) to be reachable under heavy concurrent `omp`
+    // load even with `OMP_INVOCATION_LOCK` serialising every invocation this process makes --
+    // and must fail closed, not be silently read as an empty/unconfigured record the same way a
+    // genuine `"value": null` legitimately is.
+    let Some(inner) = response.get("value") else {
+        return Err(OmpConfigError::new(
+            OmpConfigErrorCode::ParseFailed,
+            "omp config returned no value field for modelRoles.",
+        ));
+    };
+    raw_model_roles_record(inner)
 }
 
 /// `omp config get modelRoles --json`: the whole record as the TRUE effective value (environment
@@ -169,6 +179,41 @@ pub async fn get_model_roles_with(
 
 pub async fn get_model_roles() -> Result<HashMap<String, String>, OmpConfigError> {
     get_model_roles_with(&RealOmpExecutor).await
+}
+
+/// Gate-fix (round 7, `session::model::known_chat_role_list`'s own caller and
+/// `session::model::apply_role_now`'s own same-model check): an empty `modelRoles` record is
+/// ambiguous -- genuinely unconfigured (the common case: a fresh profile, or one whose roles
+/// come from `modelTags`/`PI_*_MODEL` env vars rather than `modelRoles`) vs a
+/// transient/unreliable read (SUSPECTED, not confirmed -- a direct 65-call falsification
+/// against 3 concurrently-starting/-running `omp --mode rpc-ui` agents on the same profile
+/// reproduced nothing). `cycleOrder` is NOT a usable presence signal here: it always has a
+/// non-empty DEFAULT (`omp://settings.md`) regardless of whether `modelRoles` is configured at
+/// all, so gating the retry on "`cycleOrder` is non-empty" made it fire on EVERY blank profile
+/// too and fail closed permanently (caught in review, round 7 follow-up) -- retries
+/// unconditionally on an empty result instead. If still empty after one retry, accepts it as
+/// genuine (the pre-existing behaviour) rather than guessing further. This does NOT cover every
+/// unreliable-read shape: a read that returns a non-empty but PARTIAL record (some keys
+/// silently missing) looks identical to a genuinely smaller `modelRoles` and cannot be detected
+/// here; nor does it cover a bad `cycleOrder` read (a separate call, `known_role_list`'s own
+/// `parse_cycle_order_response` fail-closed path covers that one on a missing `value` field
+/// only, not a partial `cycleOrder` array). Fails closed only on a REAL read error (non-zero
+/// exit, timeout, missing `value` field, unparseable JSON) via the normal `?` propagation from
+/// `get_model_roles` below -- never on "empty twice in a row".
+pub async fn get_model_roles_reliable() -> Result<HashMap<String, String>, OmpConfigError> {
+    let first = get_model_roles().await?;
+    if !first.is_empty() {
+        return Ok(first);
+    }
+    log::debug!("get_model_roles_reliable: empty modelRoles, retrying once");
+    let retry = get_model_roles().await?;
+    if !retry.is_empty() {
+        log::debug!(
+            "get_model_roles_reliable: retry recovered {} modelRoles keys",
+            retry.len()
+        );
+    }
+    Ok(retry)
 }
 
 const MAX_ROLE_VALUE_LENGTH: usize = 512;
