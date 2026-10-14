@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use crate::omp::transcript::RequestResolution;
 
 use super::commands::string_array;
-use super::launch::truncate;
+use super::launch_support::truncate;
 use super::{AgentError, PendingRequest, SessionAgent, SessionStatus};
 
 impl SessionAgent {

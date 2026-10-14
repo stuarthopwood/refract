@@ -145,9 +145,12 @@ impl SessionManager {
 
     /// `sessions.list()`'s live-runtime fields, merged over the registry-only `Session` row
     /// (data-model.md: "absent until the first `get_state`" for a Session with no agent this
-    /// run, matching `SessionManager.summaries()`'s own no-runtime branch exactly). Does not
-    /// port `detectUnexpectedTermination`'s own tail read (`terminatedUnexpectedly` is always
-    /// absent, see `session::agent`'s own header).
+    /// run, matching `SessionManager.summaries()`'s own no-runtime branch exactly). Lane R3
+    /// (issue #786, gate-fix): `terminatedUnexpectedly`/`pendingToolNames` are now derived for
+    /// every `stopped` row here, not left permanently absent -- a FRESH
+    /// `resolve_termination()`/`resolve_termination_for` call either way, same as `ipc::
+    /// sessions_agent`'s own attach/resume paths, so a list row's own crash badge is correct
+    /// even for a Session nothing has opened yet this run.
     pub async fn summaries(&self) -> Vec<Value> {
         let snapshot = self.registry.lock().await.snapshot();
         let sessions = snapshot.sessions;
@@ -176,7 +179,8 @@ impl SessionManager {
             let object = summary
                 .as_object_mut()
                 .expect("Session serialises to a JSON object");
-            match self.get_agent(&session.id) {
+            let agent = self.get_agent(&session.id);
+            match &agent {
                 Some(agent) => {
                     let live = agent.summary_fields().await;
                     for (key, value) in live
@@ -229,6 +233,23 @@ impl SessionManager {
                     object.insert("unread".to_string(), Value::Bool(false));
                     object.insert("launchedMode".to_string(), launched_mode.clone());
                     object.insert("pendingMode".to_string(), Value::Null);
+                }
+            }
+            if object.get("status").and_then(Value::as_str) == Some("stopped") {
+                let detection = match &agent {
+                    Some(agent) => agent.resolve_termination().await,
+                    None => {
+                        crate::session::termination::resolve_termination_for(session, false).await
+                    }
+                };
+                if detection.terminated_unexpectedly {
+                    object.insert("terminatedUnexpectedly".to_string(), Value::Bool(true));
+                    if !detection.pending_tool_names.is_empty() {
+                        object.insert(
+                            "pendingToolNames".to_string(),
+                            serde_json::json!(detection.pending_tool_names),
+                        );
+                    }
                 }
             }
             summaries.push(summary);

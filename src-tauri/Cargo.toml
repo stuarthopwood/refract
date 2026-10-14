@@ -91,6 +91,15 @@ windows = { version = "0.62.2", features = [
   "Win32_System_JobObjects",
   "Win32_System_Threading",
   "Win32_Security",
+  # Lane R3 (issue #786): `GlobalMemoryStatusEx` for the start-queue's low-memory defer
+  # (`startQueue.ts`'s own `isMemoryLow`) and `QueryFullProcessImageNameW` (already declared
+  # under `Win32_System_Threading` above) for orphan pid reaping (`process/pidRecords.ts`).
+  "Win32_System_SystemInformation",
+  # Lane R3 (issue #786, security gate-fix round 6): `CreateToolhelp32Snapshot`/
+  # `Process32FirstW`/`Process32NextW` for walking an orphaned `omp` root's own descendant
+  # processes (broker/tool children) during reaping, never by name -- see
+  # `pid_records.rs`'s own `kill_descendant_tree` doc comment.
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_Security_WinTrust",
   "Win32_Security_Cryptography",
   "Win32_Security_Cryptography_Catalog",
