@@ -1,8 +1,8 @@
 // Throwaway live-check for lane RM (#454, #740, #741, #762, #766, #760), run once over CDP
 // against the already-built debug exe. Isolated `OMP_PROFILE` (never used before, no real
 // credentials) so this never touches Stuart's real omp profile; `REFRACT_DATA_DIR`/
-// `WEBVIEW2_USER_DATA_FOLDER` are scratch too. Drives every RM channel directly through
-// `window.refract.*` (no UI exists for this feature yet, so there is nothing to click).
+// `WEBVIEW2_USER_DATA_FOLDER`/`REFRACT_IMPORT_SOURCE_DIR` are scratch too -- drives every RM
+// channel directly through `window.refract.*` (no UI exists for this feature yet).
 //
 // Root cause of the earlier "start-failed" run (2026-10-14): a brand-new, never-used profile
 // has NO default model configured at all, so `omp --mode rpc-ui` exits immediately with "No
@@ -67,7 +67,10 @@ function ensureFakeModel(profile) {
   mkdirSync(agentDir, { recursive: true });
   // Two DISTINCT fake models (not one reused for every role): so a real role switch
   // (`/switch @smol`) has a genuinely different model to move to and the verify-effect check
-  // (get_state before/after) can observe a real change, not just the one configured role.
+  // (get_state before/after) can observe a real change, not just the one configured role. A
+  // THIRD model's own `id` contains a colon (round 5, Ollama `llama3:8b`/Bedrock `...-v1:0`
+  // style) -- `selector_matches_model` must not mistake its own colon for a `:thinkingLevel`
+  // suffix and wrongly truncate it.
   const yml = [
     'providers:',
     '  probe-fake:',
@@ -85,6 +88,11 @@ function ensureFakeModel(profile) {
     '        api: openai-completions',
     '        contextWindow: 8000',
     '        maxTokens: 1000',
+    '      - id: "probe-fake-model:v8"',
+    '        name: Probe Fake Model Colon Id',
+    '        api: openai-completions',
+    '        contextWindow: 8000',
+    '        maxTokens: 1000',
     '',
   ].join('\n');
   writeFileSync(path.join(agentDir, 'models.yml'), yml);
@@ -97,7 +105,13 @@ async function main() {
   const dataDir = path.join(scratchRoot, 'data');
   const repoDir = path.join(scratchRoot, 'repo');
   const exeDir = path.join(scratchRoot, 'exe');
+  // Safety (lane R13a, #833): the one-time Electron->Rust import defaults its SOURCE to
+  // Stuart's REAL `%APPDATA%\pinion` unless `REFRACT_IMPORT_SOURCE_DIR` overrides it -- scratch
+  // `REFRACT_DATA_DIR` alone does not stop this. This empty folder makes the import a
+  // guaranteed no-op, so this harness never merges in Stuart's real Sessions/repositories.
+  const importSourceDir = path.join(scratchRoot, 'electron-import-source-empty');
   mkdirSync(dataDir, { recursive: true });
+  mkdirSync(importSourceDir, { recursive: true });
   makeScratchRepo(repoDir);
   mkdirSync(exeDir, { recursive: true });
   const exeSrc = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
@@ -133,7 +147,7 @@ async function main() {
     'config',
     'set',
     'modelRoles',
-    '{"default":"probe-fake/probe-fake-model","smol":"probe-fake/probe-fake-model-2","slow":"probe-fake/probe-fake-model-2"}',
+    '{"default":"probe-fake/probe-fake-model","smol":"probe-fake/probe-fake-model-2","slow":"probe-fake/probe-fake-model-2","vision":"probe-fake/probe-fake-model","myrole":"probe-fake/probe-fake-model-2"}',
     '--json',
   ]);
 
@@ -142,6 +156,8 @@ async function main() {
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}`,
     WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
     REFRACT_DATA_DIR: dataDir,
+    // Safety (lane R13a, #833): empty, see `importSourceDir`'s own comment above.
+    REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
     // omp's own profile-name charset: `^[a-z0-9][a-z0-9._-]{0,63}$` (lowercase only, confirmed
     // live: an uppercase stamp like `...T07-56...Z` was rejected outright with "Invalid OMP
     // profile").
@@ -493,6 +509,73 @@ async function main() {
         '/role smol validates with smol removed from cycleOrder (known_chat_role_list)',
         roleSmolRes.ok === true && roleSmolRes.value?.queued === false,
         roleSmolRes,
+      );
+    }
+
+    // --- #766 round 5: /switch @<role> now validates against the SAME wider list /role uses
+    // (previously two different lists) -- prove it too accepts `smol` with `smol` removed from
+    // `cycleOrder`. ---
+    const switchSmolId = await createSweepSession('switch-at-smol-validation candidate');
+    if (switchSmolId) {
+      await openAndWaitIdle(switchSmolId, 'switch-at-smol-validation candidate');
+      const switchSmolRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(switchSmolId)}, '/switch @smol')`);
+      record(
+        '/switch @smol accepted with smol removed from cycleOrder (unified role-validation list)',
+        switchSmolRes.ok === true && switchSmolRes.value?.queued === false,
+        switchSmolRes,
+      );
+    }
+
+    // --- #766 round 5/6: a WORKLOAD role ("not a conversation role... not in scope" per #766)
+    // is refused by `/role` even though it IS configured in `modelRoles` (the probe seeds
+    // `vision`) -- proving the exclusion is absolute, not just "unconfigured roles left out". ---
+    const workloadRoleId = await createSweepSession('workload-role-refusal candidate');
+    if (workloadRoleId) {
+      await openAndWaitIdle(workloadRoleId, 'workload-role-refusal candidate');
+      const workloadRoleRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(workloadRoleId)}, '/role vision')`);
+      record(
+        '/role vision (a workload role, configured in modelRoles) still refused',
+        workloadRoleRes.ok === false && workloadRoleRes.error?.code === 'invalid-argument',
+        workloadRoleRes,
+      );
+    }
+
+    // --- round 6: a genuinely CUSTOM role (`myrole`, not any of OMP's own named roles, not a
+    // workload/model-kind id) is accepted by `/role` as long as it has its own `modelRoles`
+    // entry (the probe seeds it). ---
+    const customRoleId = await createSweepSession('custom-role-acceptance candidate');
+    if (customRoleId) {
+      await openAndWaitIdle(customRoleId, 'custom-role-acceptance candidate');
+      const customRoleRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(customRoleId)}, '/role myrole')`);
+      record(
+        '/role myrole (a genuinely custom modelRoles key) accepted',
+        customRoleRes.ok === true && customRoleRes.value?.queued === false,
+        customRoleRes,
+      );
+    }
+
+    // --- round 5: `selector_matches_model` must not mistake a model id's OWN colon (Ollama
+    // `llama3:8b`/Bedrock `...-v1:0` style) for a `:thinkingLevel` suffix -- re-picking the SAME
+    // colon-id model must be a valid no-op, not truncated and wrongly "Model unchanged". ---
+    const colonModelId = await createSweepSession('colon-id same-model candidate');
+    if (colonModelId) {
+      await openAndWaitIdle(colonModelId, 'colon-id same-model candidate');
+      const firstColonSwitchRes = await cdp.evaluate(
+        `window.refract.chat.send(${JSON.stringify(colonModelId)}, '/switch probe-fake/probe-fake-model:v8')`,
+      );
+      const afterFirstColonList = await cdp.evaluate(`window.refract.sessions.list()`);
+      const afterFirstColonModelId = afterFirstColonList.ok
+        ? afterFirstColonList.value.find((s) => s.id === colonModelId)?.lastModel?.id
+        : undefined;
+      const secondColonSwitchRes = await cdp.evaluate(
+        `window.refract.chat.send(${JSON.stringify(colonModelId)}, '/switch probe-fake/probe-fake-model:v8')`,
+      );
+      record(
+        '/switch <same colon-id model> twice: both accepted, model id exactly preserved',
+        firstColonSwitchRes.ok === true
+          && afterFirstColonModelId === 'probe-fake-model:v8'
+          && secondColonSwitchRes.ok === true,
+        { firstColonSwitchRes, afterFirstColonModelId, secondColonSwitchRes },
       );
     }
   } catch (err) {
