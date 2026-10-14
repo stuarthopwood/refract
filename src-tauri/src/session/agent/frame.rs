@@ -177,7 +177,9 @@ impl SessionAgent {
         // stop/restart is dropped rather than clobbering fresher state.
         let agent = self.arc();
         tokio::spawn(async move {
-            agent.on_session_settled(generation, shutdown_generation).await
+            agent
+                .on_session_settled(generation, shutdown_generation)
+                .await
         });
     }
 
