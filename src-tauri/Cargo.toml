@@ -39,6 +39,11 @@ log = "0.4.34"
 dirs = "7.0.0"
 which = "8.0.6"
 dunce = "1.0.5"
+# File Explorer recursive watcher (lane R7, issue #790): wraps `ReadDirectoryChangesW` on
+# Windows. Not already in `Cargo.lock` (checked before adding, per the issue's own instruction);
+# default features disabled (`macos_fsevent` and its `objc2-*` deps are irrelevant to this
+# Windows-only build).
+notify = { version = "8.1.0", default-features = false }
 
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
