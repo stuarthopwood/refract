@@ -54,8 +54,9 @@ struct ImportMarker {
     profile_cache_imported: bool,
 }
 
-/// What happened; the caller (`lib.rs::run()`) only logs it -- every branch leaves `data_dir`
-/// safe for `RegistryStore::open`/`SettingsStore::open` to read normally afterward.
+/// What happened; the caller (`lib.rs::run()`) passes it straight to `log_outcome` below --
+/// every branch leaves `data_dir` safe for `RegistryStore::open`/`SettingsStore::open` to read
+/// normally afterward.
 #[derive(Debug)]
 pub enum ImportOutcome {
     /// A marker from a previous launch already recorded a decision; nothing checked or copied.
@@ -76,6 +77,35 @@ pub enum ImportOutcome {
     /// An unexpected I/O error. No marker was written, so the next launch retries; every step
     /// that already ran is safe to repeat (see the module doc comment).
     Failed(String),
+}
+
+/// Logs `outcome` at the right level; factored out of `lib.rs::run()`'s call site (kept under
+/// the 600-line file-size cap) so the wording for each variant lives beside the variant it
+/// describes, not at the far end of an unrelated file.
+pub fn log_outcome(outcome: ImportOutcome) {
+    match outcome {
+        ImportOutcome::AlreadyDecided => {}
+        ImportOutcome::NoElectronRegistry => {
+            log::info!(
+                "refract-tauri: data import: no Electron registry.json found, nothing to import"
+            );
+        }
+        ImportOutcome::Imported {
+            repositories_added,
+            sessions_added,
+            settings_imported,
+            profile_cache_imported,
+        } => {
+            log::info!(
+                "refract-tauri: data import: added {repositories_added} Repositories and {sessions_added} Sessions from Electron's registry.json (settings.json imported: {settings_imported}, profileCache.json imported: {profile_cache_imported})"
+            );
+        }
+        ImportOutcome::Failed(err) => {
+            log::error!(
+                "refract-tauri: data import failed, starting with this build's own existing data only: {err}"
+            );
+        }
+    }
 }
 
 pub async fn import_once(data_dir: &Path, source_dir: &Path) -> ImportOutcome {

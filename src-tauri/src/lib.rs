@@ -236,29 +236,9 @@ pub fn run() {
     // data loss or corruption; the marker write itself lands via the same atomic
     // temp-then-rename every other store write here already uses.
     let (registry, settings, update_state) = tauri::async_runtime::block_on(async {
-        match store::import::import_once(&data_dir, &electron_source_dir()).await {
-            store::import::ImportOutcome::AlreadyDecided => {}
-            store::import::ImportOutcome::NoElectronRegistry => {
-                log::info!(
-                    "refract-tauri: data import: no Electron registry.json found, nothing to import"
-                );
-            }
-            store::import::ImportOutcome::Imported {
-                repositories_added,
-                sessions_added,
-                settings_imported,
-                profile_cache_imported,
-            } => {
-                log::info!(
-                    "refract-tauri: data import: added {repositories_added} Repositories and {sessions_added} Sessions from Electron's registry.json (settings.json imported: {settings_imported}, profileCache.json imported: {profile_cache_imported})"
-                );
-            }
-            store::import::ImportOutcome::Failed(err) => {
-                log::error!(
-                    "refract-tauri: data import failed, starting with this build's own existing data only: {err}"
-                );
-            }
-        }
+        store::import::log_outcome(
+            store::import::import_once(&data_dir, &electron_source_dir()).await,
+        );
 
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
