@@ -1,0 +1,16 @@
+[
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "thinking",
+        "thinking": "Let me check the file before editing it."
+      },
+      {
+        "type": "text",
+        "text": "I checked the file; it looks fine."
+      }
+    ],
+    "timestamp": 0
+  }
+]

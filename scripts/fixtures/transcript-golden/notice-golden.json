@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "notice",
+    "id": "startup-notice:0",
+    "level": "warning",
+    "text": "Context window is nearly full."
+  }
+]

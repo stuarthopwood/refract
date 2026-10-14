@@ -1546,7 +1546,8 @@ fn apply_tool_execution_end(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let result_details = result.get("details").cloned().unwrap_or(Value::Null);
+    let result_details_opt = result.get("details").cloned();
+    let result_details = result_details_opt.clone().unwrap_or(Value::Null);
 
     if HIDDEN_TOOLS.contains(&tool_name.as_str()) {
         if !is_error {
@@ -1607,7 +1608,7 @@ fn apply_tool_execution_end(
             args: Value::Null,
             output: Some(output),
             diff: None,
-            details: Some(result_details),
+            details: result_details_opt.clone(),
             edit,
             write: None,
         }));
@@ -1625,7 +1626,7 @@ fn apply_tool_execution_end(
                     *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
                     *duration_ms = new_duration;
                     *out = Some(output.clone());
-                    *det = Some(result_details.clone());
+                    *det = result_details_opt.clone();
                     *e = edit.clone();
                 }
             }
@@ -1790,7 +1791,8 @@ fn attach_tool_result(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let content = content_parts(message);
-    let details = message.get("details").cloned().unwrap_or(Value::Null);
+    let details_opt = message.get("details").cloned();
+    let details = details_opt.clone().unwrap_or(Value::Null);
 
     if HIDDEN_TOOLS.contains(&tool_name.as_str()) {
         if !is_error {
@@ -1843,7 +1845,7 @@ fn attach_tool_result(
             args: Value::Null,
             output: Some(output),
             diff: None,
-            details: Some(details),
+            details: details_opt.clone(),
             edit,
             write: None,
         }));
@@ -1857,7 +1859,7 @@ fn attach_tool_result(
                 if let TranscriptItem::Tool { status, output: out, details: det, edit: e, .. } = Arc::make_mut(&mut item) {
                     *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
                     *out = Some(output.clone());
-                    *det = Some(details.clone());
+                    *det = details_opt.clone();
                     *e = edit.clone();
                 }
             }

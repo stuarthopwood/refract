@@ -22,7 +22,6 @@
     "toolCallId": "call-1",
     "toolName": "write",
     "content": [{ "type": "text", "text": "Successfully wrote 2 bytes to note.txt" }],
-    "details": null,
     "isError": false,
     "timestamp": 0
   },

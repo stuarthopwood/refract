@@ -20,8 +20,7 @@
       "path": "note.txt",
       "content": "hi"
     },
-    "output": "Successfully wrote 2 bytes to note.txt",
-    "details": null
+    "output": "Successfully wrote 2 bytes to note.txt"
   },
   {
     "kind": "tool",

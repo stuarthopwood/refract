@@ -1,0 +1,13 @@
+[
+  {
+    "kind": "request",
+    "id": "request:req-1",
+    "requestId": "req-1"
+  },
+  {
+    "kind": "request",
+    "id": "request:req-1",
+    "requestId": "req-1",
+    "resolved": "approved"
+  }
+]

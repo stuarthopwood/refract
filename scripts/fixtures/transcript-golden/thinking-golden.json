@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "thinking",
+    "id": "h0:0",
+    "text": "Let me check the file before editing it.",
+    "streaming": false
+  },
+  {
+    "kind": "assistant-text",
+    "id": "h0:1",
+    "text": "I checked the file; it looks fine.",
+    "streaming": false
+  }
+]

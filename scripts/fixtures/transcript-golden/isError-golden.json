@@ -1,0 +1,19 @@
+[
+  {
+    "kind": "tool",
+    "id": "h0:0",
+    "toolCallId": "call-1",
+    "tool": "write",
+    "target": "note.txt",
+    "status": "error",
+    "args": {
+      "path": "note.txt",
+      "content": "hi"
+    },
+    "write": {
+      "path": "note.txt",
+      "content": "hi"
+    },
+    "output": "Permission denied: note.txt"
+  }
+]

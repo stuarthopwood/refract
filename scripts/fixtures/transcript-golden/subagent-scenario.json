@@ -1,0 +1,15 @@
+[
+  {
+    "type": "tool_execution_start",
+    "toolCallId": "call-task-1",
+    "toolName": "task",
+    "args": {
+      "tasks": [
+        {
+          "name": "Explorer",
+          "task": "Investigate the failing test."
+        }
+      ]
+    }
+  }
+]

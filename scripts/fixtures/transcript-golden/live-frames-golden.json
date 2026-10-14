@@ -16,8 +16,7 @@
       "content": "hi"
     },
     "durationMs": 0,
-    "output": "Successfully wrote 2 bytes to note.txt",
-    "details": null
+    "output": "Successfully wrote 2 bytes to note.txt"
   },
   {
     "kind": "assistant-text",
