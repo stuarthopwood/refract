@@ -88,9 +88,7 @@ fn make_scratch_repo() -> PathBuf {
 /// never touches `CARGO_TARGET_DIR` or its shared lock, and takes well under a second.
 fn build_omp_shim(dir: &Path) -> PathBuf {
     std::fs::create_dir_all(dir).expect("create shim dir");
-    let src = repo_root()
-        .join("scripts")
-        .join("verify-tauri-omp-shim.rs");
+    let src = repo_root().join("scripts").join("verify-tauri-omp-shim.rs");
     assert!(
         src.is_file(),
         "contract_replay: expected shim source at {}",
@@ -189,7 +187,8 @@ fn normalize(value: &mut Value, dynamic: &[(String, &'static str)]) {
     match value {
         Value::Object(map) => {
             for (key, inner) in map.iter_mut() {
-                if matches!(key.as_str(), "startedAt" | "endedAt" | "durationMs") && !inner.is_null()
+                if matches!(key.as_str(), "startedAt" | "endedAt" | "durationMs")
+                    && !inner.is_null()
                 {
                     *inner = json!("<TIMESTAMP_MS>");
                     continue;
@@ -273,11 +272,24 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     let add_envelope = dispatcher
         .dispatch("repositories.add", state.clone(), vec![add_args.clone()])
         .await;
-    assert_eq!(add_envelope.get("ok"), Some(&Value::Bool(true)), "{add_envelope:?}");
+    assert_eq!(
+        add_envelope.get("ok"),
+        Some(&Value::Bool(true)),
+        "{add_envelope:?}"
+    );
     let repository = add_envelope["value"].clone();
-    let repo_id = repository["id"].as_str().expect("repository.id").to_string();
-    let repo_path = repository["path"].as_str().expect("repository.path").to_string();
-    let repo_name = repository["name"].as_str().expect("repository.name").to_string();
+    let repo_id = repository["id"]
+        .as_str()
+        .expect("repository.id")
+        .to_string();
+    let repo_path = repository["path"]
+        .as_str()
+        .expect("repository.path")
+        .to_string();
+    let repo_name = repository["name"]
+        .as_str()
+        .expect("repository.name")
+        .to_string();
     steps.push(ipc_step("repositories.add", &add_args, &add_envelope));
 
     // 2. sessions.create
@@ -289,14 +301,21 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
             vec![create_args[0].clone()],
         )
         .await;
-    assert_eq!(create_envelope.get("ok"), Some(&Value::Bool(true)), "{create_envelope:?}");
+    assert_eq!(
+        create_envelope.get("ok"),
+        Some(&Value::Bool(true)),
+        "{create_envelope:?}"
+    );
     let session = create_envelope["value"].clone();
     let session_id = session["id"].as_str().expect("session.id").to_string();
     let worktree_path = session["worktreePath"]
         .as_str()
         .expect("session.worktreePath")
         .to_string();
-    let branch_name = session["branch"].as_str().expect("session.branch").to_string();
+    let branch_name = session["branch"]
+        .as_str()
+        .expect("session.branch")
+        .to_string();
     steps.push(ipc_step("sessions.create", &create_args, &create_envelope));
 
     let agent = state.session_manager.get_or_create_agent(&session_id);
@@ -305,12 +324,17 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     //    available_commands_update/get_messages_page (tape lines 1-8) to completion.
     let open_args = json!([session_id, true]);
     let open_envelope = dispatcher
-        .dispatch("sessions.open", state.clone(), vec![
-            Value::String(session_id.clone()),
-            Value::Bool(true),
-        ])
+        .dispatch(
+            "sessions.open",
+            state.clone(),
+            vec![Value::String(session_id.clone()), Value::Bool(true)],
+        )
         .await;
-    assert_eq!(open_envelope.get("ok"), Some(&Value::Bool(true)), "{open_envelope:?}");
+    assert_eq!(
+        open_envelope.get("ok"),
+        Some(&Value::Bool(true)),
+        "{open_envelope:?}"
+    );
     steps.push(ipc_step("sessions.open", &open_args, &open_envelope));
     steps.push(snapshot_step(
         "after_sessions_open",
@@ -330,7 +354,11 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
             ],
         )
         .await;
-    assert_eq!(send_envelope.get("ok"), Some(&Value::Bool(true)), "{send_envelope:?}");
+    assert_eq!(
+        send_envelope.get("ok"),
+        Some(&Value::Bool(true)),
+        "{send_envelope:?}"
+    );
     steps.push(ipc_step("chat.send", &send_args, &send_envelope));
 
     wait_for_status(&agent, SessionStatus::NeedsYou, Duration::from_secs(10)).await;
@@ -355,7 +383,11 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
             ],
         )
         .await;
-    assert_eq!(answer_envelope.get("ok"), Some(&Value::Bool(true)), "{answer_envelope:?}");
+    assert_eq!(
+        answer_envelope.get("ok"),
+        Some(&Value::Bool(true)),
+        "{answer_envelope:?}"
+    );
     steps.push(ipc_step("chat.answer", &answer_args, &answer_envelope));
 
     // The fixture's own `{"__delay__": 2000}` sits between the assistant's two streamed deltas
@@ -409,7 +441,8 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     });
 
     assert_eq!(
-        trace, golden,
+        trace,
+        golden,
         "contract_replay: captured trace no longer matches the frozen golden file at {}",
         golden_path.display()
     );

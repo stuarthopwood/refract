@@ -47,7 +47,11 @@ fn diff_transcript_is_linear_not_quadratic() {
         let elapsed = start.elapsed();
         println!("diff_transcript_is_linear_not_quadratic: N={n} -> {elapsed:?}");
 
-        assert_eq!(ops.len(), 1, "exactly one item changed at N={n}, expected exactly one TranscriptOp");
+        assert_eq!(
+            ops.len(),
+            1,
+            "exactly one item changed at N={n}, expected exactly one TranscriptOp"
+        );
         assert!(
             matches!(&ops[0], TranscriptOp::Upsert { item } if item.id() == format!("item-{changed_index}")),
             "the single op at N={n} must be an Upsert for the one item that actually changed"
@@ -74,7 +78,10 @@ async fn patch_coalescer_sends_one_upsert_per_id_not_per_frame() {
     let coalescer = PatchCoalescer::new(
         Duration::from_secs(60),
         Box::new(move |ops: Vec<TranscriptOp>| {
-            flushed_for_closure.lock().unwrap_or_else(|p| p.into_inner()).extend(ops);
+            flushed_for_closure
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .extend(ops);
         }),
     );
 
@@ -102,7 +109,9 @@ async fn patch_coalescer_sends_one_upsert_per_id_not_per_frame() {
         .iter()
         .map(|op| match op {
             TranscriptOp::Upsert { item } => item.id(),
-            TranscriptOp::Reset { .. } => panic!("unexpected Reset op: only Upserts were ever queued"),
+            TranscriptOp::Reset { .. } => {
+                panic!("unexpected Reset op: only Upserts were ever queued")
+            }
         })
         .collect();
     ids_seen.sort_unstable();
@@ -111,10 +120,19 @@ async fn patch_coalescer_sends_one_upsert_per_id_not_per_frame() {
     // Last-write-wins: the flushed text for each id must be its LAST queued frame, not an
     // earlier one -- proves the merge actually overwrites rather than just deduplicating by id.
     for op in ops.iter() {
-        let TranscriptOp::Upsert { item } = op else { unreachable!() };
+        let TranscriptOp::Upsert { item } = op else {
+            unreachable!()
+        };
         if let TranscriptItem::AssistantText { id, text, .. } = item.as_ref() {
-            let last_frame_for_id = (0..20usize).rev().find(|f| ids[f % ids.len()] == id).unwrap();
-            assert_eq!(text, &format!("frame {last_frame_for_id}"), "id {id} must carry its LAST queued frame's text");
+            let last_frame_for_id = (0..20usize)
+                .rev()
+                .find(|f| ids[f % ids.len()] == id)
+                .unwrap();
+            assert_eq!(
+                text,
+                &format!("frame {last_frame_for_id}"),
+                "id {id} must carry its LAST queued frame's text"
+            );
         }
     }
 }

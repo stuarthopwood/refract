@@ -45,6 +45,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Includes the issue #795 (R12b) transcript-golden and contract-replay Vitest suites
+      # (src/main/omp/transcript.golden.test.ts, src/main/ipc/contractReplay.test.ts) -- Vitest
+      # auto-discovers *.test.ts, so no separate step is needed for them.
       - name: Vitest
         run: pnpm test
 
@@ -66,9 +69,19 @@ jobs:
       - name: Check file size
         run: pnpm check:file-size
 
+      # Issue #519/#795 (R12b): flags an OMP wire command/frame-type string literal Refract
+      # reads or writes that the vendored rpc-wire schema (scripts/fixtures/omp-schema/) doesn't
+      # know about, and reports (non-fatally) when that vendored schema is behind the npm
+      # registry's current @oh-my-pi/pi-coding-agent version.
+      - name: Check OMP schema drift
+        run: pnpm check:omp-schema
+
       - name: Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
+      # Includes the issue #795 (R12b) golden/contract-replay/perf-proof integration tests under
+      # src-tauri/tests/ (transcript_golden.rs, contract_replay.rs, perf_proof.rs) -- Cargo
+      # auto-discovers everything under tests/, so no separate step is needed for them.
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
