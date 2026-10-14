@@ -197,8 +197,9 @@ impl SessionAgent {
     /// not implement -- that was wrong; `SessionAgent.ts:1440-1449` says it guards exactly this
     /// `launch()` race, where the listener task's own `Exit` can arrive after a quick
     /// stop-then-start already moved `state.process` on to a newer life).
-    /// `detectUnexpectedTermination`'s crash-tail read/the persisted stopped-on-request marker
-    /// are not ported (`terminatedUnexpectedly` always absent).
+    /// `detectUnexpectedTermination`'s crash-tail read and the persisted stopped-on-request
+    /// marker are computed by `session::termination`'s own `on_exit` hook, called right after
+    /// this function returns (`agent::launch`'s own `spawn_frame_listener`), not here.
     pub(super) async fn handle_exit(
         &self,
         proc: &Arc<OmpProcess>,
@@ -210,6 +211,12 @@ impl SessionAgent {
             let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
             if is_current {
                 state.process = None;
+                // Lane R3 (issue #786, #515): the pid-record fallback for orphan reaping --
+                // fire-and-forget, mirrors `pidRecords.ts`'s own `removeProcessRecord(...).
+                // catch(...)` call from `OmpProcess.ts`'s exit handler.
+                if let Some(pid) = proc.pid() {
+                    crate::process::pid_records::remove_process_record(pid);
+                }
             }
             is_current
         };

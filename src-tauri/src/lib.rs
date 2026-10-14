@@ -192,6 +192,10 @@ pub fn run() {
     // I/O error, not a normal "missing file" case, which both modules already handle as a
     // corrected default in memory).
     let (registry, settings) = tauri::async_runtime::block_on(async {
+        // Lane R3 (issue #786, FR-005's fallback): reaps any `omp` root process orphaned by a
+        // previous crash before this run ever spawns a new one -- must run before any Session's
+        // `SessionAgent` ever attaches (`process::pid_records`'s own doc comment).
+        process::pid_records::init_and_reap(&data_dir).await;
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
             .unwrap_or_else(|err| panic!("refract-tauri: failed to open registry.json: {err}"));

@@ -195,7 +195,9 @@ impl SessionAgent {
         })
     }
 
-    fn arc(&self) -> Arc<Self> {
+    /// Lane R3 (issue #786): `pub(super)` (not private) so `session::start_queue`'s own cancel
+    /// watcher task can hold a strong reference across its own `tokio::spawn`.
+    pub(super) fn arc(&self) -> Arc<Self> {
         self.self_ref
             .upgrade()
             .expect("SessionAgent dropped while a background task still referenced it")
@@ -225,6 +227,14 @@ impl SessionAgent {
             })
     }
 
+    /// Lane R3 (issue #786): `session::termination`'s own marker record/clear and
+    /// `resolve_termination` both need the Session's registry row (`currentConversation`,
+    /// `stoppedOnRequestConversation`/`AtSize`), which `SessionAgent`'s own fields are
+    /// otherwise private to this module for.
+    pub(super) fn registry(&self) -> &SharedRegistry {
+        &self.registry
+    }
+
     // -----------------------------------------------------------------------------------------
     // Status / events
     // -----------------------------------------------------------------------------------------
@@ -242,19 +252,44 @@ impl SessionAgent {
             .expect("status_event_locked payload is always a JSON object");
         // `stopReason`/`stopDetail` are TS `?:` optional fields (the renderer checks
         // `=== undefined`, ChatPane.tsx:205): omitted entirely when absent, not sent as JSON
-        // `null` (code-review finding, 2026-10-13). `terminatedUnexpectedly`/`startProgress`
-        // have no port in this build (see this file's own header comment) and so are never
-        // emitted at all either.
+        // `null` (code-review finding, 2026-10-13).
         if let Some(reason) = state.stop_reason {
             obj.insert("stopReason".to_string(), Value::String(reason.to_string()));
         }
         if let Some(detail) = &state.stop_detail {
             obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
         }
+        // Lane R3 (issue #786): `terminatedUnexpectedly`/`pendingToolNames` (`session::
+        // termination`'s own `on_exit` hook) and `startProgress` (`session::start_queue`'s own
+        // `on_start_progress` hook), each omitted entirely while absent -- same gate rule as
+        // `stopReason`/`stopDetail` above.
+        Self::insert_termination_and_progress_fields(obj, state);
         payload
     }
 
-    async fn emit_status(&self) {
+    /// Lane R3 (issue #786): shared by `status_event_locked` (the live `session:status` event)
+    /// and `runtime_view` (`SessionSnapshot.runtime`) so both wire shapes stay in lock-step --
+    /// `summary_fields` (registry-only `sessions.list` rows) deliberately does not call this: no
+    /// live agent computes a crash's tail detection for a Session nobody has opened this run.
+    fn insert_termination_and_progress_fields(
+        obj: &mut serde_json::Map<String, Value>,
+        state: &AgentState,
+    ) {
+        if state.termination.terminated_unexpectedly {
+            obj.insert("terminatedUnexpectedly".to_string(), Value::Bool(true));
+            if !state.termination.pending_tool_names.is_empty() {
+                obj.insert(
+                    "pendingToolNames".to_string(),
+                    json!(state.termination.pending_tool_names),
+                );
+            }
+        }
+        if let Some(progress) = state.start_queue.to_wire() {
+            obj.insert("startProgress".to_string(), progress);
+        }
+    }
+
+    pub(super) async fn emit_status(&self) {
         let state = self.state.lock().await;
         let payload = self.status_event_locked(&state);
         drop(state);
@@ -389,6 +424,7 @@ impl SessionAgent {
         if let Some(detail) = &state.stop_detail {
             obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
         }
+        Self::insert_termination_and_progress_fields(obj, &state);
         payload
     }
 

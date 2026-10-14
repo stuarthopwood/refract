@@ -81,6 +81,12 @@ pub struct SessionPatch {
     pub last_message_count: Option<Option<i64>>,
     pub last_model: Option<LastModel>,
     pub last_thinking_level: Option<Option<String>>,
+    // Lane R3 (issue #786): tri-state like `current_conversation` above -- both
+    // `clear_stopped_on_request_marker` (every `launch()` attempt) and
+    // `record_stopped_on_request_marker` (a requested-stop `onExit`) need to explicitly set
+    // these back to `null`, not merely leave them unchanged.
+    pub stopped_on_request_conversation: Option<Option<String>>,
+    pub stopped_on_request_at_size: Option<Option<i64>>,
 }
 
 /// The full contents of `registry.json`.
@@ -390,6 +396,12 @@ impl RegistryStore {
             }
             if let Some(value) = patch.last_thinking_level {
                 session.last_thinking_level = value;
+            }
+            if let Some(value) = patch.stopped_on_request_conversation {
+                session.stopped_on_request_conversation = value;
+            }
+            if let Some(value) = patch.stopped_on_request_at_size {
+                session.stopped_on_request_at_size = value;
             }
         }
         if let Err(err) = self.persist().await {

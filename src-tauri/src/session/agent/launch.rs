@@ -98,11 +98,22 @@ impl SessionAgent {
         session: &Session,
         failure_prefix: &str,
     ) -> Result<(), AgentError> {
+        // Lane R3 (issue #786): a new life starting means whatever the PREVIOUS life's
+        // requested stop protected no longer applies to THIS one (`stoppedOnRequestMarker.ts`'s
+        // own `clearStoppedOnRequestMarker`, called at the top of every `launch()` attempt).
+        self.clear_stopped_on_request_marker().await;
+
         let approval_mode = self.settings.lock().await.get().approval_mode;
         let opts = OmpProcessOptions::new(
             PathBuf::from(&session.worktree_path),
             to_process_mode(approval_mode),
         );
+
+        // Lane R3 (issue #786, "one hook" this lane adds to core `agent.rs`): the process-wide
+        // start-slot gate and low-memory defer (`startQueue.ts`'s own `acquireStartSlot`/
+        // `deferStartIfMemoryLow`), held for the rest of this attempt's scope so the slot is
+        // freed exactly once, on every return path below.
+        let _slot_guard = crate::session::start_queue::acquire_slot(self).await?;
 
         let proc = match OmpProcess::connect(&opts).await {
             Ok(p) => p,
@@ -113,11 +124,23 @@ impl SessionAgent {
             }
         };
         let proc = Arc::new(proc);
+        // Lane R3 (issue #786): `startQueue.ts`'s own `markSpawned`/`unmarkSpawned` pairing (the
+        // narrower "has a process actually spawned" count the memory defer above checks), and
+        // `pidRecords.ts`'s own orphan-reaping fallback record -- fire-and-forget, never worth
+        // making this start wait on either.
+        let _spawned_guard = crate::session::start_queue::mark_spawned();
+        if let Some(pid) = proc.pid() {
+            crate::process::pid_records::record_process(pid, &self.session_id);
+        }
         // Subscribed before `wait_ready` (code-review/perf finding, 2026-10-13): registers this
         // listener before any frame -- including ones the ready-wait itself observes -- can
         // possibly be produced, the same guarantee `OmpProcess.ts` gets from attaching
         // `proc.on('frame', ...)` before calling `start()` (SessionAgent.ts:471).
         self.spawn_frame_listener(proc.clone(), proc.subscribe());
+        // Lane R3 (issue #786, #656): a cancel landing from here on must stop the now-spawned
+        // process, not just abandon the wait -- `acquire_slot`'s own cancel check above only
+        // covers the queued/memory-deferred phase, before any process existed to leak.
+        let _cancel_watch = crate::session::start_queue::watch_for_cancel(self, proc.clone()).await;
         if let Err(err) = proc.wait_ready(&opts).await {
             let detail = format!("{failure_prefix}{}", err.message);
             self.record_start_failure(&detail).await;
