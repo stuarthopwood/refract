@@ -530,7 +530,13 @@ if (process.argv.includes("--check-pin")) {
               ],
             ]
           : ["npm", ["view", "@oh-my-pi/pi-coding-agent", "version"]];
-      registryVersion = execFileSync(bin, args, { encoding: "utf8" }).trim();
+      // Gate-round-2 fix (MEDIUM #5): without a timeout, a stalled registry (network partition,
+      // hung proxy, ...) blocks this call until npm's own internal retry/backoff gives up on its
+      // own schedule -- inside a 45-minute CI job that is an expensive way to find out. 30s is
+      // generous for a single `npm view` round trip; the catch block below already treats ANY
+      // failure non-fatally (including the `ETIMEDOUT` this triggers), so a slow registry just
+      // degrades this informational check to "unknown", exactly like today's network-error path.
+      registryVersion = execFileSync(bin, args, { encoding: "utf8", timeout: 30_000 }).trim();
     } catch (err) {
       console.log(
         `--check-pin: \`npm view @oh-my-pi/pi-coding-agent version\` failed: ${err.message}`,

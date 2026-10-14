@@ -132,20 +132,34 @@ separate, later step this never calls), not reconstructed snapshots the way the 
 
 There is no live TS test reading this fixture (AGENTS.md's "no new tests while prototyping" rule
 covers `src/main`/TypeScript in full for this lane; the epic #797 exception for new tests is
-Rust-ports only). It was produced by a one-time, throwaway Node/vitest script (reusing the driving
-logic of the now-deleted `src/main/ipc/contractReplay.test.ts`, with its single `expect(...)`
-assertion replaced by a `writeFileSync` of the normalized trace to this path), run once via
-`pnpm vitest run <throwaway path>`, then deleted immediately afterward -- it never landed in any
-commit. Regenerate it the same way if `src/main`'s IPC handlers or `SessionManager`/`SessionAgent`
-ever change in a way that should be reflected here: write an equivalent throwaway script, run it
-once, delete it again.
+Rust-ports only). It is produced by a checked-in generator script,
+`scripts/gen-contract-replay-electron-trace.mjs` (reusing the driving logic of the original
+gate-round-1 throwaway TS test, `src/main/ipc/contractReplay.test.ts` -- deleted per the
+no-new-tests rule above, but never reachable again after a squash merge to `main`, which is why
+gate-round-2 (MEDIUM #4, PR #834) replaced it with this checked-in script instead of a second
+throwaway one). The generator writes the normalized trace straight to this file (no manual
+copy-paste step); it is never auto-run by `pnpm test`/CI (lives under `scripts/`, outside
+`vitest.config.ts`'s own `include: ['src/**/*.test.ts']`, and isn't named `*.test.ts`/
+`*.spec.ts` either), and needs its own one-off vitest config
+(`scripts/gen-contract-replay-electron-trace.vitest.config.mjs`) to be runnable at all, since an
+explicit CLI file argument alone does not override `vitest.config.ts`'s `include`. Regenerate:
+
+```
+npx vitest run --config scripts/gen-contract-replay-electron-trace.vitest.config.mjs scripts/gen-contract-replay-electron-trace.mjs
+```
+
+Eyeball the diff (if any) against `scripts/fixtures/omp-frames/session.jsonl` before committing --
+see the generator's own header comment for the full rationale. Regenerate it the same way if
+`src/main`'s IPC handlers or `SessionManager`/`SessionAgent` ever change in a way that should be
+reflected here.
 
 ### Normalization
 
 Same placeholder table as the Rust trace above (`<WORKTREE_PATH>`/`<REPO_DIR>`/`<REPO_NAME>`/
-`<BRANCH_NAME>`/`<SESSION_ID>`/`<REPO_ID>`/`<TIMESTAMP>`/`<TIMESTAMP_MS>`), applied by this
-fixture's own (now-deleted) `normalize()` helper -- the two traces use the identical placeholder
-tokens so a cross-shell diff can compare them directly without a translation layer.
+`<BRANCH_NAME>`/`<SESSION_ID>`/`<REPO_ID>`/`<TIMESTAMP>`/`<TIMESTAMP_MS>`), applied by the
+generator's own `normalize()` helper (`scripts/gen-contract-replay-electron-trace.mjs`) -- the two
+traces use the identical placeholder tokens so a cross-shell diff can compare them directly
+without a translation layer.
 
 ### Why the cross-shell diff folds events instead of comparing them raw
 
