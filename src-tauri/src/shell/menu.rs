@@ -210,8 +210,23 @@ fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(not_found("No window to show the menu on"));
         };
 
+        // Deadlock fix (live-check, 2026-10-14): `build_menus` and `popup_menu_at` each end in
+        // Tauri's `run_main_thread!`/`run_item_main_thread!` macros, which block the CALLING
+        // thread on a `std::sync::mpsc` `rx.recv()` until the main thread's event loop services
+        // the posted task. Calling them inline inside this `async` handler (as the first version
+        // of this file did) blocks a Tokio async-worker thread with a synchronous recv -- under
+        // load that starves the worker pool the main thread itself needs to hand work back
+        // through, hanging forever (reproduced live: a CDP-driven `window.popupMenu` call never
+        // returned even after a 90s wait). Both blocking calls now run via
+        // `tauri::async_runtime::spawn_blocking`, Tokio's dedicated blocking-task pool, which
+        // can't be exhausted by this handler's own worker-pool usage.
+        let app_handle_for_menus = app_handle.clone();
         let menus = MENUS
-            .get_or_try_init(|| async { build_menus(&app_handle) })
+            .get_or_try_init(|| async move {
+                tauri::async_runtime::spawn_blocking(move || build_menus(&app_handle_for_menus))
+                    .await
+                    .and_then(std::convert::identity)
+            })
             .await
             .map_err(|err| {
                 IpcError::new(
@@ -223,13 +238,22 @@ fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
             return Err(not_found(format!("Menu '{menu_id}' has no submenu")));
         };
 
+        // Fire-and-forget (parity, `src/main/menu.ts`'s own `popupAppMenu`): Electron's
+        // `Menu.popup()` call is NOT awaited by `window.ts`'s IPC handler either -- showing a
+        // native popup menu enters a modal loop on whichever thread drives it (Win32
+        // `TrackPopupMenuEx`, which `muda`/Tauri's `popup_menu_at` runs on the main thread) that
+        // only returns once the menu is dismissed. Awaiting that before resolving the IPC
+        // promise (an earlier version of this handler did) made every `window.popupMenu` call
+        // hang until the user dismissed the menu -- reproduced live via CDP, where nothing ever
+        // dismisses it, so the call simply never returned. Spawned onto a dedicated blocking
+        // thread and left unawaited instead, exactly like Electron's fire-and-forget `.popup()`.
         let zoom = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
-        window
-            .popup_menu_at(
-                submenu,
-                Position::Logical(LogicalPosition::new(x * zoom, y * zoom)),
-            )
-            .map_err(|err| IpcError::new("not-found", format!("Could not show the menu: {err}")))?;
+        let position = Position::Logical(LogicalPosition::new(x * zoom, y * zoom));
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(err) = window.popup_menu_at(submenu, position) {
+                log::error!("window.popupMenu: could not show the menu: {err}");
+            }
+        });
         Ok(Value::Null)
     })
 }
