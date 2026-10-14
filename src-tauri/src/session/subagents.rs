@@ -255,7 +255,11 @@ async fn settle_running_to_exited(agent: &SessionAgent, notice_text: &str) {
             }
             let mut visible_ops = Vec::new();
             for id in settled_ids {
-                let is_empty = s.streams.get(&id).map(|rows| rows.is_empty()).unwrap_or(true);
+                let is_empty = s
+                    .streams
+                    .get(&id)
+                    .map(|rows| rows.is_empty())
+                    .unwrap_or(true);
                 if is_empty {
                     let notice = json!({
                         "kind": "notice",
@@ -270,7 +274,10 @@ async fn settle_running_to_exited(agent: &SessionAgent, notice_text: &str) {
                     }
                 }
             }
-            (changed.then(|| summaries_to_value(&s.summaries)), visible_ops)
+            (
+                changed.then(|| summaries_to_value(&s.summaries)),
+                visible_ops,
+            )
         })
         .await;
     if !visible_ops.is_empty() {
