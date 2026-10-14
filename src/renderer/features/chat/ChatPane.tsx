@@ -27,8 +27,8 @@ import {
   useTranscriptStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
-import { buildImagePathAttachment, describeAttachFailureReason, MAX_PATH_ATTACHMENTS_PER_MESSAGE } from './attachments'
-import type { ImagePathAttachFailureReason } from './attachments'
+import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
+import type { ResolvedDropItem } from './attachDroppedPaths'
 import { canResumeSession, resumeSession } from './resume'
 import { applySnapshot } from './applySnapshot'
 import { closeChatPane } from './closeChatPane'
@@ -40,6 +40,7 @@ import { MessageInput } from './MessageInput'
 import { SessionStartNotice } from './SessionStartNotice'
 import { pickStartingMessageIndex, STARTING_MESSAGES, STARTING_MESSAGE_EMOJI } from './startingMessages'
 import { isConversationStarted, Transcript } from './Transcript'
+import { useTauriFileDrop } from './useTauriFileDrop'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -854,6 +855,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
   // first message, exactly like the composer itself) is refused with a notice, never silently
   // swallowed (#432's own requirement).
   const composerDisabled = session.status === 'stopped' && effectiveStopReason !== 'not-started'
+  useTauriFileDrop({ sessionId, paneRef: chatPaneRef, composerDisabled, dragDepthRef, setIsDraggingFiles })
 
   function hasFilesPayload(event: ReactDragEvent): boolean {
     return Array.from(event.dataTransfer.types).includes('Files')
@@ -884,84 +886,28 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     event.preventDefault()
     dragDepthRef.current = 0
     setIsDraggingFiles(false)
-    if (composerDisabled) {
-      notify({ code: 'disabled', message: 'This session is not accepting input right now; nothing was attached.' })
-      return
-    }
     const files = Array.from(event.dataTransfer.files)
-    if (files.length === 0) return
-    // PR #723 gate round 1 fix (Code1 LOW): the cap applies PER MESSAGE, not per drop --
-    // computed from this session's CURRENT pending image count, matching the identical fix in
+    if (files.length === 0 && !composerDisabled) return
+    // PR #723 gate round 1 fix (Code1 LOW): the cap applies PER MESSAGE, not per drop -- matches
     // `MessageInput.tsx`'s own path-only paste branch.
-    const alreadyPending = useDraftStore.getState().bySession[sessionId]?.attachments.images.length ?? 0
-    const remainingSlots = Math.max(0, MAX_PATH_ATTACHMENTS_PER_MESSAGE - alreadyPending)
+    const remainingSlots = remainingAttachmentSlots(sessionId)
     const capped = files.slice(0, remainingSlots)
-    let attachedCount = 0
-    // Basenames only (never a full path, FR-029) of every file that did not attach, for an
-    // honest-but-private failure notice (A11y1 LOW), paired with WHY where there is exactly one.
-    const failedFiles: { name: string; reason?: ImagePathAttachFailureReason }[] = []
-    useDraftStore.getState().incrementPendingAttachmentReads(sessionId)
-    try {
-      for (const file of capped) {
-        let filePath: string
-        try {
-          // A browser-dragged image with no on-disk backing file (spec US4 says "or a browser")
-          // returns `''` here -- `buildImagePathAttachment` below refuses it the same way any
-          // other unresolvable path is refused (resolves to the worktree root itself, `file-
-          // missing`), never a silent drop; disclosed as unsupported in the PR body rather than
-          // given its own bespoke message.
-          filePath = window.refract.attachments.getPathForFile(file)
-        } catch {
-          failedFiles.push({ name: file.name })
-          continue
-        }
-        const result = await buildImagePathAttachment(sessionId, filePath)
-        if (result.ok) {
-          useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, images: [...prev.images, result.attachment] }))
-          attachedCount++
-        } else {
-          failedFiles.push({ name: file.name, reason: result.reason })
-        }
+    const resolved: ResolvedDropItem[] = []
+    const preFailed: { name: string }[] = []
+    for (const file of capped) {
+      try {
+        // A browser-dragged image with no on-disk backing file (spec US4 says "or a browser")
+        // has no `getPathForFile` equivalent either; refused like any other unresolvable path
+        // (never a silent drop). Optional (issue #793): absent in the Tauri build, but its own
+        // DOM `drop` event never reaches this loop there either (`useTauriFileDrop.ts` is that
+        // build's real path), so the `undefined` branch is unreachable there in practice.
+        if (!window.refract.attachments.getPathForFile) throw new Error('getPathForFile is not available')
+        resolved.push({ name: file.name, filePath: window.refract.attachments.getPathForFile(file) })
+      } catch {
+        preFailed.push({ name: file.name })
       }
-    } finally {
-      useDraftStore.getState().decrementPendingAttachmentReads(sessionId)
     }
-    if (attachedCount > 0) {
-      useDraftStore
-        .getState()
-        .announceAttachment(sessionId, attachedCount === 1 ? 'Image attached from a dropped file.' : `${attachedCount} images attached from dropped files.`)
-    }
-    const overflowCount = files.length - capped.length
-    const skipped = failedFiles.length + overflowCount
-    if (skipped > 0) {
-      const only = failedFiles[0]
-      // PR #723 gate round 2 fix (A11y2 Low): a zero-slots overflow used to read "Only 0 more
-      // images could be attached", and a drop that had BOTH overflow and read failures silently
-      // dropped the failure half of the sentence. Both now stated precisely.
-      const overflowText =
-        overflowCount > 0
-          ? remainingSlots === 0
-            ? 'This message already has the maximum of 10 images; nothing more was attached.'
-            : `Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} could be attached to this message; the rest were skipped.`
-          : null
-      // PR #723 gate round 3 fix (A11y3 Low): "other" only makes sense when something ELSE
-      // attached or overflowed this same drop -- a drop where every file failed and none
-      // overflowed used to still read "N OTHER files could not be attached", with nothing else
-      // for them to be "other" than.
-      const saysOther = attachedCount > 0 || overflowCount > 0
-      const failureText =
-        failedFiles.length === 1 && only
-          ? `"${only.name}" ${only.reason ? describeAttachFailureReason(only.reason) : 'could not be attached as an image'}.`
-          : failedFiles.length > 1
-            ? saysOther
-              ? `${failedFiles.length} other files could not be attached as images.`
-              : `${failedFiles.length} files could not be attached as images.`
-            : null
-      notify({
-        code: 'invalid-argument',
-        message: [overflowText, failureText].filter(Boolean).join(' ')
-      })
-    }
+    await attachResolvedPaths(sessionId, resolved, preFailed, files.length, remainingSlots, composerDisabled)
   }
 
   async function handleRecover() {

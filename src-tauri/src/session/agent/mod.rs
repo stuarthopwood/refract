@@ -63,7 +63,10 @@ mod launch;
 mod requests;
 mod types;
 
-pub use commands::{classify_slash_invocation, parse_slash_command, SlashInvocationClassification};
+pub use commands::{
+    classify_slash_invocation, parse_slash_command, SlashInvocationClassification,
+    NATIVE_RESERVED_COMMANDS,
+};
 pub use requests::is_chat_answer;
 pub use types::{AgentError, PendingRequest, SessionStatus};
 
