@@ -163,6 +163,29 @@ pub(super) async fn resolve_termination_for(
     detect_unexpected_termination(session.current_conversation.as_deref()).await
 }
 
+/// Lane R3/#786 follow-up: the raw, UNGATED tail read `session::agent::launch`'s `launch()` and
+/// `session::agent::conversations`'s `open_conversation()` call right before building/merging
+/// the transcript, so an unresolved `tool` row left by a crashed previous life settles to
+/// `interrupted` (`omp::transcript::TranscriptState::merge_from_history`/
+/// `set_terminated_unexpectedly` + `settle_interrupted_tool_rows`) instead of spinning `running`
+/// forever. Port of `SessionAgent.ts` calling `detectUnexpectedTermination(file)` directly at
+/// its own `fromHistory` call sites -- 3 in TS (`launch()` line 626, `openConversation()` line
+/// 1221, and `switchRecovery.ts`'s own recovery path line 50); only the first two have a Rust
+/// equivalent (this file's own header: #515's reattach-retry recovery is out of scope for this
+/// PR, so Rust just stops the process there instead of recovering it). Deliberately NOT routed
+/// through `resolve_termination_for`'s `stoppedOnRequest`/marker gate above: that gate answers a
+/// different question ("was this exit a deliberate stop, so skip showing a crash banner"),
+/// while the transcript only needs "does the tail show an unresolved tool call right now",
+/// which stays true even for a session that stopped on request mid-tool-call. Always a fresh
+/// read against `file` (never a cached `State::terminated_unexpectedly` from an earlier
+/// `on_exit` this run), matching `resolve_termination`'s own doc comment: a Session reattached
+/// after a crash in a PREVIOUS run has no live `on_exit` to have computed anything yet.
+pub(crate) async fn detect_unexpected_termination_for_transcript(file: Option<&str>) -> bool {
+    detect_unexpected_termination(file)
+        .await
+        .terminated_unexpectedly
+}
+
 impl SessionAgent {
     /// `sessions.open`/`.recover`/`.resume` (`ipc::sessions_agent`): a FRESH read each call,
     /// never trusting a cached flag from an earlier `on_exit` this run -- a Session that crashed

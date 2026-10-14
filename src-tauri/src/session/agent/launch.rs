@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
+use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::launch_support::{
@@ -285,6 +286,9 @@ impl SessionAgent {
         }
 
         let (messages, complete) = fetch_all_messages(&proc).await;
+        let conv = session.current_conversation.as_deref();
+        let terminated_unexpectedly =
+            complete && termination::detect_unexpected_termination_for_transcript(conv).await;
 
         // Port of `exitedDuringStart`: a concurrent `onExit` may have cleared `process` while the
         // history fetch above was in flight.
@@ -303,12 +307,8 @@ impl SessionAgent {
                 Some(current_mode)
             };
             if complete {
-                // Merges in the freshly fetched history rather than replacing the transcript
-                // outright (code-review finding, 2026-10-13): a flat replace silently dropped
-                // any notice/request/in-flight item a live frame appended while this fetch was
-                // in flight. Port of `mergeLiveTranscript`.
-                state.transcript.merge_from_history(&messages);
-                let _ = state.transcript.settle_interrupted_tool_rows();
+                let transcript = &mut state.transcript;
+                transcript.merge_from_history(&messages, terminated_unexpectedly);
             }
         }
         // Told once here (after the merge above so it isn't dropped as an unpersisted notice),
