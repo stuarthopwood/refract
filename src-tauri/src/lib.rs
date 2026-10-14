@@ -73,27 +73,32 @@ fn resolve_data_dir_override(raw: Option<String>) -> Option<PathBuf> {
     Some(path)
 }
 
-/// Electron's own pinned `userData` directory (`src/main/index.ts`): `%APPDATA%\pinion`. The
-/// one-time data import's read-only source (`store::import`, issue #796 acceptance item 6,
-/// lane R13a) -- never written or deleted by this build.
+/// Electron's own pinned `userData` dir (`src/main/index.ts`): `%APPDATA%\pinion`. One-time
+/// data import's read-only source (`store::import`, #796 item 6, lane R13a); never written.
 ///
-/// Debug builds only, the same security posture as `REFRACT_DATA_DIR` above (a packaged release
-/// build must never honour an env var that redirects where it reads session data):
-/// `REFRACT_IMPORT_SOURCE_DIR` overrides this with an absolute path, so a live check can point
-/// the import at a scratch copy of a real Electron profile instead of Stuart's real
-/// `%APPDATA%\pinion`. Unset in every normal run; always a no-op in a release build.
-fn electron_source_dir() -> PathBuf {
+/// Debug builds only, same posture as `REFRACT_DATA_DIR` above: `REFRACT_IMPORT_SOURCE_DIR`
+/// overrides this with an absolute path so a live check can point the import at a scratch copy
+/// instead of Stuart's real `%APPDATA%\pinion`. Unset in every normal run; no-op in release.
+///
+/// Returns `None` (#796 follow-up safety fix) when a scratch `REFRACT_DATA_DIR` override is
+/// active with no `REFRACT_IMPORT_SOURCE_DIR`: never silently copy Stuart's real registry.json.
+fn electron_source_dir() -> Option<PathBuf> {
     #[cfg(debug_assertions)]
     {
         if let Some(path) =
             resolve_data_dir_override(std::env::var("REFRACT_IMPORT_SOURCE_DIR").ok())
         {
-            return path;
+            return Some(path);
+        }
+        if resolve_data_dir_override(std::env::var("REFRACT_DATA_DIR").ok()).is_some() {
+            return None;
         }
     }
-    dirs::data_dir()
-        .expect("refract-tauri: no platform data directory available")
-        .join("pinion")
+    Some(
+        dirs::data_dir()
+            .expect("refract-tauri: no platform data directory available")
+            .join("pinion"),
+    )
 }
 
 #[cfg(test)]
@@ -216,31 +221,26 @@ pub fn run() {
 
     // FR-010: opened BEFORE the window is created, so the theme bootstrap initialization script
     // below runs before any renderer script does. `tauri::async_runtime::block_on` runs the
-    // async store opens to completion here -- `run()` itself is a plain `fn`, and this is the
-    // one startup-only spot before the event loop exists where a blocking wait for that is fine
-    // (`store::registry`/`store::settings`'s own doc comments: a failed open is an unexpected
-    // I/O error, not a normal "missing file" case, which both modules already handle as a
-    // corrected default in memory).
+    // async store opens to completion here -- the one startup-only spot before the event loop
+    // exists where a blocking wait for that is fine.
     //
-    // Gate note (issue #793): this runs BEFORE `tauri_plugin_single_instance`'s own rejection
-    // check can run (that check only exists once the `Builder` below is assembled, which in
-    // turn needs `AppState`/`SessionManager` already built from `registry`/`settings`) -- a
-    // second, about-to-be-rejected launch still pays for this read. Accepted: `RegistryStore::
-    // open`/`SettingsStore::open` only ever READ (`atomic_json::read_json_file`); neither one
-    // writes anything to disk until an explicit mutation calls its own `persist()`.
-    // `store::import::import_once` immediately below DOES write (the one-time Electron import,
-    // issue #796 acceptance item 6, lane R13a). Its own `ImportLock`, if this launch wins it,
-    // is kept alive in `_import_lock` below for the REST OF THIS PROCESS'S LIFETIME, never
-    // dropped early: a launch that merely reads a pre-merge registry snapshot here and later
-    // calls an ordinary `persist()` could otherwise silently overwrite a completed import once
-    // it lands, however much later that `persist()` happens to fire (`store::import`'s own
-    // module doc comment has the full reasoning). A launch that finds the lock held by a PID
-    // still running does not wait -- it skips its own import entirely and opens the stores
-    // exactly as if this feature did not exist for that launch.
+    // `store::import::import_once` below writes the one-time Electron import (#796 item 6) when
+    // `electron_source_dir()` resolves a real source; `None` skips it entirely (safety fix,
+    // #796 follow-up, 2026-10-14; see `electron_source_dir`'s and `store::import`'s own docs).
     let (registry, settings, update_state, _import_lock) = tauri::async_runtime::block_on(async {
-        let (import_outcome, import_lock) =
-            store::import::import_once(&data_dir, &electron_source_dir()).await;
-        store::import::log_outcome(&import_outcome);
+        let import_lock = match electron_source_dir() {
+            Some(source_dir) => {
+                let (outcome, lock) = store::import::import_once(&data_dir, &source_dir).await;
+                store::import::log_outcome(&outcome);
+                lock
+            }
+            None => {
+                // `log::info!` is silently dropped before `Builder`'s logger plugin exists;
+                // `eprintln!` like `resolve_data_dir_override` above.
+                eprintln!("refract-tauri: data import: skipped (scratch REFRACT_DATA_DIR override active with no REFRACT_IMPORT_SOURCE_DIR override), no marker written");
+                None
+            }
+        };
 
         // Lane R3 (issue #786, FR-005's fallback): reaps any orphaned `omp` root process before
         // this run spawns a new one -- must run before any Session's `SessionAgent` attaches
