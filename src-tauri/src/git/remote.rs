@@ -183,3 +183,113 @@ pub async fn repository_remote(repo_path: &Path) -> Option<RepositoryRemoteKind>
         None => Some(RepositoryRemoteKind::Unknown),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "refract-remote-test-{label}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    fn run_git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("git must be on PATH for this test");
+        assert!(status.success(), "git {args:?} failed in {dir:?}");
+    }
+
+    #[test]
+    fn host_from_remote_url_reads_a_plain_https_url() {
+        assert_eq!(
+            host_from_remote_url("https://github.com/owner/repo.git"),
+            Some("github.com".to_string())
+        );
+    }
+
+    #[test]
+    fn host_from_remote_url_strips_embedded_userinfo_credentials() {
+        assert_eq!(
+            host_from_remote_url("https://x-access-token:ghp_xxx@github.com/owner/repo.git"),
+            Some("github.com".to_string())
+        );
+    }
+
+    #[test]
+    fn host_from_remote_url_reads_the_scp_like_ssh_form() {
+        assert_eq!(
+            host_from_remote_url("git@github.com:owner/repo.git"),
+            Some("github.com".to_string())
+        );
+    }
+
+    #[test]
+    fn host_from_remote_url_rejects_windows_drive_letter_paths() {
+        assert_eq!(host_from_remote_url("C:/repos/pinion"), None);
+        assert_eq!(host_from_remote_url("C:\\repos\\pinion"), None);
+    }
+
+    #[test]
+    fn host_from_remote_url_rejects_ipv6_literal_hosts() {
+        assert_eq!(host_from_remote_url("[::1]"), None);
+        assert_eq!(host_from_remote_url("git@[::1]:repo"), None);
+    }
+
+    #[test]
+    fn host_from_remote_url_lowercases_the_host() {
+        assert_eq!(
+            host_from_remote_url("HTTPS://GitHub.COM/owner/repo.git"),
+            Some("github.com".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn repository_remote_returns_unknown_when_no_git_entry_exists() {
+        let dir = temp_dir("no-git");
+        assert_eq!(
+            repository_remote(&dir).await,
+            Some(RepositoryRemoteKind::Unknown)
+        );
+    }
+
+    #[tokio::test]
+    async fn repository_remote_returns_has_host_for_a_configured_remote() {
+        let dir = temp_dir("has-remote");
+        run_git(&dir, &["init", "-q"]);
+        run_git(
+            &dir,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/owner/repo.git",
+            ],
+        );
+        assert_eq!(
+            repository_remote(&dir).await,
+            Some(RepositoryRemoteKind::Has {
+                host: "github.com".to_string()
+            })
+        );
+    }
+
+    /// Distinct from the `Option` wrapper's own `None` (a timed-out check, "no settled answer"):
+    /// this asserts the SETTLED `RepositoryRemoteKind::None` variant, for a repository the check
+    /// ran to completion against and genuinely has no configured remote.
+    #[tokio::test]
+    async fn repository_remote_returns_the_settled_none_variant_when_no_remote_is_configured() {
+        let dir = temp_dir("no-remote");
+        run_git(&dir, &["init", "-q"]);
+        assert_eq!(
+            repository_remote(&dir).await,
+            Some(RepositoryRemoteKind::None)
+        );
+    }
+}
