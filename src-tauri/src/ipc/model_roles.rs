@@ -182,6 +182,39 @@ pub async fn get_model_roles() -> Result<HashMap<String, String>, OmpConfigError
     get_model_roles_with(&RealOmpExecutor).await
 }
 
+/// Gate-fix (round 7, `session::model::known_chat_role_list`'s own caller): an empty
+/// `modelRoles` record is ambiguous -- a genuinely blank profile (nothing ever configured) vs a
+/// transient/unreliable read of a profile that DOES have `modelRoles` set (observed live, under
+/// heavy concurrent `omp` load: a read comes back empty even though an adjacent read of the
+/// identical, unwritten config answers correctly). `cycle_order_present` (the caller's own
+/// `cycleOrder` read, taken moments earlier) is the signal that this profile is actively
+/// configured, not blank: only then is an empty result retried once, and only then does a
+/// SECOND empty result fail closed (a clear "try again" error) rather than being accepted as
+/// "no roles configured" -- never silently narrowing `/role`/`/switch @<role>`'s own valid-list.
+pub async fn get_model_roles_reliable(
+    cycle_order_present: bool,
+) -> Result<HashMap<String, String>, OmpConfigError> {
+    let first = get_model_roles().await?;
+    if !first.is_empty() || !cycle_order_present {
+        return Ok(first);
+    }
+    log::debug!(
+        "get_model_roles_reliable: empty modelRoles while cycleOrder is configured, retrying once"
+    );
+    let retry = get_model_roles().await?;
+    if retry.is_empty() {
+        return Err(OmpConfigError::new(
+            OmpConfigErrorCode::OmpFailed,
+            "Couldn't read OMP's role config. Try again.",
+        ));
+    }
+    log::debug!(
+        "get_model_roles_reliable: retry recovered {} modelRoles keys",
+        retry.len()
+    );
+    Ok(retry)
+}
+
 const MAX_ROLE_VALUE_LENGTH: usize = 512;
 
 // Widened past C0 controls and DEL to also cover C1 controls (U+0080-U+009F), the line/paragraph

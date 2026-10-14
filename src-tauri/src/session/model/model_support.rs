@@ -202,3 +202,23 @@ pub(super) fn merge_chat_roles(
     }
     roles
 }
+
+/// Gate-fix (round 6): extracts `cycleOrder`'s own value from a raw `omp config get` response,
+/// failing closed (`Err`) when the `value` field itself is missing entirely (a malformed or
+/// incomplete read) -- never silently treated as an empty list the way a genuine `null` value
+/// (truly unconfigured) legitimately is. `pub(super)`: only `model.rs`'s own `known_role_list`
+/// calls this.
+pub(super) fn parse_cycle_order_response(response: &Value) -> Result<Vec<String>, &'static str> {
+    let value = response
+        .get("value")
+        .ok_or("omp config returned no value field for cycleOrder.")?;
+    Ok(value
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default())
+}

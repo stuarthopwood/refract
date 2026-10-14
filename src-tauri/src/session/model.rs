@@ -270,55 +270,41 @@ pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
 /// 2026-10-13: "Ctrl+R cycles OMP's `cycleOrder` roles plus `plan`") -- the Ctrl+R selector's
 /// own listing and cycling order. Narrower than `known_chat_role_list` below on purpose.
 pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
+    Ok(known_role_list_with_presence().await?.0)
+}
+
+/// Same read as `known_role_list`, also returning whether `cycleOrder` was non-empty before
+/// `"plan"` was added -- the signal `known_chat_role_list` uses for an empty `modelRoles` read.
+async fn known_role_list_with_presence() -> Result<(Vec<String>, bool), AgentError> {
     let response = crate::omp::config::get_config("cycleOrder", &[])
         .await
         .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
-    // Gate-fix (round 6): a response with NO `value` field at all is malformed/incomplete and
-    // must fail closed, not be silently read as an empty `cycleOrder` the same way a genuine
-    // `"value": null` (truly unconfigured) legitimately is.
-    let Some(value) = response.get("value") else {
-        return Err(AgentError::new(
-            "omp-probe-failed",
-            "omp config returned no value field for cycleOrder.",
-        ));
-    };
-    let cycle_order: Vec<String> = value
-        .as_array()
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(model_support::build_role_list(&cycle_order))
+    let cycle_order = model_support::parse_cycle_order_response(&response)
+        .map_err(|msg| AgentError::new("omp-probe-failed", msg))?;
+    let cycle_order_present = !cycle_order.is_empty();
+    let role_list = model_support::build_role_list(&cycle_order);
+    Ok((role_list, cycle_order_present))
 }
 
 /// Gate-fix (round 5, #766): the ONE validation set for `/role <role>` and `/switch @<role>`
 /// -- `cycleOrder` + `plan` + the core chat roles (only when configured in `modelRoles`, so
 /// `/role smol` still validates with `smol` removed from `cycleOrder`) + any CUSTOM role
-/// configured in `modelRoles`, filtered by `model_support::merge_chat_roles` (workload/
-/// model-kind roles #766 excludes, own doc comment there). Ctrl+R stays narrower
+/// configured in `modelRoles` (workload/model-kind roles #766 excludes). Ctrl+R stays narrower
 /// (`known_role_list` above, decided). A custom role name with a character outside
-/// `is_switch_argument_token`'s own charset validates here (list membership only) but is
-/// refused by `/switch @<name>` (whose charset check covers the whole token) -- a real
-/// asymmetry, not a bug.
-///
-/// The two `omp` config reads run SEQUENTIALLY: a `try_join!` version intermittently excluded
-/// a role this function should have added anyway -- the mechanism is NOT confirmed (the
-/// `cycleOrder`-race explanation does not hold up alone, since CORE roles are added
-/// independently of that read); `ipc::model::model_list_roles` runs the same pair
-/// sequentially too, same reason.
+/// `is_switch_argument_token`'s own charset validates here but is refused by `/switch @<name>`
+/// (whose charset check covers the whole token) -- a real asymmetry, not a bug.
+/// The two `omp` reads run SEQUENTIALLY (`try_join!` intermittently excluded a role) and go
+/// through `OMP_INVOCATION_LOCK` (process-wide). Round 7: an empty `modelRoles` read while
+/// `cycleOrder` is configured is retried once, then fails closed (`get_model_roles_reliable`).
 pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
-    let roles = known_role_list().await?;
-    let model_roles = crate::ipc::model_roles::get_model_roles()
+    let (roles, cycle_order_present) = known_role_list_with_presence().await?;
+    let model_roles = crate::ipc::model_roles::get_model_roles_reliable(cycle_order_present)
         .await
         .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
     let merged = model_support::merge_chat_roles(roles, &model_roles);
     log::debug!(
-        "known_chat_role_list: model_roles_keys={} merged_count={} merged={merged:?}",
-        model_roles.len(),
-        merged.len(),
+        "known_chat_role_list: model_roles_keys={} merged={merged:?}",
+        model_roles.len()
     );
     Ok(merged)
 }
