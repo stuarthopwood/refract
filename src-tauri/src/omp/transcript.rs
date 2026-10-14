@@ -1546,8 +1546,7 @@ fn apply_tool_execution_end(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let result_details_opt = result.get("details").cloned();
-    let result_details = result_details_opt.clone().unwrap_or(Value::Null);
+    let result_details = result.get("details").cloned();
 
     if HIDDEN_TOOLS.contains(&tool_name.as_str()) {
         if !is_error {
@@ -1568,7 +1567,7 @@ fn apply_tool_execution_end(
             items.clone(),
             &tool_call_id,
             is_error,
-            &result_details,
+            result_details.as_ref().unwrap_or(&Value::Null),
             true,
         );
         if updated.len() != items.len()
@@ -1583,12 +1582,12 @@ fn apply_tool_execution_end(
     // The `wait` tool's own `tool_execution_end` is the other real carrier of per-subagent
     // completion: apply its `details.jobs[]` regardless of tool name, so a batch a `wait` call
     // actually waited for completes its rows instead of spinning forever.
-    if let Some(wait_jobs) = jobs_from_details(&result_details) {
+    if let Some(wait_jobs) = jobs_from_details(result_details.as_ref().unwrap_or(&Value::Null)) {
         items = apply_async_result_jobs(items, &wait_jobs);
     }
 
     let output = join_text(&result_content);
-    let edit = build_edit_field(&tool_name, &result_details);
+    let edit = build_edit_field(&tool_name, result_details.as_ref().unwrap_or(&Value::Null));
     let has_existing = items.iter().any(|item| {
         matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
@@ -1608,7 +1607,7 @@ fn apply_tool_execution_end(
             args: Value::Null,
             output: Some(output),
             diff: None,
-            details: result_details_opt.clone(),
+            details: result_details.clone(),
             edit,
             write: None,
         }));
@@ -1626,7 +1625,7 @@ fn apply_tool_execution_end(
                     *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
                     *duration_ms = new_duration;
                     *out = Some(output.clone());
-                    *det = result_details_opt.clone();
+                    *det = result_details.clone();
                     *e = edit.clone();
                 }
             }
@@ -1791,9 +1790,8 @@ fn attach_tool_result(
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let content = content_parts(message);
-    let details_opt = message.get("details").cloned();
-    let details = details_opt.clone().unwrap_or(Value::Null);
-
+    let details = message.get("details").cloned();
+    let details_ref = details.as_ref().unwrap_or(&Value::Null);
     if HIDDEN_TOOLS.contains(&tool_name.as_str()) {
         if !is_error {
             return items;
@@ -1810,7 +1808,7 @@ fn attach_tool_result(
     let mut items = items;
     if tool_name == "task" {
         let updated =
-            apply_batch_task_result(items.clone(), &tool_call_id, is_error, &details, false);
+            apply_batch_task_result(items.clone(), &tool_call_id, is_error, details_ref, false);
         if updated.len() != items.len()
             || !updated
                 .iter()
@@ -1820,12 +1818,12 @@ fn attach_tool_result(
             return updated;
         }
     }
-    if let Some(wait_jobs) = jobs_from_details(&details) {
+    if let Some(wait_jobs) = jobs_from_details(details_ref) {
         items = apply_async_result_jobs(items, &wait_jobs);
     }
 
     let output = join_text(content);
-    let edit = build_edit_field(&tool_name, &details);
+    let edit = build_edit_field(&tool_name, details_ref);
     let has_existing = items.iter().any(|item| {
         matches!(item.as_ref(), TranscriptItem::Tool { tool_call_id: t, .. } if *t == tool_call_id)
     });
@@ -1845,7 +1843,7 @@ fn attach_tool_result(
             args: Value::Null,
             output: Some(output),
             diff: None,
-            details: details_opt.clone(),
+            details: details.clone(),
             edit,
             write: None,
         }));
@@ -1859,7 +1857,7 @@ fn attach_tool_result(
                 if let TranscriptItem::Tool { status, output: out, details: det, edit: e, .. } = Arc::make_mut(&mut item) {
                     *status = if is_error { ToolStatus::Error } else { ToolStatus::Done };
                     *out = Some(output.clone());
-                    *det = details_opt.clone();
+                    *det = details.clone();
                     *e = edit.clone();
                 }
             }

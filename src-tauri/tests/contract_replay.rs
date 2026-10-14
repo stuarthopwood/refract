@@ -166,9 +166,9 @@ async fn wait_for_pending_request(
         let view = agent.runtime_view().await;
         let status_is_needs_you = view["status"] == json!("needs-you");
         let has_pending = view["pending"].as_array().is_some_and(|p| !p.is_empty());
-        let has_request_row = view["transcript"].as_array().is_some_and(|items| {
-            items.iter().any(|item| item["kind"] == json!("request"))
-        });
+        let has_request_row = view["transcript"]
+            .as_array()
+            .is_some_and(|items| items.iter().any(|item| item["kind"] == json!("request")));
         if status_is_needs_you && has_pending && has_request_row {
             return view;
         }
@@ -654,8 +654,7 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     scrub_known_divergences(&mut electron_final_scrubbed);
     scrub_known_divergences(&mut rust_final_scrubbed);
     assert_eq!(
-        rust_final_scrubbed,
-        electron_final_scrubbed,
+        rust_final_scrubbed, electron_final_scrubbed,
         "contract_replay: cross-shell final transcript diverges beyond the documented allowlist \
          (scripts/fixtures/contract-replay/README.md)"
     );
