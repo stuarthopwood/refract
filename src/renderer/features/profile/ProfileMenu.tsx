@@ -54,7 +54,7 @@ import { useAccountsStore, useActiveThemeId, useThemeStore, useViewStore } from 
 import type { GithubStatus } from '@/state'
 import { THEMES } from '../../../shared/themes'
 import type { ThemeId } from '../../../shared/themes'
-import type { GitHubAccount } from '../../../shared/ipc'
+import type { GitHubAccount } from '../../../shared/accounts'
 
 const THEME_LIST = Object.values(THEMES)
 

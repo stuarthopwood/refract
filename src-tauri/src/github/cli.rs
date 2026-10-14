@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
 use serde::Deserialize;
 use tokio::io::AsyncReadExt;
@@ -38,7 +39,13 @@ fn account_cwd() -> PathBuf {
 /// a secret (e.g. `auth token`'s token).
 async fn gh(args: &[&str]) -> Result<String, GhError> {
     let cwd = account_cwd();
-    let result = gh_raw(&cwd, args, Some(GhErrorCode::GhNotFound)).await?;
+    let result = gh_raw(
+        &cwd,
+        args,
+        Some(GhErrorCode::GhNotFound),
+        Duration::from_millis(super::gh::TIMEOUT_MS),
+    )
+    .await?;
     if result.timed_out {
         return Err(GhError::new(
             GhErrorCode::Timeout,
@@ -173,6 +180,7 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
         &cwd,
         &["auth", "status", "--json", "hosts"],
         Some(GhErrorCode::GhNotFound),
+        Duration::from_millis(super::gh::TIMEOUT_MS),
     )
     .await?;
     if result.timed_out {
