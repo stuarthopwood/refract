@@ -212,18 +212,29 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   console.log(`verify-tauri-side-chat: live=${liveId} peer=${peerId} stopped=${stoppedId}`);
 
   // --- Acceptance 1: a side question streams during a main turn and finishes. ---
+  // Gate-fix (2026-10-14 gate review HIGH): `btw_delta` is gated on visibility
+  // (`should_forward_side_chat_patch`) -- mark the live Session visible BEFORE asking, so the
+  // streaming assertion below can require a real delta patch, not just the always-forwarded
+  // terminal record.
+  const setVisibleResult = await cdp.evaluate(`window.refract.sessions.setVisible([${JSON.stringify(liveId)}])`);
+  assert(setVisibleResult.ok, `sessions.setVisible failed: ${JSON.stringify(setVisibleResult)}`);
   const sendResult = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(liveId)}, 'Please respond now, r6.')`);
   assert(sendResult.ok, `chat.send failed: ${JSON.stringify(sendResult)}`);
   const askTopic1 = await cdp.evaluate(`window.refract.sideChat.ask(${JSON.stringify(liveId)}, 'Is this safe to run concurrently?')`);
   assert(askTopic1.ok, `sideChat.ask (topic 1) failed: ${JSON.stringify(askTopic1)}`);
   assert(askTopic1.value.record.status === 'running', `topic 1's immediate record should be running: ${JSON.stringify(askTopic1.value)}`);
 
+  const topic1Delta = await waitFor(
+    () => cdp.evaluate(`window.__r6Events.patch.some((p) => p.sessionId === ${JSON.stringify(liveId)} && p.recordId === 'topic-1' && typeof p.delta === 'string')`),
+    { timeoutMs: 15_000, label: 'topic-1 side-chat:patch delivers at least one streamed delta' },
+  );
+  assert(topic1Delta, 'topic 1 never streamed a delta patch');
   const topic1Complete = await waitFor(
     () => cdp.evaluate(`window.__r6Events.patch.some((p) => p.sessionId === ${JSON.stringify(liveId)} && p.record?.id === 'topic-1' && p.record?.status === 'complete')`),
     { timeoutMs: 15_000, label: 'topic-1 side-chat:patch reaches status complete' },
   );
   assert(topic1Complete, 'topic 1 never completed');
-  console.log('PASS: side question streamed (delta patches observed) and completed while the main turn was still in flight.');
+  console.log('PASS: side question streamed (a real delta patch observed, not just the terminal record) and completed while the main turn was still in flight.');
 
   // Let the main turn finish settling (its own get_state round trip) before the next topic.
   await waitFor(
@@ -291,6 +302,39 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   assert(switchEvent.sessionId === liveId, `conversation-changed should name the live Session: ${JSON.stringify(switchEvent)}`);
   console.log('PASS: starting a new Conversation raised side-chat:conversation-changed for the live Session.');
 
+  // --- Acceptance 8, MEDIUM (2026-10-14 gate review): a late, unsolicited topic-2 btw_delta/
+  // btw_record (side-chat-live.jsonl's own trailing push frames, simulating OMP's cancelled-but-
+  // still-processing topic finally replying) must never surface a NEW patch once the
+  // Conversation has moved on -- cancelled-topic isolation surviving a switch, not just a cancel.
+  const topic2PatchesBeforeLateFrames = await cdp.evaluate(
+    `window.__r6Events.patch.filter((p) => p.sessionId === ${JSON.stringify(liveId)} && (p.recordId === 'topic-2' || p.record?.id === 'topic-2')).length`,
+  );
+  await new Promise((r) => setTimeout(r, 1000)); // lets the tape's trailing push frames land
+  const topic2PatchesAfterLateFrames = await cdp.evaluate(
+    `window.__r6Events.patch.filter((p) => p.sessionId === ${JSON.stringify(liveId)} && (p.recordId === 'topic-2' || p.record?.id === 'topic-2')).length`,
+  );
+  assert(
+    topic2PatchesAfterLateFrames === topic2PatchesBeforeLateFrames,
+    `a late topic-2 frame leaked after the Conversation switch: before=${topic2PatchesBeforeLateFrames} after=${topic2PatchesAfterLateFrames}`,
+  );
+  console.log('PASS: a late, unsolicited topic-2 delta/record after the Conversation switch produced no new patch -- cancelled-topic isolation survives a switch.');
+
+  // --- Acceptance 9, HIGH (2026-10-14 gate review): the stopped-Session Conversation-switch
+  // path (`start_with_conversation` -> `reset_after_start_with_conversation`) also raises
+  // side-chat:conversation-changed -- the gap the gate review found (this path used to never
+  // reset side chat at all). `stoppedId` was never opened, so `conversations.startNew` routes
+  // through `start_with_conversation`, spawning its own fresh fake-omp process that reattaches
+  // through this tape's own preamble.
+  const beforeStoppedSwitch = await cdp.evaluate(`window.__r6Events.conversationChanged.length`);
+  const stoppedSwitchResult = await cdp.evaluate(`window.refract.conversations.startNew(${JSON.stringify(stoppedId)})`);
+  assert(stoppedSwitchResult.ok, `conversations.startNew on the stopped Session failed: ${JSON.stringify(stoppedSwitchResult)}`);
+  const stoppedSwitchEvent = await waitFor(
+    () => cdp.evaluate(`window.__r6Events.conversationChanged.length > ${beforeStoppedSwitch} ? window.__r6Events.conversationChanged[window.__r6Events.conversationChanged.length - 1] : null`),
+    { timeoutMs: 30_000, label: 'side-chat:conversation-changed fires after the stopped Session starts with a Conversation' },
+  );
+  assert(stoppedSwitchEvent.sessionId === stoppedId, `conversation-changed should name the stopped Session: ${JSON.stringify(stoppedSwitchEvent)}`);
+  console.log('PASS: starting a stopped Session with a Conversation (start_with_conversation) also raised side-chat:conversation-changed.');
+
   writeFileSync(path.join(evidenceDir, 'r6-live-pass.txt'), 'all live-run acceptance checks passed\n');
   return { liveId, repoLiveDir };
 }
@@ -320,12 +364,17 @@ async function runRestartCheck(cdp, { liveId }) {
 }
 
 async function main() {
-  let shimDir, dataDir, repoLiveDir, repoPeerDir, repoStoppedDir, exeDir1, exeDir2, evidenceDir;
+  let shimDir, dataDir, importSourceDir, repoLiveDir, repoPeerDir, repoStoppedDir, exeDir1, exeDir2, evidenceDir;
   let child1, child2;
   let cdp1, cdp2;
   try {
     shimDir = mkdtempSync(path.join(tmpdir(), 'refract-r6-shim-'));
     dataDir = mkdtempSync(path.join(tmpdir(), 'refract-r6-data-'));
+    // Isolation (refract-tauri-live-check-isolation skill): an EMPTY scratch import source, so a
+    // debug build's one-time Electron-registry import (`lib.rs::electron_source_dir`) never
+    // reads Stuart's real `%APPDATA%\pinion`, even though `REFRACT_DATA_DIR` alone already makes
+    // it skip the import with no override set at all.
+    importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-r6-import-src-'));
     repoLiveDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-r6-repo-live-')));
     repoPeerDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-r6-repo-peer-')));
     repoStoppedDir = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-r6-repo-stopped-')));
@@ -351,6 +400,7 @@ async function main() {
       pathPrepend: shimDir,
       logFile: path.join(evidenceDir, 'app-run1.log'),
       extraEnv: {
+        REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: debugLogPath,
@@ -365,6 +415,14 @@ async function main() {
       { timeoutMs: 60_000, label: 'readiness green' },
     );
     const { liveId } = await runLiveChecks(cdp1, evidenceDir, { repoLiveDir, repoPeerDir, repoStoppedDir, debugLogPath });
+    // Isolation verification (refract-tauri-live-check-isolation skill): abort if the resolved
+    // data dir was not actually our scratch `dataDir` -- `RegistryStore::open` only ever writes
+    // `registry.json` under whatever `data_dir()` resolved to, so its presence here is direct
+    // proof the override took effect (a relative/invalid override is otherwise silently ignored
+    // and the run would use the REAL profile instead).
+    if (!existsSync(path.join(dataDir, 'registry.json'))) {
+      throw new Error(`verify-tauri-side-chat: registry.json never appeared under the scratch data dir ${dataDir} -- REFRACT_DATA_DIR override was not honoured, aborting`);
+    }
 
     cdp1.close();
     cdp1 = null;
@@ -381,6 +439,7 @@ async function main() {
       pathPrepend: shimDir,
       logFile: path.join(evidenceDir, 'app-run2.log'),
       extraEnv: {
+        REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(evidenceDir, 'fake-omp-invocations-run2.log'),
@@ -400,6 +459,7 @@ async function main() {
     if (child2) await stopLauncher(child2);
     await safeRmSync(shimDir);
     await safeRmSync(dataDir);
+    await safeRmSync(importSourceDir);
     for (const repoDir of [repoLiveDir, repoPeerDir, repoStoppedDir]) {
       if (repoDir) await safeRmSync(worktreesDirFor(repoDir));
       await safeRmSync(repoDir);

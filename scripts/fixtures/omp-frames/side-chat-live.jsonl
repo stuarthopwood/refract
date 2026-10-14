@@ -6,10 +6,21 @@
 // the same synthesis approach side-chat.jsonl already used (no live capture: the Rust build had
 // no `btw`/`predict_word` channel to record against until this lane landed one).
 //
-// Used by BOTH the live Session (asks, cancels, predicts, switches Conversation) and an idle peer
-// Session started in the same run, which never sends anything past the attach preamble below --
-// proving cross-session isolation structurally (the peer's own `side-chat:patch` listener must
-// never fire for the live Session's topics).
+// Used by the live Session (asks, cancels, predicts, switches Conversation), an idle peer Session
+// started in the same run (which never advances past the attach preamble -- proves cross-session
+// isolation structurally: the peer's own `side-chat:patch` listener must never fire for the live
+// Session's topics), and a third, never-opened Session whose own first `conversations.startNew`
+// call (gate-fix 2026-10-14) spawns a brand-new process that also reattaches through this same
+// preamble.
+//
+// Gate-fix (2026-10-14 gate review HIGH): topic-1's own `btw` exchange sits AFTER `agent_start`
+// (not before it), so the delta/record patches genuinely arrive WHILE the main turn is mid-flight
+// at the frame level, not merely while the IPC `prompt` command is unacknowledged. Two late,
+// unsolicited `btw_delta`/`btw_record` push frames for the already-cancelled topic-2 follow the
+// final post-switch `get_state` response (simulating OMP's own trailing response to a request
+// that was cancelled before the switch) -- `scripts/verify-tauri-side-chat.mjs` asserts neither
+// ever reaches a `side-chat:patch` listener (cancelled-topic isolation across a Conversation
+// switch, the gate-fix round 6 HIGH rule `session::side_chat::apply_frame`'s own Rust tests port).
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -20,14 +31,14 @@
 {"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
 {"__wait__":["prompt"]}
 {"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"Please respond now, r6."}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"Please respond now, r6."}],"timestamp":0}}
 {"__wait__":["btw"]}
 {"id":"$lastId","type":"response","command":"btw","success":true,"data":{"record":{"id":"topic-1","leafId":"leaf-1","question":"Is this safe to run concurrently?","answer":null,"status":"running","createdAt":1,"updatedAt":1,"followUps":[]}}}
 {"type":"btw_delta","recordId":"topic-1","delta":"Check"}
 {"type":"btw_delta","recordId":"topic-1","delta":"ing..."}
 {"type":"btw_record","record":{"id":"topic-1","leafId":"leaf-1","question":"Is this safe to run concurrently?","answer":"It stays internal to this module.","status":"complete","createdAt":1,"updatedAt":2,"followUps":[]}}
-{"type":"agent_start"}
-{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"Please respond now, r6."}],"timestamp":0}}
-{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"Please respond now, r6."}],"timestamp":0}}
 {"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
 {"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Working"}],"timestamp":0}}}
 {"__delay__":500}
@@ -54,3 +65,5 @@
 {"id":"$lastId","type":"response","command":"new_session","success":true}
 {"__wait__":["get_state"]}
 {"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\side-chat\\conversation-2.json","sessionId":"sess-r6","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"type":"btw_delta","recordId":"topic-2","delta":"late leaked text"}
+{"type":"btw_record","record":{"id":"topic-2","leafId":"leaf-2","question":"Will this be cancelled?","answer":"a late answer that must never surface","status":"complete","createdAt":3,"updatedAt":5,"followUps":[]}}

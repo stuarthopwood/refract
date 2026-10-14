@@ -104,19 +104,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
   // clipboard image itself is never affected by this).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
-  // Issue #772 (Rust build only): the word-prediction (ghost-text) off switch -- `false` on
-  // Electron too (the setting is always absent there), so ghost text stays off on Electron
-  // until this ships there (it won't -- epic #797 freezes Electron main-process features).
-  const wordPredictionEnabled = useSettingsStore((s) => s.settings.wordPredictionEnabled ?? false)
+  // Issue #772 (Settings::word_prediction_enabled, Rust build only): absent means enabled (Electron).
+  const wordPredictionEnabled = useSettingsStore((s) => s.settings.wordPredictionEnabled !== false)
   // PR #723 gate round 1 fix (Code1 Medium): reactive read so the Send button's own
-  // `aria-disabled` reflects an in-flight background path/drop read the same way `handleSend`'s
-  // own guard does (draft-store.ts's `pendingAttachmentReads` doc comment).
+  // `aria-disabled` reflects an in-flight path/drop read, same guard as `handleSend` (draft-store.ts).
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   // T063: last known provider/model/effort (T062's `lastModel`/`lastThinkingLevel` on the same
   // `SessionSummary` row), never a separate live-only source -- shown as two icon-led labels
   // (CpuIcon for model, GaugeIcon for thinking level) instead of a bracketed "(Effort)" suffix
-  // (docs/DESIGN.md "No bracket/parenthetical UI copy"). `null` before the first `get_state`
-  // this Session has ever reported one.
+  // (docs/DESIGN.md "No bracket/parenthetical UI copy"); `null` until the first `get_state`.
   const modelSession = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   const modelLabel = formatModelLabel(modelSession ?? {})
   const thinkingLabel = formatThinkingLevelLabel(modelSession ?? {})
@@ -700,14 +696,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     setGhost(null)
   }
 
-  /** Fully resets ghost-prediction state outside the normal onChange path -- Enter-send, plain
-   * Esc-clear, and slash-command completion all call `setText` directly, bypassing
-   * `scheduleGhostCheck`. Without this, a suggestion computed for the old draft could outlive it:
-   * it would render (and be Tab-insertable) over the now-different text, and a request still in
-   * flight for the abandoned draft could land afterward and show a stale suggestion (#358/#359
-   * remediation). Bumps `ghostGenerationRef` so any in-flight `predictWord` response is dropped
-   * on arrival, cancels a pending debounced request before it fires, and dismisses (`accepted:
-   * false`) a currently-shown suggestion. */
+  /** Fully resets ghost-prediction state outside the normal onChange path (Enter-send, Esc-clear,
+   * and slash-command completion all call `setText` directly, bypassing `scheduleGhostCheck`) --
+   * bumps `ghostGenerationRef`, cancels any pending request, dismisses what's shown (#358/#359). */
   function clearGhostState() {
     ghostGenerationRef.current++
     if (ghostDebounceRef.current) {
@@ -717,6 +708,11 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     dismissGhost(false)
     setAnnouncedSuggestion(null)
   }
+
+  useEffect(() => { // Issue #772: clears a stale/in-flight suggestion the instant prediction is disabled.
+    if (wordPredictionEnabled === false) clearGhostState()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wordPredictionEnabled])
 
   /** Re-evaluates ghost text after every composer edit (FR-058): first dismisses (`accepted:
    * false`) whatever suggestion was showing -- typing past it or deleting into it both count as

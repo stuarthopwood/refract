@@ -1,11 +1,12 @@
 // IPC handlers for `sideChat.*` (contracts/ipc.md "Side chat", spec 014) and
-// `chat.predictWord`/`chat.predictWordFeedback`/`settings.setWordPredictionEnabled` (lane R6,
-// issue #789; #772's word-prediction off switch, wired to the renderer's existing Settings
-// screen/store) -- the IPC-facing sibling of `session/side_chat.rs`'s
-// own frame handling and RPC calls. `ask`/`cancel`/`getHistory` all drive an already-attached
-// process exactly like `chat.send`/`chat.stop` do, never a Conversation reattach, so
-// `map_agent_error` (`ipc::mod`'s own `AgentError` -> `IpcError` mapper, shared by every other
-// agent-backed channel) covers their failures the same way.
+// `chat.predictWord`/`chat.predictWordFeedback` (lane R6, issue #789) -- the IPC-facing sibling
+// of `session/side_chat.rs`'s own frame handling and RPC calls. `ask`/`cancel`/`getHistory` all
+// drive an already-attached process exactly like `chat.send`/`chat.stop` do, never a Conversation
+// reattach, so `map_agent_error` (`ipc::mod`'s own `AgentError` -> `IpcError` mapper, shared by
+// every other agent-backed channel) covers their failures the same way. `settings.setWordPrediction
+// Enabled` (#772's off switch) moved to `ipc/settings.rs` (every other `settings.*` channel's own
+// home); `store::settings::SettingsStore::word_prediction_enabled()` is what this file's own
+// `chat.predictWord*` gate reads.
 
 use serde_json::Value;
 
@@ -13,7 +14,6 @@ use crate::session::side_chat;
 
 use super::{
     arg_str, invalid_argument, map_agent_error, not_found, AppState, Dispatcher, HandlerFuture,
-    IpcError,
 };
 
 /// No OMP-documented limit exists for `btw`'s `question` field (`contracts/ipc.md` has no stated
@@ -24,6 +24,26 @@ const MAX_QUESTION_LENGTH: usize = 10_000;
 /// 14); 200 characters is a generous upper bound that still catches a malformed/oversized value
 /// before it reaches OMP.
 const MAX_RECORD_ID_LENGTH: usize = 200;
+/// Ghost-text's own `text` field has no OMP-documented limit either (`rpc.md` "Word prediction"):
+/// mirrors `MAX_QUESTION_LENGTH` above, same reasoning.
+const MAX_PREDICT_TEXT_LENGTH: usize = 10_000;
+
+/// `cursor` is a UTF-16 offset into `text` (`frames.ts`'s own `PredictWordCommand` doc comment) --
+/// anything negative or past the text's own UTF-16 length cannot be a real caret position.
+fn validate_predict_cursor(text: &str, cursor: i64) -> Result<(), super::IpcError> {
+    if text.len() > MAX_PREDICT_TEXT_LENGTH {
+        return Err(invalid_argument(format!(
+            "predictWord text must not exceed {MAX_PREDICT_TEXT_LENGTH} characters"
+        )));
+    }
+    let max_cursor = text.encode_utf16().count() as i64;
+    if !(0..=max_cursor).contains(&cursor) {
+        return Err(invalid_argument(
+            "predictWord cursor must be a UTF-16 offset within text",
+        ));
+    }
+    Ok(())
+}
 
 pub fn register(d: &mut Dispatcher) {
     d.register("sideChat.ask", side_chat_ask);
@@ -31,10 +51,6 @@ pub fn register(d: &mut Dispatcher) {
     d.register("sideChat.getHistory", side_chat_get_history);
     d.register("chat.predictWord", chat_predict_word);
     d.register("chat.predictWordFeedback", chat_predict_word_feedback);
-    d.register(
-        "settings.setWordPredictionEnabled",
-        settings_set_word_prediction_enabled,
-    );
 }
 
 async fn session_exists(state: &AppState, session_id: &str) -> bool {
@@ -146,10 +162,11 @@ pub fn chat_predict_word(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let Some(cursor) = args.get(2).and_then(Value::as_i64) else {
             return Err(invalid_argument(SHAPE_MESSAGE));
         };
+        validate_predict_cursor(text, cursor)?;
         if !session_exists(&state, session_id).await {
             return Err(not_found(format!("Session not found: {session_id}")));
         }
-        if !state.settings.lock().await.get().word_prediction_enabled {
+        if !state.settings.lock().await.word_prediction_enabled() {
             return Ok(Value::Null);
         }
         let agent = state.session_manager.get_or_create_agent(session_id);
@@ -179,10 +196,11 @@ pub fn chat_predict_word_feedback(state: AppState, args: Vec<Value>) -> HandlerF
         let Some(accepted) = args.get(4).and_then(Value::as_bool) else {
             return Err(invalid_argument(SHAPE_MESSAGE));
         };
+        validate_predict_cursor(text, cursor)?;
         if !session_exists(&state, session_id).await {
             return Err(not_found(format!("Session not found: {session_id}")));
         }
-        if !state.settings.lock().await.get().word_prediction_enabled {
+        if !state.settings.lock().await.word_prediction_enabled() {
             return Ok(Value::Null);
         }
         let agent = state.session_manager.get_or_create_agent(session_id);
@@ -195,34 +213,5 @@ pub fn chat_predict_word_feedback(state: AppState, args: Vec<Value>) -> HandlerF
         )
         .await;
         Ok(Value::Null)
-    })
-}
-
-/// `settings.setWordPredictionEnabled` (issue #772, Rust-only -- Electron main-process features
-/// are frozen, so this setting has no TypeScript counterpart): persists the whole `Settings` row
-/// and broadcasts `settings:changed`, the same pattern every other `settings.set*` setter uses
-/// (`ipc::settings`). Registered here (not `ipc/settings.rs`, lane R8's own file) because the
-/// underlying `word_prediction_enabled` field belongs to the `chat.predictWord*` prediction
-/// feature lane R6 owns -- the channel string itself is under the generic `settings.*` namespace
-/// to match every other setter's own naming (`settings.setWatermarkEnabled`, `.setShowSampleData`,
-/// etc.), reusing the renderer's existing Settings screen/store (`ChatDisplaySection.tsx`,
-/// `settings-store.ts`) rather than inventing a one-off UI surface for it.
-pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        let Some(enabled) = args.first().and_then(Value::as_bool) else {
-            return Err(invalid_argument(
-                "settings.setWordPredictionEnabled expects a boolean enabled",
-            ));
-        };
-        let value = state
-            .settings
-            .lock()
-            .await
-            .set_word_prediction_enabled(enabled)
-            .await
-            .map_err(|err| IpcError::new("git-failed", err.to_string()))?;
-        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
-        state.session_manager.emit_settings_changed(&value_json);
-        Ok(value_json)
     })
 }

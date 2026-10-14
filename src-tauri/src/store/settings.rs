@@ -277,6 +277,12 @@ impl SettingsStore {
         self.data.clone()
     }
 
+    /// Issue #772 (gate-fix, perf): `chat.predictWord`/`.predictWordFeedback` read this on every
+    /// keystroke-debounced call -- a plain bool read, never `get()`'s own whole-`Settings` clone.
+    pub fn word_prediction_enabled(&self) -> bool {
+        self.data.word_prediction_enabled
+    }
+
     /// Mirrors `settings.ts`'s own `serialize`: every setter that persists the WHOLE row writes
     /// `raw_theme`/`raw_watermark_enabled`/`raw_show_sample_data` (the value exactly as it was
     /// last actually on disk), never `data`'s possibly lazily-corrected in-memory value -- an

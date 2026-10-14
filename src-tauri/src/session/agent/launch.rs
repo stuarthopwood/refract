@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
+use crate::session::side_chat::reset_after_start_with_conversation;
 use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
@@ -87,14 +88,9 @@ impl SessionAgent {
         self.launch(&session, "").await
     }
 
-    /// Port of `conversationSwitch.ts`'s own `startStoppedSessionOnConversation`: writes the
-    /// chosen Conversation (`file`, or `None` for a brand-new one) into the registry INSIDE the
-    /// same `start_lock`-guarded attempt `start()` uses, before `launch()` reads the Session
-    /// back -- so a start already in flight, or a live process, refuses outright instead of
-    /// silently reattaching the OLD Conversation.
+    /// Port of `conversationSwitch.ts`'s `startStoppedSessionOnConversation` gate-fix: resets side chat only after `launch()` succeeds.
     pub async fn start_with_conversation(&self, file: Option<String>) -> Result<(), AgentError> {
-        // Gate-fix (round 6, HIGH): see `start()`'s own identical guard -- generation re-check,
-        // "not idle" check, and `stop_requested = false` reset all in ONE lock acquisition.
+        // Gate-fix (round 6, HIGH): mirrors `start()`'s own identical guard above.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
         {
@@ -119,9 +115,11 @@ impl SessionAgent {
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
+        let mut prev = None;
         if tokio::fs::metadata(&session.worktree_path).await.is_ok() {
+            prev = Some(self.current_conversation_path().await);
             let patch = SessionPatch {
-                current_conversation: Some(file),
+                current_conversation: Some(file.clone()),
                 last_message_count: Some(None),
                 ..Default::default()
             };
@@ -133,7 +131,9 @@ impl SessionAgent {
                 .map_err(|err| AgentError::new("git-failed", registry_store_error_message(err)))?;
         }
         let session = self.require_session().await?;
-        self.launch(&session, "").await
+        self.launch(&session, "").await?;
+        reset_after_start_with_conversation(self, file.as_deref(), prev).await;
+        Ok(())
     }
 
     pub(super) async fn launch(

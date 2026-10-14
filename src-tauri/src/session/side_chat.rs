@@ -149,11 +149,28 @@ fn should_forward_side_chat_patch(has_record_or_notice: bool, is_visible: bool) 
     has_record_or_notice || is_visible
 }
 
-// ---------------------------------------------------------------------------
-// Lane extension points
-// ---------------------------------------------------------------------------
+/// What `on_frame` must forward to the renderer as a `side-chat:patch`, if anything -- the
+/// decision `apply_frame` below makes.
+#[derive(Debug, PartialEq)]
+pub(super) enum SideChatPatch {
+    Delta { delta: String, record_id: String },
+    Record { record: Value },
+    Notice { message: String },
+}
 
-pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
+/// Pure core of `on_frame`'s three live-wire cases (gate-fix, 2026-10-14 gate review: these rules
+/// used to be proven only against a hand-built `State` and the isolated predicates above, which
+/// cannot fail for a regression in how `on_frame` itself reads or mutates the REAL state across a
+/// real sequence of calls -- this factors out that exact logic so a test can drive it). Mutates
+/// `state` precisely as the live path does (epoch lookups, terminal-status deletion); returns
+/// what SHOULD be forwarded, or `None` if this frame is dropped (stale, visibility-gated, or
+/// simply not a recognised case).
+pub(super) fn apply_frame(
+    state: &mut State,
+    frame_type: &str,
+    frame: &Value,
+    is_visible: bool,
+) -> Option<SideChatPatch> {
     match frame_type {
         "notice" => {
             // Gate-fix (round 4, Code4 Medium, constitution II/FR-010): a `btw-history` save
@@ -161,83 +178,73 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
             // already skips it for the main transcript (see that file's header); routed to the
             // side-chat store as a toast instead, same as every other side-chat failure.
             if frame.get("source").and_then(Value::as_str) != Some("btw-history") {
-                return;
+                return None;
             }
-            let Some(message) = frame.get("message").and_then(Value::as_str) else {
-                return;
-            };
-            if should_forward_side_chat_patch(true, agent.is_visible()) {
-                agent
-                    .events()
-                    .emit_side_chat_patch_notice(agent.session_id(), message);
-            }
+            let message = frame.get("message").and_then(Value::as_str)?;
+            should_forward_side_chat_patch(true, is_visible).then_some(SideChatPatch::Notice {
+                message: message.to_string(),
+            })
         }
         "btw_delta" => {
-            let Some(record_id) = frame.get("recordId").and_then(Value::as_str) else {
-                return;
-            };
-            let Some(delta) = frame.get("delta").and_then(Value::as_str) else {
-                return;
-            };
-            let (topic_epoch, conversation_epoch) = agent
-                .with_side_chat_state(|s| {
-                    (
-                        s.topic_epoch
-                            .get(record_id)
-                            .copied()
-                            .unwrap_or(s.conversation_epoch),
-                        s.conversation_epoch,
-                    )
-                })
-                .await;
-            if topic_frame_is_stale(topic_epoch, conversation_epoch) {
-                return;
+            let record_id = frame.get("recordId").and_then(Value::as_str)?;
+            let delta = frame.get("delta").and_then(Value::as_str)?;
+            let topic_epoch = state
+                .topic_epoch
+                .get(record_id)
+                .copied()
+                .unwrap_or(state.conversation_epoch);
+            if topic_frame_is_stale(topic_epoch, state.conversation_epoch) {
+                return None;
             }
-            if should_forward_side_chat_patch(false, agent.is_visible()) {
-                agent
-                    .events()
-                    .emit_side_chat_patch_delta(agent.session_id(), delta, record_id);
-            }
+            should_forward_side_chat_patch(false, is_visible).then_some(SideChatPatch::Delta {
+                delta: delta.to_string(),
+                record_id: record_id.to_string(),
+            })
         }
         "btw_record" => {
-            let Some(record) = frame.get("record") else {
-                return;
-            };
-            let Some(topic_id) = record.get("id").and_then(Value::as_str).map(str::to_string)
-            else {
-                return;
-            };
-            let (topic_epoch, conversation_epoch) = agent
-                .with_side_chat_state(|s| {
-                    (
-                        s.topic_epoch
-                            .get(&topic_id)
-                            .copied()
-                            .unwrap_or(s.conversation_epoch),
-                        s.conversation_epoch,
-                    )
-                })
-                .await;
-            let stale = topic_frame_is_stale(topic_epoch, conversation_epoch);
+            let record = frame.get("record")?;
+            let topic_id = record.get("id").and_then(Value::as_str)?.to_string();
+            let topic_epoch = state
+                .topic_epoch
+                .get(&topic_id)
+                .copied()
+                .unwrap_or(state.conversation_epoch);
+            let stale = topic_frame_is_stale(topic_epoch, state.conversation_epoch);
             let turn = latest_turn(record);
             let status = turn.get("status").and_then(Value::as_str).unwrap_or("");
             if turn_reached_terminal(status) {
-                agent
-                    .with_side_chat_state(|s| {
-                        s.topic_epoch.remove(&topic_id);
-                    })
-                    .await;
+                state.topic_epoch.remove(&topic_id);
             }
             if stale {
-                return;
+                return None;
             }
-            if should_forward_side_chat_patch(true, agent.is_visible()) {
-                agent
-                    .events()
-                    .emit_side_chat_patch_record(agent.session_id(), &turn);
-            }
+            should_forward_side_chat_patch(true, is_visible)
+                .then_some(SideChatPatch::Record { record: turn })
         }
-        _ => {}
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Lane extension points
+// ---------------------------------------------------------------------------
+
+pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
+    let is_visible = agent.is_visible();
+    let patch = agent
+        .with_side_chat_state(|s| apply_frame(s, frame_type, frame, is_visible))
+        .await;
+    match patch {
+        Some(SideChatPatch::Delta { delta, record_id }) => agent
+            .events()
+            .emit_side_chat_patch_delta(agent.session_id(), &delta, &record_id),
+        Some(SideChatPatch::Record { record }) => agent
+            .events()
+            .emit_side_chat_patch_record(agent.session_id(), &record),
+        Some(SideChatPatch::Notice { message }) => agent
+            .events()
+            .emit_side_chat_patch_notice(agent.session_id(), &message),
+        None => {}
     }
 }
 
@@ -270,8 +277,10 @@ pub(super) async fn on_start_progress(
 /// Port of `SessionAgent.ts`'s own `notifySideChatConversationChanged`: the one place that bumps
 /// `conversation_epoch` and fires `side-chat:conversation-changed`, called from
 /// `session::agent::conversations`' `start_new_conversation` (unconditionally) and
-/// `open_conversation` (only when the Conversation actually changed) -- same call sites TS's own
-/// `startNewConversation`/`openConversation` use.
+/// `open_conversation` (only when the Conversation actually changed), and from
+/// `session::agent::launch`'s `start_with_conversation` via `reset_after_start_with_conversation`
+/// below (only when the Conversation actually changed) -- same call sites TS's own
+/// `startNewConversation`/`openConversation`/`startStoppedSessionOnConversation` use.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_side_chat_state(|s| {
@@ -283,45 +292,85 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
         .emit_side_chat_conversation_changed(agent.session_id());
 }
 
+/// Port of `conversationSwitch.ts`'s own gate-fix (round 6 HIGH; 2026-10-14 gate review found
+/// `start_with_conversation` never called this at all): the ONLY Conversation-switch path
+/// available while `status == Stopped` -- without it a stopped Session kept the previous
+/// Conversation's side-chat rows/epoch, so the next question's topic id was rejected with
+/// "Unknown /btw topic" (the defect `open_conversation`'s own guard already fixed for a LIVE
+/// Session). `previous_conversation` is `None` when `start_with_conversation` never wrote the
+/// registry at all (worktree missing); `Some(None)` means it wrote but there was no earlier
+/// Conversation. Skipped when `file` IS `previous_conversation` (reopening the same Conversation,
+/// its topics are still valid); always resets for `file: None` (a brand-new Conversation),
+/// matching `start_new_conversation`'s own unconditional reset.
+pub(crate) async fn reset_after_start_with_conversation(
+    agent: &SessionAgent,
+    file: Option<&str>,
+    previous_conversation: Option<Option<String>>,
+) {
+    let Some(previous_conversation) = previous_conversation else {
+        return;
+    };
+    if file.is_none() || file != previous_conversation.as_deref() {
+        on_conversation_reset(agent).await;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // `sideChat.*` / `chat.predictWord*` (called from `ipc::side_chat`)
 // ---------------------------------------------------------------------------
 
+/// `ask`'s own pre-request stamp (gate-fix round 7, Code7/Verif7 Medium, "stamping order"):
+/// captures `conversation_epoch` BEFORE the request is sent and, for a continuation, stamps the
+/// topic with that value immediately -- never re-read after the response resolves, so a
+/// Conversation switch landing while the request is still in flight correctly leaves the topic
+/// stamped with the OLD epoch (`topic_frame_is_stale`'s own doc comment explains why that
+/// matters). Factored out of `ask` so a test can drive the exact "stamp, then a switch lands,
+/// then a late frame arrives" sequence against a real `State`.
+fn stamp_continuation_before_ask(state: &mut State, record_id: Option<&str>) -> u64 {
+    let epoch = state.conversation_epoch;
+    if let Some(record_id) = record_id {
+        state.topic_epoch.insert(record_id.to_string(), epoch);
+    }
+    epoch
+}
+
 /// `sideChat.ask` (contracts/ipc.md "Side chat"): issues `btw`, returning the new (`running`)
 /// record's own whole shape immediately -- the answer itself arrives over `side-chat:patch` as a
 /// terminal `btw_record` (`on_frame`'s own case above), never this call's return value.
-/// `record_id` omitted starts a fresh topic (FR-003); given, continues one. Gate-fix (round 7,
-/// Code7/Verif7 Medium): `epoch` is captured BEFORE the request, not after it resolves -- see
-/// `topic_frame_is_stale`'s own doc comment for why.
+/// `record_id` omitted starts a fresh topic (FR-003); given, continues one.
 pub async fn ask(
     agent: &SessionAgent,
     question: String,
     record_id: Option<String>,
 ) -> Result<Value, AgentError> {
-    let epoch = agent.with_side_chat_state(|s| s.conversation_epoch).await;
-    if let Some(record_id) = &record_id {
-        agent
-            .with_side_chat_state(|s| {
-                s.topic_epoch.insert(record_id.clone(), epoch);
-            })
-            .await;
-    }
+    let record_id_ref = record_id.as_deref();
+    let epoch = agent
+        .with_side_chat_state(|s| stamp_continuation_before_ask(s, record_id_ref))
+        .await;
     let mut cmd = json!({ "type": "btw", "question": question });
     if let Some(record_id) = &record_id {
         cmd["recordId"] = Value::String(record_id.clone());
     }
-    let res = agent.request_rpc(cmd, REQUEST_TIMEOUT_MS).await?;
+    let res = match agent.request_rpc(cmd, REQUEST_TIMEOUT_MS).await {
+        Ok(res) => res,
+        Err(err) => {
+            forget_topic_epoch(agent, &record_id).await;
+            return Err(err);
+        }
+    };
     if res.get("success").and_then(Value::as_bool) != Some(true) {
         let message = res
             .get("error")
             .and_then(Value::as_str)
             .unwrap_or("unknown error");
+        forget_topic_epoch(agent, &record_id).await;
         return Err(AgentError::new(
             "prompt-failed",
             format!("btw failed: {message}"),
         ));
     }
     let Some(thread) = res.get("data").and_then(|d| d.get("record")) else {
+        forget_topic_epoch(agent, &record_id).await;
         return Err(AgentError::new(
             "prompt-failed",
             "btw succeeded but returned no record",
@@ -340,6 +389,20 @@ pub async fn ask(
         })
         .await;
     Ok(json!({ "record": latest_turn(thread) }))
+}
+
+/// Gate-fix (2026-10-14 gate review MEDIUM): `ask`'s own pre-insert of `record_id`'s epoch above
+/// (continuing an existing topic) must not leak a dead entry into `topic_epoch` forever when the
+/// `btw` request then fails -- nothing else cleans up a continuation's entry for a topic that
+/// never got a terminal `btw_record` frame to trigger `on_frame`'s own settledness-bounded delete.
+async fn forget_topic_epoch(agent: &SessionAgent, record_id: &Option<String>) {
+    if let Some(record_id) = record_id {
+        agent
+            .with_side_chat_state(|s| {
+                s.topic_epoch.remove(record_id);
+            })
+            .await;
+    }
 }
 
 /// `sideChat.cancel` (contracts/ipc.md): issues `btw_cancel` for this Session's currently-running
@@ -386,18 +449,26 @@ pub async fn history(agent: &SessionAgent) -> Result<Vec<Value>, AgentError> {
             format!("get_btw_history failed: {message}"),
         ));
     }
-    let mut threads: Vec<Value> = res
+    let threads: Vec<Value> = res
         .get("data")
         .and_then(|d| d.get("records"))
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    Ok(sort_and_flatten_threads(threads))
+}
+
+/// Pure core of `history`'s own post-RPC shaping (gate-fix round 4, Code4/Verif4 HIGH): OMP's own
+/// `get_btw_history` returns topics NEWEST first -- sorted ascending by `createdAt` here so the
+/// flattened result reads oldest-to-newest. Factored out so a test can assert the ordering
+/// without a live RPC round trip.
+fn sort_and_flatten_threads(mut threads: Vec<Value>) -> Vec<Value> {
     threads.sort_by(|a, b| {
         let a = a.get("createdAt").and_then(Value::as_f64).unwrap_or(0.0);
         let b = b.get("createdAt").and_then(Value::as_f64).unwrap_or(0.0);
         a.total_cmp(&b)
     });
-    Ok(threads.iter().flat_map(flatten_btw_history).collect())
+    threads.iter().flat_map(flatten_btw_history).collect()
 }
 
 /// `chat.predictWord` (FR-058): ghost-text composer completion. Issues `predict_word` ONLY on an

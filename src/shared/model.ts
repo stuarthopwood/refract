@@ -112,20 +112,9 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings; // issue #457: default both true
   showSampleData: boolean; // spec 013 FR-020 to FR-022: default false
   // #514: lets the developer turn off path-based image-attach detection entirely (every pasted
-  // image path still works until turned off here); default true, same migration shape as
-  // `transcriptDisplay` (plain immediate-apply boolean, no raw/lazy-correction split needed).
+  // image path still works until turned off here); default true, immediate-apply, no migration.
   detectImagePathsOnPaste: boolean;
-  // Issue #772 (Rust build only -- Electron main-process features are frozen, epic #797): the
-  // word-prediction ghost-text off switch. Optional (never set by Electron's own `settings.ts`,
-  // same convention `SessionReadout.branch`'s own Rust-only field uses) so this shared interface
-  // never forces a change to Electron's frozen `SettingsStore` object literal. Default `false`
-  // -- the shared `predict_word` daemon measured 463 MB private commit with two live Sessions
-  // (more than Electron's whole main process), starts lazily on the first `predict_word` call,
-  // and whether it is reliably shared machine-wide (rather than per-profile) was not confirmed
-  // (FINDINGS item 28): "default to OFF when the evidence is unclear" (the issue's own decision
-  // rule). Always absent on Electron, which has no setter for this field
-  // (`UNSUPPORTED_IN_ELECTRON`) -- the renderer treats a missing value as `false`.
-  wordPredictionEnabled?: boolean;
+  wordPredictionEnabled?: boolean; // Issue #772 (Rust-only, epic #797): off switch, default false on Rust (see FINDINGS item 28); absent means enabled -- no Electron implementation.
 }
 
 /** Issue #457: two independent view filters for the chat transcript, applied in the renderer
