@@ -17,10 +17,12 @@
 //   - the pid-record fallback (`process/pidRecords.ts`) -- Job Object kill-on-close (FR-005) is
 //     the mechanism FR-001 to FR-005 actually require; the pid-record file is Electron's own
 //     secondary belt-and-braces path, not named here.
-// See this file's final report for the two Cargo.toml-less workarounds this slice needed (a
-// hand-rolled base64 decoder in place of a `base64` crate, and a conservative whole-line
-// redaction heuristic in place of `redact.ts`'s full regex set, since neither `base64` nor
-// `regex` is a declared dependency).
+// See this file's final report for the one Cargo.toml-less workaround this slice needed (a
+// hand-rolled base64 decoder in place of a `base64` crate -- `base64` is a declared dependency
+// by now, just not pulled into this module's own small decode path). The conservative
+// whole-line redaction heuristic this file used to fall back to (no `regex`-capable crate was
+// declared yet) is gone: `build_start_failure` now calls `crate::omp::redact::redact_secrets`,
+// the exact `redact.ts` port `fancy-regex` makes possible (lane R9, issue #792).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -823,7 +825,7 @@ async fn finish_ready(process: &OmpProcess, ready_frame: &Value) -> Result<(), P
                 .unwrap_or("unknown error");
             return Err(ProcessError::new(format!(
                 "negotiate_protocol failed: {}",
-                redact_best_effort(error)
+                crate::omp::redact::redact_secrets(error)
             )));
         }
     }
@@ -903,13 +905,15 @@ async fn wait_for_ready(
     }
 }
 
-/// Port of `OmpProcess.ts`'s own `buildStartFailure`, narrowed to what a dependency-free Rust
-/// implementation can match exactly: the stderr tail, the pid's own `~/.omp/logs` tail (issue
-/// #512 requirement 2), and best-effort home-dir masking/credential redaction. See this file's
-/// header and the final report for the two things NOT ported at full fidelity (the free/total
-/// memory line -- no declared crate exposes it without a new Windows feature flag -- and
-/// `redact.ts`'s full regex set -- no `regex` crate is declared, so this uses a conservative
-/// whole-line heuristic instead of exact per-pattern redaction).
+/// Port of `OmpProcess.ts`'s own `buildStartFailure`, narrowed to what this build can match
+/// exactly: the stderr tail, the pid's own `~/.omp/logs` tail (issue #512 requirement 2), and
+/// home-dir masking plus the exact `redact.ts` port (`crate::omp::redact::redact_secrets`,
+/// lane R9 issue #792 -- this function used to fall back to a conservative whole-line
+/// heuristic while no `regex`-capable crate was declared; `fancy-regex` now is, so every raw
+/// stderr/log tail here goes through the same per-pattern redaction `github::gh`/`cli`/
+/// `git::worktrees` already use). See the final report for the one thing NOT ported at full
+/// fidelity (the free/total memory line -- no declared crate exposes it without a new Windows
+/// feature flag).
 async fn build_start_failure(
     inner: &Arc<Inner>,
     reason: String,
@@ -932,25 +936,34 @@ async fn build_start_failure(
     } else {
         stderr_text
     };
-    let stderr_redacted = redact_best_effort(&mask_home_dir(&stderr_for_redaction));
-    let stderr_filtered = filter_warn_error_lines(&stderr_redacted);
+    // Order matters (gate round 3 MEDIUM, 2026-10-14): filter -> cap -> redact, never redact
+    // first. `redact_secrets` bounds its OWN input to its last ~8 KiB before scanning -- running
+    // it on the full, unfiltered tail (this one is already `STDERR_TAIL_BYTES` = 4 KiB at the
+    // source, so harmless here, but the `omp_log_part` sibling below reads up to 64 KiB) would
+    // silently drop everything before that last 8 KiB BEFORE `filter_warn_error_lines` ever saw
+    // it, discarding warn/error lines the filter step exists to surface. Redacting LAST also
+    // means the fail-closed `redact_secrets` placeholder itself is the final text embedded here,
+    // never something `filter_warn_error_lines` could itself strip back out (the placeholder
+    // contains neither "warn" nor "error").
+    let stderr_filtered = filter_warn_error_lines(&stderr_for_redaction);
     let stderr_capped = cap_tail(&stderr_filtered, STDERR_FAILURE_TAIL_BYTES);
+    let stderr_redacted = crate::omp::redact::redact_secrets(&mask_home_dir(&stderr_capped));
     let stderr_part = if stderr_capped.is_empty() {
         String::new()
     } else {
-        format!("\n--- stderr warnings/errors ---\n{stderr_capped}")
+        format!("\n--- stderr warnings/errors ---\n{stderr_redacted}")
     };
 
     let omp_log_part = if pid != 0 {
         match read_omp_log_tail(pid as u32, spawned_at_system, OMP_LOG_READ_WINDOW_BYTES).await {
             Some(raw) => {
-                let redacted = redact_best_effort(&mask_home_dir(&raw));
-                let filtered = filter_warn_error_lines(&redacted);
+                let filtered = filter_warn_error_lines(&raw);
                 let capped = cap_tail(&filtered, OMP_LOG_TAIL_BYTES);
+                let redacted = crate::omp::redact::redact_secrets(&mask_home_dir(&capped));
                 if capped.is_empty() {
                     String::new()
                 } else {
-                    format!("\n--- omp log warnings/errors (pid {pid}) ---\n{capped}")
+                    format!("\n--- omp log warnings/errors (pid {pid}) ---\n{redacted}")
                 }
             }
             None => String::new(),
@@ -1029,50 +1042,6 @@ fn mask_home_dir(text: &str) -> String {
     result
 }
 
-/// Conservative, dependency-free stand-in for `redact.ts`'s own `redactSecrets` (a 97-line, multi-
-/// cycle gate-fixed regex set with no `regex` crate declared to port it against): redacts the
-/// WHOLE line when any credential-shaped marker appears, rather than the original's precise
-/// in-line substitution. Strictly more conservative (never under-redacts a line it flags; may
-/// drop more surrounding context than the exact port would) -- see the final report for the
-/// stated need to add the `regex` crate and finish the exact port.
-fn redact_best_effort(text: &str) -> String {
-    const MARKERS: &[&str] = &[
-        "bearer ",
-        "authorization:",
-        "api_key",
-        "apikey",
-        "api-key",
-        "token",
-        "secret",
-        "password",
-        "passwd",
-        "cookie:",
-        "set-cookie:",
-        "sk-ant-",
-        "sk-proj-",
-        "ghp_",
-        "gho_",
-        "ghu_",
-        "ghs_",
-        "ghr_",
-        "-----begin",
-        "private_key",
-        "access_key",
-        "client_secret",
-    ];
-    text.lines()
-        .map(|line| {
-            let lower = line.to_ascii_lowercase();
-            if MARKERS.iter().any(|marker| lower.contains(marker)) {
-                "[redacted: possible credential]"
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 /// Port of `ompLogTail.ts`'s own `tailOmpLogForPid`: the newest `~/.omp/logs/*.{pid}.log` file
 /// whose mtime is at or after `spawned_at`, tailed to `max_bytes`. Uses `symlink_metadata` (never
 /// following a symlink) for the same reason the Electron port uses `lstat`, not `stat`.
@@ -1107,6 +1076,12 @@ async fn read_omp_log_tail(pid: u32, spawned_at: SystemTime, max_bytes: u64) -> 
     read_tail_bytes(&path, max_bytes).await
 }
 
+/// Seeking to an arbitrary byte offset (`start`, when the file is larger than `max_bytes`) can
+/// land mid-line -- a credential straddling that point would have an unrecognisable fragment on
+/// the read side, surviving the warn/error filter and redaction downstream unredacted (security
+/// finding, gate round 4, 2026-10-14; the same hazard `build_start_failure`'s own stderr-tail
+/// truncation already guards against). When the seek actually moved, drop everything up to the
+/// first newline in what was read, so only a complete line is ever returned.
 async fn read_tail_bytes(path: &Path, max_bytes: u64) -> Option<String> {
     let mut file = tokio::fs::File::open(path).await.ok()?;
     let len = file.metadata().await.ok()?.len();
@@ -1116,5 +1091,16 @@ async fn read_tail_bytes(path: &Path, max_bytes: u64) -> Option<String> {
     }
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).await.ok()?;
-    Some(String::from_utf8_lossy(&buf).into_owned())
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    if start == 0 {
+        return Some(text);
+    }
+    Some(match text.find('\n') {
+        Some(idx) => text[idx + 1..].to_string(),
+        None => String::new(),
+    })
 }
+
+#[cfg(test)]
+#[path = "process_tests.rs"]
+mod process_tests;

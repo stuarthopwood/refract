@@ -34,11 +34,42 @@ serde = { version = "1.0.229", features = ["derive", "rc"] }
 serde_json = "1.0.154"
 tokio = { version = "1.53.2", features = ["full"] }
 uuid = { version = "1.28.0", features = ["v4"] }
+# Pinned to match `reqwest = { features = ["rustls"] }`'s own `base64 = "0.23"` dependency
+# (code review, 2026-10-14): this crate otherwise resolves a second copy of `base64` alongside
+# reqwest's.
+base64 = "0.23"
 thiserror = "2.0.21"
 log = "0.4.34"
 dirs = "7.0.0"
 which = "8.0.6"
+# Lane R9 (#792): `github/profile.rs`'s bounded HTTPS requests to api.github.com/
+# avatars.githubusercontent.com for a signed-in account's display profile/avatar (research.md
+# decisions 3-5, specs/008-profile-and-accounts). `redirect::Policy::none()` is used at the call
+# site so every redirect hop is re-validated against the avatar host allowlist by hand, matching
+# the ported TS's own manual redirect loop -- reqwest's own automatic redirect following is
+# never enabled.
+#
+# `features = ["rustls"]` (code review, 2026-10-14): this pulls in `aws-lc-rs`/`aws-lc-sys` (a
+# C/assembly build step) as reqwest's default TLS crypto provider, alongside `ring`, which is
+# already in the dependency graph transitively -- two crypto backends end up compiled into this
+# binary. Accepted rather than switched to `rustls-no-provider` + an explicit `ring` install:
+# that requires a process-wide `CryptoProvider::install_default()` call at startup (a new
+# global-state dependency with no runtime test coverage in this build), for a build-time/binary-
+# size cost only -- no runtime behaviour, security, or correctness issue follows from having two
+# providers compiled in. Revisit if binary size becomes a real constraint.
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+# Lane R9 (#792): `omp/redact.rs`, a line-for-line port of `src/main/omp/redact.ts`'s
+# `redactSecrets` PATTERNS array. Several of those patterns rely on lookahead/lookbehind
+# (`(?<!...)`, `(?<=...)`, `(?!...)`) that the `regex` crate (already in this graph
+# transitively) does not support by design -- `regex`'s own docs point to `fancy-regex` as the
+# crate to reach for when lookaround is unavoidable.
+fancy-regex = "0.19.2"
 dunce = "1.0.5"
+# File Explorer recursive watcher (lane R7, issue #790): wraps `ReadDirectoryChangesW` on
+# Windows. Not already in `Cargo.lock` (checked before adding, per the issue's own instruction);
+# default features disabled (`macos_fsevent` and its `objc2-*` deps are irrelevant to this
+# Windows-only build).
+notify = { version = "8.1.0", default-features = false }
 
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is

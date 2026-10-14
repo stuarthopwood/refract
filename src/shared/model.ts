@@ -619,9 +619,9 @@ export interface FileTreeNode {
 }
 
 /** Spec 015 Slice 2 (data-model.md `GitStatusMap`): one path's current mark against `git status`
- * (not a merge-base diff like `sessions.diffStat`'s own `DiffStat` -- "what does the tree look
- * like right now", research.md decision 2's own distinction). */
-export type GitStatusMark = 'modified' | 'added' | 'untracked' | 'deleted' | 'ignored';
+ * right now (not a merge-base diff like `DiffStat`). Extended once (lane R7, issues #790/#768)
+ * with `renamed`/`conflicted`/`staged`, kept distinct from the start rather than collapsed. */
+export type GitStatusMark = 'modified' | 'added' | 'untracked' | 'deleted' | 'ignored' | 'renamed' | 'conflicted' | 'staged';
 
 /** Spec 015 Slice 2 (data-model.md `GitStatusMap`): keyed by path, relative to the worktree
  * root, matching `FileTreeNode.path`'s own convention. A path absent from this map is clean and
