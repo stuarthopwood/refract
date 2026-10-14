@@ -10,11 +10,12 @@
 // below), rather than the flag-soup `startCancelled`/`hasMarkedSpawned`/`readyWait` trio the TS
 // port threads through `OmpProcess.start()` by hand.
 //
-// `on_frame` is the one extension point `agent::frame`'s own `handle_frame` calls for every
-// decoded frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`), and
-// `on_start_progress` for the ready-wait banner (same listener) -- one call per lane module each,
-// cheap and allocation-free as a no-op; lane R3 adds its start queue behaviour inside these
-// functions, never inside any file under `session/agent/`.
+// `on_frame` is the one extension point `agent::frame`'own `handle_frame` calls for every decoded
+// frame, `on_exit` for process exit (`agent::launch`'s own `spawn_frame_listener`, which gates
+// this lane's own `on_exit` on `is_current` and threads through `stop_requested` -- see that
+// call site's own comment), and `on_start_progress` for the ready-wait banner (same listener) --
+// lane R3 adds its start queue behaviour inside these functions, never inside any file under
+// `session/agent/`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -50,10 +51,11 @@ static START_SLOTS: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(MAX_CO
 static SPAWNED_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Issue #706/#709: every stage a start can be in while in flight. Absent (`State.stage ==
-/// None`) covers both "not starting" and "starting, but not currently waiting on anything worth
-/// a banner for" (connecting, or settling after the ready frame arrives) -- the wire shape
-/// (`SessionStartProgress`, `src/shared/model.ts`) has no variant for either, so neither needs
-/// one here.
+/// None`) covers "not starting", "starting, but not currently waiting on anything worth a banner
+/// for" (connecting, or settling after the ready frame arrives), AND "the start just got
+/// cancelled" (gate-fix: `Cancelled` itself is never put on the wire -- see `to_wire` -- so a
+/// caller that reads `State.stage` right after a cancel sees the same "nothing in flight" shape
+/// either way).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum StartStage {
     /// Waiting for a process-wide start slot (issue #512 requirement 5).
@@ -66,7 +68,11 @@ pub(super) enum StartStage {
     Prompt,
     /// The user chose "Keep waiting": dismisses the prompt without affecting the ceiling.
     Extended,
-    /// Terminal: the user (or a caller acting for them) cancelled the start outright.
+    /// Terminal: the user (or a caller acting for them) cancelled the start outright. Never
+    /// reaches the wire (`to_wire` maps it to `None`, same as "nothing in flight") -- the real,
+    /// user-visible outcome is the `stopped`/`start-failed` (or `not-started`) status
+    /// `record_start_failure`/the natural `wait_ready` error path sets moments later, exactly
+    /// the single failed-start path TS itself funnels every kind of start failure through.
     Cancelled,
 }
 
@@ -86,15 +92,18 @@ impl StartStage {
 /// Issue #706/#709's own "illegal transitions unrepresentable" requirement: every legal edge in
 /// the state machine, checked explicitly rather than left to whichever caller happens to set
 /// `State.stage` next. `current == next` (the ready-wait ticker re-emitting the same stage every
-/// second) is always legal. `Cancelled` is terminal: nothing transitions out of it. See the unit
-/// tests below for the illegal cases this rejects.
+/// second) is always legal. `None -> MemoryDeferred`/`None -> Cancelled` are both legal starting
+/// points too (gate-fix: a start can begin already under memory pressure with its slot granted
+/// immediately -- no `Queued` stage at all -- and a cancel can land in the same narrow window,
+/// before any stage was ever set). `Cancelled` is terminal: nothing transitions out of it. See
+/// the unit tests below for the illegal cases this rejects.
 pub(super) fn validate_transition(
     current: Option<StartStage>,
     next: StartStage,
 ) -> Result<(), String> {
     use StartStage::{Cancelled, Extended, MemoryDeferred, Prompt, Queued, Waiting};
     let legal = match current {
-        None => matches!(next, Queued | Waiting),
+        None => matches!(next, Queued | MemoryDeferred | Waiting | Cancelled),
         Some(Queued) => matches!(next, Queued | MemoryDeferred | Waiting | Cancelled),
         Some(MemoryDeferred) => matches!(next, MemoryDeferred | Waiting | Cancelled),
         Some(Waiting) => matches!(next, Waiting | Prompt | Cancelled),
@@ -126,9 +135,15 @@ pub(super) struct State {
 impl State {
     /// `SessionStartProgress` (`src/shared/model.ts`): `None` while nothing is in flight, so
     /// `agent/mod.rs`'s own status/snapshot builders omit the field entirely (gate rule: omit
-    /// absent optional fields, never emit JSON `null`).
+    /// absent optional fields, never emit JSON `null`). `Cancelled` ALSO maps to `None`
+    /// (gate-fix): `SessionStartProgress`'s own union has no `'cancelled'` variant at all --
+    /// the real, user-visible outcome of a cancel is a `stopped` status moments later, same as
+    /// any other failed start, never a distinct wire stage.
     pub(super) fn to_wire(&self) -> Option<Value> {
         let stage = self.stage?;
+        if stage == StartStage::Cancelled {
+            return None;
+        }
         Some(match stage {
             StartStage::Queued => json!({ "kind": "queued" }),
             StartStage::MemoryDeferred => {
@@ -139,25 +154,59 @@ impl State {
     }
 }
 
+/// Applies `next` if (and only if) legal from the Session's current stage (`validate_transition`,
+/// gate-fix: a rejected transition is never silently swallowed -- it is logged AND
+/// `debug_assert!`-ed, so a real bug in this lane's own call graph fails loudly in a debug build
+/// instead of quietly leaving a stale stage on the wire). Re-emits status only when the stage
+/// actually changed.
 async fn set_stage(agent: &SessionAgent, next: StartStage, elapsed_ms: u64) {
-    agent
-        .with_start_queue_state(|s| {
-            if validate_transition(s.stage, next).is_ok() {
+    let applied = agent
+        .with_start_queue_state(|s| match validate_transition(s.stage, next) {
+            Ok(()) => {
                 s.stage = Some(next);
                 s.elapsed_ms = elapsed_ms;
+                true
+            }
+            Err(msg) => {
+                log::error!("session::start_queue: {msg}");
+                false
             }
         })
         .await;
-    agent.emit_status().await;
+    debug_assert!(
+        applied,
+        "session::start_queue: rejected transition to {next:?} (see the log::error! just above)"
+    );
+    if applied {
+        agent.emit_status().await;
+    }
 }
 
+/// Clears the in-flight stage (nothing left to show) and re-emits status so the UI's
+/// start-progress banner actually disappears -- called both defensively (`on_exit`) and
+/// positively, the moment `wait_ready` actually succeeds (`clear_stage_on_ready`, issue #618-style
+/// gate-fix: TS's own `OmpProcess.ts` calls `setStartProgress(undefined)` right there too, not
+/// only on failure/exit).
 async fn clear_stage(agent: &SessionAgent) {
-    agent
+    let changed = agent
         .with_start_queue_state(|s| {
+            let changed = s.stage.is_some();
             s.stage = None;
             s.elapsed_ms = 0;
+            changed
         })
         .await;
+    if changed {
+        agent.emit_status().await;
+    }
+}
+
+/// Called by `agent::launch`'s own `launch()` right after `OmpProcess::wait_ready` resolves
+/// successfully (the "one hook" this lane adds beyond `acquire_slot`/`watch_for_cancel`): the
+/// Session is ready, so any lingering `waiting`/`prompt`/`extended` stage must disappear from the
+/// wire immediately, not linger until the next unrelated status event happens to clear it.
+pub(super) async fn clear_stage_on_ready(agent: &SessionAgent) {
+    clear_stage(agent).await;
 }
 
 fn is_memory_low() -> bool {
@@ -213,11 +262,30 @@ pub(super) struct SlotGuard {
     _permit: SemaphorePermit<'static>,
 }
 
+/// Checked up front and again on every `acquire_slot` wait-loop iteration (gate-fix: a
+/// `shutdown()` that races a brand-new `start()` must reach a start still queued or
+/// memory-deferring too, not only an explicit `cancelStart()`). On a true result, the stage is
+/// already cleared and the final `start-failed` status already recorded -- the caller only
+/// needs to return its own `Err`.
+async fn bail_if_stop_requested(agent: &SessionAgent) -> bool {
+    if agent.stop_requested().await {
+        clear_stage(agent).await;
+        agent
+            .record_start_failure("SessionAgent: stop requested during launch")
+            .await;
+        true
+    } else {
+        false
+    }
+}
 /// Port of `acquireStartSlot` + `deferStartIfMemoryLow`, called once near the top of
 /// `agent::launch`'s own `launch()` (the "one hook" issue #786 adds to core `agent.rs`). Resolves
 /// once a process-wide start slot is held and the machine is no longer under memory pressure (or
 /// `MEMORY_DEFER_CEILING_MS` has elapsed), or rejects if `cancel_start`/`keepWaitingForStart`'s
-/// cancel path fired first.
+/// cancel path fired first, OR if `shutdown()` already set `stop_requested` before this attempt
+/// even got a slot (gate-fix: `acquire_slot` must honour a `shutdown()` that raced a brand-new
+/// `start()`, not just a `cancelStart()`; checked once up front and again on every wait-loop
+/// iteration, same shape as the cancel check it already had).
 pub(super) async fn acquire_slot(agent: &SessionAgent) -> Result<SlotGuard, AgentError> {
     let cancel = Arc::new(Notify::new());
     agent
@@ -230,6 +298,10 @@ pub(super) async fn acquire_slot(agent: &SessionAgent) -> Result<SlotGuard, Agen
 
     let cancelled_err = || AgentError::new("not-started", "SessionAgent: start cancelled");
 
+    if bail_if_stop_requested(agent).await {
+        return Err(cancelled_err());
+    }
+
     let permit = match START_SLOTS.try_acquire() {
         Ok(permit) => permit,
         Err(_) => {
@@ -237,12 +309,17 @@ pub(super) async fn acquire_slot(agent: &SessionAgent) -> Result<SlotGuard, Agen
             tokio::select! {
                 res = START_SLOTS.acquire() => res.map_err(|_| cancelled_err())?,
                 _ = cancel.notified() => {
-                    set_stage(agent, StartStage::Cancelled, 0).await;
+                    clear_stage(agent).await;
+                    agent.record_start_failure("SessionAgent: start cancelled").await;
                     return Err(cancelled_err());
                 }
             }
         }
     };
+
+    if bail_if_stop_requested(agent).await {
+        return Err(cancelled_err());
+    }
 
     let started_at = Instant::now();
     loop {
@@ -254,9 +331,13 @@ pub(super) async fn acquire_slot(agent: &SessionAgent) -> Result<SlotGuard, Agen
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(MEMORY_DEFER_POLL_MS)) => {},
             _ = cancel.notified() => {
-                set_stage(agent, StartStage::Cancelled, elapsed_ms).await;
+                clear_stage(agent).await;
+                agent.record_start_failure("SessionAgent: start cancelled").await;
                 return Err(cancelled_err());
             }
+        }
+        if bail_if_stop_requested(agent).await {
+            return Err(cancelled_err());
         }
     }
 
@@ -268,7 +349,11 @@ pub(super) async fn acquire_slot(agent: &SessionAgent) -> Result<SlotGuard, Agen
 /// wait_ready`, once the child has actually spawned): a cancel arriving here must kill the
 /// process, not just abandon the wait (issue #656: "leave no orphan process"). Spawned once,
 /// right after `connect()` succeeds, released (its watcher task ends) once the started attempt
-/// settles either way.
+/// settles either way. Only clears the stage and stops the process here -- never calls
+/// `record_start_failure` itself: stopping the process makes `wait_ready`'s own exit-detection
+/// branch fail moments later, and `launch()`'s own existing error handling there already calls
+/// `record_start_failure` with its own detail; a second, independent call here would race it for
+/// no benefit.
 pub(super) struct CancelWatch {
     done_tx: Option<oneshot::Sender<()>>,
 }
@@ -289,8 +374,8 @@ pub(super) async fn watch_for_cancel(agent: &SessionAgent, proc: Arc<OmpProcess>
         tokio::spawn(async move {
             tokio::select! {
                 _ = cancel.notified() => {
+                    clear_stage(&agent).await;
                     proc.stop().await;
-                    set_stage(&agent, StartStage::Cancelled, 0).await;
                 }
                 _ = &mut done_rx => {}
             }
@@ -310,11 +395,13 @@ impl SessionAgent {
         set_stage(self, StartStage::Extended, elapsed_ms).await;
     }
 
-    /// `sessions.cancelStart` (issue #512's "Cancel" button): fails an in-flight start
-    /// immediately -- while still queued or memory-deferring (`acquire_slot`'s own cancel
-    /// check), or already spawned and waiting on the ready frame (`watch_for_cancel`, which also
-    /// stops the process so issue #656 never leaves an orphan). A no-op if the Session is not
-    /// currently starting (no cancel handle armed).
+    /// `sessions.cancelStart` (issue #512's "Cancel" button) and `shutdown()` (gate-fix, TS
+    /// cycles 2/3: a `shutdown()` that races a start in flight must reach it too, not only a
+    /// `cancelStart()`). Fails an in-flight start immediately -- while still queued or
+    /// memory-deferring (`acquire_slot`'s own cancel check), or already spawned and waiting on
+    /// the ready frame (`watch_for_cancel`, which also stops the process so issue #656 never
+    /// leaves an orphan). A no-op if the Session is not currently starting (no cancel handle
+    /// armed).
     pub(crate) async fn cancel_start(&self) {
         let cancel = self.with_start_queue_state(|s| s.cancel.clone()).await;
         if let Some(cancel) = cancel {
@@ -334,9 +421,13 @@ pub(super) async fn on_frame(_agent: &SessionAgent, _frame_type: &str, _frame: &
     // `OmpProcess::wait_ready`/`launch()`, not through the live frame listener).
 }
 
-pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
-    // Defensive cleanup: a stale cancel handle or stage from this attempt must never leak into
-    // whatever the next `launch()` attempt does.
+/// `agent::frame`'s own `spawn_frame_listener` dispatch gates this call on `is_current` (never
+/// invoked for a stale exit belonging to an already-superseded life, gate-fix: a stale exit must
+/// never clear the NEW attempt's own cancel handle/stage), so this always runs for the Session's
+/// own current life. `stop_requested` is unused here (the stage/cancel cleanup below applies
+/// regardless of why the process exited), kept only so this lane's `on_exit` has the same shape
+/// `session::termination`'s own `on_exit` needs it for.
+pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _stop_requested: bool) {
     agent
         .with_start_queue_state(|s| {
             s.stage = None;

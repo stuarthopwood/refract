@@ -453,8 +453,33 @@ impl SessionAgent {
     /// life starting means whatever the PREVIOUS life's requested stop protected no longer
     /// applies to THIS one.
     pub(super) async fn clear_stopped_on_request_marker(&self) {
-        self.with_termination_state(|s| s.stopped_on_request = false)
-            .await;
+        self.with_termination_state(|s| {
+            s.stopped_on_request = false;
+            // Gate-fix: a new life starting means whatever the PREVIOUS life's crash banner
+            // showed no longer applies either -- `on_exit` will recompute a fresh verdict for
+            // THIS life if it too ends unexpectedly, but until then nothing is wrong.
+            s.terminated_unexpectedly = false;
+            s.pending_tool_names.clear();
+        })
+        .await;
+        let Some(session) = self
+            .registry()
+            .lock()
+            .await
+            .get_session(self.session_id())
+            .cloned()
+        else {
+            return;
+        };
+        // Perf gate-fix: every `launch()` attempt calls this, the overwhelming majority with no
+        // marker set at all (a fresh Session, or one that last stopped on a genuine crash, never
+        // a requested stop) -- skip the registry write (and the event it would broadcast)
+        // entirely rather than pay it on every single start for nothing to actually clear.
+        if session.stopped_on_request_conversation.is_none()
+            && session.stopped_on_request_at_size.is_none()
+        {
+            return;
+        }
         let patch = SessionPatch {
             stopped_on_request_conversation: Some(None),
             stopped_on_request_at_size: Some(None),
@@ -479,15 +504,23 @@ pub(super) async fn on_frame(_agent: &SessionAgent, _frame_type: &str, _frame: &
 /// `agent/frame.rs`'s own `handle_exit` per this lane's extension-point contract. Runs AFTER
 /// `agent::frame`'s own `handle_exit` has already set `status`/`stopReason` and emitted once;
 /// this computes the (possibly file-read-bound) termination verdict and re-emits so the crash
-/// banner appears without the renderer needing to re-open the Session.
-pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, requested: bool) {
+/// banner appears without the renderer needing to re-open the Session. `agent::frame`'s own
+/// dispatch gates this call on `is_current` (never invoked for a stale exit belonging to an
+/// already-superseded life).
+///
+/// `stop_requested` (the Session's OWN flag, set only by `shutdown()`), NOT the raw
+/// `ProcessEvent::Exit`'s own `requested` (gate-fix, TS cycle-6: the process-level `requested`
+/// flag is ALSO true for `launch()`'s own internal cleanup stop and for `watch_for_cancel`'s
+/// cancel-triggered `proc.stop()` -- neither is a genuine user-requested stop, and wrongly
+/// recording a stopped-on-request marker for either would mask a real problem as a clean exit).
+pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, stop_requested: bool) {
     let session = agent
         .registry()
         .lock()
         .await
         .get_session(agent.session_id())
         .cloned();
-    if requested {
+    if stop_requested {
         agent
             .with_termination_state(|s| {
                 s.stopped_on_request = true;

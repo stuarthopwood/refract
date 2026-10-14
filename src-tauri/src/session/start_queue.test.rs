@@ -14,7 +14,15 @@ fn legal_transitions_from_the_start() {
 fn illegal_to_jump_straight_to_a_later_stage_from_nothing() {
     assert!(validate_transition(None, StartStage::Prompt).is_err());
     assert!(validate_transition(None, StartStage::Extended).is_err());
-    assert!(validate_transition(None, StartStage::MemoryDeferred).is_err());
+}
+
+#[test]
+fn legal_starting_points_include_memory_deferred_and_cancelled() {
+    // A start can begin already under memory pressure with its slot granted immediately (no
+    // `Queued` stage at all), and a cancel can land in that same narrow window before any stage
+    // was ever set.
+    assert!(validate_transition(None, StartStage::MemoryDeferred).is_ok());
+    assert!(validate_transition(None, StartStage::Cancelled).is_ok());
 }
 
 #[test]
@@ -78,6 +86,19 @@ fn cancelled_is_terminal_nothing_transitions_out_of_it() {
 #[test]
 fn to_wire_is_none_while_nothing_is_in_flight() {
     let state = State::default();
+    assert_eq!(state.to_wire(), None);
+}
+
+#[test]
+fn to_wire_never_puts_cancelled_on_the_wire() {
+    // Security/correctness gate-fix: `SessionStartProgress` (`src/shared/model.ts`) has no
+    // `'cancelled'` variant at all -- a cancelled start must read exactly like "nothing in
+    // flight" to the wire, the same `None` as a Session that was never starting.
+    let state = State {
+        stage: Some(StartStage::Cancelled),
+        elapsed_ms: 42,
+        cancel: None,
+    };
     assert_eq!(state.to_wire(), None);
 }
 

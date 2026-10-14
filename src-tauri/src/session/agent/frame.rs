@@ -205,23 +205,28 @@ impl SessionAgent {
         proc: &Arc<OmpProcess>,
         code: Option<i32>,
         requested: bool,
-    ) {
-        let is_current = {
+    ) -> (bool, bool) {
+        let (is_current, stop_requested, exited_pid) = {
             let mut state = self.state.lock().await;
             let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
             if is_current {
                 state.process = None;
-                // Lane R3 (issue #786, #515): the pid-record fallback for orphan reaping --
-                // fire-and-forget, mirrors `pidRecords.ts`'s own `removeProcessRecord(...).
-                // catch(...)` call from `OmpProcess.ts`'s exit handler.
-                if let Some(pid) = proc.pid() {
-                    crate::process::pid_records::remove_process_record(pid);
-                }
             }
-            is_current
+            (is_current, state.stop_requested, proc.pid())
         };
+        if is_current {
+            // Lane R3 (issue #786, #515): the pid-record fallback for orphan reaping. Awaited
+            // here (not fire-and-forget, gate-fix: perf/correctness review) so this write is
+            // strictly ordered after the matching `record_process` write in `launch()` --
+            // otherwise two independently-spawned tasks racing on the same `pid` have no
+            // guaranteed ordering, and a very-short-lived process could have its "exited" write
+            // land before its own "spawned" write, leaving a phantom orphan record behind.
+            if let Some(pid) = exited_pid {
+                crate::process::pid_records::remove_process_record(pid).await;
+            }
+        }
         if !is_current {
-            return;
+            return (false, stop_requested);
         }
         // Finalizes every still-live row before settling pending requests (code-review finding,
         // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
@@ -237,16 +242,15 @@ impl SessionAgent {
         }
         self.settle_turn_pending().await;
         if requested {
-            let stop_requested = self.state.lock().await.stop_requested;
             if !stop_requested {
                 // A `launch()`-internal cleanup stop (failed handshake/attach), never the user
                 // asking to stop -- `launch()`'s own catch paths already recorded the real
                 // stopped/start-failed status for this; nothing further to do here.
-                return;
+                return (is_current, stop_requested);
             }
             self.set_status(SessionStatus::Stopped, Some("not-started"), None)
                 .await;
-            return;
+            return (is_current, stop_requested);
         }
         let detail = match code {
             Some(c) => format!("exit code {c}"),
@@ -254,5 +258,6 @@ impl SessionAgent {
         };
         self.set_stopped_unless_already_stopped("agent-exited", Some(detail))
             .await;
+        (is_current, stop_requested)
     }
 }

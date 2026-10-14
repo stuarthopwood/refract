@@ -126,11 +126,13 @@ impl SessionAgent {
         let proc = Arc::new(proc);
         // Lane R3 (issue #786): `startQueue.ts`'s own `markSpawned`/`unmarkSpawned` pairing (the
         // narrower "has a process actually spawned" count the memory defer above checks), and
-        // `pidRecords.ts`'s own orphan-reaping fallback record -- fire-and-forget, never worth
-        // making this start wait on either.
+        // `pidRecords.ts`'s own orphan-reaping fallback record. Awaited (gate-fix, perf/
+        // correctness review): strictly orders this write before any later `remove_process_
+        // record` for the same pid (`handle_exit`) could possibly run, and a JSON write here is
+        // cheap next to the ready-wait this attempt is about to pay regardless.
         let _spawned_guard = crate::session::start_queue::mark_spawned();
         if let Some(pid) = proc.pid() {
-            crate::process::pid_records::record_process(pid, &self.session_id);
+            crate::process::pid_records::record_process(pid, &self.session_id).await;
         }
         // Subscribed before `wait_ready` (code-review/perf finding, 2026-10-13): registers this
         // listener before any frame -- including ones the ready-wait itself observes -- can
@@ -146,6 +148,11 @@ impl SessionAgent {
             self.record_start_failure(&detail).await;
             return Err(AgentError::new("start-failed", detail));
         }
+        // Lane R3 (issue #786, gate-fix): the ready frame arrived -- any lingering `waiting`/
+        // `prompt`/`extended` stage must disappear from the wire right now, not linger until the
+        // next unrelated status event happens to clear it (TS's own `OmpProcess.ts` calls
+        // `setStartProgress(undefined)` at this exact point too).
+        crate::session::start_queue::clear_stage_on_ready(self).await;
 
         if self.state.lock().await.stop_requested {
             proc.stop().await;
@@ -372,15 +379,26 @@ impl SessionAgent {
                             .await;
                     }
                     Some(ProcessEvent::Exit { code, requested }) => {
-                        agent.handle_exit(&proc, code, requested).await;
+                        let (is_current, stop_requested) =
+                            agent.handle_exit(&proc, code, requested).await;
                         // Issue #784: the same extension point for every not-yet-landed lane's
                         // exit handling, same shape as `frame.rs`'s own `on_frame` fan-out.
                         crate::session::model::on_exit(&agent, code, requested).await;
                         crate::session::readout::on_exit(&agent, code, requested).await;
                         crate::session::side_chat::on_exit(&agent, code, requested).await;
-                        crate::session::start_queue::on_exit(&agent, code, requested).await;
                         crate::session::subagents::on_exit(&agent, code, requested).await;
-                        crate::session::termination::on_exit(&agent, code, requested).await;
+                        // Lane R3 (issue #786, gate-fix): gated on `is_current` -- a stale exit
+                        // for an already-superseded life must never clear a NEWER attempt's own
+                        // cancel handle/stage or recompute its termination verdict. Passed
+                        // `stop_requested` (the Session's own flag), not the raw `requested`
+                        // above, which `is_current` and `handle_exit`'s own crash-tail
+                        // detection both need instead (see each hook's own doc comment).
+                        if is_current {
+                            crate::session::start_queue::on_exit(&agent, code, stop_requested)
+                                .await;
+                            crate::session::termination::on_exit(&agent, code, stop_requested)
+                                .await;
+                        }
                         break;
                     }
                     // The unbounded `mpsc` channel never lags; it only closes when the process
@@ -393,7 +411,10 @@ impl SessionAgent {
 
     /// Adds an error notice and moves the runtime to `stopped`/`start-failed` (data-model.md
     /// "Reattach verification" step 3), so a failed spawn or reattach never leaves a blank chat.
-    pub(super) async fn record_start_failure(&self, detail: &str) {
+    /// `pub(in crate::session)` (not `pub(super)`): lane R3 (issue #786) calls this from
+    /// `session::start_queue`'s own cancel paths, a sibling of `session::agent`, not a
+    /// descendant of it.
+    pub(in crate::session) async fn record_start_failure(&self, detail: &str) {
         self.append_notice(detail.to_string(), "error").await;
         self.set_status(
             SessionStatus::Stopped,
@@ -412,6 +433,10 @@ impl SessionAgent {
             let mut state = self.state.lock().await;
             state.stop_requested = true;
         }
+        // Lane R3 (issue #786, gate-fix TS cycles 2/3): reaches a start still queued or
+        // memory-deferring too (`acquire_slot` has no live `process` yet for the plain
+        // `proc.stop()` below to find) -- a no-op if nothing is currently starting.
+        self.cancel_start().await;
         let proc = { self.state.lock().await.process.clone() };
         if let Some(proc) = proc {
             proc.stop().await;

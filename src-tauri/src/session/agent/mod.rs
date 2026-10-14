@@ -235,6 +235,13 @@ impl SessionAgent {
         &self.registry
     }
 
+    /// Lane R3 (issue #786): `session::start_queue`'s own `acquire_slot` needs to honour a
+    /// `shutdown()` that races a brand-new `start()` (gate-fix, TS cycles 2/3), not only an
+    /// explicit `cancelStart()`.
+    pub(super) async fn stop_requested(&self) -> bool {
+        self.state.lock().await.stop_requested
+    }
+
     // -----------------------------------------------------------------------------------------
     // Status / events
     // -----------------------------------------------------------------------------------------
