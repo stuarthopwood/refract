@@ -22,38 +22,33 @@ use super::{
 };
 
 impl SessionAgent {
-    /// Gate-fix (round 5, HIGH): a queued start could win the `start_lock` race against a
-    /// concurrent `shutdown()`, reset `stop_requested` to `false`, and finish `Idle` --
-    /// `shutdown()`'s own later `proc_after.stop()` then force-kills it as an unrequested exit.
-    /// `generation_at_entry` (snapshotted BEFORE `start_lock`) catches a `shutdown()` bump.
-    async fn bail_if_shutdown_raced(&self, generation_at_entry: u64) -> Result<(), AgentError> {
-        if self.state.lock().await.shutdown_generation != generation_at_entry {
-            self.mark_stopped_not_started().await;
-            return Err(AgentError::new(
-                "not-started",
-                "SessionAgent: start cancelled",
-            ));
-        }
-        Ok(())
-    }
-
     /// `sessions.open`'s auto-start path and the initial `start()` call alike. Joins an
     /// already-live process as a no-op (simplified "join the in-flight attempt" behaviour: the
     /// TS original shares the exact in-flight `Promise`; this serialises instead through
     /// `start_lock`, which gives the same externally-visible result for every caller here).
     pub async fn start(&self) -> Result<(), AgentError> {
-        // Snapshotted BEFORE `start_lock` is requested -- see `bail_if_shutdown_raced`.
+        // Gate-fix (round 6, test review HIGH): `generation_at_entry` snapshotted BEFORE
+        // `start_lock` is even requested, so a `shutdown()` bump (always under the same lock as
+        // `stop_requested = true`) while waiting is visible instantly. The re-check, the
+        // "already running" check, and the `stop_requested = false` reset below all happen
+        // under ONE lock acquisition -- three separate ones left a window where a `shutdown()`
+        // landing in between could bump the generation only for this call's own stale reset to
+        // undo it again.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
-        self.bail_if_shutdown_raced(generation_at_entry).await?;
         {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
+            if state.shutdown_generation != generation_at_entry {
+                drop(state);
+                self.mark_stopped_not_started().await;
+                return Err(AgentError::new(
+                    "not-started",
+                    "SessionAgent: start cancelled",
+                ));
+            }
             if state.process.is_some() {
                 return Ok(());
             }
-        }
-        {
-            let mut state = self.state.lock().await;
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
@@ -97,11 +92,20 @@ impl SessionAgent {
     /// back -- so a start already in flight, or a live process, refuses outright instead of
     /// silently reattaching the OLD Conversation.
     pub async fn start_with_conversation(&self, file: Option<String>) -> Result<(), AgentError> {
+        // Gate-fix (round 6, HIGH): see `start()`'s own identical guard -- generation re-check,
+        // "not idle" check, and `stop_requested = false` reset all in ONE lock acquisition.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
-        self.bail_if_shutdown_raced(generation_at_entry).await?;
         {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
+            if state.shutdown_generation != generation_at_entry {
+                drop(state);
+                self.mark_stopped_not_started().await;
+                return Err(AgentError::new(
+                    "not-started",
+                    "SessionAgent: start cancelled",
+                ));
+            }
             if state.process.is_some() || state.status != SessionStatus::Stopped {
                 return Err(AgentError::new(
                     "not-idle",
@@ -111,9 +115,6 @@ impl SessionAgent {
                     ),
                 ));
             }
-        }
-        {
-            let mut state = self.state.lock().await;
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
@@ -556,12 +557,13 @@ impl SessionAgent {
     /// `sessions.stopAgent` (T040) and the app-exit stop-all path (`lib.rs`'s `ExitRequested`
     /// handler): closes stdin, awaits a graceful exit up to the grace period, then force-kills
     /// via the Job Object's owning process tree (`OmpProcess::stop`'s own `taskkill /T /F`
+    /// fallback, FR-004).
     pub async fn shutdown(&self) {
         {
             let mut state = self.state.lock().await;
             state.stop_requested = true;
             // Bumped alongside, under this SAME lock, before `start_lock` is ever awaited
-            // below -- see `bail_if_shutdown_raced`'s own doc comment.
+            // below -- see `start()`'s own identical generation re-check.
             state.shutdown_generation = state.shutdown_generation.wrapping_add(1);
         }
         // Lane R3 (gate-fix TS cycles 2/3): reaches a start still queued/memory-deferring too
@@ -574,11 +576,10 @@ impl SessionAgent {
         // Gate-fix (round 3, HIGH): covers a start already past `acquire_slot`, still inside
         // `OmpProcess::connect`/its own ready-wait -- no `state.process` yet for either step
         // above to find; without this, `sessions.delete`/`.archive` could remove the worktree
-        // while `omp` was still alive inside it. Acquiring `start_lock` blocks until whichever
-        // `start()`/`launch()` call holds it returns -- `stop_requested` is already `true`, so
-        // `bail_if_stop_requested` ends that attempt quickly. Gate-fix (round 5, HIGH): the
-        // guard is HELD (not dropped immediately) for the rest of this function, refusing any
-        // NEW `start()` until `proc_after` below is dealt with.
+        // while `omp` was still alive inside it. `start_lock` blocks until whichever
+        // `start()`/`launch()` call holds it returns -- `stop_requested` is already `true`.
+        // Gate-fix (round 5, HIGH): HELD (not dropped immediately) for the rest of this
+        // function, refusing any NEW `start()` until `proc_after` below is dealt with.
         let _start_guard = self.start_lock.lock().await;
         // A start could have completed and recorded a fresh `state.process` in the narrow
         // window between the checks above and this lock acquisition -- stop it too, unless it
