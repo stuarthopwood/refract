@@ -8,12 +8,9 @@ import type {
   DiffStat,
   FilePreview,
   FileTreeNode,
-  GitHubAccount,
-  GitHubAddFlowProgress,
   GitStatusMap,
   LowMemoryWarning,
   MergeInput,
-  OmpProviderState,
   PullRequestListResult,
   RefractApi,
   Readiness,
@@ -26,6 +23,7 @@ import type {
   TranscriptOp,
   Unsubscribe
 } from '../shared/ipc'
+import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
 import type {
   CatalogKind,
