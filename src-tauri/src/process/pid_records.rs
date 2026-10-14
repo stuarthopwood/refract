@@ -334,9 +334,15 @@ fn terminate_if_matching(_pid: u32, _recorded_start_time: u64, _recorded_image_p
 /// whenever the Job Object itself did not cover them. One `CreateToolhelp32Snapshot` call reads
 /// the whole system process table as `(pid, parent_pid)` pairs ONLY -- `szExeFile` (the
 /// snapshot's own cached name) is never trusted for identity, matching this module's own "never
-/// match by name" rule; every candidate descendant is instead re-verified live, on its own
-/// freshly opened handle, exactly like the root was, inside `walk_descendants`'s own `verify`
-/// closure.
+/// match by name" rule. Every candidate descendant is re-opened on its OWN freshly opened
+/// handle and re-verified LIVE before being touched -- but unlike the root (which has one known
+/// expected image path to compare against), a descendant is an arbitrary broker/tool child with
+/// no single expected image, so its own re-verification is liveness-only: creation time at or
+/// after its parent's own (the same pid-reuse defence the root uses) and a successful
+/// `QueryFullProcessImageNameW` call on the SAME handle about to be terminated (the queried path
+/// itself is intentionally not compared to anything -- its only role here is proving the handle
+/// still resolves to a real, running process immediately before `TerminateProcess`, not identity
+/// matching).
 #[cfg(target_os = "windows")]
 fn kill_descendant_tree(root_pid: u32, root_creation_ticks: u64) -> usize {
     use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
