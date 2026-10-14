@@ -226,20 +226,6 @@ fn assert_valid_selector_rejects_blank_oversized_and_formatting_characters() {
     }
 }
 
-#[test]
-fn env_without_role_overrides_strips_case_insensitively() {
-    let mut env = HashMap::new();
-    env.insert("PI_SMOL_MODEL".to_string(), "x/y".to_string());
-    env.insert("Pi_Config_Files".to_string(), "a;b".to_string());
-    env.insert("OTHER".to_string(), "kept".to_string());
-    let result = env_without_role_overrides(&env);
-    assert_eq!(
-        result,
-        HashMap::from([("OTHER".to_string(), "kept".to_string())])
-    );
-    assert!(env_without_role_overrides(&HashMap::new()).is_empty());
-}
-
 // ---------------------------------------------------------------------------
 // `FakeModelRolesExecutor`: a fake `OmpExecutor` simulating `omp config get/set modelRoles` in
 // memory (no real process), letting these tests prove the REAL `set_model_role`/

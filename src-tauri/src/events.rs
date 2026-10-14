@@ -132,3 +132,19 @@ pub fn emit<P: Serialize + Clone>(app: &AppHandle, event: &str, payload: P) {
         log::warn!("refract-tauri: failed to emit {event}: {err}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lane R8 (#791) gate-fix: `emit_settings_changed`'s one real behaviour this lane depends on
+    /// is reaching `send` with the exact `SETTINGS_CHANGED` event name and an unchanged clone of
+    /// its payload -- the "no window yet" branch inside `send` (no `AppHandle` set) must never
+    /// panic, since a settings setter can run before `lib.rs`'s `setup` closure has filled one in.
+    #[test]
+    fn emit_settings_changed_does_not_panic_before_a_window_exists() {
+        let sink = EventSink::new(std::sync::Arc::new(std::sync::Mutex::new(None)));
+        let payload = serde_json::json!({ "theme": "obsidian" });
+        sink.emit_settings_changed(&payload);
+    }
+}

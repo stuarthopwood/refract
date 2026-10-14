@@ -42,24 +42,35 @@ fn describe_value(value: &Value) -> String {
     }
 }
 
+/// Pure validation for `theme.preview`'s one argument, split out for direct unit testing. A
+/// MISSING argument is rejected too, matching Electron parity exactly: `theme.ts`'s own check is
+/// `themeId !== null && !isThemeId(themeId)`, and a call with no argument at all arrives there as
+/// `undefined`, which is `!== null` and so fails `isThemeId` -- only an EXPLICIT `null` is the
+/// accepted "revert" case.
+fn validate_preview_arg(arg: Option<&Value>) -> Result<(), IpcError> {
+    match arg {
+        Some(Value::Null) => Ok(()),
+        Some(Value::String(id)) if parse_theme_id(id).is_some() => Ok(()),
+        Some(other) => Err(IpcError::new(
+            "invalid-theme",
+            format!(
+                "theme.preview expects a known theme id or null, got {}",
+                describe_value(other)
+            ),
+        )),
+        None => Err(IpcError::new(
+            "invalid-theme",
+            "theme.preview expects a known theme id or null, got no argument",
+        )),
+    }
+}
+
 /// `theme.preview(themeId | null)` (FR-003 to FR-005, FR-017): validates the id (or `null`, which
 /// reverts a preview) and succeeds -- see the module header for why there is no live window
 /// effect to apply in this build. Never persisted.
 pub fn theme_preview(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        match args.first() {
-            None | Some(Value::Null) => {}
-            Some(Value::String(id)) if parse_theme_id(id).is_some() => {}
-            Some(other) => {
-                return Err(IpcError::new(
-                    "invalid-theme",
-                    format!(
-                        "theme.preview expects a known theme id or null, got {}",
-                        describe_value(other)
-                    ),
-                ))
-            }
-        }
+        validate_preview_arg(args.first())?;
         Ok(Value::Null)
     })
 }
@@ -130,5 +141,23 @@ mod tests {
         let described = describe_value(&huge);
         assert!(described.chars().count() <= 203);
         assert!(described.ends_with('…'));
+    }
+
+    #[test]
+    fn validate_preview_arg_accepts_a_known_id_or_explicit_null_rejects_everything_else() {
+        assert!(validate_preview_arg(Some(&Value::String("dark".to_string()))).is_ok());
+        assert!(validate_preview_arg(Some(&Value::Null)).is_ok());
+        assert_eq!(
+            validate_preview_arg(Some(&Value::String("not-a-theme".to_string())))
+                .unwrap_err()
+                .code,
+            "invalid-theme"
+        );
+        // Electron parity: a MISSING argument (`undefined` in JS) is rejected, not treated the
+        // same as an explicit `null`.
+        assert_eq!(
+            validate_preview_arg(None).unwrap_err().code,
+            "invalid-theme"
+        );
     }
 }

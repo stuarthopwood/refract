@@ -44,6 +44,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::Value;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::sync::Mutex as AsyncMutex;
 #[cfg(windows)]
@@ -154,6 +155,30 @@ impl OmpExecutor for RealOmpExecutor {
     }
 }
 
+/// Pure mapping for a `Command::spawn` failure: an `io::ErrorKind::NotFound` (the resolved path
+/// stopped existing between `resolve_omp` and this call -- rare, but a real possible race) is
+/// `OmpNotFound`, the same code a `which` resolution failure already produces; anything else is
+/// the generic `OmpFailed`. Exported for direct unit testing (no real process needed).
+fn map_spawn_error(err: &io::Error) -> OmpConfigError {
+    if err.kind() == io::ErrorKind::NotFound {
+        OmpConfigError::new(
+            OmpConfigErrorCode::OmpNotFound,
+            format!("omp is not installed or not on PATH: {err}"),
+        )
+    } else {
+        OmpConfigError::new(
+            OmpConfigErrorCode::OmpFailed,
+            format!("Could not start omp: {err}"),
+        )
+    }
+}
+
+/// Pure constructor for the one timeout error every caller sees, split out alongside
+/// `map_spawn_error` for the same direct-unit-testing reason (no real process needed).
+fn timeout_error() -> OmpConfigError {
+    OmpConfigError::new(OmpConfigErrorCode::Timeout, "omp config timed out.")
+}
+
 async fn run_omp(
     args: &[&str],
     failure_message: &str,
@@ -179,36 +204,49 @@ async fn run_omp(
     for var in strip_env_vars {
         command.env_remove(var);
     }
-    let child = command.spawn().map_err(|err| {
-        OmpConfigError::new(
-            OmpConfigErrorCode::OmpFailed,
-            format!("Could not start omp: {err}"),
-        )
-    })?;
-    let output =
-        match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), child.wait_with_output())
-            .await
-        {
-            Ok(Ok(output)) => output,
-            Ok(Err(err)) => {
-                return Err(OmpConfigError::new(
-                    OmpConfigErrorCode::OmpFailed,
-                    format!("omp exited abnormally: {err}"),
-                ))
-            }
-            Err(_) => {
-                return Err(OmpConfigError::new(
-                    OmpConfigErrorCode::Timeout,
-                    "omp config timed out.",
-                ))
-            }
+    let mut child = command.spawn().map_err(|err| map_spawn_error(&err))?;
+    let mut stdout_pipe = child.stdout.take().expect("configured as piped above");
+    let mut stderr_pipe = child.stderr.take().expect("configured as piped above");
+
+    let run = async {
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+        // Bounded at the source (never buffers more than the cap, unlike reading everything
+        // first and checking afterwards): `take` stops yielding bytes past the limit, so a
+        // runaway `omp` can write gigabytes into its own stdout pipe without this process ever
+        // holding more than `MAX_STDOUT_BYTES + 1` bytes in memory for it.
+        let mut limited_stdout = (&mut stdout_pipe).take(MAX_STDOUT_BYTES as u64 + 1);
+        let stdout_read = limited_stdout.read_to_end(&mut stdout_buf);
+        let stderr_read = stderr_pipe.read_to_end(&mut stderr_buf);
+        let (stdout_result, stderr_result) = tokio::join!(stdout_read, stderr_read);
+        stdout_result.map_err(|err| {
+            OmpConfigError::new(
+                OmpConfigErrorCode::OmpFailed,
+                format!("Could not read omp output: {err}"),
+            )
+        })?;
+        stderr_result.map_err(|err| {
+            OmpConfigError::new(
+                OmpConfigErrorCode::OmpFailed,
+                format!("Could not read omp output: {err}"),
+            )
+        })?;
+        let status = child.wait().await.map_err(|err| {
+            OmpConfigError::new(
+                OmpConfigErrorCode::OmpFailed,
+                format!("omp exited abnormally: {err}"),
+            )
+        })?;
+        Ok::<_, OmpConfigError>((status, stdout_buf, stderr_buf))
+    };
+
+    let (status, stdout_buf, stderr_buf) =
+        match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), run).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(err)) => return Err(err),
+            Err(_) => return Err(timeout_error()),
         };
-    map_run_result(
-        output.status.success(),
-        &output.stdout,
-        &output.stderr,
-        failure_message,
-    )
+    map_run_result(status.success(), &stdout_buf, &stderr_buf, failure_message)
 }
 
 /// Pure post-spawn decision, split out of `run_omp` for direct unit testing (no real process
@@ -377,6 +415,26 @@ mod tests {
         assert!(validate_config_key("--json").is_err());
         assert!(validate_config_key("composer.predictions").is_err());
         assert!(validate_config_key("").is_err());
+    }
+
+    #[test]
+    fn map_spawn_error_maps_not_found_to_omp_not_found_and_everything_else_to_omp_failed() {
+        let not_found = io::Error::from(io::ErrorKind::NotFound);
+        assert_eq!(
+            map_spawn_error(&not_found).code,
+            OmpConfigErrorCode::OmpNotFound
+        );
+
+        let permission_denied = io::Error::from(io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            map_spawn_error(&permission_denied).code,
+            OmpConfigErrorCode::OmpFailed
+        );
+    }
+
+    #[test]
+    fn timeout_error_is_always_the_timeout_code() {
+        assert_eq!(timeout_error().code, OmpConfigErrorCode::Timeout);
     }
 
     #[test]

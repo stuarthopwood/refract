@@ -9,22 +9,25 @@
 // Alt+F4 so Ctrl+W reaches the renderer's own close-chat-pane handler instead of closing the
 // window (#621); the custom `MenuItem`s below do the same.
 //
-// Quality-gate correction (code review, 2026-10-14): `PredefinedMenuItem::undo`/`redo`/
-// `fullscreen` are each documented "Windows/Linux: Unsupported" on their own BUILDER method
-// (`tauri::menu::SubmenuBuilder`), but `PredefinedMenuItem::fullscreen` itself (used directly, as
-// below) still creates an item muda actually runs on Windows via a simulated accelerator the same
-// way Cut/Copy do -- `Undo`/`Redo` really do nothing there, confirmed against muda 0.20.0's own
-// Windows `run_predefined` match (no `Undo`/`Redo` arm at all, falling through to a no-op; `Cut`/
-// `Copy`/`Paste`/`SelectAll` and the window-state items DO have arms). So: `Undo`/`Redo` stay out
-// (genuinely dead), but `Fullscreen` needed a different fix -- it is a custom `MenuItem` below
-// calling `window.set_fullscreen(!is_fullscreen)` in `on_menu_event`, not the predefined item.
+// Quality-gate correction (code review, 2026-10-14): an earlier version of this file read
+// `tauri::menu::SubmenuBuilder`'s own per-method docs ("Windows/Linux: Unsupported" on its
+// `undo()`/`redo()`/`fullscreen()` convenience methods) and dropped all three. That is wrong for
+// two of them: muda 0.20.0's own Windows `run_predefined` match DOES have arms for `Undo`/`Redo`
+// (simulated Ctrl+Z/Ctrl+Y keystrokes, the same mechanism `Cut`/`Copy` use) -- restored below via
+// `.undo().redo()`. `Fullscreen` is the one that really is a no-op there (no `Fullscreen` arm at
+// all, falling through to nothing when clicked) -- fixed with a custom `MenuItem` below calling
+// `window.set_fullscreen(!is_fullscreen)` in `on_menu_event` instead of the predefined item.
 // Reset Zoom / Zoom In / Zoom Out ship in Electron's PRODUCTION build (`menu.ts`; only Reload,
 // Force Reload and Toggle DevTools are gated on `isDev`) -- ported here as three more custom
 // items driving `WebviewWindow::set_zoom` against a tracked `ZOOM_FACTOR` (no getter exists on
 // this Tauri version), with `window.popupMenu`'s own x/y multiplied by that same factor before
 // building the popup position, mirroring `window.ts`'s own `webContents.getZoomFactor()` multiply
-// exactly. Reload/Force Reload/Toggle DevTools stay out: nothing else in this build wires a
-// reload/devtools action for them to drive.
+// exactly. No accelerator label on any of the three (code-review correction, round 2): this menu
+// is popup-only, never attached as the window/app menu, so WebView2 never registers these as
+// live keyboard shortcuts -- showing "Ctrl+=" next to an item that only fires on a click would be
+// misleading. Tracked as a follow-up (#825) rather than wiring real accelerator keys, which
+// would need intercepting them before WebView2's own browser-side zoom handling. Reload/Force
+// Reload/Toggle DevTools stay out: nothing else in this build wires a reload/devtools action.
 
 use std::sync::Mutex as StdMutex;
 
@@ -104,12 +107,8 @@ fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
     let view_fullscreen =
         MenuItemBuilder::with_id("view-toggle-fullscreen", "Toggle Full Screen").build(app)?;
     let view_reset_zoom = MenuItemBuilder::with_id("view-reset-zoom", "Reset Zoom").build(app)?;
-    let view_zoom_in = MenuItemBuilder::with_id("view-zoom-in", "Zoom In")
-        .accelerator("Ctrl+=")
-        .build(app)?;
-    let view_zoom_out = MenuItemBuilder::with_id("view-zoom-out", "Zoom Out")
-        .accelerator("Ctrl+-")
-        .build(app)?;
+    let view_zoom_in = MenuItemBuilder::with_id("view-zoom-in", "Zoom In").build(app)?;
+    let view_zoom_out = MenuItemBuilder::with_id("view-zoom-out", "Zoom Out").build(app)?;
     let view = SubmenuBuilder::with_id(app, "view", "View")
         .item(&view_reset_zoom)
         .item(&view_zoom_in)

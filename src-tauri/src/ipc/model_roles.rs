@@ -97,20 +97,6 @@ const ROLE_OVERRIDE_ENV_VARS: [&str; 4] = [
     "PI_CONFIG_FILES",
 ];
 
-/// Pure reference implementation of the stripping rule above, kept for direct unit testing of the
-/// case-insensitive matching logic (Windows environment variable names are case-insensitive);
-/// not on the production call path, which strips directly on the `Command` via `strip_env_vars`.
-pub fn env_without_role_overrides(env: &HashMap<String, String>) -> HashMap<String, String> {
-    env.iter()
-        .filter(|(key, _)| {
-            !ROLE_OVERRIDE_ENV_VARS
-                .iter()
-                .any(|stripped| stripped.eq_ignore_ascii_case(key))
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
-}
-
 /// Validates that `value` is a plain, non-array object (the shape `omp config get/set modelRoles`
 /// always returns), returning a shallow copy. `Value::Null` is an empty record. Exported for
 /// direct unit testing.
