@@ -17,7 +17,6 @@
 // - (security LOW) Raw, uncapped `gh` stderr used to be saved to `last_error` as-is; now routed
 //   through the shared, redacting `github::gh::non_empty_or` plus this file's own local length
 //   cap, same as every other `gh` failure path.
-
 use std::path::Path;
 use std::time::Duration;
 
@@ -27,6 +26,7 @@ use crate::github::gh::{gh_json, gh_raw, non_empty_or};
 
 use super::checksum::{checksum_matches, hex_digest_file};
 use super::dependency_install_http::safe_file_name;
+use super::signature::verify_installer_signature;
 use super::state::{SharedUpdateState, UpdatePhase, UpdateState};
 
 /// research.md decision 8: the same private repository `UpdateChecker`/`gh_client` reads from.
@@ -100,11 +100,13 @@ impl std::fmt::Display for UpdateError {
 
 impl std::error::Error for UpdateError {}
 
-/// `updates.install()` (contracts/ipc.md): awaits the whole download and checksum verification
-/// for the release named by the current `Available` state before resolving; persists
-/// `Downloading` immediately (so `updates:state-changed`, broadcast via `on_state`, can drive a
-/// progress indicator before this future ever resolves), then `Downloaded` with
-/// `installer_path` set on a verified match, or `Failed` with `last_error` otherwise (FR-014).
+/// `updates.install()` (contracts/ipc.md): awaits the whole download, checksum verification, and
+/// Authenticode signature verification (lane R11d, follow-up to #794: `signature.rs`'s pinned
+/// signer-certificate check) for the release named by the current `Available` state before
+/// resolving; persists `Downloading` immediately (so `updates:state-changed`, broadcast via
+/// `on_state`, can drive a progress indicator before this future ever resolves), then
+/// `Downloaded` with `installer_path` set on a verified match, or `Failed` with `last_error`
+/// otherwise (FR-014).
 pub async fn download_update(
     store: &SharedUpdateState,
     data_dir: &Path,
@@ -159,9 +161,9 @@ pub async fn download_update(
 }
 
 /// The whole download-and-verify body, factored out of `download_update` so every exit path
-/// (missing asset, `gh` failure, a real digest mismatch) collapses to the single `Err(String)`
-/// `download_update` reports as `ChecksumMismatch`, matching `UpdateInstaller.ts`'s own single
-/// `catch` block. Runs with NO store lock held.
+/// (missing asset, `gh` failure, a real digest mismatch, or a rejected Authenticode signature)
+/// collapses to the single `Err(String)` `download_update` reports as `ChecksumMismatch`,
+/// matching `UpdateInstaller.ts`'s own single `catch` block. Runs with NO store lock held.
 async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String> {
     let updates_dir = data_dir.join("updates");
     // A previous failed attempt's leftovers are never mistaken for this one's fresh pair --
@@ -297,6 +299,14 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         let _ = tokio::fs::remove_file(&installer_path).await;
         let _ = tokio::fs::remove_file(&checksum_path).await;
         return Err("The downloaded installer did not match its published checksum.".to_string());
+    }
+
+    if let Err(reason) = verify_installer_signature(&installer_path).await {
+        // Same tamper-defense as a checksum mismatch above: never leave a rejected installer on
+        // disk for a later caller (or a stale `installerPath`) to pick back up.
+        let _ = tokio::fs::remove_file(&installer_path).await;
+        let _ = tokio::fs::remove_file(&checksum_path).await;
+        return Err(reason);
     }
 
     Ok(installer_path.to_string_lossy().into_owned())

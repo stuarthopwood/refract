@@ -12,8 +12,10 @@
 // - `checker`: `check_for_updates` (depends on `state`, `gh_client`).
 // - `installer`: `download_update` (depends on `state`, `gh_client`, `checksum`).
 // - `checksum`: shared streamed SHA-256 verify (depends on nothing in this module).
+// - `signature` (lane R11d, follow-up to #794): `WinVerifyTrust`-based Authenticode signature
+//   verification plus the pinned signer-certificate check (depends on nothing in this module).
 // - `install_on_quit`: the WMI-breakaway install-on-quit mechanism, and the startup leftover-state
-//   resolver (depends on `state`, `checksum`).
+//   resolver (depends on `state`, `checksum`, `signature`).
 // - `dependency_install` (+ `dependency_install_http`): `install_git`/`install_omp`/
 //   `install_github_cli`, the first-run readiness checklist's Install actions (self-contained).
 pub mod checker;
@@ -23,6 +25,7 @@ mod dependency_install_http;
 pub mod gh_client;
 pub mod install_on_quit;
 pub mod installer;
+pub mod signature;
 pub mod state;
 
 use std::path::Path;
