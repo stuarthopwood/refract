@@ -476,7 +476,7 @@ fn kill_descendant_tree(root_pid: u32, root_creation_ticks: u64, snapshot_ticks:
 }
 
 #[cfg(not(target_os = "windows"))]
-fn kill_descendant_tree(_root_pid: u32, _root_creation_ticks: u64) -> usize {
+fn kill_descendant_tree(_root_pid: u32, _root_creation_ticks: u64, _snapshot_ticks: u64) -> usize {
     0
 }
 

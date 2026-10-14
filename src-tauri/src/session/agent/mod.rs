@@ -103,6 +103,17 @@ struct AgentState {
     process: Option<Arc<OmpProcess>>,
     turn_settle_handled: bool,
     stop_requested: bool,
+    /// Lane R3 (issue #786, gate-fix round 5, code review HIGH): bumped by `shutdown()` under
+    /// the SAME lock acquisition that sets `stop_requested = true`, BEFORE it ever awaits
+    /// `start_lock`. `start()`/`start_with_conversation()` snapshot this BEFORE their own
+    /// `start_lock` await and re-check it right after acquiring that lock -- a mismatch means a
+    /// `shutdown()` landed while this call was still waiting, so it must bail out
+    /// (`stopped`/`not-started`) instead of resetting `stop_requested` back to `false` and
+    /// running a full launch a `shutdown()` already considers superseded. Closes the race where
+    /// a start queued behind an in-flight one won the `start_lock` race against `shutdown()`'s
+    /// own wait, undid `stop_requested`, and finished as a live `Idle` agent `shutdown()`'s own
+    /// later `proc_after.stop()` then force-killed as an unrequested-looking exit.
+    shutdown_generation: u64,
     // Issue #784: each lane owns its own `State` (defined in its own file), reachable only via
     // its `with_<lane>_state` accessor below; still empty/unread until a lane lands.
     #[allow(dead_code)]
@@ -196,6 +207,7 @@ impl SessionAgent {
                 process: None,
                 turn_settle_handled: false,
                 stop_requested: false,
+                shutdown_generation: 0,
                 model: Default::default(),
                 readout: Default::default(),
                 subagents: Default::default(),

@@ -240,9 +240,6 @@ pub(crate) async fn resume_session_core<A: ResumableAgent>(
     ) {
         return Err(ResumeCoreError::Refused(code));
     }
-    if agent.is_archived().await {
-        return Err(ResumeCoreError::Refused("not-eligible"));
-    }
     let _ = agent.start().await;
     agent.notify_list_changed().await;
     if agent.status().await == SessionStatus::Stopped {

@@ -27,9 +27,23 @@ impl SessionAgent {
     /// TS original shares the exact in-flight `Promise`; this serialises instead through
     /// `start_lock`, which gives the same externally-visible result for every caller here).
     pub async fn start(&self) -> Result<(), AgentError> {
+        // Gate-fix (round 5, code review HIGH): snapshotted BEFORE `start_lock` is even
+        // requested, so a `shutdown()` that bumps this (always under the same lock acquisition
+        // that sets `stop_requested = true`) while THIS call is still waiting for `start_lock`
+        // is visible the instant that wait ends. See `AgentState::shutdown_generation`'s own
+        // doc comment for the exact race this closes.
+        let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
         {
             let state = self.state.lock().await;
+            if state.shutdown_generation != generation_at_entry {
+                drop(state);
+                self.mark_stopped_not_started().await;
+                return Err(AgentError::new(
+                    "not-started",
+                    "SessionAgent: start cancelled",
+                ));
+            }
             if state.process.is_some() {
                 return Ok(());
             }
@@ -79,9 +93,20 @@ impl SessionAgent {
     /// back -- so a start already in flight, or a live process, refuses outright instead of
     /// silently reattaching the OLD Conversation.
     pub async fn start_with_conversation(&self, file: Option<String>) -> Result<(), AgentError> {
+        // Gate-fix (round 5, code review HIGH): see `start()`'s own identical guard and
+        // `AgentState::shutdown_generation`'s own doc comment for the race this closes.
+        let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
         {
             let state = self.state.lock().await;
+            if state.shutdown_generation != generation_at_entry {
+                drop(state);
+                self.mark_stopped_not_started().await;
+                return Err(AgentError::new(
+                    "not-started",
+                    "SessionAgent: start cancelled",
+                ));
+            }
             if state.process.is_some() || state.status != SessionStatus::Stopped {
                 return Err(AgentError::new(
                     "not-idle",
@@ -541,6 +566,12 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.stop_requested = true;
+            // Gate-fix (round 5, code review HIGH): bumped under this SAME lock acquisition,
+            // before `start_lock` is ever awaited below -- see
+            // `AgentState::shutdown_generation`'s own doc comment for the race this closes
+            // (a start queued behind an in-flight one winning the `start_lock` race against
+            // this call's own wait, below, and resetting `stop_requested` back to `false`).
+            state.shutdown_generation = state.shutdown_generation.wrapping_add(1);
         }
         // Lane R3 (issue #786, gate-fix TS cycles 2/3): reaches a start still queued or
         // memory-deferring too (`acquire_slot` has no live `process` yet for the plain
@@ -552,9 +583,10 @@ impl SessionAgent {
         }
         // Gate-fix (round 3, code review HIGH): the two steps above cover a start that is
         // already queued, memory-deferring, or has a live process recorded -- but a start
-        // still inside `OmpProcess::connect` (the raw spawn, before `acquire_slot` even grants
-        // a slot) or anywhere up to `watch_for_cancel` first arming has NO `state.process` yet
-        // for either to find, and its own `launch()` call is still running. Without this,
+        // already past `acquire_slot` (a slot already granted) and still inside
+        // `OmpProcess::connect` (the raw spawn) or anywhere up to `watch_for_cancel` first
+        // arming has NO `state.process` yet for either to find, and its own `launch()` call is
+        // still running. Without this,
         // `sessions.delete`/`.archive` (which call this, then immediately remove the pid
         // record and the worktree) could run while `omp` was still alive with its cwd inside
         // that same worktree, racing a Windows EBUSY/EPERM removal failure -- exactly the class
@@ -566,13 +598,26 @@ impl SessionAgent {
         // -- `stop_requested` is already `true` by the time that happens, so every
         // `bail_if_stop_requested`/inline `stop_requested` check inside `acquire_slot`/
         // `launch()` makes that attempt end quickly rather than run out its own ceiling.
-        drop(self.start_lock.lock().await);
+        // Gate-fix (round 5, code review HIGH): the guard is now HELD (not dropped immediately)
+        // for the rest of this function -- a start that raced this wait and lost (snapshotted
+        // an older `shutdown_generation`, per `start()`'s own guard) bails out on its own, but
+        // holding this lock additionally refuses ANY new `start()`/`start_with_conversation()`
+        // call from even beginning until this shutdown has finished dealing with `proc_after`.
+        let _start_guard = self.start_lock.lock().await;
         // A start could have completed and recorded a fresh `state.process` in the narrow
         // window between the checks above and this lock acquisition -- stop it too, unless it
         // is the exact same process already stopped above.
         let proc_after = { self.state.lock().await.process.clone() };
         if let Some(proc_after) = &proc_after {
             if !proc.as_ref().is_some_and(|p| Arc::ptr_eq(p, proc_after)) {
+                // Gate-fix (round 5, code review HIGH): re-set immediately before stopping it --
+                // belt-and-braces against `stop_requested` having been reset by anything else
+                // between the top of this function and here, so the exit this `stop()` call
+                // causes is never misread as an unrequested crash.
+                {
+                    let mut state = self.state.lock().await;
+                    state.stop_requested = true;
+                }
                 proc_after.stop().await;
             }
         }

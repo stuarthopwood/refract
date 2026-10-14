@@ -569,6 +569,10 @@ struct FakeAttachableAgent {
     terminated_unexpectedly: bool,
     start_called: StdMutex<bool>,
     notify_called: StdMutex<bool>,
+    /// Gate-fix (round 5, test review MEDIUM): proves `attach_snapshot_decision` returns early
+    /// (no tail read at all) for a Session that is not stopped, not merely that it refused to
+    /// start.
+    resolve_termination_called: StdMutex<bool>,
 }
 
 impl AttachableAgent for FakeAttachableAgent {
@@ -581,6 +585,7 @@ impl AttachableAgent for FakeAttachableAgent {
     }
 
     async fn resolve_termination(&self) -> TerminationDetectionResult {
+        *self.resolve_termination_called.lock().unwrap() = true;
         TerminationDetectionResult {
             terminated_unexpectedly: self.terminated_unexpectedly,
             ..Default::default()
@@ -608,15 +613,23 @@ fn fake_attachable(
         terminated_unexpectedly,
         start_called: StdMutex::new(false),
         notify_called: StdMutex::new(false),
+        resolve_termination_called: StdMutex::new(false),
     }
 }
 
 #[tokio::test]
 async fn attach_snapshot_decision_is_none_and_never_starts_when_not_stopped() {
+    // Port of `attachSnapshot.test.ts`'s own "never reads the tail when the agent is not
+    // stopped (no detection, no start)" (Main gate round 5 MEDIUM): asserts the tail read
+    // itself never happens, not merely that `start` was never called.
     let agent = fake_attachable(SessionStatus::Working, Some("agent-exited"), false);
     let detection = attach_snapshot_decision(&agent, false).await;
     assert!(detection.is_none());
     assert!(!*agent.start_called.lock().unwrap());
+    assert!(
+        !*agent.resolve_termination_called.lock().unwrap(),
+        "a Session that is not stopped must never trigger a tail read at all"
+    );
 }
 
 #[tokio::test]
@@ -743,69 +756,3 @@ async fn attach_snapshot_core_returns_not_found_for_an_unknown_session_id() {
         .expect_err("unknown id must error");
     assert_eq!(err.code, "not-found");
 }
-
-// -------------------------------------------------------------------------------------------
-// Remaining `resumeSession.test.ts`/`attachSnapshot.test.ts` cases: either already covered by an
-// existing pure-function test in this crate (cited below, not re-proven here redundantly), or
-// genuinely out of reach at every layer this port exposes -- documented, not silently skipped or
-// worked around with a differently-shaped invented test.
-// -------------------------------------------------------------------------------------------
-//
-// Already covered elsewhere (redundant to re-test here):
-// - `resumeSession.test.ts`'s "skips the tail read and refuses as not-eligible for a requested
-//   stop (stoppedOnRequest)": the `stoppedOnRequest` short-circuit itself is
-//   `termination::resolve_termination_for`'s own job, already proven by
-//   `resolve_termination_is_clean_when_stopped_on_request_flag_is_set`
-//   (`session/termination.test.rs`); the resulting "clean detection + an otherwise-insufficient
-//   `stopReason` still refuses" step is `check_resume_eligible_re_checks_eligibility_server_side`
-//   above (`check_resume_eligible(Stopped, Some("not-started"), false, false) ==
-//   Some("not-eligible")`).
-// - `attachSnapshot.test.ts`'s "FR-038: short-circuits to clean and auto-starts a requested stop
-//   without reading the tail": same `resolve_termination_for` short-circuit, same citation
-//   (`resolve_termination_is_clean_when_stopped_on_request_flag_is_set`); the auto-start half is
-//   `attach_snapshot_decision_passive_open_auto_starts_when_nothing_is_wrong` above once the
-//   detection it receives is clean.
-// - `attachSnapshot.test.ts`'s "a genuinely crashed Session with the same stopReason never
-//   auto-starts": `can_auto_start_table` above already exhaustively covers
-//   `(Some("not-started"), terminated_unexpectedly: true) -> false` (and the `agent-exited`
-//   equivalents); `attach_snapshot_decision_passive_open_never_auto_starts_an_agent_exited_session`
-//   above already proves the decision wrapper is a thin, faithful pass-through of that result
-//   (threading the computed `detection` onward is a single unconditional `Some(detection)`, not
-//   independently testable in isolation from a real `build_snapshot`).
-//
-// Genuinely out of reach (documented, not invented around):
-// - `resumeSession.test.ts`'s "refuses a resume when the Session is archived by a concurrent
-//   call during the tail read": covered now by `resume_session_core_refuses_when_archived_
-//   during_the_tail_read` above via `ResumableAgent::is_archived`'s own fresh re-check inside
-//   `resume_session_core` (added round 3, test review HIGH -- the race is caught before
-//   `start()` even runs, not only by the belt-and-braces re-check described below). The
-//   SEPARATE, later window this bullet used to also cover -- archive landing AFTER
-//   `resume_session_core` already returned `Ok` but before `ResumeAgentAdapter::send_resume_
-//   instruction`'s own `send()` -- remains out of reach from here: that re-check reads a LIVE
-//   `state.registry` which `FakeResumableAgent` never touches (its own `send_resume_instruction`
-//   has no registry at all), and proving it needs a second task actually mutating that registry
-//   during the adapter's own await; out of reach without a dedicated process-level integration
-//   harness.
-// - `resumeSession.test.ts`'s "returns the snapshot built AFTER agent.send resolves, not the
-//   pre-send one": N/A in this port's split, not merely untested -- `resume_session_core` never
-//   calls `build_snapshot` at all (TS's single `resumeSessionCore` calls it twice, before AND
-//   after `send`); this port's `build_snapshot` is called exactly once, by the `sessions_resume`
-//   IPC handler, strictly after `resume_session_core` has already returned. There is no
-//   "pre-send" build in this architecture to race against.
-// - `resumeSession.test.ts`'s "propagates a thrown buildSnapshot as a rejection, still releasing
-//   the lock": also N/A -- `conversations::build_snapshot` returns a plain `Value`, not a
-//   `Result`, in this port, so there is no rejection path for it to propagate.
-// - `attachSnapshot.test.ts`'s "builds the snapshot from the refreshed session (post-start
-//   registry state), not the stale pre-start one": `attach_snapshot_core`'s two registry reads
-//   (`session` before the decision, `refreshed` after) are plain `state.registry.lock().await...`
-//   calls, not behind an injectable `deps` seam the way TS's `getSession` mock is. Proving
-//   "refreshed, not stale" needs the registry to genuinely change between those two reads, and
-//   nothing on the failing-fast path a non-existent worktree takes
-//   (`SessionAgent::start`'s own `worktree_is_valid` check) writes to the registry at all, so no
-//   real-registry fixture observably differs; out of reach without refactoring
-//   `attach_snapshot_core` onto an injectable seam of its own.
-// - `resumeSession.test.ts persisted stoppedOnRequest marker` / `attachSnapshot.test.ts persisted
-//   stoppedOnRequest marker` (both describe blocks, both cases each): entirely
-//   `termination::resolve_termination`'s own concern in this port, already covered by that
-//   file's own marker tests (`session/termination.test.rs`), extended this session -- not
-//   re-proven here.
