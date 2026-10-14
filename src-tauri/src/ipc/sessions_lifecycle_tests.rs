@@ -430,9 +430,10 @@ async fn sessions_archive_fires_the_worktree_released_hook_on_success() {
         .await
         .expect("archive must succeed");
     let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
-    assert!(
-        after > before,
-        "a successful archive must fire the reclaim hook"
+    assert_eq!(
+        after,
+        before + 1,
+        "a successful archive must fire the reclaim hook exactly once"
     );
 }
 
@@ -488,9 +489,10 @@ async fn sessions_delete_fires_the_worktree_released_hook_on_success() {
         .await
         .expect("delete must succeed");
     let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
-    assert!(
-        after > before,
-        "a successful delete must fire the reclaim hook"
+    assert_eq!(
+        after,
+        before + 1,
+        "a successful delete must fire the reclaim hook exactly once"
     );
 }
 
