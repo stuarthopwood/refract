@@ -163,9 +163,16 @@ mod tests {
     /// is reaching `send` with the exact `SETTINGS_CHANGED` event name and an unchanged clone of
     /// its payload -- the "no window yet" branch inside `send` (no `AppHandle` set) must never
     /// panic, since a settings setter can run before `lib.rs`'s `setup` closure has filled one in.
-    #[test]
-    fn emit_settings_changed_does_not_panic_before_a_window_exists() {
-        let sink = EventSink::new(std::sync::Arc::new(std::sync::Mutex::new(None)));
+    #[tokio::test]
+    async fn emit_settings_changed_does_not_panic_before_a_window_exists() {
+        let dir =
+            std::env::temp_dir().join(format!("refract-events-test-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let registry = RegistryStore::open(&dir).await.unwrap();
+        let sink = EventSink::new(
+            std::sync::Arc::new(std::sync::Mutex::new(None)),
+            std::sync::Arc::new(tokio::sync::Mutex::new(registry)),
+        );
         let payload = serde_json::json!({ "theme": "obsidian" });
         sink.emit_settings_changed(&payload);
     }
