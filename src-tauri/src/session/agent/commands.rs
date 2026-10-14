@@ -34,6 +34,11 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
         "tools" | "context" | "fresh" | "retry" | "rename" | "add-dir" | "dirs" | "force"
         | "autoresearch" | "annotate" => Some(&[]),
         "shake" => Some(&["elide", "images", "thinking"]),
+        // Issue #762 (lane RM): the explicit decision `omp-usage.md` line 163 was waiting for.
+        // No fixed subcommand table (an empty allow-list here, same shape `add-dir`/`dirs` use)
+        // -- its one argument is a free-form, charset-checked model/role token, gated by
+        // `classify_against_builtin`'s own name-aware branch below, never this table.
+        "switch" => Some(&[]),
         _ => None,
     }
 }
@@ -63,6 +68,15 @@ pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
     "pause",
     "plan-review",
     "btw",
+    // Issue #762 (lane RM): `/model` is always rewritten to `/switch` before classification
+    // (`ipc::chat`); reserved here too, defence in depth, so a future OMP command or a custom
+    // command (#760) can never take the name over if that rewrite is ever bypassed.
+    "model",
+    // Issue #762: opens Settings' Model roles page client-side; never forwarded to OMP.
+    "models",
+    // Issue #766: `/role` with no argument has no server-side action (the renderer opens the
+    // role selector); `/role <role>` is special-cased in `ipc::chat` BEFORE this check runs.
+    "role",
 ];
 
 /// Refract's own native commands (`NATIVE_BUILT_COMMANDS`): `/new` has a working implementation
@@ -75,6 +89,8 @@ pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
 const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
     ("new", "Start a new Conversation in this Session"),
     ("btw", "Ask the agent a side question"),
+    ("role", "Switch roles for this Session"),
+    ("models", "Open model role settings"),
 ];
 
 /// Port of `slash-commands.ts`'s own `filterSupportedCommands`, extended per issue #760: a
@@ -154,6 +170,22 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
                 .collect();
             pruned["subcommands"] = Value::Array(filtered);
         }
+        if name == "switch" {
+            // Issue #762: `/model` is a Refract-side alias of `/switch`, menu display only --
+            // `ipc::chat` rewrites a typed `/model` to `/switch` before anything is classified
+            // or forwarded, so OMP's own descriptor (which has no `model` alias of its own)
+            // never needs to be asked for this. "The menu lists one entry, /switch with the
+            // alias model shown beside it, not two commands" (issue #762).
+            let mut aliases: Vec<Value> = pruned
+                .get("aliases")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            if !aliases.iter().any(|a| a.as_str() == Some("model")) {
+                aliases.push(Value::String("model".to_string()));
+            }
+            pruned["aliases"] = Value::Array(aliases);
+        }
         out.push(pruned);
     }
     out
@@ -202,6 +234,17 @@ fn matches_name(descriptor: &Value, name: &str) -> bool {
 /// any further trailing text refused. Shared by both branches of `classify_slash_invocation`
 /// below so the anti-shadow fix never duplicates this logic.
 fn classify_against_builtin(descriptor: &Value, rest: &str) -> SlashInvocationClassification {
+    if descriptor.get("name").and_then(Value::as_str) == Some("switch") {
+        // Issue #762: `/switch` takes one charset-checked model/role token (`provider/id`, a
+        // bare id, a thinking suffix, or a role alias `@role`), never OMP's own (absent)
+        // `subcommands` table -- `supported_omp_subcommands`'s own `Some(&[])` entry for
+        // `"switch"` exists only to keep it listed in the menu, not to gate this argument.
+        return if crate::session::model::is_switch_argument_token(rest) {
+            SlashInvocationClassification::Supported
+        } else {
+            SlashInvocationClassification::UnsupportedArguments
+        };
+    }
     let space_idx = rest.find(' ');
     let sub_name = match space_idx {
         Some(idx) => &rest[..idx],

@@ -101,6 +101,54 @@ impl SessionManager {
             .cloned()
     }
 
+    /// Every live `SessionAgent` this run, a snapshot clone (lane RM, issue #740: the role-
+    /// change propagation sweep below needs to touch each one without holding the `agents`
+    /// lock across an `.await`).
+    pub fn live_agents(&self) -> Vec<Arc<SessionAgent>> {
+        self.agents
+            .lock()
+            .expect("agents mutex poisoned")
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    /// Issue #740 (lane RM): called by `ipc::model_roles::model_roles_set` after a role's
+    /// config value changes. Moves every live, non-pinned Session whose tracked role is `role`
+    /// onto its freshly-resolved model -- immediately if idle, queued for its own next settle if
+    /// working (Stuart's decision, 2026-10-13: "automatic at the next idle moment", no prompt,
+    /// never refused); a Session pinned by `/switch`/the composer picker (#454) is skipped.
+    pub async fn apply_role_change(&self, role: &str) -> crate::session::model::RoleChangeSummary {
+        let mut summary = crate::session::model::RoleChangeSummary::default();
+        for agent in self.live_agents() {
+            let (pinned, current_role) = crate::session::model::current_selection(&agent).await;
+            let effective = current_role.as_deref().unwrap_or("default");
+            if effective != role {
+                continue;
+            }
+            if pinned {
+                summary.skipped_pinned += 1;
+                continue;
+            }
+            let working = matches!(
+                agent.status().await,
+                crate::session::SessionStatus::Working | crate::session::SessionStatus::NeedsYou
+            );
+            if working {
+                agent
+                    .with_model_state(|s| s.pending_role_reapply = Some(role.to_string()))
+                    .await;
+                summary.queued += 1;
+            } else {
+                match crate::session::model::apply_role_now(&agent, role, true).await {
+                    Ok(_) => summary.moved += 1,
+                    Err(_) => summary.failed += 1,
+                }
+            }
+        }
+        summary
+    }
+
     /// `SessionManager.ts`'s own `getOrCreateAgent`: a brand-new instance on first access,
     /// returning the existing one for every later call -- never starts it (callers start a
     /// `stopped` agent explicitly).

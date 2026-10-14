@@ -366,3 +366,95 @@ fn filter_supported_commands_drops_a_file_command_named_after_a_reserved_native_
         "a skill command named `resume` must never be listed: {filtered:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Lane RM (issues #762, #766, #760): `/switch`'s own argument shape, its `/model` menu alias,
+// and the new reserved names.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn switch_is_listed_in_the_menu_with_model_as_an_alias() {
+    let raw = vec![json!({
+        "name": "switch",
+        "description": "Switch model for this session only",
+        "input": { "hint": "[model]" },
+        "source": "builtin",
+    })];
+    let out = filter_supported_commands(&raw);
+    let switch = out
+        .iter()
+        .find(|c| c.get("name").and_then(Value::as_str) == Some("switch"))
+        .expect("switch listed");
+    let aliases: Vec<&str> = switch
+        .get("aliases")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(aliases, vec!["model"], "one alias, not a second menu entry");
+}
+
+#[test]
+fn classify_switch_bare_is_supported() {
+    let commands = vec![json!({ "name": "switch", "source": "builtin" })];
+    assert!(matches!(
+        classify_slash_invocation("switch", "", &commands),
+        SlashInvocationClassification::Supported
+    ));
+}
+
+#[test]
+fn classify_switch_accepts_provider_slash_id() {
+    let commands = vec![json!({ "name": "switch", "source": "builtin" })];
+    assert!(matches!(
+        classify_slash_invocation("switch", "github-copilot/claude-sonnet-5.5", &commands),
+        SlashInvocationClassification::Supported
+    ));
+}
+
+#[test]
+fn classify_switch_accepts_a_role_alias() {
+    let commands = vec![json!({ "name": "switch", "source": "builtin" })];
+    assert!(matches!(
+        classify_slash_invocation("switch", "@task", &commands),
+        SlashInvocationClassification::Supported
+    ));
+}
+
+#[test]
+fn classify_switch_refuses_a_second_argument() {
+    let commands = vec![json!({ "name": "switch", "source": "builtin" })];
+    assert!(matches!(
+        classify_slash_invocation("switch", "model-a model-b", &commands),
+        SlashInvocationClassification::UnsupportedArguments
+    ));
+}
+
+#[test]
+fn classify_switch_refuses_a_flag_like_argument() {
+    let commands = vec![json!({ "name": "switch", "source": "builtin" })];
+    assert!(matches!(
+        classify_slash_invocation("switch", "--help", &commands),
+        SlashInvocationClassification::UnsupportedArguments
+    ));
+}
+
+#[test]
+fn model_models_role_are_reserved() {
+    for name in ["model", "models", "role"] {
+        assert!(
+            NATIVE_RESERVED_COMMANDS.contains(&name),
+            "{name} must be reserved (issues #762, #766)"
+        );
+    }
+}
+
+#[test]
+fn role_is_listed_in_the_native_menu() {
+    let out = filter_supported_commands(&[]);
+    assert!(out
+        .iter()
+        .any(|c| c.get("name").and_then(Value::as_str) == Some("role")
+            && c.get("source").and_then(Value::as_str) == Some("native")));
+}
