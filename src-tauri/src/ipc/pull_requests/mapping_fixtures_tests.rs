@@ -139,3 +139,82 @@ fn gh_pr_view_detail_deserialises_camel_case_cross_repository_false_without_owne
     assert!(!detail.is_cross_repository);
     assert!(detail.head_repository_owner.is_none());
 }
+
+/// The inner `pullRequest` shape `get_review_threads_and_timeline` (`gh_mutations.rs`) actually
+/// hands `build_timeline`, deserialised from JSON rather than constructed as a struct literal
+/// (unlike `mapping_tests.rs`'s own `GhThreadsAndTimeline` cases) specifically to exercise the
+/// `__typename` discriminator and three null-shaped fields real `gh`/GraphQL output sends: a
+/// review thread's `line: null` (file-level comment), a timeline node's `author: null` (deleted
+/// account), and a pending `PullRequestReview`'s `submittedAt: null` -- the full envelope
+/// (`{"repository":{"pullRequest":{...}}}`) is deserialised separately in `gh_mutations_tests.rs`,
+/// which can see its private wrapper structs; this test starts one layer in, at the already-
+/// unwrapped shape `build_timeline` itself reads.
+#[test]
+fn threads_and_timeline_json_fixture_maps_through_build_timeline() {
+    let json = r#"{
+        "id": "PR_1",
+        "reviewThreads": {
+            "nodes": [
+                {
+                    "id": "THREAD_1",
+                    "isResolved": false,
+                    "isOutdated": false,
+                    "path": "src/lib.rs",
+                    "line": null,
+                    "diffSide": "RIGHT",
+                    "comments": {
+                        "nodes": [
+                            {
+                                "id": "COMMENT_1",
+                                "author": { "login": "alice" },
+                                "body": "looks good",
+                                "createdAt": "2024-01-01T00:00:00Z"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "timelineItems": {
+            "nodes": [
+                {
+                    "__typename": "IssueComment",
+                    "id": "IC_1",
+                    "author": null,
+                    "body": "a comment",
+                    "createdAt": "2024-01-02T00:00:00Z"
+                },
+                {
+                    "__typename": "PullRequestReview",
+                    "id": "REVIEW_1",
+                    "author": { "login": "bob" },
+                    "state": "PENDING",
+                    "body": "",
+                    "submittedAt": null
+                }
+            ]
+        }
+    }"#;
+    let data: GhThreadsAndTimeline =
+        serde_json::from_str(json).expect("GhThreadsAndTimeline fixture parses");
+
+    let timeline = build_timeline(&data);
+    // The pending review is dropped (no verdict); only the comment and the review thread
+    // remain, chronologically ordered by their earliest timestamp: the thread's first comment
+    // (2024-01-01) sorts before the issue comment (2024-01-02).
+    assert_eq!(timeline.len(), 2);
+    match &timeline[0] {
+        TimelineEntry::ReviewThread { thread } => {
+            assert_eq!(thread.id, "THREAD_1");
+            assert_eq!(thread.line, None);
+        }
+        other => panic!("expected a ReviewThread entry, got {other:?}"),
+    }
+    match &timeline[1] {
+        TimelineEntry::Comment { id, author, .. } => {
+            assert_eq!(id, "IC_1");
+            assert_eq!(author.login, "unknown");
+        }
+        other => panic!("expected a Comment entry, got {other:?}"),
+    }
+}

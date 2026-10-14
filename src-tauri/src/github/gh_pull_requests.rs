@@ -137,6 +137,12 @@ struct CachedCheckState {
     status_check_rollup: Option<Vec<GhCheckRun>>,
 }
 
+/// LOW finding (code review round 2, 2026-10-14): unbounded otherwise -- a long-running session
+/// that opens many repositories/pull requests would grow this forever. Correctness never
+/// depends on this cache (a miss just costs one more `gh pr view` spawn), so the cheapest
+/// correct eviction is good enough: clear the whole map rather than track per-entry recency.
+const CHECK_STATE_CACHE_CAP: usize = 500;
+
 static CHECK_STATE_CACHE: LazyLock<StdMutex<HashMap<(String, u64), CachedCheckState>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
@@ -170,16 +176,21 @@ pub async fn view_check_state(
         ],
     )
     .await?;
-    CHECK_STATE_CACHE
-        .lock()
-        .expect("CHECK_STATE_CACHE mutex poisoned")
-        .insert(
+    {
+        let mut cache = CHECK_STATE_CACHE
+            .lock()
+            .expect("CHECK_STATE_CACHE mutex poisoned");
+        if !cache.contains_key(&key) && cache.len() >= CHECK_STATE_CACHE_CAP {
+            cache.clear();
+        }
+        cache.insert(
             key,
             CachedCheckState {
                 updated_at: updated_at.to_string(),
                 status_check_rollup: result.status_check_rollup.clone(),
             },
         );
+    }
     Ok(result.status_check_rollup)
 }
 
@@ -357,4 +368,33 @@ pub async fn get_changed_files_with_patch(
     )
     .await
     .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gh_staleness_check_wire_deserialises_camel_case_including_head_ref_oid_rename() {
+        // Shaped like `gh pr view --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,
+        // isDraft,state`.
+        let json = r#"{
+            "id": "PR_kwDO1234",
+            "updatedAt": "2024-06-01T12:00:00Z",
+            "headRefOid": "deadbeefcafe",
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "isDraft": false,
+            "state": "OPEN"
+        }"#;
+        let wire: GhStalenessCheckWire =
+            serde_json::from_str(json).expect("GhStalenessCheckWire fixture parses");
+        assert_eq!(wire.id, "PR_kwDO1234");
+        assert_eq!(wire.updated_at, "2024-06-01T12:00:00Z");
+        assert_eq!(wire.head_ref_oid, "deadbeefcafe");
+        assert_eq!(wire.mergeable, "MERGEABLE");
+        assert_eq!(wire.merge_state_status, "CLEAN");
+        assert!(!wire.is_draft);
+        assert_eq!(wire.state, "OPEN");
+    }
 }

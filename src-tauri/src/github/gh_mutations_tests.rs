@@ -219,3 +219,100 @@ fn classify_merge_failure_falls_back_to_shared_gh_failure_classification() {
     let error = classify_merge_failure("not logged into any GitHub hosts", "");
     assert_eq!(error.code, GhErrorCode::GhUnavailable);
 }
+
+#[test]
+fn classify_merge_failure_redacts_a_github_token_found_in_stderr() {
+    // Split across fragments (same convention as `omp/redact_tests.rs`) so no single literal
+    // in this source file reads as a real live credential.
+    let token = format!("{}{}", "ghp_", "1234567890abcdef");
+    let stderr = format!("merge conflict with {token}");
+    let error = classify_merge_failure(&stderr, "");
+    assert_eq!(error.code, GhErrorCode::NotMergeable);
+    assert!(!error.message.contains(&token));
+}
+
+#[test]
+fn allowed_merge_methods_wire_deserializes_a_non_trivial_combination() {
+    // Shaped like `gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed`.
+    let json = r#"{
+        "mergeCommitAllowed": false,
+        "squashMergeAllowed": true,
+        "rebaseMergeAllowed": false
+    }"#;
+    let wire: AllowedMergeMethodsWire = serde_json::from_str(json).unwrap();
+    assert!(!wire.merge_commit_allowed);
+    assert!(wire.squash_merge_allowed);
+    assert!(!wire.rebase_merge_allowed);
+}
+
+#[test]
+fn threads_and_timeline_envelope_deserializes_the_real_graphql_shape() {
+    // Shaped like the real `get_review_threads_and_timeline` GraphQL envelope
+    // (`THREADS_AND_TIMELINE_QUERY`'s own selection set): a review thread with `line: null`
+    // (a file-level comment), a timeline `IssueComment` node with `author: null` (a deleted
+    // account), and a pending `PullRequestReview` node (`submittedAt: null`, `state: "PENDING"`)
+    // -- `ipc::pull_requests::mapping::build_timeline` (exercised against this same shape in
+    // `mapping_tests.rs`, which can see it) drops that last node since `map_review_verdict` has
+    // no verdict for `"PENDING"`.
+    let json = r#"{
+        "repository": {
+            "pullRequest": {
+                "id": "PR_1",
+                "reviewThreads": {
+                    "nodes": [
+                        {
+                            "id": "THREAD_1",
+                            "isResolved": false,
+                            "isOutdated": false,
+                            "path": "src/lib.rs",
+                            "line": null,
+                            "diffSide": "RIGHT",
+                            "comments": {
+                                "nodes": [
+                                    {
+                                        "id": "COMMENT_1",
+                                        "author": { "login": "alice" },
+                                        "body": "looks good",
+                                        "createdAt": "2024-01-01T00:00:00Z"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "timelineItems": {
+                    "nodes": [
+                        {
+                            "__typename": "IssueComment",
+                            "id": "IC_1",
+                            "author": null,
+                            "body": "a comment",
+                            "createdAt": "2024-01-02T00:00:00Z"
+                        },
+                        {
+                            "__typename": "PullRequestReview",
+                            "id": "REVIEW_1",
+                            "author": { "login": "bob" },
+                            "state": "PENDING",
+                            "body": "",
+                            "submittedAt": null
+                        }
+                    ]
+                }
+            }
+        }
+    }"#;
+    let data: ThreadsAndTimelineData = serde_json::from_str(json).unwrap();
+    let pull_request = data.repository.pull_request;
+    assert_eq!(pull_request.id, "PR_1");
+    assert_eq!(pull_request.review_threads.nodes.len(), 1);
+    assert_eq!(pull_request.review_threads.nodes[0].line, None);
+    assert_eq!(pull_request.review_threads.nodes[0].path, "src/lib.rs");
+    assert_eq!(pull_request.timeline_items.nodes.len(), 2);
+    assert!(pull_request.timeline_items.nodes[0].author.is_none());
+    assert_eq!(
+        pull_request.timeline_items.nodes[1].state.as_deref(),
+        Some("PENDING")
+    );
+    assert_eq!(pull_request.timeline_items.nodes[1].submitted_at, None);
+}

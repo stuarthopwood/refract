@@ -86,7 +86,7 @@ pub struct GhRawResult {
 
 /// Resolves `gh` on PATH, honouring `PATHEXT`, caching the first successful resolution for the
 /// process lifetime (same rationale as `process::executables::resolve_omp`).
-fn resolve_gh() -> Result<std::path::PathBuf, ()> {
+pub(super) fn resolve_gh() -> Result<std::path::PathBuf, ()> {
     static CACHE: std::sync::LazyLock<Result<std::path::PathBuf, ()>> =
         std::sync::LazyLock::new(|| which::which_global("gh").map_err(|_| ()));
     CACHE.clone()
@@ -326,7 +326,7 @@ pub async fn owner_repo_for(repo_path: &Path) -> Result<(String, String), GhErro
 /// otherwise build a path-traversal-shaped `gh api repos/../x/...` argument) and anything
 /// outside `[A-Za-z0-9._-]`. The request this builds still only ever reaches `api.github.com`
 /// with the developer's own `gh` session, so this is defence in depth, not a live exploit.
-fn is_valid_owner_or_repo_segment(segment: &str) -> bool {
+pub(super) fn is_valid_owner_or_repo_segment(segment: &str) -> bool {
     !segment.is_empty()
         && segment != "."
         && segment != ".."
@@ -534,5 +534,16 @@ mod tests {
         assert_eq!(non_empty_or("  err  ", "out", "fallback"), "err");
         assert_eq!(non_empty_or("   ", "out", "fallback"), "out");
         assert_eq!(non_empty_or("   ", "   ", "fallback"), "fallback");
+    }
+
+    #[test]
+    fn map_gh_failure_redacts_a_github_token_found_in_stderr() {
+        // Split across fragments (same convention as `omp/redact_tests.rs`) so no single
+        // literal in this source file reads as a real live credential.
+        let token = format!("{}{}", "ghp_", "1234567890abcdef");
+        let stderr = format!("some unexpected gh error: {token}");
+        let err = map_gh_failure(&stderr, "");
+        assert_eq!(err.code, GhErrorCode::GithubFailed);
+        assert!(!err.message.contains(&token));
     }
 }

@@ -228,7 +228,10 @@ fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
     {
         return GitError::new(
             GitErrorCode::BaseMissing,
-            format!("Base branch not found: {}", stderr.trim()),
+            format!(
+                "Base branch not found: {}",
+                crate::omp::redact::redact_secrets(stderr.trim())
+            ),
         );
     }
     let path_str = worktree_path.to_string_lossy();
@@ -238,11 +241,11 @@ fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
             format!("Worktree path too long: {path_str}"),
         );
     }
-    let detail = stderr.trim();
+    let detail = crate::omp::redact::redact_secrets(stderr.trim());
     let message = if detail.is_empty() {
         format!("git worktree add failed for {path_str}")
     } else {
-        detail.to_string()
+        detail
     };
     GitError::new(GitErrorCode::WorktreeFailed, message)
 }
@@ -273,11 +276,11 @@ pub async fn remove_worktree(
     )
     .await;
     if result.code != 0 {
-        let detail = if !result.stderr.trim().is_empty() {
+        let detail = crate::omp::redact::redact_secrets(if !result.stderr.trim().is_empty() {
             result.stderr.trim()
         } else {
             result.stdout.trim()
-        };
+        });
         return Err(GitError::new(
             GitErrorCode::WorktreeFailed,
             format!("git worktree remove failed: {detail}"),

@@ -258,14 +258,6 @@ pub async fn auth_logout(host: &str, login: &str) -> Result<(), GhError> {
     Ok(())
 }
 
-/// Resolves `gh` on PATH, honouring `PATHEXT`, caching the first successful resolution for the
-/// process lifetime.
-fn resolve_gh_for_spawn() -> Result<PathBuf, ()> {
-    static CACHE: std::sync::LazyLock<Result<PathBuf, ()>> =
-        std::sync::LazyLock::new(|| which::which_global("gh").map_err(|_| ()));
-    CACHE.clone()
-}
-
 #[derive(Debug, Clone)]
 pub struct GhLoginExitInfo {
     pub code: Option<i32>,
@@ -427,7 +419,7 @@ impl GhLoginFlow {
     pub async fn start(
         host: &str,
     ) -> Result<(Arc<GhLoginFlow>, mpsc::UnboundedReceiver<GhLoginFlowEvent>), GhError> {
-        let gh_path = resolve_gh_for_spawn().map_err(|_| {
+        let gh_path = super::gh::resolve_gh().map_err(|_| {
             GhError::new(
                 GhErrorCode::GhNotFound,
                 "The GitHub CLI (gh) is not installed or not on PATH.",

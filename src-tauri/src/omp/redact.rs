@@ -14,10 +14,32 @@
 // hardening history this array embodies (ReDoS-bounded quantifiers, the "monkey" vs
 // `secretKey`/`PRIVATE_KEY` false-positive guards, escaped-quote handling for JSON-nested
 // values, and the URL-userinfo-vs-email ordering fix).
+//
+// The TS source has no `u` (unicode) flag on any pattern, so its own `\b`/`\w` are ASCII-only
+// (a JS non-`/u` regex never treats a non-ASCII letter as a word character). `fancy_regex`'s
+// `\b`/`\w` are Unicode-aware by default, which is a behaviour change, not a straight port: a
+// credential immediately preceded by a non-ASCII letter would have no word boundary under
+// Rust's Unicode-aware `\b` and silently pass through unredacted. Every pattern below that
+// relies on a `\b` boundary or a `\w` character class uses the ASCII-only forms instead:
+// `ASCII_WORD_BOUNDARY` below (spelled out via lookaround, since `fancy_regex` refuses to
+// change Unicode mode inline -- `(?-u:...)`/`(?u:...)` both hit its own
+// `ChangingUnicodeModeUnsupported` parse error, so there's no inline-flag shortcut) in place of
+// a bare `\b`, and an explicit `[A-Za-z0-9_]` character class in place of `\w`.
 
 use std::sync::LazyLock;
 
 use fancy_regex::Regex;
+
+/// ASCII-only word-boundary assertion: ports the TS source's own (no `/u` flag) `\b` semantics,
+/// which only ever treats `[A-Za-z0-9_]` as a word character. Spelled out as an explicit
+/// lookaround rather than an inline Unicode-mode toggle because `fancy_regex` parses
+/// `(?-u:...)`/`(?u:...)` as `ChangingUnicodeModeUnsupported` -- it has no inline-flag
+/// equivalent of `RegexBuilder::unicode_mode`, so per-pattern ASCII boundaries can only be
+/// expressed this way. A position is a boundary when exactly one side is an ASCII word
+/// character: either not-preceded-by-and-followed-by one (word starts here), or
+/// preceded-by-and-not-followed-by one (word ends here).
+const ASCII_WORD_BOUNDARY: &str =
+    r"(?:(?<![A-Za-z0-9_])(?=[A-Za-z0-9_])|(?<=[A-Za-z0-9_])(?![A-Za-z0-9_]))";
 
 /// Every pattern/replacement pair, applied in order by `redact_secrets`. Compiled once: every
 /// pattern here is a fixed literal known at compile time, so `.expect(...)` at this init site is
@@ -27,45 +49,67 @@ static PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         // Bearer tokens. No trailing `\b` on the value: Anthropic/OpenAI keys embed hyphens
         // (sk-ant-api03-..., sk-proj-...), which a word boundary would stop matching mid-key.
         (
-            Regex::new(r"(?i)\b(Bearer)\s+[A-Za-z0-9._~+/-]+=*").expect("fixed literal pattern"),
+            Regex::new(&format!(
+                "(?i){ASCII_WORD_BOUNDARY}{}",
+                r"(Bearer)\s+[A-Za-z0-9._~+/-]+=*"
+            ))
+            .expect("fixed literal pattern"),
             "$1 [redacted]",
         ),
         (
-            Regex::new(r"\bsk-[A-Za-z0-9_-]{10,}").expect("fixed literal pattern"),
+            Regex::new(&format!("{ASCII_WORD_BOUNDARY}sk-[A-Za-z0-9_-]{{10,}}"))
+                .expect("fixed literal pattern"),
             "[redacted]",
         ),
         // `gh[pousr]_` covers personal/oauth/user/server/refresh tokens; `github_pat_` covers
         // fine-grained PATs. Kept at the original 10-char minimum (not a stricter real-world
         // length) so this still matches the shorter tokens the existing tests use.
         (
-            Regex::new(r"\b(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})")
-                .expect("fixed literal pattern"),
+            Regex::new(&format!(
+                "{ASCII_WORD_BOUNDARY}{}",
+                r"(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})"
+            ))
+            .expect("fixed literal pattern"),
             "[redacted]",
         ),
         // Bare JWT: three dot-separated base64url segments, each starting `eyJ` (a base64'd
         // `{"`). Redacted whole: unlike the key=value forms below, there is no key name worth
         // preserving.
         (
-            Regex::new(r"\beyJ[\w-]+\.eyJ[\w-]+\.[\w-]+").expect("fixed literal pattern"),
+            Regex::new(&format!(
+                "{ASCII_WORD_BOUNDARY}{}",
+                r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+            ))
+            .expect("fixed literal pattern"),
             "[redacted]",
         ),
         // Gate-fixes security Medium finding (cycle 5): AWS access key IDs, bare Google/Gemini
         // API keys (omp has a Google provider), Slack tokens, GitLab/npm/Hugging Face tokens,
         // and PEM private-key blocks all passed through unredacted.
         (
-            Regex::new(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b").expect("fixed literal pattern"),
+            Regex::new(&format!(
+                "{ASCII_WORD_BOUNDARY}{}{ASCII_WORD_BOUNDARY}",
+                r"(?:AKIA|ASIA)[0-9A-Z]{16}"
+            ))
+            .expect("fixed literal pattern"),
             "[redacted]",
         ),
         (
-            Regex::new(r"\bAIza[0-9A-Za-z_-]{35}").expect("fixed literal pattern"),
+            Regex::new(&format!("{ASCII_WORD_BOUNDARY}AIza[0-9A-Za-z_-]{{35}}"))
+                .expect("fixed literal pattern"),
             "[redacted]",
         ),
         (
-            Regex::new(r"\bxox[abposr]-[A-Za-z0-9-]{10,}").expect("fixed literal pattern"),
+            Regex::new(&format!("{ASCII_WORD_BOUNDARY}xox[abposr]-[A-Za-z0-9-]{{10,}}"))
+                .expect("fixed literal pattern"),
             "[redacted]",
         ),
         (
-            Regex::new(r"\b(?:glpat-|npm_|hf_)[A-Za-z0-9_-]{16,}").expect("fixed literal pattern"),
+            Regex::new(&format!(
+                "{ASCII_WORD_BOUNDARY}{}",
+                r"(?:glpat-|npm_|hf_)[A-Za-z0-9_-]{16,}"
+            ))
+            .expect("fixed literal pattern"),
             "[redacted]",
         ),
         (
@@ -128,9 +172,10 @@ static PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         // the key=value pattern above, so an escaped or JSON-quoted header value redacts
         // exactly like any other credential field instead of only matching a bare line.
         (
-            Regex::new(
-                r#"(?i)\b(Authorization|(?:Set-)?Cookie)(\\?['"]?\s*:\s*)(\\?"(?:[^"\\\n]|\\.)*\\?"?|'[^'\n]*'?|[^\n]+)"#,
-            )
+            Regex::new(&format!(
+                "(?i){ASCII_WORD_BOUNDARY}{}",
+                r#"(Authorization|(?:Set-)?Cookie)(\\?['"]?\s*:\s*)(\\?"(?:[^"\\\n]|\\.)*\\?"?|'[^'\n]*'?|[^\n]+)"#
+            ))
             .expect("fixed literal pattern"),
             "$1$2[redacted]",
         ),
@@ -140,8 +185,11 @@ static PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         // leaks a trailing fragment; an empty username (`redis://:pw@host`) is still allowed.
         // Scheme bounded to 31 chars against pathological input.
         (
-            Regex::new(r"(?i)\b([a-z][a-z0-9+.-]{0,31}://)[^\s/@:]*:[^\s/]*@(?=[^\s/@]*(?:[/:?#\s]|$))")
-                .expect("fixed literal pattern"),
+            Regex::new(&format!(
+                "(?i){ASCII_WORD_BOUNDARY}{}",
+                r"([a-z][a-z0-9+.-]{0,31}://)[^\s/@:]*:[^\s/]*@(?=[^\s/@]*(?:[/:?#\s]|$))"
+            ))
+            .expect("fixed literal pattern"),
             "$1[redacted]@",
         ),
         // Gate-fixes security Medium finding (cycle 5, moved + bounded cycle 6): email
@@ -151,28 +199,72 @@ static PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         // bounded (local part, each domain label, and the TLD) against unbounded-repetition
         // cost.
         (
-            Regex::new(
-                r"\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}\b",
-            )
+            Regex::new(&format!(
+                "{ASCII_WORD_BOUNDARY}{}{ASCII_WORD_BOUNDARY}",
+                r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}"
+            ))
             .expect("fixed literal pattern"),
             "[email]",
         ),
     ]
 });
 
-/// Pure text transform: runs every pattern over `text` in order and returns the redacted
-/// result. Never panics and never aborts the chain -- if a single pattern's replace errors
-/// (e.g. `fancy_regex`'s backtrack limit on pathological input), that one pattern is skipped
-/// unapplied and every other pattern in the chain still runs.
-pub fn redact_secrets(text: &str) -> String {
+/// Diagnostic text handed to `redact_secrets` can be arbitrarily large (a full stderr tail, omp
+/// log tail, ...), and three of the patterns above -- the key=value pattern, the bare-`key`
+/// pattern, and the URL-userinfo pattern (see `redact_tests.rs`'s own test driving this) --
+/// carry lookaround and run through `fancy_regex`'s slower backtracking engine instead of the
+/// `regex` crate's linear-time one. A sufficiently large -- crafted or simply very long --
+/// input can run a single `try_replacen` call past `fancy_regex`'s default 1,000,000-step
+/// backtrack budget. Bounding to a fixed recent-history window keeps the worst-case scan cost
+/// bounded regardless of how much text the caller hands in; 8 KiB holds comfortably more than
+/// a diagnostic notice needs to show.
+const MAX_REDACTION_INPUT_BYTES: usize = 8 * 1024;
+
+/// Fixed stand-in returned for the WHOLE text when any single pattern's `try_replacen` errors
+/// (the backtrack limit was hit). `fancy_regex` erroring means it could not prove the already-
+/// bounded text is credential-free, not that it proved it is -- passing the partially-redacted
+/// text through, or continuing the chain on a string that just proved expensive to scan, would
+/// both risk leaking a secret past a boundary whose entire job is to never do that. Fail closed
+/// instead: drop the whole text rather than gamble on what's left of it.
+const REDACTION_FAILURE_PLACEHOLDER: &str = "[diagnostic withheld]";
+
+/// Trims `text` to at most its last `max_bytes` bytes, advancing the cut point forward to the
+/// next UTF-8 char boundary so a multi-byte character already inside the window is never split.
+fn bound_to_tail_bytes(text: &str, max_bytes: usize) -> &str {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut start = text.len() - max_bytes;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    &text[start..]
+}
+
+/// Runs every pattern over `text` in order. Returns `Err(())` the moment any single pattern's
+/// `try_replacen` errors instead of skipping that pattern and letting the remaining chain run
+/// on a string that just proved expensive to scan -- the caller (`redact_secrets`) is the one
+/// that turns that `Err` into the fixed fail-closed placeholder. Factored out from
+/// `redact_secrets` so a test can drive this unbounded step directly with an adversarial input.
+fn apply_patterns(text: &str) -> Result<String, ()> {
     let mut result = text.to_string();
     for (pattern, replacement) in PATTERNS.iter() {
-        result = match pattern.try_replacen(&result, 0, *replacement) {
-            Ok(replaced) => replaced.into_owned(),
-            Err(_) => result,
-        };
+        result = pattern
+            .try_replacen(&result, 0, *replacement)
+            .map_err(|_| ())?
+            .into_owned();
     }
-    result
+    Ok(result)
+}
+
+/// Pure text transform: bounds `text` to its last `MAX_REDACTION_INPUT_BYTES` bytes (see that
+/// constant), then runs every pattern over the bounded text in order and returns the redacted
+/// result. Fails closed: if any single pattern errors on the bounded text (`fancy_regex`'s
+/// backtrack limit was hit), returns `REDACTION_FAILURE_PLACEHOLDER` for the whole text rather
+/// than a partially-redacted or unredacted string.
+pub fn redact_secrets(text: &str) -> String {
+    let bounded = bound_to_tail_bytes(text, MAX_REDACTION_INPUT_BYTES);
+    apply_patterns(bounded).unwrap_or_else(|()| REDACTION_FAILURE_PLACEHOLDER.to_string())
 }
 
 #[cfg(test)]

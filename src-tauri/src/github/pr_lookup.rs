@@ -8,8 +8,7 @@
 // this file keeps its own small `gh`-invocation and owner/repo-parsing logic, exactly as the TS
 // source states it does relative to its spec-003 sibling.
 
-use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -66,7 +65,10 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
         }
         let owner = segments[0].to_string();
         let repo = strip_dot_git_and_slash(segments[1]);
-        if repo.is_empty() {
+        if repo.is_empty()
+            || !super::gh::is_valid_owner_or_repo_segment(&owner)
+            || !super::gh::is_valid_owner_or_repo_segment(&repo)
+        {
             return None;
         }
         return Some((owner, repo));
@@ -82,7 +84,10 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
             }
             let owner = segments[0].to_string();
             let repo = strip_dot_git_and_slash(segments[1]);
-            if repo.is_empty() {
+            if repo.is_empty()
+                || !super::gh::is_valid_owner_or_repo_segment(&owner)
+                || !super::gh::is_valid_owner_or_repo_segment(&repo)
+            {
                 return None;
             }
             return Some((owner, repo));
@@ -99,15 +104,6 @@ struct GhPrListEntry {
     state: String,
 }
 
-/// Resolves `gh` on PATH, caching the first successful resolution for the process lifetime.
-/// Deliberately a local copy of `github::gh`'s own `resolve_gh` (see this file's own doc
-/// comment: kept independent on purpose) rather than an import of it.
-fn resolve_gh_cached() -> Result<PathBuf, ()> {
-    static CACHE: LazyLock<Result<PathBuf, ()>> =
-        LazyLock::new(|| which::which_global("gh").map_err(|_| ()));
-    CACHE.clone()
-}
-
 /// The Session's open pull request for `branch` (spec 004 FR-006). Never fails: every error path
 /// below resolves to `PullRequestLookup::Unavailable` instead of propagating.
 pub async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequestLookup {
@@ -119,7 +115,12 @@ pub async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequ
         return PullRequestLookup::Unavailable;
     };
 
-    let Ok(gh_path) = resolve_gh_cached() else {
+    // Shares `github::gh`'s own cached `resolve_gh` (LOW finding, code review round 2,
+    // 2026-10-14) -- this file's own "deliberately independent" header comment is about the
+    // owner/repo-parsing and gh-invocation LOGIC (matching the TS source's own stated
+    // independence from its spec-003 sibling), not about where the `gh` binary itself lives on
+    // disk, which is the same answer for every caller in this crate.
+    let Ok(gh_path) = super::gh::resolve_gh() else {
         return PullRequestLookup::Unavailable;
     };
 
@@ -237,15 +238,5 @@ mod tests {
             .into_iter()
             .find(|entry| entry.state == "OPEN")
             .is_none());
-    }
-
-    // --- resolve_gh_cached ---
-
-    #[test]
-    fn resolve_gh_cached_is_stable_across_calls() {
-        // Caching means two calls in the same process always agree, whatever the outcome on
-        // this machine (found or not found) -- the point under test is the stability, not a
-        // specific `gh` installation.
-        assert_eq!(resolve_gh_cached(), resolve_gh_cached());
     }
 }

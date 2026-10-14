@@ -412,6 +412,21 @@ mod tests {
     }
 
     #[test]
+    fn map_gh_error_preserves_redaction_for_a_token_shaped_message() {
+        // `map_gh_error` is a pure passthrough that trusts `GhError.message` is already
+        // redacted (`gh::map_gh_failure`'s own job) -- this proves it never re-exposes a
+        // secret-shaped substring that was already stripped before reaching this layer. Split
+        // across fragments (same convention as `omp/redact_tests.rs`) so no single literal in
+        // this source file reads as a real live credential.
+        let token = format!("{}{}", "ghp_", "1234567890abcdef");
+        let raw = format!("some unexpected gh error: {token}");
+        let redacted_message = crate::omp::redact::redact_secrets(&raw);
+        let err = GhError::new(gh::GhErrorCode::GithubFailed, redacted_message);
+        let ipc_err = map_gh_error(err);
+        assert!(!ipc_err.message.contains(&token));
+    }
+
+    #[test]
     fn valid_pull_request_number_accepts_positive_up_to_i32_max() {
         assert_eq!(
             valid_pull_request_number(&[serde_json::json!(1)], 0),

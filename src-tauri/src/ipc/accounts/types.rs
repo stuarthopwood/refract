@@ -400,6 +400,21 @@ mod tests {
     }
 
     #[test]
+    fn map_gh_error_never_leaks_a_github_token_shaped_message() {
+        // Split across fragments (same convention as `omp/redact_tests.rs`) so no single
+        // literal in this source file reads as a real live credential.
+        let token = format!("{}{}", "ghp_", "1234567890abcdef");
+        let err = GhError::new(
+            crate::github::gh::GhErrorCode::GhFailed,
+            format!("gh auth login failed: {token}"),
+        );
+        let mapped = map_gh_error(err);
+        assert_eq!(mapped.code, "gh-failed");
+        assert_eq!(mapped.message, DEFAULT_GITHUB_ERROR_MESSAGE);
+        assert!(!mapped.message.contains(&token));
+    }
+
+    #[test]
     fn map_io_error_is_always_the_fixed_gh_failed_sentence() {
         let mapped = map_io_error(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
