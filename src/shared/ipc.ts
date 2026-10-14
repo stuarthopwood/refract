@@ -542,16 +542,16 @@ export interface RefractApi {
      * a pasted clipboard image -- constitution V: the renderer's own check is never trusted
      * alone. Never returns the resolved path or any other file metadata to the renderer. */
     readImageFile(sessionId: string, path: string): Promise<Result<AttachmentImageFile>>;
-    /** #432: the renderer-safe replacement for the removed `File.path` (Electron's own
-     * `webUtils.getPathForFile`), bridged here rather than imported directly from `electron` in
-     * a renderer `.tsx` file -- `electron.d.ts` carries its own `/// <reference types="node" />`,
-     * which (once any renderer file imports from `'electron'`) pulls Node's ambient `setTimeout`
-     * overload into the WHOLE `tsconfig.web.json` program, silently breaking every other file's
-     * own `setTimeout(...): number` (DOM lib) return type -- confirmed by a real typecheck run
-     * during this feature's own development. Synchronous, no IPC round trip: `webUtils` reads a
-     * `File` object's own already-resolved path locally in the renderer process (no main-process
-     * involvement, no new attack surface) -- this is simply where its one call site lives. */
-    getPathForFile(file: File): string;
+    /** #432: the renderer-safe replacement for Electron's own `webUtils.getPathForFile`
+     * (bridged here, not imported from `electron` in a renderer file, to avoid pulling its
+     * ambient Node `setTimeout` override into the whole web program). Optional (issue #793):
+     * absent in the Tauri build -- the standard `File` API exposes no OS path, and its own
+     * `drop` DOM event never reaches the page either; `onFileDrop` below is the replacement. */
+    getPathForFile?(file: File): string;
+    /** Tauri build only (issue #793): real OS paths from Tauri's own native drag-drop handler,
+     * which swallows the HTML5 `drop` event (`dragenter`/`dragover`/`dragleave` still fire).
+     * `position` is physical pixels from the webview's top-left corner. Absent in Electron. */
+    onFileDrop?(handler: (event: { paths: string[]; position: { x: number; y: number } }) => void): Unsubscribe;
   };
 
   clipboard: {
