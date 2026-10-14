@@ -349,10 +349,7 @@ impl SessionAgent {
             "unread": state.unread,
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
-            // Issue #740/#741 (lane RM): the composer's role chip and the Settings "N Sessions
-            // moved" summary both need these on every `sessions.list()` row, not only while a
-            // Session pane is open -- merged in here (the one other live-runtime field this
-            // method already assembles) rather than as a second `sessions.list` round trip.
+            // Issue #740/#741 (lane RM): role chip/pin state on every `sessions.list()` row.
             "currentRole": if state.model.pinned { Value::Null } else {
                 Value::String(state.model.current_role.clone().unwrap_or_else(|| "default".to_string()))
             },
@@ -511,10 +508,8 @@ impl SessionAgent {
         self.events.emit_request_pending(&self.session_id, &payload);
     }
 
-    /// Generic RPC passthrough for a lane module (lane RM's own `set_model`/`cycle_model`
-    /// calls, `session::model.rs`): the same `state.process.clone()` + `AgentError` mapping
-    /// `chat.rs`'s own `send()` uses, exposed here so a lane never needs a `pub(super)` widening
-    /// of `agent::chat`'s private internals for a one-off RPC request of its own.
+    /// Generic RPC passthrough for a lane module (lane RM's `session::model`): same
+    /// `state.process.clone()` + error mapping as `chat.rs`'s own `send()`.
     #[allow(dead_code)]
     pub(super) async fn request_rpc(
         &self,
@@ -538,15 +533,10 @@ impl SessionAgent {
             .map_err(|err| AgentError::new("prompt-failed", err.to_string()))
     }
 
-    /// Re-reads `get_state` and applies it via `launch.rs`'s own `sync_from_state` (the
-    /// Session's `lastModel`/`lastThinkingLevel`/reattach bookkeeping), returning the raw
-    /// `get_state` `data` object so a lane can read the one already-verified field shape
-    /// (FINDINGS item 30: `get_state().model = {provider, id, name?}`) instead of guessing at a
-    /// less-certain RPC response shape of its own (`set_model`/`cycle_model`'s own echoed
-    /// `Model`/`{isScoped,model,...}` shape is deliberately not reused for this). Lane RM's own
-    /// `set_model`/`cycle_model`/role-switch calls use this to refresh the composer label and
-    /// build their own transcript notice after a successful change; failures are non-fatal to
-    /// the caller (best-effort, same as `conversations.rs`'s own post-`new_session` refresh).
+    /// Re-reads `get_state`, applies it via `sync_from_state`, and returns the raw `data`
+    /// object (FINDINGS item 30: `model = {provider, id, name?}`) so a lane (RM's own
+    /// `set_model`/`cycle_model`/role switch) can refresh the composer label/notice itself.
+    /// Best-effort: failures are non-fatal to the caller.
     #[allow(dead_code)]
     pub(super) async fn refresh_from_state(&self) -> Result<Value, AgentError> {
         let res = self
