@@ -22,7 +22,8 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::git::diff_stat::diff_stat;
-use crate::git::worktree_delete::{delete_check_for_session, remove_session_worktree};
+use crate::git::worktree_delete::remove_session_worktree;
+use crate::git::worktree_delete_check::delete_check_for_session;
 use crate::git::worktree_validity::comparable_path;
 use crate::git::worktrees::{
     add_worktree_with_generated_name, branch_exists, list_branches, recreate_worktree,

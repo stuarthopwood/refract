@@ -477,3 +477,7 @@ fn resolve_path_lexical(p: &str) -> String {
     }
     collapsed.to_string_lossy().into_owned()
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;
