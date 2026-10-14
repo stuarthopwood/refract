@@ -138,17 +138,57 @@ where
     std::thread::spawn(move || {
         let mut pending: HashSet<String> = HashSet::new();
         let mut deadline: Option<Instant> = None;
+        let mut last_liveness_check = Instant::now();
         loop {
+            // Gate round 1 fix (perf MEDIUM / code LOW): checked UNCONDITIONALLY at the top of
+            // every iteration, not only inside the `Timeout` arm below -- a continuous burst
+            // (events arriving faster than `recv_timeout`'s own wait) previously never reached
+            // that arm at all, silently delaying both the debounce flush and the liveness poll
+            // past their own stated bounds for as long as the burst lasted.
+            if let Some(d) = deadline {
+                if Instant::now() >= d {
+                    for dir in pending.drain() {
+                        on_directory_changed(dir);
+                    }
+                    deadline = None;
+                }
+            }
+            if last_liveness_check.elapsed() >= ROOT_LIVENESS_POLL_INTERVAL {
+                last_liveness_check = Instant::now();
+                if !root_for_thread.exists() {
+                    if !fired_fatal.swap(true, Ordering::SeqCst) {
+                        on_fatal();
+                    }
+                    return;
+                }
+                // Gate round 1 fix (perf MEDIUM): `notify`'s own buffer can overflow during an
+                // event storm, on which some backends silently stop watching with no `Err`
+                // reaching this thread at all (no documented, reliable signal to detect this
+                // specifically) -- as a bounded mitigation, every liveness tick also re-queues
+                // the WATCHED ROOT ITSELF (`relative_path == ""`) through the SAME debounce
+                // `pending` set a real event would use (never called directly -- a direct call
+                // here would bypass coalescing entirely, firing an extra, undebounced callback
+                // even when a real burst is already pending a flush for the same path). A
+                // Session whose panel is closed pays nothing extra once its directory is no
+                // longer loaded (`explorer_watch_state::refresh_directory`'s own `is_loaded`
+                // guard turns this into a no-op); one whose root IS open self-heals within
+                // roughly one `ROOT_LIVENESS_POLL_INTERVAL` plus one debounce period even if the
+                // detailed per-subfolder event stream has gone silent. Subdirectories below the
+                // root are not covered by this mitigation; recorded as a residual, not a
+                // complete fix.
+                pending.insert(String::new());
+                if deadline.is_none() {
+                    deadline = Some(Instant::now() + debounce);
+                }
+            }
+
             let wait = match deadline {
                 Some(d) => d
                     .saturating_duration_since(Instant::now())
                     .min(ROOT_LIVENESS_POLL_INTERVAL),
-                // No pending burst: still wake periodically (never block indefinitely) to poll
-                // whether the watched root itself still exists -- see this file's own doc
-                // comment: a live probe on this machine found `notify` emits NO event at all
-                // (not even an error) when an already-empty watched root is removed out from
-                // under the watch, so an event- or error-driven signal alone is not sufficient.
-                None => ROOT_LIVENESS_POLL_INTERVAL,
+                None => ROOT_LIVENESS_POLL_INTERVAL
+                    .saturating_sub(last_liveness_check.elapsed())
+                    .max(Duration::from_millis(1)),
             };
             match rx.recv_timeout(wait) {
                 Ok(Ok(event)) => {
@@ -184,20 +224,9 @@ where
                     return;
                 }
                 Err(std_mpsc::RecvTimeoutError::Timeout) => {
-                    if let Some(d) = deadline {
-                        if Instant::now() >= d {
-                            for dir in pending.drain() {
-                                on_directory_changed(dir);
-                            }
-                            deadline = None;
-                        }
-                    }
-                    if !root_for_thread.exists() {
-                        if !fired_fatal.swap(true, Ordering::SeqCst) {
-                            on_fatal();
-                        }
-                        return;
-                    }
+                    // Nothing extra to do here now: the deadline/liveness checks at the top of
+                    // the loop already ran and will run again next iteration regardless of why
+                    // we woke up.
                 }
                 Err(std_mpsc::RecvTimeoutError::Disconnected) => return,
             }

@@ -46,6 +46,10 @@ const STATUS_GIT_ARGS: &[&str] = &[
 ];
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
+/// Mirrors `status.ts`'s own `STATUS_MAX_BUFFER_BYTES`: a repo with enough untracked/ignored
+/// entries to exceed this returns `None` (gate round 1 perf fix), rather than building an
+/// unbounded `BTreeMap`/JSON payload from an enormous status output.
+const STATUS_MAX_BUFFER_BYTES: usize = 32 * 1024 * 1024;
 
 /// Same shape as `src/shared/model.ts`'s `GitStatusMark`, extended per issue #768 with
 /// `Renamed`/`Conflicted`/`Staged`.
@@ -81,7 +85,11 @@ fn mark_from_code(code: &str) -> GitStatusMark {
     }
     let bytes = code.as_bytes();
     let (x, y) = (bytes[0], bytes[1]);
-    if x == b'R' || y == b'R' {
+    // Gate round 1 fix (LOW): a copy (`C`, only ever emitted under a repo-level
+    // `status.renames=copies` setting) is treated exactly like a rename -- both carry the SAME
+    // extra renamed/copied-FROM path field right after in `-z` output (see `parse_status`'s own
+    // consumption below), and neither is a plain content edit.
+    if x == b'R' || y == b'R' || x == b'C' || y == b'C' {
         return GitStatusMark::Renamed;
     }
     if x == b'D' || y == b'D' {
@@ -100,10 +108,16 @@ fn mark_from_code(code: &str) -> GitStatusMark {
 }
 
 /// Parses `-z`-delimited `status --porcelain=v1` output into a `GitStatusMap`. Each entry is
-/// `XY<space>path`; a renamed/copied entry additionally carries the renamed-FROM path as its own
-/// extra NUL-terminated field right after -- consumed and discarded, never treated as an entry of
-/// its own. Strips exactly one trailing `/` before using a path as a key (git reports an ignored
-/// or untracked DIRECTORY with a trailing slash; `FileTreeNode.path` never carries one).
+/// `XY<space>path`; a renamed OR copied entry (`R`/`C` in either column) additionally carries the
+/// renamed/copied-FROM path as its own extra NUL-terminated field right after -- consumed and
+/// discarded, never treated as an entry of its own (gate round 1 fix: previously only `R` was
+/// consumed, so a `C` entry's own from-path leaked into the next loop iteration and was
+/// misinterpreted as a fresh status line, byte-indexing into an arbitrary path string that need
+/// not even be ASCII at that offset -- a panic risk `-z`'s own NUL-delimited, no-quoting output
+/// otherwise avoids). Strips exactly one trailing `/` before using a path as a key (git reports
+/// an ignored or untracked DIRECTORY with a trailing slash; `FileTreeNode.path` never carries
+/// one). Every slice is `get`-based (never indexed directly): a malformed or truncated entry is
+/// skipped, never a panic.
 fn parse_status(stdout: &str) -> GitStatusMap {
     let mut map = GitStatusMap::new();
     let mut tokens = stdout.split('\0');
@@ -111,14 +125,20 @@ fn parse_status(stdout: &str) -> GitStatusMap {
         if entry.is_empty() {
             continue;
         }
-        if entry.len() < 3 {
+        let Some(code) = entry.get(0..2) else {
             continue;
-        }
-        let code = &entry[0..2];
-        let file_path = entry[3..].trim_end_matches('/');
-        let is_rename = code.as_bytes()[0] == b'R' || code.as_bytes()[1] == b'R';
-        if is_rename {
-            tokens.next(); // renamed-from path: not a map key, `file_path` above is
+        };
+        let Some(after_code) = entry.get(3..) else {
+            continue;
+        };
+        let file_path = after_code.trim_end_matches('/');
+        let code_bytes = code.as_bytes();
+        let is_rename_or_copy = code_bytes[0] == b'R'
+            || code_bytes[1] == b'R'
+            || code_bytes[0] == b'C'
+            || code_bytes[1] == b'C';
+        if is_rename_or_copy {
+            tokens.next(); // renamed/copied-from path: not a map key, `file_path` above is
         }
         if contains_git_segment(file_path) {
             continue; // FR-007: `.git` itself is never a key
@@ -128,10 +148,20 @@ fn parse_status(stdout: &str) -> GitStatusMap {
     map
 }
 
-/// The File explorer's shared git-status/ignore reader.
+/// The File explorer's shared git-status/ignore reader. Caps the read at
+/// `STATUS_MAX_BUFFER_BYTES` (perf finding, gate round 1): `git_raw` itself buffers the whole of
+/// stdout with no limit, so this is a post-read guard rather than a true streaming cap (changing
+/// `git_raw`'s own signature to accept a bounded reader is `git::git`'s file, another lane's
+/// already-merged core module, out of this lane's scope for a targeted fix) -- it still restores
+/// the TS original's own OBSERVABLE behaviour (`null` past the cap, never an unbounded
+/// `BTreeMap`/JSON build from an enormous status output) even though the allocation itself cannot
+/// be avoided this way.
 pub async fn read_git_status(worktree_path: &Path) -> Option<GitStatusMap> {
     let result = git_raw(worktree_path, STATUS_GIT_ARGS, Some(STATUS_TIMEOUT)).await;
     if result.code != 0 {
+        return None;
+    }
+    if result.stdout.len() > STATUS_MAX_BUFFER_BYTES {
         return None;
     }
     Some(parse_status(&result.stdout))
@@ -160,6 +190,30 @@ mod tests {
         assert_eq!(mark_from_code("R "), GitStatusMark::Renamed);
         assert_eq!(mark_from_code(" R"), GitStatusMark::Renamed);
         assert_eq!(mark_from_code("RM"), GitStatusMark::Renamed);
+    }
+
+    #[test]
+    fn copy_in_either_column_maps_to_renamed_like_a_rename() {
+        assert_eq!(mark_from_code("C "), GitStatusMark::Renamed);
+        assert_eq!(mark_from_code(" C"), GitStatusMark::Renamed);
+    }
+
+    #[test]
+    fn parse_status_consumes_the_copied_from_field_without_keying_it_or_panicking() {
+        let stdout = "C  new.txt\0old.txt\0";
+        let map = parse_status(stdout);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("new.txt"), Some(&GitStatusMark::Renamed));
+        assert!(!map.contains_key("old.txt"));
+    }
+
+    #[test]
+    fn parse_status_never_panics_on_a_non_ascii_byte_at_an_indexing_boundary() {
+        // A malformed/truncated entry (too short to even carry a code) must be skipped, never
+        // panic on a `get`-based slice landing off a UTF-8 char boundary.
+        let stdout = "\u{1f600}\0?? ok.txt\0";
+        let map = parse_status(stdout);
+        assert_eq!(map.get("ok.txt"), Some(&GitStatusMark::Untracked));
     }
 
     #[test]

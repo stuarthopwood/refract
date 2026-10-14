@@ -7,15 +7,22 @@
 // Folds in issue #729 (`worktree_is_valid`, lane R2 #785): a root listing (`relative_path ==
 // ""`) first proves the worktree is actually REGISTERED with git and has its own `.git` pointer,
 // not merely that the folder exists -- an empty, orphaned folder (the bug #729 describes) is
-// `worktree-missing`, never a false "this folder is empty".
+// `worktree-missing`, never a false "this folder is empty". The validity check itself is cached
+// per Session (`fs::explorer_watch_state::cached_worktree_validity`) so a watcher-triggered
+// re-list of the root never spawns a fresh `git worktree list` on every debounced flush (perf
+// finding, gate round 1).
 
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::fs::explorer_watch_state::cached_worktree_validity;
 use crate::fs::paths::contains_git_segment;
-use crate::fs::resolve::{resolve_in_worktree, ResolveReason};
-use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
+use crate::fs::resolve::{
+    canonicalize_root, resolve_in_worktree, resolve_in_worktree_with_root, resolve_reason_message,
+    ResolveReason,
+};
+use crate::git::worktree_validity::WorktreeValidity;
 
 /// Same shape as `src/shared/model.ts`'s `FileTreeEntryKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -42,6 +49,7 @@ pub struct ListDirectoryOk {
     pub truncated: usize,
 }
 
+#[derive(Debug)]
 pub enum ListDirectoryError {
     WorktreeMissing,
     FileMissing(String),
@@ -56,33 +64,34 @@ pub enum ResolveTargetOk {
     Path(PathBuf),
 }
 
+impl ResolveTargetOk {
+    pub fn real_path(&self) -> &Path {
+        match self {
+            ResolveTargetOk::Root(p) | ResolveTargetOk::Path(p) => p,
+        }
+    }
+}
+
 /// Resolves, for the `relative_path` LISTING target (never a plain file-containment proof --
 /// `''` is this function's own special case for the worktree root itself, mirrors `fileExplorer.
-/// ts`'s own `resolveListTarget`): proves the worktree is a VALID one (issue #729) for a root
-/// listing, rejects `.git` as a requested path (as-typed AND post-realpath, FR-007), and defers
-/// to `resolve_in_worktree` unchanged for every other value.
+/// ts`'s own `resolveListTarget`): proves the worktree is a VALID one (issue #729, cached per
+/// `session_id`) for a root listing, rejects `.git` as a requested path (as-typed AND
+/// post-realpath, FR-007), and defers to `resolve_in_worktree` unchanged for every other value.
 pub async fn resolve_list_target(
+    session_id: &str,
     repo_path: Option<&Path>,
     worktree_root: &Path,
     relative_path: &str,
 ) -> Result<ResolveTargetOk, ResolveReason> {
     if relative_path.is_empty() {
         if let Some(repo_path) = repo_path {
-            if worktree_is_valid(repo_path, worktree_root).await == WorktreeValidity::Invalid {
+            if cached_worktree_validity(session_id, repo_path, worktree_root).await
+                == WorktreeValidity::Invalid
+            {
                 return Err(ResolveReason::WorktreeMissing);
             }
         }
-        let root_real = match dunce::canonicalize(worktree_root) {
-            Ok(p) => p,
-            Err(err) => {
-                return Err(match err.kind() {
-                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory => {
-                        ResolveReason::WorktreeMissing
-                    }
-                    _ => ResolveReason::FileMissing,
-                });
-            }
-        };
+        let root_real = canonicalize_root(worktree_root).await?;
         return Ok(ResolveTargetOk::Root(root_real));
     }
 
@@ -90,8 +99,9 @@ pub async fn resolve_list_target(
         return Err(ResolveReason::OutsideWorktree);
     }
     let resolved = resolve_in_worktree(worktree_root, relative_path).await?;
-    let root_real =
-        dunce::canonicalize(worktree_root).unwrap_or_else(|_| worktree_root.to_path_buf());
+    let root_real = canonicalize_root(worktree_root)
+        .await
+        .unwrap_or_else(|_| worktree_root.to_path_buf());
     let rel_from_root = resolved
         .strip_prefix(&root_real)
         .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -100,14 +110,6 @@ pub async fn resolve_list_target(
         return Err(ResolveReason::OutsideWorktree);
     }
     Ok(ResolveTargetOk::Path(resolved))
-}
-
-impl ResolveTargetOk {
-    pub fn real_path(&self) -> &Path {
-        match self {
-            ResolveTargetOk::Root(p) | ResolveTargetOk::Path(p) => p,
-        }
-    }
 }
 
 /// Spec.md Edge Cases ("a huge repository"): caps how many entries ONE `list_directory_entries`
@@ -138,19 +140,27 @@ fn sort_entries(entries: &mut [FileTreeNode]) {
 /// Classifies ONE symlink/junction dirent's `kind` by reusing the SAME hardened resolver every
 /// other path in this codebase goes through: a target that escapes, is UNC/device-shaped, or
 /// sits behind a chain of links into any of those (or lands under `.git`), resolves to
-/// `cannot-access` without ever being followed by anything else.
+/// `cannot-access` without ever being followed by anything else. Takes the worktree root ALREADY
+/// canonicalized once by the caller (`resolved_root`/`unresolved_root`), rather than re-running
+/// `dunce::canonicalize` on a tokio worker for every one of up to 1000 entries (perf finding,
+/// gate round 1): `resolve_in_worktree_with_root` skips exactly that redundant step.
 async fn classify_symlink_entry(
-    worktree_root: &Path,
-    root_real_path: &Path,
+    resolved_root: &Path,
+    unresolved_root: &Path,
     entry_abs_path: &Path,
 ) -> FileTreeEntryKind {
-    let resolved = match resolve_in_worktree(worktree_root, &entry_abs_path.to_string_lossy()).await
+    let resolved = match resolve_in_worktree_with_root(
+        resolved_root,
+        unresolved_root,
+        &entry_abs_path.to_string_lossy(),
+    )
+    .await
     {
         Ok(p) => p,
         Err(_) => return FileTreeEntryKind::CannotAccess,
     };
     let rel = resolved
-        .strip_prefix(root_real_path)
+        .strip_prefix(resolved_root)
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default();
     if contains_git_segment(&rel) {
@@ -180,18 +190,22 @@ fn map_readdir_error(err: &std::io::Error) -> ListDirectoryError {
 
 /// Resolves, reads, caps, classifies, and sorts one directory's listing -- the one hardened
 /// implementation shared by the `listDirectory` IPC handler and the file watcher's own
-/// re-list-on-change path.
+/// re-list-on-change path. `session_id` keys the issue #729 validity cache (root listings only).
 pub async fn list_directory_entries(
+    session_id: &str,
     repo_path: Option<&Path>,
     worktree_path: &Path,
     relative_path: &str,
 ) -> ListDirectoryResult {
-    let resolved = resolve_list_target(repo_path, worktree_path, relative_path)
+    let resolved = resolve_list_target(session_id, repo_path, worktree_path, relative_path)
         .await
         .map_err(resolve_reason_to_error)?;
     let real_path = resolved.real_path().to_path_buf();
 
-    let root_real_path = dunce::canonicalize(worktree_path).unwrap_or_else(|_| real_path.clone());
+    let root_real_path = canonicalize_root(worktree_path)
+        .await
+        .unwrap_or_else(|_| real_path.clone());
+    let unresolved_root = worktree_path.to_path_buf();
 
     let mut read_dir = match tokio::fs::read_dir(&real_path).await {
         Ok(rd) => rd,
@@ -225,8 +239,8 @@ pub async fn list_directory_entries(
     let mut set = tokio::task::JoinSet::new();
     for (idx, (name, is_dir, is_symlink)) in dirents.iter().enumerate() {
         let permit_sem = semaphore.clone();
-        let worktree_path = worktree_path.to_path_buf();
         let root_real_path = root_real_path.clone();
+        let unresolved_root = unresolved_root.clone();
         let entry_abs = real_path.join(name);
         let is_dir = *is_dir;
         let is_symlink = *is_symlink;
@@ -236,7 +250,7 @@ pub async fn list_directory_entries(
                 .await
                 .expect("semaphore never closes");
             let kind = if is_symlink {
-                classify_symlink_entry(&worktree_path, &root_real_path, &entry_abs).await
+                classify_symlink_entry(&root_real_path, &unresolved_root, &entry_abs).await
             } else if is_dir {
                 FileTreeEntryKind::Folder
             } else {
@@ -276,9 +290,13 @@ pub async fn list_directory_entries(
 fn resolve_reason_to_error(reason: ResolveReason) -> ListDirectoryError {
     match reason {
         ResolveReason::WorktreeMissing => ListDirectoryError::WorktreeMissing,
-        ResolveReason::FileMissing => ListDirectoryError::FileMissing(
-            "Couldn't find that folder in this Session's worktree".to_string(),
-        ),
+        ResolveReason::FileMissing => {
+            ListDirectoryError::FileMissing(resolve_reason_message(reason, "folder"))
+        }
         ResolveReason::OutsideWorktree => ListDirectoryError::OutsideWorktree,
     }
 }
+
+#[cfg(test)]
+#[path = "list_directory_tests.rs"]
+mod tests;

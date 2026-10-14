@@ -176,7 +176,55 @@ fn removing_the_watched_root_fires_on_fatal_once() {
     // handle is live (`EPERM`-equivalent) -- if removal itself fails, this test's own assertion
     // is skipped rather than flaking a real OS race unrelated to this module's own logic.
     if std::fs::remove_dir_all(&root).is_ok() {
+        // Past the first liveness tick (2s) with margin (gate round 1 fix: the previous version
+        // only waited 3s then stopped checking, which could not distinguish "fired once" from
+        // "fires repeatedly" -- this polls twice more, past a second and third liveness tick, and
+        // asserts the count never climbs above 1).
         std::thread::sleep(Duration::from_secs(3));
-        assert_eq!(fatal_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            fatal_count.load(Ordering::SeqCst),
+            1,
+            "must fire within the first liveness tick"
+        );
+        std::thread::sleep(Duration::from_secs(2));
+        assert_eq!(
+            fatal_count.load(Ordering::SeqCst),
+            1,
+            "must never fire a second time"
+        );
     }
+}
+
+#[test]
+fn a_burst_of_writes_in_the_same_directory_produces_one_callback() {
+    let root = temp_root("burst");
+    std::fs::create_dir_all(&root).unwrap();
+    let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let call_count_cb = call_count.clone();
+    // A wider-than-production debounce window (2s, versus `WATCH_DEBOUNCE_MS` = 200ms): real OS
+    // event delivery for 20 near-simultaneous creates is not instantaneous (observed live: the
+    // default 200ms window sometimes split one burst into two debounce cycles under real
+    // `ReadDirectoryChangesW` scheduling jitter, which is an OS/environment timing fact, not a
+    // bug in the trailing-edge-timer logic this test exists to prove). A 2s window comfortably
+    // absorbs that jitter while still proving the SAME guarantee the production value relies on.
+    let handle = watch_directory_with_debounce(
+        &root,
+        move |_rel| {
+            call_count_cb.fetch_add(1, Ordering::SeqCst);
+        },
+        || {},
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    for i in 0..20 {
+        std::fs::write(root.join(format!("burst-{i}.txt")), b"x").unwrap();
+    }
+    std::thread::sleep(Duration::from_millis(2500));
+    let count = call_count.load(Ordering::SeqCst);
+    assert_eq!(
+        count, 1,
+        "a burst within one debounce window must produce exactly one callback, got {count}"
+    );
+    handle.stop();
 }

@@ -74,13 +74,13 @@ async fn session_context(
 fn list_directory_error_to_ipc(err: ListDirectoryError) -> IpcError {
     match err {
         ListDirectoryError::WorktreeMissing => IpcError::new(
-            "worktree-missing",
-            "This Session's worktree folder no longer exists",
+            crate::fs::resolve::resolve_reason_code(ResolveReason::WorktreeMissing),
+            crate::fs::resolve::resolve_reason_message(ResolveReason::WorktreeMissing, ""),
         ),
         ListDirectoryError::FileMissing(msg) => IpcError::new("file-missing", msg),
         ListDirectoryError::OutsideWorktree => IpcError::new(
-            "outside-worktree",
-            "That path is outside this Session's worktree",
+            crate::fs::resolve::resolve_reason_code(ResolveReason::OutsideWorktree),
+            crate::fs::resolve::resolve_reason_message(ResolveReason::OutsideWorktree, ""),
         ),
         ListDirectoryError::InvalidArgument(msg) => IpcError::new("invalid-argument", msg),
     }
@@ -115,6 +115,7 @@ pub fn file_explorer_list_directory(state: AppState, args: Vec<Value>) -> Handle
         watch_state::ensure_watcher(
             runtime,
             state.app_handle.clone(),
+            Some(state.registry.clone()),
             &session_id,
             &worktree_path,
             repo_path.clone(),
@@ -122,8 +123,13 @@ pub fn file_explorer_list_directory(state: AppState, args: Vec<Value>) -> Handle
         );
         let watched_handle = watch_state::watcher_handle(&session_id);
 
-        let result =
-            list_directory_entries(repo_path.as_deref(), &worktree_path, &relative_path).await;
+        let result = list_directory_entries(
+            &session_id,
+            repo_path.as_deref(),
+            &worktree_path,
+            &relative_path,
+        )
+        .await;
 
         if let Err(ListDirectoryError::WorktreeMissing) = &result {
             match &watched_handle {
@@ -186,6 +192,7 @@ pub fn file_explorer_ensure_watching(state: AppState, args: Vec<Value>) -> Handl
         watch_state::ensure_watcher(
             runtime.clone(),
             state.app_handle.clone(),
+            Some(state.registry.clone()),
             &session_id,
             &worktree_path,
             repo_path.clone(),
@@ -196,13 +203,14 @@ pub fn file_explorer_ensure_watching(state: AppState, args: Vec<Value>) -> Handl
             watch_state::reflush_loaded_paths(
                 runtime,
                 state.app_handle.clone(),
+                Some(state.registry.clone()),
                 &session_id,
                 &worktree_path,
                 repo_path,
             );
         } else if !has_watcher_now && watch_state::has_loaded_paths(&session_id) {
             if let Err(ResolveReason::WorktreeMissing) =
-                resolve_list_target(repo_path.as_deref(), &worktree_path, "").await
+                resolve_list_target(&session_id, repo_path.as_deref(), &worktree_path, "").await
             {
                 watch_state::notify_file_explorer_reset(&state.app_handle, &session_id);
             }
@@ -233,9 +241,14 @@ pub fn file_explorer_read_preview(state: AppState, args: Vec<Value>) -> HandlerF
             ));
         }
         let (worktree_path, repo_path, _archived) = session_context(&state, &session_id).await?;
-        let resolved = resolve_list_target(repo_path.as_deref(), &worktree_path, &relative_path)
-            .await
-            .map_err(|r| resolve_error_result(r, "file"))?;
+        let resolved = resolve_list_target(
+            &session_id,
+            repo_path.as_deref(),
+            &worktree_path,
+            &relative_path,
+        )
+        .await
+        .map_err(|r| resolve_error_result(r, "file"))?;
         let preview = read_preview_file(resolved.real_path(), &relative_path).await;
         Ok(json!({ "preview": preview }))
     })
@@ -275,9 +288,14 @@ pub fn file_explorer_open_in_vscode(state: AppState, args: Vec<Value>) -> Handle
             "fileExplorer.openInVSCode rejected an oversized sessionId or path",
         )?;
         let (worktree_path, repo_path, _archived) = session_context(&state, &session_id).await?;
-        let resolved = resolve_list_target(repo_path.as_deref(), &worktree_path, &relative_path)
-            .await
-            .map_err(|r| resolve_error_result(r, "folder"))?;
+        let resolved = resolve_list_target(
+            &session_id,
+            repo_path.as_deref(),
+            &worktree_path,
+            &relative_path,
+        )
+        .await
+        .map_err(|r| resolve_error_result(r, "folder"))?;
 
         // Research decision (fixed-install-root resolver, never a bare `code`/PATH search):
         // `None` is a normal, expected state (VS Code not installed), never an IPC error.
@@ -290,16 +308,27 @@ pub fn file_explorer_open_in_vscode(state: AppState, args: Vec<Value>) -> Handle
         // `ELECTRON_RUN_AS_NODE`/`NODE_OPTIONS` stripped from the child's env: VS Code itself
         // embeds an Electron/Node runtime, and an inherited `ELECTRON_RUN_AS_NODE=1` would make
         // it try to run its first argument as a Node script instead of opening it as a file.
-        // Known follow-up (recorded in the PR, not silently dropped): this build's own process
-        // Job Object (`process::job_object`, another lane's file) joins Refract's process to a
-        // kill-on-close job with no breakaway permission, so a spawned VS Code is a job-object
-        // descendant and will be closed alongside Refract -- the Electron original's
-        // `detached: true` assumed no such ancestor job existed. Changing the job's own
-        // breakaway policy is out of this lane's scope (another lane's file).
+        // `stdio(null)` (gate round 1 LOW): Electron's own spawn used `stdio: 'ignore'`; VS Code
+        // inheriting Refract's console handles was an unintended difference, not a security
+        // issue.
+        //
+        // Job Object note (gate round 1 LOW, corrects a prior misreading of this comment): both
+        // builds join VS Code to the SAME kind of kill-on-close Job Object -- Electron's own
+        // `jobObject.ts` sets `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` with no breakaway permission
+        // either, and `detached: true` on Windows does not set `CREATE_BREAKAWAY_FROM_JOB` (only
+        // `CREATE_NEW_PROCESS_GROUP`), so the Electron build's VS Code was already a job member
+        // and also closed with Refract. VS Code surviving Refract's own exit is therefore not
+        // parity with Electron and not something this lane's live check can claim -- it would be
+        // a NEW behaviour, requiring `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK` on the job
+        // (`process::job_object`, another lane's file) plus `CREATE_BREAKAWAY_FROM_JOB` on this
+        // spawn; left as an open problem, not attempted here.
         let mut command = std::process::Command::new(&code_exe);
         command.arg(resolved.real_path());
         command.env_remove("ELECTRON_RUN_AS_NODE");
         command.env_remove("NODE_OPTIONS");
+        command.stdin(std::process::Stdio::null());
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
         match command.spawn() {
             Ok(_child) => Ok(json!({ "opened": true })),
             Err(err) => {
@@ -333,9 +362,14 @@ pub fn file_explorer_reveal(state: AppState, args: Vec<Value>) -> HandlerFuture 
             ));
         }
         let (worktree_path, repo_path, _archived) = session_context(&state, &session_id).await?;
-        let resolved = resolve_list_target(repo_path.as_deref(), &worktree_path, &relative_path)
-            .await
-            .map_err(|r| resolve_error_result(r, "file"))?;
+        let resolved = resolve_list_target(
+            &session_id,
+            repo_path.as_deref(),
+            &worktree_path,
+            &relative_path,
+        )
+        .await
+        .map_err(|r| resolve_error_result(r, "file"))?;
         // Deliberately the "show item in folder" verb, never an "open" verb that would run the
         // file's own default handler (constitution V: agent/tool/file output is untrusted).
         let _ = show_item_in_folder(resolved.real_path());
@@ -365,9 +399,14 @@ pub fn file_explorer_copy_path(state: AppState, args: Vec<Value>) -> HandlerFutu
             ));
         }
         let (worktree_path, repo_path, _archived) = session_context(&state, &session_id).await?;
-        let resolved = resolve_list_target(repo_path.as_deref(), &worktree_path, &relative_path)
-            .await
-            .map_err(|r| resolve_error_result(r, "file"))?;
+        let resolved = resolve_list_target(
+            &session_id,
+            repo_path.as_deref(),
+            &worktree_path,
+            &relative_path,
+        )
+        .await
+        .map_err(|r| resolve_error_result(r, "file"))?;
 
         let text = resolved.real_path().to_string_lossy().into_owned();
         let app_handle = state

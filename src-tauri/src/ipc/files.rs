@@ -1,20 +1,34 @@
 // IPC handler for `sessions.revealFile` (issue #610, lane R7 #790): reveals a single file in the
-// OS file explorer via Explorer's `/select,` verb -- deliberately NEVER an "open" verb that would
-// run the file's own default handler (a `.cmd`/`.ps1`/`.lnk`/`.js` an agent or tool wrote would
-// execute), exactly the attack surface constitution V's "agent/tool/file output is untrusted"
-// rule exists to close. The path comes straight from rendered chat text (a linkified file
-// reference) -- main is the sole authority on containment; the renderer's own string checks are a
-// cheap early-out, never trusted here.
+// OS file explorer via `tauri_plugin_opener::reveal_item_in_dir` (wraps
+// `SHOpenFolderAndSelectItems`, Electron's own `shell.showItemInFolder` equivalent) -- deliberately
+// NEVER an "open" verb that would run the file's own default handler (a `.cmd`/`.ps1`/`.lnk`/
+// `.js` an agent or tool wrote would execute), exactly the attack surface constitution V's
+// "agent/tool/file output is untrusted" rule exists to close. The path comes straight from
+// rendered chat text (a linkified file reference) -- main is the sole authority on containment;
+// the renderer's own string checks are a cheap early-out, never trusted here.
+//
+// Gate round 1 fix (security HIGH): a prior version built `explorer.exe /select,<path>` as a raw
+// command-line argument. `Command::arg` quotes an argument only when it contains WHITESPACE;
+// explorer.exe itself still parses its own command line and splits on commas, so an in-worktree
+// path containing a comma (`x,C:\Users\<u>\AppData\Local\Temp\evil.bat`, which passes containment
+// unchanged) reached explorer as TWO tokens, the second a bare file explorer.exe can be made to
+// run -- turning "reveal, never execute" into execution. `reveal_item_in_dir` never builds a
+// command line at all (it calls the shell API directly), closing this class of bug entirely
+// rather than quoting around it.
 //
 // Also home to `resolve_error_result`, shared by this file's own handler and
 // `ipc::file_explorer`'s handlers: maps a `fs::resolve::ResolveReason` to the same three error
-// codes and plain-English messages every caller of `resolve_in_worktree` uses -- never a real
-// filesystem path (constitution V: never leak one into a message a screen reader or log could
-// surface).
+// codes and plain-English messages every caller of `resolve_in_worktree` uses (via
+// `fs::resolve::resolve_reason_code`/`resolve_reason_message`, the single source of truth --
+// code-reviewer MEDIUM, this file and `fs::list_directory` used to each hardcode the same three
+// strings independently) -- never a real filesystem path (constitution V: never leak one into a
+// message a screen reader or log could surface).
 
 use serde_json::Value;
 
-use crate::fs::resolve::{resolve_in_worktree, ResolveReason};
+use crate::fs::resolve::{
+    resolve_in_worktree, resolve_reason_code, resolve_reason_message, ResolveReason,
+};
 
 use super::{arg_str, invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -29,32 +43,19 @@ const MAX_TOKEN_LENGTH: usize = 4096;
 /// error codes and messages, `noun` letting each call site say "file" or "folder" without a
 /// second, drifting copy of this mapping.
 pub fn resolve_error_result(reason: ResolveReason, noun: &str) -> IpcError {
-    match reason {
-        ResolveReason::WorktreeMissing => IpcError::new(
-            "worktree-missing",
-            "This Session's worktree folder no longer exists",
-        ),
-        ResolveReason::FileMissing => IpcError::new(
-            "file-missing",
-            format!("Couldn't find that {noun} in this Session's worktree"),
-        ),
-        ResolveReason::OutsideWorktree => IpcError::new(
-            "outside-worktree",
-            "That path is outside this Session's worktree",
-        ),
-    }
+    IpcError::new(
+        resolve_reason_code(reason),
+        resolve_reason_message(reason, noun),
+    )
 }
 
-/// Explorer's own `/select,<path>` verb: highlights `path` in its parent folder's Explorer
-/// window, never executing it -- the Rust equivalent of `shell.showItemInFolder` (Electron) /
-/// `tauri-plugin-opener`'s own `reveal_item_in_dir` is not used here since this build already
-/// resolves the fixed `explorer.exe` path itself (`process::executables::explorer_exe_path`,
-/// lane R1) for the identical reason `sessions.revealWorktree` does: never spawn a bare name.
-pub(super) fn show_item_in_folder(path: &std::path::Path) -> std::io::Result<std::process::Child> {
-    let arg = format!("/select,{}", path.display());
-    std::process::Command::new(crate::process::executables::explorer_exe_path())
-        .arg(arg)
-        .spawn()
+/// Reveals `path` in its parent folder's Explorer window via the shell API, never executing it.
+/// `pub(super)` so `ipc::file_explorer`'s own `reveal` handler reuses this one implementation
+/// instead of a second copy.
+pub(super) fn show_item_in_folder(
+    path: &std::path::Path,
+) -> Result<(), tauri_plugin_opener::Error> {
+    tauri_plugin_opener::reveal_item_in_dir(path)
 }
 
 pub fn sessions_reveal_file(state: AppState, args: Vec<Value>) -> HandlerFuture {

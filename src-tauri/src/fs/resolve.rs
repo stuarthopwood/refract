@@ -264,27 +264,62 @@ async fn resolve_no_follow(
     Ok(current)
 }
 
+/// Canonicalizes `path` on a blocking-pool thread (perf finding: `dunce::canonicalize` is a
+/// synchronous syscall; called inline on a tokio worker it stalls every other task on that
+/// worker, and `classify_symlink_entry` can call this indirectly up to 1000 times per listing
+/// across 8 concurrently running tasks). Maps a `NotFound`/`NotADirectory` failure to
+/// `WorktreeMissing`, any other failure (including a `spawn_blocking` join failure) to
+/// `FileMissing`.
+pub(crate) async fn canonicalize_root(path: &Path) -> Result<PathBuf, ResolveReason> {
+    let owned = path.to_path_buf();
+    match tokio::task::spawn_blocking(move || dunce::canonicalize(&owned)).await {
+        Ok(Ok(p)) => Ok(p),
+        Ok(Err(err)) => Err(match err.kind() {
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory => {
+                ResolveReason::WorktreeMissing
+            }
+            _ => ResolveReason::FileMissing,
+        }),
+        Err(_) => Err(ResolveReason::FileMissing),
+    }
+}
+
+async fn canonicalize_target(path: &Path) -> Option<PathBuf> {
+    let owned = path.to_path_buf();
+    match tokio::task::spawn_blocking(move || dunce::canonicalize(&owned)).await {
+        Ok(Ok(p)) => Some(p),
+        _ => None,
+    }
+}
+
 /// Resolves `token` (untrusted: agent/tool/model-authored text) against `worktree_root`, proving
 /// containment rather than assuming it -- the Rust port of `files.ts`'s own `resolveInWorktree`.
-/// Windows-only build (spec.md Assumptions): `case_insensitive` is always `true`.
+/// Windows-only build (spec.md Assumptions): `case_insensitive` is always `true`. Thin wrapper
+/// over `resolve_in_worktree_with_root` that canonicalizes `worktree_root` once; callers that
+/// already hold that canonicalized root from an earlier step in the SAME listing (symlink
+/// classification, up to 1000 times per directory) call the shared-root variant directly instead
+/// of paying for a redundant canonicalize on every entry (perf finding).
 pub async fn resolve_in_worktree(worktree_root: &Path, token: &str) -> ResolveInWorktreeResult {
+    let resolved_root = canonicalize_root(worktree_root).await?;
+    let unresolved_root = normalize_lexical(worktree_root);
+    resolve_in_worktree_with_root(&resolved_root, &unresolved_root, token).await
+}
+
+/// Same containment proof as `resolve_in_worktree`, but takes an ALREADY-canonicalized
+/// `resolved_root` (and its matching lexically-normalised `unresolved_root`) instead of
+/// canonicalizing `worktree_root` itself again -- see that function's own doc comment. `pub(crate)`
+/// so `fs::list_directory`'s own `classify_symlink_entry` can reuse the root it already
+/// canonicalized once per listing.
+pub(crate) async fn resolve_in_worktree_with_root(
+    resolved_root: &Path,
+    unresolved_root: &Path,
+    token: &str,
+) -> ResolveInWorktreeResult {
     if is_unsafe_token(token) {
         return Err(ResolveReason::OutsideWorktree);
     }
 
-    let resolved_root = match dunce::canonicalize(worktree_root) {
-        Ok(p) => p,
-        Err(err) => {
-            return Err(match err.kind() {
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory => {
-                    ResolveReason::WorktreeMissing
-                }
-                _ => ResolveReason::FileMissing,
-            });
-        }
-    };
-
-    let candidate = lexical_resolve(&resolved_root, token);
+    let candidate = lexical_resolve(resolved_root, token);
     let case_insensitive = true;
     let fold = |s: &str| -> String {
         if case_insensitive {
@@ -296,7 +331,6 @@ pub async fn resolve_in_worktree(worktree_root: &Path, token: &str) -> ResolveIn
     let resolved_root_str = resolved_root.to_string_lossy().into_owned();
     let resolved_root_lower = fold(&resolved_root_str);
 
-    let unresolved_root = normalize_lexical(worktree_root);
     let unresolved_root_str = unresolved_root.to_string_lossy().into_owned();
     let unresolved_root_lower = fold(&unresolved_root_str);
 
@@ -312,28 +346,26 @@ pub async fn resolve_in_worktree(worktree_root: &Path, token: &str) -> ResolveIn
         return Err(ResolveReason::FileMissing);
     }
 
-    let (base_str, base_path) = if is_contained_in(&candidate_lower, &resolved_root_lower) {
-        (&resolved_root_str, &resolved_root)
+    let base_str = if is_contained_in(&candidate_lower, &resolved_root_lower) {
+        &resolved_root_str
     } else {
-        (&unresolved_root_str, &unresolved_root)
+        &unresolved_root_str
     };
     let relative_suffix = candidate_str
         .get(base_str.len()..)
         .unwrap_or("")
         .trim_start_matches(std::path::MAIN_SEPARATOR);
-    let _ = base_path;
 
     let walked = resolve_no_follow(
-        &resolved_root,
-        &unresolved_root,
+        resolved_root,
+        unresolved_root,
         relative_suffix,
         case_insensitive,
     )
     .await?;
 
-    let resolved_target = match dunce::canonicalize(&walked) {
-        Ok(p) => p,
-        Err(_) => return Err(ResolveReason::FileMissing),
+    let Some(resolved_target) = canonicalize_target(&walked).await else {
+        return Err(ResolveReason::FileMissing);
     };
 
     // The REAL, final-target containment check: no case folding at all here (gate round 5, Sec4
@@ -353,6 +385,32 @@ pub async fn resolve_in_worktree(worktree_root: &Path, token: &str) -> ResolveIn
     }
 
     Ok(resolved_target)
+}
+
+/// Shared by every caller of `resolve_in_worktree`/`resolve_list_target` to map a `ResolveReason`
+/// to the SAME error code and message (DRY fix, code-reviewer MEDIUM: `ipc::files::
+/// resolve_error_result` and `fs::list_directory`'s own mapping used to each hardcode these
+/// strings independently). `noun` lets each call site say "file" or "folder".
+pub fn resolve_reason_code(reason: ResolveReason) -> &'static str {
+    match reason {
+        ResolveReason::WorktreeMissing => "worktree-missing",
+        ResolveReason::FileMissing => "file-missing",
+        ResolveReason::OutsideWorktree => "outside-worktree",
+    }
+}
+
+pub fn resolve_reason_message(reason: ResolveReason, noun: &str) -> String {
+    match reason {
+        ResolveReason::WorktreeMissing => {
+            "This Session's worktree folder no longer exists".to_string()
+        }
+        ResolveReason::FileMissing => {
+            format!("Couldn't find that {noun} in this Session's worktree")
+        }
+        ResolveReason::OutsideWorktree => {
+            "That path is outside this Session's worktree".to_string()
+        }
+    }
 }
 
 #[cfg(test)]

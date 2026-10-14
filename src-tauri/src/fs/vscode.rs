@@ -73,10 +73,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn no_known_root_set_resolves_to_none() {
-        // Scoped by temporarily clearing the three env vars this resolver checks would need a
-        // process-wide mutation this test suite does not make (other tests may read the real
-        // env concurrently) -- instead this just proves the cache-clear/get pair round-trips.
+    async fn clear_vscode_executable_cache_empties_the_cache_slot() {
+        // Does NOT call `resolve_vscode_executable` itself (gate round 1 fix: the previous name
+        // implied it did, and asserting against the real, process-wide `LOCALAPPDATA`/
+        // `ProgramFiles` env vars would race with any other test or live run that populates this
+        // same cache in the same test binary) -- this only proves the cache-clear primitive
+        // itself empties the slot, which is the one thing safe to assert without controlling
+        // the real environment or serialising against concurrent callers.
         clear_vscode_executable_cache();
         assert!(cache().lock().unwrap().is_none());
     }
