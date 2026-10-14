@@ -154,8 +154,19 @@ async fn read_model_roles_raw_with(
     strip_env_vars: &[&str],
 ) -> Result<Map<String, Value>, OmpConfigError> {
     let response = get_config_with(executor, "modelRoles", strip_env_vars).await?;
-    let inner = response.get("value").cloned().unwrap_or(Value::Null);
-    raw_model_roles_record(&inner)
+    // Gate-fix (round 6): a response with NO `value` field at all is a malformed/incomplete
+    // read (never seen from a direct `omp` CLI call; was reachable under load before
+    // `OMP_INVOCATION_LOCK` serialised every invocation) and must fail closed, not be silently
+    // read as an empty/unconfigured record the same way a genuine `"value": null` legitimately
+    // is -- an empty record here previously meant every `modelRoles` key, including ones that
+    // ARE configured, silently vanished from `/role`/`/switch @<role>`'s own valid-roles list.
+    let Some(inner) = response.get("value") else {
+        return Err(OmpConfigError::new(
+            OmpConfigErrorCode::ParseFailed,
+            "omp config returned no value field for modelRoles.",
+        ));
+    };
+    raw_model_roles_record(inner)
 }
 
 /// `omp config get modelRoles --json`: the whole record as the TRUE effective value (environment

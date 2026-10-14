@@ -140,6 +140,16 @@ pub trait OmpExecutor: Send + Sync {
 
 pub struct RealOmpExecutor;
 
+/// Gate-fix (round 6, diagnostic): serialises EVERY real `omp config get/set` invocation
+/// process-wide, one at a time. Concurrent invocations (lane RM's own `apply_role_change` sweep
+/// runs up to 4 `apply_role_now` calls at once, each able to read `modelRoles`) all share the
+/// ONE memoised scratch `cwd` above; under load, concurrent `omp` processes racing in that same
+/// directory were suspected (and are being instrumented) to intermittently return a response
+/// missing its own `value` field, silently read as an EMPTY record downstream
+/// (`ipc::model_roles::read_model_roles_raw_with`) rather than erroring. Config reads are rare
+/// (never a hot per-frame path), so correctness wins over any parallelism here.
+static OMP_INVOCATION_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
+
 impl OmpExecutor for RealOmpExecutor {
     fn call<'a>(
         &'a self,
@@ -148,6 +158,7 @@ impl OmpExecutor for RealOmpExecutor {
         strip_env_vars: &'a [&'a str],
     ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
         Box::pin(async move {
+            let _permit = OMP_INVOCATION_LOCK.lock().await;
             let cwd = ensure_scratch_dir().await?;
             let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
             run_omp(&arg_refs, failure_message, strip_env_vars, &cwd).await
@@ -208,17 +219,43 @@ async fn run_omp(
     let stdout_pipe = child.stdout.take().expect("configured as piped above");
     let stderr_pipe = child.stderr.take().expect("configured as piped above");
 
-    let (status, stdout_buf, stderr_buf) = match tokio::time::timeout(
+    // Gate-fix (round 6, diagnostic): log every invocation at debug level -- args (the key is
+    // always `args[2]` for `config get/set <key>`), cwd, elapsed ms, exit code, whether it timed
+    // out, and the stdout byte length, to confirm or rule out a concurrent-`omp`-process race
+    // in the shared scratch `cwd` before changing behaviour based on a guess.
+    let start = std::time::Instant::now();
+    let timeout_result = tokio::time::timeout(
         Duration::from_millis(TIMEOUT_MS),
         read_capped_output(&mut child, stdout_pipe, stderr_pipe, MAX_STDOUT_BYTES),
     )
-    .await
-    {
-        Ok(Ok(result)) => result,
-        Ok(Err(err)) => return Err(err),
-        Err(_) => return Err(timeout_error()),
-    };
-    map_run_result(status.success(), &stdout_buf, &stderr_buf, failure_message)
+    .await;
+    let elapsed_ms = start.elapsed().as_millis();
+    match timeout_result {
+        Ok(Ok((status, stdout_buf, stderr_buf))) => {
+            log::debug!(
+                "omp config: args={args:?} cwd={} elapsed_ms={elapsed_ms} exit_code={:?} timed_out=false stdout_len={}",
+                cwd.display(),
+                status.code(),
+                stdout_buf.len(),
+            );
+            map_run_result(status.success(), &stdout_buf, &stderr_buf, failure_message)
+        }
+        Ok(Err(err)) => {
+            log::debug!(
+                "omp config: args={args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=false read_error={}",
+                cwd.display(),
+                err.message,
+            );
+            Err(err)
+        }
+        Err(_) => {
+            log::debug!(
+                "omp config: args={args:?} cwd={} elapsed_ms={elapsed_ms} timed_out=true",
+                cwd.display(),
+            );
+            Err(timeout_error())
+        }
+    }
 }
 
 /// Reads `child`'s stdout (capped at `max_stdout_bytes`) and stderr concurrently. Gate-fix (code

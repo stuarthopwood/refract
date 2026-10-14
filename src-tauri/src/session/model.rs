@@ -273,9 +273,17 @@ pub async fn known_role_list() -> Result<Vec<String>, AgentError> {
     let response = crate::omp::config::get_config("cycleOrder", &[])
         .await
         .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
-    let cycle_order: Vec<String> = response
-        .get("value")
-        .and_then(Value::as_array)
+    // Gate-fix (round 6): a response with NO `value` field at all is malformed/incomplete and
+    // must fail closed, not be silently read as an empty `cycleOrder` the same way a genuine
+    // `"value": null` (truly unconfigured) legitimately is.
+    let Some(value) = response.get("value") else {
+        return Err(AgentError::new(
+            "omp-probe-failed",
+            "omp config returned no value field for cycleOrder.",
+        ));
+    };
+    let cycle_order: Vec<String> = value
+        .as_array()
         .map(|entries| {
             entries
                 .iter()
@@ -306,7 +314,13 @@ pub async fn known_chat_role_list() -> Result<Vec<String>, AgentError> {
     let model_roles = crate::ipc::model_roles::get_model_roles()
         .await
         .map_err(|err| AgentError::new("omp-probe-failed", err.to_string()))?;
-    Ok(model_support::merge_chat_roles(roles, &model_roles))
+    let merged = model_support::merge_chat_roles(roles, &model_roles);
+    log::debug!(
+        "known_chat_role_list: model_roles_keys={} merged_count={} merged={merged:?}",
+        model_roles.len(),
+        merged.len(),
+    );
+    Ok(merged)
 }
 
 // ---------------------------------------------------------------------------
