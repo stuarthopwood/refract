@@ -44,7 +44,7 @@
 //     run published.
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -205,6 +205,58 @@ function freshReleaseDir(version) {
   return path.join(tmpdir(), `refract-release-${version}`);
 }
 
+// Hard guards before ANY delete of this script's own release dir (Main addendum, PR #837 gate
+// round 1): resolves to an absolute path, requires it to be a DIRECT child of `os.tmpdir()`
+// whose basename is exactly `refract-release-<this run's own version>` (matching
+// `/^refract-release-\d+\.\d+\.\d+$/`), refuses an empty path, a root, a bare drive, or any
+// path that is the repo or a repo ancestor/descendant, and refuses if the target or any
+// directory between it and `tmpdir()` is a symlink/junction (a redirected `%TEMP%` or release
+// dir must never turn this into a delete of something else). Prints the exact path before
+// deleting; `rmSync` itself does not follow a symlink AT the target path either way (it unlinks
+// the link, never descends through it), but every guard above still runs first regardless.
+function safeRemoveReleaseDir(targetDir, version) {
+  const resolved = path.resolve(targetDir);
+  const root = path.parse(resolved).root;
+  if (!resolved || resolved === root || resolved === '') {
+    fail(`refusing to delete: "${resolved}" is empty or a drive root.`);
+  }
+
+  const base = path.resolve(tmpdir());
+  if (path.dirname(resolved) !== base) {
+    fail(`refusing to delete: "${resolved}" is not a direct child of ${base}.`);
+  }
+
+  const expectedBasename = `refract-release-${version}`;
+  if (!/^refract-release-\d+\.\d+\.\d+$/.test(expectedBasename) || path.basename(resolved) !== expectedBasename) {
+    fail(`refusing to delete: "${path.basename(resolved)}" is not "${expectedBasename}".`);
+  }
+
+  const repoResolved = path.resolve(REPO_ROOT);
+  if (
+    resolved === repoResolved ||
+    repoResolved.startsWith(resolved + path.sep) ||
+    resolved.startsWith(repoResolved + path.sep)
+  ) {
+    fail(`refusing to delete: "${resolved}" is the repo or shares an ancestor/descendant path with it.`);
+  }
+
+  let probe = resolved;
+  // Walks from the target up to (and including) `tmpdir()` itself; stops once `dirname` stops
+  // making progress (a filesystem root), which `base` is never equal to by construction above.
+  while (true) {
+    if (existsSync(probe) && lstatSync(probe).isSymbolicLink()) {
+      fail(`refusing to delete: "${probe}" is a symlink/reparse point.`);
+    }
+    if (probe === base) break;
+    const next = path.dirname(probe);
+    if (next === probe) break;
+    probe = next;
+  }
+
+  console.log(`release-local: removing temp release dir: ${resolved}`);
+  rmSync(resolved, { recursive: true, force: true });
+}
+
 function buildRelease(releaseDir, signtoolPath, conf) {
   const configOverlayPath = path.join(releaseDir, 'sign-config-overlay.json');
   // `bundle.windows.signCommand` merged for THIS invocation only via `--config`, never written
@@ -363,7 +415,7 @@ function main() {
   const tag = verifyTagMatchesVersion(conf.version);
 
   const releaseDir = freshReleaseDir(conf.version);
-  rmSync(releaseDir, { recursive: true, force: true });
+  safeRemoveReleaseDir(releaseDir, conf.version);
   mkdirSync(releaseDir, { recursive: true });
 
   try {
@@ -397,7 +449,7 @@ function main() {
     // installs onto disk carries a valid signature too, but it is never its own release asset.
     publishRelease(tag, [nsisSetup, nsisChecksum]);
   } finally {
-    rmSync(releaseDir, { recursive: true, force: true });
+    safeRemoveReleaseDir(releaseDir, conf.version);
   }
 }
 
