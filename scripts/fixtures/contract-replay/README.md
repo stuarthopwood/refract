@@ -108,3 +108,72 @@ settles. That final persisted-registry-state path is already covered by this cra
    contents.
 5. Re-run the same command twice in a row to confirm an identical, green pass both times (proves
    nothing was accidentally baked in as a race).
+
+## Electron-trace fixture and the cross-shell diff (gate-round-1 remediation, PR #834)
+
+`scripts/fixtures/contract-replay/session-scenario.electron-trace.json` is the Electron-build
+counterpart to `session-scenario.rust-trace.json`: the same `session` scenario tape, driven
+through the real Electron-build IPC handlers (`src/main/ipc/repositories.ts`/`sessions.ts`/
+`chat.ts`'s own `register*` functions) and a real `SessionManager`/`SessionAgent`/`OmpProcess`,
+with no Electron app/`BrowserWindow` launched at all (`electron` mocked down to the one export
+these handler files call at runtime, `ipcMain.handle`, used only to capture each handler function
+into a plain map -- the handlers are then invoked directly, exactly like a real `ipcMain.invoke`
+round trip would). Unlike the Rust build, `OmpProcessOptions`/`SessionManager`'s constructor
+already expose a public `ompPath` override seam, so this points the fake-omp shim directly at
+that seam -- no PATH-shim needed on this side.
+
+Unlike the Rust trace, this fixture's final step is `kind: "events"`: the real, ordered
+`ManagerEvent[]` captured off `SessionManager.onEvent` (`SessionManager.onEvent` is a plain,
+Electron-independent `EventEmitter`-style subscription -- `forwardEvent`'s window-send step is a
+separate, later step this never calls), not reconstructed snapshots the way the Rust trace has to
+(no live-window workaround needed on this side at all).
+
+### How it was produced
+
+There is no live TS test reading this fixture (AGENTS.md's "no new tests while prototyping" rule
+covers `src/main`/TypeScript in full for this lane; the epic #797 exception for new tests is
+Rust-ports only). It was produced by a one-time, throwaway Node/vitest script (reusing the driving
+logic of the now-deleted `src/main/ipc/contractReplay.test.ts`, with its single `expect(...)`
+assertion replaced by a `writeFileSync` of the normalized trace to this path), run once via
+`pnpm vitest run <throwaway path>`, then deleted immediately afterward -- it never landed in any
+commit. Regenerate it the same way if `src/main`'s IPC handlers or `SessionManager`/`SessionAgent`
+ever change in a way that should be reflected here: write an equivalent throwaway script, run it
+once, delete it again.
+
+### Normalization
+
+Same placeholder table as the Rust trace above (`<WORKTREE_PATH>`/`<REPO_DIR>`/`<REPO_NAME>`/
+`<BRANCH_NAME>`/`<SESSION_ID>`/`<REPO_ID>`/`<TIMESTAMP>`/`<TIMESTAMP_MS>`), applied by this
+fixture's own (now-deleted) `normalize()` helper -- the two traces use the identical placeholder
+tokens so a cross-shell diff can compare them directly without a translation layer.
+
+### Why the cross-shell diff folds events instead of comparing them raw
+
+`contract_replay.rs`'s cross-shell diff (`fold_electron_events`) never asserts an exact
+`PatchCoalescer` batch boundary/shape: the fixture's own `patch` events show the assistant's
+streamed reply split across two separate batches (`"xy"` then `"xyzzy9"`, straddling the
+coalescer's 50ms window) -- a wall-clock-dependent split a slower regeneration run could
+legitimately produce differently. Instead, the diff folds every `patch` event's ops (upsert-by-id,
+reset-replaces-all) into one materialized final transcript, and compares THAT against the Rust
+run's `after_turn_settled` snapshot (itself already a full, folded transcript -- see "Why
+transcript snapshots instead of real emitted events" above). The Electron fixture's other event
+classes (`list-changed`/`commands`/`subagents`/`readout`/`queue`/`status`/`request`/
+`requestResolved`/`sideChatInterrupted`) have no Rust-side live-stream equivalent at all and are
+intentionally not compared.
+
+### Known, intentional Rust-vs-Electron divergences (the diff's allowlist)
+
+`contract_replay.rs`'s `scrub_known_divergences` normalizes exactly these away before comparing,
+so the diff only ever fails on a real, un-triaged regression:
+
+| Field | Rust | Electron | Status |
+| --- | --- | --- | --- |
+| `repositories.add` response's `value.remote.kind` | `"unknown"` | `"none"` | Filed as [issue #835](https://github.com/stuarthopwood/refract/issues/835) -- a real, pre-existing design difference (`repositories.rs`'s `.add` always returns the `unknown` placeholder, computed lazily later via `.remotes`/`.rename`; the Electron handler computes it eagerly), not fixed here. |
+| tool-call transcript row's `details` field | explicit `null` | key absent entirely | Owned by a sibling fix to `omp/transcript.rs` in this same lane (issue #795 R12b); tolerated in either state so this diff never races that fix landing. |
+| `chat.answer` response envelope | was `{"ok":true,"value":null}` | `{"ok":true}` | **Fixed in this PR**: `ipc/mod.rs`'s `Dispatcher::dispatch` now omits the `value` key entirely when a handler resolves `Value::Null`, matching the Electron build's `JSON.stringify`-drops-`undefined` convention (the same one `transcript.rs`'s own header comment documents for the `args` field). No longer allowlisted -- both sides already agree. |
+
+A Session this test never calls `sessions.setVisible` on would also show a different final
+`unread` flag (see "Normalization rules" above) -- the Electron fixture's own driving script DOES
+call `sessions.setVisible` (needed to get `patch` events forwarded at all), so this divergence
+never actually surfaces in the captured traces; it is documented here only as a reader's caution
+if either harness's driving sequence ever changes.

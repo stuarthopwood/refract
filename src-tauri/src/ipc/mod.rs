@@ -113,7 +113,15 @@ impl Dispatcher {
     /// does for `src/preload/index.ts`'s `request<T>` helper.
     pub async fn dispatch(&self, channel: &str, state: AppState, args: Vec<Value>) -> Value {
         let envelope = match self.handlers.get(channel) {
+            // Gate-round-1 remediation (HIGH #3, issue #795 R12b): a handler with no real
+            // return data resolves `Ok(Value::Null)` (see e.g. `chat.rs`'s `chat_answer`) --
+            // omit the `value` key entirely in that case, the same way `JSON.stringify` drops
+            // an `undefined` field on the Electron side (`transcript.rs`'s own header comment
+            // documents the identical convention for the `args` field). Verified safe: no
+            // channel's handler ever relies on a literal `"value": null` envelope shape (the
+            // full `cargo test` suite passed with this change).
             Some(handler) => match handler(state, args).await {
+                Ok(Value::Null) => serde_json::json!({ "ok": true }),
                 Ok(value) => serde_json::json!({ "ok": true, "value": value }),
                 Err(err) => {
                     serde_json::json!({ "ok": false, "error": { "code": err.code, "message": err.message } })

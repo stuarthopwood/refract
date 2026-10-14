@@ -180,8 +180,7 @@
     "channel": "chat.answer",
     "kind": "ipc",
     "response": {
-      "ok": true,
-      "value": null
+      "ok": true
     }
   },
   {
@@ -209,7 +208,6 @@
             "content": "hi",
             "path": "note.txt"
           },
-          "details": null,
           "durationMs": "<TIMESTAMP_MS>",
           "id": "tool-exec:call-1",
           "kind": "tool",

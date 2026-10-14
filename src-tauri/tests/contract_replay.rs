@@ -150,6 +150,40 @@ async fn wait_for_status(
     }
 }
 
+/// Gate-round-1 remediation (MEDIUM #8, issue #795 R12b): `SessionAgent::push_pending_request`
+/// (`session/agent/mod.rs:493-504`, R3-owned, read-only here) calls `set_status(NeedsYou)` and
+/// `upsert_request_row` as two SEPARATE lock acquisitions -- a poll landing between them would
+/// observe `status == NeedsYou` with no `kind: "request"` transcript row yet. `runtime_view()`
+/// reads `status`/`transcript`/`pending` under ONE lock acquisition, so polling it in a loop
+/// until all three conditions hold at once (not a single snapshot gated on the status flag
+/// alone) cannot land in that gap.
+async fn wait_for_pending_request(
+    agent: &refract_tauri_lib::session::SessionAgent,
+    timeout: Duration,
+) -> Value {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let view = agent.runtime_view().await;
+        let status_is_needs_you = view["status"] == json!("needs-you");
+        let has_pending = view["pending"].as_array().is_some_and(|p| !p.is_empty());
+        let has_request_row = view["transcript"].as_array().is_some_and(|items| {
+            items.iter().any(|item| item["kind"] == json!("request"))
+        });
+        if status_is_needs_you && has_pending && has_request_row {
+            return view;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            panic!(
+                "contract_replay: timed out after {timeout:?} waiting for NeedsYou status with \
+                 a pending approval request row (status={:?} has_pending={has_pending} \
+                 has_request_row={has_request_row})",
+                view["status"]
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 /// 24-byte `new Date().toISOString()` shape (`ipc::now_iso8601`'s own format): exact length plus
 /// digit/separator positions, no regex dependency needed for this one fixed pattern.
 fn is_iso8601_timestamp(s: &str) -> bool {
@@ -223,8 +257,111 @@ fn snapshot_step(label: &str, runtime_view: &Value) -> Value {
     json!({ "kind": "transcript_snapshot", "label": label, "runtimeView": runtime_view })
 }
 
+/// Gate-round-1 remediation (CRITICAL #1 / HIGH #2, issue #795 R12b): applies one `"patch"`
+/// event's `ops` onto a running transcript array using the exact upsert-by-`id`/reset-replaces-
+/// all semantics `SessionAgent.ts`'s own `queuePatch`/`transcriptDiff.ts` implement. Used to fold
+/// the Electron-build fixture's raw event stream into a single materialized end state -- this
+/// test must never assert an exact `PatchCoalescer` batch boundary/shape (a wall-clock race: a
+/// slower run can legitimately split the same ops across a different number of `patch` events),
+/// only the folded result.
+fn apply_transcript_ops(transcript: &mut Vec<Value>, ops: &[Value]) {
+    for op in ops {
+        match op["op"].as_str() {
+            Some("reset") => {
+                *transcript = op["items"].as_array().cloned().unwrap_or_default();
+            }
+            Some("upsert") => {
+                let item = op["item"].clone();
+                let id = item["id"].clone();
+                match transcript.iter_mut().find(|existing| existing["id"] == id) {
+                    Some(existing) => *existing = item,
+                    None => transcript.push(item),
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Folds the Electron fixture's `kind: "events"` step into the one batch-boundary-independent
+/// shape this diff actually compares: the final materialized transcript. Every `patch` event's
+/// ops are folded via `apply_transcript_ops`; every other event type (`list-changed`, `commands`,
+/// `subagents`, `readout`, `queue`, `status`, `request`, `requestResolved`,
+/// `sideChatInterrupted`) has no Rust-side equivalent live stream at all (`events::EventSink` is
+/// a documented no-op without a live `AppHandle`/window -- see this file's own
+/// `after_sessions_open`/`after_approval_request`/`after_turn_settled` snapshot design) and is
+/// intentionally not compared here.
+fn fold_electron_events(events: &[Value]) -> Value {
+    let mut transcript: Vec<Value> = Vec::new();
+    for event in events {
+        if event["type"].as_str() == Some("patch") {
+            if let Some(ops) = event["payload"]["ops"].as_array() {
+                apply_transcript_ops(&mut transcript, ops);
+            }
+        }
+    }
+    Value::Array(transcript)
+}
+
+/// Gate-round-1 remediation (HIGH #3, issue #795 R12b): normalizes away the cross-shell diff's
+/// documented, intentional divergences in place, identically on both sides, so the final
+/// `assert_eq!` only ever fails on a REAL, un-triaged regression:
+/// - `remote.kind`: `repositories.add` always returns the Rust port's `unknown` placeholder
+///   (`repositories.rs`'s `with_unknown_remote`) vs the Electron build's eager computation --
+///   filed as issue #835 rather than fixed here (a real, pre-existing design difference, not a
+///   one-line bug: see that issue for the full citation).
+/// - `details`: a tool-call row's `null` `details` field (Rust) vs an entirely absent key
+///   (Electron) -- owned by a sibling fix to `omp/transcript.rs` in this same lane (issue #795
+///   R12b); tolerated in EITHER state here so this diff never races that fix landing.
+///
+/// `chat.answer`'s `{ok:true,value:null}` vs `{ok:true}` divergence is NOT in this list: it was
+/// fixed in this PR instead (`ipc/mod.rs`'s `Dispatcher::dispatch` now omits `value` for a
+/// `Value::Null` handler result), so both sides already agree without scrubbing.
+fn scrub_known_divergences(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if let Some(remote_obj) = map.get_mut("remote").and_then(Value::as_object_mut) {
+                if remote_obj.contains_key("kind") {
+                    remote_obj.insert(
+                        "kind".to_string(),
+                        json!("<ALLOWLISTED:repositories.add remote.kind, issue #835>"),
+                    );
+                }
+            }
+            if matches!(map.get("details"), Some(Value::Null)) {
+                map.remove("details");
+            }
+            for (_, inner) in map.iter_mut() {
+                scrub_known_divergences(inner);
+            }
+        }
+        Value::Array(items) => {
+            for item in items.iter_mut() {
+                scrub_known_divergences(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Every `kind: "ipc"` step out of a full captured trace array, in emission order.
+fn ipc_steps_of(trace: &Value) -> Vec<&Value> {
+    trace
+        .as_array()
+        .expect("trace is always a JSON array")
+        .iter()
+        .filter(|step| step["kind"] == json!("ipc"))
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn session_scenario_replays_against_the_fake_omp_tape() {
+    // Scratch directories below (`shim_dir`/`data_dir`/`repo_dir`) are created under the OS temp
+    // dir and never removed -- the same deliberate, documented choice this crate's own
+    // `git::test_support` already makes for its scratch repos (see that module's header
+    // comment): cleaning them up would need a destructive-delete guard this crate does not have
+    // yet, and leaving them behind is harmless. Matches the existing crate convention rather
+    // than inventing a new one.
     // --- Fixture wiring: PATH-shim the fake `omp`, point it at the `session` scenario tape. ---
     let shim_dir = std::env::temp_dir().join(format!(
         "refract-contract-replay-shim-{}",
@@ -361,8 +498,7 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     );
     steps.push(ipc_step("chat.send", &send_args, &send_envelope));
 
-    wait_for_status(&agent, SessionStatus::NeedsYou, Duration::from_secs(10)).await;
-    let after_request = agent.runtime_view().await;
+    let after_request = wait_for_pending_request(&agent, Duration::from_secs(10)).await;
     let request_id = after_request["pending"][0]["requestId"]
         .as_str()
         .expect("a pending approval request id")
@@ -445,5 +581,82 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
         golden,
         "contract_replay: captured trace no longer matches the frozen golden file at {}",
         golden_path.display()
+    );
+
+    // --- Gate-round-1 remediation (CRITICAL #1 / HIGH #2 / HIGH #3, issue #795 R12b):
+    // cross-shell diff against the real Electron build, folded per `fold_electron_events`'s own
+    // doc comment (never an exact patch-batch shape) and scrubbed of documented, intentional
+    // divergences per `scrub_known_divergences`'s own doc comment. See
+    // `scripts/fixtures/contract-replay/README.md`'s "Electron-trace fixture" section for how
+    // `session-scenario.electron-trace.json` was produced. ---
+    let electron_path = repo_root()
+        .join("scripts")
+        .join("fixtures")
+        .join("contract-replay")
+        .join("session-scenario.electron-trace.json");
+    let electron_text = std::fs::read_to_string(&electron_path).unwrap_or_else(|err| {
+        panic!(
+            "contract_replay: could not read Electron-trace fixture {} ({err}). See \
+             scripts/fixtures/contract-replay/README.md for how to regenerate it.",
+            electron_path.display()
+        )
+    });
+    let electron_trace: Value = serde_json::from_str(&electron_text).unwrap_or_else(|err| {
+        panic!(
+            "contract_replay: Electron-trace fixture {} is not valid JSON: {err}",
+            electron_path.display()
+        )
+    });
+
+    let electron_ipc_steps = ipc_steps_of(&electron_trace);
+    let rust_ipc_steps = ipc_steps_of(&trace);
+    assert_eq!(
+        electron_ipc_steps.len(),
+        rust_ipc_steps.len(),
+        "contract_replay: Electron fixture and live Rust run captured a different number of IPC steps"
+    );
+    for (electron_step, rust_step) in electron_ipc_steps.iter().zip(rust_ipc_steps.iter()) {
+        assert_eq!(
+            electron_step["channel"], rust_step["channel"],
+            "contract_replay: cross-shell IPC step order diverges"
+        );
+        let mut electron_scrubbed = (*electron_step).clone();
+        let mut rust_scrubbed = (*rust_step).clone();
+        scrub_known_divergences(&mut electron_scrubbed);
+        scrub_known_divergences(&mut rust_scrubbed);
+        assert_eq!(
+            rust_scrubbed,
+            electron_scrubbed,
+            "contract_replay: cross-shell IPC step `{}` diverges beyond the documented allowlist \
+             (scripts/fixtures/contract-replay/README.md)",
+            electron_step["channel"].as_str().unwrap_or("?")
+        );
+    }
+
+    let electron_events = electron_trace
+        .as_array()
+        .expect("Electron trace is always a JSON array")
+        .iter()
+        .find(|step| step["kind"] == json!("events"))
+        .and_then(|step| step["events"].as_array())
+        .expect("Electron fixture must contain a kind:\"events\" step");
+    let electron_final_transcript = fold_electron_events(electron_events);
+    let rust_final_transcript = trace
+        .as_array()
+        .expect("trace is always a JSON array")
+        .iter()
+        .find(|step| step["label"] == json!("after_turn_settled"))
+        .map(|step| step["runtimeView"]["transcript"].clone())
+        .expect("Rust trace must contain the after_turn_settled snapshot");
+
+    let mut electron_final_scrubbed = electron_final_transcript;
+    let mut rust_final_scrubbed = rust_final_transcript;
+    scrub_known_divergences(&mut electron_final_scrubbed);
+    scrub_known_divergences(&mut rust_final_scrubbed);
+    assert_eq!(
+        rust_final_scrubbed,
+        electron_final_scrubbed,
+        "contract_replay: cross-shell final transcript diverges beyond the documented allowlist \
+         (scripts/fixtures/contract-replay/README.md)"
     );
 }
