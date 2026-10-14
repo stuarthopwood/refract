@@ -25,8 +25,9 @@ tauri-plugin-opener = "2.7.1"
 tauri-plugin-log = "2.10.1"
 # Window shell/chrome lane (R10b, issue #793): click-to-focus OS notifications
 # (`shell::notifications`) and the second-launch focus-existing-window behaviour (`lib.rs`'s
-# `single_instance::init` call). Neither needs a JS-side permission in `capabilities/` beyond
-# `notification:default` (single-instance has no JS API at all, per its own docs).
+# `single_instance::init` call). Neither needs a JS-side capability grant at all: both are driven
+# entirely from Rust, never invoked from the renderer (`capabilities/default.json`'s own doc
+# comment: capabilities gate webview-to-plugin calls only).
 tauri-plugin-notification = "2.6.0"
 tauri-plugin-single-instance = "2.5.3"
 serde = { version = "1.0.229", features = ["derive", "rc"] }

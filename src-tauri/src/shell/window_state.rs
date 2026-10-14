@@ -234,17 +234,19 @@ impl Tracker {
                 }
                 self.schedule_debounced_save();
             }
-            // Never store the transient maximised size as the "normal" size to restore into --
-            // `state.maximized` is captured fresh below, not read from a `Resized` event.
-            WindowEvent::Resized(size)
-                if !window.is_minimized().unwrap_or(false)
-                    && !window.is_maximized().unwrap_or(false) =>
-            {
-                {
-                    let mut state = self.state.lock().expect("window-state mutex poisoned");
+            // Never store the transient maximised size as the "normal" size to restore into,
+            // but DO keep `state.maximized` current here too (gate follow-up): maximising/
+            // restoring fires `Resized`, and relying on `CloseRequested` alone meant a 500ms
+            // debounced save mid-run (the one a crash depends on) always wrote the flag as it
+            // was at startup, not as it actually is right now.
+            WindowEvent::Resized(size) if !window.is_minimized().unwrap_or(false) => {
+                let mut state = self.state.lock().expect("window-state mutex poisoned");
+                state.maximized = window.is_maximized().unwrap_or(state.maximized);
+                if !state.maximized {
                     state.width = size.width;
                     state.height = size.height;
                 }
+                drop(state);
                 self.schedule_debounced_save();
             }
             // CRITICAL gate fix: a user-initiated close (the X button, Alt+F4) destroys the

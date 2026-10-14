@@ -1,15 +1,15 @@
 // External-link policy (issue #793 security baseline): the renderer (shared, unchanged) renders
 // ordinary `<a target="_blank">` links (`Markdown.tsx`, `ReadoutChip.tsx`, the profile/PR panes)
 // trusting Electron's own `setWindowOpenHandler`/`openExternalSafe` (`src/main/index.ts`) to open
-// them in the system browser and silently drop anything that is not `http:`/`https:`. Tauri/wry
-// has no `on_new_window` handler registered (`lib.rs`'s own security comment: a same-window
-// navigation to a remote origin is denied separately by `is_allowed_navigation_url`), so a
-// `target="_blank"` click here would otherwise just be swallowed with no visible effect. This
-// capture-phase listener is the Tauri-build equivalent: the opener plugin's own `open_url`
-// command, scoped in `capabilities/default.json` to `http`/`https` only (narrower than the
-// plugin's own `allow-default-urls`, which also permits `mailto:`/`tel:`). `lib.rs` disables the
-// plugin's own `open_js_links_on_click` (defaults to `true`), so this is the ONLY interceptor a
-// link click ever reaches.
+// them in the system browser and silently drop anything that is not `http:`/`https:`. The Tauri
+// build had something that worked here already, but not this lane's own: `tauri_plugin_opener`'s
+// own `init()` defaults to `open_js_links_on_click(true)`, which injects ITS OWN `<a>`-click
+// interceptor, unscoped beyond whatever capability the renderer is granted. This capture-phase
+// listener REPLACES that script (`lib.rs` now builds the plugin with `open_js_links_on_click
+// (false)`, so this is the ONLY interceptor a link click ever reaches), narrowed to the exact
+// `http`/`https`-only scope `capabilities/default.json` grants (narrower than the plugin's own
+// `allow-default-urls`, which also permits `mailto:`/`tel:`), and matching Electron's own
+// always-deny-the-native-path, conditionally-open-externally behaviour exactly.
 import { invoke } from '@tauri-apps/api/core'
 
 /** Always prevents the default `target="_blank"` action (matching Electron's own
