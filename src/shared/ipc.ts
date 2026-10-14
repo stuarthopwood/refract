@@ -36,6 +36,7 @@ import type {
   ReviewVerdict
 } from './github';
 import type { ThemeId } from './themes';
+import type { UpdatesApi } from './updates';
 
 /** The four top-level items of the in-app menu bar (spec 001 T100, FR-057): `window.popupMenu`
  * asks main to pop open the one real `Menu` (`src/main/menu.ts`) built from this same set, so a
@@ -92,10 +93,7 @@ export type IpcErrorCode =
   | 'checkout-failed'
   | 'disabled'
   | 'session-archived'
-  // Lane R11b (issue #794, spec 006 contracts/ipc.md "New error codes").
-  | 'dependency-install-failed'
-  | 'update-unavailable'
-  | 'checksum-mismatch';
+  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch'; // lane R11b (#794)
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -131,15 +129,8 @@ export interface Readiness {
   git: Check;
   omp: Check;
   ompSignedIn: Check;
-  /** Lane R11b (issue #794): optional (never affects `allPass`, FR-008); also optional on this
-   * type since Electron's frozen `readiness.ts` never implements this new, Rust-only check. */
-  github?: Check;
 }
-
-// Types live in `./updates` (issue #806 "No god files"); re-exported so every existing
-// `from '../shared/ipc'` import site keeps working unchanged.
-export type { InstallableDependency, DependencyInstallProgress, UpdateState };
-
+export type { InstallableDependency, DependencyInstallProgress, UpdateState } from './updates'; // lane R11b (#794)
 /** `sessions.list()` row: a Session plus its live-runtime view. `lastModel`/`lastThinkingLevel`
  * (T062) come straight through from `Session`: the last known provider/model/thinking level,
  * absent until the first `get_state`. */
@@ -423,7 +414,6 @@ export const IPC_REQUESTS = {
   ACCOUNTS_OMP_SIGN_OUT: 'accounts.omp.signOut',
   ACCOUNTS_OMP_ANSWER: 'accounts.omp.answer',
   APP_OPEN_RELEASE_NOTES: 'app.openReleaseNotes',
-  // Lane R11b (issue #794, spec 006 "Installer and updates" contracts/ipc.md).
   READINESS_INSTALL_DEPENDENCY: 'readiness.installDependency',
   UPDATES_CHECK: 'updates.check',
   UPDATES_GET_STATE: 'updates.getState',
@@ -452,7 +442,6 @@ export const IPC_EVENTS = {
   FILE_EXPLORER_RESET: 'file-explorer:reset',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
-  // Lane R11b (issue #794, spec 006 "Installer and updates" contracts/ipc.md).
   READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
   READINESS_CHANGED: 'readiness:changed',
   UPDATES_STATE_CHANGED: 'updates:state-changed',
@@ -473,13 +462,7 @@ export const THEME_BOOTSTRAP_CHANNEL = 'theme:bootstrap';
 /** An unsubscribe function returned by every `on*` event subscription. */
 export type Unsubscribe = () => void;
 
-export interface RefractApi {
-  readiness: {
-    check(): Promise<Result<Readiness>>;
-    /** Lane R11b (issue #794): awaits the vendor install; progress on `onReadinessInstallProgress`, then `onReadinessChanged`. */
-    installDependency(dependency: InstallableDependency): Promise<Result<void>>;
-  };
-
+export interface RefractApi extends UpdatesApi {
   repositories: {
     /** Issue #528, gate round 3 fix (Medium): returns immediately with `remote: { kind:
      * 'unknown' }` on every entry -- the per-repository remote check used to run inline here
@@ -872,18 +855,9 @@ export interface RefractApi {
    * link already uses (constitution V); never opened inside an app window. */
   app: {
     openReleaseNotes(): Promise<Result<void>>;
-    /** Lane R11b (issue #794): the running build's own version, for the update badge. */
-    getVersion(): Promise<Result<string>>;
+    getVersion(): Promise<Result<string>>; // lane R11b (#794): for the update badge
   };
 
-  /** Lane R11b (issue #794): updates from private GitHub Releases via the developer's signed-in `gh` CLI, never a stored token. */
-  updates: {
-    /** User-initiated; re-checks even from `'failed'`, unlike the automatic startup check. */
-    check(): Promise<Result<UpdateState>>;
-    getState(): Promise<Result<UpdateState>>;
-    /** Downloads and checksum-verifies; `onUpdatesStateChanged` drives a progress indicator. */
-    install(): Promise<Result<void>>;
-  };
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;
   onSessionListChanged(handler: () => void): Unsubscribe;
   onTranscriptPatch(handler: (payload: { sessionId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
@@ -931,12 +905,6 @@ export interface RefractApi {
   onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
-  /** Lane R11b (issue #794): drives the first-run readiness screen's Install progress text. */
-  onReadinessInstallProgress(handler: (payload: DependencyInstallProgress) => void): Unsubscribe;
-  /** Lane R11b (issue #794): pushed after `readiness.installDependency`'s own automatic re-check. */
-  onReadinessChanged(handler: (payload: Readiness) => void): Unsubscribe;
-  /** Lane R11b (issue #794): drives the update badge in the status bar. */
-  onUpdatesStateChanged(handler: (payload: UpdateState) => void): Unsubscribe;
 }
 
 declare global {

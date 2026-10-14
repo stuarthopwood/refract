@@ -32,3 +32,43 @@ export interface UpdateState {
   lastError?: string;
   unavailableReason?: 'not-installed' | 'not-signed-in' | 'offline';
 }
+
+// `import type`: fully erased at compile time, so this does not create a runtime circular
+// dependency with `./ipc` (which itself imports the three types above from this file).
+import type { Check, Readiness, Result, Unsubscribe } from './ipc';
+
+/** `window.refract` members for this spec, merged into `RefractApi` via `extends` (issue #806
+ * "No god files": keeps this block, and the channel key objects below, out of `ipc.ts`). */
+export interface UpdatesApi {
+  readiness: {
+    check(): Promise<Result<Readiness>>;
+    installDependency(dependency: InstallableDependency): Promise<Result<void>>;
+  };
+  updates: {
+    /** User-initiated; re-checks even from `'failed'`, unlike the automatic startup check. */
+    check(): Promise<Result<UpdateState>>;
+    getState(): Promise<Result<UpdateState>>;
+    /** Downloads and checksum-verifies; `onUpdatesStateChanged` drives a progress indicator. */
+    install(): Promise<Result<void>>;
+  };
+  /** Drives the first-run readiness screen's Install progress text. */
+  onReadinessInstallProgress(handler: (payload: DependencyInstallProgress) => void): Unsubscribe;
+  onReadinessChanged(handler: (payload: Readiness) => void): Unsubscribe;
+  /** Drives the update badge in the status bar. */
+  onUpdatesStateChanged(handler: (payload: UpdateState) => void): Unsubscribe;
+}
+
+// `IPC_REQUESTS`/`IPC_EVENTS`'s own key-value entries for this spec's channels stay literal and
+// inline in `ipc.ts` (not spread from a const here): `scripts/check-parity.mjs` parses that
+// object's source text directly, line by line, and has no notion of a spread operator or an
+// externally-defined channel-key object.
+// Module augmentation (issue #806 "No god files"): adds this field to `Readiness` without
+// touching `ipc.ts`'s own interface body -- a plain optional property, pure declaration
+// merging, no runtime code.
+declare module './ipc' {
+  interface Readiness {
+    /** Optional (never affects `allPass`, FR-008); Electron's frozen `readiness.ts` never
+     * implements this new, Rust-only check (epic #797). */
+    github?: Check;
+  }
+}

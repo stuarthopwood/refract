@@ -16,6 +16,7 @@
 //   readiness checklist's Install actions (self-contained; no dependency on the other files here).
 pub mod checker;
 pub mod dependency_install;
+mod dependency_install_http;
 pub mod gh_client;
 pub mod install_on_quit;
 pub mod installer;
