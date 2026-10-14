@@ -57,7 +57,9 @@ which = "8.0.6"
 # global-state dependency with no runtime test coverage in this build), for a build-time/binary-
 # size cost only -- no runtime behaviour, security, or correctness issue follows from having two
 # providers compiled in. Revisit if binary size becomes a real constraint.
-reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+# `json` added (lane R11b, issue #794): the GitHub Releases API JSON responses this lane's own
+# `updates::checker`/`updates::dependency_install` parse.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 # Lane R9 (#792): `omp/redact.rs`, a line-for-line port of `src/main/omp/redact.ts`'s
 # `redactSecrets` PATTERNS array. Several of those patterns rely on lookahead/lookbehind
 # (`(?<!...)`, `(?<=...)`, `(?!...)`) that the `regex` crate (already in this graph
@@ -70,6 +72,10 @@ dunce = "1.0.5"
 # default features disabled (`macos_fsevent` and its `objc2-*` deps are irrelevant to this
 # Windows-only build).
 notify = { version = "8.1.0", default-features = false }
+
+# Lane R11b (issue #794): SHA-256 verification of a downloaded Refract update installer against
+# its published `.sha256` asset (research.md decision 4, spec 006).
+sha2 = "0.10.8"
 
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is

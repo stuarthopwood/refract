@@ -14,22 +14,39 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{LazyLock, Mutex as StdMutex};
 
 /// Resolves `omp` on `PATH`, honouring `PATHEXT`, caching the first successful resolution for the
 /// process lifetime (a fresh install replacing the binary mid-run is not a case Refract needs to
-/// handle -- mirrors `executables.ts`'s own `cache` Map). Returns a clear, user-facing message on
-/// failure; callers must not fall back to the bare name `"omp"`.
+/// handle -- mirrors `executables.ts`'s own `cache` Map). The initial value is lazily computed
+/// the first time either this or `prime_omp_cache` below touches the cell; both agree on the
+/// same `LazyLock`, so there is exactly one cache, not two.
+static OMP_CACHE: LazyLock<StdMutex<Result<PathBuf, String>>> = LazyLock::new(|| {
+    StdMutex::new(which::which_global("omp").map_err(|_| {
+        "Could not resolve \"omp\" on PATH. Install it and make sure it is on PATH, then relaunch Refract."
+            .to_string()
+    }))
+});
+
+/// Returns a clear, user-facing message on failure; callers must not fall back to the bare name
+/// `"omp"`.
 pub fn resolve_omp() -> Result<PathBuf, String> {
-    static CACHE: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            which::which_global("omp").map_err(|_| {
-                "Could not resolve \"omp\" on PATH. Install it and make sure it is on PATH, then relaunch Refract."
-                    .to_string()
-            })
-        })
+    OMP_CACHE
+        .lock()
+        .expect("resolve_omp cache mutex poisoned")
         .clone()
+}
+
+/// Lane R11b (issue #794): overwrites the cache above with a known-good path, once
+/// `updates::dependency_install::install_omp`'s own vendor install script has already exited 0
+/// -- this process's in-memory `PATH` does not pick up the script's own `User`-scope
+/// `SetEnvironmentVariable` write, so an immediate `readiness.check()` right after a successful
+/// Install action would otherwise still report `omp` missing until Refract is relaunched
+/// (mirrors `executables.ts`'s own `primeExecutableCache`, ported here rather than invented
+/// fresh: `resolve_omp` is this module's only PATH-cached resolver). Never used to fabricate a
+/// resolution that was not itself independently verified (`std::fs::try_exists`) to exist first.
+pub fn prime_omp_cache(path: PathBuf) {
+    *OMP_CACHE.lock().expect("resolve_omp cache mutex poisoned") = Ok(path);
 }
 
 /// `%SystemRoot%\System32\taskkill.exe`: a fixed system path, never a PATH/cwd search. Port of
@@ -53,6 +70,20 @@ pub fn explorer_exe_path() -> PathBuf {
         .or_else(|_| env::var("windir"))
         .unwrap_or_else(|_| "C:\\Windows".to_string());
     Path::new(&system_root).join("explorer.exe")
+}
+
+/// `%SystemRoot%\System32\tar.exe`: a fixed system path, never a PATH/cwd search -- same
+/// reasoning as `taskkill_path`/`explorer_exe_path` above. Windows 10 1803+ and Windows 11 ship
+/// a real bsdtar build here that understands `.zip` as well as `.tar`/`.tar.gz`; used by
+/// `updates::dependency_install::install_github_cli` to extract the GitHub CLI's official
+/// portable zip (research.md decision 6: the portable zip, not the per-machine-only MSI, so the
+/// Install action stays no-admin like every other dependency install) without adding a `zip`
+/// crate dependency just for this one caller.
+pub fn tar_exe_path() -> PathBuf {
+    let system_root = env::var("SystemRoot")
+        .or_else(|_| env::var("windir"))
+        .unwrap_or_else(|_| "C:\\Windows".to_string());
+    Path::new(&system_root).join("System32").join("tar.exe")
 }
 
 /// Gate-fixes a LOW security finding: `lib.rs`'s `run()` now sets this env var process-wide as

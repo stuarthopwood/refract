@@ -24,7 +24,7 @@ import { initials } from '@/lib/initials'
 import { cn } from '@/lib/utils'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useAccountsStore } from '@/state'
-import type { GitHubAccount } from '../../../shared/ipc'
+import type { GitHubAccount } from '../../../shared/accounts'
 import { AddAccountPanel } from './AddAccountPanel'
 import { OmpProvidersSection } from './OmpProvidersSection'
 
