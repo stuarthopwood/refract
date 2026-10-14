@@ -141,9 +141,10 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
         .await;
     if let Some(role) = pending {
         // Gate-fix (MEDIUM, perf): run on a clone of the agent's own `Arc` rather than inline,
-        // so the frame listener itself is never blocked waiting on this reapply's own RPCs
-        // (`agent::frame`'s `handle_frame` already makes one inline RPC at settle time for
-        // `on_session_settled`, which this deliberately does NOT add to).
+        // so the frame listener itself is never blocked waiting on this reapply's own RPCs.
+        // Gate-fix (#856): `agent::frame`'s own `handle_turn_settled` used to make one inline
+        // RPC at settle time for `on_session_settled` too -- that one is ALSO spawned off the
+        // listener task now (same file), so this reapply no longer needs to share that worry.
         let agent = agent.arc();
         tokio::spawn(async move {
             // Gate-fix (HIGH, round 2): re-queue ONLY on `not-idle` (a genuine race -- the

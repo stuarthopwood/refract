@@ -23,6 +23,12 @@ impl SessionAgent {
                 {
                     let mut state = self.state.lock().await;
                     state.turn_settle_handled = false;
+                    // Gate-fix (#856): a new turn starting invalidates any `on_session_settled`
+                    // `get_state` round trip still in flight from the PREVIOUS turn's settle --
+                    // that round trip now runs on a spawned task (see `handle_turn_settled`), so
+                    // its reply can land after this point. Bumping here lets it recognise itself
+                    // as stale and drop its own reply instead of clobbering this turn's state.
+                    state.turn_generation = state.turn_generation.wrapping_add(1);
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
@@ -144,16 +150,26 @@ impl SessionAgent {
     /// `handleTurnSettled`): resolves any still-pending requests, moves to `idle`, then
     /// re-syncs from a fresh `get_state`.
     async fn handle_turn_settled(&self) {
-        {
+        let generation = {
             let mut state = self.state.lock().await;
             if state.turn_settle_handled {
                 return;
             }
             state.turn_settle_handled = true;
-        }
+            state.turn_generation
+        };
         self.settle_turn_pending().await;
         self.set_status(SessionStatus::Idle, None, None).await;
-        self.on_session_settled().await;
+        // Gate-fix (#856): `on_session_settled`'s own `get_state` round trip (up to
+        // `DEFAULT_REQUEST_TIMEOUT_MS`, 60s) used to run inline here, on the SAME task that
+        // `spawn_frame_listener`'s own `rx.recv()` loop calls `handle_frame` from -- nothing
+        // read another frame (including the NEXT turn's own `agent_start`) until it returned.
+        // Spawned instead, tagged with this turn's `turn_generation`: `on_session_settled`
+        // re-checks the generation under the state lock before applying anything, so a reply
+        // that lands after a newer turn has already started (bumping the generation in the
+        // `agent_start` arm above) is dropped rather than clobbering that newer turn's state.
+        let agent = self.arc();
+        tokio::spawn(async move { agent.on_session_settled(generation).await });
     }
 
     /// Port of `SessionAgent.ts`'s own `settleTurnPendingRequests`: every still-pending request
@@ -176,7 +192,7 @@ impl SessionAgent {
         }
     }
 
-    async fn on_session_settled(&self) {
+    async fn on_session_settled(&self, generation: u64) {
         let proc = { self.state.lock().await.process.clone() };
         let Some(proc) = proc else { return };
         if let Ok(res) = proc
@@ -185,6 +201,16 @@ impl SessionAgent {
         {
             if res.get("success").and_then(Value::as_bool) == Some(true) {
                 if let Some(data) = res.get("data") {
+                    // Gate-fix (#856): dropped, not applied, once a newer turn has started
+                    // while this request was in flight -- see `handle_turn_settled`'s own doc
+                    // comment for the mechanism. `sync_from_state` writes the registry's
+                    // `lastMessageCount`/`lastModel`/`lastThinkingLevel`/`currentConversation`
+                    // and (via `readout::on_sync_from_state`) `contextUsage`/`todoPhases`; a
+                    // stale reply applying any of those over a newer turn's own fresher values
+                    // would be a real (if narrower) regression of its own.
+                    if self.state.lock().await.turn_generation != generation {
+                        return;
+                    }
                     self.sync_from_state(data).await;
                 }
             }
