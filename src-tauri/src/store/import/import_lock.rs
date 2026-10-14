@@ -201,6 +201,9 @@ fn process_matches(pid: u32, expected_created_at_ticks: u64) -> bool {
     }
 }
 
+/// Always "not a match" off Windows (this build's own target is Windows-only, spec.md
+/// Assumptions; `GetProcessTimes`/`OpenProcess` have no portable equivalent here) -- a live
+/// owner's lock would always be (harmlessly) stolen on a non-Windows build of this crate.
 #[cfg(not(target_os = "windows"))]
 fn process_matches(_pid: u32, _expected_created_at_ticks: u64) -> bool {
     false
