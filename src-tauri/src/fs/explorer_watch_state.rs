@@ -162,6 +162,19 @@ fn is_session_busy(session_id: &str) -> bool {
         .contains_key(session_id)
 }
 
+/// The number of concurrent "busy" claims on `session_id` right now (0 if none). Lets
+/// `ensure_watcher`'s own final re-check (gate round 2 fix) tell "just my own claim" (1) apart
+/// from "someone else -- a lifecycle operation -- also claimed busy while I was inside
+/// `watch_directory`" (> 1), since `is_session_busy` alone cannot distinguish the two.
+fn busy_count(session_id: &str) -> u32 {
+    BUSY_SESSIONS
+        .lock()
+        .expect("busy mutex poisoned")
+        .get(session_id)
+        .copied()
+        .unwrap_or(0)
+}
+
 /// What a Session-lifecycle handler tells the renderer once it finishes, via
 /// `WorktreeOperationGuard::finish` -- `Reset` for archive/restore/recreateWorktree (the tree is
 /// stale, re-check it), `Forgotten` for delete (the Session itself is gone).
@@ -171,29 +184,31 @@ pub enum WorktreeOperationOutcome {
 }
 
 /// RAII guard returned by `begin_worktree_operation`. `finish` is the success path (clears busy,
-/// then resets or forgets); dropping it without calling `finish` (an early `?` return from the
-/// caller) still clears the busy marker -- fail-safe, matching `sessions.ts`'s own
-/// try/finally-style `setFileExplorerSessionBusy(id, false)` on every exit path -- but fires no
-/// reset/forget event, since a failed lifecycle operation changed nothing for the Explorer to
-/// re-check.
+/// then resets or forgets). Gate round 2 fix: dropping it WITHOUT calling `finish` (a FAILED
+/// lifecycle operation, via an early `?` return) now also resets, not just clears busy --
+/// `begin_worktree_operation` already stopped the watcher before the operation was attempted, so
+/// a failure still leaves the Explorer with no watcher underneath a now-possibly-stale tree;
+/// Electron's own `sessions.ts` resets in exactly this situation (archive's outer `finally`,
+/// :228-234; a failed delete that still has a Session row, :341-347; recreate's `catch`,
+/// :380-388). For `sessions_delete` specifically: its own handler never removes the registry row
+/// before any OTHER fallible step (`remove_session` is the LAST one), so every path that drops
+/// this guard unfinished still has the Session row present -- a Drop-triggered reset here never
+/// targets an already-gone Session.
 #[must_use]
 pub struct WorktreeOperationGuard {
     session_id: String,
+    app_handle: Arc<StdMutex<Option<AppHandle>>>,
     finished: bool,
 }
 
 impl WorktreeOperationGuard {
-    pub fn finish(
-        mut self,
-        app_handle: &Arc<StdMutex<Option<AppHandle>>>,
-        outcome: WorktreeOperationOutcome,
-    ) {
+    pub fn finish(mut self, outcome: WorktreeOperationOutcome) {
         self.finished = true;
         unmark_session_busy(&self.session_id);
         match outcome {
             WorktreeOperationOutcome::Forgotten => forget_file_explorer_session(&self.session_id),
             WorktreeOperationOutcome::Reset => {
-                notify_file_explorer_reset(app_handle, &self.session_id)
+                notify_file_explorer_reset(&self.app_handle, &self.session_id)
             }
         }
     }
@@ -203,27 +218,39 @@ impl Drop for WorktreeOperationGuard {
     fn drop(&mut self) {
         if !self.finished {
             unmark_session_busy(&self.session_id);
+            notify_file_explorer_reset(&self.app_handle, &self.session_id);
         }
     }
 }
 
 /// Called by `sessions.archive`/`.delete`/`.recreateWorktree` BEFORE they touch the worktree:
+/// marks the Session busy FIRST (gate round 2 fix: narrows the window a concurrent
+/// `ensure_watcher` could still slip a watcher in between "stopped" and "marked busy"), then
 /// stops any running watcher (PR #671 round 4 Critical: a watcher holding the root open makes
-/// `recreateWorktree`'s own folder creation fail with `EPERM`) and marks the Session busy so a
-/// concurrent `listDirectory`/`ensureWatching` cannot restart one mid-operation. Returns a guard
-/// the caller must `finish` on success.
-pub fn begin_worktree_operation(session_id: &str) -> WorktreeOperationGuard {
-    stop_file_explorer_watcher(session_id);
+/// `recreateWorktree`'s own folder creation fail with `EPERM`). Returns a guard the caller must
+/// `finish` on success; dropping it unfinished (failure) still resets -- see the guard's own doc
+/// comment.
+pub fn begin_worktree_operation(
+    app_handle: Arc<StdMutex<Option<AppHandle>>>,
+    session_id: &str,
+) -> WorktreeOperationGuard {
     mark_session_busy(session_id);
+    stop_file_explorer_watcher(session_id);
     WorktreeOperationGuard {
         session_id: session_id.to_string(),
+        app_handle,
         finished: false,
     }
 }
 
-/// Issue #729's validity check, cached per Session until the next reset/forget -- a watcher-
-/// triggered re-list of the root must never spawn a fresh `git worktree list` on every debounced
-/// flush (perf finding).
+/// Issue #729's validity check. Caches ONLY a `Valid` result, per Session, until the next
+/// reset/forget (gate round 2 fix): an `Invalid`/`Unknown` answer is never cached, so a user who
+/// repairs the worktree outside the app (restores the folder, runs `git worktree repair`) and
+/// hits Retry always sees the live, current answer -- the perf concern this cache exists for
+/// (`git worktree list` on every watcher-triggered re-list) only ever matters for an ACTIVELY
+/// WATCHED, valid Session with high file churn; an invalid one has no watcher doing repeated
+/// churn-driven re-lists in the first place, so never caching its failure costs nothing on the
+/// hot path this cache was built to protect.
 pub async fn cached_worktree_validity(
     session_id: &str,
     repo_path: &Path,
@@ -238,10 +265,12 @@ pub async fn cached_worktree_validity(
         return cached;
     }
     let validity = worktree_is_valid(repo_path, worktree_path).await;
-    VALIDITY_CACHE
-        .lock()
-        .expect("validity cache mutex poisoned")
-        .insert(session_id.to_string(), validity);
+    if validity == WorktreeValidity::Valid {
+        VALIDITY_CACHE
+            .lock()
+            .expect("validity cache mutex poisoned")
+            .insert(session_id.to_string(), validity);
+    }
     validity
 }
 
@@ -430,8 +459,14 @@ pub fn ensure_watcher(
         if archived || is_session_busy(session_id) || watchers.contains_key(session_id) {
             return;
         }
+        // Gate round 2 fix: the busy claim is now taken WHILE STILL HOLDING the same lock the
+        // membership/busy check above just ran under, closing the window a concurrent
+        // `begin_worktree_operation` (a lifecycle operation) could slip its OWN busy claim
+        // between this check and this claim and then proceed to stop a watcher that does not
+        // exist yet, only for this call to insert a fresh one on a Session being archived or
+        // deleted.
+        mark_session_busy(session_id);
     }
-    mark_session_busy(session_id);
     struct BusyRelease<'a>(&'a str);
     impl Drop for BusyRelease<'_> {
         fn drop(&mut self) {
@@ -493,7 +528,13 @@ pub fn ensure_watcher(
     };
     *handle_cell.lock().expect("handle cell poisoned") = Some(handle.clone());
     let mut watchers = WATCHERS.lock().expect("watchers mutex poisoned");
-    if watchers.contains_key(session_id) {
+    // Gate round 2 fix: `busy_count(session_id) > 1` means someone OTHER than our own
+    // `_release` claim also marked this Session busy while `watch_directory` was in flight --
+    // the only other caller of `mark_session_busy` is `begin_worktree_operation` (a lifecycle
+    // operation), since a second concurrent `ensure_watcher` call would have returned early at
+    // the membership/busy check above instead of claiming its own count. Back off rather than
+    // insert a watcher on a Session a lifecycle operation is (or is about to start) touching.
+    if watchers.contains_key(session_id) || busy_count(session_id) > 1 {
         drop(watchers);
         handle.stop();
         return;

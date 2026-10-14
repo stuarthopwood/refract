@@ -56,21 +56,33 @@ async fn dot_git_nested_path_as_typed_is_rejected() {
 #[tokio::test]
 async fn dot_git_reached_via_an_8_3_short_name_alias_is_rejected_post_realpath() {
     // Windows auto-generates an 8.3 short-name alias for any folder not already in 8.3 form
-    // (`.git` has a leading dot, so it qualifies) UNLESS the volume has disabled 8.3 generation
-    // -- not every alias is guaranteed `GIT~1` specifically, so this asserts the invariant that
-    // actually matters (never successfully lists into `.git`, whichever code path catches it),
-    // rather than assuming one exact alias string.
+    // (`.git` has a leading dot, so it qualifies) UNLESS the volume has disabled 8.3 generation.
+    // Gate round 2 fix: a bare `is_err()` passed even when 8.3 generation is disabled (`GIT~1`
+    // then does not exist at all, so the result is a mundane `FileMissing`, proving nothing about
+    // the post-realpath `.git` rejection this test exists for). Checks whether the alias actually
+    // exists first: if it does, asserts the EXACT reason (`OutsideWorktree`); if 8.3 generation is
+    // disabled, panics under CI (this crate's windows-latest CI runner is not expected to have it
+    // disabled) rather than silently passing on an untested path.
     let session = format!("s-{}", uuid::Uuid::new_v4());
     let root = fixture();
+    let alias_exists = std::fs::metadata(root.join("GIT~1")).is_ok();
+    if !alias_exists {
+        if is_ci() {
+            panic!("GIT~1 8.3 alias does not exist in CI; 8.3 name generation may be disabled on this runner's volume");
+        }
+        eprintln!("skipping 8.3-alias test: GIT~1 does not exist on this volume (8.3 generation disabled?)");
+        return;
+    }
     let result = resolve_list_target(&session, None, &root, "GIT~1/HEAD").await;
-    assert!(
-        result.is_err(),
+    assert_eq!(
+        result.unwrap_err(),
+        ResolveReason::OutsideWorktree,
         "must never resolve into .git via a short-name alias"
     );
 }
 
 #[tokio::test]
-async fn a_valid_empty_worktree_lists_as_genuinely_empty() {
+async fn a_valid_worktree_with_its_tracked_file_removed_lists_as_genuinely_empty() {
     let session = format!("s-{}", uuid::Uuid::new_v4());
     let repo = init_repo().await;
     let worktree = repo.with_file_name(format!("wt-{}", uuid::Uuid::new_v4()));
@@ -86,11 +98,21 @@ async fn a_valid_empty_worktree_lists_as_genuinely_empty() {
         ],
     )
     .await;
-    // Remove the only tracked file so the worktree is genuinely, validly empty of content (the
-    // `.git` pointer file itself still proves registration).
+    // Gate round 2 fix: the comment claimed a file was removed, but nothing was -- the test
+    // actually asserted ONE entry (README.md from the seed commit), contradicting its own name.
+    // Remove the tracked file for real (working-tree delete, no commit needed -- `listDirectory`
+    // only reads the filesystem, never the index) so the worktree is genuinely, validly empty of
+    // content while the `.git` pointer file itself still proves registration.
+    tokio::fs::remove_file(worktree.join("README.md"))
+        .await
+        .unwrap();
     let result = list_directory_entries(&session, Some(&repo), &worktree, "").await;
     match result {
-        Ok(ok) => assert_eq!(ok.entries.len(), 1, "README.md from the seed commit"),
+        Ok(ok) => assert_eq!(
+            ok.entries.len(),
+            0,
+            "the only tracked file was removed from disk"
+        ),
         Err(_) => panic!("a validly registered worktree must not report worktree-missing"),
     }
 }

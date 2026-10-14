@@ -230,7 +230,7 @@ fn is_ci() -> bool {
 /// whenever this machine lacked symlink privilege, proving nothing). Junctions only target
 /// DIRECTORIES; panics under CI rather than silently skipping (matches
 /// `git/worktree_validity.rs`'s own convention).
-fn make_junction(target_dir: &Path, link: &Path) {
+fn make_junction(target_dir: &Path, link: &Path) -> bool {
     let status = std::process::Command::new("cmd")
         .args(["/C", "mklink", "/J"])
         .arg(link)
@@ -243,6 +243,7 @@ fn make_junction(target_dir: &Path, link: &Path) {
         }
         eprintln!("skipping junction-based test: mklink refused (sandbox restriction, not CI)");
     }
+    ok
 }
 
 #[tokio::test]
@@ -255,8 +256,7 @@ async fn a_junction_escaping_the_worktree_is_outside_worktree() {
         .await
         .unwrap();
     let link = root.join("escape-link");
-    make_junction(&outside, &link);
-    if !link.exists() {
+    if !make_junction(&outside, &link) {
         return;
     }
     let result = resolve_in_worktree(&root, "escape-link/secret.txt").await;
@@ -267,8 +267,7 @@ async fn a_junction_escaping_the_worktree_is_outside_worktree() {
 async fn an_in_worktree_junction_still_resolves() {
     let root = fixture().await;
     let link = root.join("alias");
-    make_junction(&root.join("sub"), &link);
-    if !link.exists() {
+    if !make_junction(&root.join("sub"), &link) {
         return;
     }
     let result = resolve_in_worktree(&root, "alias/file.txt").await;
@@ -292,8 +291,7 @@ async fn a_junction_in_a_middle_segment_still_resolves_the_remaining_segments() 
         .await
         .unwrap();
     let link = root.join("mid-link");
-    make_junction(&root.join("sub"), &link);
-    if !link.exists() {
+    if !make_junction(&root.join("sub"), &link) {
         return;
     }
     let result = resolve_in_worktree(&root, "mid-link/deep/c.txt").await;
@@ -309,8 +307,7 @@ async fn a_junction_in_a_middle_segment_still_resolves_the_remaining_segments() 
 async fn a_junction_resolving_back_to_the_worktree_root_is_file_missing() {
     let root = fixture().await;
     let link = root.join("loop");
-    make_junction(&root, &link);
-    if !link.exists() {
+    if !make_junction(&root, &link) {
         return;
     }
     let result = resolve_in_worktree(&root, "loop").await;
@@ -325,8 +322,7 @@ async fn a_worktree_reached_through_its_own_junction_alias_still_accepts_the_ali
     let real_root = fixture().await;
     let alias_root =
         std::env::temp_dir().join(format!("refract-resolve-alias-{}", uuid::Uuid::new_v4()));
-    make_junction(&real_root, &alias_root);
-    if !alias_root.exists() {
+    if !make_junction(&real_root, &alias_root) {
         return;
     }
     let absolute_alias_token = alias_root.join("sub").join("file.txt");
@@ -344,21 +340,29 @@ async fn a_junction_cycle_is_rejected_rather_than_looping_forever() {
     let a = root.join("junc-a");
     let b = root.join("junc-b");
     tokio::fs::create_dir_all(&b).await.unwrap();
-    make_junction(&b, &a);
-    if !a.exists() {
+    if !make_junction(&b, &a) {
         return;
     }
     // Point `b` back at `a`, completing the cycle -- both are directories, so junctions alone
-    // (no symlink privilege) exercise `MAX_LINK_HOPS`'s own cap.
+    // (no symlink privilege) exercise `MAX_LINK_HOPS`'s own cap. Gate round 2 fix: `b.exists()`
+    // (and `a.exists()`) call `fs::metadata`, which FOLLOWS reparse points -- once the cycle is
+    // complete, following either one fails to resolve at all (`ERROR_CANT_RESOLVE_FILENAME`),
+    // so `exists()` returns false and a check against it would return early with ZERO
+    // assertions ever running, even in CI. `symlink_metadata` never follows, so it still reports
+    // the reparse point ITSELF as present regardless of whether its target resolves.
     let _ = tokio::fs::remove_dir(&b).await; // directories must be empty before mklink /J (re)targets them
-    make_junction(&a, &b);
-    if !b.exists() {
+    if !make_junction(&a, &b) {
         return;
     }
-    let result = resolve_in_worktree(&root, "junc-a").await;
     assert!(
-        result.is_err(),
-        "a link cycle must be rejected, not looped forever"
+        std::fs::symlink_metadata(&b).is_ok(),
+        "the junction reparse point itself must exist even though its cyclic target cannot resolve"
+    );
+    let result = resolve_in_worktree(&root, "junc-a").await;
+    assert_eq!(
+        result.unwrap_err(),
+        ResolveReason::OutsideWorktree,
+        "a link cycle must hit MAX_LINK_HOPS and be rejected, not looped forever"
     );
 }
 
@@ -398,27 +402,31 @@ async fn kelvin_sign_does_not_fold_to_k_against_a_sibling_folder() {
 #[tokio::test]
 async fn a_link_chain_to_a_unc_target_is_outside_worktree() {
     // Junctions CANNOT target a UNC path at all (verified live: `mklink /J` refuses with "Local
-    // volumes are required"), so this one case needs a real symlink -- soft-skipped without
-    // Developer Mode/elevation, the one residual case this suite cannot force under an
-    // unprivileged CI runner. `a -> b -> \\attacker\share`: `b` is a real in-worktree symlink
-    // whose OWN target is the UNC path, so the walk substitutes it as the SECOND hop, proving
-    // the per-hop (not just top-level-token) `is_unsafe_token` check.
+    // volumes are required"), so this case needs real symlinks -- panics under CI if symlink
+    // privilege is unavailable (gate round 2 fix: matches every other link test's own CI
+    // discipline rather than a soft-skip). `chain-a -> chain-b -> \\attacker\share`: `chain-b` is
+    // a real in-worktree symlink whose OWN target is the UNC path, so the walk substitutes it as
+    // the SECOND hop, proving the per-hop (not just top-level-token) `is_unsafe_token` check.
     let root = fixture().await;
     let a = root.join("chain-a");
-    #[cfg(windows)]
-    {
-        if tokio::fs::symlink_file("\\\\attacker\\share\\payload.txt", &a)
-            .await
-            .is_ok()
-        {
-            let result = resolve_in_worktree(&root, "chain-a").await;
-            assert_eq!(result.unwrap_err(), ResolveReason::OutsideWorktree);
-        } else {
-            eprintln!(
-                "skipping UNC-chain test: this environment cannot create symlinks (no Developer Mode / not elevated); junctions cannot target UNC paths at all"
+    let b = root.join("chain-b");
+    let made_b = tokio::fs::symlink_file("\\\\attacker\\share\\payload.txt", &b)
+        .await
+        .is_ok();
+    let made_a = tokio::fs::symlink_file("chain-b", &a).await.is_ok();
+    if !made_a || !made_b {
+        if is_ci() {
+            panic!(
+                "symlink creation failed in CI for the UNC-chain test (chain-a -> chain-b -> UNC)"
             );
         }
+        eprintln!(
+            "skipping UNC-chain test: this environment cannot create symlinks (no Developer Mode / not elevated); junctions cannot target UNC paths at all"
+        );
+        return;
     }
+    let result = resolve_in_worktree(&root, "chain-a").await;
+    assert_eq!(result.unwrap_err(), ResolveReason::OutsideWorktree);
 }
 
 /// Issue #790's own acceptance criterion: "a table of 20 hostile paths... refused with the same
@@ -445,15 +453,8 @@ async fn the_twenty_hostile_path_table() {
         ("COM\u{00b9}", ResolveReason::OutsideWorktree),    // reserved name, superscript digit
         ("a\0b", ResolveReason::OutsideWorktree),           // embedded NUL
         ("javascript:alert(1)", ResolveReason::OutsideWorktree), // colon, no drive letter
-        ("sub/file.txt", ResolveReason::FileMissing),       // placeholder, overwritten below
     ];
     for (token, expected) in cases {
-        // The one case above that is actually a SUCCESS path (sanity-checked separately, not
-        // part of the hostile set) is replaced here to keep the table itself honest about what
-        // it tests: every remaining row must be hostile.
-        if *token == "sub/file.txt" {
-            continue;
-        }
         let result = resolve_in_worktree(&root, token).await;
         assert_eq!(
             result.unwrap_err(),

@@ -184,12 +184,16 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
         if state.registry.lock().await.get_session(&id).is_none() {
             return Err(not_found(format!("Session not found: {id}")));
         }
-        // Lane R7 (#790) lifecycle hook, gate round 1 fix: stops any running file-explorer
+        // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: stops any running file-explorer
         // watcher and marks the Session busy BEFORE the archive proceeds, so a concurrent
-        // `listDirectory`/`ensureWatching` cannot restart one mid-operation; on success, resets
-        // the Explorer so a mounted panel re-checks and shows the archived state instead of a
-        // stale live tree (`sessions.ts`:209).
-        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(&id);
+        // `listDirectory`/`ensureWatching` cannot restart one mid-operation; resets the Explorer
+        // on BOTH success and failure (the watcher is already stopped either way) so a mounted
+        // panel re-checks instead of staying on a stale tree with no watcher underneath
+        // (`sessions.ts`:209, 228-234).
+        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
+            state.app_handle.clone(),
+            &id,
+        );
         state
             .session_manager
             .get_or_create_agent(&id)
@@ -214,10 +218,7 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // this hook only ships the point itself, so a later lane never has to rediscover where
         // archive finishes. Fires only on success, never on an early `?` return above.
         on_worktree_released(&id);
-        worktree_guard.finish(
-            &state.app_handle,
-            crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset,
-        );
+        worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset);
         state.session_manager.notify_list_changed();
         Ok(Value::Null)
     })
@@ -329,8 +330,12 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             (session, repository)
         };
 
-        // Lane R7 (#790) lifecycle hook, gate round 1 fix: see `sessions_archive`'s own comment.
-        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(&id);
+        // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: see `sessions_archive`'s own
+        // comment -- resets on failure too, not only on success.
+        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
+            state.app_handle.clone(),
+            &id,
+        );
         // CRITICAL fix (gate round 1): the live agent (if any) must be shut down BEFORE the
         // worktree is removed -- same ordering `sessions.archive` already uses, same ordering
         // `sessions.ts`'s own SESSIONS_DELETE handler uses (`await manager.getOrCreateAgent(id)
@@ -375,10 +380,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // delete releases a worktree exactly as finally as an archive does. Fires only on
         // success (every earlier failure path returns via `?` before reaching this line).
         on_worktree_released(&id);
-        worktree_guard.finish(
-            &state.app_handle,
-            crate::fs::explorer_watch_state::WorktreeOperationOutcome::Forgotten,
-        );
+        worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Forgotten);
         state.session_manager.notify_list_changed();
         Ok(Value::Null)
     })
@@ -412,12 +414,13 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
             (session, repository)
         };
 
-        // Lane R7 (#790) lifecycle hook, gate round 1 fix: stops the watcher and marks the
-        // Session busy BEFORE the folder is recreated (PR #671 round 4 Critical: a watcher
-        // holding the OLD root open makes this `mkdir` fail with `EPERM`); resets the Explorer
-        // on success so a mounted panel picks up the fresh tree instead of staying stuck on
-        // `worktree-missing`.
-        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(&id);
+        // Lane R7 (#790) lifecycle hook, gate round 1/2 fixes: the busy/stop claim is taken
+        // AFTER `branch_exists` (not before, gate round 2 fix) -- Electron's own
+        // `recreateWorktree` only stops the watcher once it knows the branch actually exists,
+        // so a plain `branch-missing` failure (no worktree mutation attempted at all) never
+        // stops a healthy running watcher for no reason. Once taken, it resets the Explorer on
+        // BOTH success and a later failure (the watcher is already stopped before the folder
+        // recreation is attempted, same PR #671 round 4 Critical reasoning as before).
         let repo_path = Path::new(&repository.path);
         if !branch_exists(repo_path, &session.branch).await {
             return Err(IpcError::new(
@@ -425,6 +428,10 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
                 format!("Branch not found: {}", session.branch),
             ));
         }
+        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
+            state.app_handle.clone(),
+            &id,
+        );
         recreate_worktree(
             repo_path,
             Path::new(&session.worktree_path),
@@ -432,10 +439,7 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
         )
         .await
         .map_err(map_git_error)?;
-        worktree_guard.finish(
-            &state.app_handle,
-            crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset,
-        );
+        worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset);
         state.session_manager.notify_list_changed();
         Ok(Value::Null)
     })

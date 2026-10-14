@@ -172,27 +172,35 @@ fn removing_the_watched_root_fires_on_fatal_once() {
     );
     assert!(handle.is_some());
     std::thread::sleep(Duration::from_millis(300));
-    // Best-effort: removing a directory a watch handle holds open can fail on Windows while the
-    // handle is live (`EPERM`-equivalent) -- if removal itself fails, this test's own assertion
-    // is skipped rather than flaking a real OS race unrelated to this module's own logic.
-    if std::fs::remove_dir_all(&root).is_ok() {
-        // Past the first liveness tick (2s) with margin (gate round 1 fix: the previous version
-        // only waited 3s then stopped checking, which could not distinguish "fired once" from
-        // "fires repeatedly" -- this polls twice more, past a second and third liveness tick, and
-        // asserts the count never climbs above 1).
-        std::thread::sleep(Duration::from_secs(3));
-        assert_eq!(
-            fatal_count.load(Ordering::SeqCst),
-            1,
-            "must fire within the first liveness tick"
+    // Removing a directory a watch handle holds open can fail on Windows while the handle is
+    // live (`EPERM`-equivalent). Gate round 2 fix: this used to silently skip the whole test's
+    // assertions on that failure, including under CI, where a persistent `EPERM` would mean the
+    // fatal-detection path is never actually exercised at all -- now panics under CI instead.
+    if std::fs::remove_dir_all(&root).is_err() {
+        if std::env::var("CI").is_ok() {
+            panic!("remove_dir_all failed in CI; the fatal-detection path was never exercised");
+        }
+        eprintln!(
+            "skipping fatal-detection assertions: remove_dir_all failed (EPERM-equivalent, not CI)"
         );
-        std::thread::sleep(Duration::from_secs(2));
-        assert_eq!(
-            fatal_count.load(Ordering::SeqCst),
-            1,
-            "must never fire a second time"
-        );
+        return;
     }
+    // Past the first liveness tick (2s) with margin (gate round 1 fix: the previous version
+    // only waited 3s then stopped checking, which could not distinguish "fired once" from
+    // "fires repeatedly" -- this polls twice more, past a second and third liveness tick, and
+    // asserts the count never climbs above 1).
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(
+        fatal_count.load(Ordering::SeqCst),
+        1,
+        "must fire within the first liveness tick"
+    );
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(
+        fatal_count.load(Ordering::SeqCst),
+        1,
+        "must never fire a second time"
+    );
 }
 
 #[test]

@@ -59,6 +59,7 @@ pub enum ListDirectoryError {
 
 pub type ListDirectoryResult = Result<ListDirectoryOk, ListDirectoryError>;
 
+#[derive(Debug)]
 pub enum ResolveTargetOk {
     Root(PathBuf),
     Path(PathBuf),
