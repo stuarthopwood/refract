@@ -39,6 +39,17 @@ pub(super) fn truncate(s: &str, max_len: usize) -> String {
     s.chars().take(max_len).collect()
 }
 
+/// Port of `reattachVerification.ts`'s own `assertConversationFileExists`: checked by
+/// `attach_and_verify` before it ever calls `switch_session` (gate-fix round 4, test review
+/// MEDIUM -- extracted out of `attach_and_verify`'s own inline `tokio::fs::metadata` check so
+/// the missing-file error message is directly unit-testable, matching TS's own naming of the
+/// path in the thrown message).
+pub(super) async fn assert_conversation_file_exists(file: &str) -> Result<(), String> {
+    if tokio::fs::metadata(file).await.is_err() {
+        return Err(format!("Conversation file missing: {file}"));
+    }
+    Ok(())
+}
 /// Port of `reattachVerification.ts`'s own `verifyReattach`. Windows paths are compared
 /// case-insensitively without canonicalisation (both sides are already absolute paths from the
 /// registry/OMP itself, unlike `path.resolve`'s own relative-path handling).

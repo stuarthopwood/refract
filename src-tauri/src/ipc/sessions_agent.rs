@@ -215,14 +215,28 @@ pub(crate) async fn resume_session_core<A: ResumableAgent>(
     let Some(_guard) = try_lock_resuming(id) else {
         return Err(ResumeCoreError::Refused("busy"));
     };
+    // Port of `resumeSession.ts`'s own upfront `session.archivedAt` check: refused before the
+    // tail read (gate-fix round 4, test review MEDIUM -- never worth a 256 KiB Conversation
+    // read for a Session a resume can never apply to).
+    if archived {
+        return Err(ResumeCoreError::Refused("not-eligible"));
+    }
     let status = agent.status().await;
     let stop_reason = agent.stop_reason().await;
     let detection = agent.resolve_termination().await;
+    // Fresh re-check (gate-fix round 3, test review HIGH): catches a concurrent archive landing
+    // DURING the tail read just above, which the already-consumed `archived` parameter above
+    // cannot see -- by this point it is already known `false`, so `check_resume_eligible` below
+    // is always called with `false` too (same as TS's own `!!fresh.archivedAt`, itself always
+    // `false` by the equivalent point in `resumeSessionCore`).
+    if agent.is_archived().await {
+        return Err(ResumeCoreError::Refused("not-eligible"));
+    }
     if let Some(code) = check_resume_eligible(
         status,
         stop_reason.as_deref(),
         detection.terminated_unexpectedly,
-        archived,
+        false,
     ) {
         return Err(ResumeCoreError::Refused(code));
     }

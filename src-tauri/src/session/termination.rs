@@ -101,6 +101,14 @@ async fn record_stopped_on_request_marker(
     let Ok(metadata) = tokio::fs::metadata(conversation).await else {
         return;
     };
+    // Gate-fix (round 4, security review MEDIUM): the registry lock is now acquired BEFORE the
+    // epoch re-check and held across it AND the write below, not released in between -- the
+    // previous shape (check epoch, release, THEN separately acquire the registry lock to write)
+    // left a window where a `clear_stopped_on_request_marker` landing in exactly that gap could
+    // bump the epoch AFTER this call's own check already passed, letting a stale write through
+    // anyway. No other caller can observe or mutate the registry between the check and this
+    // call's own write while this guard is held.
+    let mut registry = agent.registry().lock().await;
     let still_current = agent
         .with_termination_state(|s| s.epoch == epoch_at_exit)
         .await;
@@ -112,12 +120,7 @@ async fn record_stopped_on_request_marker(
         stopped_on_request_at_size: Some(Some(metadata.len() as i64)),
         ..Default::default()
     };
-    let _ = agent
-        .registry()
-        .lock()
-        .await
-        .update_session(agent.session_id(), patch)
-        .await;
+    let _ = registry.update_session(agent.session_id(), patch).await;
 }
 
 /// True only when `session` carries a marker for its OWN current Conversation whose recorded

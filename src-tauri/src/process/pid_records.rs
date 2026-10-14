@@ -236,6 +236,7 @@ fn identity_matches(
 #[cfg(target_os = "windows")]
 fn terminate_if_matching(pid: u32, recorded_start_time: u64, recorded_image_path: &str) -> bool {
     use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
+    use windows::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime;
     use windows::Win32::System::Threading::{
         GetProcessTimes, OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
         PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
@@ -267,6 +268,17 @@ fn terminate_if_matching(pid: u32, recorded_start_time: u64, recorded_image_path
     // have been reused by an unrelated process between check and kill); closed exactly once via
     // `HandleGuard` on every return path.
     unsafe {
+        // Security gate-fix (round 4, security review MEDIUM): captured right before this whole
+        // verification starts, so it is the single shared reference moment for BOTH this root
+        // check and every descendant `kill_descendant_tree` walks below -- nothing created
+        // AFTER this instant can be the process this reap pass actually observed, closing the
+        // snapshot-to-`OpenProcess` TOCTOU (an unrelated process could otherwise reuse a pid in
+        // the gap between reading `processes.json`/the Toolhelp32 snapshot and opening it here,
+        // coincidentally landing inside the existing creation-time/image-path checks).
+        let snapshot_ticks = {
+            let ft = GetSystemTimePreciseAsFileTime();
+            ((ft.dwHighDateTime as u64) << 32) | ft.dwLowDateTime as u64
+        };
         let Ok(handle) = OpenProcess(
             PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
             false,
@@ -284,6 +296,12 @@ fn terminate_if_matching(pid: u32, recorded_start_time: u64, recorded_image_path
             return false;
         }
         let ticks = ((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64;
+        if ticks > snapshot_ticks {
+            // Fail closed: a process that looks newer than this call's own reference moment
+            // cannot be the one `processes.json` recorded -- treat as a reused pid rather than
+            // risk terminating an unrelated, brand-new process.
+            return false;
+        }
 
         let mut buf = [0u16; 512];
         let mut len = buf.len() as u32;
@@ -316,7 +334,7 @@ fn terminate_if_matching(pid: u32, recorded_start_time: u64, recorded_image_path
         // `taskkill /T` already covers for a NORMAL stop.
         let root_killed = TerminateProcess(guard.0, 1).is_ok();
         if root_killed {
-            kill_descendant_tree(pid, ticks);
+            kill_descendant_tree(pid, ticks, snapshot_ticks);
         }
         root_killed
     }
@@ -338,13 +356,17 @@ fn terminate_if_matching(_pid: u32, _recorded_start_time: u64, _recorded_image_p
 /// handle and re-verified LIVE before being touched -- but unlike the root (which has one known
 /// expected image path to compare against), a descendant is an arbitrary broker/tool child with
 /// no single expected image, so its own re-verification is liveness-only: creation time at or
-/// after its parent's own (the same pid-reuse defence the root uses) and a successful
+/// after its parent's own (the same pid-reuse defence the root uses) AND at or before
+/// `snapshot_ticks` (security gate-fix round 4, MEDIUM: the single reference moment captured by
+/// `terminate_if_matching` right before this whole reap pass began -- a candidate that looks
+/// NEWER than that instant cannot be a process this pass actually observed, closing the
+/// snapshot-to-`OpenProcess` TOCTOU at every level, not just the root's own), and a successful
 /// `QueryFullProcessImageNameW` call on the SAME handle about to be terminated (the queried path
 /// itself is intentionally not compared to anything -- its only role here is proving the handle
 /// still resolves to a real, running process immediately before `TerminateProcess`, not identity
 /// matching).
 #[cfg(target_os = "windows")]
-fn kill_descendant_tree(root_pid: u32, root_creation_ticks: u64) -> usize {
+fn kill_descendant_tree(root_pid: u32, root_creation_ticks: u64, snapshot_ticks: u64) -> usize {
     use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -421,6 +443,14 @@ fn kill_descendant_tree(root_pid: u32, root_creation_ticks: u64) -> usize {
             if ticks < parent_creation_ticks {
                 // Pid-reuse defence: a genuine child is created at or after its own parent -- an
                 // unrelated, OLDER process now holding this pid is never touched.
+                return None;
+            }
+            if ticks > snapshot_ticks {
+                // Security gate-fix (round 4, MEDIUM): a candidate that looks NEWER than the
+                // shared reference moment this whole reap pass started at cannot be a process
+                // that was actually alive when the Toolhelp32 snapshot was taken -- fail closed
+                // rather than risk terminating a brand-new, unrelated process that happened to
+                // reuse this pid.
                 return None;
             }
             let mut buf = [0u16; 512];

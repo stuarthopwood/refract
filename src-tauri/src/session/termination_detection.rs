@@ -3,9 +3,10 @@
 // #806's 600-line soft cap). No behaviour change: every item moved here verbatim (`clean()`
 // calls become the equivalent `TerminationDetectionResult::default()` since that private helper
 // stayed in `termination.rs` with the struct it belongs to). `detect_unexpected_termination` is
-// re-exported from `termination.rs` so every existing caller's `termination::
-// detect_unexpected_termination` path is unchanged. See `termination.rs`'s own header for this
-// lane's full scope and the `on_frame`/`on_exit`/`on_start_progress` extension-point contract.
+// brought in via a plain private `use` in `termination.rs` (gate-fix round 3, code
+// review/security MEDIUM: no `pub(crate)` re-export -- no caller outside that file and its own
+// test needs one). See `termination.rs`'s own header for this lane's full scope and the
+// `on_frame`/`on_exit`/`on_start_progress` extension-point contract.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex as StdMutex};

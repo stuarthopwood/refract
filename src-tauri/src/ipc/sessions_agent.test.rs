@@ -192,6 +192,11 @@ struct FakeResumableAgent {
     /// `resolve_termination` would wrongly see `false` here too.
     archived_during_resolve: bool,
     archived: StdMutex<bool>,
+    /// Gate-fix (round 4, test review MEDIUM): proves the upfront-`archived` short-circuit
+    /// genuinely skips the tail read entirely (`resumeSession.test.ts`'s own "refuses as
+    /// not-eligible for an archived Session, without reading the tail" -- never worth a 256 KiB
+    /// file read for a Session a resume can never apply to).
+    resolve_termination_called: StdMutex<bool>,
     start_called: StdMutex<bool>,
     notify_called: StdMutex<bool>,
     send_called: StdMutex<bool>,
@@ -211,6 +216,7 @@ impl ResumableAgent for FakeResumableAgent {
     }
 
     async fn resolve_termination(&self) -> TerminationDetectionResult {
+        *self.resolve_termination_called.lock().unwrap() = true;
         if self.archived_during_resolve {
             *self.archived.lock().unwrap() = true;
         }
@@ -289,6 +295,7 @@ fn fake_resumable_with_archive_race(
         start_fails,
         archived_during_resolve,
         archived: StdMutex::new(false),
+        resolve_termination_called: StdMutex::new(false),
         start_called: StdMutex::new(false),
         notify_called: StdMutex::new(false),
         send_called: StdMutex::new(false),
@@ -373,7 +380,11 @@ async fn resume_session_core_refuses_when_not_eligible_without_starting_the_agen
 }
 
 #[tokio::test]
-async fn resume_session_core_refuses_an_archived_session() {
+async fn resume_session_core_refuses_an_archived_session_without_reading_the_tail() {
+    // Port of `resumeSession.test.ts`'s own "refuses as not-eligible for an archived Session,
+    // without reading the tail" (Main gate round 4 MEDIUM): never worth a 256 KiB Conversation
+    // read for a Session a resume can never apply to -- the upfront `archived` parameter must
+    // short-circuit BEFORE `resolve_termination` is ever called, not merely refuse afterward.
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable(
         SessionStatus::Stopped,
@@ -389,6 +400,14 @@ async fn resume_session_core_refuses_an_archived_session() {
         Err(ResumeCoreError::Refused("not-eligible"))
     ));
     assert!(!*agent.start_called.lock().unwrap());
+    assert!(
+        !*agent.resolve_termination_called.lock().unwrap(),
+        "an already-archived Session must never trigger the tail read at all"
+    );
+    assert!(
+        try_lock_resuming(&id).is_some(),
+        "the busy lock must be released even on this early-return path"
+    );
 }
 
 #[tokio::test]
@@ -446,6 +465,8 @@ async fn resume_session_core_starts_notifies_and_sends_when_eligible_and_restart
 
 #[tokio::test]
 async fn resume_session_core_never_sends_when_the_restart_itself_fails() {
+    // Port of `resumeSession.test.ts`'s own "releases the lock after agent.start() resolves but
+    // the resulting snapshot is still stopped".
     let id = format!("test-session-{}", uuid::Uuid::new_v4());
     let agent = fake_resumable(
         SessionStatus::Stopped,
@@ -462,6 +483,35 @@ async fn resume_session_core_never_sends_when_the_restart_itself_fails() {
         !*agent.send_called.lock().unwrap(),
         "never send the resume instruction into a Session that did not actually come back"
     );
+    assert!(
+        try_lock_resuming(&id).is_some(),
+        "the busy lock must be released once this call has returned"
+    );
+}
+
+#[tokio::test]
+async fn resume_session_core_refuses_a_third_call_after_completion_as_not_stopped() {
+    // Port of `resumeSession.test.ts`'s own "refuses a third call after completion as
+    // not-stopped (the agent is now idle)" (Main gate round 4 MEDIUM): a resume that actually
+    // completed leaves the Session no longer `Stopped`, so a LATER call (lock long since
+    // released, a genuinely fresh attempt, not a concurrent one) must refuse `not-stopped`
+    // rather than re-running the whole eligible path again.
+    let id = format!("test-session-{}", uuid::Uuid::new_v4());
+    let agent = fake_resumable(
+        SessionStatus::Stopped,
+        Some(SessionStatus::Working),
+        Some("agent-exited"),
+        false,
+        false,
+        false,
+    );
+    let first = resume_session_core(&agent, &id, false).await;
+    assert!(first.is_ok(), "the first call must succeed");
+    let third = resume_session_core(&agent, &id, false).await;
+    assert!(matches!(
+        third,
+        Err(ResumeCoreError::Refused("not-stopped"))
+    ));
 }
 
 #[tokio::test]
@@ -480,6 +530,10 @@ async fn resume_session_core_propagates_a_send_failure_as_prompt_failed() {
         Err(ResumeCoreError::PromptFailed(message)) => assert_eq!(message, "boom"),
         other => panic!("expected PromptFailed, got is_ok={}", other.is_ok()),
     }
+    assert!(
+        try_lock_resuming(&id).is_some(),
+        "the busy lock must be released even on a PromptFailed exit"
+    );
 }
 
 #[tokio::test]
@@ -598,6 +652,26 @@ async fn attach_snapshot_decision_passive_open_auto_starts_when_nothing_is_wrong
     assert!(detection.is_some());
     assert!(*agent.start_called.lock().unwrap());
     assert!(*agent.notify_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn attach_snapshot_decision_a_genuinely_crashed_session_with_the_same_stop_reason_never_auto_starts(
+) {
+    // Port of `attachSnapshot.test.ts`'s own "a genuinely crashed Session with the same
+    // stopReason never auto-starts and the detection reaches buildSnapshot" (Main gate round 4
+    // HIGH): `not-started` is normally allowed to auto-start, but a tail read proving it
+    // actually died mid-turn (`terminated_unexpectedly: true`) must still block it -- and the
+    // caller still gets the real detection back either way (threaded into `build_snapshot`).
+    let agent = fake_attachable(SessionStatus::Stopped, Some("not-started"), true);
+    let detection = attach_snapshot_decision(&agent, false).await;
+    assert!(
+        !*agent.start_called.lock().unwrap(),
+        "a Session whose tail shows it died mid-turn must never auto-start"
+    );
+    assert!(
+        detection.is_some_and(|d| d.terminated_unexpectedly),
+        "the fresh detection result must still be returned for buildSnapshot to use"
+    );
 }
 
 #[tokio::test]

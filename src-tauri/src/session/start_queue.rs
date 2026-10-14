@@ -140,10 +140,11 @@ pub(super) struct State {
     /// review HIGH, round 2): `on_start_progress` ignores every tick while this is `false` -- the
     /// frame-listener task can still have a STALE `StartProgress` event queued from the SAME
     /// attempt's own `wait_for_ready` ticker, delivered AFTER `wait_ready()` has already returned
-    /// (ready or failed) and the stage already cleared. `None -> Waiting`/`None -> Prompt` are
-    /// BOTH legal by the transition table alone (a genuinely fresh start is allowed to begin at
-    /// either), so the table cannot tell a late, stale tick from this same attempt apart from a
-    /// brand new one; this flag can.
+    /// (ready or failed) and the stage already cleared. `None -> Waiting` is legal by the
+    /// transition table alone (a genuinely fresh start is allowed to begin there -- gate round
+    /// 4, LOW: corrected, `None -> Prompt` is NOT also legal, `validate_transition`'s own `None`
+    /// arm never includes `Prompt`), so the table on its own cannot tell a late, stale `Waiting`
+    /// tick from this same attempt apart from a brand new one; this flag can.
     ready_wait_active: bool,
     /// Set by `watch_for_cancel`'s own cancel branch (round 4), read-and-reset by
     /// `agent::launch`'s own `launch()` right after `wait_ready` errors (the same `proc.stop()`

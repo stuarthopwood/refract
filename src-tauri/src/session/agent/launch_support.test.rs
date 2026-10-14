@@ -8,13 +8,46 @@
 // `fetch_all_messages_core`/`fallback_to_get_messages_core` (the generic `_core` functions
 // `MessagesPageRequester` makes testable without a real spawned `omp` process -- see
 // `launch_support.rs`'s own doc comment on that trait for the refactor this required).
-//
-// NOT ported: `reattachVerification.test.ts`'s own `assertConversationFileExists` (2 cases).
-// Its exact behaviour is already inlined directly in `launch.rs`'s `attach_and_verify` (a plain
-// `tokio::fs::metadata` check before `switch_session`), never extracted as its own function in
-// this file -- nothing here to unit-test in isolation.
+// Ports `assert_conversation_file_exists`'s own 2 cases from `reattachVerification.test.ts`'s
+// `describe('assertConversationFileExists', ...)` block (gate round 4, test review MEDIUM --
+// extracted out of `launch.rs`'s own inline `attach_and_verify` check so it is directly
+// unit-testable, matching this file's own split for `verify_reattach`/`reattach_rebaseline_notice`).
 use super::*;
 use std::sync::Mutex as StdMutex;
+
+// ---------------------------------------------------------------------------------------------
+// assert_conversation_file_exists -- port of reattachVerification.test.ts's own
+// `describe('assertConversationFileExists', ...)`
+// ---------------------------------------------------------------------------------------------
+
+#[tokio::test]
+async fn assert_conversation_file_exists_resolves_for_a_file_that_exists() {
+    let file = std::env::temp_dir().join(format!(
+        "refract-assert-conv-exists-test-{}.jsonl",
+        uuid::Uuid::new_v4()
+    ));
+    tokio::fs::write(&file, "{}\n").await.unwrap();
+    let result = assert_conversation_file_exists(file.to_str().unwrap()).await;
+    tokio::fs::remove_file(&file).await.ok();
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn assert_conversation_file_exists_throws_naming_the_path_for_a_missing_file() {
+    let file = std::env::temp_dir().join(format!(
+        "refract-assert-conv-missing-test-{}.jsonl",
+        uuid::Uuid::new_v4()
+    ));
+    let missing = file.to_str().unwrap().to_string();
+    let result = assert_conversation_file_exists(&missing).await;
+    match result {
+        Err(message) => assert!(
+            message.contains(&missing),
+            "error must name the missing path, got: {message}"
+        ),
+        Ok(()) => panic!("expected an error for a missing file"),
+    }
+}
 
 // ---------------------------------------------------------------------------------------------
 // verify_reattach -- port of reattachVerification.test.ts's own `describe('verifyReattach', ...)`

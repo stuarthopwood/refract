@@ -14,8 +14,8 @@ use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
 use crate::store::registry::{Session, SessionPatch};
 
 use super::launch_support::{
-    fetch_all_messages, reattach_rebaseline_notice, registry_store_error_message, to_process_mode,
-    truncate, verify_reattach,
+    assert_conversation_file_exists, fetch_all_messages, reattach_rebaseline_notice,
+    registry_store_error_message, to_process_mode, truncate, verify_reattach,
 };
 use super::{
     AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS, MAX_MODEL_FIELD_LENGTH,
@@ -342,9 +342,7 @@ impl SessionAgent {
         session: &Session,
     ) -> Result<Value, String> {
         if let Some(conversation) = &session.current_conversation {
-            if tokio::fs::metadata(conversation).await.is_err() {
-                return Err(format!("Conversation file missing: {conversation}"));
-            }
+            assert_conversation_file_exists(conversation).await?;
             let switch_res = proc
                 .request(
                     json!({ "type": "switch_session", "sessionPath": conversation }),
