@@ -228,17 +228,27 @@ const MAX_REDACTION_INPUT_BYTES: usize = 8 * 1024;
 /// instead: drop the whole text rather than gamble on what's left of it.
 const REDACTION_FAILURE_PLACEHOLDER: &str = "[diagnostic withheld]";
 
-/// Trims `text` to at most its last `max_bytes` bytes, advancing the cut point forward to the
-/// next UTF-8 char boundary so a multi-byte character already inside the window is never split.
-fn bound_to_tail_bytes(text: &str, max_bytes: usize) -> &str {
+/// Trims `text` to at most its last `max_bytes` bytes. A plain byte-offset cut (even one moved
+/// forward to a UTF-8 char boundary) can still land MID-TOKEN -- a credential split across the
+/// cut (`hunter2…`, `XXXX…`) has neither its prefix nor its remaining suffix in a shape any
+/// pattern above recognises, so the fragment on this side of the cut would otherwise survive
+/// completely unredacted (security finding, gate round 3, 2026-10-14). Fixed by dropping
+/// everything up to the first newline inside the byte-bounded tail -- only a truncated partial
+/// line can ever precede it -- and marking the cut explicitly with a fixed `[truncated]`
+/// placeholder instead of silently splicing a line's remainder onto nothing.
+fn bound_to_tail_bytes(text: &str, max_bytes: usize) -> String {
     if text.len() <= max_bytes {
-        return text;
+        return text.to_string();
     }
     let mut start = text.len() - max_bytes;
     while !text.is_char_boundary(start) {
         start += 1;
     }
-    &text[start..]
+    let tail = &text[start..];
+    match tail.find('\n') {
+        Some(idx) => format!("[truncated]\n{}", &tail[idx + 1..]),
+        None => "[truncated]".to_string(),
+    }
 }
 
 /// Runs every pattern over `text` in order. Returns `Err(())` the moment any single pattern's
@@ -264,7 +274,7 @@ fn apply_patterns(text: &str) -> Result<String, ()> {
 /// than a partially-redacted or unredacted string.
 pub fn redact_secrets(text: &str) -> String {
     let bounded = bound_to_tail_bytes(text, MAX_REDACTION_INPUT_BYTES);
-    apply_patterns(bounded).unwrap_or_else(|()| REDACTION_FAILURE_PLACEHOLDER.to_string())
+    apply_patterns(&bounded).unwrap_or_else(|()| REDACTION_FAILURE_PLACEHOLDER.to_string())
 }
 
 #[cfg(test)]

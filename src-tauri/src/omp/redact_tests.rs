@@ -243,15 +243,35 @@ fn token_immediately_after_a_non_ascii_letter_is_still_redacted() {
 #[test]
 fn bound_to_tail_bytes_caps_length_and_respects_char_boundaries() {
     assert_eq!(super::bound_to_tail_bytes("short", 100), "short");
-    assert_eq!(super::bound_to_tail_bytes(&"a".repeat(20), 5), "aaaaa");
+    // No newline anywhere in the truncated window: nothing survives past the cut at all, since
+    // there is no line boundary to cut at -- the whole window is "maybe mid-token".
+    assert_eq!(
+        super::bound_to_tail_bytes(&"a".repeat(20), 5),
+        "[truncated]"
+    );
     // "é" is a 2-byte UTF-8 character; a byte-only cut at its midpoint would panic when
     // slicing. Bounding to 3 of this 6-byte string's bytes would land inside "é" (bytes 2-3);
-    // the cut must advance past it instead of splitting it.
+    // the cut must advance past it to the next char boundary before looking for a newline.
     let multi_byte = "abécd";
     assert_eq!(multi_byte.len(), 6);
     let bounded = super::bound_to_tail_bytes(multi_byte, 3);
-    assert_eq!(bounded, "cd");
-    assert!(bounded.len() <= 3);
+    assert_eq!(bounded, "[truncated]"); // "cd" alone has no newline to cut at either
+}
+
+/// Security regression (gate round 3, 2026-10-14): a plain byte-offset cut (even one already
+/// moved to a UTF-8 char boundary) used to land MID-TOKEN, leaving an unrecognisable fragment
+/// of a credential (`hunter2…`, `sk-ant-…`) on the surviving side of the cut -- no pattern
+/// matches a partial token, so it passed through completely unredacted. The fix drops
+/// everything up to the first newline inside the bounded window instead.
+#[test]
+fn truncation_never_splits_a_credential_mid_token() {
+    let token = format!("sk-{}", "a".repeat(40));
+    let text = format!("{}{}\nsafe trailing line", "x".repeat(50), token);
+    // Chosen so the cut lands inside `token` itself, not before or after it.
+    let bounded = super::bound_to_tail_bytes(&text, 30);
+    assert_eq!(bounded, "[truncated]\nsafe trailing line");
+    assert!(!bounded.contains("sk-"));
+    assert!(!bounded.contains("aaa")); // no leaked run of the token's filler characters
 }
 
 #[test]

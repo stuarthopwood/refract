@@ -936,25 +936,34 @@ async fn build_start_failure(
     } else {
         stderr_text
     };
-    let stderr_redacted = crate::omp::redact::redact_secrets(&mask_home_dir(&stderr_for_redaction));
-    let stderr_filtered = filter_warn_error_lines(&stderr_redacted);
+    // Order matters (gate round 3 MEDIUM, 2026-10-14): filter -> cap -> redact, never redact
+    // first. `redact_secrets` bounds its OWN input to its last ~8 KiB before scanning -- running
+    // it on the full, unfiltered tail (this one is already `STDERR_TAIL_BYTES` = 4 KiB at the
+    // source, so harmless here, but the `omp_log_part` sibling below reads up to 64 KiB) would
+    // silently drop everything before that last 8 KiB BEFORE `filter_warn_error_lines` ever saw
+    // it, discarding warn/error lines the filter step exists to surface. Redacting LAST also
+    // means the fail-closed `redact_secrets` placeholder itself is the final text embedded here,
+    // never something `filter_warn_error_lines` could itself strip back out (the placeholder
+    // contains neither "warn" nor "error").
+    let stderr_filtered = filter_warn_error_lines(&stderr_for_redaction);
     let stderr_capped = cap_tail(&stderr_filtered, STDERR_FAILURE_TAIL_BYTES);
+    let stderr_redacted = crate::omp::redact::redact_secrets(&mask_home_dir(&stderr_capped));
     let stderr_part = if stderr_capped.is_empty() {
         String::new()
     } else {
-        format!("\n--- stderr warnings/errors ---\n{stderr_capped}")
+        format!("\n--- stderr warnings/errors ---\n{stderr_redacted}")
     };
 
     let omp_log_part = if pid != 0 {
         match read_omp_log_tail(pid as u32, spawned_at_system, OMP_LOG_READ_WINDOW_BYTES).await {
             Some(raw) => {
-                let redacted = crate::omp::redact::redact_secrets(&mask_home_dir(&raw));
-                let filtered = filter_warn_error_lines(&redacted);
+                let filtered = filter_warn_error_lines(&raw);
                 let capped = cap_tail(&filtered, OMP_LOG_TAIL_BYTES);
+                let redacted = crate::omp::redact::redact_secrets(&mask_home_dir(&capped));
                 if capped.is_empty() {
                     String::new()
                 } else {
-                    format!("\n--- omp log warnings/errors (pid {pid}) ---\n{capped}")
+                    format!("\n--- omp log warnings/errors (pid {pid}) ---\n{redacted}")
                 }
             }
             None => String::new(),

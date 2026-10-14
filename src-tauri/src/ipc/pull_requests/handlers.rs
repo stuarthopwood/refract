@@ -5,9 +5,7 @@
 
 use serde_json::Value;
 
-use crate::git::worktrees::{
-    add_worktree_from_pull_request_branch, remove_worktree, unique_pull_request_branch_name,
-};
+use crate::git::worktrees::{add_worktree_from_pull_request_branch, remove_worktree};
 use crate::github::gh_mutations::{self, MergeMethod, PinnedReview, ReviewVerdict};
 use crate::github::gh_pull_requests;
 use crate::ipc::{
@@ -437,12 +435,12 @@ pub(super) fn pull_requests_new_session_from_pull_request(
         };
         let repo_path = std::path::Path::new(&repository.path);
 
-        // High remediation (ported): resolves a collision-free name FIRST (`pr-<n>`,
-        // `pr-<n>-2`, ...) instead of assuming the fixed `pr-<n>` is always free.
-        let local_branch_name = unique_pull_request_branch_name(repo_path, number)
-            .await
-            .map_err(map_git_error)?;
-        let added = add_worktree_from_pull_request_branch(repo_path, number, &local_branch_name)
+        // Gate round 3 HIGH (code review, 2026-10-14): the former two-step "resolve a free name
+        // first, then fetch into it" sequence reserved nothing between the two steps, letting
+        // two concurrent calls destroy each other's worktree/branch -- see
+        // `add_worktree_from_pull_request_branch`'s own doc comment. It now does its own atomic
+        // reservation internally; there is no separate name to resolve here any more.
+        let added = add_worktree_from_pull_request_branch(repo_path, number)
             .await
             .map_err(map_git_error)?;
         let view = gh_pull_requests::view_pull_request_detail(repo_path, number)

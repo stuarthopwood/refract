@@ -197,11 +197,15 @@ pub async fn add_worktree_with_generated_name(
     ))
 }
 
-/// Test-only seam (gate round 1, HIGH #656): drives the same reserve-then-create path as
-/// `add_worktree_with_generated_name` above, but against a caller-supplied candidate sequence
-/// instead of the random generator, so a test can force a specific collision (a pre-created
-/// branch/worktree at an exact name) and assert the loser's cleanup never touches it.
-#[cfg(test)]
+/// Drives the same reserve-then-create path as `add_worktree_with_generated_name` above, but
+/// against a caller-supplied candidate sequence instead of the random generator. Originally a
+/// test-only seam (gate round 1, HIGH #656) so a test could force a specific collision and
+/// assert the loser's cleanup never touches the winner's artefacts; promoted to a shared,
+/// always-compiled engine (gate round 3, HIGH #656 regression, 2026-10-14) for
+/// `add_worktree_from_pull_request_branch`'s own deterministic `pr-<n>`/`pr-<n>-2`/... sequence
+/// -- that caller needs EXACTLY this function's atomic-reservation safety against a concurrent
+/// racer, which a separate "is this name free" pre-check plus a name-based fetch destination
+/// does not provide (see that function's own doc comment for the incident this fixed).
 pub(crate) async fn add_worktree_with_candidates(
     repo: &Path,
     base_branch: &str,
@@ -405,72 +409,39 @@ pub async fn remove_worktree(
     Ok(())
 }
 
-/// Port of `worktrees.ts`'s own `uniquePullRequestBranchName` (lane R9, issue #792): picks a
-/// free local name for pull request `number`'s worktree/branch, starting at `pr-<number>` and
-/// falling back to `pr-<number>-2`, `pr-<number>-3`, ... up to 1000 attempts -- an earlier
-/// Session for the same pull request, or a failed prior attempt that left a branch or folder
-/// behind, must never collide with a fresh `newSessionFromPullRequest` call.
-pub async fn unique_pull_request_branch_name(repo: &Path, number: u64) -> Result<String, GitError> {
-    let base = format!("pr-{number}");
-    let branches: std::collections::HashSet<String> =
-        list_branches(repo).await?.into_iter().collect();
-
-    let mut existing_folders = std::collections::HashSet::new();
-    match tokio::fs::read_dir(worktrees_root(repo)).await {
-        Ok(mut entries) => {
-            while let Some(entry) = entries.next_entry().await? {
-                if let Some(name) = entry.file_name().to_str() {
-                    existing_folders.insert(name.to_string());
-                }
-            }
-        }
-        Err(err) if crate::store::atomic_json::is_enoent(&err) => {}
-        Err(err) => return Err(err.into()),
-    }
-
-    if !branches.contains(&base) && !existing_folders.contains(&base) {
-        return Ok(base);
-    }
-    const MAX_ATTEMPTS: u32 = 1000;
-    for suffix in 2..=MAX_ATTEMPTS {
-        let candidate = format!("{base}-{suffix}");
-        if !branches.contains(&candidate) && !existing_folders.contains(&candidate) {
-            return Ok(candidate);
-        }
-    }
-    Err(GitError::new(
-        GitErrorCode::WorktreeFailed,
-        format!(
-            "Could not find a free local name for pull request #{number}'s worktree: every \"{base}\"/\"{base}-2\"..\"{base}-{MAX_ATTEMPTS}\" is already taken."
-        ),
-    ))
-}
-
-/// Port of `worktrees.ts`'s own `addWorktreeFromPullRequestBranch` (lane R9, issue #792):
-/// `git fetch origin pull/<number>/head:<local_branch_name>` (works for both same-repository and
-/// fork pull requests), then attaches a new worktree to that fetched branch (no `-b`: the branch
-/// already exists after the fetch). On any failed step after the fetch succeeds, removes
-/// whatever this attempt already created (branch and/or worktree directory) -- the same
-/// all-or-nothing contract `add_worktree` keeps. `local_branch_name` MUST already be
-/// collision-checked by the caller (`unique_pull_request_branch_name` above); this function's
-/// own cleanup-on-failure is only safe for a name this exact attempt created.
+/// Port of `worktrees.ts`'s own `addWorktreeFromPullRequestBranch` (lane R9, issue #792).
+///
+/// Gate round 3 HIGH regression (code review, 2026-10-14): the previous version pre-checked a
+/// candidate name (`pr-<n>`, `pr-<n>-2`, ...) was free via `unique_pull_request_branch_name`
+/// (now deleted), then fetched the pull request's head STRAIGHT INTO that chosen name as a real
+/// branch. The pre-check reserved nothing: two concurrent `newSessionFromPullRequest` calls for
+/// the SAME pull request could both see `pr-<n>` as free, both fetch into it (the identical
+/// commit, so neither fetch ever conflicts), and then whichever `git worktree add` lost would
+/// run this function's own cleanup -- `remove_worktree`'s `git worktree remove --force` +
+/// `branch -D` -- against the name the WINNER had just finished creating, destroying its live
+/// worktree and branch.
+///
+/// Fixed by never giving the fetch a name-based destination at all: the pull request's head is
+/// fetched into a call-scoped temporary ref (`refs/pinion/tmp/<uuid>`, deleted again
+/// unconditionally before returning), then `add_worktree_with_candidates` runs the SAME
+/// atomic-reservation engine `add_worktree_with_generated_name` already relies on
+/// (`try_reserve_and_create`: `git branch <candidate> <base>` IS the reservation -- git's own
+/// ref lock lets at most one concurrent caller ever create a given branch name, so a collision
+/// is detected with nothing yet created by the losing attempt) over the exact `pr-<n>`,
+/// `pr-<n>-2`, ... sequence the deleted pre-check used to generate. A loser now simply moves on
+/// to the next candidate, the same as two concurrent generated-name Session creates already do.
 pub async fn add_worktree_from_pull_request_branch(
     repo: &Path,
     number: u64,
-    local_branch_name: &str,
 ) -> Result<AddWorktreeResult, GitError> {
+    let temp_ref = format!("refs/pinion/tmp/{}", uuid::Uuid::new_v4());
     let fetch_result = git_raw(
         repo,
-        &[
-            "fetch",
-            "origin",
-            &format!("pull/{number}/head:{local_branch_name}"),
-        ],
+        &["fetch", "origin", &format!("pull/{number}/head:{temp_ref}")],
         None,
     )
     .await;
     if fetch_result.code != 0 {
-        // Nothing was created yet (the fetch itself failed): no cleanup needed.
         return Err(GitError::new(
             GitErrorCode::CheckoutFailed,
             if fetch_result.stderr.trim().is_empty() {
@@ -481,54 +452,22 @@ pub async fn add_worktree_from_pull_request_branch(
         ));
     }
 
-    let worktree_path = worktrees_root(repo).join(local_branch_name);
-    if let Some(parent) = worktree_path.parent() {
-        if let Err(err) = tokio::fs::create_dir_all(parent).await {
-            git_raw(repo, &["branch", "-D", "--", local_branch_name], None).await;
-            if is_path_too_long_error(&err.to_string(), err.raw_os_error()) {
-                return Err(GitError::new(
-                    GitErrorCode::PathTooLong,
-                    format!("Worktree path too long: {}", worktree_path.display()),
-                ));
-            }
-            return Err(err.into());
-        }
+    let base = format!("pr-{number}");
+    const MAX_ATTEMPTS: u32 = 1000;
+    let candidates = std::iter::once(base.clone())
+        .chain((2..=MAX_ATTEMPTS).map(move |suffix| format!("{base}-{suffix}")));
+    let result = add_worktree_with_candidates(repo, &temp_ref, candidates).await;
+
+    // Scratch space for this one fetch only, never a Session's real branch -- deleted
+    // unconditionally, success or failure, and never via `branch -D` (it was never created
+    // under `refs/heads/`, so that command would not even find it).
+    if let Err(err) = git(repo, &["update-ref", "-d", &temp_ref]).await {
+        log::warn!(
+            "add_worktree_from_pull_request_branch: could not remove the temporary fetch ref {temp_ref}: {err}"
+        );
     }
 
-    let worktree_path_str = worktree_path.to_string_lossy().into_owned();
-    let add_result = git_raw(
-        repo,
-        &[
-            "worktree",
-            "add",
-            "--",
-            &worktree_path_str,
-            local_branch_name,
-        ],
-        None,
-    )
-    .await;
-    if add_result.code != 0 {
-        // `cleanup_failed_worktree` (this function's own original helper) was folded away by
-        // lane R2's #826 refactor; `remove_worktree` below is the still-present equivalent --
-        // `git worktree remove --force` tolerates a half-registered worktree left behind by a
-        // failed `add`, so it is a safe, already-reviewed cleanup path rather than a new one.
-        // Best-effort: the ORIGINAL `git worktree add` failure is what the caller sees; a
-        // cleanup failure on top of that is logged, not propagated.
-        if let Err(cleanup_err) =
-            remove_worktree(repo, &worktree_path, local_branch_name, true).await
-        {
-            log::warn!(
-                "add_worktree_from_pull_request_branch: cleanup after a failed `git worktree add` also failed: {cleanup_err}"
-            );
-        }
-        return Err(map_add_worktree_error(&add_result.stderr, &worktree_path));
-    }
-
-    Ok(AddWorktreeResult {
-        worktree_path,
-        branch: local_branch_name.to_string(),
-    })
+    result
 }
 
 /// Recreates a worktree at its original path, attaching the existing `branch` (no `-b`): used
