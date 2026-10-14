@@ -82,6 +82,12 @@ pub struct SessionPatch {
     pub last_message_count: Option<Option<i64>>,
     pub last_model: Option<LastModel>,
     pub last_thinking_level: Option<Option<String>>,
+    // Lane R3 (issue #786): tri-state like `current_conversation` above -- both
+    // `clear_stopped_on_request_marker` (every `launch()` attempt) and
+    // `record_stopped_on_request_marker` (a requested-stop `onExit`) need to explicitly set
+    // these back to `null`, not merely leave them unchanged.
+    pub stopped_on_request_conversation: Option<Option<String>>,
+    pub stopped_on_request_at_size: Option<Option<i64>>,
     pub archived_at: Option<Option<String>>,
 }
 
@@ -393,6 +399,12 @@ impl RegistryStore {
             if let Some(value) = patch.last_thinking_level {
                 session.last_thinking_level = value;
             }
+            if let Some(value) = patch.stopped_on_request_conversation {
+                session.stopped_on_request_conversation = value;
+            }
+            if let Some(value) = patch.stopped_on_request_at_size {
+                session.stopped_on_request_at_size = value;
+            }
             if let Some(value) = patch.archived_at {
                 session.archived_at = value;
             }
@@ -448,14 +460,14 @@ impl RegistryStore {
 /// Case- and drive-letter-insensitive path comparison for Windows (T011 rule): a lexical
 /// resolve-and-normalise (never touches the filesystem, so it works for a worktree path that may
 /// not exist yet) followed by a lowercase compare.
-fn same_path(a: &str, b: &str) -> bool {
+pub(crate) fn same_path(a: &str, b: &str) -> bool {
     resolve_path_lexical(a).to_lowercase() == resolve_path_lexical(b).to_lowercase()
 }
 
 /// The Rust equivalent of Node's `path.resolve(p)`: joins a relative path onto the current
 /// working directory, then lexically collapses `.`/`..` components without requiring the path to
 /// exist on disk (unlike `Path::canonicalize`, which would fail for a worktree not yet created).
-fn resolve_path_lexical(p: &str) -> String {
+pub(crate) fn resolve_path_lexical(p: &str) -> String {
     use std::path::Component;
 
     let path = Path::new(p);

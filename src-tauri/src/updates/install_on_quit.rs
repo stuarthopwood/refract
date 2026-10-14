@@ -30,22 +30,35 @@
 // origin/spec-006-impl:src/main/update/installOnQuit.ts).
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tokio::process::Command;
 
 use super::checksum::{checksum_matches, hex_digest_file};
+use super::signature::{verify_installer_signature, SIGNATURE_REJECTED_MESSAGE};
 use super::state::{UpdatePhase, UpdateState, UpdateStateStore};
 
 /// Windows-only: `CREATE_NO_WINDOW`, the same flag `git/git.rs` uses -- no console window flashes
 /// for the short-lived in-job PowerShell helper this spawns.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Gate finding (PR #837 round 1, perf Medium): `run_install_on_quit_hook`'s own 30s budget
+/// (`mod.rs`'s `VERIFY_AND_SCHEDULE_TIMEOUT`) bounds this function's TOTAL work, but a stalled
+/// `WinVerifyTrust` call inside it previously had no bound of its own -- `stop_all()`'s quit path
+/// already times out at 15s; this check must never make quitting hang for longer than that on a
+/// stalled Win32 call. A timeout here is treated as a rejection (fails closed), consistent with
+/// every other `verify_installer_signature` failure.
+const SIGNATURE_VERIFY_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Quality-gate remediation (LOW, security): re-verifies a `downloaded` installer immediately
 /// before scheduling it, rather than trusting `updateState.json`'s possibly-stale `installerPath`
 /// at face value -- the file must still live directly inside `updates_dir` (`<userData>/updates`,
-/// never anywhere a stale/tampered `installerPath` could have redirected it to) and its SHA-256
+/// never anywhere a stale/tampered `installerPath` could have redirected it to), its SHA-256
 /// must still match the `.sha256` sibling file (not a new `UpdateChecker` download, that sibling
-/// file is this app's one persisted copy of "the expected hash").
+/// file is this app's one persisted copy of "the expected hash"), and (lane R11d, follow-up to
+/// #794) its Authenticode signature and pinned signer certificate must still verify -- the same
+/// two checks `installer.rs` makes right after download, re-run here in case the file on disk
+/// changed between then and quit.
 pub async fn verify_installer_before_quit(
     installer_path: &Path,
     updates_dir: &Path,
@@ -74,6 +87,26 @@ pub async fn verify_installer_before_quit(
             "{} no longer matches its published checksum",
             installer_path.display()
         ));
+    }
+
+    match tokio::time::timeout(
+        SIGNATURE_VERIFY_TIMEOUT,
+        verify_installer_signature(installer_path),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            // Gate finding (PR #837 round 2, Low): returns the same constant message every other
+            // rejected signature does, logging the real detail instead -- a timeout is just
+            // another reason `verify_installer_signature` didn't resolve `Ok`, not a distinct
+            // oracle for the renderer's badge UI to surface.
+            log::error!(
+                "signature verification of {} timed out after {SIGNATURE_VERIFY_TIMEOUT:?}",
+                installer_path.display()
+            );
+            return Err(SIGNATURE_REJECTED_MESSAGE.to_string());
+        }
     }
 
     Ok(())

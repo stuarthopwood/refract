@@ -32,16 +32,43 @@ pub(crate) struct ConversationInfo {
     is_current: bool,
 }
 
-/// Port of `src/main/ipc/util.ts`'s own `buildSnapshot`, returned by `sessions.open`/`.recover`
-/// and `conversations.startNew`/`.open` alike (contracts/ipc.md). `readout`/`subagents` are out
-/// of this build's scope (`session::agent`'s own header): emitted as the documented "nothing
-/// read yet" empty shape so the unmodified renderer's `SessionSnapshot` consumers never see a
-/// missing field, never actually computed or updated afterward.
+/// Port of `src/main/ipc/util.ts`'s own `buildSnapshot`, returned by `sessions.open`/`.recover`/
+/// `.resume` and `conversations.startNew`/`.open` alike (contracts/ipc.md). `readout`/`subagents`
+/// are out of this build's scope (`session::agent`'s own header): emitted as the documented
+/// "nothing read yet" empty shape so the unmodified renderer's `SessionSnapshot` consumers never
+/// see a missing field, never actually computed or updated afterward.
+///
+/// `detection` (lane R3, issue #786, gate-fix): a FRESHLY computed `resolve_termination()`
+/// result, threaded in by callers that already paid for one (`ipc::sessions_agent`'s own
+/// `attach_snapshot_core`/`resume_locked`) so this never re-derives a SECOND, possibly different
+/// answer from `agent.runtime_view()`'s own cached (and, for a Session whose crash this run's
+/// `on_exit` never saw, potentially stale-`false`) `terminatedUnexpectedly`. `None` (every other
+/// caller here) leaves `runtime_view()`'s own value untouched.
 pub(crate) async fn build_snapshot(
     session: &crate::store::registry::Session,
     agent: &std::sync::Arc<crate::session::SessionAgent>,
+    detection: Option<&crate::session::termination::TerminationDetectionResult>,
 ) -> Value {
-    let runtime = agent.runtime_view().await;
+    let mut runtime = agent.runtime_view().await;
+    if let Some(detection) = detection {
+        let obj = runtime
+            .as_object_mut()
+            .expect("runtime_view payload is always a JSON object");
+        if detection.terminated_unexpectedly {
+            obj.insert("terminatedUnexpectedly".to_string(), Value::Bool(true));
+            if detection.pending_tool_names.is_empty() {
+                obj.remove("pendingToolNames");
+            } else {
+                obj.insert(
+                    "pendingToolNames".to_string(),
+                    serde_json::json!(detection.pending_tool_names),
+                );
+            }
+        } else {
+            obj.remove("terminatedUnexpectedly");
+            obj.remove("pendingToolNames");
+        }
+    }
     let conversations = list_conversations(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
@@ -325,7 +352,7 @@ pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFutu
             .get_session(&session_id)
             .cloned()
             .ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
-        Ok(build_snapshot(&session, &agent).await)
+        Ok(build_snapshot(&session, &agent, None).await)
     })
 }
 
@@ -387,6 +414,6 @@ pub fn conversations_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .get_session(&session_id)
             .cloned()
             .ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
-        Ok(build_snapshot(&session, &agent).await)
+        Ok(build_snapshot(&session, &agent, None).await)
     })
 }

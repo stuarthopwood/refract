@@ -266,6 +266,24 @@ async fn install_omp_inner(on_progress: &impl Fn(DependencyInstallProgress)) -> 
                 OMP_MANUAL_HINT,
             )
         })?;
+    // Gate finding: a successful `write_all` only means the bytes reached the OS buffer cache,
+    // not that they are durable on disk or even fully visible to the `pwsh -File` child process
+    // this function is about to spawn -- `flush` (and `sync_all` for the stronger, data-durable
+    // guarantee tokio's own `flush` does not promise) before that child ever reads the file.
+    tokio::io::AsyncWriteExt::flush(&mut script_file)
+        .await
+        .map_err(|err| {
+            fail_detail(
+                &format!("could not flush omp install script: {err}"),
+                OMP_MANUAL_HINT,
+            )
+        })?;
+    script_file.sync_all().await.map_err(|err| {
+        fail_detail(
+            &format!("could not sync omp install script: {err}"),
+            OMP_MANUAL_HINT,
+        )
+    })?;
     drop(script_file);
     let script_path_str = script_path.to_string_lossy().into_owned();
 
@@ -324,7 +342,7 @@ async fn fetch_omp_install_script(script_url: &str) -> Result<Vec<u8>, String> {
         "omp install script",
     )?;
     let client = allowlisted_client()?;
-    let response = client
+    let mut response = client
         .get(url)
         .header("User-Agent", "refract-dependency-install")
         .timeout(FETCH_JSON_TIMEOUT)
@@ -340,8 +358,8 @@ async fn fetch_omp_install_script(script_url: &str) -> Result<Vec<u8>, String> {
     // Gate finding (round 2, Medium): this is a single small PowerShell script (the real one is
     // under 10 KiB), never a reason to buffer an unbounded response -- checked against the
     // server's own `Content-Length` up front (cheap, fails fast on an obviously-wrong response)
-    // AND against the actual buffered length below (a dishonest/missing header must not bypass
-    // the cap).
+    // AND against a running total of the actual bytes read below (a dishonest/missing header
+    // must not bypass the cap).
     if response
         .content_length()
         .is_some_and(|len| len > OMP_INSTALL_SCRIPT_MAX_BYTES as u64)
@@ -350,15 +368,23 @@ async fn fetch_omp_install_script(script_url: &str) -> Result<Vec<u8>, String> {
             "omp install script response is larger than the {OMP_INSTALL_SCRIPT_MAX_BYTES}-byte cap"
         ));
     }
-    let bytes = response
-        .bytes()
+    // Gate finding: `response.bytes()` buffers the ENTIRE body before the length check above
+    // ever runs, so a server with no (or a lying) `Content-Length` header could still force an
+    // unbounded allocation. Read chunk-by-chunk instead (`Response::chunk`, matching
+    // `download_to_file`'s own streaming convention) and fail as soon as the running total
+    // passes the cap, never after buffering past it.
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
         .map_err(|err| format!("omp install script download failed: {err}"))?
-        .to_vec();
-    if bytes.len() > OMP_INSTALL_SCRIPT_MAX_BYTES {
-        return Err(format!(
-            "omp install script body is larger than the {OMP_INSTALL_SCRIPT_MAX_BYTES}-byte cap"
-        ));
+    {
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() > OMP_INSTALL_SCRIPT_MAX_BYTES {
+            return Err(format!(
+                "omp install script body is larger than the {OMP_INSTALL_SCRIPT_MAX_BYTES}-byte cap"
+            ));
+        }
     }
     let actual: String = Sha256::digest(&bytes)
         .iter()

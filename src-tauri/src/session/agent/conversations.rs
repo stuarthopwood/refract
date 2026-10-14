@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::omp::transcript::TranscriptState;
 use crate::store::registry::SessionPatch;
 
-use super::launch::{fetch_all_messages, verify_reattach};
+use super::launch_support::{fetch_all_messages, verify_reattach};
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
