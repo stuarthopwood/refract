@@ -11,13 +11,18 @@
 // every agent's `EventSink`-backed patch coalescer reads to decide whether to forward a patch.
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde_json::Value;
 
 use crate::events::EventSink;
+use crate::git::worktree_validity::{
+    list_registered_worktrees, registered_validity, WorktreeValidity,
+};
 use crate::session::agent::{SharedRegistry, SharedSettings};
 use crate::session::SessionAgent;
+use crate::store::registry::Repository;
 
 /// Owns every live `SessionAgent` (one per Session opened this run) plus the shared registry/
 /// settings stores every agent and every registry-only IPC handler already uses.
@@ -27,6 +32,54 @@ pub struct SessionManager {
     events: EventSink,
     agents: StdMutex<HashMap<String, Arc<SessionAgent>>>,
     visible_ids: Arc<StdMutex<HashSet<String>>>,
+}
+
+/// Gate round 1 HIGH perf finding (#826): at most this many repositories' `git worktree list
+/// --porcelain` calls run concurrently when `summaries()` needs to check several repositories'
+/// no-live-agent Sessions at once. Unbounded concurrency here would still spike `git`/antivirus-
+/// scanner load the same way the old per-Session loop did, just across repositories instead of
+/// Sessions.
+const WORKTREE_LIST_CONCURRENCY: usize = 4;
+
+/// Gate round 1 HIGH perf finding: the old no-live-agent branch in `summaries()` called
+/// `worktree_is_valid` (and so ran `git worktree list --porcelain`) once PER SESSION, serially,
+/// with no concurrency cap and no timeout -- a repository with many Sessions re-listed the SAME
+/// repository's worktrees over and over, and a single hung `git` could block the whole
+/// `sessions.list` response. This issues `list_registered_worktrees` at most once per DISTINCT
+/// repository id in `repo_ids` (each call already bounded by its own ~3s timeout, see
+/// `worktree_validity.rs`), capped at `WORKTREE_LIST_CONCURRENCY` concurrent calls. A repository
+/// id with no matching `Repository` row is silently skipped: `summaries()`'s own per-Session
+/// loop already treats that case as `Invalid` directly, with no repository to even ask git
+/// about.
+async fn fetch_worktree_lists(
+    repo_ids: &[String],
+    repositories: &[Repository],
+) -> HashMap<String, Option<Vec<String>>> {
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(WORKTREE_LIST_CONCURRENCY));
+    let mut handles = Vec::with_capacity(repo_ids.len());
+    for repo_id in repo_ids {
+        let Some(repository) = repositories.iter().find(|r| &r.id == repo_id) else {
+            continue;
+        };
+        let repo_path = PathBuf::from(&repository.path);
+        let repo_id = repo_id.clone();
+        let semaphore = semaphore.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = semaphore
+                .acquire_owned()
+                .await
+                .expect("semaphore is never closed");
+            let list = list_registered_worktrees(&repo_path).await;
+            (repo_id, list)
+        }));
+    }
+    let mut out = HashMap::with_capacity(handles.len());
+    for handle in handles {
+        if let Ok((repo_id, list)) = handle.await {
+            out.insert(repo_id, list);
+        }
+    }
+    out
 }
 
 impl SessionManager {
@@ -84,9 +137,25 @@ impl SessionManager {
     /// sessions_agent`'s own attach/resume paths, so a list row's own crash badge is correct
     /// even for a Session nothing has opened yet this run.
     pub async fn summaries(&self) -> Vec<Value> {
-        let sessions = self.registry.lock().await.snapshot().sessions;
+        let snapshot = self.registry.lock().await.snapshot();
+        let sessions = snapshot.sessions;
+        let repositories = snapshot.repositories;
         let launched_mode = serde_json::to_value(self.settings.lock().await.get().approval_mode)
             .expect("ApprovalMode is always JSON-serialisable");
+
+        // Gate round 1 HIGH perf finding (#826): collect the distinct repository ids actually
+        // needed (every Session with no live agent) BEFORE touching git at all, so the `git
+        // worktree list` fetch below runs once per repository, not once per Session.
+        let mut repos_needed: Vec<String> = Vec::new();
+        for session in &sessions {
+            if self.get_agent(&session.id).is_some() {
+                continue;
+            }
+            if !repos_needed.contains(&session.repository_id) {
+                repos_needed.push(session.repository_id.clone());
+            }
+        }
+        let worktree_lists = fetch_worktree_lists(&repos_needed, &repositories).await;
 
         let mut summaries = Vec::with_capacity(sessions.len());
         for session in &sessions {
@@ -107,11 +176,39 @@ impl SessionManager {
                     }
                 }
                 None => {
-                    let worktree_exists = tokio::fs::metadata(&session.worktree_path).await.is_ok();
-                    let stop_reason = if worktree_exists {
-                        "not-started"
+                    // Issue #729 (lane R2, #785): registered with git AND has its own `.git`
+                    // pointer, not merely `fs::metadata` succeeding -- a hand-emptied or
+                    // orphaned-but-still-present folder both satisfied the old `exists()` check
+                    // while being unusable. Gate round 1 (#826): the repository's registered-
+                    // worktree list was already fetched once above (`fetch_worktree_lists`), so
+                    // this is a cheap local `.git` stat plus a lookup, no `git` process per
+                    // Session.
+                    let has_repository = repositories.iter().any(|r| r.id == session.repository_id);
+                    let validity = if !has_repository {
+                        WorktreeValidity::Invalid
                     } else {
-                        "worktree-missing"
+                        let has_git_entry = tokio::fs::symlink_metadata(
+                            Path::new(&session.worktree_path).join(".git"),
+                        )
+                        .await
+                        .is_ok();
+                        if !has_git_entry {
+                            WorktreeValidity::Invalid
+                        } else {
+                            let registered = worktree_lists
+                                .get(&session.repository_id)
+                                .and_then(|list| list.as_deref());
+                            registered_validity(Path::new(&session.worktree_path), registered).await
+                        }
+                    };
+                    // Gate round 1: a timed-out registry check must never read as a confirmed-
+                    // missing worktree (a slow disk/antivirus scan is not proof the worktree is
+                    // gone) -- `Unknown` is mapped the SAME as `Valid` here, optimistically
+                    // assuming the worktree is still there rather than reporting the harsher
+                    // `worktree-missing` on a mere timeout.
+                    let stop_reason = match validity {
+                        WorktreeValidity::Valid | WorktreeValidity::Unknown => "not-started",
+                        WorktreeValidity::Invalid => "worktree-missing",
                     };
                     object.insert("status".to_string(), Value::String("stopped".to_string()));
                     object.insert(
@@ -143,6 +240,17 @@ impl SessionManager {
             summaries.push(summary);
         }
         summaries
+    }
+
+    /// `sessions.delete` (issue #785, lane R2): drops the live agent from the map once its
+    /// Session is removed from the registry, so a later `get_or_create_agent` call for the same
+    /// (now-deleted) id can never resurrect a process over a worktree `sessions.delete` just
+    /// removed. Callers stop the agent (`shutdown()`) themselves first; this only forgets it.
+    pub fn remove_agent(&self, session_id: &str) {
+        self.agents
+            .lock()
+            .expect("agents mutex poisoned")
+            .remove(session_id);
     }
 
     /// `sessions.setVisible` (T036/T037, spec 005 Decision 2): selects which Sessions' patches
@@ -184,5 +292,138 @@ impl SessionManager {
         for handle in handles {
             let _ = handle.await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::init_repo;
+    use crate::git::worktrees::add_worktree_with_generated_name;
+    use crate::store::registry::{RegistryStore, Session};
+    use crate::store::settings::SettingsStore;
+    use tokio::sync::Mutex as AsyncMutex;
+
+    fn temp_dir(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "refract-session-manager-test-{label}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    fn make_session(
+        id: &str,
+        repository_id: &str,
+        worktree_path: &std::path::Path,
+        branch: &str,
+    ) -> Session {
+        Session {
+            id: id.to_string(),
+            repository_id: repository_id.to_string(),
+            name: "Test Session".to_string(),
+            branch: branch.to_string(),
+            base_branch: "main".to_string(),
+            worktree_path: worktree_path.to_string_lossy().to_string(),
+            session_dir: None,
+            current_conversation: None,
+            last_message_count: None,
+            last_model: None,
+            last_thinking_level: None,
+            created_at: "2026-01-01T00:00:00.000Z".to_string(),
+            last_activity_at: "2026-01-01T00:00:00.000Z".to_string(),
+            archived_at: None,
+            current_turn_subagents: None,
+            stopped_on_request_conversation: None,
+            stopped_on_request_at_size: None,
+        }
+    }
+
+    /// Gate round 1 HIGH perf finding (#826): proves `summaries()`'s batched per-repository
+    /// worktree check (`fetch_worktree_lists`) still reports the right `stopReason` for every
+    /// Session in a repository with 3 registry-only Sessions sharing it -- one healthy, one
+    /// with its `.git` pointer hand-deleted, one whose worktree folder was removed entirely
+    /// (the same three states the old per-Session `worktree_is_valid` call covered). The
+    /// call-count claim itself ("once per repository, not once per Session") is enforced by
+    /// this file's own structure, not re-proved here: `fetch_worktree_lists` calls
+    /// `list_registered_worktrees` exactly once per distinct repository id in its `repo_ids`
+    /// slice (see its own doc comment) -- all 3 Sessions below share that one repository id, so
+    /// this test is proving the single shared fetch result was looked up correctly for all
+    /// three, not silently re-fetched or mixed up between Sessions.
+    #[tokio::test]
+    async fn summaries_reports_the_right_stop_reason_for_every_session_sharing_one_repository() {
+        let repo = init_repo().await;
+        let healthy = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create healthy worktree");
+        let hand_emptied = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create hand-emptied worktree");
+        tokio::fs::remove_file(hand_emptied.worktree_path.join(".git"))
+            .await
+            .expect("remove .git pointer");
+        let removed_worktree_path = repo.with_file_name("removed-worktree-does-not-exist");
+
+        let dir = temp_dir("batched-validity");
+        let mut registry_store = RegistryStore::open(&dir).await.expect("open registry");
+        let repository = Repository {
+            id: "repo-1".to_string(),
+            path: repo.to_string_lossy().to_string(),
+            name: "pinion".to_string(),
+            default_branch: "main".to_string(),
+            added_at: "2026-01-01T00:00:00.000Z".to_string(),
+        };
+        registry_store
+            .add_repository(repository)
+            .await
+            .expect("add repository");
+        registry_store
+            .add_session(make_session(
+                "healthy",
+                "repo-1",
+                &healthy.worktree_path,
+                "healthy-branch",
+            ))
+            .await
+            .expect("add healthy session");
+        registry_store
+            .add_session(make_session(
+                "hand-emptied",
+                "repo-1",
+                &hand_emptied.worktree_path,
+                "hand-emptied-branch",
+            ))
+            .await
+            .expect("add hand-emptied session");
+        registry_store
+            .add_session(make_session(
+                "removed",
+                "repo-1",
+                &removed_worktree_path,
+                "removed-branch",
+            ))
+            .await
+            .expect("add removed session");
+
+        let registry = Arc::new(AsyncMutex::new(registry_store));
+        let settings = Arc::new(AsyncMutex::new(
+            SettingsStore::open(&dir).await.expect("open settings"),
+        ));
+        let app_handle_slot: Arc<StdMutex<Option<tauri::AppHandle>>> =
+            Arc::new(StdMutex::new(None));
+        let events = EventSink::new(app_handle_slot, registry.clone());
+        let manager = SessionManager::new(registry, settings, events);
+
+        let summaries = manager.summaries().await;
+        let find = |id: &str| {
+            summaries
+                .iter()
+                .find(|s| s["id"] == id)
+                .unwrap_or_else(|| panic!("summary for {id} missing"))
+        };
+        assert_eq!(find("healthy")["stopReason"], "not-started");
+        assert_eq!(find("hand-emptied")["stopReason"], "worktree-missing");
+        assert_eq!(find("removed")["stopReason"], "worktree-missing");
     }
 }

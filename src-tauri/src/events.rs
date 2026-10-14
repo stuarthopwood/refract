@@ -10,6 +10,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::omp::diff::TranscriptOp;
+use crate::store::registry::RegistryStore;
 
 pub const SESSION_STATUS: &str = "session:status";
 pub const SESSION_LIST_CHANGED: &str = "session:list-changed";
@@ -52,11 +53,21 @@ struct TranscriptPatchPayload<'a> {
 #[derive(Clone)]
 pub struct EventSink {
     app_handle: std::sync::Arc<std::sync::Mutex<Option<AppHandle>>>,
+    // Lane R10b, issue #793: `shell::notifications::on_session_status` (called from
+    // `emit_session_status` below) needs a live Session's display name, which lives only in the
+    // registry -- `EventSink` otherwise has no reason to know about any store.
+    registry: std::sync::Arc<tokio::sync::Mutex<RegistryStore>>,
 }
 
 impl EventSink {
-    pub fn new(app_handle: std::sync::Arc<std::sync::Mutex<Option<AppHandle>>>) -> Self {
-        Self { app_handle }
+    pub fn new(
+        app_handle: std::sync::Arc<std::sync::Mutex<Option<AppHandle>>>,
+        registry: std::sync::Arc<tokio::sync::Mutex<RegistryStore>>,
+    ) -> Self {
+        Self {
+            app_handle,
+            registry,
+        }
     }
 
     pub(crate) fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
@@ -72,15 +83,26 @@ impl EventSink {
 
     /// `session:status`: `payload` is a `session::agent::SessionStatusEvent` already serialised
     /// to `Value` by the caller (kept generic here so `events.rs` never needs to depend on
-    /// `session`, avoiding a module cycle).
+    /// `session`, avoiding a module cycle). Also the one hook OS notifications fire from (issue
+    /// #793): every status transition already flows through this exact method, the Rust
+    /// equivalent of the chokepoint Electron's own `SessionManager.onEvent` gives
+    /// `registerNotifications` for free.
     pub fn emit_session_status(&self, payload: &serde_json::Value) {
         self.send(SESSION_STATUS, payload.clone());
+        crate::shell::notifications::on_session_status(
+            self.app_handle.clone(),
+            self.registry.clone(),
+            payload.clone(),
+        );
     }
 
     /// `session:list-changed`: no payload, matching `window.webContents.send(IPC_EVENTS.
-    /// SESSION_LIST_CHANGED)`'s own no-argument call.
+    /// SESSION_LIST_CHANGED)`'s own no-argument call. Also the hook `shell::notifications`'
+    /// `LAST_STATUS` map prunes stale Session ids from (gate fix, issue #793): archive, restore,
+    /// delete and recreate all already fire this event.
     pub fn emit_session_list_changed(&self) {
         self.send(SESSION_LIST_CHANGED, ());
+        crate::shell::notifications::prune_deleted_sessions(self.registry.clone());
     }
 
     /// Serialises `ops` directly from a borrowed `TranscriptPatchPayload` (performance finding,

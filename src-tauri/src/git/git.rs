@@ -2,7 +2,8 @@
 // git-backed module in `src-tauri/src/git` throws (contracts/omp-usage.md and tasks.md T011).
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use tokio::process::Command;
@@ -102,23 +103,30 @@ fn is_stripped_env_var(key: &str) -> bool {
         .any(|stripped| stripped.eq_ignore_ascii_case(key))
 }
 
+/// Resolves git's absolute path via `which` (security: Windows would otherwise search `cwd`
+/// before PATH for a bare `"git"`, so a repository that commits its own `git.exe` could run
+/// instead of the real one -- `which` only ever searches `PATH`, never the child's `cwd`), once
+/// per process: `which_global` walks every PATH directory on each call, and git's own location
+/// never changes mid-process, so every call after the first reuses the cached result (success or
+/// failure, including the exact original error message) instead of re-walking PATH.
+static GIT_PATH: LazyLock<Result<PathBuf, String>> =
+    LazyLock::new(|| which::which_global("git").map_err(|err| err.to_string()));
+
 /// Runs `git <args>` with no shell in `cwd`. Never fails on a non-zero exit; callers branch on
-/// `.code`. Resolves git's absolute path via `which` (security: Windows would otherwise search
-/// `cwd` before PATH for a bare `"git"`, so a repository that commits its own `git.exe` could run
-/// instead of the real one -- `which` only ever searches `PATH`, never the child's `cwd`).
+/// `.code`.
 pub async fn git_raw(cwd: &Path, args: &[&str], timeout: Option<Duration>) -> GitRawResult {
-    let git_path = match which::which_global("git") {
+    let git_path = match GIT_PATH.as_ref() {
         Ok(path) => path,
         Err(err) => {
             return GitRawResult {
                 stdout: String::new(),
-                stderr: err.to_string(),
+                stderr: err.clone(),
                 code: 1,
             }
         }
     };
 
-    let mut command = Command::new(&git_path);
+    let mut command = Command::new(git_path);
     command
         .args(args)
         .current_dir(cwd)

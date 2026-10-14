@@ -8,6 +8,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { UnlistenFn } from '@tauri-apps/api/event'
+import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import type {
   AttachmentImageFile,
@@ -81,6 +82,32 @@ function on<T>(channel: string, handler: (payload: T) => void): Unsubscribe {
   }
 }
 
+// Tauri's own native drag-drop handler (`getCurrentWebview().onDragDropEvent`), filtered to the
+// `drop` variant only (issue #793, spike section 2): `enter`/`over`/`leave` are left to the DOM
+// `dragenter`/`dragover`/`dragleave` handlers already in place (`ChatPane.tsx`), which still fire
+// normally in WebView2. Same pending/cancelled shape as `on()` above.
+function onFileDrop(handler: (event: { paths: string[]; position: { x: number; y: number } }) => void): Unsubscribe {
+  let unlisten: UnlistenFn | undefined
+  let cancelled = false
+  void getCurrentWebview()
+    .onDragDropEvent((event) => {
+      if (event.payload.type !== 'drop') return
+      handler({ paths: event.payload.paths, position: { x: event.payload.position.x, y: event.payload.position.y } })
+    })
+    .then((fn) => {
+      if (cancelled) {
+        fn()
+      } else {
+        unlisten = fn
+      }
+    })
+  return () => {
+    cancelled = true
+    unlisten?.()
+    unlisten = undefined
+  }
+}
+
 const refract: RefractApi = {
   readiness: {
     check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK)
@@ -124,13 +151,12 @@ const refract: RefractApi = {
 
   attachments: {
     readImageFile: (sessionId, path) => request<AttachmentImageFile>(IPC_REQUESTS.ATTACHMENTS_READ_IMAGE_FILE, sessionId, path),
-    // Known, accepted difference (spec 016 Assumptions): Tauri's webview has no equivalent to
-    // Electron's `webUtils.getPathForFile`; the standard `File` API never exposes an OS path.
-    // Throwing (rather than returning '') sends `ChatPane.tsx`'s drop handler down its generic
-    // "could not be attached as an image" path instead of a misleading "file missing" reason.
-    getPathForFile: () => {
-      throw new Error('Dropping files is not available in the Rust build yet.')
-    }
+    // #432/#793: Tauri's own native drag-drop handler owns the drop (`dragDropEnabled` defaults
+    // to `true`, left unset in `tauri.conf.json`'s window config -- spike section 2), so the
+    // page's own HTML5 `drop` event never fires; `getPathForFile` has no Tauri equivalent either
+    // (the standard `File` API never exposes an OS path), so neither is implemented here --
+    // `onFileDrop` is the real replacement, real absolute OS paths, not a stub.
+    onFileDrop
   },
 
   clipboard: {

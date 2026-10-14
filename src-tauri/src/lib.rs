@@ -129,7 +129,13 @@ mod data_dir_tests {
 ///   Electron build's own `isOwnOrigin` does not have (it only allows the dev-server origin when
 ///   `isDev && ELECTRON_RENDERER_URL` is set).
 fn is_allowed_navigation_url(url: &Url) -> bool {
-    let allowed = if tauri::is_dev() {
+    is_allowed_navigation_origin(url, tauri::is_dev())
+}
+
+/// Pure core of the check above, `is_dev` taken as a parameter (rather than read from
+/// `tauri::is_dev()` directly) so both branches are unit-testable with no running Tauri app.
+fn is_allowed_navigation_origin(url: &Url, is_dev: bool) -> bool {
+    let allowed = if is_dev {
         "http://localhost:5174"
     } else {
         "http://tauri.localhost"
@@ -191,6 +197,14 @@ pub fn run() {
     // (`store::registry`/`store::settings`'s own doc comments: a failed open is an unexpected
     // I/O error, not a normal "missing file" case, which both modules already handle as a
     // corrected default in memory).
+    //
+    // Gate note (issue #793): this runs BEFORE `tauri_plugin_single_instance`'s own rejection
+    // check can run (that check only exists once the `Builder` below is assembled, which in
+    // turn needs `AppState`/`SessionManager` already built from `registry`/`settings`) -- a
+    // second, about-to-be-rejected launch still pays for this read. Accepted: `RegistryStore::
+    // open`/`SettingsStore::open` only ever READ (`atomic_json::read_json_file`); neither one
+    // writes anything to disk until an explicit mutation calls its own `persist()`, so two
+    // instances racing this same read is never a corruption risk, only a redundant one.
     let (registry, settings) = tauri::async_runtime::block_on(async {
         // Lane R3 (issue #786, FR-005's fallback): reaps any `omp` root process orphaned by a
         // previous crash before this run ever spawns a new one -- must run before any Session's
@@ -217,9 +231,16 @@ pub fn run() {
     let settings = std::sync::Arc::new(tokio::sync::Mutex::new(settings));
     let app_handle_slot: std::sync::Arc<std::sync::Mutex<Option<tauri::AppHandle>>> =
         std::sync::Arc::new(std::sync::Mutex::new(None));
-    let events = events::EventSink::new(app_handle_slot.clone());
+    // Issue #793: `shell::notifications::on_session_status` (called from `emit_session_status`)
+    // needs the registry too, for the Session's live display name -- the same `Arc` every
+    // agent-backed handler already shares, never a second store instance.
+    let events = events::EventSink::new(app_handle_slot.clone(), registry.clone());
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     let session_manager_for_exit = session_manager.clone();
+    // Issue #623: cloned before `data_dir` moves into `AppState` below -- the setup closure
+    // applies the saved window state (`shell::window_state::Tracker` keeps its own copy for
+    // the final write at quit, so only one clone is needed here).
+    let data_dir_for_setup = data_dir.clone();
 
     let app_state = AppState {
         data_dir,
@@ -232,6 +253,20 @@ pub fn run() {
     ipc::register_handlers(&mut dispatcher);
 
     let app = tauri::Builder::default()
+        // Issue #793: registered first, ahead of every other plugin -- a second launch should
+        // exit (after focusing the first window) as early as possible, doing no other startup
+        // work. No JS capability needed (`capabilities/default.json`'s own doc comment): this
+        // plugin has no JavaScript API at all.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let Some(window) = app.get_webview_window("main") else {
+                return;
+            };
+            if window.is_minimized().unwrap_or(false) {
+                let _ = window.unminimize();
+            }
+            let _ = window.show();
+            let _ = window.set_focus();
+        }))
         .plugin(
             tauri_plugin_log::Builder::new()
                 // Security: Debug level also writes envelopes (now channel+outcome only, see
@@ -247,7 +282,18 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_opener::init())
+        // Gate fix (issue #793): the plugin's own `init()` defaults to `open_js_links_on_click
+        // (true)`, which injects ANOTHER `<a>`-click interceptor of its own -- disabled here so
+        // `src/tauri-bridge/externalLinks.ts`'s own capture-phase handler is the single path a
+        // link click ever takes (and the only one this lane's security baseline documents).
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
+        // Issue #793: OS notification on needs-you/finished, click-to-focus
+        // (`shell::notifications`).
+        .plugin(tauri_plugin_notification::init())
         .manage(ManagedState {
             app_state,
             dispatcher,
@@ -275,9 +321,10 @@ pub fn run() {
             );
 
             // One main window, native decorations (spec.md Assumptions: no custom caption
-            // parity in milestone 1), same initial size as the Electron build's own
-            // `BrowserWindow` (`src/main/index.ts`'s `width: 1280, height: 800`). Like Electron,
-            // no minimum size, so the window still fits and reflows at 150-200% display scaling.
+            // parity in milestone 1; spike section 1 confirms no visible gap either, issue
+            // #793). Initially hidden (issue #623, mirrors Electron's own `show: false` ->
+            // `ready-to-show`): the saved window state is applied below before the first paint,
+            // so there is no flash at the default size/position first.
             // `tauri.vite.config.ts` keeps Vite's default root (the repository root, not
             // `tauri/`) so this build's HTML entry can reference the sibling
             // `src/tauri-bridge/` tree by an ordinary root-relative script `src` -- the built
@@ -285,18 +332,42 @@ pub fn run() {
             // `index.html`, in both `frontendDist` (`out/tauri-web/tauri/index.html`) and the
             // dev server (`http://localhost:5174/tauri/index.html`, `devUrl`'s origin plus this
             // same relative path).
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
-                .title("Refract (Rust preview)")
-                .inner_size(1280.0, 800.0)
-                .decorations(true)
-                .initialization_script(&init_script)
-                // Security LOW finding: matches the Electron build's `denyForeignNavigation` --
-                // same-window navigation to a remote page would otherwise replace the app UI
-                // (remote origins can already not reach `refract_request`, and wry denies new
-                // windows with no `on_new_window` handler set, but a same-window navigation
-                // away is a separate hole neither of those closes).
-                .on_navigation(is_allowed_navigation_url)
-                .build()?;
+            let window =
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
+                    .title("Refract (Rust preview)")
+                    .inner_size(1280.0, 800.0)
+                    .decorations(true)
+                    .visible(false)
+                    .initialization_script(&init_script)
+                    // Security LOW finding: matches the Electron build's `denyForeignNavigation`
+                    // -- same-window navigation to a remote page would otherwise replace the app
+                    // UI (remote origins can already not reach `refract_request`, and wry denies
+                    // new windows with no `on_new_window` handler set, but a same-window
+                    // navigation away is a separate hole neither of those closes).
+                    .on_navigation(is_allowed_navigation_url)
+                    .build()?;
+
+            // Issue #623: reads and applies the saved position/size/maximised state (a
+            // one-off, startup-only blocking wait, same justification as the registry/settings
+            // opens above), then keeps it current for the rest of the run and manages the
+            // tracker so the final `ExitRequested` handler below can reach it to flush it.
+            let window_state_tracker = tauri::async_runtime::block_on(
+                shell::window_state::apply_on_startup(&data_dir_for_setup, &window),
+            );
+            {
+                let tracker = window_state_tracker.clone();
+                let window_for_events = window.clone();
+                window.on_window_event(move |event| {
+                    tracker.on_window_event(&window_for_events, event)
+                });
+            }
+            app.manage(window_state_tracker);
+
+            // Issue #793: the one global notification click handler, registered before any
+            // notification is ever shown (`shell::notifications::init`'s own doc comment).
+            shell::notifications::init(app.handle());
+
+            window.show()?;
 
             Ok(())
         })
@@ -309,18 +380,132 @@ pub fn run() {
     // shutdown until that finishes or a 15 s bound elapses, whichever comes first -- a stuck
     // child must never hold the whole app open forever (the kill-on-close Job Object, already
     // joined before `run()` was ever called, is the final belt-and-braces guarantee regardless).
-    app.run(move |_app_handle, event| {
+    app.run(move |app_handle, event| {
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
             api.prevent_exit();
             let session_manager = session_manager_for_exit.clone();
+            let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(15),
                     session_manager.stop_all(),
                 )
                 .await;
+                // Issue #623: the final, awaited window-state write. The maximised flag was
+                // already captured fresh at `WindowEvent::CloseRequested` time (gate fix: the
+                // window itself may already be destroyed by now for a user-initiated close/
+                // Alt+F4, so `save()` needs no window handle at all); this call is what covers
+                // a quit that never goes through `CloseRequested` (a direct `app.exit()`/signal).
+                if let Some(tracker) =
+                    app_handle.try_state::<std::sync::Arc<shell::window_state::Tracker>>()
+                {
+                    tracker.save().await;
+                }
                 std::process::exit(0);
             });
         }
     });
+}
+
+#[cfg(test)]
+mod is_allowed_navigation_origin_tests {
+    use super::*;
+
+    fn url(s: &str) -> Url {
+        Url::parse(s).expect("test URL must parse")
+    }
+
+    #[test]
+    fn dev_allows_the_exact_dev_server_origin() {
+        assert!(is_allowed_navigation_origin(
+            &url("http://localhost:5174/some/path"),
+            true
+        ));
+    }
+
+    #[test]
+    fn dev_refuses_a_different_port() {
+        assert!(!is_allowed_navigation_origin(
+            &url("http://localhost:5175"),
+            true
+        ));
+    }
+
+    #[test]
+    fn dev_refuses_a_different_scheme_on_the_same_host_and_port() {
+        assert!(!is_allowed_navigation_origin(
+            &url("https://localhost:5174"),
+            true
+        ));
+    }
+
+    #[test]
+    fn dev_refuses_a_remote_host() {
+        assert!(!is_allowed_navigation_origin(
+            &url("http://evil.example.com:5174"),
+            true
+        ));
+    }
+
+    #[test]
+    fn production_allows_the_exact_tauri_localhost_origin() {
+        assert!(is_allowed_navigation_origin(
+            &url("http://tauri.localhost/tauri/index.html"),
+            false
+        ));
+    }
+
+    #[test]
+    fn production_refuses_the_dev_server_origin() {
+        // The "allow-both-unconditionally" bug this doc comment names: a release build has no
+        // reason to ever trust `localhost:5174` as a same-window origin.
+        assert!(!is_allowed_navigation_origin(
+            &url("http://localhost:5174"),
+            false
+        ));
+    }
+
+    #[test]
+    fn production_refuses_a_different_host() {
+        assert!(!is_allowed_navigation_origin(
+            &url("http://evil.example.com"),
+            false
+        ));
+    }
+
+    #[test]
+    fn file_scheme_is_refused_in_both_modes() {
+        assert!(!is_allowed_navigation_origin(
+            &url("file:///C:/secrets.txt"),
+            true
+        ));
+        assert!(!is_allowed_navigation_origin(
+            &url("file:///C:/secrets.txt"),
+            false
+        ));
+    }
+
+    #[test]
+    fn javascript_scheme_is_refused_in_both_modes() {
+        assert!(!is_allowed_navigation_origin(
+            &url("javascript:alert(1)"),
+            true
+        ));
+        assert!(!is_allowed_navigation_origin(
+            &url("javascript:alert(1)"),
+            false
+        ));
+    }
+
+    #[test]
+    fn data_scheme_is_refused_in_both_modes() {
+        assert!(!is_allowed_navigation_origin(
+            &url("data:text/html,hi"),
+            true
+        ));
+        assert!(!is_allowed_navigation_origin(
+            &url("data:text/html,hi"),
+            false
+        ));
+    }
 }
