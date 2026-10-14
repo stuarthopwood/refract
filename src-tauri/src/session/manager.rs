@@ -101,6 +101,147 @@ impl SessionManager {
             .cloned()
     }
 
+    /// Every live `SessionAgent` this run, a snapshot clone (lane RM, issue #740: the role-
+    /// change propagation sweep below needs to touch each one without holding the `agents`
+    /// lock across an `.await`).
+    pub fn live_agents(&self) -> Vec<Arc<SessionAgent>> {
+        self.agents
+            .lock()
+            .expect("agents mutex poisoned")
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    /// Issue #740 (lane RM): called by `ipc::model_roles::model_roles_set` after a role's
+    /// config value changes, AWAITED before that IPC call replies (gate-fix: an earlier
+    /// comment/PR-body wording implied this runs "off the reply path" -- it does not; only the
+    /// sweep's OWN work across Sessions is concurrent and bounded, the whole sweep still
+    /// completes before `modelRoles.set`'s response is sent). Moves every live, non-pinned,
+    /// non-stopped Session whose tracked role is `role` onto its freshly-resolved model --
+    /// immediately if idle (concurrently, bounded, gate-fix MEDIUM/perf), queued for its own
+    /// next settle if working (Stuart's decision, 2026-10-13: "automatic at the next idle
+    /// moment", no prompt, never refused); a Session pinned by `/switch`/the composer picker
+    /// (#454) is skipped. A Session with NO entry at all in `self.agents` (never opened or
+    /// probed this run) is invisible to `live_agents()` and so is not counted in ANY bucket --
+    /// it simply resumes its own saved model on its own next start. A Session that DOES have an
+    /// agent entry (e.g. a prior open, or a `model.listRoles` probe) but whose live status is
+    /// `Stopped` lands in `skipped_stopped` instead, rather than being counted as failed
+    /// (gate-fix, HIGH/tests).
+    pub async fn apply_role_change(&self, role: &str) -> crate::session::model::RoleChangeSummary {
+        use crate::session::model::{apply_role_now, current_selection, RoleChangeSummary};
+        use crate::session::SessionStatus;
+
+        enum RoleApplyOutcome {
+            Moved,
+            Queued,
+            Failed,
+        }
+
+        let mut summary = RoleChangeSummary::default();
+        // Gate-fix (MEDIUM, perf): idle Sessions are applied concurrently, bounded, instead of
+        // one at a time -- each makes up to three RPCs (a `get_state` before, the `/switch
+        // @role` send, a `get_state` after), so a serial sweep's worst case grows with the
+        // Session count.
+        const CONCURRENCY: usize = 4;
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCY));
+        let mut idle_tasks = Vec::new();
+
+        for agent in self.live_agents() {
+            let name = self
+                .registry
+                .lock()
+                .await
+                .get_session(agent.session_id())
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| agent.session_id().to_string());
+
+            // Gate-fix (MEDIUM): check which role this Session is ON before checking whether it
+            // is Stopped, not the other way around -- checking Stopped first put EVERY Stopped
+            // Session in `skipped_stopped` for ANY role change, including one it was never on.
+            let (pinned, current_role) = current_selection(&agent).await;
+            let effective = current_role.as_deref().unwrap_or("default");
+            if effective != role {
+                continue;
+            }
+            if agent.status().await == SessionStatus::Stopped {
+                summary.skipped_stopped.push(name);
+                continue;
+            }
+            if pinned {
+                summary.skipped_pinned.push(name);
+                continue;
+            }
+            // Atomic with the status read above being stale by now is fine: this re-checks
+            // `status` itself (gate-fix, HIGH, race) and sets `pending_role_reapply` under the
+            // SAME lock acquisition, so a settle landing in the gap can never lose the reapply.
+            if agent.queue_role_reapply_or_ready(role).await {
+                summary.queued.push(name);
+                continue;
+            }
+            let semaphore = semaphore.clone();
+            let role = role.to_string();
+            idle_tasks.push(tokio::spawn(async move {
+                let _permit = semaphore
+                    .acquire_owned()
+                    .await
+                    .expect("semaphore never closed");
+                let outcome = match apply_role_now(&agent, &role, true).await {
+                    Ok(_) => RoleApplyOutcome::Moved,
+                    Err(err) if err.code == "not-idle" => {
+                        // Gate-fix (MEDIUM): became working between the atomic queue-or-ready
+                        // check above and this task's own `send_if_idle` call. Re-run the SAME
+                        // atomic decision right here rather than waiting for the sequential loop
+                        // below to notice minutes later -- if the Session has ALREADY settled
+                        // back to idle by now, apply right away instead of queuing for a whole
+                        // extra turn.
+                        if agent.queue_role_reapply_or_ready(&role).await {
+                            RoleApplyOutcome::Queued
+                        } else {
+                            match apply_role_now(&agent, &role, true).await {
+                                Ok(_) => RoleApplyOutcome::Moved,
+                                Err(err2) if err2.code == "not-idle" => {
+                                    // Gate-fix (round 4): a SECOND race -- became working again
+                                    // between the ready-check just above and this retry's own
+                                    // send. Set `pending_role_reapply` directly (the same state
+                                    // `queue_role_reapply_or_ready` itself would have set) so
+                                    // `on_frame`'s settle hook still picks it up, rather than
+                                    // reporting failure for a Session that was never actually
+                                    // idle long enough to apply.
+                                    agent
+                                        .with_model_state(|s| {
+                                            if s.pending_role_reapply.is_none() {
+                                                s.pending_role_reapply = Some(role.clone());
+                                            }
+                                        })
+                                        .await;
+                                    RoleApplyOutcome::Queued
+                                }
+                                Err(_) => RoleApplyOutcome::Failed,
+                            }
+                        }
+                    }
+                    Err(_) => RoleApplyOutcome::Failed,
+                };
+                (name, outcome)
+            }));
+        }
+        for task in idle_tasks {
+            match task.await {
+                Ok((name, RoleApplyOutcome::Moved)) => summary.moved.push(name),
+                Ok((name, RoleApplyOutcome::Queued)) => summary.queued.push(name),
+                Ok((name, RoleApplyOutcome::Failed)) => summary.failed.push(name),
+                Err(join_err) => {
+                    // Gate-fix (MEDIUM): a panicked task used to be silently dropped, with the
+                    // affected Session absent from every bucket and the Settings page none the
+                    // wiser.
+                    log::error!("apply_role_change: a role-reapply task panicked: {join_err}");
+                }
+            }
+        }
+        summary
+    }
+
     /// `SessionManager.ts`'s own `getOrCreateAgent`: a brand-new instance on first access,
     /// returning the existing one for every later call -- never starts it (callers start a
     /// `stopped` agent explicitly).

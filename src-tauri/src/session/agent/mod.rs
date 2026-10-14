@@ -28,19 +28,16 @@
 // own file only, never here: the `on_frame(agent, frame_type, &frame)`, `on_exit(agent, code,
 // requested)`, and `on_start_progress(agent, stage, elapsed_ms)` calls `agent::frame`'s own
 // `handle_frame` and `agent::launch`'s own `spawn_frame_listener` make per lane module, the
-// lane's own `State` slot inside `AgentState` (reached only through its `with_<lane>_state`
-// accessor below), and the narrow status/events/transcript/request/`session_id()` accessors
-// below are the only things a lane ever needs.
+// lane's own `State` slot inside `AgentState`, and the narrow status/events/transcript/request/
+// `session_id()` accessors below are the only things a lane ever needs.
 //
 // This module is itself split across `session/agent/` by concern (code-review finding,
 // 2026-10-13: a single ~1,900-line `agent.rs` violated issue #784's own 600-line-per-file
 // criterion): `mod.rs` (core state/status/transcript), `launch.rs` (start/attach/reattach),
 // `frame.rs` (frame dispatch), `requests.rs` (dialog classification), `chat.rs`
 // (send/stop/removeQueued), `conversations.rs` (startNew/open), `commands.rs` (slash-command
-// tables), `types.rs` (`AgentError`/`PendingRequest`/`SessionStatus`, split out round 2,
-// 2026-10-14, so `mod.rs` keeps headroom under its own 600-line limit). `mod agent;` in
-// `session/mod.rs` still resolves here, so `crate::session::agent` and every external import of
-// it are unchanged.
+// tables), `types.rs` (split out round 2 to keep `mod.rs` under its own 600-line limit). `mod
+// agent;` in `session/mod.rs` still resolves here, so every external import is unchanged.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex, Weak};
@@ -59,6 +56,7 @@ mod chat;
 mod commands;
 mod conversations;
 mod frame;
+mod lane_support;
 mod launch;
 mod launch_support;
 mod requests;
@@ -330,7 +328,7 @@ impl SessionAgent {
     /// `idle` transition while this Session is not the visible one (T037). Window-focus is not
     /// tracked in this build (simplification, see this file's own header), so only visibility
     /// gates `unread`, not focus.
-    async fn set_status(
+    pub(super) async fn set_status(
         &self,
         status: SessionStatus,
         stop_reason: Option<&'static str>,
@@ -408,12 +406,14 @@ impl SessionAgent {
     /// this method never having run for a Session with no agent this run -- `SessionManager`
     /// only calls this for a Session that already has one).
     pub async fn summary_fields(&self) -> Value {
+        let (current_role, pinned) = self.role_summary_fields().await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "status": state.status,
             "unread": state.unread,
             "launchedMode": state.launched_mode,
             "pendingMode": state.pending_mode,
+            "currentRole": current_role, "pinned": pinned,
         });
         if let Some(reason) = state.stop_reason {
             payload

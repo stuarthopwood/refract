@@ -29,6 +29,7 @@ import type {
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor, SupportedImageMimeType } from './frames';
+import type { ModelApi, RoleChangeSummary } from './ipc-model';
 import type {
   ChangedFile,
   FilterTab,
@@ -154,6 +155,12 @@ export interface SessionSummary extends Session {
    * that has never run): the pill's "currently in effect" mode while `pendingMode` is set. */
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
+  /** Lane RM (#740, #741): `true` once chosen directly (picker, `/switch`, `/model`, cycle) --
+   * a later Settings role change skips it. Optional: Electron never ports this family. */
+  pinned?: boolean;
+  /** Lane RM (#741, #740): the role this Session is on, `null` while pinned (`ipc-model.ts`'s
+   * own `ModelApi.listRoles` doc has the full reasoning). Optional, same reason as `pinned`. */
+  currentRole?: string | null;
 }
 
 /** `sessions.diffStat(id)` (T068, contracts/ipc.md): tracked-file edits since the merge-base
@@ -359,6 +366,11 @@ export const IPC_REQUESTS = {
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
+  // Lane RM: `model: {...}` (ipc-model.ts).
+  MODEL_SET_MODEL: 'model.setModel',
+  MODEL_CYCLE_MODEL: 'model.cycleModel',
+  MODEL_APPLY_ROLE: 'model.applyRole',
+  MODEL_LIST_ROLES: 'model.listRoles',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -735,13 +747,20 @@ export interface RefractApi extends UpdatesApi {
      * content can ever exist" claim -- any same-user process COULD in principle list the OS temp
      * root, find this directory by its fixed name prefix, and plant something there between calls
      * within the same session, same as it could already edit the real global `config.yml`
-     * directly; this crosses no privilege boundary and is accepted, not claimed impossible). */
-    set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string }>>;
+     * directly; this crosses no privilege boundary and is accepted, not claimed impossible).
+     * Lane RM (#740): `propagation` summarises the role-change sweep over every open Session
+     * on that role ("Moved N..., left M pinned, K waiting"); optional (Electron never ports
+     * it). */
+    set(role: ModelRoleId, value: string | null): Promise<Result<{ roles: Record<string, string>; overriddenBy?: string; propagation?: RoleChangeSummary }>>;
     /** `omp models --kind <kind> --json`: a read-only catalog listing used to populate a
      * role's model picker (the RPC `get_available_models` surface carries no role field and
      * lives behind Phase A files this feature does not touch). */
     listCatalog(kind: CatalogKind): Promise<Result<ModelCatalogEntry[]>>;
   };
+
+  /** Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s
+   * own `ModelApi` has the full reasoning); optional (Electron never ports this family). */
+  model?: ModelApi;
 
   window: {
     /** Pops open one of the in-app menu bar's real submenus (spec 001 T100, FR-057) at `x`/`y`,

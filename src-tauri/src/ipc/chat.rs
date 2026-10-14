@@ -15,7 +15,7 @@ use crate::session::agent::{
     classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
     NATIVE_RESERVED_COMMANDS,
 };
-use crate::session::SessionManager;
+use crate::session::{model, SessionManager};
 
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -38,6 +38,20 @@ fn is_native_reserved(name: &str) -> bool {
 /// chip model recognise.
 fn is_valid_queue_kind(queue: &str) -> bool {
     queue == "followUp" || queue == "steering"
+}
+
+/// `/model` is rewritten to `/switch` before classification or forwarding; everything else
+/// passes through unchanged. Returns `(name, rest, original_name)` -- `original_name` is always
+/// what the user actually typed, kept for every error message downstream (a user who typed
+/// `/model` must see "/model", never the internal rewrite target "/switch").
+fn rewrite_model_to_switch(name: String, rest: String) -> (String, String, String) {
+    let original_name = name.clone();
+    let name = if name == "model" {
+        "switch".to_string()
+    } else {
+        name
+    };
+    (name, rest, original_name)
 }
 
 /// Pure (gate-fix, testability): the `(sessionId, text)` positional pair every `chat.send`/
@@ -179,6 +193,29 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     .map_err(map_chat_error)?;
                 return Ok(serde_json::json!({ "queued": false }));
             }
+            // Issue #762 (lane RM): `/model`/`/model <model>` are a Refract-side rewrite to
+            // `/switch`/`/switch <model>`, before anything is classified or forwarded -- OMP's
+            // own `model` builtin (alias `models`) opens the role-writing hub, never what
+            // Refract's composer means by this name (FINDINGS item 53).
+            let (name, rest, original_name) = rewrite_model_to_switch(name, rest);
+            // Issue #766: `/role <role>` applies directly (Refract-native; no OMP command
+            // exists for this). Bare `/role` has no server-side action (the renderer opens the
+            // Ctrl+R selector) and falls through to the reserved-command refusal below, same as
+            // `/btw`/`/models`. Validates against the WIDER chat-role set (gate-fix, round 4):
+            // `cycleOrder` + `plan` + every other configured chat role, not only Ctrl+R's own
+            // narrower cycling list (`model::known_role_list`, Stuart's own decided design).
+            if name == "role" && !rest.is_empty() {
+                let known_roles = model::known_chat_role_list()
+                    .await
+                    .map_err(map_chat_error)?;
+                // Gate-fix (HIGH): `chat.send`'s own wire type is `Result<{ queued: boolean }>`
+                // (ipc.ts); the richer `{model, role}` shape is for `ipc::model`'s own direct
+                // `applyRole` caller only, never this text-command path.
+                model::apply_role(&agent, &rest, &known_roles)
+                    .await
+                    .map_err(map_chat_error)?;
+                return Ok(serde_json::json!({ "queued": false }));
+            }
             // Port of `slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS` (chat.ts:125-130):
             // refused locally before classification, never forwarded to OMP even if a future
             // OMP version later recognizes one of these names as a real command.
@@ -190,7 +227,7 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 };
                 return Err(IpcError::new(
                     "unknown-command",
-                    format!("Unknown command: /{name}{suffix}"),
+                    format!("Unknown command: /{original_name}{suffix}"),
                 ));
             }
             let commands = agent.available_commands().await;
@@ -203,18 +240,27 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     };
                     return Err(IpcError::new(
                         "unknown-command",
-                        format!("Unknown command: /{name}{suffix}"),
+                        format!("Unknown command: /{original_name}{suffix}"),
                     ));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
                     return Err(IpcError::new(
                         "unsupported-arguments",
-                        format!("/{name} doesn't support arguments yet. Try /{name} on its own."),
+                        format!("/{original_name} doesn't support arguments yet. Try /{original_name} on its own."),
                     ));
                 }
                 SlashInvocationClassification::Supported => {
-                    // A real OMP-side command (from `available_commands_update`): fall through
-                    // and forward it as a normal prompt below.
+                    if name == "switch" {
+                        // Issue #762: `/switch <arg>` (and its `/model` alias, rewritten above)
+                        // tracks pinning/role state and refreshes the composer label itself --
+                        // never the generic forward-and-ignore path every other supported OMP
+                        // command below falls through to.
+                        return model::handle_switch_text(&agent, &rest)
+                            .await
+                            .map_err(map_chat_error);
+                    }
+                    // Any other real OMP-side command (from `available_commands_update`): fall
+                    // through and forward it as a normal prompt below.
                 }
             }
         }

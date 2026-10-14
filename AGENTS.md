@@ -49,6 +49,7 @@ On 2026-10-08 the user decided that Refract is in a rapid-prototyping phase. Tes
 - Verify behaviour by running the app and exercising the changed path.
 - The phase ends only when the user says so. Until then, put this rule in every delegation brief.
 - Exception (epic #797, Rust promotion, 2026-10-13): each Rust lane PR ports the TypeScript tests named in its lane issue as Rust tests (`cargo test`); the rule above still applies to `src/renderer`, `src/main`, `src/preload` and `src/shared`.
+- #795's gate suite may keep the contract replay as a CI test (Stuart, 2026-10-14).
 
 ## Docs-only PRs are always merged (HARD RULE)
 

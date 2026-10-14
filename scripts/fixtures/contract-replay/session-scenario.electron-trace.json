@@ -1,0 +1,471 @@
+[
+  {
+    "kind": "ipc",
+    "channel": "repositories.add",
+    "args": "<REPO_DIR>",
+    "response": {
+      "ok": true,
+      "value": {
+        "id": "<REPO_ID>",
+        "path": "<REPO_DIR>",
+        "name": "<REPO_NAME>",
+        "defaultBranch": "main",
+        "addedAt": "<TIMESTAMP>",
+        "remote": {
+          "kind": "none"
+        }
+      }
+    }
+  },
+  {
+    "kind": "ipc",
+    "channel": "sessions.create",
+    "args": [
+      {
+        "repositoryId": "<REPO_ID>",
+        "baseBranch": "main"
+      }
+    ],
+    "response": {
+      "ok": true,
+      "value": {
+        "id": "<SESSION_ID>",
+        "repositoryId": "<REPO_ID>",
+        "name": "<BRANCH_NAME>",
+        "branch": "<BRANCH_NAME>",
+        "baseBranch": "main",
+        "worktreePath": "<WORKTREE_PATH>",
+        "sessionDir": null,
+        "currentConversation": null,
+        "lastMessageCount": null,
+        "createdAt": "<TIMESTAMP>",
+        "lastActivityAt": "<TIMESTAMP>",
+        "archivedAt": null
+      }
+    }
+  },
+  {
+    "kind": "ipc",
+    "channel": "sessions.open",
+    "args": [
+      "<SESSION_ID>",
+      true
+    ],
+    "response": {
+      "ok": true,
+      "value": {
+        "runtime": {
+          "sessionId": "<SESSION_ID>",
+          "status": "idle",
+          "launchedMode": "ask",
+          "pendingMode": null,
+          "unread": false,
+          "transcript": [],
+          "queue": {
+            "followUp": [],
+            "steering": []
+          },
+          "pending": []
+        },
+        "conversations": [],
+        "readout": {
+          "changes": null,
+          "contextUsage": null,
+          "turnTime": null,
+          "pullRequest": null,
+          "subagentCount": null,
+          "todoProgress": null
+        },
+        "subagents": []
+      }
+    }
+  },
+  {
+    "kind": "ipc",
+    "channel": "chat.send",
+    "args": [
+      "<SESSION_ID>",
+      "Create note.txt with the text 'hi', then tell me the token xyzzy9."
+    ],
+    "response": {
+      "ok": true,
+      "value": {
+        "queued": false
+      }
+    }
+  },
+  {
+    "kind": "ipc",
+    "channel": "chat.answer",
+    "args": [
+      "<SESSION_ID>",
+      "dlg-1",
+      {
+        "approve": true
+      }
+    ],
+    "response": {
+      "ok": true
+    }
+  },
+  {
+    "kind": "events",
+    "events": [
+      {
+        "type": "list-changed"
+      },
+      {
+        "type": "list-changed"
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "stopped",
+          "stopReason": "not-started",
+          "startProgress": {
+            "kind": "waiting",
+            "elapsedMs": 0
+          },
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "stopped",
+          "stopReason": "not-started",
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      },
+      {
+        "type": "commands",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "commands": [
+            {
+              "name": "new",
+              "description": "Start a new Conversation in this Session",
+              "source": "native"
+            },
+            {
+              "name": "btw",
+              "description": "Ask the agent a side question",
+              "source": "native"
+            },
+            {
+              "name": "tools",
+              "description": "List available tools"
+            }
+          ]
+        }
+      },
+      {
+        "type": "list-changed"
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "idle",
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      },
+      {
+        "type": "patch",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "ops": [
+            {
+              "op": "reset",
+              "items": []
+            }
+          ]
+        }
+      },
+      {
+        "type": "list-changed"
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "working",
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      },
+      {
+        "type": "subagents",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "subagents": []
+        }
+      },
+      {
+        "type": "request",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "request": {
+            "kind": "approval",
+            "requestId": "dlg-1",
+            "tool": "write",
+            "target": "note.txt",
+            "details": [
+              "Path: note.txt",
+              "Content:",
+              "hi"
+            ]
+          }
+        }
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "needs-you",
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      },
+      {
+        "type": "requestResolved",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "requestId": "dlg-1"
+        }
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "working",
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      },
+      {
+        "type": "patch",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "ops": [
+            {
+              "op": "reset",
+              "items": [
+                {
+                  "kind": "user",
+                  "id": "msg-u1",
+                  "text": "Create note.txt with the text 'hi', then tell me the token xyzzy9.",
+                  "at": 0
+                }
+              ]
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "user",
+                "id": "msg-u1",
+                "text": "Create note.txt with the text 'hi', then tell me the token xyzzy9.",
+                "at": 0
+              }
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "tool",
+                "id": "tool-exec:call-1",
+                "toolCallId": "call-1",
+                "tool": "write",
+                "target": "note.txt",
+                "status": "running",
+                "startedAt": "<TIMESTAMP_MS>",
+                "args": {
+                  "path": "note.txt",
+                  "content": "hi"
+                },
+                "write": {
+                  "path": "note.txt",
+                  "content": "hi"
+                }
+              }
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "request",
+                "id": "request:dlg-1",
+                "requestId": "dlg-1"
+              }
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "request",
+                "id": "request:dlg-1",
+                "requestId": "dlg-1",
+                "resolved": "approved"
+              }
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "tool",
+                "id": "tool-exec:call-1",
+                "toolCallId": "call-1",
+                "tool": "write",
+                "target": "note.txt",
+                "status": "done",
+                "startedAt": "<TIMESTAMP_MS>",
+                "args": {
+                  "path": "note.txt",
+                  "content": "hi"
+                },
+                "write": {
+                  "path": "note.txt",
+                  "content": "hi"
+                },
+                "durationMs": "<TIMESTAMP_MS>",
+                "output": "Successfully wrote 2 bytes to note.txt"
+              }
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "assistant-text",
+                "id": "msg-a1:0",
+                "text": "",
+                "streaming": true
+              }
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "assistant-text",
+                "id": "msg-a1:0",
+                "text": "xy",
+                "streaming": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "readout",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "readout": {
+            "changes": {
+              "files": 0,
+              "additions": 0,
+              "deletions": 0,
+              "partial": false
+            },
+            "contextUsage": "not-available",
+            "turnTime": {
+              "startedAt": "<TIMESTAMP_MS>"
+            },
+            "pullRequest": null,
+            "subagentCount": null,
+            "todoProgress": null
+          }
+        }
+      },
+      {
+        "type": "readout",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "readout": {
+            "changes": {
+              "files": 0,
+              "additions": 0,
+              "deletions": 0,
+              "partial": false
+            },
+            "contextUsage": "not-available",
+            "turnTime": {
+              "startedAt": "<TIMESTAMP_MS>"
+            },
+            "pullRequest": null,
+            "subagentCount": null,
+            "todoProgress": null
+          }
+        }
+      },
+      {
+        "type": "queue",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "followUp": [],
+          "steering": []
+        }
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "idle",
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      },
+      {
+        "type": "list-changed"
+      },
+      {
+        "type": "patch",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "ops": [
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "assistant-text",
+                "id": "msg-a1:0",
+                "text": "xyzzy9",
+                "streaming": true
+              }
+            },
+            {
+              "op": "upsert",
+              "item": {
+                "kind": "assistant-text",
+                "id": "msg-a1:0",
+                "text": "xyzzy9",
+                "streaming": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "sideChatInterrupted",
+        "payload": {
+          "sessionId": "<SESSION_ID>"
+        }
+      },
+      {
+        "type": "status",
+        "payload": {
+          "sessionId": "<SESSION_ID>",
+          "status": "stopped",
+          "stopReason": "not-started",
+          "terminatedUnexpectedly": false,
+          "unread": false,
+          "launchedMode": "ask",
+          "pendingMode": null
+        }
+      }
+    ]
+  }
+]
