@@ -31,6 +31,7 @@ pub mod clipboard;
 pub mod conversations;
 pub mod file_explorer;
 pub mod files;
+pub mod model_roles;
 pub mod pull_requests;
 pub mod readiness;
 pub mod repositories;
@@ -171,6 +172,8 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     attachments::register(dispatcher);
     side_chat::register(dispatcher);
     theme::register(dispatcher);
+    model_roles::register(dispatcher);
+    crate::shell::menu::register(dispatcher);
 }
 
 // ---------------------------------------------------------------------------

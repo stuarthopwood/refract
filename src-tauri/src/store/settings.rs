@@ -130,6 +130,14 @@ pub struct SettingsStore {
     raw_theme: Option<ThemeId>,
     raw_watermark_enabled: Option<bool>,
     raw_show_sample_data: Option<bool>,
+    /// Rust-necessitated adaptation (issue #791 acceptance: "unknown keys round-trip untouched
+    /// so renderer features can add fields later"): `settings.ts`'s own `this.data` is an
+    /// untyped JS object, so an unrecognised key from a hand-edited or future-build
+    /// `settings.json` simply rides along through every `{...this.data, ...}` spread with no
+    /// code needed for it. `Settings` here is a real struct with no such slot, so every key NOT
+    /// one of the nine known fields is captured here at `open()` and re-inserted verbatim by
+    /// `serialize_for_disk` on every write, instead of being silently dropped.
+    unknown_fields: Map<String, Value>,
 }
 
 impl SettingsStore {
@@ -208,6 +216,23 @@ impl SettingsStore {
             .and_then(Value::as_bool)
             .unwrap_or(true);
 
+        const KNOWN_FIELDS: [&str; 9] = [
+            "version",
+            "approvalMode",
+            "sessionReadout",
+            "split",
+            "theme",
+            "watermarkEnabled",
+            "transcriptDisplay",
+            "showSampleData",
+            "detectImagePathsOnPaste",
+        ];
+        let unknown_fields: Map<String, Value> = object
+            .iter()
+            .filter(|(key, _)| !KNOWN_FIELDS.contains(&key.as_str()))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+
         let data = Settings {
             version: 1,
             approval_mode,
@@ -226,6 +251,7 @@ impl SettingsStore {
             raw_theme,
             raw_watermark_enabled,
             raw_show_sample_data,
+            unknown_fields,
         })
     }
 
@@ -270,6 +296,12 @@ impl SettingsStore {
             "detectImagePathsOnPaste".to_string(),
             json!(self.data.detect_image_paths_on_paste),
         );
+        // Re-inserts every key captured at `open()` that this struct has no slot for, verbatim --
+        // never overwrites a known key above (by construction, `unknown_fields` excludes all
+        // nine of them), so a renderer feature's own not-yet-ported setting survives every save.
+        for (key, value) in &self.unknown_fields {
+            map.insert(key.clone(), value.clone());
+        }
         Value::Object(map)
     }
 
@@ -394,5 +426,145 @@ impl SettingsStore {
             ..self.data.clone()
         };
         self.persist_whole(next).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Port of `store/settings.test.ts`'s own `openScratchStore`: a fresh, uniquely-named
+    /// directory under the OS temp root, left on disk (never deleted), matching this project's
+    /// existing scratch-directory test convention.
+    async fn open_scratch_store(initial_json: Option<Value>) -> SettingsStore {
+        let dir =
+            std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .expect("create scratch dir");
+        if let Some(json) = initial_json {
+            tokio::fs::write(
+                dir.join("settings.json"),
+                serde_json::to_vec(&json).unwrap(),
+            )
+            .await
+            .expect("write scratch settings.json");
+        }
+        SettingsStore::open(&dir).await.expect("open scratch store")
+    }
+
+    #[tokio::test]
+    async fn transcript_display_defaults_on_a_brand_new_settings_json() {
+        let store = open_scratch_store(None).await;
+        assert!(store.get().transcript_display.thinking);
+        assert!(store.get().transcript_display.tool_calls);
+    }
+
+    #[tokio::test]
+    async fn transcript_display_fills_in_default_when_key_is_missing() {
+        let store = open_scratch_store(Some(json!({
+            "version": 1, "approvalMode": "ask", "sessionReadout": {}, "split": null,
+            "theme": "dark", "watermarkEnabled": true
+        })))
+        .await;
+        assert!(store.get().transcript_display.thinking);
+        assert!(store.get().transcript_display.tool_calls);
+    }
+
+    #[tokio::test]
+    async fn transcript_display_falls_back_to_default_on_malformed_shapes() {
+        for malformed in [
+            json!(5),
+            json!("yes"),
+            json!([]),
+            json!({ "thinking": "yes" }),
+            json!({ "thinking": true }),
+            Value::Null,
+        ] {
+            let store = open_scratch_store(Some(json!({
+                "version": 1, "approvalMode": "ask", "sessionReadout": {}, "split": null,
+                "theme": "dark", "watermarkEnabled": true, "transcriptDisplay": malformed
+            })))
+            .await;
+            assert!(store.get().transcript_display.thinking);
+            assert!(store.get().transcript_display.tool_calls);
+        }
+    }
+
+    #[tokio::test]
+    async fn set_transcript_display_merges_one_field_without_touching_the_other() {
+        let mut store = open_scratch_store(None).await;
+        store
+            .set_transcript_display("thinking", false)
+            .await
+            .unwrap();
+        let after = store
+            .set_transcript_display("toolCalls", false)
+            .await
+            .unwrap();
+        assert!(!after.transcript_display.thinking);
+        assert!(!after.transcript_display.tool_calls);
+    }
+
+    #[tokio::test]
+    async fn set_transcript_display_is_idempotent_and_never_affects_the_other_field() {
+        let mut store = open_scratch_store(None).await;
+        store
+            .set_transcript_display("toolCalls", false)
+            .await
+            .unwrap();
+        let result = store
+            .set_transcript_display("toolCalls", false)
+            .await
+            .unwrap();
+        assert!(result.transcript_display.thinking);
+        assert!(!result.transcript_display.tool_calls);
+    }
+
+    #[tokio::test]
+    async fn set_transcript_display_persists_across_a_reopen() {
+        let dir =
+            std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let mut first = SettingsStore::open(&dir).await.unwrap();
+        first
+            .set_transcript_display("thinking", false)
+            .await
+            .unwrap();
+        let reopened = SettingsStore::open(&dir).await.unwrap();
+        assert!(!reopened.get().transcript_display.thinking);
+        assert!(reopened.get().transcript_display.tool_calls);
+    }
+
+    /// Issue #791 acceptance: "unknown keys round-trip untouched so renderer features can add
+    /// fields later (a Settings round-trip test)".
+    #[tokio::test]
+    async fn unknown_keys_round_trip_untouched_across_an_unrelated_setter_and_a_reopen() {
+        let dir =
+            std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        tokio::fs::write(
+            dir.join("settings.json"),
+            serde_json::to_vec(&json!({
+                "version": 1, "approvalMode": "ask", "sessionReadout": {}, "split": null,
+                "theme": "dark", "watermarkEnabled": true, "aFutureFeature": { "enabled": true }
+            }))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut store = SettingsStore::open(&dir).await.unwrap();
+        store.set_show_sample_data(true).await.unwrap();
+
+        let on_disk: Value =
+            serde_json::from_slice(&tokio::fs::read(dir.join("settings.json")).await.unwrap())
+                .unwrap();
+        assert_eq!(
+            on_disk.get("aFutureFeature"),
+            Some(&json!({ "enabled": true }))
+        );
+
+        let reopened = SettingsStore::open(&dir).await.unwrap();
+        assert!(reopened.get().show_sample_data);
     }
 }
