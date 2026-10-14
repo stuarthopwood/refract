@@ -199,14 +199,16 @@ impl SessionAgent {
     /// stop-then-start already moved `state.process` on to a newer life).
     /// `detectUnexpectedTermination`'s crash-tail read and the persisted stopped-on-request
     /// marker are computed by `session::termination`'s own `on_exit` hook, called right after
-    /// this function returns (`agent::launch`'s own `spawn_frame_listener`), not here.
+    /// this function returns (`agent::launch`'s own `spawn_frame_listener`), not here -- the
+    /// fourth returned value is `termination::State::epoch` as read in THIS call's own lock
+    /// acquisition, threaded through as that hook's `epoch_at_exit` parameter.
     pub(super) async fn handle_exit(
         &self,
         proc: &Arc<OmpProcess>,
         code: Option<i32>,
         requested: bool,
-    ) -> (bool, bool, bool) {
-        let (is_current, stop_requested, was_already_stopped, exited_pid) = {
+    ) -> (bool, bool, bool, u64) {
+        let (is_current, stop_requested, was_already_stopped, epoch_at_exit, exited_pid) = {
             let mut state = self.state.lock().await;
             let is_current = state.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc));
             let was_already_stopped = state.status == SessionStatus::Stopped;
@@ -217,11 +219,15 @@ impl SessionAgent {
                 is_current,
                 state.stop_requested,
                 was_already_stopped,
+                // Gate-fix (code review MEDIUM, round 6): captured in this SAME lock acquisition
+                // -- see `termination::State::epoch`'s own doc comment for why a separate,
+                // later read left a race window open.
+                state.termination.epoch,
                 proc.pid(),
             )
         };
         if is_current {
-            // Lane R3 (issue #786, #515): the pid-record fallback for orphan reaping. Awaited
+            // Lane R3 (issue #786, #656): the pid-record fallback for orphan reaping. Awaited
             // here (not fire-and-forget, gate-fix: perf/correctness review) so this write is
             // strictly ordered after the matching `record_process` write in `launch()` --
             // otherwise two independently-spawned tasks racing on the same `pid` have no
@@ -232,7 +238,7 @@ impl SessionAgent {
             }
         }
         if !is_current {
-            return (false, stop_requested, was_already_stopped);
+            return (false, stop_requested, was_already_stopped, epoch_at_exit);
         }
         // Finalizes every still-live row before settling pending requests (code-review finding,
         // 2026-10-13: TS calls `finalizeLiveItems` first, `SessionAgent.ts:1379`); otherwise a
@@ -252,11 +258,21 @@ impl SessionAgent {
                 // A `launch()`-internal cleanup stop (failed handshake/attach), never the user
                 // asking to stop -- `launch()`'s own catch paths already recorded the real
                 // stopped/start-failed status for this; nothing further to do here.
-                return (is_current, stop_requested, was_already_stopped);
+                return (
+                    is_current,
+                    stop_requested,
+                    was_already_stopped,
+                    epoch_at_exit,
+                );
             }
             self.set_status(SessionStatus::Stopped, Some("not-started"), None)
                 .await;
-            return (is_current, stop_requested, was_already_stopped);
+            return (
+                is_current,
+                stop_requested,
+                was_already_stopped,
+                epoch_at_exit,
+            );
         }
         let detail = match code {
             Some(c) => format!("exit code {c}"),
@@ -264,6 +280,11 @@ impl SessionAgent {
         };
         self.set_stopped_unless_already_stopped("agent-exited", Some(detail))
             .await;
-        (is_current, stop_requested, was_already_stopped)
+        (
+            is_current,
+            stop_requested,
+            was_already_stopped,
+            epoch_at_exit,
+        )
     }
 }

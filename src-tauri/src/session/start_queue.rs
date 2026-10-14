@@ -94,11 +94,14 @@ impl StartStage {
 /// immediately -- no `Queued` stage at all -- and a cancel can land in the same narrow window,
 /// before any stage was ever set). `Cancelled` is terminal: nothing transitions out of it.
 ///
-/// Gate-fix (code review HIGH, round 2): this validator only ever runs for transitions this
-/// lane's OWN call sites drive deliberately now -- every caller that could otherwise race it
-/// (`keep_waiting_for_start`'s stale button click, `on_start_progress`'s late post-ready tick)
-/// checks its own precondition BEFORE ever calling `set_stage`, so a rejection here means a real
-/// bug in this lane's own call graph, not a routine race -- see `set_stage`'s own doc comment.
+/// Gate-fix (code review HIGH, round 2; revised round 6): `keep_waiting_for_start` and
+/// `on_start_progress` -- the two callers whose own precondition can race a concurrent
+/// `clear_stage`/cancel -- no longer go through `set_stage` at all; each checks its own
+/// precondition, calls this function, and applies the result inside ONE atomic
+/// `with_start_queue_state` closure, so a race can only ever make this return `Err` as a benign
+/// no-op for them, never a bug to assert on. `set_stage`'s own remaining callers (`acquire_slot`)
+/// are not racy the same way (sequential within one `launch()` attempt) -- see `set_stage`'s own
+/// doc comment for why a rejection THERE still means a real bug.
 pub(super) fn validate_transition(
     current: Option<StartStage>,
     next: StartStage,
@@ -183,10 +186,11 @@ impl State {
 
 /// Applies `next` if (and only if) legal from the Session's current stage (`validate_transition`,
 /// gate-fix: a rejected transition is never silently swallowed -- it is logged AND
-/// `debug_assert!`-ed). Every caller of this function is now expected to have already checked its
-/// own precondition (see `validate_transition`'s own doc comment) -- a rejection means a real bug
-/// in THIS lane's call graph, not a routine UI/process race. Re-emits status only when the stage
-/// actually changed.
+/// `debug_assert!`-ed). Used only by `acquire_slot`'s own sequential transitions (Queued/
+/// MemoryDeferred) now (round 6: `keep_waiting_for_start`/`on_start_progress` apply atomically
+/// themselves instead, see `validate_transition`'s own doc comment) -- a rejection here means a
+/// real bug in THIS lane's call graph, not a routine UI/process race. Re-emits status only when
+/// the stage actually changed.
 async fn set_stage(agent: &SessionAgent, next: StartStage, elapsed_ms: u64) {
     let applied = agent
         .with_start_queue_state(|s| match validate_transition(s.stage, next) {
@@ -493,18 +497,33 @@ pub(super) async fn take_cancel_already_recorded(agent: &SessionAgent) -> bool {
 
 impl SessionAgent {
     /// `sessions.keepWaitingForStart` (issue #512's "Keep waiting" button): dismisses the prompt
-    /// without affecting the ceiling. Gate-fix (code review HIGH, round 2): checks the current
-    /// stage itself and no-ops outside `Prompt` -- a stale click racing a resolve (the stage has
-    /// already moved past `Prompt` by the time this runs) must never throw/assert, matching TS's
-    /// own doc comment on `ReadyWaitController.keepWaiting`.
+    /// without affecting the ceiling. Gate-fix (code review HIGH, round 2): no-ops outside
+    /// `Prompt` -- a stale click racing a resolve (the stage has already moved past `Prompt` by
+    /// the time this runs) must never throw/assert, matching TS's own doc comment on
+    /// `ReadyWaitController.keepWaiting`. Gate-fix (code review MEDIUM, round 6): the read
+    /// ("is it `Prompt`?") and the write used to be two separate lock acquisitions (via
+    /// `set_stage`, which `debug_assert!`s a rejected transition as a real bug) -- a
+    /// `clear_stage`/cancel landing in the gap between them moved the stage to `None`/
+    /// `Cancelled`, both illegal targets for `Extended`, panicking the frame-listener task in a
+    /// debug build on a routine race, not a bug. Now one atomic closure: the precondition check,
+    /// `validate_transition`, and the write all happen under the SAME lock acquisition, so a
+    /// race can only ever make this a silent no-op, never trip the assert.
     pub(crate) async fn keep_waiting_for_start(&self) {
-        let current = self
-            .with_start_queue_state(|s| (s.stage, s.elapsed_ms))
+        let applied = self
+            .with_start_queue_state(|s| {
+                if s.stage != Some(StartStage::Prompt) {
+                    return false;
+                }
+                if validate_transition(s.stage, StartStage::Extended).is_err() {
+                    return false;
+                }
+                s.stage = Some(StartStage::Extended);
+                true
+            })
             .await;
-        if current.0 != Some(StartStage::Prompt) {
-            return;
+        if applied {
+            self.emit_status().await;
         }
-        set_stage(self, StartStage::Extended, current.1).await;
     }
 
     /// `sessions.cancelStart` (issue #512's "Cancel" button) and `shutdown()` (gate-fix, TS
@@ -559,20 +578,39 @@ pub(super) async fn on_start_progress(
     // attempt was in has already ended (`ready_wait_active` false) -- a STALE tick from the SAME
     // attempt's own ticker, queued before `wait_ready()` returned but delivered after
     // `clear_stage_on_ready`/`StageGuard` already cleared the stage, would otherwise be
-    // indistinguishable from a genuinely new attempt (`None -> Waiting`/`None -> Prompt` are both
-    // legal by the transition table alone). See `State::ready_wait_active`'s own doc comment.
-    let (already_extended, active) = agent
-        .with_start_queue_state(|s| (s.stage == Some(StartStage::Extended), s.ready_wait_active))
+    // indistinguishable from a genuinely new attempt (`None -> Waiting` is legal by the
+    // transition table alone, same as a genuinely fresh start beginning there). See
+    // `State::ready_wait_active`'s own doc comment.
+    //
+    // Gate-fix (code review MEDIUM, round 6): the `(already_extended, active)` read and the
+    // later `set_stage` write used to be two separate lock acquisitions -- a `clear_stage`/
+    // cancel landing in the gap moved the stage to `None`/`Cancelled`, and `set_stage`'s own
+    // `debug_assert!` then panicked the frame-listener task on a routine race, not a bug. Now
+    // one atomic closure: the `ready_wait_active` check, the stage decision, `validate_
+    // transition`, and the write all happen under the SAME lock acquisition, so a race can only
+    // ever make this a silent no-op, never trip the assert.
+    let applied = agent
+        .with_start_queue_state(|s| {
+            if !s.ready_wait_active {
+                return false;
+            }
+            let already_extended = s.stage == Some(StartStage::Extended);
+            let next = match (stage, already_extended) {
+                (_, true) => StartStage::Extended,
+                (ReadyWaitStage::Waiting, false) => StartStage::Waiting,
+                (ReadyWaitStage::Prompt, false) => StartStage::Prompt,
+            };
+            if validate_transition(s.stage, next).is_err() {
+                return false;
+            }
+            s.stage = Some(next);
+            s.elapsed_ms = elapsed_ms;
+            true
+        })
         .await;
-    if !active {
-        return;
+    if applied {
+        agent.emit_status().await;
     }
-    let next = match (stage, already_extended) {
-        (_, true) => StartStage::Extended,
-        (ReadyWaitStage::Waiting, false) => StartStage::Waiting,
-        (ReadyWaitStage::Prompt, false) => StartStage::Prompt,
-    };
-    set_stage(agent, next, elapsed_ms).await;
 }
 
 #[cfg(test)]

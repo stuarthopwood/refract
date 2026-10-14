@@ -164,3 +164,96 @@ fn spawned_guard_count_is_independent_per_guard() {
     drop(guard_b);
     assert_eq!(spawned_in_flight(), before);
 }
+
+#[test]
+fn validate_transition_matches_the_full_expected_legal_set_exhaustively() {
+    // Issue #706/#709's own acceptance criterion: "every illegal start transition is rejected".
+    // Gate-fix (test review HIGH, round 6): the hand-picked tests above only ever asserted 11 of
+    // this table's illegal pairs one at a time; this checks ALL 42 `(current, next)` pairs this
+    // type can represent against one literal, independently-written expected-legal table (not
+    // derived from `validate_transition` itself, so a change to one without the other fails
+    // here). Note: this table has 23 illegal pairs, not 22 -- `Waiting -> Extended` is illegal
+    // too (`Waiting`'s own legal set is `{Waiting, Prompt, Cancelled}`) and was missing from
+    // every hand-picked test above as well as this fix's own illegal-pair count; this exhaustive
+    // form catches it regardless.
+    use StartStage::{Cancelled, Extended, MemoryDeferred, Prompt, Queued, Waiting};
+    let all_stages = [Queued, MemoryDeferred, Waiting, Prompt, Extended, Cancelled];
+    let expected_legal = |current: Option<StartStage>, next: StartStage| -> bool {
+        match current {
+            None => matches!(next, Queued | MemoryDeferred | Waiting | Cancelled),
+            Some(Queued) => matches!(next, Queued | MemoryDeferred | Waiting | Cancelled),
+            Some(MemoryDeferred) => matches!(next, MemoryDeferred | Waiting | Cancelled),
+            Some(Waiting) => matches!(next, Waiting | Prompt | Cancelled),
+            Some(Prompt) => matches!(next, Prompt | Extended | Cancelled),
+            Some(Extended) => matches!(next, Extended | Cancelled),
+            Some(Cancelled) => false,
+        }
+    };
+    let mut currents: Vec<Option<StartStage>> = vec![None];
+    currents.extend(all_stages.iter().copied().map(Some));
+    let mut illegal_count = 0;
+    for current in currents {
+        for next in all_stages {
+            let expected = expected_legal(current, next);
+            if !expected {
+                illegal_count += 1;
+            }
+            assert_eq!(
+                validate_transition(current, next).is_ok(),
+                expected,
+                "{current:?} -> {next:?}: expected legal={expected}"
+            );
+        }
+    }
+    assert_eq!(
+        illegal_count, 23,
+        "expected-legal table itself should have exactly 23 illegal pairs"
+    );
+}
+
+async fn make_test_agent(label: &str) -> std::sync::Arc<SessionAgent> {
+    let dir = std::env::temp_dir().join(format!(
+        "refract-start-queue-test-{label}-{}",
+        uuid::Uuid::new_v4()
+    ));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let registry = std::sync::Arc::new(tokio::sync::Mutex::new(
+        crate::store::registry::RegistryStore::open(&dir)
+            .await
+            .unwrap(),
+    ));
+    let settings = std::sync::Arc::new(tokio::sync::Mutex::new(
+        crate::store::settings::SettingsStore::open(&dir)
+            .await
+            .unwrap(),
+    ));
+    let app_handle_slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let events = crate::events::EventSink::new(app_handle_slot, registry.clone());
+    let manager = crate::session::manager::SessionManager::new(registry, settings, events);
+    manager.get_or_create_agent(&format!("session-{label}"))
+}
+
+#[tokio::test]
+async fn take_cancel_already_recorded_reads_and_resets_exactly_once() {
+    // Round-5 fix's own flag (`cancel_already_recorded`): `agent::launch`'s own `wait_ready`
+    // error branch calls this exactly once per attempt to tell "a cancel already recorded a
+    // clean status for this exact exit" apart from a genuine ready-wait failure. Never tested
+    // directly before (test review MEDIUM, round 6).
+    let agent = make_test_agent("take-cancel-recorded").await;
+    assert!(
+        !take_cancel_already_recorded(&agent).await,
+        "a fresh agent has nothing recorded"
+    );
+    agent
+        .with_start_queue_state(|s| s.cancel_already_recorded = true)
+        .await;
+    assert!(
+        take_cancel_already_recorded(&agent).await,
+        "set flag must read back true"
+    );
+    assert!(
+        !take_cancel_already_recorded(&agent).await,
+        "the read above must have reset it -- a second call never suppresses a LATER, \
+         unrelated failure report"
+    );
+}

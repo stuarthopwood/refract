@@ -27,7 +27,7 @@ use super::agent::SessionAgent;
 
 #[path = "termination_detection.rs"]
 mod termination_detection;
-pub(crate) use termination_detection::detect_unexpected_termination;
+use termination_detection::detect_unexpected_termination;
 
 /// Lane R3's own runtime state, held inside `AgentState` by `agent/mod.rs` without that file
 /// ever needing to change when this lane adds a field here. Reachable through `SessionAgent`'s
@@ -49,8 +49,13 @@ pub(super) struct State {
     /// `on_exit(requested=true)` racing a quick `Recover`'s own `clear` (which runs while this
     /// call's stat is still in flight) can never re-arm the marker for the NEW life that clear
     /// started -- the `stillCurrent`/`lifeEpoch` guard `stoppedOnRequestMarker.ts` has, this
-    /// port previously lacked.
-    epoch: u64,
+    /// port previously lacked. `pub(super)` (round 6, code review MEDIUM): `agent::frame`'s own
+    /// `handle_exit` reads this directly (`state.termination.epoch`), under the SAME lock
+    /// acquisition that reads `is_current`/`stop_requested` and clears `state.process`, so the
+    /// epoch `on_exit` later checks every write against is captured atomically with those --
+    /// a separate `with_termination_state` call afterward (the previous approach) left a window
+    /// for a concurrent Recover to bump it first.
+    pub(super) epoch: u64,
 }
 
 /// Port of `terminationDetection.ts`'s own `TerminationDetectionResult`, narrowed to the two
@@ -254,11 +259,30 @@ pub(super) async fn on_exit(
     requested: bool,
     stop_requested: bool,
     was_already_stopped: bool,
+    epoch_at_exit: u64,
 ) {
     if requested && !stop_requested {
         return;
     }
     if was_already_stopped {
+        return;
+    }
+    // Gate-fix (code review MEDIUM, round 6): `epoch_at_exit` is captured by the caller
+    // (`agent::frame`'s own `handle_exit`) under the SAME lock acquisition that reads
+    // `is_current`/`stop_requested`/`was_already_stopped` and clears `state.process` -- the
+    // read used to happen HERE instead, after this function's own registry `get_session` await,
+    // which left a window for a concurrent Recover's `clear_stopped_on_request_marker` (which
+    // bumps `epoch`) to run first and make this stale exit look like it belongs to the life
+    // `clear` just started protecting. Every write below now also re-checks `s.epoch ==
+    // epoch_at_exit` INSIDE its own `with_termination_state` closure (not just once up front):
+    // `detect_unexpected_termination`'s own file read can take a moment, during which another
+    // Recover could bump the epoch again, so only a check atomic with the write itself closes
+    // the race for every state mutation, not merely the persisted marker (already epoch-guarded
+    // in `record_stopped_on_request_marker`).
+    let still_current = agent
+        .with_termination_state(|s| s.epoch == epoch_at_exit)
+        .await;
+    if !still_current {
         return;
     }
     let session = agent
@@ -268,9 +292,11 @@ pub(super) async fn on_exit(
         .get_session(agent.session_id())
         .cloned();
     if stop_requested {
-        let epoch_at_exit = agent.with_termination_state(|s| s.epoch).await;
         agent
             .with_termination_state(|s| {
+                if s.epoch != epoch_at_exit {
+                    return;
+                }
                 s.stopped_on_request = true;
                 s.terminated_unexpectedly = false;
                 s.pending_tool_names.clear();
@@ -286,7 +312,12 @@ pub(super) async fn on_exit(
         }
     } else {
         agent
-            .with_termination_state(|s| s.stopped_on_request = false)
+            .with_termination_state(|s| {
+                if s.epoch != epoch_at_exit {
+                    return;
+                }
+                s.stopped_on_request = false;
+            })
             .await;
         let file = session
             .as_ref()
@@ -294,6 +325,9 @@ pub(super) async fn on_exit(
         let result = detect_unexpected_termination(file.as_deref()).await;
         agent
             .with_termination_state(|s| {
+                if s.epoch != epoch_at_exit {
+                    return;
+                }
                 s.terminated_unexpectedly = result.terminated_unexpectedly;
                 s.pending_tool_names = result.pending_tool_names.clone();
             })

@@ -222,6 +222,21 @@ impl SessionAgent {
             Err(err) => {
                 proc.stop().await;
                 self.state.lock().await.process = None;
+                // Gate-fix (round 6, FR-038, code review HIGH): a `shutdown()` (stopAgent/
+                // archive/delete/app quit) racing this exact await sets `stop_requested` and
+                // stops this SAME process -- exactly what makes `attach_and_verify`'s own
+                // request fail here. Re-checked AFTER the `proc.stop()` above (which can itself
+                // take a moment) so a deliberate stop during attach never ends start-failed
+                // with an error notice; it ends stopped/not-started like every other
+                // stop-during-launch branch in this function, matching TS's own `shutdown()`
+                // contract (`bailIfStopRequested`).
+                if self.state.lock().await.stop_requested {
+                    self.mark_stopped_not_started().await;
+                    return Err(AgentError::new(
+                        "not-started",
+                        "SessionAgent: stop requested during launch",
+                    ));
+                }
                 let detail = format!("{failure_prefix}{err}");
                 self.record_start_failure(&detail).await;
                 return Err(AgentError::new("reattach-failed", detail));
@@ -243,11 +258,7 @@ impl SessionAgent {
 
         // Port of `exitedDuringStart`: a concurrent `onExit` may have cleared `process` while the
         // history fetch above was in flight.
-        if self.state.lock().await.process.as_ref().map(Arc::as_ptr) != Some(Arc::as_ptr(&proc)) {
-            let detail = format!("{failure_prefix}agent exited during start");
-            self.record_start_failure(&detail).await;
-            return Err(AgentError::new("start-failed", detail));
-        }
+        self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         let current_mode = self.settings.lock().await.get().approval_mode;
         {
@@ -273,15 +284,38 @@ impl SessionAgent {
 
         self.sync_from_state(&state_data).await;
 
-        if self.state.lock().await.process.as_ref().map(Arc::as_ptr) != Some(Arc::as_ptr(&proc)) {
-            let detail = format!("{failure_prefix}agent exited during start");
-            self.record_start_failure(&detail).await;
-            return Err(AgentError::new("start-failed", detail));
-        }
+        self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;
         self.emit_patch_reset().await;
         Ok(())
+    }
+
+    /// Port of `exitedDuringStart`: fails the attempt when a concurrent `on_exit` (a real crash)
+    /// has cleared `state.process` out from under it while `fetch_all_messages`/`sync_from_state`
+    /// were in flight -- factored out (round 6, code review HIGH) since both call sites need the
+    /// SAME FR-038 re-check this got wrong before: a `shutdown()` racing this exact window also
+    /// clears `process` (via the exit its own `proc.stop()` causes), which must end
+    /// stopped/not-started like every other stop-during-launch branch in `launch()`, never
+    /// start-failed with an error notice.
+    async fn fail_if_process_changed(
+        &self,
+        proc: &Arc<OmpProcess>,
+        failure_prefix: &str,
+    ) -> Result<(), AgentError> {
+        if self.state.lock().await.process.as_ref().map(Arc::as_ptr) == Some(Arc::as_ptr(proc)) {
+            return Ok(());
+        }
+        if self.state.lock().await.stop_requested {
+            self.mark_stopped_not_started().await;
+            return Err(AgentError::new(
+                "not-started",
+                "SessionAgent: stop requested during launch",
+            ));
+        }
+        let detail = format!("{failure_prefix}agent exited during start");
+        self.record_start_failure(&detail).await;
+        Err(AgentError::new("start-failed", detail))
     }
 
     /// Port of `SessionAgent.ts`'s own `attachAndVerify`: `switch_session` to the Session's
@@ -427,7 +461,7 @@ impl SessionAgent {
                             .await;
                     }
                     Some(ProcessEvent::Exit { code, requested }) => {
-                        let (is_current, stop_requested, was_already_stopped) =
+                        let (is_current, stop_requested, was_already_stopped, epoch_at_exit) =
                             agent.handle_exit(&proc, code, requested).await;
                         // Issue #784: the same extension point for every not-yet-landed lane's
                         // exit handling, same shape as `frame.rs`'s own `on_frame` fan-out.
@@ -445,7 +479,10 @@ impl SessionAgent {
                         // (skips recomputing a crash verdict entirely once something more
                         // authoritative already settled this life's status before this exit
                         // event was even processed, the same race `should_apply_crash_exit_
-                        // verdict` guards for `handle_exit`'s own status write).
+                        // verdict` guards for `handle_exit`'s own status write), AND
+                        // `epoch_at_exit` (round 6 gate-fix) -- captured by `handle_exit` under
+                        // its own lock, checked by `termination::on_exit` before every state
+                        // write it makes, not just the persisted marker.
                         if is_current {
                             crate::session::start_queue::on_exit(&agent, code, stop_requested)
                                 .await;
@@ -455,6 +492,7 @@ impl SessionAgent {
                                 requested,
                                 stop_requested,
                                 was_already_stopped,
+                                epoch_at_exit,
                             )
                             .await;
                         }
