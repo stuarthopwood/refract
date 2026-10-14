@@ -31,6 +31,7 @@ thiserror = "2.0.21"
 log = "0.4.34"
 dirs = "7.0.0"
 which = "8.0.6"
+dunce = "1.0.5"
 
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
