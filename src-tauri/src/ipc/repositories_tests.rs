@@ -34,7 +34,7 @@ async fn make_state(dir: &std::path::Path) -> AppState {
     let registry = Arc::new(AsyncMutex::new(registry));
     let settings = Arc::new(AsyncMutex::new(settings));
     let app_handle_slot: Arc<StdMutex<Option<tauri::AppHandle>>> = Arc::new(StdMutex::new(None));
-    let events = EventSink::new(app_handle_slot.clone());
+    let events = EventSink::new(app_handle_slot.clone(), registry.clone());
     let session_manager = SessionManager::new(registry.clone(), settings.clone(), events);
     AppState {
         data_dir: dir.to_path_buf(),

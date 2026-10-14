@@ -391,7 +391,7 @@ mod tests {
         ));
         let app_handle_slot: Arc<StdMutex<Option<tauri::AppHandle>>> =
             Arc::new(StdMutex::new(None));
-        let events = EventSink::new(app_handle_slot);
+        let events = EventSink::new(app_handle_slot, registry.clone());
         let manager = SessionManager::new(registry, settings, events);
 
         let summaries = manager.summaries().await;
