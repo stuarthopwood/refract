@@ -32,6 +32,7 @@ import type {
   TranscriptOp,
   Unsubscribe
 } from '../shared/ipc'
+import type { Model, RoleChangeSummary } from '../shared/ipc-model'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
 import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
@@ -224,8 +225,23 @@ const refract: RefractApi = {
   modelRoles: {
     list: () => request<Record<string, string>>(IPC_REQUESTS.MODEL_ROLES_LIST),
     set: (role: ModelRoleId, value: string | null) =>
-      request<{ roles: Record<string, string>; overriddenBy?: string }>(IPC_REQUESTS.MODEL_ROLES_SET, role, value),
+      request<{ roles: Record<string, string>; overriddenBy?: string; propagation?: RoleChangeSummary }>(IPC_REQUESTS.MODEL_ROLES_SET, role, value),
     listCatalog: (kind: CatalogKind) => request<ModelCatalogEntry[]>(IPC_REQUESTS.MODEL_ROLES_LIST_CATALOG, kind)
+  },
+
+  // Lane RM (#454, #740, #741, #762, #766): per-Session model/role actions (`ipc-model.ts`'s
+  // own `ModelApi` has the full reasoning).
+  model: {
+    setModel: (sessionId: string, provider: string, modelId: string) =>
+      request<{ model: Model }>(IPC_REQUESTS.MODEL_SET_MODEL, sessionId, provider, modelId),
+    cycleModel: (sessionId: string) => request<{ model: Model }>(IPC_REQUESTS.MODEL_CYCLE_MODEL, sessionId),
+    applyRole: (sessionId: string, role: string) =>
+      request<{ model: Model; role: string }>(IPC_REQUESTS.MODEL_APPLY_ROLE, sessionId, role),
+    listRoles: (sessionId: string) =>
+      request<{ roles: Array<{ role: string; model: string | null; current: boolean }>; currentRole: string | null; pinned: boolean }>(
+        IPC_REQUESTS.MODEL_LIST_ROLES,
+        sessionId
+      )
   },
 
   window: {
