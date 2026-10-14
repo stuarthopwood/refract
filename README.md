@@ -82,6 +82,87 @@ point at `pnpm verify:tauri`/`verify-refract-tauri-build-live` instead.
 
 ## Releasing
 
+### Cutting a release
+
+`pnpm release` is the one command that cuts a release: it bumps the version, writes
+`CHANGELOG.md`, commits, tags, pushes, and publishes the signed installer, in that order. Running
+it with no argument infers the bump itself (see below); `pnpm release patch`, `pnpm release
+minor`, or `pnpm release major` forces that bump level instead. It refuses to run unless the
+working tree is on branch `main`, is fully clean (no tracked changes, no untracked files), and
+`HEAD` equals `origin/main` after a `git fetch origin`. On success, if the target version differs
+from the current manifest version (always true except the very first release, which ships the
+current manifest version as-is with nothing to bump), it updates the version in `package.json`,
+`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock` together (and
+asserts `Cargo.lock` changed only its own `refract-tauri` version line, nothing else); prepends a
+`## vX.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md`, built from GitHub's own generated release
+notes for that version and grouped into "Breaking changes", "Features", "Fixes", and "Other" by
+each merged PR title's conventional-commit type (a legacy, non-conventional title lands verbatim
+in Other); runs `pnpm ci:local` (see below) on the edited tree; and, only if that passes, stages
+and commits exactly those four version files plus `CHANGELOG.md` as `chore: release vX.Y.Z`. If
+any step up to and including that commit fails -- including Ctrl+C/SIGTERM, which the script
+catches specifically so the restore below always runs -- it unstages anything already added and
+restores the tracked release files (never `CHANGELOG.md` is removed if it didn't exist before)
+to their original, pre-release bytes (never via `git`), and reports that it did so; nothing is
+committed. It exits 130 when the interrupt is the detected cause and 1 for any other failure --
+an interrupt is checked (with one event-loop tick to let the signal handler actually run first)
+immediately before every `git add`/`commit`/`tag`/`push` and before the publish step, so a Ctrl+C
+landing in the gap between two of those steps is always caught there; the same tick-then-check
+also runs again inside each of those steps' own failure handling, so a signal that kills
+`cargo`/`git` directly mid-step (rather than being caught before the step even starts) is still
+recognised and reported as an interrupt, not a generic failure. `git fetch origin` and
+`ci:local`'s own installs/builds still happened either way -- only the tracked release files and
+the git index are guaranteed back to their starting state.
+
+Once that commit exists, a failure is handled differently, and the recovery text matches
+whichever step actually failed, never a bare "just re-run pnpm release" (which cannot work once
+the commit is real: `HEAD` no longer equals `origin/main`, and the manifests are already at the
+new version): tagging and pushing use one atomic `git push --atomic origin main vX.Y.Z` (so
+`main` and the tag either both land or neither does -- two separate pushes could let
+`origin/main` move during the minutes `ci:local` takes, landing one but rejecting the other). The
+script never restores file bytes or runs `git reset`/`git tag -d` once the commit is real. If
+tagging is interrupted or `git tag -a` itself fails (for example a leftover local tag from an
+earlier aborted attempt), the tag was never created, so the script prints the real resume
+sequence to run yourself -- `git tag -a vX.Y.Z -m vX.Y.Z && git push --atomic origin main
+vX.Y.Z && pnpm release:local -- --notes-from-changelog` (prefixed with `git tag -d vX.Y.Z` first
+if a stale tag is the cause) -- or `git reset --keep HEAD~1` to abandon the release commit
+entirely. If tagging succeeds but the atomic push is interrupted or fails, it prints the retry
+(`git push --atomic origin main vX.Y.Z`, then `pnpm release:local -- --notes-from-changelog`) or
+abandon (`git tag -d vX.Y.Z` then `git reset --keep HEAD~1`) commands -- and, since a Ctrl+C
+during the push itself can leave the atomic push's actual outcome ambiguous, tells Stuart to
+check `git ls-remote origin refs/tags/vX.Y.Z` first rather than guessing before retrying or
+abandoning. After a successful push, it runs `node scripts/release-local.mjs
+--notes-from-changelog` to build, sign, verify, and publish the installer, using the
+`CHANGELOG.md` section it just wrote as the GitHub release's notes instead of GitHub's own
+auto-generated notes. If that publish step fails (or is interrupted before it starts), the
+commit, tag, and push have already happened -- it prints the exact resume command `pnpm
+release:local -- --notes-from-changelog`, which finishes the release without re-doing the
+version bump, changelog, commit, or push.
+
+`pnpm release --dry-run` runs only the precondition checks (including the `git fetch origin`),
+the version-inference step, a preview of the changelog section (printed to the console, never
+written to `CHANGELOG.md`), and `pnpm ci:local` (see below) on the current, unmodified tree --
+`ci:local`'s own installs/builds still run, but none of the tracked release files, the git index,
+or any ref are written, committed, tagged, pushed, or published. It only prints the version it
+would release and the changelog section preview.
+
+Version inference, when no explicit bump is given: the last tag is the highest semver `v*` tag
+reachable from `HEAD`. If there is no tag yet, the command releases the current manifest version
+as-is (so the very first release is whatever version is already in the manifests, with no bump).
+If there is a previous tag, it inspects every commit subject (and body, for a `BREAKING CHANGE:`
+or `BREAKING-CHANGE:` footer) on `main`'s own mainline (`git log --first-parent`, so an
+in-progress feature-branch commit folded into one squash merge is never walked individually)
+since that tag: a `type!:` subject or a breaking footer bumps major; a `feat` subject bumps minor;
+a `fix` or `perf` subject bumps patch (the type is matched case-insensitively -- `Feat:`, `FEAT:`
+and `feat:` all count); every other conventional type, and every legacy, non-conventional
+subject, does not bump anything. **A `BREAKING CHANGE` footer still only bumps the version --
+the `CHANGELOG.md` "Breaking changes" section is built from PR TITLES only (GitHub's own
+generate-notes has no PR-body/footer data to group by), so a major release can ship with an empty
+or missing Breaking changes section if the breaking PR's own title didn't also use `!`.** If
+nothing since the last tag would bump the version, the command stops with an error naming the
+last tag and listing every un-bumping commit subject, telling the user to pass `patch`, `minor`,
+or `major` explicitly instead. Passing an explicit bump level bumps from the current manifest
+version, which must equal the last tag's version (or there must be no tag yet).
+
 There is a packaged NSIS installer (lane R11d, follow-up to #794), signed locally with a
 self-signed code-signing certificate Stuart created in his own `Cert:\CurrentUser\My` store:
 
@@ -119,30 +200,37 @@ self-signed code-signing certificate Stuart created in his own `Cert:\CurrentUse
      pin from `SIGNING_CERT_SHA256_PINS`, trust the new certificate on Stuart's machine the same
      way the current one is trusted, and start signing with it.
 
-To cut a release: bump `src-tauri/tauri.conf.json`'s `version`, commit, tag the commit
-`v<version>`, **push both the commit and the tag**, then run `pnpm release:local`
-(`scripts/release-local.mjs`) from Stuart's own workstation (never on CI). It fails unless the
-working tree is clean, unless the signing certificate is present, and unless `HEAD`'s tag matches
-`tauri.conf.json`'s version; builds the full NSIS bundle into a **fresh, release-only target
-directory under `%TEMP%`** (never the shared dev `CARGO_TARGET_DIR`) with a `--config` overlay
-that points Tauri's own `bundle.windows.signCommand` at `signtool.exe` (located at a fixed
-Windows SDK path, picked by the highest version actually installed, never `PATH`) with
-`/sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /td SHA256` -- Tauri's bundler
-then signs the main binary BEFORE NSIS packs it, and signs the generated installer again
-afterwards, both in that one build (the loose build-tree `refract-tauri.exe` is never separately
-re-signed: Tauri restores it to unsigned once bundling finishes, by design, and that copy never
-ships); requires the installer's exact expected name (`<productName>_<version>_x64-setup.exe`);
-verifies it with `Get-AuthenticodeSignature`, checking `Status`, the signer certificate's own
-SHA-256 against the pin, and that a trusted timestamp is present; if 7-Zip is installed at its
-fixed default path, also extracts `refract-tauri.exe` from the signed installer and runs that
-same check against the embedded copy (skipped, not a failure, if 7-Zip isn't there); writes a
-`.sha256` checksum sidecar for the installer; confirms `origin`'s own tag still points at this
-exact commit (`git ls-remote`); then publishes the installer and its checksum to a new GitHub
-release (`gh release create v<version> --verify-tag`, which refuses to run if the tag was never
-pushed). The fresh target directory (build output, installer, and any embedded-copy extraction)
-is deleted by its own literal path at the end of every run, published or not -- there is no
-`--keep` flag; `pnpm release:local -- --dry-run` builds, signs, and verifies but skips the
-publish step (and still deletes the same build output afterward).
+`pnpm release` performs the whole cut-a-release sequence automatically: it bumps
+`src-tauri/tauri.conf.json`'s `version` (together with `package.json`, `src-tauri/Cargo.toml`, and
+`src-tauri/Cargo.lock`), commits, tags the commit `v<version>`, and pushes the commit and the tag
+together in one atomic push, then invokes `scripts/release-local.mjs` to build, sign, verify, and
+publish the installer.
+`scripts/release-local.mjs` itself is otherwise unchanged from a manual release -- same signing
+and verification machinery, same `--dry-run` on the local build/sign/publish portion -- except for
+the new `--notes-from-changelog` flag `pnpm release` passes it, which extracts `CHANGELOG.md`'s
+section for the current version and uses it as the GitHub release's notes instead of
+`gh release create`'s own `--generate-notes`. Run directly (never on CI) from Stuart's own
+workstation, it fails unless the working tree is clean, unless the signing certificate is present,
+and unless `HEAD`'s tag matches `tauri.conf.json`'s version; builds the full NSIS bundle into a
+**fresh, release-only target directory under `%TEMP%`** (never the shared dev `CARGO_TARGET_DIR`)
+with a `--config` overlay that points Tauri's own `bundle.windows.signCommand` at `signtool.exe`
+(located at a fixed Windows SDK path, picked by the highest version actually installed, never
+`PATH`) with `/sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /td SHA256` --
+Tauri's bundler then signs the main binary BEFORE NSIS packs it, and signs the generated installer
+again afterwards, both in that one build (the loose build-tree `refract-tauri.exe` is never
+separately re-signed: Tauri restores it to unsigned once bundling finishes, by design, and that
+copy never ships); requires the installer's exact expected name
+(`<productName>_<version>_x64-setup.exe`); verifies it with `Get-AuthenticodeSignature`, checking
+`Status`, the signer certificate's own SHA-256 against the pin, and that a trusted timestamp is
+present; if 7-Zip is installed at its fixed default path, also extracts `refract-tauri.exe` from
+the signed installer and runs that same check against the embedded copy (skipped, not a failure,
+if 7-Zip isn't there); writes a `.sha256` checksum sidecar for the installer; confirms `origin`'s
+own tag still points at this exact commit (`git ls-remote`); then publishes the installer and its
+checksum to a new GitHub release (`gh release create v<version> --verify-tag`, which refuses to
+run if the tag was never pushed). The fresh target directory (build output, installer, and any
+embedded-copy extraction) is deleted by its own literal path at the end of every run, published or
+not -- there is no `--keep` flag; `pnpm release:local -- --dry-run` builds, signs, and verifies but
+skips the publish step (and still deletes the same build output afterward).
 
 ## Where things live
 
