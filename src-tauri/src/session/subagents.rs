@@ -67,7 +67,8 @@ use super::agent::SessionAgent;
 #[path = "subagents_progress.rs"]
 mod subagents_progress;
 use subagents_progress::{
-    apply_jobs, apply_progress_to_batch, emit_subagents_update, summaries_to_value,
+    apply_jobs, apply_progress_to_batch, emit_subagents_update, queue_patch_ops,
+    summaries_to_value,
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
@@ -204,9 +205,12 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
 
 /// Settles every `Running` summary to `Exited` immediately (not only on the next `launch()`'s own
 /// `on_attach_reconcile`): a crash or a deliberate stop must clear the pill right away, matching
-/// the CRITICAL gate finding ("in on_exit, settle Running to exited").
+/// the CRITICAL gate finding ("in on_exit, settle Running to exited"). Gate round 2 (code HIGH):
+/// this is a plain process exit, not a reattach, so `seed_notice: false` -- a crash/stop never
+/// claims "Refract reattached" (that claim is only ever true from `on_attach_reconcile`'s own
+/// call site, below).
 pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested: bool) {
-    settle_running_to_exited(agent).await;
+    settle_running_to_exited(agent, false).await;
 }
 
 pub(super) async fn on_start_progress(
@@ -218,15 +222,23 @@ pub(super) async fn on_start_progress(
 }
 
 /// Settles every `Running` summary to `Exited` (gate finding ("in on_exit, settle Running to
-/// exited") and, for `on_attach_reconcile`'s own call site, Electron gate finding 6: a summary
-/// with no live stream at all when it settles (nothing ever arrived for it this run) gets a
-/// one-row "No live output" notice, port of `reconcileSubagentsOnAttach`'s own placeholder --
-/// scoped to exactly the `Running`->`Exited` transition this function performs; a summary that
-/// was already `Finished`/`Failed` before this call is untouched, and this does not re-derive
-/// historical candidates from the reattached transcript's own `subagent` rows the way TS's fuller
-/// version does (Electron gate finding 4, still disclosed as not ported -- see the PR body).
-async fn settle_running_to_exited(agent: &SessionAgent) {
-    let summaries_value = agent
+/// exited"). `seed_notice` is true ONLY from `on_attach_reconcile`'s own call site (Electron gate
+/// finding 6): a summary with no live stream at all when it settles there gets a one-row "No live
+/// output" notice, port of `reconcileSubagentsOnAttach`'s own placeholder -- `on_exit`'s own call
+/// (a plain process exit, not a reattach) passes `false` so a crash/stop never claims "Refract
+/// reattached" when nothing reattached at all (gate round 2, code MEDIUM). Scoped to exactly the
+/// `Running`->`Exited` transition this function performs; a summary that was already
+/// `Finished`/`Failed` before this call is untouched, and this does not re-derive historical
+/// candidates from the reattached transcript's own `subagent` rows the way TS's fuller version
+/// does (Electron gate finding 4, still disclosed as not ported -- see the PR body). Also
+/// schedules a readout update when anything changed (gate round 2, code HIGH): otherwise the
+/// chip can keep reading "1 running" after a crash/stop with no turn left to trigger a recompute.
+/// If the settled, notice-seeded subagent is the CURRENTLY visible one (gate round 2, code
+/// MEDIUM), the notice is also queued as a `subagent:patch` upsert -- replacing `streams` alone
+/// never reaches an already-open panel, which only ever learns of new rows through that patch
+/// channel.
+async fn settle_running_to_exited(agent: &SessionAgent, seed_notice: bool) {
+    let (summaries_value, visible_ops) = agent
         .with_subagents_state(|s| {
             let mut changed = false;
             let mut settled_ids = Vec::new();
@@ -237,24 +249,34 @@ async fn settle_running_to_exited(agent: &SessionAgent) {
                     settled_ids.push(entry.id.clone());
                 }
             }
-            for id in settled_ids {
-                let is_empty = s.streams.get(&id).map(|rows| rows.is_empty()).unwrap_or(true);
-                if is_empty {
-                    let notice = json!({
-                        "kind": "notice",
-                        "id": format!("{id}:reattach-notice"),
-                        "level": "info",
-                        "text": "No live output: this subagent had already exited when Refract reattached.",
-                    });
-                    s.streams.insert(id.clone(), vec![notice]);
-                    s.stream_ids.insert(id, HashSet::new());
+            let mut visible_ops = Vec::new();
+            if seed_notice {
+                for id in settled_ids {
+                    let is_empty = s.streams.get(&id).map(|rows| rows.is_empty()).unwrap_or(true);
+                    if is_empty {
+                        let notice = json!({
+                            "kind": "notice",
+                            "id": format!("{id}:reattach-notice"),
+                            "level": "info",
+                            "text": "No live output: this subagent had already exited when Refract reattached.",
+                        });
+                        s.streams.insert(id.clone(), vec![notice.clone()]);
+                        s.stream_ids.insert(id.clone(), HashSet::new());
+                        if s.visible_id.as_deref() == Some(id.as_str()) {
+                            visible_ops.push(json!({ "op": "upsert", "item": notice }));
+                        }
+                    }
                 }
             }
-            changed.then(|| summaries_to_value(&s.summaries))
+            (changed.then(|| summaries_to_value(&s.summaries)), visible_ops)
         })
         .await;
+    if !visible_ops.is_empty() {
+        queue_patch_ops(agent, visible_ops).await;
+    }
     if let Some(value) = summaries_value {
         emit_subagents_update(agent, value).await;
+        super::readout::schedule_readout_update(agent).await;
     }
 }
 
@@ -264,12 +286,12 @@ async fn settle_running_to_exited(agent: &SessionAgent) {
 /// `Exited` (a fresh `OmpProcess` is about to attach -- or just did -- and has no way to confirm
 /// the old one's in-flight work survived it), covering the common "Resume/Recover after a crash,
 /// same app run" case, and seeds the "No live output" notice for any of those with no stream
-/// (Electron gate finding 6, via `settle_running_to_exited`). Does NOT re-derive historical
-/// finished/failed candidates from the reattached transcript's own `subagent` rows the way TS's
-/// fuller version does (Electron gate finding 4) -- disclosed simplification, see the PR body's
-/// own "Open problems".
+/// (Electron gate finding 6, via `settle_running_to_exited(agent, true)`). Does NOT re-derive
+/// historical finished/failed candidates from the reattached transcript's own `subagent` rows
+/// the way TS's fuller version does (Electron gate finding 4) -- disclosed simplification, see
+/// the PR body's own "Open problems".
 pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
-    settle_running_to_exited(agent).await;
+    settle_running_to_exited(agent, true).await;
 }
 
 /// `conversations.rs`'s own hook (issue #577): the previous Conversation's subagents (and their

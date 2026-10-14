@@ -145,6 +145,19 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Gate round 2 (perf MEDIUM): a pseudo-random 0..`cap_ms` jitter for the PR poll's own FIRST
+/// sleep, so several Sessions launched together never tick their 60s polls in lockstep (a
+/// simple nanosecond-modulo source, not a new `rand` dependency for one timer stagger).
+fn jitter_ms(cap_ms: u64) -> u64 {
+    if cap_ms == 0 {
+        return 0;
+    }
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| (d.subsec_nanos() as u64) % cap_ms)
+        .unwrap_or(0)
+}
+
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
     match frame_type {
         "agent_start" => {
@@ -221,6 +234,7 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
         .await;
     let agent = agent.arc();
     tokio::spawn(async move {
+        let mut first = true;
         loop {
             let Some(session) = agent
                 .registry()
@@ -231,9 +245,31 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
             else {
                 return;
             };
+            if first {
+                // Gate round 2 (perf MEDIUM): seed `pull_request_branch` BEFORE this first
+                // `refresh_pull_request` call so its own `still_current` check succeeds instead
+                // of discarding this lookup's result -- without this, `compute_readout`'s own
+                // branch-changed detection (still seeing `None`) spawned a SECOND, redundant
+                // `gh` lookup on every launch (the one whose result actually landed), matching
+                // Electron's own `SessionAgent.ts:1861` (`launch()`'s unconditional first
+                // `refreshPullRequest()` sets this before calling it, not after).
+                agent
+                    .with_readout_state(|s| s.pull_request_branch = Some(session.branch.clone()))
+                    .await;
+            }
             refresh_pull_request(&agent, &session.worktree_path, &session.branch).await;
             schedule_readout_update(&agent).await;
-            tokio::time::sleep(Duration::from_millis(PR_POLL_INTERVAL_MS)).await;
+            // Gate round 2 (perf MEDIUM): jitter only the FIRST sleep -- several Sessions
+            // launched together (a batch open/resume) must not all tick their 60s PR polls at
+            // the exact same wall-clock moment; every tick after this one keeps the plain
+            // fixed interval, matching `SessionAgent.ts`'s own un-jittered steady-state timer.
+            let sleep_ms = if first {
+                jitter_ms(PR_POLL_INTERVAL_MS)
+            } else {
+                PR_POLL_INTERVAL_MS
+            };
+            first = false;
+            tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
             let still_current = agent
                 .with_readout_state(|s| s.pr_poll_generation == generation)
                 .await;

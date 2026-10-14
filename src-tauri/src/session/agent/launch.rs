@@ -499,9 +499,7 @@ impl SessionAgent {
                         // Issue #784: the same extension point for every not-yet-landed lane's
                         // exit handling, same shape as `frame.rs`'s own `on_frame` fan-out.
                         crate::session::model::on_exit(&agent, code, requested).await;
-                        crate::session::readout::on_exit(&agent, code, requested).await;
                         crate::session::side_chat::on_exit(&agent, code, requested).await;
-                        crate::session::subagents::on_exit(&agent, code, requested).await;
                         // Lane R3 (issue #786, gate-fix): gated on `is_current` -- a stale exit
                         // for an already-superseded life must never clear a NEWER attempt's own
                         // cancel handle/stage or recompute its termination verdict.
@@ -516,7 +514,16 @@ impl SessionAgent {
                         // `epoch_at_exit` (round 6 gate-fix) -- captured by `handle_exit` under
                         // its own lock, checked by `termination::on_exit` before every state
                         // write it makes, not just the persisted marker.
+                        //
+                        // Lane R5 (gate round 2, code LOW): `readout::on_exit`/
+                        // `subagents::on_exit` moved into this SAME `is_current` gate -- an
+                        // UNGATED call let a stale exit from an already-superseded life bump
+                        // `readout`'s own `pr_poll_generation` a second time, which then no
+                        // longer matched the NEWER life's own `on_launch`-captured generation,
+                        // killing that newer life's PR-poll timer on its very next tick.
                         if is_current {
+                            crate::session::readout::on_exit(&agent, code, requested).await;
+                            crate::session::subagents::on_exit(&agent, code, requested).await;
                             crate::session::start_queue::on_exit(&agent, code, stop_requested)
                                 .await;
                             crate::session::termination::on_exit(

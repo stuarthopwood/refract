@@ -17,6 +17,14 @@ use super::{State, SummaryStatus};
 /// stream uses.
 const PATCH_COALESCE_MS: u64 = 50;
 
+/// Gate round 2 (security/perf LOW): Electron's `subagentStream.ts` has no cap of its own to
+/// mirror, so this is a new, deliberately generous bound -- a very long-running or chatty
+/// subagent must not grow its own synthetic stream (and the `stream_ids` dedupe set alongside
+/// it) without limit for the lifetime of the Conversation. Oldest rows are dropped first; the
+/// visible subagent's own `subagent:patch` stream only ever diffs forward from here anyway, so
+/// an already-open panel never sees a row vanish out from under it mid-view.
+const MAX_STREAM_ROWS: usize = 500;
+
 /// Port of `transcript.ts`'s own `mapProgressStatus`, extended to settle a `SubagentSummary`
 /// (not just a chat-row `running|done|error`): every terminal status OMP sends (`"completed"`,
 /// `"finished"`, `"failed"`, `"cancelled"`, `"error"`, `"aborted"`, ...) maps to `Finished`/
@@ -96,9 +104,17 @@ pub(super) async fn apply_progress_to_batch(
                     entry.status = new_status;
                     changed = true;
                 }
+                // Gate round 2 (perf MEDIUM): `durationMs` ticks up on nearly every live
+                // `tool_execution_update` while still running -- storing it is cheap and keeps
+                // the data fresh, but it must not by itself trigger a full `subagents:update`
+                // broadcast on every single tick; only a genuine status move (already handled
+                // above) or the FINAL duration once the entry leaves `Running` counts as a
+                // visible change here.
                 if new_duration.is_some() && entry.duration_ms != new_duration {
                     entry.duration_ms = new_duration;
-                    changed = true;
+                    if new_status != SummaryStatus::Running {
+                        changed = true;
+                    }
                 }
 
                 let stream_id = entry.id.clone();
@@ -256,6 +272,14 @@ fn apply_subagent_progress_in_place(
             new_rows.push(row);
         }
     }
+    if stream.len() > MAX_STREAM_ROWS {
+        let overflow = stream.len() - MAX_STREAM_ROWS;
+        for evicted in stream.drain(0..overflow) {
+            if let Some(evicted_id) = evicted.get("id").and_then(Value::as_str) {
+                ids.remove(evicted_id);
+            }
+        }
+    }
     new_rows
 }
 
@@ -303,7 +327,7 @@ pub(super) async fn emit_subagents_update(agent: &SessionAgent, value: Value) {
 /// sent for a hidden Session -- `set_visible` already clears `pending_patch_ops` the instant a
 /// different subagent (or none) is selected, so a hidden Session never accumulates ops for a
 /// subagent nobody is looking at either.
-async fn queue_patch_ops(agent: &SessionAgent, ops: Vec<Value>) {
+pub(super) async fn queue_patch_ops(agent: &SessionAgent, ops: Vec<Value>) {
     let should_spawn = agent
         .with_subagents_state(|s| {
             s.pending_patch_ops.extend(ops);
