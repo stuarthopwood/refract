@@ -21,7 +21,8 @@
     "verify:tauri": "node scripts/verify-tauri.mjs",
     "check:parity": "node scripts/check-parity.mjs",
     "check:file-size": "node scripts/check-file-size.mjs",
-    "check:omp-schema": "node scripts/check-omp-schema-drift.mjs"
+    "check:omp-schema": "node scripts/check-omp-schema-drift.mjs",
+    "release:local": "node scripts/release-local.mjs"
   },
   "dependencies": {
     "@shadcn/react": "0.3.1",
