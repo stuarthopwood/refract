@@ -351,10 +351,18 @@ pub(crate) async fn detect_unexpected_termination(
         }
     }
     let result = compute_detection(file).await;
-    CACHE
-        .lock()
-        .expect("termination cache mutex poisoned")
-        .insert(
+    {
+        let mut cache = CACHE.lock().expect("termination cache mutex poisoned");
+        // Perf gate-fix: one entry per distinct Conversation path ever seen this run would grow
+        // unbounded across a very long-lived process with many archived Sessions. A real desktop
+        // user's own Session count stays small (realistically dozens, not thousands), so a
+        // coarse "clear everything past this bound" is enough -- the next call for any
+        // still-relevant file just re-populates its own entry, same cost as a cold cache.
+        const CACHE_MAX_ENTRIES: usize = 500;
+        if cache.len() >= CACHE_MAX_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(
             file.to_string(),
             CacheEntry {
                 size,
@@ -362,6 +370,7 @@ pub(crate) async fn detect_unexpected_termination(
                 result: result.clone(),
             },
         );
+    }
     result
 }
 
@@ -420,8 +429,11 @@ async fn is_stopped_on_request_marker_valid(session: &Session) -> bool {
 }
 
 /// Port of `resolveTermination`: the "requested stop (in-memory flag or a valid persisted
-/// marker) -> clean, else read the tail" rule every call site routes through.
-async fn resolve_termination_for(
+/// marker) -> clean, else read the tail" rule every call site routes through. `pub(super)`
+/// (lane R3, issue #786, gate-fix): `session::manager`'s own `summaries()` calls this directly
+/// for a Session with no LIVE agent this run (nothing to call `resolve_termination()`'s own
+/// `SessionAgent` method through).
+pub(super) async fn resolve_termination_for(
     session: &Session,
     stopped_on_request: bool,
 ) -> TerminationDetectionResult {

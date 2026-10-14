@@ -16,6 +16,7 @@ use std::sync::{LazyLock, Mutex as StdMutex};
 
 use serde_json::Value;
 
+use crate::session::termination::TerminationDetectionResult;
 use crate::session::{SessionAgent, SessionStatus};
 use crate::store::registry::Session;
 
@@ -77,20 +78,16 @@ fn can_resume_session(
     stop_reason == Some("agent-exited") || terminated_unexpectedly
 }
 
-/// Port of `resumeEligibility.ts`'s own `checkResumeEligible`: the gating half of
-/// `sessions.resume`, re-checked server-side rather than trusted from the renderer's own
-/// (possibly stale) state.
+/// Port of `resumeEligibility.ts`'s own `checkResumeEligible`, narrowed to the Session-state half
+/// (`not-stopped`/`not-eligible`): the `busy` half is `try_lock_resuming`'s own job now
+/// (gate-fix, security review HIGH -- see that function's own doc comment for the TOCTOU window
+/// a separate `resuming_ids.contains()` check-then-later-`insert()` pair left open).
 fn check_resume_eligible(
-    resuming_ids: &HashSet<String>,
-    id: &str,
     status: SessionStatus,
     stop_reason: Option<&str>,
     terminated_unexpectedly: bool,
     archived: bool,
 ) -> Option<&'static str> {
-    if resuming_ids.contains(id) {
-        return Some("busy");
-    }
     if status != SessionStatus::Stopped {
         return Some("not-stopped");
     }
@@ -117,9 +114,45 @@ const DEFAULT_RESUME_INSTRUCTION: &str = "resume";
 
 /// Port of `resumeSession.ts`'s own `resumingIds`: one `Set` shared across every
 /// `sessions.resume` call for the life of the app, so the per-session lock genuinely spans
-/// concurrent IPC calls, not just one function's own stack frame.
+/// concurrent IPC calls, not just one function's own stack frame. Issue #603 quality-gate
+/// follow-up: `sessions.archive`/`.delete` (`ipc::sessions_lifecycle`, lane R2) are meant to hold
+/// this SAME lock set for their own shutdown()+write duration, not just a resume in progress --
+/// `try_lock_resuming` below is exposed (`pub(crate)`) for exactly that; wiring R2's own handlers
+/// to call it is that lane's own follow-up, not done here (R3 owns this file, not
+/// `sessions_lifecycle.rs`).
 static RESUMING_IDS: LazyLock<StdMutex<HashSet<String>>> =
     LazyLock::new(|| StdMutex::new(HashSet::new()));
+
+/// Claims `id` in the shared busy-lock set with ONE atomic `HashSet::insert` call (gate-fix,
+/// security review HIGH): `insert` itself returns whether the value was newly added, so the
+/// eligibility check and the claim are a single lock acquisition with no window between them for
+/// a second concurrent caller to also see "not yet claimed" and also proceed -- the TOCTOU a
+/// separate `contains()`-then-later-`insert()` pair left open under a real multi-threaded tokio
+/// runtime (two OS threads can genuinely run each call's own check/insert in parallel, not just
+/// interleaved cooperative scheduling). Returns `None` (busy) if someone else already holds it;
+/// otherwise an RAII guard that releases the claim on drop, exactly once, on every return path
+/// (success, error, or panic unwind alike).
+pub(crate) fn try_lock_resuming(id: &str) -> Option<ResumingGuard> {
+    let mut resuming = RESUMING_IDS.lock().expect("resuming_ids mutex poisoned");
+    if resuming.insert(id.to_string()) {
+        Some(ResumingGuard { id: id.to_string() })
+    } else {
+        None
+    }
+}
+
+pub(crate) struct ResumingGuard {
+    id: String,
+}
+
+impl Drop for ResumingGuard {
+    fn drop(&mut self) {
+        RESUMING_IDS
+            .lock()
+            .expect("resuming_ids mutex poisoned")
+            .remove(&self.id);
+    }
+}
 
 fn stop_reason_of(runtime: &Value) -> Option<String> {
     runtime
@@ -141,24 +174,30 @@ async fn attach_snapshot_core(
         return Err(not_found(format!("Session not found: {id}")));
     };
     let agent = state.session_manager.get_or_create_agent(id);
+    let mut detection: Option<TerminationDetectionResult> = None;
     if agent.status().await == SessionStatus::Stopped {
         // A requested stop is never read from the tail at all (`SessionAgent::resolve_termination`
         // honours the in-memory `stoppedOnRequest` flag and the persisted marker alike): FR-038
         // ("stopAgent reattaches when reopened") needs this, otherwise a tool call still
         // outstanding when a deliberate stop fired looks identical, from the file alone, to a
         // crash.
-        let detection = agent.resolve_termination().await;
+        let computed = agent.resolve_termination().await;
         let stop_reason = agent
             .runtime_view()
             .await
             .get("stopReason")
             .and_then(Value::as_str)
             .map(str::to_string);
-        if force_start || can_auto_start(stop_reason.as_deref(), detection.terminated_unexpectedly)
-        {
+        if force_start || can_auto_start(stop_reason.as_deref(), computed.terminated_unexpectedly) {
             let _ = agent.start().await;
             state.session_manager.notify_list_changed();
         }
+        // Gate-fix: threaded into `build_snapshot` below instead of trusting `runtime_view()`'s
+        // own cached `terminatedUnexpectedly` -- that cache only ever reflects a crash THIS
+        // live agent's own `on_exit` actually observed; a Session that crashed in a PREVIOUS run
+        // (no live agent yet existed to see it) still has its own tail genuinely read, right
+        // here, by `resolve_termination()` just above, every single time this is called.
+        detection = Some(computed);
     }
     let refreshed = state
         .registry
@@ -167,7 +206,7 @@ async fn attach_snapshot_core(
         .get_session(id)
         .cloned()
         .unwrap_or(session);
-    Ok(super::conversations::build_snapshot(&refreshed, &agent).await)
+    Ok(super::conversations::build_snapshot(&refreshed, &agent, detection.as_ref()).await)
 }
 
 /// `sessions.open` (T024): auto-starts a `stopped` Session when nothing is wrong with the agent
@@ -224,38 +263,29 @@ pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
         if fresh.archived_at.is_some() {
             return Err(invalid_argument(resume_refusal_message("not-eligible")));
         }
-        let runtime = agent.runtime_view().await;
         let status = agent.status().await;
-        let refusal = {
-            let resuming = RESUMING_IDS.lock().expect("resuming_ids mutex poisoned");
-            check_resume_eligible(
-                &resuming,
-                &id,
-                status,
-                stop_reason_of(&runtime).as_deref(),
-                detection.terminated_unexpectedly,
-                fresh.archived_at.is_some(),
-            )
-        };
-        if let Some(code) = refusal {
+        let runtime = agent.runtime_view().await;
+        if let Some(code) = check_resume_eligible(
+            status,
+            stop_reason_of(&runtime).as_deref(),
+            detection.terminated_unexpectedly,
+            fresh.archived_at.is_some(),
+        ) {
             return Err(invalid_argument(resume_refusal_message(code)));
         }
-        RESUMING_IDS
-            .lock()
-            .expect("resuming_ids mutex poisoned")
-            .insert(id.clone());
-        let result = resume_locked(&state, &id, &agent, fresh).await;
-        RESUMING_IDS
-            .lock()
-            .expect("resuming_ids mutex poisoned")
-            .remove(&id);
-        result
+        // The one atomic busy claim, taken as late as possible (right before the irreversible
+        // work) and held for `resume_locked`'s entire duration via RAII (`_guard`'s `Drop`
+        // releases it exactly once, on every return path below).
+        let Some(_guard) = try_lock_resuming(&id) else {
+            return Err(invalid_argument(resume_refusal_message("busy")));
+        };
+        resume_locked(&state, &id, &agent, fresh).await
     })
 }
 
-/// The locked body of `sessions.resume`, run while `id` is held in `RESUMING_IDS` (released by
-/// the caller's own unconditional removal above on every return path, matching the TS port's own
-/// `finally { resumingIds.delete(id) }`).
+/// The locked body of `sessions.resume`, run while `id` is held in `RESUMING_IDS` (via the
+/// caller's own `_guard`, released on every return path including this function's own, matching
+/// the TS port's own `finally { resumingIds.delete(id) }`).
 async fn resume_locked(
     state: &AppState,
     id: &str,
@@ -271,7 +301,7 @@ async fn resume_locked(
         .get_session(id)
         .cloned()
         .unwrap_or(fresh);
-    let snapshot = super::conversations::build_snapshot(&refreshed, agent).await;
+    let snapshot = super::conversations::build_snapshot(&refreshed, agent, None).await;
     if snapshot
         .get("runtime")
         .and_then(|r| r.get("status"))
@@ -301,7 +331,7 @@ async fn resume_locked(
     }
     let post_send = state.registry.lock().await.get_session(id).cloned();
     match post_send {
-        Some(session) => Ok(super::conversations::build_snapshot(&session, agent).await),
+        Some(session) => Ok(super::conversations::build_snapshot(&session, agent, None).await),
         None => Ok(snapshot),
     }
 }

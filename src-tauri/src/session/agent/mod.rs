@@ -350,7 +350,7 @@ impl SessionAgent {
     ) {
         {
             let mut state = self.state.lock().await;
-            if state.status == SessionStatus::Stopped {
+            if !should_apply_crash_exit_verdict(state.status) {
                 return;
             }
             if state.status == SessionStatus::Working && !self.is_visible() {
@@ -592,5 +592,42 @@ impl SessionAgent {
         f: impl FnOnce(&mut crate::session::termination::State) -> R,
     ) -> R {
         f(&mut self.state.lock().await.termination)
+    }
+}
+
+/// Port of `exitVerdictGuard.ts`'s own `shouldApplyCrashExitVerdict`, narrowed to the
+/// `statusNow !== 'stopped'` half of its two-part guard: the other half (`lifeEpochNow ===
+/// epochAtExit`) guards a `restart()`/mode-change-respawn race this build does not implement
+/// (see this file's own header: "no restart()/approval-mode-change auto-restart"), so there is
+/// no `lifeEpoch` concept here for it to compare -- a real, intentional scope cut, not a silently
+/// dropped port. Used by `handle_exit`'s crash branch (`set_stopped_unless_already_stopped`):
+/// skips the verdict once something more authoritative (a synchronous `launch()` failure path)
+/// already moved the Session to `stopped` for this same life.
+fn should_apply_crash_exit_verdict(status_now: SessionStatus) -> bool {
+    status_now != SessionStatus::Stopped
+}
+
+#[cfg(test)]
+mod exit_verdict_guard_tests {
+    use super::{should_apply_crash_exit_verdict, SessionStatus};
+
+    #[test]
+    fn skips_the_verdict_once_already_stopped() {
+        assert!(!should_apply_crash_exit_verdict(SessionStatus::Stopped));
+    }
+
+    #[test]
+    fn applies_the_verdict_from_idle() {
+        assert!(should_apply_crash_exit_verdict(SessionStatus::Idle));
+    }
+
+    #[test]
+    fn applies_the_verdict_from_working() {
+        assert!(should_apply_crash_exit_verdict(SessionStatus::Working));
+    }
+
+    #[test]
+    fn applies_the_verdict_from_needs_you() {
+        assert!(should_apply_crash_exit_verdict(SessionStatus::NeedsYou));
     }
 }
