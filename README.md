@@ -106,29 +106,36 @@ to their original, pre-release bytes (never via `git`), and reports that it did 
 committed. It exits 130 when the interrupt is the detected cause and 1 for any other failure --
 an interrupt is checked (with one event-loop tick to let the signal handler actually run first)
 immediately before every `git add`/`commit`/`tag`/`push` and before the publish step, so a Ctrl+C
-landing in the gap between two of those steps is always caught there; one landing while
-synchronously blocked inside a child process `ci:local` itself is running still restores
-everything the same way, but surfaces as the ordinary `ci:local`-failed message and exit 1
-instead, since nothing yielded for the handler to run before that catch block already fired.
-`git fetch origin` and `ci:local`'s own installs/builds still happened either way -- only the
-tracked release files and the git index are guaranteed back to their starting state.
+landing in the gap between two of those steps is always caught there; the same tick-then-check
+also runs again inside each of those steps' own failure handling, so a signal that kills
+`cargo`/`git` directly mid-step (rather than being caught before the step even starts) is still
+recognised and reported as an interrupt, not a generic failure. `git fetch origin` and
+`ci:local`'s own installs/builds still happened either way -- only the tracked release files and
+the git index are guaranteed back to their starting state.
 
 Once that commit exists, a failure is handled differently, and the recovery text matches
-whichever step actually failed: tagging and pushing use one atomic `git push --atomic origin main
-vX.Y.Z` (so `main` and the tag either both land or neither does -- two separate pushes could let
+whichever step actually failed, never a bare "just re-run pnpm release" (which cannot work once
+the commit is real: `HEAD` no longer equals `origin/main`, and the manifests are already at the
+new version): tagging and pushing use one atomic `git push --atomic origin main vX.Y.Z` (so
+`main` and the tag either both land or neither does -- two separate pushes could let
 `origin/main` move during the minutes `ci:local` takes, landing one but rejecting the other). The
 script never restores file bytes or runs `git reset`/`git tag -d` once the commit is real. If
-creating the tag itself fails (for example a leftover local tag from an earlier aborted attempt),
-the tag was never created, so there is nothing to push or delete for it -- the script prints how
-to inspect/remove the stale local tag instead of a push command for a tag that doesn't exist. If
-tagging succeeds but the atomic push fails, it prints the exact commands to retry
-(`git push --atomic origin main vX.Y.Z`) or abandon the release (`git tag -d vX.Y.Z` then
-`git reset --keep HEAD~1`), for Stuart to run himself. After a successful push, it runs
-`node scripts/release-local.mjs --notes-from-changelog` to build, sign, verify, and publish the
-installer, using the `CHANGELOG.md` section it just wrote as the GitHub release's notes instead
-of GitHub's own auto-generated notes. If that publish step fails (or is interrupted before it
-starts), the commit, tag, and push have already happened -- it prints the exact resume command
-`pnpm release:local -- --notes-from-changelog`, which finishes the release without re-doing the
+tagging is interrupted or `git tag -a` itself fails (for example a leftover local tag from an
+earlier aborted attempt), the tag was never created, so the script prints the real resume
+sequence to run yourself -- `git tag -a vX.Y.Z -m vX.Y.Z && git push --atomic origin main
+vX.Y.Z && pnpm release:local -- --notes-from-changelog` (prefixed with `git tag -d vX.Y.Z` first
+if a stale tag is the cause) -- or `git reset --keep HEAD~1` to abandon the release commit
+entirely. If tagging succeeds but the atomic push is interrupted or fails, it prints the retry
+(`git push --atomic origin main vX.Y.Z`, then `pnpm release:local -- --notes-from-changelog`) or
+abandon (`git tag -d vX.Y.Z` then `git reset --keep HEAD~1`) commands -- and, since a Ctrl+C
+during the push itself can leave the atomic push's actual outcome ambiguous, tells Stuart to
+check `git ls-remote origin refs/tags/vX.Y.Z` first rather than guessing before retrying or
+abandoning. After a successful push, it runs `node scripts/release-local.mjs
+--notes-from-changelog` to build, sign, verify, and publish the installer, using the
+`CHANGELOG.md` section it just wrote as the GitHub release's notes instead of GitHub's own
+auto-generated notes. If that publish step fails (or is interrupted before it starts), the
+commit, tag, and push have already happened -- it prints the exact resume command `pnpm
+release:local -- --notes-from-changelog`, which finishes the release without re-doing the
 version bump, changelog, commit, or push.
 
 `pnpm release --dry-run` runs only the precondition checks (including the `git fetch origin`),

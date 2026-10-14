@@ -75,8 +75,11 @@ const TRACKED_RELEASE_FILES = [
 // process group (parent AND child), leaving the manifests and CHANGELOG.md mid-edit with no
 // restore ever running. With a handler installed, the child still dies from the same signal,
 // `spawnSync` returns a non-zero/killed status, and the existing catch block below restores the
-// files exactly as it would for any other failure -- this flag only changes the final exit code
-// to the conventional 130 and the message printed.
+// files exactly as it would for any other failure. Because `main()` is otherwise fully
+// synchronous, this flag alone is not enough to reliably flip the exit code/message to the
+// interrupt-specific one at the exact moment a catch block runs (see `checkInterrupted` below) --
+// every catch site that needs to tell "the user asked to stop" apart from an ordinary failure
+// also awaits one more event-loop tick itself before reading this flag.
 let interrupted = false;
 
 function installInterruptHandlers() {
@@ -372,6 +375,11 @@ async function main() {
     await checkInterrupted();
     gitInherit(['commit', '-m', `chore: release v${nextVersion}`]);
   } catch (err) {
+    // One more event-loop tick before reading `interrupted`: a signal that killed `cargo`/`git`
+    // directly (rather than being caught by `checkInterrupted()` before that step even started)
+    // surfaces here as a generic ci:local/git failure, not `InterruptedError` -- this gives the
+    // queued SIGINT/SIGTERM handler a chance to run and set the flag before the check below.
+    await new Promise((resolve) => setImmediate(resolve));
     unstageTrackedFiles();
     restoreOriginals(originals);
     console.error(
@@ -401,8 +409,26 @@ async function main() {
     if (err instanceof InterruptedError) {
       console.error(
         `release: stopped by SIGINT/SIGTERM before tagging v${nextVersion} -- "chore: release v${nextVersion}" ` +
-          'is committed locally but not tagged or pushed. Re-run pnpm release to tag and push it, or abandon it ' +
-          'yourself: git reset --keep HEAD~1',
+          'is committed locally but not tagged or pushed. A plain re-run of pnpm release will NOT work here ' +
+          '(HEAD no longer equals origin/main, and the manifests are already at the new version) -- resume ' +
+          `yourself: git tag -a v${nextVersion} -m v${nextVersion} && git push --atomic origin main v${nextVersion} ` +
+          '&& pnpm release:local -- --notes-from-changelog. To abandon this release commit entirely instead: ' +
+          'git reset --keep HEAD~1',
+      );
+      process.exit(130);
+    }
+    // One more tick: `git tag -a` itself could have been killed mid-run by a signal that never
+    // reached `checkInterrupted()` above (which only guards the moment BEFORE the command
+    // starts) -- same resume path applies either way, since a killed `git tag -a` leaves no tag.
+    await new Promise((resolve) => setImmediate(resolve));
+    if (interrupted) {
+      console.error(
+        `release: stopped by SIGINT/SIGTERM while tagging v${nextVersion} -- "chore: release v${nextVersion}" ` +
+          'is committed locally but not tagged or pushed. A plain re-run of pnpm release will NOT work here ' +
+          '(HEAD no longer equals origin/main, and the manifests are already at the new version) -- resume ' +
+          `yourself: git tag -a v${nextVersion} -m v${nextVersion} && git push --atomic origin main v${nextVersion} ` +
+          '&& pnpm release:local -- --notes-from-changelog. To abandon this release commit entirely instead: ' +
+          'git reset --keep HEAD~1',
       );
       process.exit(130);
     }
@@ -410,10 +436,12 @@ async function main() {
       `release: "chore: release v${nextVersion}" was committed locally, but creating the tag v${nextVersion} failed: ${err.message}`,
     );
     console.error(
-      'release: this script will NOT retry or reset automatically. The tag was never created, so there is ' +
-        `nothing to push or delete for it. Inspect why tagging failed (for example an existing local tag: ` +
-        `git tag -l v${nextVersion}); remove a stale one yourself (git tag -d v${nextVersion}) and re-run ` +
-        `pnpm release, or abandon this release commit entirely: git reset --keep HEAD~1`,
+      'release: this script will NOT retry or reset automatically. A plain re-run of pnpm release will NOT ' +
+        'work here (HEAD no longer equals origin/main, and the manifests are already at the new version). If ' +
+        `a stale local tag is the cause (check: git tag -l v${nextVersion}), remove it first: ` +
+        `git tag -d v${nextVersion}. Then resume: git tag -a v${nextVersion} -m v${nextVersion} && ` +
+        `git push --atomic origin main v${nextVersion} && pnpm release:local -- --notes-from-changelog. ` +
+        'To abandon this release commit entirely instead: git reset --keep HEAD~1',
     );
     process.exit(1);
   }
@@ -425,8 +453,9 @@ async function main() {
     if (err instanceof InterruptedError) {
       console.error(
         `release: stopped by SIGINT/SIGTERM before pushing -- "chore: release v${nextVersion}" is committed ` +
-          `and tagged locally but not pushed. Retry: git push --atomic origin main v${nextVersion}. Abandon: ` +
-          `git tag -d v${nextVersion}  (then)  git reset --keep HEAD~1`,
+          'and tagged locally but not pushed. Since this was before the push started, nothing was sent: ' +
+          `retry: git push --atomic origin main v${nextVersion}  (then)  pnpm release:local -- --notes-from-changelog. ` +
+          `Abandon: git tag -d v${nextVersion}  (then)  git reset --keep HEAD~1`,
       );
       process.exit(130);
     }
@@ -434,9 +463,13 @@ async function main() {
       `release: "chore: release v${nextVersion}" was committed and tagged locally, but the atomic push failed: ${err.message}`,
     );
     console.error(
-      'release: this script will NOT retry or reset automatically. ' +
-        `To retry: git push --atomic origin main v${nextVersion}. ` +
-        `To abandon this release entirely instead, run yourself: git tag -d v${nextVersion}  (then)  git reset --keep HEAD~1`,
+      'release: this script will NOT retry or reset automatically. If this was a Ctrl+C during the push ' +
+        'itself, the atomic push may have already landed on the remote despite the error -- check first: ' +
+        `git ls-remote origin refs/tags/v${nextVersion}. If it is NOT there, retry: ` +
+        `git push --atomic origin main v${nextVersion}  (then)  pnpm release:local -- --notes-from-changelog. ` +
+        `If it IS there, just run: pnpm release:local -- --notes-from-changelog. To abandon this release ` +
+        `entirely instead (only if the tag is confirmed NOT on the remote): git tag -d v${nextVersion}  (then)  ` +
+        'git reset --keep HEAD~1',
     );
     process.exit(1);
   }
