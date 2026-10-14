@@ -1,12 +1,10 @@
-// Minimal `gh` CLI status wrapper for `updates::checker` (lane R11b, issue #794). Used to share
-// its own, longer timeout with `updates::installer::download_update`'s ~146MB release-asset
-// download rather than forking a second spawn-with-timeout implementation (gate finding, PR #829
-// round 2, Medium). Keeps only what doesn't belong in the PR-management module: the update-
-// specific `GithubCliStatus` mapping and offline-text matching.
-//
-// `git::git`'s shell-free `tokio::process::Command` wrapper pattern (no shell, `CREATE_NO_WINDOW`
-// on Windows, `kill_on_drop(true)`, a bounded `tokio::time::timeout`) is reused here rather than
-// re-derived.
+// `gh` CLI sign-in status for `updates::checker::check_for_updates` (lane R11b, issue #794).
+// Shares the shared `github::gh::gh_raw`/`resolve_gh` directly (gate finding, PR #829 round 2,
+// Medium: this file used to duplicate its own `gh_raw`/`GhRawResult`/spawn-with-timeout runner
+// purely because the shared one had no configurable timeout; it now takes one). Keeps only what
+// doesn't belong in the PR-management module: the update-specific `GithubCliStatus` mapping and
+// offline-text matching -- `updates::installer::download_update` calls `github::gh::gh_raw`
+// directly for its own download, not through this file.
 
 use std::path::Path;
 use std::time::Duration;
@@ -57,7 +55,12 @@ pub async fn github_cli_status(cwd: &Path) -> GithubCliStatus {
     if auth.code == 0 {
         return GithubCliStatus::Ok;
     }
-    if looks_offline(&format!("{}\n{}", auth.stdout, auth.stderr)) {
+    // Gate finding (round 3, Medium): the shared `gh_raw`'s own timeout path never writes
+    // "timed out" (or any text at all) to stdout/stderr -- `timed_out` is the only signal a spawn
+    // itself stalled, so it must be checked explicitly, before `looks_offline`'s text match (which
+    // exists for `gh`'s OWN reported network-timeout text, a different case) ever runs against
+    // what would otherwise be two empty strings and silently fall through to `NotSignedIn`.
+    if auth.timed_out || looks_offline(&format!("{}\n{}", auth.stdout, auth.stderr)) {
         return GithubCliStatus::Offline;
     }
     GithubCliStatus::NotSignedIn

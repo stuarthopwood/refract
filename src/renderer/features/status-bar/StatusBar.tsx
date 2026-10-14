@@ -27,7 +27,11 @@ function updateUnavailableReasonText(reason: NonNullable<UpdateState['unavailabl
     case 'not-installed':
       return 'GitHub CLI is not installed.'
     case 'not-signed-in':
-      return 'GitHub CLI is not signed in. Run gh auth login.'
+      // Gate finding (round 3, Medium): matches `readiness.rs`'s own `check_github_cli` hint --
+      // a portable-zip `gh` install may not be the `gh` a user's own terminal resolves, so
+      // "Run gh auth login" could sign a different `gh` in, or find no terminal at all. Refract's
+      // own sign-in flow (Manage accounts' "Sign in to GitHub…") always drives this exact binary.
+      return 'GitHub CLI is not signed in. Sign in via Manage accounts.'
     case 'offline':
       return 'Could not reach GitHub.'
   }

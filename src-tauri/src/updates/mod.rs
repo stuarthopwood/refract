@@ -40,15 +40,24 @@ use state::{SharedUpdateState, UpdateState};
 /// perf HIGH: the lock used to be held by this caller across the WHOLE check, including every
 /// `gh` call). Returns the renderer-safe final state for the caller to broadcast; factored out of
 /// `lib.rs` itself (`AGENTS.md` "No god files") rather than inlined in its `setup` closure.
+///
+/// Gate finding (round 3, Medium): `resolve_startup_state`'s own result used to be discarded here
+/// -- a resolution to `Failed` (a leftover `Installing` mismatch, or the new `Downloading`
+/// hardening) is a phase the automatic `check_for_updates` call right after it then SKIPS
+/// entirely (its own `automatic && Failed` no-op guard), so `on_state` was never called for it:
+/// the window would already be showing a renderer that never heard about the resolution until
+/// its next unrelated poll. `on_state` is now called with the resolved state directly, before the
+/// automatic check ever runs.
 pub async fn run_startup_update_check(
     store: &SharedUpdateState,
     current_version: &str,
     on_state: &(dyn Fn(&UpdateState) + Send + Sync),
 ) -> UpdateState {
-    {
+    let resolved = {
         let mut guard = store.lock().await;
-        install_on_quit::resolve_startup_state(&mut guard, current_version).await;
-    }
+        install_on_quit::resolve_startup_state(&mut guard, current_version).await
+    };
+    on_state(&resolved);
     checker::check_for_updates(store, true, current_version, on_state).await
 }
 
@@ -97,15 +106,11 @@ pub async fn run_install_on_quit_hook(store: &SharedUpdateState, updates_dir: &P
         std::path::PathBuf::from(installer_path)
     };
 
-    let outcome = match tokio::time::timeout(
+    let timeout_result = tokio::time::timeout(
         VERIFY_AND_SCHEDULE_TIMEOUT,
         verify_and_schedule(&installer_path, updates_dir),
     )
-    .await
-    {
-        Ok(outcome) => outcome,
-        Err(_) => Err("verifying and scheduling the install timed out".to_string()),
-    };
+    .await;
 
     let mut guard = match tokio::time::timeout(std::time::Duration::from_secs(5), store.lock())
         .await
@@ -118,19 +123,37 @@ pub async fn run_install_on_quit_hook(store: &SharedUpdateState, updates_dir: &P
             return;
         }
     };
-    match outcome {
-        Ok(()) => {
+    match timeout_result {
+        Ok(Ok(())) => {
             guard
                 .update(|s| s.phase = state::UpdatePhase::Installing)
                 .await;
         }
-        Err(reason) => {
+        Ok(Err(reason)) => {
             log::error!("install-on-quit failed: {reason}");
             guard
                 .update(|s| {
                     s.phase = state::UpdatePhase::Failed;
                     s.last_error = Some(reason);
                 })
+                .await;
+        }
+        Err(_) => {
+            // Gate finding (round 3, Low): the 30s budget below is this whole function's own
+            // wait, not a cancellation signal `schedule_install_on_quit`'s WMI call itself ever
+            // sees -- if `Win32_Process.Create` had already succeeded the instant before this
+            // timeout fired, the real wait-then-install process is already running
+            // independently of Refract, and writing `Failed` here would be actively wrong (it
+            // overwrites a true success with a reported failure). The outcome is genuinely
+            // ambiguous, so this leaves the phase at `Installing`, same as a confirmed
+            // hand-off -- `install_on_quit::resolve_startup_state`'s own version-match check on
+            // the next launch resolves it for real (`Idle` if the install actually happened,
+            // `Failed` if it didn't), rather than this function guessing.
+            log::error!(
+                "install-on-quit: verify-and-schedule timed out after {VERIFY_AND_SCHEDULE_TIMEOUT:?}; leaving phase as Installing for the next launch to resolve"
+            );
+            guard
+                .update(|s| s.phase = state::UpdatePhase::Installing)
                 .await;
         }
     }

@@ -221,6 +221,14 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         .await
         .map_err(|err| err.to_string())?;
 
+    // Gate finding (round 3, Medium): a timed-out spawn's own `gh_raw` never writes anything to
+    // stdout/stderr (see `github::gh::gh_raw`'s own timeout branch) -- without this check,
+    // `non_empty_or` below would silently fall through to its generic `gh command failed: gh
+    // {args_joined}` fallback, which is accurate but not as actionable as a plain, dedicated
+    // message.
+    if result.timed_out {
+        return Err("Download timed out.".to_string());
+    }
     if result.code != 0 {
         // Security fix (gate round 2, Medium): routed through the shared, redacting
         // `github::gh::non_empty_or` (never echoes a credential-shaped substring verbatim)
