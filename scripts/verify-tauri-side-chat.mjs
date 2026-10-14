@@ -310,22 +310,13 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   assert(switchEvent.sessionId === liveId, `conversation-changed should name the live Session: ${JSON.stringify(switchEvent)}`);
   console.log('PASS: starting a new Conversation raised side-chat:conversation-changed for the live Session.');
 
-  // --- Acceptance 8, MEDIUM (2026-10-14 gate review): a late, unsolicited topic-2 btw_delta/
-  // btw_record (side-chat-live.jsonl's own trailing push frames, simulating OMP's cancelled-but-
-  // still-processing topic finally replying) must never surface a NEW patch once the
-  // Conversation has moved on -- cancelled-topic isolation surviving a switch, not just a cancel.
-  const topic2PatchesBeforeLateFrames = await cdp.evaluate(
-    `window.__r6Events.patch.filter((p) => p.sessionId === ${JSON.stringify(liveId)} && (p.recordId === 'topic-2' || p.record?.id === 'topic-2')).length`,
-  );
-  await new Promise((r) => setTimeout(r, 1000)); // lets the tape's trailing push frames land
-  const topic2PatchesAfterLateFrames = await cdp.evaluate(
-    `window.__r6Events.patch.filter((p) => p.sessionId === ${JSON.stringify(liveId)} && (p.recordId === 'topic-2' || p.record?.id === 'topic-2')).length`,
-  );
-  assert(
-    topic2PatchesAfterLateFrames === topic2PatchesBeforeLateFrames,
-    `a late topic-2 frame leaked after the Conversation switch: before=${topic2PatchesBeforeLateFrames} after=${topic2PatchesAfterLateFrames}`,
-  );
-  console.log('PASS: a late, unsolicited topic-2 delta/record after the Conversation switch produced no new patch -- cancelled-topic isolation survives a switch.');
+  // --- Acceptance 8, MEDIUM (2026-10-14 gate review round 3 HIGH: the round-1/2 before/after
+  // patch-COUNT check could never fail -- side-chat-live.jsonl's own late, unsolicited topic-2
+  // `btw_delta`/`btw_record` push frames land synchronously right after `startNew`'s own
+  // `get_state` response, before any "before" snapshot taken afterward could ever run without
+  // them already counted). The real content assertion -- that the exact fixture strings these
+  // late frames carry never appear in any patch for `liveId` -- runs at the very end of this
+  // function instead, after every later check has had the maximum chance to let them land.
 
   // --- Acceptance 9, HIGH (2026-10-14 gate review): the stopped-Session Conversation-switch
   // path (`start_with_conversation` -> `reset_after_start_with_conversation`) also raises
@@ -342,6 +333,21 @@ async function runLiveChecks(cdp, evidenceDir, { repoLiveDir, repoPeerDir, repoS
   );
   assert(stoppedSwitchEvent.sessionId === stoppedId, `conversation-changed should name the stopped Session: ${JSON.stringify(stoppedSwitchEvent)}`);
   console.log('PASS: starting a stopped Session with a Conversation (start_with_conversation) also raised side-chat:conversation-changed.');
+
+  // --- Acceptance 8 (continued from above): the actual content assertion, run last so the
+  // late, unsolicited topic-2 push frames (emitted synchronously right after acceptance 7's own
+  // startNew/get_state exchange) have had the maximum possible time to land before this checks
+  // the FULL set of patches collected over the whole run -- a before/after count can never prove
+  // this; only checking for the fixture's own exact leaked strings can.
+  const leakedDelta = await cdp.evaluate(
+    `window.__r6Events.patch.find((p) => p.sessionId === ${JSON.stringify(liveId)} && p.delta === 'late leaked text')`,
+  );
+  assert(!leakedDelta, `a late topic-2 delta leaked into a side-chat:patch after the Conversation switch: ${JSON.stringify(leakedDelta)}`);
+  const leakedRecord = await cdp.evaluate(
+    `window.__r6Events.patch.find((p) => p.sessionId === ${JSON.stringify(liveId)} && p.record?.answer === 'a late answer that must never surface')`,
+  );
+  assert(!leakedRecord, `a late topic-2 record leaked into a side-chat:patch after the Conversation switch: ${JSON.stringify(leakedRecord)}`);
+  console.log("PASS: no side-chat:patch for the live Session ever carried the late topic-2 frames' own leaked text -- cancelled-topic isolation survives a switch.");
 
   writeFileSync(path.join(evidenceDir, 'r6-live-pass.txt'), 'all live-run acceptance checks passed\n');
   return { liveId, repoLiveDir };

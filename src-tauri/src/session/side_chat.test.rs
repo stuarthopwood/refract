@@ -480,40 +480,98 @@ async fn on_exit_clears_both_epoch_maps_unconditionally() {
     assert_eq!(conversation_epoch, 5);
 }
 
-/// `on_conversation_reset` bumps the epoch exactly once per call, and retains only the CURRENT
-/// generation's tombstones (dropping anything older) so `terminal_topic_epoch` stays bounded.
+/// `on_conversation_reset` bumps the epoch exactly once per call. Gate-fix (round 3 MEDIUM):
+/// tombstones must SURVIVE every reset now -- round 2's own per-reset prune (keep only the
+/// retiring generation) is what caused the two-switch leak
+/// (`a_tombstone_survives_a_second_conversation_switch_after_a_late_cancel` below); asserted
+/// directly here, across TWO resets, so a regression back to pruning is caught without needing
+/// the full end-to-end scenario.
 #[tokio::test]
-async fn on_conversation_reset_bumps_the_epoch_once_and_prunes_older_tombstones() {
+async fn on_conversation_reset_bumps_the_epoch_once_and_never_prunes_tombstones() {
     let agent = make_test_agent("conv-reset", None).await;
     let before = agent
         .with_side_chat_state(|s| {
-            // A tombstone from the CURRENT (about-to-retire) generation must survive this reset.
             s.terminal_topic_epoch
-                .insert("just-cancelled".to_string(), s.conversation_epoch);
-            // A tombstone from an OLDER generation must be pruned by this reset.
-            s.terminal_topic_epoch
-                .insert("ancient".to_string(), s.conversation_epoch.wrapping_sub(1));
+                .insert("old-tombstone".to_string(), 0);
+            s.terminal_topic_order
+                .push_back("old-tombstone".to_string());
             s.conversation_epoch
         })
         .await;
     on_conversation_reset(&agent).await;
-    let (after, has_current, has_ancient) = agent
+    on_conversation_reset(&agent).await; // a second reset -- round 2's bug only showed up after this
+    let (after, still_there) = agent
         .with_side_chat_state(|s| {
             (
                 s.conversation_epoch,
-                s.terminal_topic_epoch.contains_key("just-cancelled"),
-                s.terminal_topic_epoch.contains_key("ancient"),
+                s.terminal_topic_epoch.contains_key("old-tombstone"),
             )
         })
         .await;
-    assert_eq!(after, before.wrapping_add(1));
+    assert_eq!(after, before.wrapping_add(2));
     assert!(
-        has_current,
-        "the generation just ending must survive this one reset"
+        still_there,
+        "a tombstone must never be pruned by a reset any more"
+    );
+}
+
+/// Gate-fix (round 3 MEDIUM, security Low): `tombstone_topic`'s own FIFO cap bounds
+/// `terminal_topic_epoch` regardless of how many topics a session's whole lifetime ever asks --
+/// the oldest tombstone is evicted once `MAX_TOMBSTONES` is exceeded.
+#[test]
+fn tombstone_topic_evicts_the_oldest_once_the_fifo_cap_is_exceeded() {
+    let mut state = State::default();
+    for i in 0..300 {
+        let id = format!("topic-{i}");
+        state.topic_epoch.insert(id.clone(), 0);
+        let removed_epoch = state.topic_epoch.remove(&id).unwrap();
+        tombstone_topic(&mut state, id, removed_epoch);
+    }
+    assert_eq!(state.terminal_topic_epoch.len(), 256);
+    assert!(
+        !state.terminal_topic_epoch.contains_key("topic-0"),
+        "the oldest tombstone must have been evicted"
     );
     assert!(
-        !has_ancient,
-        "an older generation's tombstone must be pruned"
+        state.terminal_topic_epoch.contains_key("topic-299"),
+        "the newest tombstone must still be present"
+    );
+}
+
+/// Gate-fix (round 3 MEDIUM, a deeper cross-Conversation leak the round 2 fix still had): a
+/// cancel record arriving AFTER a switch is tombstoned with the epoch `topic_epoch.remove`
+/// actually returns (the stamped-before epoch) -- round 2's own per-reset prune then wrongly
+/// treated that as "an older generation" and dropped it at the VERY NEXT reset, so a late frame
+/// arriving after a SECOND switch leaked. Drives exactly that sequence: stamp at epoch 0, switch
+/// #1 (the cancel hasn't arrived yet), the cancel arrives only now, switch #2 -- a late frame
+/// afterward must still be dropped. This test FAILS against round 2's own per-reset prune.
+#[tokio::test]
+async fn a_tombstone_survives_a_second_conversation_switch_after_a_late_cancel() {
+    let agent = make_test_agent("leak-fix-two-switch", None).await;
+    agent
+        .with_side_chat_state(|s| stamp_continuation_before_ask(s, Some("topic-9")))
+        .await;
+
+    on_conversation_reset(&agent).await; // switch #1 -- the cancel hasn't arrived yet
+
+    let cancelled = btw_record_frame("topic-9", "cancelled");
+    let cancel_patch = agent
+        .with_side_chat_state(|s| apply_frame(s, "btw_record", &cancelled, true))
+        .await;
+    assert_eq!(
+        cancel_patch, None,
+        "the cancel record itself, stamped at the OLD epoch, is already stale by switch #1"
+    );
+
+    on_conversation_reset(&agent).await; // switch #2 -- round 2's own bug pruned the tombstone here
+
+    let late_delta = json!({ "recordId": "topic-9", "delta": "leaked after two switches" });
+    let late_patch = agent
+        .with_side_chat_state(|s| apply_frame(s, "btw_delta", &late_delta, true))
+        .await;
+    assert_eq!(
+        late_patch, None,
+        "a tombstone must survive a SECOND switch, not just the first"
     );
 }
 
@@ -567,12 +625,14 @@ async fn reset_after_start_with_conversation_skips_reopening_the_same_conversati
     );
 }
 
-/// Gate-fix (round 2 MEDIUM): drives the reset decision through the REAL previous-Conversation
-/// capture (`current_conversation_path`, what `start_with_conversation` itself calls) instead of
-/// a hand-picked `Some(Some("file-a"))` literal -- a regression in that read itself would still
-/// be caught here.
+/// Gate-fix (round 2 MEDIUM; renamed round 3 LOW -- the old name claimed to test that `prev` is
+/// captured BEFORE `start_with_conversation`'s own `update_session` write, which this does NOT
+/// drive; see Not-exercised in the PR body): `reset_after_start_with_conversation` accepts
+/// whatever `current_conversation_path` (the real accessor `start_with_conversation` itself
+/// calls) genuinely returns, not a hand-picked `Some(Some("file-a"))` literal -- a regression in
+/// that accessor itself would still be caught here.
 #[tokio::test]
-async fn start_with_conversation_reset_decision_uses_the_real_previous_conversation_capture() {
+async fn reset_after_start_with_conversation_accepts_the_real_current_conversation_path_result() {
     let agent = make_test_agent("prev-capture", Some("file-a")).await;
     let prev = agent.current_conversation_path().await;
     assert_eq!(

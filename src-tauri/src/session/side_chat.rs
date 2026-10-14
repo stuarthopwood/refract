@@ -36,23 +36,28 @@ pub(super) struct State {
     conversation_epoch: u64,
     /// Port of `SessionAgent.ts`'s own `sideChatTopicEpoch`, keyed by a topic's root id (never a
     /// flattened follow-up's own synthetic id, never `leafId`). Gate-fix (round 9): bounded by
-    /// SETTLEDNESS, not by age -- `apply_frame`'s own `btw_record` case deletes an entry (moving
-    /// it to `terminal_topic_epoch` below) once that topic's LATEST TURN reaches a terminal
-    /// status; `on_exit` clears the whole map unconditionally on every process exit.
+    /// SETTLEDNESS, not by age -- `apply_frame`'s own `btw_record` case removes an entry (moving
+    /// it to `terminal_topic_epoch` below via `tombstone_topic`) once that topic's LATEST TURN
+    /// reaches a terminal status; `on_exit` clears the whole map unconditionally on every exit.
     topic_epoch: std::collections::HashMap<String, u64>,
-    /// Gate-fix (2026-10-14 gate review round 2 HIGH, a REAL cross-Conversation leak; Electron
-    /// has the identical hole, issue #789's own "port the fixed behaviour" note filed against it):
-    /// a terminal/cancelled topic's `topic_epoch` entry above is removed to bound memory, but a
-    /// late frame for that SAME `record_id` arriving after a Conversation switch must still be
-    /// recognised as belonging to the OLD Conversation -- `unwrap_or(conversation_epoch)` alone
-    /// cannot tell "never asked this session" (correctly never stale) from "asked, went terminal,
-    /// entry removed" (must stay stale forever after a switch) once both cases return the same
-    /// "not found" lookup. This tombstone keeps the epoch a now-terminal topic belonged to;
-    /// `apply_frame` checks it as a second fallback before `conversation_epoch`.
-    /// `on_conversation_reset` retains only the CURRENT generation's tombstones (the ones that
-    /// still need protecting against a frame straggling in from the Conversation just left) and
-    /// drops anything older, so this stays bounded across a long session; `on_exit` clears it.
+    /// Gate-fix (2026-10-14 gate review round 2 HIGH, round 3 MEDIUM, a REAL cross-Conversation
+    /// leak; Electron has the identical hole, issue #789's own "port the fixed behaviour" note
+    /// filed against it -- issue comment #6179571662): a terminal/cancelled topic's `topic_epoch`
+    /// entry is removed to bound memory, but a late frame for that SAME `record_id` after a
+    /// switch must still read as belonging to the OLD Conversation -- `unwrap_or(conversation_
+    /// epoch)` alone cannot tell "never asked" (never stale) from "asked, went terminal, removed"
+    /// (stays stale forever after a switch) once both return "not found". `tombstone_topic`
+    /// populates this ONLY for an id this process actually had an active entry for (security Low:
+    /// never for an arbitrary claimed id, which would let a malicious response grow this map
+    /// unbounded); `apply_frame` checks it before falling back to `conversation_epoch`. Round 3:
+    /// a per-reset prune (round 2's own fix) protected only ONE switch -- a cancel landing AFTER
+    /// a bump tombstoned with the post-bump epoch, pruned as "old" by the NEXT reset, leaking a
+    /// second-switch straggler. Never pruned by a reset now; bounded by `terminal_topic_order`'s
+    /// own FIFO cap (`MAX_TOMBSTONES`) and cleared by `on_exit`.
     terminal_topic_epoch: std::collections::HashMap<String, u64>,
+    /// Insertion order for `terminal_topic_epoch`'s own FIFO eviction (`tombstone_topic`); never
+    /// contains an id not currently a key of that map.
+    terminal_topic_order: std::collections::VecDeque<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +181,31 @@ fn resolve_topic_epoch(state: &State, topic_id: &str) -> u64 {
         .unwrap_or(state.conversation_epoch)
 }
 
+/// FIFO cap for `State::terminal_topic_epoch` (round 3 MEDIUM, security Low): a tombstone is
+/// never pruned by a Conversation switch, only by this eviction or by `on_exit` -- without a cap
+/// a pathologically long session (many `/btw` topics, each eventually terminal) would otherwise
+/// grow the map forever. 256 is generous for any realistic session's own side-chat topic count.
+const MAX_TOMBSTONES: usize = 256;
+
+/// Tombstones `topic_id` with `epoch` (gate-fix round 3 MEDIUM): called ONLY when `apply_frame`'s
+/// own `topic_epoch.remove(&topic_id)` actually returned something (security Low: never for an
+/// arbitrary id a frame merely claims, which would let a malicious/buggy response grow this map
+/// unbounded) -- evicts the OLDEST tombstone once `MAX_TOMBSTONES` is exceeded.
+fn tombstone_topic(state: &mut State, topic_id: String, epoch: u64) {
+    if state
+        .terminal_topic_epoch
+        .insert(topic_id.clone(), epoch)
+        .is_none()
+    {
+        state.terminal_topic_order.push_back(topic_id);
+    }
+    while state.terminal_topic_order.len() > MAX_TOMBSTONES {
+        if let Some(oldest) = state.terminal_topic_order.pop_front() {
+            state.terminal_topic_epoch.remove(&oldest);
+        }
+    }
+}
+
 /// What `on_frame` must forward to the renderer as a `side-chat:patch`, if anything -- the
 /// decision `apply_frame` below makes.
 #[derive(Debug, PartialEq)]
@@ -232,8 +262,9 @@ pub(super) fn apply_frame(
             let turn = latest_turn(record);
             let status = turn.get("status").and_then(Value::as_str).unwrap_or("");
             if turn_reached_terminal(status) {
-                state.topic_epoch.remove(&topic_id);
-                state.terminal_topic_epoch.insert(topic_id, topic_epoch);
+                if let Some(removed_epoch) = state.topic_epoch.remove(&topic_id) {
+                    tombstone_topic(state, topic_id, removed_epoch);
+                }
             }
             if stale {
                 return None;
@@ -279,6 +310,7 @@ pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested
         .with_side_chat_state(|s| {
             s.topic_epoch.clear();
             s.terminal_topic_epoch.clear();
+            s.terminal_topic_order.clear();
         })
         .await;
     agent
@@ -302,16 +334,13 @@ pub(super) async fn on_start_progress(
 /// `session::agent::launch`'s `start_with_conversation` via `reset_after_start_with_conversation`
 /// below (only when the Conversation actually changed) -- same call sites TS's own
 /// `startNewConversation`/`openConversation`/`startStoppedSessionOnConversation` use. Gate-fix
-/// (2026-10-14 gate review round 2 HIGH): before bumping the epoch, retains only
-/// `terminal_topic_epoch` tombstones from the generation JUST ENDING (the ones that still need
-/// to catch a straggling frame from the Conversation this call is leaving) and drops anything
-/// older -- so the tombstone map never grows past one generation's worth of now-terminal topics.
+/// (round 3 MEDIUM: round 2's own per-reset tombstone prune protected only ONE switch -- see
+/// `State::terminal_topic_epoch`'s own doc comment): never prunes `terminal_topic_epoch` here
+/// any more; a tombstone now survives every switch until `on_exit` or `tombstone_topic`'s own
+/// FIFO cap retires it.
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     agent
         .with_side_chat_state(|s| {
-            let retiring_epoch = s.conversation_epoch;
-            s.terminal_topic_epoch
-                .retain(|_, epoch| *epoch == retiring_epoch);
             s.conversation_epoch = s.conversation_epoch.wrapping_add(1);
         })
         .await;
@@ -370,7 +399,12 @@ fn stamp_continuation_before_ask(state: &mut State, record_id: Option<&str>) -> 
 /// epoch `stamp_continuation_before_ask` captured BEFORE the request was sent -- never a value
 /// re-read after the response resolves. Factored out of `ask` (not inlined) so a test can drive a
 /// REAL `on_conversation_reset` bump between the capture and this stamp, reproducing the exact
-/// race the epoch guard protects against.
+/// race the epoch guard protects against. Round 3 note: if the frame listener already processed
+/// this same topic's terminal `btw_record` push (a very fast reply) before this call runs, this
+/// re-adds an active `topic_epoch` entry for an already-tombstoned topic -- benign (never acted
+/// on again unless a further frame for the same id arrives; memory-bounded only by `on_exit`,
+/// same posture `topic_epoch`'s own doc comment already accepts for any entry no later frame
+/// ever settles).
 fn stamp_topic_after_response(state: &mut State, thread_id: String, epoch: u64) {
     state.topic_epoch.insert(thread_id, epoch);
 }
