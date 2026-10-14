@@ -341,3 +341,28 @@ fn filter_supported_commands_keeps_a_file_command_with_no_real_collision() {
         .iter()
         .any(|c| c.get("name").and_then(Value::as_str) == Some("check-build")));
 }
+
+/// Gate-fix regression test: a file/skill command named one of Refract's own reserved native
+/// commands (`plan`, `resume`, `fork`, ...) must never be listed -- `chat.send`'s own
+/// `NATIVE_RESERVED_COMMANDS` check would refuse it unconditionally anyway, so listing it in
+/// the menu would be misleading (it can never actually run).
+#[test]
+fn filter_supported_commands_drops_a_file_command_named_after_a_reserved_native_command() {
+    let raw = vec![
+        json!({ "name": "plan", "source": "file", "description": "a user command named plan" }),
+        json!({ "name": "resume", "aliases": ["res"], "source": "skill" }),
+    ];
+    let filtered = filter_supported_commands(&raw);
+    assert!(
+        !filtered
+            .iter()
+            .any(|c| c.get("name").and_then(Value::as_str) == Some("plan")),
+        "a file command named `plan` must never be listed: {filtered:?}"
+    );
+    assert!(
+        !filtered
+            .iter()
+            .any(|c| c.get("name").and_then(Value::as_str) == Some("resume")),
+        "a skill command named `resume` must never be listed: {filtered:?}"
+    );
+}

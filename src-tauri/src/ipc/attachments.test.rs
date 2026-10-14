@@ -243,7 +243,10 @@ fn try_symlink(original: &Path, link: &Path) -> bool {
 }
 
 /// Directory junctions (`mklink /J`) need no elevation or Developer Mode on Windows, unlike
-/// symlinks -- so these tests never soft-skip. Junctions only target DIRECTORIES.
+/// symlinks -- so these tests never soft-skip. Junctions only target DIRECTORIES. Windows-only
+/// (gate-fix): `mklink` is a `cmd.exe` built-in with no equivalent on other platforms this crate
+/// doesn't target anyway (Windows-only, spec.md Assumptions).
+#[cfg(windows)]
 fn try_junction(target_dir: &Path, link: &Path) -> bool {
     std::process::Command::new("cmd")
         .args(["/C", "mklink", "/J"])
@@ -328,6 +331,7 @@ async fn resolve_no_follow_rejects_a_link_cycle() {
 /// inside the worktree, pointing to a real directory OUTSIDE it, must never let a token reached
 /// through it escape containment.
 #[tokio::test]
+#[cfg(windows)]
 async fn junction_escaping_the_worktree_is_rejected() {
     let wt = TempWorktree::new();
     let outside_dir =
@@ -353,6 +357,7 @@ async fn junction_escaping_the_worktree_is_rejected() {
 /// inside it must still resolve, exercising the dual-root (`resolved_root`/`unresolved_root`)
 /// fallback this module's own doc comments describe.
 #[tokio::test]
+#[cfg(windows)]
 async fn junctioned_worktree_root_resolves_correctly() {
     let real_dir =
         std::env::temp_dir().join(format!("refract-r4-junction-real-{}", Uuid::new_v4()));
@@ -378,6 +383,7 @@ async fn junctioned_worktree_root_resolves_correctly() {
 /// directory junction mid-path -- the no-follow-unrooted walker must substitute the junction's
 /// own real target the same way it already does for the worktree-relative branch.
 #[tokio::test]
+#[cfg(windows)]
 async fn absolute_token_through_a_junction_resolves() {
     let real_dir =
         std::env::temp_dir().join(format!("refract-r4-junction-abs-real-{}", Uuid::new_v4()));

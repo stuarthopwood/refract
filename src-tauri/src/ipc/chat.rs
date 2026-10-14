@@ -12,6 +12,7 @@ use crate::omp::images::{
 };
 use crate::session::agent::{
     classify_slash_invocation, is_chat_answer, parse_slash_command, SlashInvocationClassification,
+    NATIVE_RESERVED_COMMANDS,
 };
 use crate::session::SessionManager;
 
@@ -26,21 +27,8 @@ pub fn register(d: &mut Dispatcher) {
     d.register("chat.commands", chat_commands);
 }
 
-/// Port of `src/shared/slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS`: Refract's own
-/// native/reserved command names (constitution I), refused locally even if OMP later recognizes
-/// one of them as a real command -- never forwarded as a literal prompt.
-const NATIVE_RESERVED_COMMANDS: &[&str] = &[
-    "new",
-    "resume",
-    "plan",
-    "fork",
-    "settings",
-    "pause",
-    "plan-review",
-    "btw",
-];
-
-/// Pure (gate-fix, testability): `name` is one of Refract's own native/reserved commands.
+/// Pure (gate-fix, testability): `name` is one of Refract's own native/reserved commands
+/// (`session::agent::commands`'s own `NATIVE_RESERVED_COMMANDS`, the one shared copy).
 fn is_native_reserved(name: &str) -> bool {
     NATIVE_RESERVED_COMMANDS.contains(&name)
 }

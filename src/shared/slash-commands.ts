@@ -137,7 +137,10 @@ function pruneSubcommands(command: SlashCommandDescriptor): SlashCommandDescript
  * listed or not -- is dropped entirely here, before the allow-list pruning below ever has a
  * chance to remove the builtin's own trace from the list a downstream shadow check might see. */
 export function filterSupportedCommands(commands: readonly SlashCommandDescriptor[]): SlashCommandDescriptor[] {
-  const builtinClaimed = new Set<string>();
+  // Gate-fix: also seeded with `NATIVE_RESERVED_COMMANDS` -- a file/skill command named `plan`,
+  // `resume`, etc. is refused unconditionally at `chat.send` regardless of source, so listing it
+  // in the menu at all would be misleading (it can never actually run).
+  const builtinClaimed = new Set<string>(Object.keys(NATIVE_RESERVED_COMMANDS));
   for (const command of commands) {
     if (!isBuiltinSource(command.source)) continue;
     builtinClaimed.add(command.name);

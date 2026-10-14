@@ -49,6 +49,22 @@ fn is_builtin_source(source: Option<&str>) -> bool {
     !matches!(source, Some("file") | Some("skill"))
 }
 
+/// Port of `src/shared/slash-commands.ts`'s own `NATIVE_RESERVED_COMMANDS`: Refract's own
+/// native/reserved command names (constitution I), refused locally even if OMP later recognizes
+/// one of them as a real command -- never forwarded as a literal prompt. `ipc::chat` imports
+/// this (rather than keeping its own copy) so the one list backs both the send-time refusal and
+/// the menu-filtering exclusion below.
+pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
+    "new",
+    "resume",
+    "plan",
+    "fork",
+    "settings",
+    "pause",
+    "plan-review",
+    "btw",
+];
+
 /// Refract's own native commands (`NATIVE_BUILT_COMMANDS`): `/new` has a working implementation
 /// (`start_new_conversation`); `/btw` is listed for menu parity with the Electron build but has
 /// no implementation here (side chat out of scope, see `mod.rs`'s own header) -- `ipc::chat`'s
@@ -71,8 +87,12 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
     // below drops a builtin that was never verified (e.g. `model`, `login`) -- the bug this
     // closes let a file/skill command assume the identity of exactly that class of builtin,
     // because a downstream anti-shadow check that only sees the ALREADY-FILTERED list has no
-    // trace left of a builtin this same function already dropped to compare against.
+    // trace left of a builtin this same function already dropped to compare against. Also
+    // seeded with `NATIVE_RESERVED_COMMANDS` (gate-fix): a file/skill command named `plan`,
+    // `resume`, etc. is refused unconditionally at `chat.send` regardless of source, so listing
+    // it in the menu at all would be misleading -- it can never actually run.
     let mut builtin_claimed: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    builtin_claimed.extend(NATIVE_RESERVED_COMMANDS.iter().copied());
     for command in raw {
         if !is_builtin_source(command.get("source").and_then(Value::as_str)) {
             continue;
@@ -86,10 +106,11 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
             }
         }
     }
-
     let mut out: Vec<Value> = NATIVE_BUILT_COMMANDS
         .iter()
-        .map(|(name, description)| json!({ "name": name, "description": description, "source": "native" }))
+        .map(|(name, description)| {
+            json!({ "name": name, "description": description, "source": "native" })
+        })
         .collect();
     for command in raw {
         let Some(name) = command.get("name").and_then(Value::as_str) else {
