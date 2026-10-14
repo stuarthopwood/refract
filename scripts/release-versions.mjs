@@ -174,9 +174,14 @@ export function bumpVersion(version, level) {
 // unexpected extra change, however small, is caught: a line-count change, more than one changed
 // line, or the one changed line not being a bare `version = "..."` line, all fail loudly rather
 // than letting an unrelated lock change ride along silently into the release commit.
+//
+// Both sides are normalised to LF first: cargo's own lockfile writer always writes LF-only,
+// regardless of what line ending the checked-out "before" copy had (CRLF, if `core.autocrlf`
+// converted it on checkout) -- without this, EVERY line would show as "changed" (the trailing
+// `\r` moves), a false positive that has nothing to do with dependency drift.
 export function assertCargoLockOnlyVersionChanged(before, after, label) {
-  const beforeLines = before.split('\n');
-  const afterLines = after.split('\n');
+  const beforeLines = before.replace(/\r\n/g, '\n').split('\n');
+  const afterLines = after.replace(/\r\n/g, '\n').split('\n');
   if (beforeLines.length !== afterLines.length) {
     versionFail(
       `${label}: cargo update changed the line count (${beforeLines.length} -> ${afterLines.length}); ` +
