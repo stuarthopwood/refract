@@ -348,6 +348,13 @@ export interface SessionReadout {
   // "0 finished" (SubagentsChip, ReadoutChips.tsx).
   subagentCount: { running: number; finished: number; exited: number; failed: number } | null; // null = turn has started none (chip hidden)
   todoProgress: { done: number; total: number } | null; // null = agent has no task list (chip hidden)
+  /** Issue #724 (Rust promotion lane R5, #788): the live checked-out branch of the Session's
+   * worktree, refreshed on attach, turn end, and tool-call end. `name` is the branch's short
+   * name, or (when `detached` is true) the checked-out commit's short sha; renderer formats
+   * "Detached at <name>" itself. Optional (epic #797 rule 5, "a feature that exists only in
+   * Rust is acceptable"): Electron's own frozen `readout.ts` never computed this, so it never
+   * appears on that build's `SessionReadout`. */
+  branch?: { name: string; detached: boolean } | null;
 }
 
 /** `get_state().contextUsage` (FINDINGS item 34): OMP reports `percent` itself, never derived here. */

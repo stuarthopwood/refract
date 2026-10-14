@@ -1,9 +1,10 @@
 // IPC handlers for `chat.*` (contracts/ipc.md "Chat", tasks.md T026). Ports `chat.send`
 // (including the native `/new` slash-command routing and the allowlisted-commands validation,
 // `src/main/ipc/chat.ts`), `.stop`, `.answer`, `.removeQueued`, `.commands`, and `.sendNow`
-// (issue #540, lane R4). `.predictWord`, `.predictWordFeedback`, `.setVisibleSubagent`, and
-// `.subagentSnapshot` are not ported (model roles/subagents/predict-word are out of this
-// slice's scope, `session::agent`'s own header).
+// (issue #540, lane R4). `.predictWord`/`.predictWordFeedback` are not ported (model roles/
+// predict-word are out of this slice's scope, `session::agent`'s own header).
+// `.setVisibleSubagent`/`.subagentSnapshot` are ported, but in the sibling `ipc/subagents.rs`
+// (lane R5, issue #788), not here.
 
 use serde_json::{json, Value};
 

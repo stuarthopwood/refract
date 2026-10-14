@@ -58,6 +58,11 @@ impl SessionAgent {
             state.transcript = TranscriptState::new();
         }
         self.emit_patch_reset().await;
+        // Lane R5 (issue #577, #712): clears the PREVIOUS Conversation's readout/subagent state
+        // before (possibly) refreshing it from the brand-new one's `get_state` below -- never
+        // left showing a stale reading if that request itself fails.
+        crate::session::readout::on_conversation_reset(self).await;
+        crate::session::subagents::on_conversation_reset(self).await;
         if let Ok(res) = proc
             .request(json!({ "type": "get_state" }), DEFAULT_REQUEST_TIMEOUT_MS)
             .await
@@ -156,6 +161,11 @@ impl SessionAgent {
                 TranscriptState::new()
             };
         }
+        // Lane R5 (issue #577, #712): this is a DIFFERENT Conversation's history, so the
+        // previous one's readout/subagent state never carries over (see `start_new_conversation`
+        // above for the identical reasoning).
+        crate::session::readout::on_conversation_reset(self).await;
+        crate::session::subagents::on_conversation_reset(self).await;
         self.sync_from_state(&data).await;
         self.emit_patch_reset().await;
         Ok(())
