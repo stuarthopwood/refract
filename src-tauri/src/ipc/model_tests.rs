@@ -9,7 +9,8 @@ use super::*;
 
 #[test]
 fn map_model_error_passes_code_and_message_through_unchanged() {
-    let err = crate::session::AgentError::new("not-idle", "Switch the model after the current turn.");
+    let err =
+        crate::session::AgentError::new("not-idle", "Switch the model after the current turn.");
     let ipc_err = map_model_error(err);
     assert_eq!(ipc_err.code, "not-idle");
     assert_eq!(ipc_err.message, "Switch the model after the current turn.");

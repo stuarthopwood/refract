@@ -394,7 +394,8 @@ pub fn model_roles_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let propagation = state.session_manager.apply_role_change(&role).await;
         out.insert(
             "propagation".to_string(),
-            serde_json::to_value(propagation).expect("RoleChangeSummary is always JSON-serialisable"),
+            serde_json::to_value(propagation)
+                .expect("RoleChangeSummary is always JSON-serialisable"),
         );
         Ok(Value::Object(out))
     })

@@ -516,7 +516,11 @@ impl SessionAgent {
     /// `chat.rs`'s own `send()` uses, exposed here so a lane never needs a `pub(super)` widening
     /// of `agent::chat`'s private internals for a one-off RPC request of its own.
     #[allow(dead_code)]
-    pub(super) async fn request_rpc(&self, cmd: Value, timeout_ms: u64) -> Result<Value, AgentError> {
+    pub(super) async fn request_rpc(
+        &self,
+        cmd: Value,
+        timeout_ms: u64,
+    ) -> Result<Value, AgentError> {
         let proc = {
             let state = self.state.lock().await;
             state.process.clone().ok_or_else(|| {

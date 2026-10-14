@@ -13,7 +13,11 @@ use super::*;
 
 #[test]
 fn build_role_list_appends_plan_when_absent() {
-    let cycle_order = vec!["smol".to_string(), "default".to_string(), "slow".to_string()];
+    let cycle_order = vec![
+        "smol".to_string(),
+        "default".to_string(),
+        "slow".to_string(),
+    ];
     assert_eq!(
         build_role_list(&cycle_order),
         vec![
@@ -56,7 +60,9 @@ fn is_switch_argument_token_accepts_a_role_alias() {
 
 #[test]
 fn is_switch_argument_token_accepts_a_thinking_suffix() {
-    assert!(is_switch_argument_token("github-copilot/claude-opus-5.5:high"));
+    assert!(is_switch_argument_token(
+        "github-copilot/claude-opus-5.5:high"
+    ));
 }
 
 #[test]
@@ -93,8 +99,12 @@ fn friendly_model_text_prefers_the_display_name() {
 
 #[test]
 fn friendly_model_text_falls_back_to_provider_slash_id() {
-    let data = serde_json::json!({ "model": { "provider": "github-copilot", "id": "claude-sonnet-5.5" } });
-    assert_eq!(friendly_model_text(&data), "github-copilot/claude-sonnet-5.5");
+    let data =
+        serde_json::json!({ "model": { "provider": "github-copilot", "id": "claude-sonnet-5.5" } });
+    assert_eq!(
+        friendly_model_text(&data),
+        "github-copilot/claude-sonnet-5.5"
+    );
 }
 
 #[test]
@@ -105,7 +115,10 @@ fn friendly_model_text_falls_back_to_a_bare_id() {
 
 #[test]
 fn friendly_model_text_has_a_safe_fallback_when_model_is_missing() {
-    assert_eq!(friendly_model_text(&serde_json::json!({})), "the selected model");
+    assert_eq!(
+        friendly_model_text(&serde_json::json!({})),
+        "the selected model"
+    );
 }
 
 // ---------------------------------------------------------------------------

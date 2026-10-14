@@ -89,28 +89,6 @@ export interface Session {
   stoppedOnRequestConversation?: string | null;
   stoppedOnRequestAtSize?: number | null;
 }
-
-/** A resolved OMP model (`get_state().model`, FINDINGS item 30): `provider`/`id` always
- * present, `name` the catalog's friendly display name when OMP reports one (#741: the
- * provider-free label comes from this field, falling back to `provider/id` when absent). Lane
- * RM's own `model.setModel`/`cycleModel`/`applyRole` all return this same shape. */
-export interface Model {
-  provider: string;
-  id: string;
-  name?: string;
-}
-
-/** Lane RM (#740): `modelRoles.set`'s own propagation summary after sweeping every live Session
- * for one that was on the changed role ("Moved N Sessions..., left M pinned, K waiting for
- * their turn to finish"). Field names match Rust's `#[serde(rename_all = "camelCase")]`
- * `RoleChangeSummary` exactly. */
-export interface RoleChangeSummary {
-  moved: number;
-  queued: number;
-  skippedPinned: number;
-  failed: number;
-}
-
 /** The app-wide setting for how much the agent may do without asking. Reads are never prompted. */
 export type ApprovalMode = 'ask' | 'edit-freely' | 'auto';
 

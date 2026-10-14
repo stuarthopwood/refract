@@ -152,7 +152,9 @@ pub fn is_switch_argument_token(value: &str) -> bool {
 fn friendly_model_text(get_state_data: &Value) -> String {
     let model = get_state_data.get("model");
     let name = model.and_then(|m| m.get("name")).and_then(Value::as_str);
-    let provider = model.and_then(|m| m.get("provider")).and_then(Value::as_str);
+    let provider = model
+        .and_then(|m| m.get("provider"))
+        .and_then(Value::as_str);
     let id = model.and_then(|m| m.get("id")).and_then(Value::as_str);
     match (name, provider, id) {
         (Some(name), ..) => name.to_string(),
@@ -363,7 +365,10 @@ pub async fn apply_role(
     if !known_roles.iter().any(|r| r == role) {
         return Err(AgentError::new(
             "invalid-argument",
-            format!("Unknown role: {role}. Valid roles: {}", known_roles.join(", ")),
+            format!(
+                "Unknown role: {role}. Valid roles: {}",
+                known_roles.join(", ")
+            ),
         ));
     }
     if is_working(agent).await {
