@@ -145,20 +145,14 @@ pub(super) struct State {
     /// either), so the table cannot tell a late, stale tick from this same attempt apart from a
     /// brand new one; this flag can.
     ready_wait_active: bool,
-    /// Set by `watch_for_cancel`'s own cancel branch (round 4 gate-fix), read-and-reset by
-    /// `agent::launch`'s own `launch()` immediately after `wait_ready` resolves: a cancel that
-    /// arrives mid-ready-wait kills the real process (`proc.stop()`), and that SAME kill is what
-    /// makes `wait_ready` itself return an error moments later -- `wait_ready`'s own error has
-    /// no way to tell "I was killed because of a cancel `end_cancelled_attempt` already recorded
-    /// cleanly" apart from "the process genuinely crashed/timed out waiting to become ready".
-    /// Without this, `launch()`'s own `wait_result` error branch called `record_start_failure`
-    /// a second time with the raw, generic exit error, clobbering the clean "start cancelled"
-    /// status/notice `end_cancelled_attempt` had just written (found live, round 4 CDP
-    /// live-check: a Cancel click ended on an "OmpProcess: process exited before ready" failure
-    /// banner with Retry/Start-new actions instead of a clean cancelled stop). Reset at the top
-    /// of every fresh `acquire_slot` attempt so a stale `true` from an earlier attempt that
-    /// never reached `wait_ready` at all (cancelled while still queued/memory-deferring) can
-    /// never suppress a LATER, unrelated attempt's own genuine failure notice.
+    /// Set by `watch_for_cancel`'s own cancel branch (round 4), read-and-reset by
+    /// `agent::launch`'s own `launch()` right after `wait_ready` errors (the same `proc.stop()`
+    /// kill that causes that error): lets `launch()` tell "a cancel already recorded a clean
+    /// status for this exact exit" apart from a genuine ready-wait failure, instead of
+    /// re-recording a wrong, raw failure on top of the clean one (found live, round 4 CDP
+    /// check). Reset at the top of every fresh `acquire_slot` attempt so a stale `true` from an
+    /// earlier attempt that never reached `wait_ready` can never suppress a LATER attempt's own
+    /// genuine failure notice. See `take_cancel_already_recorded`'s own doc comment.
     cancel_already_recorded: bool,
 }
 
@@ -462,13 +456,10 @@ pub(super) async fn watch_for_cancel(agent: &SessionAgent, proc: Arc<OmpProcess>
         tokio::spawn(async move {
             tokio::select! {
                 _ = cancel.notified() => {
-                    // Gate-fix (round 4, found live): set BEFORE `proc.stop()` -- that call is
-                    // what makes `wait_ready` (racing concurrently in `agent::launch`'s own
-                    // `launch()`) eventually observe the process exiting and return its own
-                    // error; setting this flag strictly before triggering that kill guarantees
-                    // `launch()` always sees it set by the time it checks, regardless of how
-                    // fast the kill propagates. See `State::cancel_already_recorded`'s own doc
-                    // comment for the race this closes.
+                    // Gate-fix (round 4, found live): set BEFORE `proc.stop()` -- that kill is
+                    // what makes `wait_ready` (racing in `launch()`) observe the exit and
+                    // error, so setting this strictly before it guarantees `launch()` always
+                    // sees it set regardless of timing. See `State::cancel_already_recorded`.
                     agent
                         .with_start_queue_state(|s| s.cancel_already_recorded = true)
                         .await;
@@ -484,11 +475,9 @@ pub(super) async fn watch_for_cancel(agent: &SessionAgent, proc: Arc<OmpProcess>
     }
 }
 
-/// Read-and-reset: `agent::launch`'s own `launch()` calls this exactly once, immediately after
-/// `wait_ready` resolves with an error, to tell "this failure is the direct, already-handled
-/// result of a cancel `end_cancelled_attempt` already recorded cleanly" apart from "a genuine
-/// ready-wait failure (ceiling, real crash) this lane has not reported yet". Resets to `false`
-/// so this only ever suppresses the ONE failure report it caused, never a later unrelated one.
+/// Read-and-reset: `agent::launch`'s own `launch()` calls this once, right after `wait_ready`
+/// errors, to tell a cancel-caused exit (already recorded cleanly) apart from a genuine
+/// ready-wait failure -- resets so this only ever suppresses the ONE report it caused.
 pub(super) async fn take_cancel_already_recorded(agent: &SessionAgent) -> bool {
     agent
         .with_start_queue_state(|s| std::mem::take(&mut s.cancel_already_recorded))
@@ -497,17 +486,13 @@ pub(super) async fn take_cancel_already_recorded(agent: &SessionAgent) -> bool {
 
 impl SessionAgent {
     /// `sessions.keepWaitingForStart` (issue #512's "Keep waiting" button): dismisses the prompt
-    /// without affecting the ceiling. Gate-fix (code review HIGH, round 2): no-ops outside
-    /// `Prompt` -- a stale click racing a resolve (the stage has already moved past `Prompt` by
-    /// the time this runs) must never throw/assert, matching TS's own doc comment on
-    /// `ReadyWaitController.keepWaiting`. Gate-fix (code review MEDIUM, round 6): the read
-    /// ("is it `Prompt`?") and the write used to be two separate lock acquisitions (via
-    /// `set_stage`, which `debug_assert!`s a rejected transition as a real bug) -- a
-    /// `clear_stage`/cancel landing in the gap between them moved the stage to `None`/
-    /// `Cancelled`, both illegal targets for `Extended`, panicking the frame-listener task in a
-    /// debug build on a routine race, not a bug. Now one atomic closure: the precondition check,
-    /// `validate_transition`, and the write all happen under the SAME lock acquisition, so a
-    /// race can only ever make this a silent no-op, never trip the assert.
+    /// without affecting the ceiling. No-ops outside `Prompt` (a stale click racing a resolve
+    /// must never throw/assert, matching TS's own `ReadyWaitController.keepWaiting`). Gate-fix
+    /// (code review MEDIUM, round 6): the read and the write used to be two separate lock
+    /// acquisitions (via `set_stage`, which `debug_assert!`s a rejected transition), so a
+    /// `clear_stage`/cancel landing in the gap panicked the frame-listener task on a routine
+    /// race. Now one atomic closure: check, `validate_transition`, and write all happen under
+    /// the SAME lock, so a race can only ever be a silent no-op.
     pub(crate) async fn keep_waiting_for_start(&self) {
         let applied = self
             .with_start_queue_state(|s| {
@@ -576,19 +561,15 @@ pub(super) async fn on_start_progress(
 ) {
     // Gate-fix (code review HIGH, round 2): ignores every tick once the ready-wait phase this
     // attempt was in has already ended (`ready_wait_active` false) -- a STALE tick from the SAME
-    // attempt's own ticker, queued before `wait_ready()` returned but delivered after
-    // `clear_stage_on_ready`/`StageGuard` already cleared the stage, would otherwise be
-    // indistinguishable from a genuinely new attempt (`None -> Waiting` is legal by the
-    // transition table alone, same as a genuinely fresh start beginning there). See
+    // attempt's own ticker, delivered AFTER `clear_stage_on_ready`/`StageGuard` already cleared
+    // the stage, would otherwise be indistinguishable from a genuinely new attempt. See
     // `State::ready_wait_active`'s own doc comment.
     //
-    // Gate-fix (code review MEDIUM, round 6): the `(already_extended, active)` read and the
-    // later `set_stage` write used to be two separate lock acquisitions -- a `clear_stage`/
-    // cancel landing in the gap moved the stage to `None`/`Cancelled`, and `set_stage`'s own
-    // `debug_assert!` then panicked the frame-listener task on a routine race, not a bug. Now
-    // one atomic closure: the `ready_wait_active` check, the stage decision, `validate_
-    // transition`, and the write all happen under the SAME lock acquisition, so a race can only
-    // ever make this a silent no-op, never trip the assert.
+    // Gate-fix (code review MEDIUM, round 6): the read and the later `set_stage` write used to
+    // be two separate lock acquisitions -- a `clear_stage`/cancel landing in the gap panicked
+    // the frame-listener task on a routine race (`set_stage`'s own `debug_assert!`). Now one
+    // atomic closure: the `ready_wait_active` check, stage decision, `validate_transition`, and
+    // write all happen under the SAME lock, so a race can only ever be a silent no-op.
     let applied = agent
         .with_start_queue_state(|s| {
             if !s.ready_wait_active {

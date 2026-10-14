@@ -116,6 +116,23 @@ pub(crate) async fn remove_process_record(pid: u32) {
     remove_process_record_with(&file, pid).await;
 }
 
+/// Removes every record for `session_id` regardless of pid (gate-fix, security MEDIUM round 6:
+/// `sessions.delete`/`.archive` call this right after their own `shutdown()`). Three cases left
+/// a stale record behind before this existed: an exit arriving during `wait_ready` (before
+/// `state.process` was ever set, so `handle_exit`'s own pid-keyed `remove_process_record` never
+/// ran for it), a cancelled start, or the stop-then-clear race in `launch()`'s own
+/// `fail_if_process_changed`. None of these are a security issue by themselves (the reaper's own
+/// identity check -- creation time AND full image path, both re-verified live -- fails closed
+/// against a stale record, and `init_and_reap` empties the file at every startup regardless),
+/// but a session-keyed cleanup closes the gap outright rather than leaving it to the reaper's
+/// own defence-in-depth alone.
+pub(crate) async fn remove_process_records_for_session(session_id: &str) {
+    let Some(file) = require_file_path() else {
+        return;
+    };
+    remove_process_records_for_session_with(&file, session_id).await;
+}
+
 async fn record_process_with(file: &Path, pid: u32, session_id: &str, query: QueryFn) {
     let (start_time, image_path) = query(pid).unwrap_or_else(|| (0, default_image_path()));
     let _guard = QUEUE.lock().await;
@@ -154,6 +171,20 @@ async fn remove_process_record_with(file: &Path, pid: u32) {
     if records.len() != before {
         if let Err(err) = write_json_file(file, &records).await {
             log::error!("pid_records: failed to remove pid {pid}: {err}");
+        }
+    }
+}
+
+async fn remove_process_records_for_session_with(file: &Path, session_id: &str) {
+    let _guard = QUEUE.lock().await;
+    let mut records: Vec<ProcessRecord> = read_json_file(file, make_default)
+        .await
+        .unwrap_or_else(|_| make_default());
+    let before = records.len();
+    records.retain(|r| r.session_id != session_id);
+    if records.len() != before {
+        if let Err(err) = write_json_file(file, &records).await {
+            log::error!("pid_records: failed to remove records for session {session_id}: {err}");
         }
     }
 }
@@ -277,13 +308,175 @@ fn terminate_if_matching(pid: u32, recorded_start_time: u64, recorded_image_path
             return false;
         }
 
-        TerminateProcess(guard.0, 1).is_ok()
+        // Security gate-fix (MEDIUM, round 6): the Job Object (`job_object.rs`,
+        // `KILL_ON_JOB_CLOSE`) is the primary defence against an orphaned `omp` root's own
+        // broker/tool children surviving it, but only while `join_kill_on_close` succeeded for
+        // this exact process tree -- this reaper is the fallback for when it did not. Walking
+        // and killing descendants here closes that same gap `OmpProcess::stop`'s own live
+        // `taskkill /T` already covers for a NORMAL stop.
+        let root_killed = TerminateProcess(guard.0, 1).is_ok();
+        if root_killed {
+            kill_descendant_tree(pid, ticks);
+        }
+        root_killed
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 fn terminate_if_matching(_pid: u32, _recorded_start_time: u64, _recorded_image_path: &str) -> bool {
     false
+}
+
+/// Walks and terminates every live descendant of a just-verified `omp` root (`pid`,
+/// `root_creation_ticks`), called only after that root itself has genuinely matched and been
+/// terminated. Port of this fix's own requirement (security gate-fix MEDIUM, round 6): the
+/// reaper used to terminate the verified root only, leaving its broker/tool children to survive
+/// whenever the Job Object itself did not cover them. One `CreateToolhelp32Snapshot` call reads
+/// the whole system process table as `(pid, parent_pid)` pairs ONLY -- `szExeFile` (the
+/// snapshot's own cached name) is never trusted for identity, matching this module's own "never
+/// match by name" rule; every candidate descendant is instead re-verified live, on its own
+/// freshly opened handle, exactly like the root was, inside `walk_descendants`'s own `verify`
+/// closure.
+#[cfg(target_os = "windows")]
+fn kill_descendant_tree(root_pid: u32, root_creation_ticks: u64) -> usize {
+    use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
+        PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    struct HandleGuard(HANDLE);
+    impl Drop for HandleGuard {
+        fn drop(&mut self) {
+            // Safety: see `terminate_if_matching`'s own identical guard.
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+
+    // Safety: a single documented API call; the returned handle is closed via `HandleGuard`
+    // right after the one pass over it below.
+    let Ok(snapshot) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+        return 0;
+    };
+    let snapshot_guard = HandleGuard(snapshot);
+    let mut entries: Vec<(u32, u32)> = Vec::new();
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    // Safety: `entry` is sized and `dwSize`-stamped exactly as the API requires, a local on
+    // this function's own stack that outlives both calls.
+    unsafe {
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                entries.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                if Process32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    drop(snapshot_guard);
+
+    walk_descendants(
+        &entries,
+        root_pid,
+        root_creation_ticks,
+        |pid, parent_creation_ticks| {
+            // Safety: see `terminate_if_matching`'s own identical comment -- one handle, used for
+            // both the identity re-check and the terminate, closed exactly once.
+            let Ok(handle) = (unsafe {
+                OpenProcess(
+                    PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION,
+                    false,
+                    pid,
+                )
+            }) else {
+                return None;
+            };
+            let guard = HandleGuard(handle);
+            let mut creation = FILETIME::default();
+            let mut exit = FILETIME::default();
+            let mut kernel = FILETIME::default();
+            let mut user = FILETIME::default();
+            // Safety: see `terminate_if_matching`'s own identical call.
+            if unsafe { GetProcessTimes(guard.0, &mut creation, &mut exit, &mut kernel, &mut user) }
+                .is_err()
+            {
+                return None;
+            }
+            let ticks = ((creation.dwHighDateTime as u64) << 32) | creation.dwLowDateTime as u64;
+            if ticks < parent_creation_ticks {
+                // Pid-reuse defence: a genuine child is created at or after its own parent -- an
+                // unrelated, OLDER process now holding this pid is never touched.
+                return None;
+            }
+            let mut buf = [0u16; 512];
+            let mut len = buf.len() as u32;
+            // Safety: see `terminate_if_matching`'s own identical call.
+            if unsafe {
+                QueryFullProcessImageNameW(
+                    guard.0,
+                    PROCESS_NAME_WIN32,
+                    windows::core::PWSTR(buf.as_mut_ptr()),
+                    &mut len,
+                )
+            }
+            .is_err()
+            {
+                return None;
+            }
+            // Safety: `TerminateProcess` on the SAME handle just verified above.
+            let terminated = unsafe { TerminateProcess(guard.0, 1) }.is_ok();
+            Some((ticks, terminated))
+        },
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn kill_descendant_tree(_root_pid: u32, _root_creation_ticks: u64) -> usize {
+    0
+}
+
+/// Pure BFS over `entries` (every `(pid, parent_pid)` pair in the system -- the shape
+/// `CreateToolhelp32Snapshot` enumerates), walking forward from `root_pid`/`root_creation_ticks`.
+/// For each CANDIDATE child found by parent-pid match, `verify(pid, parent_creation_ticks)` runs
+/// the real live identity/pid-reuse re-check and returns `Some((child_creation_ticks,
+/// was_terminated))` on a genuine, kept descendant (walked for ITS OWN children too, using its
+/// own creation time as the new parent reference), or `None` to skip that pid and its entire
+/// subtree. `killed` counts only `was_terminated == true` outcomes. Pulled out as its own pure
+/// function (same reason `identity_matches` was): the BFS/visited/cycle-guard shape is
+/// unit-testable against a synthetic process table, without a real process tree or Win32
+/// handles.
+fn walk_descendants(
+    entries: &[(u32, u32)],
+    root_pid: u32,
+    root_creation_ticks: u64,
+    mut verify: impl FnMut(u32, u64) -> Option<(u64, bool)>,
+) -> usize {
+    let mut killed = 0usize;
+    let mut frontier: Vec<(u32, u64)> = vec![(root_pid, root_creation_ticks)];
+    let mut visited: std::collections::HashSet<u32> = std::collections::HashSet::from([root_pid]);
+    while let Some((parent_pid, parent_creation_ticks)) = frontier.pop() {
+        for &(pid, ppid) in entries {
+            if ppid != parent_pid || pid == 0 || !visited.insert(pid) {
+                continue;
+            }
+            if let Some((ticks, terminated)) = verify(pid, parent_creation_ticks) {
+                if terminated {
+                    killed += 1;
+                }
+                frontier.push((pid, ticks));
+            }
+        }
+    }
+    killed
 }
 
 #[cfg(target_os = "windows")]
