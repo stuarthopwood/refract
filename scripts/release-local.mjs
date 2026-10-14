@@ -192,13 +192,26 @@ function signAsset(signtool, assetPath) {
 // `-Command` script body, not a path: `assetPath` is this script's own build output, never
 // caller/network input, so a single-quote-escaped interpolation is sufficient here (same
 // convention as `src-tauri/src/updates/install_on_quit.rs`'s `escape_single_quoted`).
+//
+// Restricted `PSModulePath` (observed on Stuart's own workstation, 2026-10-14): when a user
+// profile's `PSModulePath` also lists a PowerShell 7 install's `Modules` directory alongside
+// Windows PowerShell 5.1's own, `powershell.exe` (5.1) fails to autoload
+// `Microsoft.PowerShell.Security` (duplicate `ObjectSecurity` extended type-data between the two
+// copies) -- `Get-AuthenticodeSignature` then errors "command was found... but the module could
+// not be loaded" instead of ever reporting a signature status. Restricting `PSModulePath` to
+// only the two built-in Windows PowerShell module directories for this one invocation sidesteps
+// the collision without touching the caller's own environment or profile.
 function verifySignature(assetPath) {
   const escaped = assetPath.replace(/'/g, "''");
   const script =
     `$sig = Get-AuthenticodeSignature -FilePath '${escaped}'; ` +
     `if ($sig.Status -ne 'Valid') { Write-Error ("status=" + $sig.Status + " statusMessage=" + $sig.StatusMessage); exit 1 }; ` +
     `Write-Host ("Valid: " + $sig.SignerCertificate.Subject + " (thumbprint " + $sig.SignerCertificate.Thumbprint + ")")`;
-  const result = run('powershell', ['-NoProfile', '-Command', script]);
+  const env = {
+    ...process.env,
+    PSModulePath: 'C:\\Program Files\\WindowsPowerShell\\Modules;C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\Modules',
+  };
+  const result = run('powershell', ['-NoProfile', '-Command', script], { env });
   if (result.status !== 0) {
     fail(`Get-AuthenticodeSignature did not report Valid for ${assetPath}:\n${result.stdout}${result.stderr}`);
   }
