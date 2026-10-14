@@ -1,0 +1,28 @@
+[
+  {
+    "kind": "tool",
+    "id": "tool-exec:call-1",
+    "toolCallId": "call-1",
+    "tool": "write",
+    "target": "note.txt",
+    "status": "done",
+    "startedAt": 0,
+    "args": {
+      "path": "note.txt",
+      "content": "hi"
+    },
+    "write": {
+      "path": "note.txt",
+      "content": "hi"
+    },
+    "durationMs": 0,
+    "output": "Successfully wrote 2 bytes to note.txt",
+    "details": null
+  },
+  {
+    "kind": "assistant-text",
+    "id": "msg-a1:0",
+    "text": "xyzzy9",
+    "streaming": false
+  }
+]
