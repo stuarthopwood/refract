@@ -227,18 +227,20 @@ pub fn run() {
     // turn needs `AppState`/`SessionManager` already built from `registry`/`settings`) -- a
     // second, about-to-be-rejected launch still pays for this read. Accepted: `RegistryStore::
     // open`/`SettingsStore::open` only ever READ (`atomic_json::read_json_file`); neither one
-    // writes anything to disk until an explicit mutation calls its own `persist()`, so two
-    // instances racing this same read is never a corruption risk, only a redundant one.
+    // writes anything to disk until an explicit mutation calls its own `persist()`.
     // `store::import::import_once` immediately below DOES write (the one-time Electron import,
-    // issue #796 acceptance item 6, lane R13a) -- it takes its OWN exclusive lock file for the
-    // duration of the attempt (`store::import::ImportLock`), closing the race this comment used
-    // to wave off as merely redundant: a second launch that loses the lock gets
-    // `ImportOutcome::AlreadyRunning` and makes no write of its own this launch, so the two
-    // reads immediately below never race a concurrent import write.
-    let (registry, settings, update_state) = tauri::async_runtime::block_on(async {
-        store::import::log_outcome(
-            store::import::import_once(&data_dir, &electron_source_dir()).await,
-        );
+    // issue #796 acceptance item 6, lane R13a). Its own `ImportLock`, if this launch wins it,
+    // is kept alive in `_import_lock` below for the REST OF THIS PROCESS'S LIFETIME, never
+    // dropped early: a launch that merely reads a pre-merge registry snapshot here and later
+    // calls an ordinary `persist()` could otherwise silently overwrite a completed import once
+    // it lands, however much later that `persist()` happens to fire (`store::import`'s own
+    // module doc comment has the full reasoning). A launch that finds the lock held by a PID
+    // still running does not wait -- it skips its own import entirely and opens the stores
+    // exactly as if this feature did not exist for that launch.
+    let (registry, settings, update_state, _import_lock) = tauri::async_runtime::block_on(async {
+        let (import_outcome, import_lock) =
+            store::import::import_once(&data_dir, &electron_source_dir()).await;
+        store::import::log_outcome(&import_outcome);
 
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
@@ -250,7 +252,7 @@ pub fn run() {
         // `UpdateState::default()` on any read/parse problem, same as `registry`/`settings`'s
         // own corrected-default-in-memory stance) -- no `unwrap_or_else`/`panic!` needed here.
         let update_state = updates::state::UpdateStateStore::open(&data_dir).await;
-        (registry, settings, update_state)
+        (registry, settings, update_state, import_lock)
     });
 
     // FR-010/FR-011: the theme as `SettingsStore::open`'s own FR-013 lazy-correction already

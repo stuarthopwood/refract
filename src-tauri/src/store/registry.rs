@@ -448,14 +448,14 @@ impl RegistryStore {
 /// Case- and drive-letter-insensitive path comparison for Windows (T011 rule): a lexical
 /// resolve-and-normalise (never touches the filesystem, so it works for a worktree path that may
 /// not exist yet) followed by a lowercase compare.
-fn same_path(a: &str, b: &str) -> bool {
+pub(crate) fn same_path(a: &str, b: &str) -> bool {
     resolve_path_lexical(a).to_lowercase() == resolve_path_lexical(b).to_lowercase()
 }
 
 /// The Rust equivalent of Node's `path.resolve(p)`: joins a relative path onto the current
 /// working directory, then lexically collapses `.`/`..` components without requiring the path to
 /// exist on disk (unlike `Path::canonicalize`, which would fail for a worktree not yet created).
-fn resolve_path_lexical(p: &str) -> String {
+pub(crate) fn resolve_path_lexical(p: &str) -> String {
     use std::path::Component;
 
     let path = Path::new(p);

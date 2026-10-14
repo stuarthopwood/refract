@@ -1,51 +1,55 @@
 // One-time import of the Electron build's `registry.json`/`settings.json`/`profileCache.json`
-// into this build's own data directory (issue #796 acceptance item 6, pulled forward as lane
-// R13a so Stuart can daily-drive the Rust build before Electron is deleted). Runs once, at
-// startup, before `RegistryStore::open`/`SettingsStore::open` read `data_dir`
-// (`lib.rs::run()`'s call site).
+// into this build's own data directory (issue #796 acceptance item 6, lane R13a, pulled forward
+// so Stuart can daily-drive the Rust build before Electron is deleted). Runs once, at startup,
+// before `RegistryStore::open`/`SettingsStore::open` read `data_dir` (`lib.rs::run()`).
 //
-// Read-only on `source_dir` (Electron's own pinned `userData`, `src/main/index.ts`): every read
-// uses a plain, size-capped `tokio::fs::read`/`serde_json::from_slice`, never
-// `atomic_json::read_json_file` (which would quarantine -- RENAME -- a source file that fails
-// to parse; a write to the Electron folder, which this import must never perform). A source
-// parse failure is an unexpected error: logged, the attempt aborted, no marker, so a later
-// launch retries.
+// Read-only on `source_dir` (Electron's pinned `userData`): every read uses a plain, capped
+// `tokio::fs::read`/`serde_json::from_slice`, never `atomic_json::read_json_file` (which would
+// quarantine -- RENAME -- a bad source file; a write to the Electron folder, never allowed). A
+// source parse failure aborts with no marker, so a later launch retries.
 //
 // Decisions (R13a, recorded in the PR body too):
-// - Registry: MERGED, never overwritten, respecting the registry's own uniqueness rules
-//   (`registry.rs`'s own `add_repository`/`add_session`): a same-PATH Electron repository maps
-//   onto an existing Rust repository instead of duplicating it (its Sessions' `repositoryId` is
-//   rewritten to match); a Session with a duplicate `id`, a duplicate `worktreePath`, or a
-//   duplicate `(repositoryId, branch)` pair is skipped and logged, never silently dropped.
-// - Settings/profile cache: imported only when this build's own copy is absent (byte-for-byte,
-//   no (de)serialisation round-trip, `create_new`/`hard_link` semantics so a target that
-//   appeared meanwhile is never clobbered), otherwise the Rust copy is kept untouched.
+// - Registry MERGED, never overwritten, respecting the registry's own uniqueness rules
+//   (`registry.rs`'s `add_repository`/`add_session`, `same_path` reused from there): a
+//   same-PATH repository maps onto an existing one (Sessions' `repositoryId` rewritten to
+//   match); a duplicate `id`/`worktreePath`/`(repositoryId, branch)` Session is skipped and
+//   logged. The SAME checks run on a crash-recovery replay (`apply_pending`), not just a fresh
+//   merge, via one shared `SessionUniqueness` tracker.
+// - Settings/profile cache imported only when this build's own copy is absent (byte-for-byte,
+//   `create_new`/`hard_link` semantics so a target that appears meanwhile is never clobbered).
 // - All-or-nothing, no resurrection: a `PendingImportMarker` freezes WHICH ids are about to be
-//   added, written BEFORE any data file changes. Settings and profile cache commit first, the
-//   registry last, immediately followed by the final marker -- the narrowest possible window
-//   between "the registry write landed" and "marked permanently done". A retry (pending marker
-//   present, final marker absent) adds only ids from that FROZEN list still absent -- never a
-//   fresh diff, which could resurrect an id the user deliberately removed in that window. Once
-//   the final marker exists, nothing below ever runs again.
-// - `ImportLock` (`create_new`, atomic to acquire) scopes the whole attempt: the Tauri
-//   single-instance plugin's own rejection only exists once the `Builder` is assembled, AFTER
-//   this import runs; the losing launch gets `AlreadyRunning`, no write of its own. A lock far
-//   older than this import ever takes is a crashed attempt, not a live race, and is stolen
-//   rather than blocking every future launch forever.
+//   added, written BEFORE any data change. Settings/profile-cache commit first, the registry
+//   last; the final marker can itself fail to write -- that returns `Failed` and keeps the
+//   pending marker. A retry first checks `pending_already_landed`: since one `write_json_file`
+//   call is all-or-nothing, ANY frozen id already present means the earlier registry write
+//   landed in full (only the final marker failed) -- nothing is re-added then (an absent id was
+//   deliberately deleted since, possibly long after that attempt; re-adding it would resurrect
+//   it), only the final marker is (re)written. Only when NONE have landed does the retry
+//   perform the original decision, re-validated against current uniqueness. Once the final
+//   marker exists, nothing below ever runs again.
+// - `ImportLock` (own file, `import_lock.rs`), once won, is held for the REST OF THIS
+//   PROCESS'S LIFETIME, not just the import's own duration -- closing a deeper race where a
+//   launch that merely READ a pre-merge registry snapshot could later `persist()` over a
+//   completed import. A launch finding the lock held by a still-running PID skips its own
+//   import (`AlreadyRunning`) and opens the stores as-is.
+// - The final marker is checked BEFORE touching the lock (one stat, common path), then AGAIN
+//   right after winning it (a stolen lock's former owner may already be done).
+// - Same-folder guard: canonicalizes when both dirs exist, else falls back to `same_path`.
+
+mod import_lock;
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use super::atomic_json::{read_json_file, write_json_file};
-use super::registry::Registry;
+use super::registry::{same_path, Registry};
+use import_lock::ImportLock;
 
 const FINAL_MARKER_FILE: &str = "electron-import.json";
 const PENDING_MARKER_FILE: &str = "electron-import-pending.json";
-const LOCK_FILE: &str = "electron-import.lock";
-const LOCK_STALE_AFTER_MILLIS: u128 = 30_000;
 const MAX_IMPORT_FILE_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,8 +82,8 @@ struct PendingImportMarker {
 pub enum ImportOutcome {
     /// A marker from a previous launch already recorded a decision; nothing checked or copied.
     AlreadyDecided,
-    /// Another launch currently holds the import lock; this launch proceeds straight to
-    /// opening the stores as they are.
+    /// The import lock is held by another PID that is still running; this launch does not
+    /// attempt its own import and proceeds straight to opening the stores.
     AlreadyRunning,
     /// The Electron source directory has no `registry.json`; marked done (nothing to import,
     /// now or on a future launch -- tied to this build's first run, not to Electron's data).
@@ -99,12 +103,12 @@ pub enum ImportOutcome {
 
 /// Logs `outcome` at the right level; kept separate from the `lib.rs` call site to stay under
 /// the 600-line file-size cap there.
-pub fn log_outcome(outcome: ImportOutcome) {
+pub fn log_outcome(outcome: &ImportOutcome) {
     match outcome {
         ImportOutcome::AlreadyDecided => {}
         ImportOutcome::AlreadyRunning => {
             log::info!(
-                "refract-tauri: data import: another launch is already importing, skipping this launch's attempt"
+                "refract-tauri: data import: another running launch owns the import lock, skipping this launch's attempt"
             );
         }
         ImportOutcome::NoElectronRegistry => {
@@ -130,25 +134,41 @@ pub fn log_outcome(outcome: ImportOutcome) {
     }
 }
 
-pub async fn import_once(data_dir: &Path, source_dir: &Path) -> ImportOutcome {
+/// Returns the outcome and, if this launch won the import lock, the guard to keep alive for the
+/// rest of the process (`ImportLock` decision above); `None` for every other outcome.
+pub async fn import_once(
+    data_dir: &Path,
+    source_dir: &Path,
+) -> (ImportOutcome, Option<ImportLock>) {
     if same_folder(data_dir, source_dir) {
-        return ImportOutcome::Failed(format!(
-            "the data directory and the Electron source directory resolve to the same folder ({data_dir:?}); refusing to import"
-        ));
+        return (
+            ImportOutcome::Failed(format!(
+                "the data directory and the Electron source directory resolve to the same folder ({data_dir:?}); refusing to import"
+            )),
+            None,
+        );
     }
-
-    let _lock = match ImportLock::acquire(data_dir).await {
-        Ok(lock) => lock,
-        Err(outcome) => return outcome,
-    };
 
     let final_marker_path = data_dir.join(FINAL_MARKER_FILE);
-    match tokio::fs::try_exists(&final_marker_path).await {
-        Ok(true) => return ImportOutcome::AlreadyDecided,
-        Ok(false) => {}
-        Err(err) => return ImportOutcome::Failed(format!("checking {final_marker_path:?}: {err}")),
+    if let Some(outcome) = check_final_marker(&final_marker_path).await {
+        return (outcome, None);
     }
 
+    let lock = match ImportLock::acquire(data_dir).await {
+        Ok(lock) => lock,
+        Err(outcome) => return (outcome, None),
+    };
+
+    // A lock stolen from a dead former owner may already have a completed import behind it.
+    if let Some(outcome) = check_final_marker(&final_marker_path).await {
+        return (outcome, Some(lock));
+    }
+
+    let outcome = run_import(data_dir, source_dir, &final_marker_path).await;
+    (outcome, Some(lock))
+}
+
+async fn run_import(data_dir: &Path, source_dir: &Path, final_marker_path: &Path) -> ImportOutcome {
     let source_registry_file = source_dir.join("registry.json");
     let source_registry: Registry = match read_capped(&source_registry_file).await {
         Ok(None) => {
@@ -165,19 +185,18 @@ pub async fn import_once(data_dir: &Path, source_dir: &Path) -> ImportOutcome {
                     Ok(v) => v,
                     Err(err) => return ImportOutcome::Failed(err),
                 };
-            write_final_marker(
-                &final_marker_path,
-                &ImportMarker {
-                    version: 1,
-                    imported_at_millis: now_millis(),
-                    source_registry_found: false,
-                    repositories_added: 0,
-                    sessions_added: 0,
-                    settings_imported,
-                    profile_cache_imported,
-                },
-            )
-            .await;
+            let marker = ImportMarker {
+                version: 1,
+                imported_at_millis: now_millis(),
+                source_registry_found: false,
+                repositories_added: 0,
+                sessions_added: 0,
+                settings_imported,
+                profile_cache_imported,
+            };
+            if let Err(err) = write_final_marker(final_marker_path, &marker).await {
+                return ImportOutcome::Failed(format!("writing {final_marker_path:?}: {err}"));
+            }
             let _ = tokio::fs::remove_file(data_dir.join(PENDING_MARKER_FILE)).await;
             return ImportOutcome::NoElectronRegistry;
         }
@@ -210,14 +229,34 @@ pub async fn import_once(data_dir: &Path, source_dir: &Path) -> ImportOutcome {
     let pending_marker_path = data_dir.join(PENDING_MARKER_FILE);
     let existing_pending: Option<PendingImportMarker> =
         match tokio::fs::read(&pending_marker_path).await {
-            Ok(bytes) => serde_json::from_slice(&bytes).ok(),
-            Err(_) => None,
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(marker) => Some(marker),
+                Err(err) => {
+                    return ImportOutcome::Failed(format!("parsing {pending_marker_path:?}: {err}"))
+                }
+            },
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(err) => {
+                return ImportOutcome::Failed(format!("reading {pending_marker_path:?}: {err}"))
+            }
         };
 
-    let (plan, pending_to_persist) = match existing_pending {
+    let (plan, pending_to_persist, registry_already_committed) = match existing_pending {
         Some(marker) => {
-            let plan = apply_pending(&dest_registry, &source_registry, &marker);
-            (plan, marker)
+            if pending_already_landed(&dest_registry, &marker) {
+                (
+                    MergePlan {
+                        merged: dest_registry.clone(),
+                        repository_ids_added: Vec::new(),
+                        session_ids_added: Vec::new(),
+                    },
+                    marker,
+                    true,
+                )
+            } else {
+                let plan = apply_pending(&dest_registry, &source_registry, &marker);
+                (plan, marker, false)
+            }
         }
         None => {
             let (plan, repo_id_map) = compute_merge(&dest_registry, &source_registry);
@@ -228,17 +267,18 @@ pub async fn import_once(data_dir: &Path, source_dir: &Path) -> ImportOutcome {
                 repository_ids: plan.repository_ids_added.clone(),
                 session_ids: plan.session_ids_added.clone(),
             };
-            (plan, marker)
+            (plan, marker, false)
         }
     };
 
-    if let Err(err) = write_json_file(&pending_marker_path, &pending_to_persist).await {
-        return ImportOutcome::Failed(format!("writing {pending_marker_path:?}: {err}"));
+    if !registry_already_committed {
+        if let Err(err) = write_json_file(&pending_marker_path, &pending_to_persist).await {
+            return ImportOutcome::Failed(format!("writing {pending_marker_path:?}: {err}"));
+        }
     }
 
     // Commit order: settings and profile cache first, the registry last -- immediately followed
-    // by the final marker -- so the only state a crash can leave un-marked-done is "the registry
-    // write itself landed", the narrowest possible window (see the module doc comment).
+    // by the final marker (see the module doc comment).
     let settings_imported = match import_if_absent(data_dir, source_dir, "settings.json").await {
         Ok(v) => v,
         Err(err) => return ImportOutcome::Failed(err),
@@ -248,23 +288,26 @@ pub async fn import_once(data_dir: &Path, source_dir: &Path) -> ImportOutcome {
             Ok(v) => v,
             Err(err) => return ImportOutcome::Failed(err),
         };
-    if let Err(err) = write_json_file(&dest_registry_file, &plan.merged).await {
-        return ImportOutcome::Failed(format!("writing {dest_registry_file:?}: {err}"));
+    if !registry_already_committed {
+        if let Err(err) = write_json_file(&dest_registry_file, &plan.merged).await {
+            return ImportOutcome::Failed(format!("writing {dest_registry_file:?}: {err}"));
+        }
     }
 
-    write_final_marker(
-        &final_marker_path,
-        &ImportMarker {
-            version: 1,
-            imported_at_millis: now_millis(),
-            source_registry_found: true,
-            repositories_added: plan.repository_ids_added.len(),
-            sessions_added: plan.session_ids_added.len(),
-            settings_imported,
-            profile_cache_imported,
-        },
-    )
-    .await;
+    let marker = ImportMarker {
+        version: 1,
+        imported_at_millis: now_millis(),
+        source_registry_found: true,
+        repositories_added: plan.repository_ids_added.len(),
+        sessions_added: plan.session_ids_added.len(),
+        settings_imported,
+        profile_cache_imported,
+    };
+    // The pending marker is the only record of what still needs doing; it is deleted ONLY once
+    // the final marker -- which supersedes it -- is confirmed on disk.
+    if let Err(err) = write_final_marker(final_marker_path, &marker).await {
+        return ImportOutcome::Failed(format!("writing {final_marker_path:?}: {err}"));
+    }
     let _ = tokio::fs::remove_file(&pending_marker_path).await;
 
     ImportOutcome::Imported {
@@ -275,18 +318,97 @@ pub async fn import_once(data_dir: &Path, source_dir: &Path) -> ImportOutcome {
     }
 }
 
+async fn check_final_marker(final_marker_path: &Path) -> Option<ImportOutcome> {
+    match tokio::fs::try_exists(final_marker_path).await {
+        Ok(true) => Some(ImportOutcome::AlreadyDecided),
+        Ok(false) => None,
+        Err(err) => Some(ImportOutcome::Failed(format!(
+            "checking {final_marker_path:?}: {err}"
+        ))),
+    }
+}
+
+/// A single `write_json_file` call is all-or-nothing, so ANY frozen id already present in
+/// `dest` means the earlier write landed in full; an absent id was deliberately deleted since.
+fn pending_already_landed(dest: &Registry, marker: &PendingImportMarker) -> bool {
+    let repo_ids: HashSet<&str> = dest.repositories.iter().map(|r| r.id.as_str()).collect();
+    let session_ids: HashSet<&str> = dest.sessions.iter().map(|s| s.id.as_str()).collect();
+    marker
+        .repository_ids
+        .iter()
+        .any(|id| repo_ids.contains(id.as_str()))
+        || marker
+            .session_ids
+            .iter()
+            .any(|id| session_ids.contains(id.as_str()))
+}
+
 struct MergePlan {
     merged: Registry,
     repository_ids_added: Vec<String>,
     session_ids_added: Vec<String>,
 }
 
-/// Fresh-attempt merge: respects the registry's own uniqueness rules (`add_repository`/
-/// `add_session` in `registry.rs`), not just a per-id dedupe. A same-PATH repository maps onto
-/// an existing Rust one (`repo_id_map` covers EVERY source repository, persisted for a retry);
-/// a Session with a duplicate `id`/`worktreePath`/`(repositoryId, branch)`, or an unmapped
-/// repository, is skipped and logged. Tracking sets update as each entry is added, so two
-/// source entries colliding with EACH OTHER are caught too.
+/// Tracks the registry's own Session uniqueness rules (`id`, `worktreePath`,
+/// `(repositoryId, branch)`) across BOTH a fresh merge and a crash-recovery replay, so the two
+/// paths can never drift apart on what counts as a collision. `try_claim` records the entry as
+/// claimed on success, so a later entry in the same batch sees it too.
+struct SessionUniqueness {
+    ids: HashSet<String>,
+    worktree_paths: Vec<String>,
+    repo_branch: HashSet<(String, String)>,
+}
+
+impl SessionUniqueness {
+    fn from_registry(registry: &Registry) -> Self {
+        Self {
+            ids: registry.sessions.iter().map(|s| s.id.clone()).collect(),
+            worktree_paths: registry
+                .sessions
+                .iter()
+                .map(|s| s.worktree_path.clone())
+                .collect(),
+            repo_branch: registry
+                .sessions
+                .iter()
+                .map(|s| (s.repository_id.clone(), s.branch.clone()))
+                .collect(),
+        }
+    }
+
+    fn try_claim(&mut self, session: &super::registry::Session) -> bool {
+        if self.ids.contains(&session.id) {
+            log::info!(
+                "refract-tauri: data import: Session id {} already exists, keeping the Rust entry",
+                session.id
+            );
+            return false;
+        }
+        if self
+            .worktree_paths
+            .iter()
+            .any(|p| same_path(p, &session.worktree_path))
+        {
+            log::info!("refract-tauri: data import: Session id {} worktreePath collides with an existing Session; skipping", session.id);
+            return false;
+        }
+        let key = (session.repository_id.clone(), session.branch.clone());
+        if self.repo_branch.contains(&key) {
+            log::info!("refract-tauri: data import: Session id {} branch {} collides in repository {}; skipping", session.id, session.branch, session.repository_id);
+            return false;
+        }
+        self.ids.insert(session.id.clone());
+        self.worktree_paths.push(session.worktree_path.clone());
+        self.repo_branch.insert(key);
+        true
+    }
+}
+
+/// Fresh-attempt merge: respects the registry's own uniqueness rules (`registry.rs`'s
+/// `add_repository`/`add_session`), not a per-id dedupe. A same-PATH repository maps onto an
+/// existing Rust one (`repo_id_map` covers EVERY source repository, persisted for a retry); a
+/// Session failing `SessionUniqueness::try_claim`, or referencing an unmapped repository, is
+/// skipped.
 fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<String, String>) {
     let mut merged = dest.clone();
     let mut repo_id_map: HashMap<String, String> = HashMap::new();
@@ -301,19 +423,13 @@ fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<Stri
             .find(|r| same_path(&r.path, &repo.path))
         {
             if existing.id != repo.id {
-                log::info!(
-                    "refract-tauri: data import: Electron repository {} ({}) matches an existing Rust repository by path, mapping its Sessions' repositoryId to {}",
-                    repo.id, repo.path, existing.id
-                );
+                log::info!("refract-tauri: data import: Electron repository {} matches an existing one by path, mapping its Sessions' repositoryId to {}", repo.id, existing.id);
             }
             repo_id_map.insert(repo.id.clone(), existing.id.clone());
             continue;
         }
         if existing_repo_ids.contains(&repo.id) {
-            log::info!(
-                "refract-tauri: data import: Repository id {} already exists in this build's registry.json, keeping the Rust entry",
-                repo.id
-            );
+            log::info!("refract-tauri: data import: Repository id {} already exists, keeping the Rust entry", repo.id);
             repo_id_map.insert(repo.id.clone(), repo.id.clone());
             continue;
         }
@@ -323,59 +439,19 @@ fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<Stri
         merged.repositories.push(repo.clone());
     }
 
-    let mut existing_session_ids: HashSet<String> =
-        merged.sessions.iter().map(|s| s.id.clone()).collect();
-    let mut existing_worktree_paths: Vec<String> = merged
-        .sessions
-        .iter()
-        .map(|s| s.worktree_path.clone())
-        .collect();
-    let mut existing_repo_branch: HashSet<(String, String)> = merged
-        .sessions
-        .iter()
-        .map(|s| (s.repository_id.clone(), s.branch.clone()))
-        .collect();
+    let mut uniqueness = SessionUniqueness::from_registry(&merged);
     let mut session_ids_added = Vec::new();
 
     for session in &source.sessions {
         let Some(mapped_repo_id) = repo_id_map.get(&session.repository_id) else {
-            log::info!(
-                "refract-tauri: data import: Session id {} references repository {}, which was not imported; skipping",
-                session.id, session.repository_id
-            );
+            log::info!("refract-tauri: data import: Session id {} references an unimported repository; skipping", session.id);
             continue;
         };
-        if existing_session_ids.contains(&session.id) {
-            log::info!(
-                "refract-tauri: data import: Session id {} already exists in this build's registry.json, keeping the Rust entry",
-                session.id
-            );
-            continue;
-        }
-        if existing_worktree_paths
-            .iter()
-            .any(|p| same_path(p, &session.worktree_path))
-        {
-            log::info!(
-                "refract-tauri: data import: Session id {} has worktreePath {}, already used by an existing Session; skipping (the registry's own uniqueness rule)",
-                session.id, session.worktree_path
-            );
-            continue;
-        }
-        let repo_branch_key = (mapped_repo_id.clone(), session.branch.clone());
-        if existing_repo_branch.contains(&repo_branch_key) {
-            log::info!(
-                "refract-tauri: data import: Session id {} has branch {} already used in repository {}; skipping (the registry's own uniqueness rule)",
-                session.id, session.branch, mapped_repo_id
-            );
-            continue;
-        }
-
         let mut session = session.clone();
         session.repository_id = mapped_repo_id.clone();
-        existing_session_ids.insert(session.id.clone());
-        existing_worktree_paths.push(session.worktree_path.clone());
-        existing_repo_branch.insert(repo_branch_key);
+        if !uniqueness.try_claim(&session) {
+            continue;
+        }
         session_ids_added.push(session.id.clone());
         merged.sessions.push(session);
     }
@@ -390,10 +466,8 @@ fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<Stri
     )
 }
 
-/// Crash-recovery path: the pending marker already decided WHICH ids to add, frozen before the
-/// previous attempt's registry write. A fresh diff here could resurrect an id the user
-/// deliberately removed in that window; only ids still absent from the CURRENT dest registry,
-/// and still present in the freshly-read source, are added back.
+/// Crash-recovery path, reached only when nothing from this batch has landed yet: performs the
+/// original decision in full, re-validated against the registry's own uniqueness rules.
 fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarker) -> MergePlan {
     let mut merged = dest.clone();
     let existing_repo_ids: HashSet<String> =
@@ -409,21 +483,24 @@ fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarke
         }
     }
 
-    let existing_session_ids: HashSet<String> =
-        merged.sessions.iter().map(|s| s.id.clone()).collect();
+    let mut uniqueness = SessionUniqueness::from_registry(&merged);
     let mut session_ids_added = Vec::new();
     for id in &marker.session_ids {
-        if existing_session_ids.contains(id) {
+        if uniqueness.ids.contains(id) {
             continue;
         }
-        if let Some(session) = source.sessions.iter().find(|s| &s.id == id) {
-            let mut session = session.clone();
-            if let Some(mapped) = marker.repo_id_map.get(&session.repository_id) {
-                session.repository_id = mapped.clone();
-            }
-            merged.sessions.push(session);
-            session_ids_added.push(id.clone());
+        let Some(session) = source.sessions.iter().find(|s| &s.id == id) else {
+            continue;
+        };
+        let mut session = session.clone();
+        if let Some(mapped) = marker.repo_id_map.get(&session.repository_id) {
+            session.repository_id = mapped.clone();
         }
+        if !uniqueness.try_claim(&session) {
+            continue;
+        }
+        session_ids_added.push(id.clone());
+        merged.sessions.push(session);
     }
 
     MergePlan {
@@ -434,14 +511,15 @@ fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarke
 }
 
 /// Copies `name` from `source_dir` into `data_dir` verbatim, ONLY when `data_dir` has no copy
-/// of its own yet: a uniquely-named temp file, `sync_all` before the commit step, the temp
-/// file always removed afterward, and create-new semantics (`hard_link`, which fails if `dest`
-/// exists -- unlike `rename`, which silently overwrites everywhere including Windows) so a
+/// yet: a uniquely-named temp file, `sync_all` before commit, always removed afterward, and
+/// create-new semantics (`hard_link`, which fails if `dest` exists, unlike `rename`) so a
 /// target that appeared since the initial check is never clobbered.
 async fn import_if_absent(data_dir: &Path, source_dir: &Path, name: &str) -> Result<bool, String> {
     let dest = data_dir.join(name);
-    if matches!(tokio::fs::try_exists(&dest).await, Ok(true)) {
-        return Ok(false);
+    match tokio::fs::try_exists(&dest).await {
+        Ok(true) => return Ok(false),
+        Ok(false) => {}
+        Err(err) => return Err(format!("checking {dest:?}: {err}")),
     }
 
     let src = source_dir.join(name);
@@ -499,87 +577,15 @@ async fn read_capped(path: &Path) -> Result<Option<Vec<u8>>, String> {
     }
 }
 
-/// Closes the race the single-instance plugin doesn't cover this early (module doc comment).
-/// `path`'s mere existence is the lock; dropping this guard always removes it, win or fail.
-struct ImportLock {
-    path: PathBuf,
-}
-
-impl ImportLock {
-    async fn acquire(data_dir: &Path) -> Result<Self, ImportOutcome> {
-        let path = data_dir.join(LOCK_FILE);
-        if try_create_lock(&path).await {
-            return Ok(Self { path });
-        }
-
-        let stale = match tokio::fs::metadata(&path).await.and_then(|m| m.modified()) {
-            Ok(modified) => SystemTime::now()
-                .duration_since(modified)
-                .map(|age| age.as_millis() > LOCK_STALE_AFTER_MILLIS)
-                .unwrap_or(false),
-            Err(_) => false,
-        };
-        if !stale {
-            return Err(ImportOutcome::AlreadyRunning);
-        }
-        let _ = tokio::fs::remove_file(&path).await;
-        if try_create_lock(&path).await {
-            Ok(Self { path })
-        } else {
-            Err(ImportOutcome::AlreadyRunning)
-        }
-    }
-}
-
-async fn try_create_lock(path: &Path) -> bool {
-    tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .await
-        .is_ok()
-}
-
-impl Drop for ImportLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-/// Case- and drive-letter-insensitive path comparison (same rule and algorithm as
-/// `registry.rs`'s own `same_path`/`resolve_path_lexical`, duplicated in miniature here rather
-/// than widening that file's visibility for this one extra caller).
-fn same_path(a: &str, b: &str) -> bool {
-    resolve_path_lexical(a).to_lowercase() == resolve_path_lexical(b).to_lowercase()
-}
-
-fn resolve_path_lexical(p: &str) -> String {
-    use std::path::Component;
-
-    let path = Path::new(p);
-    let absolute: PathBuf = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::env::current_dir().unwrap_or_default().join(path)
-    };
-
-    let mut collapsed = PathBuf::new();
-    for component in absolute.components() {
-        match component {
-            Component::ParentDir => {
-                collapsed.pop();
-            }
-            Component::CurDir => {}
-            other => collapsed.push(other.as_os_str()),
-        }
-    }
-    collapsed.to_string_lossy().into_owned()
-}
-
 /// Refuses outright if `data_dir` and `source_dir` resolve to the same folder: a misconfigured
 /// `REFRACT_IMPORT_SOURCE_DIR` would otherwise turn "read-only source" into same-file chaos.
+/// Canonicalizes (resolves symlinks/junctions) when both exist; falls back to the lexical
+/// `same_path` compare `registry.rs` already uses when either does not exist yet.
 fn same_folder(a: &Path, b: &Path) -> bool {
-    same_path(&a.to_string_lossy(), &b.to_string_lossy())
+    match (dunce::canonicalize(a), dunce::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => same_path(&a.to_string_lossy(), &b.to_string_lossy()),
+    }
 }
 
 fn now_millis() -> u128 {
@@ -589,8 +595,6 @@ fn now_millis() -> u128 {
         .unwrap_or(0)
 }
 
-async fn write_final_marker(marker_path: &Path, marker: &ImportMarker) {
-    if let Err(err) = write_json_file(marker_path, marker).await {
-        log::warn!("refract-tauri: data import: failed to write {marker_path:?}: {err}");
-    }
+async fn write_final_marker(marker_path: &Path, marker: &ImportMarker) -> std::io::Result<()> {
+    write_json_file(marker_path, marker).await
 }
