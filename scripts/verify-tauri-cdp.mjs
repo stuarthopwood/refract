@@ -7,9 +7,16 @@
 // research note): `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` set on
 // the spawned dev process (not the launcher), discovered over the DevTools `/json/list` HTTP
 // endpoint exactly like Chrome/Electron.
+//
+// Process lifecycle (gate-fix, security review HIGH, round 2): the built exe is never spawned
+// directly. It runs inside `scripts/verify-tauri-launcher.rs`'s own kill-on-close Win32 Job
+// Object, so tearing down the whole tree (WebView2, the fake-omp PATH shim, its own node child)
+// is a single OS-level job termination, never a Win32_Process snapshot or a `taskkill` of a
+// computed pid -- there is no pid-reuse window to reason about at all, because the kill is scoped
+// by actual job membership, not by a guessed ancestry chain.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 
 /** Asks the OS for a free TCP port (binds to port 0, reads back the one actually assigned, then
@@ -205,136 +212,83 @@ export class CdpSession {
   }
 }
 
-/** Snapshots every live process's pid, parent pid, command line and creation time (as raw
- * `DateTime.Ticks`, a plain sortable number -- avoids parsing WMI's own DMTF datetime string
- * format) via PowerShell/CIM. Tolerates a malformed/empty response (process list queries are
- * inherently racy) by returning no rows rather than throwing. */
-function liveProcessTree() {
-  const script =
-    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine,@{N='CreationTicks';E={ if ($_.CreationDate) { $_.CreationDate.Ticks } else { 0 } }} | ConvertTo-Json -Compress";
-  const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true });
-  if (result.status !== 0 || !result.stdout) return [];
-  try {
-    const parsed = JSON.parse(result.stdout);
-    return Array.isArray(parsed) ? parsed : [parsed];
-  } catch {
-    return [];
-  }
-}
+/** Spawns `scripts/verify-tauri-launcher.exe` (already built by the caller), which creates a
+ * kill-on-close Job Object, spawns `targetExe` inside it, and writes the target's own pid to
+ * `pidFile` once assigned. Returns `{ child, targetPid }`: `child` is the LAUNCHER's own
+ * `ChildProcess` (Node's own handle on it, so its pid can never be silently reused while this
+ * harness holds it), `targetPid` is the real app's pid (for `isTargetOwningPort` only -- never
+ * used to construct a kill target). */
+export async function launchViaJobObject(launcherExe, pidFile, targetExe, targetArgs, { cwd, env } = {}) {
+  const child = spawn(launcherExe, [pidFile, targetExe, ...targetArgs], { windowsHide: true, cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
 
-/** The live creation-ticks of exactly this pid right now, or `null` if it is not currently a
- * live process (already exited, or never existed). */
-function creationTicksOf(pid) {
-  const row = liveProcessTree().find((r) => r.ProcessId === pid);
-  return row ? row.CreationTicks : null;
-}
-
-/** Every currently-live process (full row: pid, parent pid, command line, creation ticks)
- * transitively descended from `rootPid`, validated against `rootCreationTicks` (captured once,
- * right after this script spawned the root, while it was still known-alive): a parent -> child
- * link is followed only when the recorded child's own creation time is at or after the parent's
- * (gate-fix, security review HIGH). Windows never updates a process's own recorded parent pid,
- * and pids get reused -- without this check, a long-lived, wholly unrelated process (Stuart's
- * own terminal, a live Refract tree, anything started by a launcher that has since exited) whose
- * stale recorded parent pid happens to equal a pid this harness used earlier would be
- * force-killed as if it were "our child". */
-function liveDescendants(rootPid, rootCreationTicks) {
-  const rows = liveProcessTree();
-  const childrenOf = new Map();
-  for (const row of rows) {
-    const list = childrenOf.get(row.ParentProcessId) ?? [];
-    list.push(row);
-    childrenOf.set(row.ParentProcessId, list);
-  }
-  const out = [];
-  const visited = new Set([rootPid]);
-  const queue = [{ pid: rootPid, creationTicks: rootCreationTicks }];
-  while (queue.length > 0) {
-    const current = queue.shift();
-    for (const child of childrenOf.get(current.pid) ?? []) {
-      if (visited.has(child.ProcessId)) continue;
-      if (typeof child.CreationTicks !== 'number' || typeof current.creationTicks !== 'number') continue;
-      if (child.CreationTicks < current.creationTicks) continue; // stale/reused parent link
-      visited.add(child.ProcessId);
-      out.push(child);
-      queue.push({ pid: child.ProcessId, creationTicks: child.CreationTicks });
+  const deadline = Date.now() + 15_000;
+  let targetPid = null;
+  while (Date.now() < deadline) {
+    if (existsSync(pidFile)) {
+      const content = readFileSync(pidFile, 'utf8').trim();
+      if (/^\d+$/.test(content)) {
+        targetPid = Number(content);
+        break;
+      }
     }
+    if (child.exitCode !== null) {
+      throw new Error(`launchViaJobObject: launcher exited (code ${child.exitCode}) before writing ${pidFile}`);
+    }
+    await sleep(100);
   }
-  return out;
+  if (targetPid == null) {
+    throw new Error(`launchViaJobObject: timed out waiting for ${pidFile}`);
+  }
+  return { child, targetPid };
 }
 
-/** Confirms the process actually listening with `--remote-debugging-port=<port>` on its own
- * command line is a genuine descendant of `child` (gate-fix, security review MEDIUM): even with
- * `getFreePort()` removing the usual collision window, this is a belt-and-braces check that the
- * CDP target `waitForCdpTarget` attached to truly belongs to the process this script launched,
- * not some other instance that raced onto the same port between the check and the connect. */
-export function isPortOwnedBy(port, child) {
-  const rootCreationTicks = child?.__refractCreationTicks;
-  if (!child?.pid || rootCreationTicks == null) return false;
-  const needle = `--remote-debugging-port=${port}`;
-  const descendants = liveDescendants(child.pid, rootCreationTicks);
-  return descendants.some((row) => typeof row.CommandLine === 'string' && row.CommandLine.includes(needle));
-}
-
-function killByPid(pid) {
-  return new Promise((resolve) => {
-    const tk = spawn('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true, stdio: 'ignore' });
-    tk.on('exit', resolve);
-    tk.on('error', resolve);
-  });
-}
-
-/** Spawns a process and immediately records its own creation time (while its pid is certainly
- * still live and certainly still this process), attaching it as `child.__refractCreationTicks`
- * for `stopProcess` to validate against later. Callers MUST use this (not a bare `spawn`) for
- * anything `stopProcess` will later tear down. */
-export async function launchTracked(command, args, options) {
-  const child = spawn(command, args, { windowsHide: true, ...options });
-  child.__refractCreationTicks = child.pid ? creationTicksOf(child.pid) : null;
-  return child;
-}
-
-/** Stops the process this script itself started: asks it to exit, then force-kills every
- * process still transitively descended from it (descendants first, the root last -- see
- * `liveDescendants`'s own doc comment for why each link is validated by creation time). Every
- * kill is a literal, explicit pid -- never a kill by image name -- matching AGENTS.md's
- * destructive-operations rule applied to processes.
- *
- * Needed because the launched exe's own WebView2 process tree (and anything further it spawns,
- * like the fake `omp` shim) must be torn down too: a crash or an already-exited parent leaves
- * Windows' own parent-pid bookkeeping as the only trace of that relationship, so a plain
- * `taskkill /T` against an already-dead pid cannot find them.
- *
- * Gate-fix (security review HIGH): the root pid itself is force-killed only while this function
- * can still prove, by BOTH pid and creation time, that it is the exact same process `child` --
- * never after `child`'s own `exit` event has already fired (the pid may have been reused by an
- * unrelated process in the meantime), and the creation-time check that gates descendant discovery
- * applies here too. */
-export async function stopProcess(child, { graceMs = 5000 } = {}) {
-  const pid = child?.pid;
-  if (!pid) return;
-  // Captured at launch time by `launchTracked`, never re-derived here: by the time this function
-  // runs the pid may already be gone (or reused), so a lazy query here could silently adopt the
-  // wrong process's creation time.
-  const rootCreationTicks = child.__refractCreationTicks ?? null;
-
-  let rootAlreadyExited = child.exitCode !== null || child.killed;
-  if (!rootAlreadyExited) {
+/** Stops the launcher (gate-fix, security review HIGH, round 2): closes its stdin, the shutdown
+ * signal `verify-tauri-launcher.rs` watches for, which terminates its Job Object (and so the
+ * whole tree inside it) immediately. If the launcher itself does not exit within `graceMs` (it
+ * should exit almost immediately once its own job is torn down), it is force-killed directly by
+ * Node's own `ChildProcess.kill()` -- always safe: Node holds this exact process handle itself,
+ * so there is no pid to compute and no reuse window to reason about. */
+export async function stopLauncher(child, { graceMs = 5000 } = {}) {
+  if (!child || child.killed || child.exitCode !== null) return;
+  try {
+    child.stdin.end();
+  } catch {
+    // already gone
+  }
+  const exited = await Promise.race([new Promise((resolve) => child.once('exit', () => resolve(true))), sleep(graceMs).then(() => false)]);
+  if (!exited) {
     try {
       child.kill();
     } catch {
       // already gone
     }
-    rootAlreadyExited = await Promise.race([new Promise((resolve) => child.once('exit', () => resolve(true))), sleep(graceMs).then(() => false)]);
   }
+}
 
-  if (rootCreationTicks != null) {
-    for (const descendant of liveDescendants(pid, rootCreationTicks)) await killByPid(descendant.ProcessId);
+/** Confirms the process actually listening on `port` is the app this harness launched, or one of
+ * its own direct children (WebView2's own browser process is typically one hop below the Tauri
+ * exe) -- a pid-based check (`Get-NetTCPConnection`'s own `OwningProcess`), never a command-line
+ * substring match (gate-fix, security review round 2). This is read-only verification, never a
+ * kill decision, so a shallow one-hop parent check is sufficient: the worst case of a wrong
+ * answer here is an aborted run, not a touched process. */
+export function isTargetOwningPort(port, targetPid) {
+  const script = `
+$conn = Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $conn) { Write-Output '{}'; exit }
+$owner = $conn.OwningProcess
+$parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue).ParentProcessId
+@{ owner = $owner; parent = $parent } | ConvertTo-Json -Compress
+`.trim();
+  const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true });
+  if (result.status !== 0 || !result.stdout) return false;
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    return false;
   }
-
-  if (!rootAlreadyExited && rootCreationTicks != null && creationTicksOf(pid) === rootCreationTicks) {
-    await killByPid(pid);
-  }
+  if (!parsed.owner) return false;
+  return parsed.owner === targetPid || parsed.parent === targetPid;
 }
 
 export { sleep };

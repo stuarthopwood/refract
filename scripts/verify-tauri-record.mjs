@@ -24,7 +24,7 @@
 // docs/spike/FINDINGS.md's "Production argv note"). `--readiness` spends none (read-only RPC).
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, appendFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,14 +39,26 @@ function parseArgs(argv) {
     else if (argv[i] === '--readiness') out.readiness = true;
   }
   if (!out.out) throw new Error('verify-tauri-record: --out <path> is required');
-  // Gate-fix (security review LOW): the raw capture can carry real chat text and real `omp`
-  // stderr -- refuse a destination inside this repository so it can never land in a commit by
-  // accident (fixtures are hand-sanitised separately; the raw file itself must never be checked
-  // in, per this file's own header).
+  // Gate-fix (security review LOW, round 2 refinement): the raw capture can carry real chat
+  // text and real `omp` stderr -- refuse a destination inside this repository so it can never
+  // land in a commit by accident (fixtures are hand-sanitised separately; the raw file itself
+  // must never be checked in, per this file's own header). Checks the PARENT directory's own
+  // realpath (the file itself may not exist yet, so it has no realpath of its own), against the
+  // repo root's realpath, so a symlink/junction on either side (common under a Windows TEMP
+  // dir) cannot fool a plain string-prefix comparison.
   const resolvedOut = path.resolve(out.out);
-  const relative = path.relative(REPO_ROOT, resolvedOut);
-  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
-    throw new Error(`verify-tauri-record: --out must resolve OUTSIDE the repository (got ${resolvedOut}, repo root ${REPO_ROOT})`);
+  const parentDir = path.dirname(resolvedOut);
+  let realParent;
+  try {
+    realParent = realpathSync(parentDir);
+  } catch {
+    throw new Error(`verify-tauri-record: --out's parent directory does not exist: ${parentDir}`);
+  }
+  const realRepoRoot = realpathSync(REPO_ROOT);
+  const relative = path.relative(realRepoRoot, realParent);
+  const outside = relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative);
+  if (!outside) {
+    throw new Error(`verify-tauri-record: --out must resolve OUTSIDE the repository (got ${resolvedOut}, repo root ${realRepoRoot})`);
   }
   return out;
 }

@@ -25,11 +25,12 @@
 // `side-chat`/`subagents`/`failure`/`exit` are fixtures for the R3/R5/R6 lanes to drive once they
 // port those channels (`scripts/fixtures/omp-frames/README.md`), not exercised by this script.
 //
-// Every process this script starts is tracked by pid (via `launchTracked`) and torn down in a
-// `finally` block, tree-swept (every live descendant of that pid is found and force-killed,
-// validated by creation time so a stale/reused pid can never be adopted -- see `stopProcess`'s
-// own doc comment) -- never a kill by name, per AGENTS.md's destructive-operations rule applied
-// to processes.
+// Every process this script starts runs inside `scripts/verify-tauri-launcher.rs`'s own
+// kill-on-close Win32 Job Object (gate-fix, security review HIGH, round 2): tearing down the
+// whole tree (WebView2, the fake-omp PATH shim, its own node child) is a single OS-level job
+// termination, never a Win32_Process snapshot or a `taskkill` of a computed pid -- see
+// `verify-tauri-cdp.mjs`'s own `stopLauncher`/`launchViaJobObject` doc comments. Never a kill by
+// name, per AGENTS.md's destructive-operations rule applied to processes.
 //
 // Shared disk note: when `CARGO_TARGET_DIR` is set in the environment, every cargo/tauri
 // invocation here uses it (see this repo's own worktree instructions for the shared path); when
@@ -43,7 +44,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, createWriteStream, copyF
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getFreePort, waitForCdpTarget, CdpSession, stopProcess, launchTracked, isPortOwnedBy } from './verify-tauri-cdp.mjs';
+import { getFreePort, waitForCdpTarget, CdpSession, stopLauncher, launchViaJobObject, isTargetOwningPort } from './verify-tauri-cdp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -55,10 +56,12 @@ const CARGO_TARGET_DIR = process.env.CARGO_TARGET_DIR;
 // Where the built exe actually lands, mirroring cargo's own resolution: under `CARGO_TARGET_DIR`
 // when set, else `src-tauri/target` (cargo's default for a manifest at `src-tauri/Cargo.toml`).
 const BUILD_OUTPUT_DIR = CARGO_TARGET_DIR ? path.join(CARGO_TARGET_DIR, 'debug') : path.join(REPO_ROOT, 'src-tauri', 'target', 'debug');
-// A token the fake omp's assistant reply ends with, chosen to never collide with the prompt text
-// itself (gate-fix, code/tests review MEDIUM: the previous prompt and reply both happened to end
-// in "ok", so the final-state check passed even though it could not tell the assistant's own
-// reply apart from the user's echoed prompt).
+// The scripted prompt deliberately never mentions the reply token below (gate-fix, tests review
+// round 2 MEDIUM): the two must be independent strings, or a check against the token could pass
+// merely because the user's own echoed prompt contains it, never actually observing the
+// assistant's own reply.
+const PROMPT_MESSAGE = 'Please respond now.';
+// A token the fake omp's assistant reply ends with; absent from `PROMPT_MESSAGE` above.
 const REPLY_TOKEN = 'xyzzy9';
 
 function nowStamp() {
@@ -95,6 +98,19 @@ function buildOmpShim(dir) {
   const result = spawnSync_('rustc', ['--edition', '2021', '-O', src, '-o', out]);
   if (result.status !== 0) {
     throw new Error(`buildOmpShim: rustc failed (exit ${result.status}):\n${result.stderr}`);
+  }
+  return out;
+}
+
+/** Compiles the Win32 Job Object launcher (scripts/verify-tauri-launcher.rs) into
+ * `<dir>/verify-tauri-launcher.exe` the same way: a bare `rustc` call, std only. */
+function buildLauncher(dir) {
+  mkdirSync(dir, { recursive: true });
+  const src = path.join(__dirname, 'verify-tauri-launcher.rs');
+  const out = path.join(dir, 'verify-tauri-launcher.exe');
+  const result = spawnSync_('rustc', ['--edition', '2021', '-O', src, '-o', out]);
+  if (result.status !== 0) {
+    throw new Error(`buildLauncher: rustc failed (exit ${result.status}):\n${result.stderr}`);
   }
   return out;
 }
@@ -144,7 +160,13 @@ function buildTauriDebugNoBundle() {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const env = { ...process.env };
-    if (CARGO_TARGET_DIR) env.CARGO_TARGET_DIR = CARGO_TARGET_DIR;
+    // Shared-disk note (Main broadcast, 2026-10-14): the shared target dir's disk hit 100% and
+    // broke builds once already; CARGO_INCREMENTAL=0 travels with CARGO_TARGET_DIR so every
+    // lane building against the shared cache keeps its incremental-artifact footprint down.
+    if (CARGO_TARGET_DIR) {
+      env.CARGO_TARGET_DIR = CARGO_TARGET_DIR;
+      env.CARGO_INCREMENTAL = '0';
+    }
     const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
       cwd: REPO_ROOT,
       env,
@@ -174,17 +196,19 @@ function copyBuiltExe(destDir) {
   return dest;
 }
 
-/** Runs the already-built, already-copied exe directly via `launchTracked` -- no wrapper
- * process, so the pid this returns IS the app, and `stopProcess` can validate every descendant
- * (the exe's own WebView2 process tree) against this launch's own recorded creation time.
- * `WEBVIEW2_USER_DATA_FOLDER` (a documented WebView2 env var) gets its own scratch subfolder
- * next to the copied exe: WebView2's default user-data-folder resolution can collide across
- * concurrently running instances sharing an identity, surfacing as `HRESULT(0x8007139F)`
- * ("the group or resource is not in the correct state") -- seen live when another lane's own
- * Tauri instance was running at the same time. */
-async function launchBuiltExe(exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
+/** Runs the already-built, already-copied exe inside `verify-tauri-launcher.exe`'s own
+ * kill-on-close Job Object (gate-fix, security review HIGH, round 2) -- see
+ * `verify-tauri-cdp.mjs`'s own `launchViaJobObject` doc comment. `WEBVIEW2_USER_DATA_FOLDER` (a
+ * documented WebView2 env var) gets its own scratch subfolder next to the copied exe: WebView2's
+ * default user-data-folder resolution can collide across concurrently running instances sharing
+ * an identity, surfacing as `HRESULT(0x8007139F)` ("the group or resource is not in the correct
+ * state") -- seen live when another lane's own Tauri instance was running at the same time.
+ * Returns `{ child, targetPid }`: `child` is the launcher's own process (what `stopLauncher`
+ * takes), `targetPid` is the real app's pid (for `isTargetOwningPort` only). */
+async function launchBuiltExe(launcherExe, exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
   const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
   mkdirSync(webview2DataDir, { recursive: true });
+  const pidFile = path.join(path.dirname(exePath), 'target.pid');
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
@@ -193,13 +217,13 @@ async function launchBuiltExe(exePath, { port, dataDir, pathPrepend, extraEnv = 
     ...extraEnv,
   };
   if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
-  const child = await launchTracked(exePath, [], { cwd: path.dirname(exePath), env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
   if (logFile) {
     const stream = createWriteStream(logFile);
     child.stdout.pipe(stream, { end: false });
     child.stderr.pipe(stream, { end: false });
   }
-  return child;
+  return { child, targetPid };
 }
 
 function withEvidenceDir(name) {
@@ -234,34 +258,46 @@ async function proveUs1(cdp, evidenceDir) {
   console.log('US1 PASS: window painted, readiness green, Add repository enabled.');
 }
 
-/** Polls `[aria-label="Transcript"]`'s own `textContent` until it both contains `finalToken` AND
- * has visibly changed at least once before settling on that final value -- proves the reply
- * actually streamed in over more than one render, not just a single final paint that would also
- * pass for a non-streaming implementation (gate-fix, tests review MEDIUM). Also fails loudly (not
- * silently) if a "prompt failed" notice appears, which a missing `response` ack to `prompt` would
- * otherwise cause (gate-fix, code review HIGH, fixed in the fixtures themselves). */
+/** Polls `[aria-label="Transcript"]`'s own trailing text until it ends with `finalToken`, but
+ * only accepts that final state if an EARLIER poll already observed the same trailing text
+ * ending with a strict, non-empty, proper prefix of `finalToken` (gate-fix, tests review round
+ * 2 MEDIUM: a plain "more than one distinct state" check could pass for a reply that streamed
+ * something else entirely before happening to paint the whole token in one go -- requiring a
+ * real prefix of THIS token proves the token itself arrived incrementally). The streaming
+ * assistant message is always the last thing appended to the transcript's own trailing text
+ * while a turn is in flight (nothing else renders after it until the turn settles), so checking
+ * the tail of the whole region's `textContent` -- rather than a dedicated per-message selector,
+ * which does not exist in the renderer yet -- reliably scopes this to that message. Also fails
+ * loudly (not silently) if a "prompt failed" notice appears, which a missing `response` ack to
+ * `prompt` would otherwise cause (gate-fix, code review HIGH, fixed in the fixtures themselves). */
 async function waitForStreamedReply(cdp, { finalToken, timeoutMs = 60_000, intervalMs = 250 }) {
   const deadline = Date.now() + timeoutMs;
-  const distinctValues = new Set();
+  let sawPartialPrefix = false;
   let lastValue = '';
   while (Date.now() < deadline) {
     const { text, failedNotice } = await cdp.evaluate(
-      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); const text = t ? t.textContent : ''; return { text, failedNotice: /prompt failed/i.test(text) }; })()`,
+      `(() => { const t = document.querySelector('[aria-label="Transcript"]'); const text = t ? t.textContent.trim() : ''; return { text, failedNotice: /prompt failed/i.test(text) }; })()`,
     );
     if (failedNotice) {
       throw new Error(`waitForStreamedReply: a "prompt failed" notice appeared in the transcript (missing response ack to prompt?): ${text}`);
     }
-    if (text !== lastValue) {
-      distinctValues.add(text);
-      lastValue = text;
+    lastValue = text;
+    const fullyArrived = text.endsWith(finalToken);
+    if (!fullyArrived) {
+      for (let len = finalToken.length - 1; len >= 1; len--) {
+        if (text.endsWith(finalToken.slice(0, len))) {
+          sawPartialPrefix = true;
+          break;
+        }
+      }
     }
-    if (text.trim().endsWith(finalToken) && distinctValues.size > 1) {
+    if (fullyArrived && sawPartialPrefix) {
       return text;
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
   throw new Error(
-    `waitForStreamedReply: timed out after ${timeoutMs}ms waiting for a streamed reply ending in "${finalToken}" (${distinctValues.size} distinct transcript state(s) seen; last: ${JSON.stringify(lastValue)})`,
+    `waitForStreamedReply: timed out after ${timeoutMs}ms waiting for a streamed reply ending in "${finalToken}" (partial prefix observed: ${sawPartialPrefix}; last: ${JSON.stringify(lastValue)})`,
   );
 }
 
@@ -341,12 +377,13 @@ async function runFakeOmpProof() {
     console.log(`verify-tauri: CDP port ${port}`);
 
     buildOmpShim(shimDir);
+    const launcherExe = buildLauncher(shimDir);
     console.log('verify-tauri: building (tauri build --debug --no-bundle, no dev server)...');
     buildTauriDebugNoBundle();
     const exePath = copyBuiltExe(exeDir);
     console.log(`verify-tauri: built exe copied to ${exePath}`);
 
-    child = await launchBuiltExe(exePath, {
+    const launched = await launchBuiltExe(launcherExe, exePath, {
       port,
       dataDir,
       pathPrepend: shimDir,
@@ -357,22 +394,24 @@ async function runFakeOmpProof() {
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(evidenceDir, 'fake-omp-invocations.log'),
       },
     });
+    child = launched.child;
+    const targetPid = launched.targetPid;
 
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
     cdp = await CdpSession.connect(wsUrl);
-    // Belt-and-braces (gate-fix, security review MEDIUM): `getFreePort()` already removes the
-    // usual collision window, but confirms the attached target's own process is genuinely a
-    // descendant of `child`, not some other instance that raced onto the same port between the
-    // free-port check and this connect.
-    if (!isPortOwnedBy(port, child)) {
-      throw new Error(`verify-tauri: CDP target on port ${port} is not a descendant of the process this run launched (pid ${child.pid}) -- refusing to drive it`);
+    // Belt-and-braces (gate-fix, security review MEDIUM/round 2): `getFreePort()` already
+    // removes the usual collision window, but confirms the pid actually listening on the port is
+    // the app this run launched (or its own direct WebView2 child), not some other instance that
+    // raced onto the same port between the free-port check and this connect.
+    if (!isTargetOwningPort(port, targetPid)) {
+      throw new Error(`verify-tauri: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid}) -- refusing to drive it`);
     }
     await proveUs1(cdp, evidenceDir);
-    await proveUs4(cdp, evidenceDir, { repoDir, message: `Reply with the single word ${REPLY_TOKEN}` });
+    await proveUs4(cdp, evidenceDir, { repoDir, message: PROMPT_MESSAGE });
     console.log(`verify-tauri: PASS (fake omp). Evidence: ${evidenceDir}`);
   } finally {
     cdp?.close();
-    if (child) await stopProcess(child);
+    if (child) await stopLauncher(child);
     await safeRmSync(shimDir);
     await safeRmSync(dataDir);
     if (repoDir) await safeRmSync(worktreesDirFor(repoDir));
@@ -396,17 +435,20 @@ async function runRealOmpProof() {
     console.log(`verify-tauri: evidence dir ${evidenceDir}`);
     console.log(`verify-tauri: CDP port ${port}`);
 
+    const launcherExe = buildLauncher(exeDir);
     console.log('verify-tauri: building (tauri build --debug --no-bundle, no dev server)...');
     buildTauriDebugNoBundle();
     const exePath = copyBuiltExe(exeDir);
     console.log(`verify-tauri: built exe copied to ${exePath}`);
 
-    child = await launchBuiltExe(exePath, { port, dataDir, logFile: path.join(evidenceDir, 'app.log') });
+    const launched = await launchBuiltExe(launcherExe, exePath, { port, dataDir, logFile: path.join(evidenceDir, 'app.log') });
+    child = launched.child;
+    const targetPid = launched.targetPid;
 
     const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
     cdp = await CdpSession.connect(wsUrl);
-    if (!isPortOwnedBy(port, child)) {
-      throw new Error(`verify-tauri: CDP target on port ${port} is not a descendant of the process this run launched (pid ${child.pid}) -- refusing to drive it`);
+    if (!isTargetOwningPort(port, targetPid)) {
+      throw new Error(`verify-tauri: CDP target on port ${port} is not owned by the process this run launched (pid ${targetPid}) -- refusing to drive it`);
     }
     await proveUs1(cdp, evidenceDir);
     const omp = await cdp.evaluate(`document.body.innerText`);
@@ -414,7 +456,7 @@ async function runRealOmpProof() {
     console.log(`verify-tauri: PASS (real omp, US1 only). Evidence: ${evidenceDir}`);
   } finally {
     cdp?.close();
-    if (child) await stopProcess(child);
+    if (child) await stopLauncher(child);
     await safeRmSync(dataDir);
     await safeRmSync(exeDir);
   }
