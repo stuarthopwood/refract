@@ -19,17 +19,36 @@ pub enum SessionStatus {
 }
 
 /// Port of `exitVerdictGuard.ts`'s own `shouldApplyCrashExitVerdict`, narrowed to the
-/// `statusNow !== 'stopped'` half of its two-part guard: the other half (`lifeEpochNow ===
-/// epochAtExit`) guards a `restart()`/mode-change-respawn race this build does not implement
-/// (see `mod.rs`'s own header: "no restart()/approval-mode-change auto-restart"), so there is no
-/// `lifeEpoch` concept here for it to compare -- a real, intentional scope cut, not a silently
-/// dropped port. Used by `mod.rs`'s own `set_stopped_unless_already_stopped` (`handle_exit`'s
-/// crash branch): skips the verdict once something more authoritative (a synchronous `launch()`
-/// failure path) already moved the Session to `stopped` for this same life.
+/// `statusNow !== 'stopped'` half of its two-part guard. Used by `mod.rs`'s own
+/// `set_stopped_unless_already_stopped` (`handle_exit`'s crash branch): skips the verdict once
+/// something more authoritative (a synchronous `launch()` failure path) already moved the
+/// Session to `stopped` for this same life.
+///
+/// Gate-fix (round 2, 2026-10-14): this doc comment previously claimed the other half of TS's
+/// guard (`lifeEpochNow === epochAtExit`) was a scope cut -- "this build does not implement
+/// restart()/mode-change-respawn, so there is no lifeEpoch concept to compare". That framing
+/// went stale the moment this SAME lane's own round-6 epoch work landed: `handle_exit`
+/// (`frame.rs`) now computes `is_current` -- an `Arc::as_ptr` identity check of its own `proc`
+/// argument against `state.process` -- and returns early, before this function (or
+/// `set_stopped_unless_already_stopped`) is EVER called, for any exit belonging to an
+/// already-superseded life. That is the TS "newer life" guard's equivalent: not a missing
+/// feature, just a differently-shaped one. There is no literal 3-argument Rust twin of
+/// `shouldApplyCrashExitVerdict` to write (TS compares two integers passed INTO a pure
+/// function; this port compares a pointer INSIDE the stateful `handle_exit`, before this
+/// function is even reached), so `status_now` staying this function's only parameter is
+/// correct, not an oversight. `is_current`'s own "stale exit never applies a crash verdict"
+/// behaviour has no test yet anywhere in this tree (confirmed: no test references
+/// `handle_exit`/`is_current`) -- that coverage belongs in a `frame.rs`-owned test module
+/// (`frame.test.rs`, sibling convention `commands.rs`/`requests.rs` already use), not here.
 pub(super) fn should_apply_crash_exit_verdict(status_now: SessionStatus) -> bool {
     status_now != SessionStatus::Stopped
 }
 
+/// `should_apply_crash_exit_verdict`'s own doc comment explains why TS's two "newer life" cases
+/// (`shouldApplyCrashExitVerdict('idle', 4, 3)` / `('stopped', 4, 3)`) have no equivalent case
+/// in this module: the guard they prove now lives in `frame.rs`'s `handle_exit` (`is_current`),
+/// not in this 1-argument function, so there is nothing this module's pure-function style can
+/// assert for them.
 #[cfg(test)]
 mod exit_verdict_guard_tests {
     use super::{should_apply_crash_exit_verdict, SessionStatus};
