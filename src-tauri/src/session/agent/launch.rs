@@ -3,11 +3,12 @@
 // `fetchAllMessages.ts`). See `mod.rs`'s own header for this module's place in the `agent/`
 // split and the lane extension contract.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{
     ApprovalMode as ProcApprovalMode, OmpProcess, OmpProcessOptions, ProcessEvent,
 };
@@ -37,7 +38,26 @@ impl SessionAgent {
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
-        if tokio::fs::metadata(&session.worktree_path).await.is_err() {
+        // Lane R3 (issue #786), once R2 (#826) landed `worktree_is_valid`: replaces the plain
+        // `fs::metadata` existence check -- catches a worktree whose `.git` pointer was hand-
+        // deleted or that git no longer has registered, not merely "the folder is gone" (#729).
+        // `Unknown` (the underlying `git worktree list` call could not be made to settle within
+        // its own timeout) must never block a start -- a slow disk/antivirus scan is not
+        // evidence the worktree is actually missing, so this agent starts normally the same as
+        // `Valid` (matching `session::manager::summaries()`'s own documented `Unknown` policy).
+        let repo_path = {
+            let registry = self.registry.lock().await;
+            registry
+                .get_repository(&session.repository_id)
+                .map(|r| r.path.clone())
+        };
+        let validity = match repo_path {
+            Some(path) => {
+                worktree_is_valid(Path::new(&path), Path::new(&session.worktree_path)).await
+            }
+            None => WorktreeValidity::Invalid,
+        };
+        if validity == WorktreeValidity::Invalid {
             self.set_status(
                 SessionStatus::Stopped,
                 Some("worktree-missing"),
