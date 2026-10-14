@@ -99,6 +99,7 @@ fn to_wire_never_puts_cancelled_on_the_wire() {
         elapsed_ms: 42,
         cancel: None,
         ready_wait_active: false,
+        cancel_already_recorded: false,
     };
     assert_eq!(state.to_wire(), None);
 }

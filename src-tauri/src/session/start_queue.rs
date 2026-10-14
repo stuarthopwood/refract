@@ -142,6 +142,21 @@ pub(super) struct State {
     /// either), so the table cannot tell a late, stale tick from this same attempt apart from a
     /// brand new one; this flag can.
     ready_wait_active: bool,
+    /// Set by `watch_for_cancel`'s own cancel branch (round 4 gate-fix), read-and-reset by
+    /// `agent::launch`'s own `launch()` immediately after `wait_ready` resolves: a cancel that
+    /// arrives mid-ready-wait kills the real process (`proc.stop()`), and that SAME kill is what
+    /// makes `wait_ready` itself return an error moments later -- `wait_ready`'s own error has
+    /// no way to tell "I was killed because of a cancel `end_cancelled_attempt` already recorded
+    /// cleanly" apart from "the process genuinely crashed/timed out waiting to become ready".
+    /// Without this, `launch()`'s own `wait_result` error branch called `record_start_failure`
+    /// a second time with the raw, generic exit error, clobbering the clean "start cancelled"
+    /// status/notice `end_cancelled_attempt` had just written (found live, round 4 CDP
+    /// live-check: a Cancel click ended on an "OmpProcess: process exited before ready" failure
+    /// banner with Retry/Start-new actions instead of a clean cancelled stop). Reset at the top
+    /// of every fresh `acquire_slot` attempt so a stale `true` from an earlier attempt that
+    /// never reached `wait_ready` at all (cancelled while still queued/memory-deferring) can
+    /// never suppress a LATER, unrelated attempt's own genuine failure notice.
+    cancel_already_recorded: bool,
 }
 
 impl State {
@@ -354,6 +369,7 @@ pub(super) async fn acquire_slot(agent: &SessionAgent) -> Result<SlotGuard, Agen
             s.stage = None;
             s.elapsed_ms = 0;
             s.ready_wait_active = false;
+            s.cancel_already_recorded = false;
         })
         .await;
 
@@ -442,6 +458,16 @@ pub(super) async fn watch_for_cancel(agent: &SessionAgent, proc: Arc<OmpProcess>
         tokio::spawn(async move {
             tokio::select! {
                 _ = cancel.notified() => {
+                    // Gate-fix (round 4, found live): set BEFORE `proc.stop()` -- that call is
+                    // what makes `wait_ready` (racing concurrently in `agent::launch`'s own
+                    // `launch()`) eventually observe the process exiting and return its own
+                    // error; setting this flag strictly before triggering that kill guarantees
+                    // `launch()` always sees it set by the time it checks, regardless of how
+                    // fast the kill propagates. See `State::cancel_already_recorded`'s own doc
+                    // comment for the race this closes.
+                    agent
+                        .with_start_queue_state(|s| s.cancel_already_recorded = true)
+                        .await;
                     proc.stop().await;
                     end_cancelled_attempt(&agent).await;
                 }
@@ -452,6 +478,17 @@ pub(super) async fn watch_for_cancel(agent: &SessionAgent, proc: Arc<OmpProcess>
     CancelWatch {
         done_tx: Some(done_tx),
     }
+}
+
+/// Read-and-reset: `agent::launch`'s own `launch()` calls this exactly once, immediately after
+/// `wait_ready` resolves with an error, to tell "this failure is the direct, already-handled
+/// result of a cancel `end_cancelled_attempt` already recorded cleanly" apart from "a genuine
+/// ready-wait failure (ceiling, real crash) this lane has not reported yet". Resets to `false`
+/// so this only ever suppresses the ONE failure report it caused, never a later unrelated one.
+pub(super) async fn take_cancel_already_recorded(agent: &SessionAgent) -> bool {
+    agent
+        .with_start_queue_state(|s| std::mem::take(&mut s.cancel_already_recorded))
+        .await
 }
 
 impl SessionAgent {

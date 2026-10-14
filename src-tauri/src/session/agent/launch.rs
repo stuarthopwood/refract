@@ -177,6 +177,21 @@ impl SessionAgent {
         drop(slot_guard);
         drop(spawned_guard);
         if let Err(err) = wait_result {
+            // Gate-fix (round 4, found live via CDP): a cancel landing during this exact wait
+            // (`watch_for_cancel`'s own handler above) already recorded a clean cancelled status
+            // via `end_cancelled_attempt` -- that handler's own `proc.stop()` call is what makes
+            // THIS `wait_ready` call return the error being matched here in the first place, so
+            // without this check every cancelled start ended up on the raw, generic
+            // "OmpProcess: process exited before ready" failure banner (Retry/Start new
+            // conversation) a moment later, clobbering the correct one. See
+            // `start_queue::State::cancel_already_recorded`'s own doc comment for the exact
+            // ordering guarantee that makes this check race-free.
+            if crate::session::start_queue::take_cancel_already_recorded(self).await {
+                return Err(AgentError::new(
+                    "not-started",
+                    "SessionAgent: start cancelled",
+                ));
+            }
             let detail = format!("{failure_prefix}{}", err.message);
             self.record_start_failure(&detail).await;
             return Err(AgentError::new("start-failed", detail));
