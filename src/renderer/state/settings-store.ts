@@ -13,6 +13,7 @@ interface SettingsState {
   setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
+  setWordPredictionEnabled(enabled: boolean): Promise<void>
 }
 
 // The app-wide Settings (contracts/ipc.md "Settings"): Approval mode and (spec 004) which
@@ -26,7 +27,10 @@ export const DEFAULT_SETTINGS: Settings = {
   watermarkEnabled: true,
   transcriptDisplay: DEFAULT_TRANSCRIPT_DISPLAY,
   showSampleData: false,
-  detectImagePathsOnPaste: true
+  detectImagePathsOnPaste: true,
+  // Issue #772 (Rust build only): off by default -- see `Settings.wordPredictionEnabled`'s own
+  // doc comment for the memory-cost evidence.
+  wordPredictionEnabled: false
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -80,6 +84,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setDetectImagePathsOnPaste: async (enabled) => {
     const result = await window.refract.settings.setDetectImagePathsOnPaste(enabled)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setWordPredictionEnabled: async (enabled) => {
+    const result = await window.refract.settings.setWordPredictionEnabled(enabled)
     if (result.ok) {
       set({ settings: result.value })
     } else {

@@ -455,7 +455,10 @@ impl SettingsStore {
     /// `chat.setPredictWordEnabled(enabled)` (issue #772, lane R6): no raw/lazy-correction
     /// tracking needed, the same plain-boolean migration shape `set_detect_image_paths_on_paste`
     /// above uses.
-    pub async fn set_word_prediction_enabled(&mut self, enabled: bool) -> std::io::Result<Settings> {
+    pub async fn set_word_prediction_enabled(
+        &mut self,
+        enabled: bool,
+    ) -> std::io::Result<Settings> {
         let next = Settings {
             word_prediction_enabled: enabled,
             ..self.data.clone()

@@ -363,6 +363,11 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_TRANSCRIPT_DISPLAY: 'settings.setTranscriptDisplay',
   SETTINGS_SET_SHOW_SAMPLE_DATA: 'settings.setShowSampleData',
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
+  // Issue #772, lane R6 (Rust build only -- Electron main-process features are frozen, epic
+  // #797 -- `UNSUPPORTED_IN_ELECTRON` on the Electron side of `settings.*`): the word-prediction
+  // ghost-text off switch. Default `false`; see `Settings.wordPredictionEnabled`'s own doc
+  // comment for the memory-cost evidence behind that default.
+  SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
   MODEL_ROLES_LIST: 'modelRoles.list',
   MODEL_ROLES_SET: 'modelRoles.set',
   MODEL_ROLES_LIST_CATALOG: 'modelRoles.listCatalog',
@@ -721,6 +726,11 @@ export interface RefractApi extends UpdatesApi {
      * `settings:changed`, no new event. Turns OFF path-based image-attach detection on paste
      * entirely when `false`; pasting a clipboard image directly is never affected. */
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
+    /** Issue #772 (Rust build only): persists the whole `Settings` row and returns this call's
+     * own written value, the same race-safety pattern as every other setter here. Pushes
+     * `settings:changed`, no new event. Always `{ ok: false, error: { code: 'unsupported' } }`
+     * on Electron (`UNSUPPORTED_IN_ELECTRON`) -- this setting has no TypeScript counterpart. */
+    setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>;
   };
 
   /** Issue #455: reads and writes OMP's own `modelRoles` config through the `omp config` CLI

@@ -60,11 +60,23 @@ pub(super) struct State {
 fn flatten_btw_history(thread: &Value) -> Vec<Value> {
     let topic_id = thread.get("id").and_then(Value::as_str).unwrap_or("");
     let mut out = Vec::new();
-    visit_btw_node(thread, topic_id, topic_id, thread.get("leafId").and_then(Value::as_str), &mut out);
+    visit_btw_node(
+        thread,
+        topic_id,
+        topic_id,
+        thread.get("leafId").and_then(Value::as_str),
+        &mut out,
+    );
     out
 }
 
-fn visit_btw_node(node: &Value, id: &str, topic_id: &str, leaf_id: Option<&str>, out: &mut Vec<Value>) {
+fn visit_btw_node(
+    node: &Value,
+    id: &str,
+    topic_id: &str,
+    leaf_id: Option<&str>,
+    out: &mut Vec<Value>,
+) {
     let mut record = json!({
         "id": id,
         "topicId": topic_id,
@@ -170,7 +182,10 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
             let (topic_epoch, conversation_epoch) = agent
                 .with_side_chat_state(|s| {
                     (
-                        s.topic_epoch.get(record_id).copied().unwrap_or(s.conversation_epoch),
+                        s.topic_epoch
+                            .get(record_id)
+                            .copied()
+                            .unwrap_or(s.conversation_epoch),
                         s.conversation_epoch,
                     )
                 })
@@ -188,13 +203,17 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
             let Some(record) = frame.get("record") else {
                 return;
             };
-            let Some(topic_id) = record.get("id").and_then(Value::as_str).map(str::to_string) else {
+            let Some(topic_id) = record.get("id").and_then(Value::as_str).map(str::to_string)
+            else {
                 return;
             };
             let (topic_epoch, conversation_epoch) = agent
                 .with_side_chat_state(|s| {
                     (
-                        s.topic_epoch.get(&topic_id).copied().unwrap_or(s.conversation_epoch),
+                        s.topic_epoch
+                            .get(&topic_id)
+                            .copied()
+                            .unwrap_or(s.conversation_epoch),
                         s.conversation_epoch,
                     )
                 })
@@ -234,7 +253,9 @@ pub(super) async fn on_exit(agent: &SessionAgent, _code: Option<i32>, _requested
             s.topic_epoch.clear();
         })
         .await;
-    agent.events().emit_side_chat_interrupted(agent.session_id());
+    agent
+        .events()
+        .emit_side_chat_interrupted(agent.session_id());
 }
 
 pub(super) async fn on_start_progress(
@@ -308,7 +329,11 @@ pub async fn ask(
     };
     // Gate-fix (round 6, Code6/Sec6/A11y6/Verif6 HIGH defense in depth): stamps the TOPIC's own
     // root id (never the latest turn's own flattened id) with the epoch captured above.
-    let thread_id = thread.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    let thread_id = thread
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     agent
         .with_side_chat_state(|s| {
             s.topic_epoch.insert(thread_id, epoch);

@@ -1,6 +1,7 @@
 // IPC handlers for `sideChat.*` (contracts/ipc.md "Side chat", spec 014) and
-// `chat.predictWord`/`chat.predictWordFeedback`/`chat.setPredictWordEnabled` (lane R6, issue
-// #789; #772's word-prediction off switch) -- the IPC-facing sibling of `session/side_chat.rs`'s
+// `chat.predictWord`/`chat.predictWordFeedback`/`settings.setWordPredictionEnabled` (lane R6,
+// issue #789; #772's word-prediction off switch, wired to the renderer's existing Settings
+// screen/store) -- the IPC-facing sibling of `session/side_chat.rs`'s
 // own frame handling and RPC calls. `ask`/`cancel`/`getHistory` all drive an already-attached
 // process exactly like `chat.send`/`chat.stop` do, never a Conversation reattach, so
 // `map_agent_error` (`ipc::mod`'s own `AgentError` -> `IpcError` mapper, shared by every other
@@ -10,7 +11,10 @@ use serde_json::Value;
 
 use crate::session::side_chat;
 
-use super::{arg_str, invalid_argument, map_agent_error, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
+use super::{
+    arg_str, invalid_argument, map_agent_error, not_found, AppState, Dispatcher, HandlerFuture,
+    IpcError,
+};
 
 /// No OMP-documented limit exists for `btw`'s `question` field (`contracts/ipc.md` has no stated
 /// maximum). 10,000 characters comfortably covers any realistic side question while still
@@ -27,11 +31,16 @@ pub fn register(d: &mut Dispatcher) {
     d.register("sideChat.getHistory", side_chat_get_history);
     d.register("chat.predictWord", chat_predict_word);
     d.register("chat.predictWordFeedback", chat_predict_word_feedback);
-    d.register("chat.setPredictWordEnabled", chat_set_predict_word_enabled);
+    d.register("settings.setWordPredictionEnabled", settings_set_word_prediction_enabled);
 }
 
 async fn session_exists(state: &AppState, session_id: &str) -> bool {
-    state.registry.lock().await.get_session(session_id).is_some()
+    state
+        .registry
+        .lock()
+        .await
+        .get_session(session_id)
+        .is_some()
 }
 
 /// `sideChat.ask` (contracts/ipc.md "Side chat", spec 014 tasks.md T011-T013). A blank `question`
@@ -85,7 +94,9 @@ pub fn side_chat_ask(state: AppState, args: Vec<Value>) -> HandlerFuture {
 pub fn side_chat_cancel(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = arg_str(&args, 0) else {
-            return Err(invalid_argument("Cancelling a side question needs a Session id"));
+            return Err(invalid_argument(
+                "Cancelling a side question needs a Session id",
+            ));
         };
         if !session_exists(&state, session_id).await {
             return Err(not_found(format!("Session not found: {session_id}")));
@@ -103,7 +114,9 @@ pub fn side_chat_cancel(state: AppState, args: Vec<Value>) -> HandlerFuture {
 pub fn side_chat_get_history(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = arg_str(&args, 0) else {
-            return Err(invalid_argument("Loading side chat history needs a Session id"));
+            return Err(invalid_argument(
+                "Loading side chat history needs a Session id",
+            ));
         };
         if !session_exists(&state, session_id).await {
             return Err(not_found(format!("Session not found: {session_id}")));
@@ -182,16 +195,20 @@ pub fn chat_predict_word_feedback(state: AppState, args: Vec<Value>) -> HandlerF
     })
 }
 
-/// `chat.setPredictWordEnabled` (issue #772, Rust-only -- Electron main-process features are
-/// frozen, so this setting has no TypeScript counterpart): persists the whole `Settings` row and
-/// broadcasts `settings:changed`, the same pattern every other `settings.set*` setter uses
-/// (`ipc::settings`). Registered here (not `ipc/settings.rs`, lane R8's own file) because this
-/// setting belongs to the `chat.*` prediction channels lane R6 owns.
-pub fn chat_set_predict_word_enabled(state: AppState, args: Vec<Value>) -> HandlerFuture {
+/// `settings.setWordPredictionEnabled` (issue #772, Rust-only -- Electron main-process features
+/// are frozen, so this setting has no TypeScript counterpart): persists the whole `Settings` row
+/// and broadcasts `settings:changed`, the same pattern every other `settings.set*` setter uses
+/// (`ipc::settings`). Registered here (not `ipc/settings.rs`, lane R8's own file) because the
+/// underlying `word_prediction_enabled` field belongs to the `chat.predictWord*` prediction
+/// feature lane R6 owns -- the channel string itself is under the generic `settings.*` namespace
+/// to match every other setter's own naming (`settings.setWatermarkEnabled`, `.setShowSampleData`,
+/// etc.), reusing the renderer's existing Settings screen/store (`ChatDisplaySection.tsx`,
+/// `settings-store.ts`) rather than inventing a one-off UI surface for it.
+pub fn settings_set_word_prediction_enabled(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(enabled) = args.first().and_then(Value::as_bool) else {
             return Err(invalid_argument(
-                "chat.setPredictWordEnabled expects a boolean enabled",
+                "settings.setWordPredictionEnabled expects a boolean enabled",
             ));
         };
         let value = state

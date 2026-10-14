@@ -79,8 +79,14 @@ fn flatten_a_multi_level_thread_builds_dotted_synthetic_ids_and_shared_topic_id(
         ],
     });
     let flattened = flatten_btw_history(&thread);
-    let ids: Vec<&str> = flattened.iter().map(|r| r["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, vec!["topic-1", "topic-1.0", "topic-1.0.0", "topic-1.1"]);
+    let ids: Vec<&str> = flattened
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["topic-1", "topic-1.0", "topic-1.0.0", "topic-1.1"]
+    );
     // Every record, root or not, shares the SAME topicId -- never a child's own id.
     for record in &flattened {
         assert_eq!(record["topicId"], "topic-1");
@@ -215,7 +221,10 @@ fn a_cancelled_topics_late_frame_is_dropped_once_the_conversation_has_moved_on()
         .get("current-topic")
         .copied()
         .unwrap_or(state.conversation_epoch);
-    assert!(!topic_frame_is_stale(current_topic_epoch, state.conversation_epoch));
+    assert!(!topic_frame_is_stale(
+        current_topic_epoch,
+        state.conversation_epoch
+    ));
 }
 
 // ---------------------------------------------------------------------------

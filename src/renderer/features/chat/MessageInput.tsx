@@ -104,6 +104,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // #514: a Settings switch to turn path-based image-attach detection off entirely (a pasted
   // clipboard image itself is never affected by this).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
+  // Issue #772 (Rust build only): the word-prediction (ghost-text) off switch -- `false` on
+  // Electron too (the setting is always absent there), so ghost text stays off on Electron
+  // until this ships there (it won't -- epic #797 freezes Electron main-process features).
+  const wordPredictionEnabled = useSettingsStore((s) => s.settings.wordPredictionEnabled ?? false)
   // PR #723 gate round 1 fix (Code1 Medium): reactive read so the Send button's own
   // `aria-disabled` reflects an in-flight background path/drop read the same way `handleSend`'s
   // own guard does (draft-store.ts's `pendingAttachmentReads` doc comment).
@@ -727,7 +731,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       ghostDebounceRef.current = null
     }
     dismissGhost(false)
-    if (!isGhostTextEligible(nextText, nextCursor)) {
+    if (!wordPredictionEnabled || !isGhostTextEligible(nextText, nextCursor)) {
       setAnnouncedSuggestion(null) // no request will be made: nothing left to announce
       return
     }
