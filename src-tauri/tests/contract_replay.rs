@@ -332,7 +332,8 @@ fn scrub_known_divergences(value: &mut Value) {
                     );
                 }
             }
-            if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null)) {
+            if map.get("ok") == Some(&json!(true)) && matches!(map.get("value"), Some(Value::Null))
+            {
                 map.remove("value");
             }
             for (_, inner) in map.iter_mut() {

@@ -2059,22 +2059,15 @@ impl TranscriptState {
         }
     }
 
-    /// Marks that the user has sent a prompt or slash command at least once in this process's
-    /// lifetime (`SessionAgent.hasUserActed`); one-directional, matching the TS field (only ever
-    /// flips false -> true).
+    /// Marks the user has sent a prompt/slash command at least once (`SessionAgent.hasUserActed`); one-directional.
     pub fn mark_user_acted(&mut self) {
         self.has_user_acted = true;
     }
-
-    /// Sets the flag `settle_interrupted_tool_rows` reads (`SessionAgent`'s own
-    /// `detectUnexpectedTermination` result, threaded in by the caller -- this struct has no way
-    /// to detect it itself). Port of `fromHistory`'s own `terminatedUnexpectedly` parameter.
+    /// Sets the flag `settle_interrupted_tool_rows` reads; port of `fromHistory`'s `terminatedUnexpectedly` param.
     pub fn set_terminated_unexpectedly(&mut self, value: bool) {
         self.terminated_unexpectedly = value;
     }
-
-    /// Port of `settleInterruptedToolRows`, using the flag set by `set_terminated_unexpectedly`.
-    /// Returns `true` when any row changed.
+    /// Port of `settleInterruptedToolRows`, using the flag set by `set_terminated_unexpectedly`; returns `true` when any row changed.
     pub fn settle_interrupted_tool_rows(&mut self) -> bool {
         let (next, changed) =
             settle_interrupted_tool_rows_items(self.items.clone(), self.terminated_unexpectedly);
