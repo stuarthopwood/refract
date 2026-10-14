@@ -21,7 +21,8 @@
 import { app, ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { IPC_EVENTS, IPC_REQUESTS } from '../../shared/ipc';
-import type { GitHubAccount, GitHubAddFlowProgress, IpcErrorCode, OmpProviderState, Result } from '../../shared/ipc';
+import type { IpcErrorCode, Result } from '../../shared/ipc';
+import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../../shared/accounts';
 import type { GhAuthHostEntry, GhLoginExitInfo, GhLoginFlow } from '../github/cli';
 import { GhError, authLoginCancel, authLoginStart, authLogout, authStatus, authSwitch } from '../github/cli';
 import { fetchAvatar, fetchProfile } from '../github/profile';

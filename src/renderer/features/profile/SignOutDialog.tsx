@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { signOutSuccessor } from '@/lib/account-format'
 import { useAccountsStore } from '@/state'
-import type { GitHubAccount } from '../../../shared/ipc'
+import type { GitHubAccount } from '../../../shared/accounts'
 
 export interface SignOutDialogProps {
   /** Non-null opens the dialog for this account. */
