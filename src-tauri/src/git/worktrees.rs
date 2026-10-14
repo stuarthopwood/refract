@@ -360,7 +360,7 @@ pub async fn add_worktree_from_pull_request_branch(
             if fetch_result.stderr.trim().is_empty() {
                 format!("Could not fetch pull request #{number}'s head branch.")
             } else {
-                fetch_result.stderr.trim().to_string()
+                crate::omp::redact::redact_secrets(fetch_result.stderr.trim())
             },
         ));
     }

@@ -174,14 +174,21 @@ pub(super) fn map_gh_failure(stderr: &str, stdout: &str) -> GhError {
     )
 }
 
+/// Security finding (code review, 2026-10-14): every string this returns can reach the renderer
+/// (`GhError.message`, surfaced via `ipc::pull_requests`'s own error mapping) or a debug log
+/// (`ipc::accounts::map_gh_error`) -- `gh`'s own stderr/stdout can echo back a `--body`/`--user`
+/// argument the caller passed in, which in turn could contain a credential-shaped substring a
+/// user pasted into a comment or branch name. Redacted before it ever leaves this function
+/// (`crate::omp::redact::redact_secrets`, ported from `src/main/omp/redact.ts`); the fixed
+/// `fallback` string never needs it.
 pub(super) fn non_empty_or(stderr: &str, stdout: &str, fallback: &str) -> String {
     let stderr = stderr.trim();
     if !stderr.is_empty() {
-        return stderr.to_string();
+        return crate::omp::redact::redact_secrets(stderr);
     }
     let stdout = stdout.trim();
     if !stdout.is_empty() {
-        return stdout.to_string();
+        return crate::omp::redact::redact_secrets(stdout);
     }
     fallback.to_string()
 }
@@ -365,9 +372,7 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
     // `.get(..)` rather than `remote_url[..]` indexing (LOW finding, code review 2026-10-14): a
     // crafted remote with non-ASCII text at exactly byte 15 would otherwise panic by slicing
     // inside a multi-byte character instead of simply failing this prefix match.
-    let Some(prefix) = remote_url.get(..SSH_PREFIX.len()) else {
-        return None;
-    };
+    let prefix = remote_url.get(..SSH_PREFIX.len())?;
     if prefix.eq_ignore_ascii_case(SSH_PREFIX) {
         let rest = remote_url[SSH_PREFIX.len()..].trim_end_matches('/');
         let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();

@@ -154,10 +154,18 @@ pub async fn fetch_profile(host: &str, login: &str) -> Result<GitHubProfile, Pro
     }
     let token = auth_token(host, login).await?;
 
+    // Built explicitly (not via `.header(_, format!(...))`) so `set_sensitive(true)` can be
+    // applied before it is ever attached to the request builder: defence in depth so the token
+    // is also excluded from reqwest's own debug/trace logging of outgoing headers, never just
+    // this codebase's own logging.
+    let mut auth_header = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+        .map_err(|_| ProfileFetchError::new("GitHub token contained an invalid header value"))?;
+    auth_header.set_sensitive(true);
+
     let response = HTTP_CLIENT
         .get(format!("https://{API_HOST}/user"))
         // Held only in this one request's headers object; never logged, never written to disk.
-        .header(AUTHORIZATION, format!("Bearer {token}"))
+        .header(AUTHORIZATION, auth_header)
         .header(ACCEPT, "application/vnd.github+json")
         .header(USER_AGENT, "Refract")
         .send()
@@ -219,7 +227,12 @@ struct AvatarResponse {
 fn parse_avatar_url(value: &str) -> Result<Url, AvatarFetchError> {
     let url = Url::parse(value)
         .map_err(|_| AvatarFetchError::new(format!("avatar URL \"{value}\" is not a valid URL")))?;
-    if url.scheme() != "https" || url.host_str() != Some(AVATAR_HOST) {
+    if url.scheme() != "https"
+        || url.host_str() != Some(AVATAR_HOST)
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
         return Err(AvatarFetchError::new(format!(
             "avatar host \"{}\" is not {AVATAR_HOST}",
             url.host_str().unwrap_or("")
@@ -366,6 +379,16 @@ mod tests {
     #[test]
     fn rejects_malformed_url() {
         assert!(parse_avatar_url("not a url").is_err());
+    }
+
+    #[test]
+    fn rejects_explicit_port() {
+        assert!(parse_avatar_url("https://avatars.githubusercontent.com:8080/u/123").is_err());
+    }
+
+    #[test]
+    fn rejects_userinfo() {
+        assert!(parse_avatar_url("https://user:pass@avatars.githubusercontent.com/u/123").is_err());
     }
 
     // --- resolve_avatar_mime_type ---

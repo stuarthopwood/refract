@@ -8,7 +8,8 @@
 // this file keeps its own small `gh`-invocation and owner/repo-parsing logic, exactly as the TS
 // source states it does relative to its spec-003 sibling.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -56,7 +57,9 @@ fn parse_owner_repo(remote_url: &str) -> Option<(String, String)> {
         if !host.eq_ignore_ascii_case("github.com") {
             return None;
         }
-        let path = host_and_path.1;
+        // `trim_end_matches` so a trailing slash (promised by this fn's own doc comment) does
+        // not leave a trailing empty segment that would otherwise make `segments.len() != 2`.
+        let path = host_and_path.1.trim_end_matches('/');
         let segments: Vec<&str> = path.split('/').collect();
         if segments.len() != 2 || segments[0].is_empty() || segments[1].is_empty() {
             return None;
@@ -96,6 +99,15 @@ struct GhPrListEntry {
     state: String,
 }
 
+/// Resolves `gh` on PATH, caching the first successful resolution for the process lifetime.
+/// Deliberately a local copy of `github::gh`'s own `resolve_gh` (see this file's own doc
+/// comment: kept independent on purpose) rather than an import of it.
+fn resolve_gh_cached() -> Result<PathBuf, ()> {
+    static CACHE: LazyLock<Result<PathBuf, ()>> =
+        LazyLock::new(|| which::which_global("gh").map_err(|_| ()));
+    CACHE.clone()
+}
+
 /// The Session's open pull request for `branch` (spec 004 FR-006). Never fails: every error path
 /// below resolves to `PullRequestLookup::Unavailable` instead of propagating.
 pub async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequestLookup {
@@ -107,7 +119,7 @@ pub async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequ
         return PullRequestLookup::Unavailable;
     };
 
-    let Ok(gh_path) = which::which_global("gh") else {
+    let Ok(gh_path) = resolve_gh_cached() else {
         return PullRequestLookup::Unavailable;
     };
 
@@ -149,5 +161,91 @@ pub async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequ
             url: open.url,
         },
         None => PullRequestLookup::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_owner_repo ---
+
+    #[test]
+    fn parses_https_with_git_suffix() {
+        assert_eq!(
+            parse_owner_repo("https://github.com/owner/repo.git"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_https_without_git_suffix_and_trailing_slash() {
+        assert_eq!(
+            parse_owner_repo("https://github.com/owner/repo/"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_ssh_form() {
+        assert_eq!(
+            parse_owner_repo("git@github.com:owner/repo.git"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_non_github_host() {
+        assert_eq!(parse_owner_repo("https://gitlab.com/owner/repo.git"), None);
+    }
+
+    #[test]
+    fn rejects_malformed_remote_url() {
+        assert_eq!(parse_owner_repo("not a url at all"), None);
+    }
+
+    // --- GhPrListEntry / gh pr list --json parsing ---
+
+    #[test]
+    fn parses_open_pr_found_for_branch() {
+        let fixture =
+            r#"[{"number":42,"url":"https://github.com/owner/repo/pull/42","state":"OPEN"}]"#;
+        let entries: Vec<GhPrListEntry> = serde_json::from_str(fixture).unwrap();
+        let found = entries.into_iter().find(|entry| entry.state == "OPEN");
+        assert!(found.is_some());
+        let found = found.unwrap();
+        assert_eq!(found.number, 42);
+        assert_eq!(found.url, "https://github.com/owner/repo/pull/42");
+    }
+
+    #[test]
+    fn parses_no_pr_found_for_branch() {
+        let fixture = "[]";
+        let entries: Vec<GhPrListEntry> = serde_json::from_str(fixture).unwrap();
+        assert!(entries
+            .into_iter()
+            .find(|entry| entry.state == "OPEN")
+            .is_none());
+    }
+
+    #[test]
+    fn parses_closed_pr_not_treated_as_open() {
+        let fixture =
+            r#"[{"number":7,"url":"https://github.com/owner/repo/pull/7","state":"CLOSED"}]"#;
+        let entries: Vec<GhPrListEntry> = serde_json::from_str(fixture).unwrap();
+        assert!(entries
+            .into_iter()
+            .find(|entry| entry.state == "OPEN")
+            .is_none());
+    }
+
+    // --- resolve_gh_cached ---
+
+    #[test]
+    fn resolve_gh_cached_is_stable_across_calls() {
+        // Caching means two calls in the same process always agree, whatever the outcome on
+        // this machine (found or not found) -- the point under test is the stability, not a
+        // specific `gh` installation.
+        assert_eq!(resolve_gh_cached(), resolve_gh_cached());
     }
 }

@@ -51,6 +51,12 @@ which = "8.0.6"
 # size cost only -- no runtime behaviour, security, or correctness issue follows from having two
 # providers compiled in. Revisit if binary size becomes a real constraint.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+# Lane R9 (#792): `omp/redact.rs`, a line-for-line port of `src/main/omp/redact.ts`'s
+# `redactSecrets` PATTERNS array. Several of those patterns rely on lookahead/lookbehind
+# (`(?<!...)`, `(?<=...)`, `(?!...)`) that the `regex` crate (already in this graph
+# transitively) does not support by design -- `regex`'s own docs point to `fancy-regex` as the
+# crate to reach for when lookaround is unavoidable.
+fancy-regex = "0.19.2"
 
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is

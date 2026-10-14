@@ -4,14 +4,22 @@
 // at its tail) to stay under the 600-line-per-file cap (issue #806), the same pattern
 // `session/agent` already uses for splitting a module by concern, applied test-only here.
 //
-// `GhRestFile` (REST, single-word field names) is deserialised from a JSON string via
-// `serde_json::from_str` -- the most faithful stand-in for recorded `gh api` REST output.
-// `GhPrViewDetail` and every `gh_mutations` GraphQL wire shape below are constructed directly as
-// Rust struct literals instead: none of them carry a `#[serde(rename_all = "camelCase")]` (or
-// per-field `rename`) on their multi-word fields, so a JSON fixture using `gh`'s actual camelCase
-// wire keys (e.g. `"baseRefName"`, `"createdAt"`, `"diffSide"`) would not deserialise against
-// today's field names, and one using those literal snake_case field names instead would not be a
-// faithful "recorded gh output" fixture either -- direct construction says what it actually is.
+// `GhRestFile` (REST, single-word field names) and, as of this round, `GhPrListEntry`,
+// `GhSearchEntry`, and `GhPrViewDetail` (all now `#[serde(rename_all = "camelCase")]`) are each
+// deserialised from a JSON string via `serde_json::from_str` -- the most faithful stand-in for
+// recorded `gh pr list --json`/`gh search prs --json`/`gh pr view --json` output, and the
+// regression test for the HIGH finding (code review, 2026-10-14) that a Team review request (no
+// `login` key at all in real `gh` output) used to fail to map to `login: "unknown"`. Those three
+// JSON-fixture tests live in a further child module, `mapping_fixtures_tests.rs`, to stay under
+// this file's own 600-line cap.
+//
+// `gh_mutations`'s GraphQL wire shapes (`GhThreadsAndTimeline`/`GhTimelineNode`/
+// `GhReviewThreadNode` and friends) are still constructed directly as Rust struct literals below,
+// even though they too now carry `#[serde(rename_all = "camelCase")]`: a faithful JSON fixture for
+// them would have to hand-maintain the full nested GraphQL response envelope
+// (`{"data":{"repository":{"pullRequest":{...}}}}`) `THREADS_AND_TIMELINE_QUERY` actually returns,
+// for no behavioural gain over directly constructing the already-unwrapped inner shape these
+// mapping functions read -- struct-literal construction says exactly what's varied per test case.
 
 use super::*;
 use crate::github::gh_mutations::{
@@ -400,3 +408,119 @@ fn build_timeline_sorts_commit_review_comment_and_thread_chronologically() {
     assert!(matches!(timeline[2], TimelineEntry::Comment { .. }));
     assert!(matches!(timeline[3], TimelineEntry::ReviewThread { .. }));
 }
+
+#[test]
+fn build_timeline_maps_team_actor_to_unknown_login() {
+    // A team review request/comment author has no `login` key at all in real `gh`/GraphQL output
+    // (`gh.rs`'s own `GhActor` doc comment) -- `map_actor` must fall back to `"unknown"`, not
+    // panic or misread `name` as the login.
+    let data = GhThreadsAndTimeline {
+        id: "PR_kwFOTeam".to_string(),
+        review_threads: GhReviewThreadsNodes { nodes: vec![] },
+        timeline_items: GhTimelineNodes {
+            nodes: vec![GhTimelineNode {
+                __typename: "IssueComment".to_string(),
+                commit: None,
+                id: Some("comment-team".to_string()),
+                author: Some(GhActor {
+                    login: None,
+                    name: Some("Some Team".to_string()),
+                }),
+                body: Some("On behalf of the team.".to_string()),
+                created_at: Some("2024-06-01T00:00:00Z".to_string()),
+                state: None,
+                submitted_at: None,
+            }],
+        },
+    };
+
+    let timeline = build_timeline(&data);
+
+    assert_eq!(timeline.len(), 1);
+    match &timeline[0] {
+        TimelineEntry::Comment { author, .. } => {
+            assert_eq!(author.login, "unknown");
+            assert_eq!(author.name, Some("Some Team".to_string()));
+        }
+        other => panic!("expected a Comment entry, got {other:?}"),
+    }
+}
+
+#[test]
+fn build_timeline_skips_unknown_typename_node() {
+    // `build_timeline`'s `__typename` match has a catch-all `_ => {}` arm (any future
+    // `timelineItems` kind this build doesn't yet render): confirms it's silently skipped rather
+    // than erroring or being mistaken for one of the three handled kinds.
+    let data = GhThreadsAndTimeline {
+        id: "PR_kwFOUnknown".to_string(),
+        review_threads: GhReviewThreadsNodes { nodes: vec![] },
+        timeline_items: GhTimelineNodes {
+            nodes: vec![
+                gh_timeline_node_commit(
+                    "sha-known",
+                    "Known commit",
+                    "octocat",
+                    "2024-01-01T00:00:00Z",
+                ),
+                GhTimelineNode {
+                    __typename: "SomeFutureNodeKind".to_string(),
+                    commit: None,
+                    id: Some("future-1".to_string()),
+                    author: None,
+                    body: None,
+                    created_at: None,
+                    state: None,
+                    submitted_at: None,
+                },
+            ],
+        },
+    };
+
+    let timeline = build_timeline(&data);
+
+    assert_eq!(timeline.len(), 1);
+    assert!(matches!(timeline[0], TimelineEntry::Commit { .. }));
+}
+
+#[test]
+fn build_timeline_tie_break_preserves_relative_order_for_identical_timestamps() {
+    // `[T]::sort_by` is a documented stable sort: two entries with an identical timestamp keep
+    // their original relative order rather than swapping unpredictably or panicking.
+    let data = GhThreadsAndTimeline {
+        id: "PR_kwFOTie".to_string(),
+        review_threads: GhReviewThreadsNodes { nodes: vec![] },
+        timeline_items: GhTimelineNodes {
+            nodes: vec![
+                gh_timeline_node_comment(
+                    "comment-first",
+                    "octocat",
+                    "First.",
+                    "2024-07-01T00:00:00Z",
+                ),
+                gh_timeline_node_comment(
+                    "comment-second",
+                    "octocat",
+                    "Second.",
+                    "2024-07-01T00:00:00Z",
+                ),
+            ],
+        },
+    };
+
+    let timeline = build_timeline(&data);
+
+    assert_eq!(timeline.len(), 2);
+    let bodies: Vec<&str> = timeline
+        .iter()
+        .map(|entry| match entry {
+            TimelineEntry::Comment { body, .. } => body.as_str(),
+            other => panic!("expected Comment entries, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(bodies, vec!["First.", "Second."]);
+}
+
+// `GhPrListEntry`/`GhSearchEntry`/`GhPrViewDetail` JSON-string fixtures: split out to stay under
+// this file's own 600-line cap (issue #806).
+#[path = "mapping_fixtures_tests.rs"]
+mod mapping_fixtures_tests;

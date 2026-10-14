@@ -252,37 +252,68 @@ pub async fn submit_review(
 ) -> Result<(), GhError> {
     if verdict == ReviewVerdict::Approve {
         if let Some(pinned) = pinned {
-            let mut variables = vec![
-                ("pullRequestId", GraphqlValue::Str(pinned.pull_request_id)),
-                ("commitOID", GraphqlValue::Str(pinned.head_sha)),
-                ("event", GraphqlValue::Str("APPROVE")),
-            ];
-            if let Some(body) = body {
-                variables.push(("body", GraphqlValue::Str(body)));
-            }
+            let variables = build_approve_review_variables(&pinned, body);
             let _: serde_json::Value =
                 gh_graphql(repo_path, ADD_REVIEW_MUTATION, &variables).await?;
             return Ok(());
         }
     }
     let (owner, repo) = owner_repo_for(repo_path).await?;
-    let flag = match verdict {
-        ReviewVerdict::Approve => "--approve",
-        ReviewVerdict::RequestChanges => "--request-changes",
-        ReviewVerdict::Comment => "--comment",
-    };
-    let number_str = number.to_string();
     let owner_repo = format!("{owner}/{repo}");
-    let mut args: Vec<&str> = vec!["pr", "review", &number_str, "--repo", &owner_repo, flag];
-    if let Some(body) = body {
-        args.push("--body");
-        args.push(body);
-    }
+    let owned_args = build_review_argv(number, &owner_repo, verdict, body);
+    let args: Vec<&str> = owned_args.iter().map(String::as_str).collect();
     let result = gh_raw(repo_path, &args, None).await?;
     if result.code != 0 {
         return Err(map_gh_failure(&result.stderr, &result.stdout));
     }
     Ok(())
+}
+
+/// `addPullRequestReview`'s GraphQL variables for the pinned-commit approve path, pulled out of
+/// `submit_review` so the variable-building logic is testable without a live `gh` spawn.
+fn build_approve_review_variables<'a>(
+    pinned: &PinnedReview<'a>,
+    body: Option<&'a str>,
+) -> Vec<(&'a str, GraphqlValue<'a>)> {
+    let mut variables = vec![
+        ("pullRequestId", GraphqlValue::Str(pinned.pull_request_id)),
+        ("commitOID", GraphqlValue::Str(pinned.head_sha)),
+        ("event", GraphqlValue::Str("APPROVE")),
+    ];
+    if let Some(body) = body {
+        variables.push(("body", GraphqlValue::Str(body)));
+    }
+    variables
+}
+
+/// `gh pr review`'s porcelain argv for the comment/request-changes path, pulled out of
+/// `submit_review` so the argv shape is testable without a live `gh` spawn. Owned `Vec<String>`,
+/// the same convention `gh_graphql`'s own `owned_args` already uses, since the args borrow from
+/// locals (`number`'s string form, `owner_repo`) that don't outlive this function otherwise.
+fn build_review_argv(
+    number: u64,
+    owner_repo: &str,
+    verdict: ReviewVerdict,
+    body: Option<&str>,
+) -> Vec<String> {
+    let flag = match verdict {
+        ReviewVerdict::Approve => "--approve",
+        ReviewVerdict::RequestChanges => "--request-changes",
+        ReviewVerdict::Comment => "--comment",
+    };
+    let mut args = vec![
+        "pr".to_string(),
+        "review".to_string(),
+        number.to_string(),
+        "--repo".to_string(),
+        owner_repo.to_string(),
+        flag.to_string(),
+    ];
+    if let Some(body) = body {
+        args.push("--body".to_string());
+        args.push(body.to_string());
+    }
+    args
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -335,17 +366,24 @@ pub async fn get_allowed_merge_methods(repo_path: &Path) -> Result<Vec<MergeMeth
         ],
     )
     .await?;
+    Ok(allowed_merge_methods_from_wire(&result))
+}
+
+/// The wire-booleans -> `Vec<MergeMethod>` mapping, pulled out of `get_allowed_merge_methods` so
+/// every boolean combination is testable without a live `gh` spawn. Order always
+/// merge/squash/rebase, matching the original `if`/`if`/`if` sequence.
+fn allowed_merge_methods_from_wire(wire: &AllowedMergeMethodsWire) -> Vec<MergeMethod> {
     let mut methods = Vec::new();
-    if result.merge_commit_allowed {
+    if wire.merge_commit_allowed {
         methods.push(MergeMethod::Merge);
     }
-    if result.squash_merge_allowed {
+    if wire.squash_merge_allowed {
         methods.push(MergeMethod::Squash);
     }
-    if result.rebase_merge_allowed {
+    if wire.rebase_merge_allowed {
         methods.push(MergeMethod::Rebase);
     }
-    Ok(methods)
+    methods
 }
 
 /// `head_sha` is always passed (security remediation, Medium-but-must-fix): `--match-head-commit`
@@ -358,69 +396,64 @@ pub async fn merge_pull_request(
     head_sha: &str,
 ) -> Result<(), GhError> {
     let (owner, repo) = owner_repo_for(repo_path).await?;
+    let owner_repo = format!("{owner}/{repo}");
+    let owned_args = build_merge_argv(number, &owner_repo, method, head_sha);
+    let args: Vec<&str> = owned_args.iter().map(String::as_str).collect();
+    let result = gh_raw(repo_path, &args, None).await?;
+    if result.code != 0 {
+        return Err(classify_merge_failure(&result.stderr, &result.stdout));
+    }
+    Ok(())
+}
+
+/// `gh pr merge`'s porcelain argv, pulled out of `merge_pull_request` so the
+/// `--match-head-commit <sha>` shape (security-critical: confirmed present per a prior gate's
+/// security review) is testable without a live `gh` spawn.
+fn build_merge_argv(
+    number: u64,
+    owner_repo: &str,
+    method: MergeMethod,
+    head_sha: &str,
+) -> Vec<String> {
     let flag = match method {
         MergeMethod::Merge => "--merge",
         MergeMethod::Squash => "--squash",
         MergeMethod::Rebase => "--rebase",
     };
-    let number_str = number.to_string();
-    let result = gh_raw(
-        repo_path,
-        &[
-            "pr",
-            "merge",
-            &number_str,
-            "--repo",
-            &format!("{owner}/{repo}"),
-            flag,
-            "--match-head-commit",
-            head_sha,
-        ],
-        None,
-    )
-    .await?;
-    if result.code != 0 {
-        let text = format!("{}\n{}", result.stderr, result.stdout).to_lowercase();
-        let not_mergeable = text.contains("not mergeable")
-            || text.contains("conflict")
-            || text.contains("required status check")
-            || (text.contains("review") && text.contains("required"))
-            || (text.contains("changes") && text.contains("requested"))
-            || text.contains("match-head-commit")
-            || text.contains("head commit");
-        if not_mergeable {
-            return Err(GhError::new(
-                GhErrorCode::NotMergeable,
-                non_empty_or(
-                    &result.stderr,
-                    &result.stdout,
-                    "This pull request cannot be merged.",
-                ),
-            ));
-        }
-        return Err(map_gh_failure(&result.stderr, &result.stdout));
+    vec![
+        "pr".to_string(),
+        "merge".to_string(),
+        number.to_string(),
+        "--repo".to_string(),
+        owner_repo.to_string(),
+        flag.to_string(),
+        "--match-head-commit".to_string(),
+        head_sha.to_string(),
+    ]
+}
+
+/// A non-zero `gh pr merge` exit's stderr/stdout text classified into the right `GhError`,
+/// pulled out of `merge_pull_request` so the conflict/not-mergeable text-matching is testable
+/// without a live `gh` spawn. Falls back to the shared `map_gh_failure` (used identically by
+/// every other `gh` call site) for anything that doesn't match a known not-mergeable shape.
+fn classify_merge_failure(stderr: &str, stdout: &str) -> GhError {
+    let text = format!("{stderr}\n{stdout}").to_lowercase();
+    let not_mergeable = text.contains("not mergeable")
+        || text.contains("conflict")
+        || text.contains("required status check")
+        || (text.contains("review") && text.contains("required"))
+        || (text.contains("changes") && text.contains("requested"))
+        || text.contains("match-head-commit")
+        || text.contains("head commit");
+    if not_mergeable {
+        return GhError::new(
+            GhErrorCode::NotMergeable,
+            non_empty_or(stderr, stdout, "This pull request cannot be merged."),
+        );
     }
-    Ok(())
+    map_gh_failure(stderr, stdout)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn merge_method_round_trips_every_valid_literal() {
-        for (literal, method) in [
-            ("merge", MergeMethod::Merge),
-            ("squash", MergeMethod::Squash),
-            ("rebase", MergeMethod::Rebase),
-        ] {
-            assert_eq!(MergeMethod::parse(literal), Some(method));
-            assert_eq!(method.as_str(), literal);
-        }
-    }
-
-    #[test]
-    fn merge_method_parse_rejects_unknown_literal() {
-        assert_eq!(MergeMethod::parse("bogus"), None);
-    }
-}
+#[path = "gh_mutations_tests.rs"]
+mod tests;

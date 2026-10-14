@@ -49,7 +49,7 @@ async fn gh(args: &[&str]) -> Result<String, GhError> {
         ));
     }
     if result.code != 0 {
-        let detail = result.stderr.trim();
+        let detail = crate::omp::redact::redact_secrets(result.stderr.trim());
         return Err(GhError::new(
             GhErrorCode::GhFailed,
             format!(
@@ -58,7 +58,7 @@ async fn gh(args: &[&str]) -> Result<String, GhError> {
                 if detail.is_empty() {
                     "no output"
                 } else {
-                    detail
+                    &detail
                 }
             ),
         ));
@@ -183,7 +183,7 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
     }
     let parsed: GhAuthStatusJson = if result.stdout.trim().is_empty() {
         if result.code != 0 {
-            let detail = result.stderr.trim();
+            let detail = crate::omp::redact::redact_secrets(result.stderr.trim());
             return Err(GhError::new(
                 GhErrorCode::GhFailed,
                 format!(
@@ -191,7 +191,7 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
                     if detail.is_empty() {
                         "no output"
                     } else {
-                        detail
+                        &detail
                     }
                 ),
             ));
@@ -199,20 +199,27 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
         GhAuthStatusJson::default()
     } else {
         serde_json::from_str(&result.stdout).map_err(|_| {
-            let detail = result.stderr.trim();
+            let detail = crate::omp::redact::redact_secrets(result.stderr.trim());
             GhError::new(
                 GhErrorCode::GhFailed,
                 format!(
                     "gh auth status --json hosts returned unparseable output: {}",
                     if detail.is_empty() {
-                        result.stdout.trim()
+                        "gh produced no diagnostic output."
                     } else {
-                        detail
+                        &detail
                     }
                 ),
             )
         })?
     };
+    Ok(flatten_auth_status(parsed))
+}
+
+/// Flattens `GhAuthStatusJson`'s per-host account map into one list, preserving each host's own
+/// account ordering (`gh`'s own listing order, non-alphabetical) and classifying every non-
+/// success account's problem.
+fn flatten_auth_status(parsed: GhAuthStatusJson) -> Vec<GhAuthHostEntry> {
     let mut entries = Vec::new();
     for (host_key, accounts) in parsed.hosts {
         for account in accounts {
@@ -229,7 +236,7 @@ pub async fn auth_status() -> Result<Vec<GhAuthHostEntry>, GhError> {
             });
         }
     }
-    Ok(entries)
+    entries
 }
 
 /// Runs `gh auth token --hostname <host> --user <login>` and returns the trimmed token. Reads a
@@ -290,15 +297,29 @@ struct FlowShared {
     events_tx: mpsc::UnboundedSender<GhLoginFlowEvent>,
 }
 
+/// `gh auth login --web`'s one-time code is always `XXXX-XXXX` (4 uppercase-alphanumeric, a
+/// hyphen, 4 more uppercase-alphanumeric). Anything else is treated as a parsing fluke rather
+/// than emitted to the renderer verbatim.
+fn is_valid_device_code(code: &str) -> bool {
+    let bytes = code.as_bytes();
+    if bytes.len() != 9 || bytes[4] != b'-' {
+        return false;
+    }
+    let is_upper_alnum = |b: u8| b.is_ascii_uppercase() || b.is_ascii_digit();
+    bytes[..4].iter().all(|&b| is_upper_alnum(b)) && bytes[5..9].iter().all(|&b| is_upper_alnum(b))
+}
+
 impl FlowShared {
     fn handle_line(&self, line: &str) {
         if let Some(start) = line.find("One-time code (") {
             let after = &line[start + "One-time code (".len()..];
             if let Some(end) = after.find(')') {
                 let code = &after[..end];
-                let _ = self
-                    .events_tx
-                    .send(GhLoginFlowEvent::Code(code.to_string()));
+                if is_valid_device_code(code) {
+                    let _ = self
+                        .events_tx
+                        .send(GhLoginFlowEvent::Code(code.to_string()));
+                }
             }
         }
     }
@@ -323,7 +344,10 @@ impl FlowShared {
         let mut tail = self.stderr_tail.lock().expect("stderr_tail mutex poisoned");
         tail.push_str(&text);
         if tail.len() > STDERR_TAIL_BYTES {
-            let start = tail.len() - STDERR_TAIL_BYTES;
+            let mut start = tail.len() - STDERR_TAIL_BYTES;
+            while !tail.is_char_boundary(start) {
+                start += 1;
+            }
             *tail = tail[start..].to_string();
         }
     }
@@ -564,3 +588,11 @@ pub async fn auth_login_start(
 pub async fn auth_login_cancel(flow: &Arc<GhLoginFlow>) {
     flow.cancel().await;
 }
+
+// Unit tests for this module's pure parsing/classification logic (issue #792's own "tests
+// ported" ask -- this file had zero tests before this lane). Split into a sibling file
+// (`#[path = "cli_tests.rs"]`) to stay under the 600-line-per-file cap (issue #806), the same
+// pattern `ipc/pull_requests/mapping.rs` already uses.
+#[cfg(test)]
+#[path = "cli_tests.rs"]
+mod cli_tests;

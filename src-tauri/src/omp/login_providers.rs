@@ -27,6 +27,13 @@ pub async fn request_login_providers(proc: &OmpProcess) -> Option<Vec<OmpLoginPr
         .await
         .ok()?;
 
+    parse_login_providers_response(&res)
+}
+
+/// Pure parsing core of `request_login_providers`, split out so it is directly testable without
+/// a live `OmpProcess`: given the raw response `Value` a real `proc.request` would resolve to,
+/// returns the provider list under the same rules documented on `request_login_providers` above.
+fn parse_login_providers_response(res: &Value) -> Option<Vec<OmpLoginProvider>> {
     if res.get("success").and_then(Value::as_bool) != Some(true) {
         return None;
     }
@@ -92,4 +99,54 @@ pub async fn read_omp_login_providers() -> Option<Vec<OmpLoginProvider>> {
 
     let _ = tokio::fs::remove_dir_all(&scratch_dir).await;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_well_formed_providers() {
+        let res = serde_json::json!({
+            "success": true,
+            "data": { "providers": [{"id": "x", "authenticated": true}] }
+        });
+        let providers = parse_login_providers_response(&res).unwrap();
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].id, "x");
+        assert!(providers[0].authenticated);
+    }
+
+    #[test]
+    fn unsuccessful_response_is_none() {
+        let res = serde_json::json!({
+            "success": false,
+            "data": { "providers": [{"id": "x", "authenticated": true}] }
+        });
+        assert!(parse_login_providers_response(&res).is_none());
+    }
+
+    #[test]
+    fn malformed_providers_field_is_empty_vec() {
+        let res = serde_json::json!({
+            "success": true,
+            "data": { "providers": "not-an-array" }
+        });
+        assert!(parse_login_providers_response(&res).unwrap().is_empty());
+    }
+
+    #[test]
+    fn provider_missing_id_is_skipped_not_a_failure() {
+        let res = serde_json::json!({
+            "success": true,
+            "data": { "providers": [
+                {"authenticated": true},
+                {"id": "y", "authenticated": false}
+            ] }
+        });
+        let providers = parse_login_providers_response(&res).unwrap();
+        assert_eq!(providers.len(), 1);
+        assert_eq!(providers[0].id, "y");
+        assert!(!providers[0].authenticated);
+    }
 }
