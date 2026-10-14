@@ -98,3 +98,33 @@ The soft cap is 600 lines per source file (TypeScript, TSX, scripts, and the Rus
 ## The plan
 
 `docs/PLAN.md` holds the ordered work queue, dependencies and status. When the user asks "What's next?" or "Implement the next story", read it first and follow its "How to use this file" section. Keep it current: update the row's status in the same change as the work. When the user asks for new issues to be created, update the plan in the same turn (working rule 8).
+
+## Verifying the Rust (Tauri) build (epic #797)
+
+The Rust build has its own shared build cache and its own live-verification mechanics, separate
+from the Electron CDP recipe above.
+
+- Point `CARGO_TARGET_DIR` at the shared, already-populated cache for every `cargo`/`tauri`
+  command (disk space is tight); never let `src-tauri/target` get created inside a worktree.
+  Builds serialise on that cache's lock -- wait for a build in flight rather than starting a
+  second one, and never delete anything under the shared cache except a crate-scoped `cargo
+  clean -p <crate>` for a confirmed stale-path error.
+- `scripts/verify-tauri.mjs` (`pnpm verify:tauri`, issue #795) is the CDP harness: a scratch data
+  directory (`REFRACT_DATA_DIR`, debug builds only, since Tauri has no `--user-data-dir`
+  equivalent), a scratch git repository, and a recorded-frame fake `omp` on PATH ahead of the
+  real one, so a UI flow can be driven with no model cost and no network. Only `readiness` (US1)
+  and `session` (US4) are ever driven this way; `side-chat`/`subagents`/`failure`/`exit` are
+  fixtures for a lane to select directly once it ports the matching channel
+  (`scripts/fixtures/omp-frames/README.md`). Use the harness instead of a live real-`omp` CDP
+  session wherever the flow you need is already covered; fall back to a real `omp` only for a
+  flow the fixtures do not cover yet. **Not covered by this harness (R12b, #795 part 3 onward):**
+  ported Rust test cases, transcript golden tests, the cross-shell contract replay, generated
+  frame types, the performance/footprint proof.
+- **Never `pnpm dev` for a live check (2026-10-13 live-run convention).** It holds Vite's
+  fixed port 5174, and the running exe lives under the shared `CARGO_TARGET_DIR`, so two lanes'
+  own dev servers or running binaries collide. Instead: `pnpm exec tauri build --debug --no-bundle`
+  (bakes the renderer in, no dev server, no port), copy
+  `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to your own scratch dir, and run that copy with
+  your own `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` and
+  `REFRACT_DATA_DIR` pointing at a scratch data directory, never Stuart's real
+  `%APPDATA%\refract-tauri`. `scripts/verify-tauri.mjs` already does this.

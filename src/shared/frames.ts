@@ -100,8 +100,8 @@ export interface SlashCommandDescriptor {
   aliases?: string[];
   input?: { hint: string };
   subcommands?: SlashCommandDescriptor[];
+  source?: 'builtin' | 'file' | 'skill' | 'native' | (string & {}); // #760: OMP's own field ('builtin'/'file'/'skill'), or 'native' for a locally-supplied descriptor (`/new`/`/btw`); absent = 'builtin' (fail-closed default, `session::agent::commands.rs`). `(string & {})` keeps unknown future values accepted without widening to a bare `string`.
 }
-
 // ---------------------------------------------------------------------------
 // Dialogs (extension_ui_request / extension_ui_response), per "Dialogs"
 // ---------------------------------------------------------------------------

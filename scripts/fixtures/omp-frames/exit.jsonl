@@ -1,0 +1,12 @@
+// SYNTHESIZED (process-exit timing, not a frame shape): simulates `omp` exiting unexpectedly
+// right after a Session attaches, before any turn runs -- for the R3 lane (#786, termination/
+// recovery as a typed state machine) to drive once it has an unexpected-termination path to
+// assert against. Real `omp` emits no special frame for this; the engine's own `__exit__`
+// directive just terminates this process, exactly like a crash would. See README.md's
+// provenance table.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\exit\\conversation.json","sessionId":"sess-exit-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"}}}
+{"__exit__":{"code":1}}

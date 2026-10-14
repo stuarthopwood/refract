@@ -18,6 +18,7 @@
     "check:drag-regions": "node scripts/check-drag-regions.mjs",
     "check:theme-contrast": "node scripts/check-theme-contrast.mjs",
     "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs",
+    "verify:tauri": "node scripts/verify-tauri.mjs",
     "check:parity": "node scripts/check-parity.mjs",
     "check:file-size": "node scripts/check-file-size.mjs"
   },
