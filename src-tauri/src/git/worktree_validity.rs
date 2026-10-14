@@ -176,10 +176,11 @@ pub(crate) async fn registered_validity(
 /// `repo` AND the folder still has its own `.git` entry (a file for a linked worktree) -- not
 /// merely `exists()`, which a hand-emptied folder (registered, but its `.git` pointer deleted)
 /// or an orphaned leftover (folder present, git already lost track of it) both satisfy while
-/// being unusable. Used by Session start/open and the File Explorer (lane R7, #790) to report
-/// `worktree-missing` instead of silently treating either state as a healthy worktree. Gate round
-/// 1 (#826): returns `WorktreeValidity`, not a `bool` -- callers must not read `Unknown` as
-/// `Invalid`.
+/// being unusable. Used today by `session::manager::summaries()`'s registry-only `stopReason`
+/// computation; lane R3/#786 (agent start/open) and lane R7/#790 (File Explorer) must wire this
+/// in too, reporting `worktree-missing` instead of silently treating either state as healthy --
+/// `WorktreeValidity::Unknown` (a timed-out check) must never be read as confirmed-missing by
+/// either caller. Gate round 1 (#826): returns `WorktreeValidity`, not a `bool`.
 pub async fn worktree_is_valid(repo: &Path, worktree_path: &Path) -> WorktreeValidity {
     let has_git_entry = tokio::fs::symlink_metadata(worktree_path.join(".git"))
         .await

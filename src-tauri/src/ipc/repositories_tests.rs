@@ -102,6 +102,25 @@ async fn repositories_rename_returns_not_found_for_an_unknown_repository_id() {
     assert_eq!(err.code, "not-found");
 }
 
+/// Ported from `repositories.ts`'s own handler (not `repositoryName.ts`'s pure functions): a
+/// defence-in-depth rejection of a RAW (untrimmed) name over 4x the real 60-character limit,
+/// checked before the repository lookup even runs -- any id works, since this never reaches
+/// `validate_repository_name` at all.
+#[tokio::test]
+async fn repositories_rename_rejects_a_raw_name_over_4x_the_limit_before_any_lookup() {
+    let dir = temp_dir("pre-trim-too-long");
+    let state = make_state(&dir).await;
+    let args = vec![
+        Value::String("any-id-at-all".to_string()),
+        Value::String("x".repeat(241)),
+    ];
+    let err = repositories_rename(state, args)
+        .await
+        .expect_err("a raw name over 4x the limit must be rejected");
+    assert_eq!(err.code, "invalid-argument");
+    assert!(err.message.contains("too long"));
+}
+
 #[tokio::test]
 async fn repositories_rename_notifies_the_list_and_returns_the_updated_repository() {
     let dir = temp_dir("success");

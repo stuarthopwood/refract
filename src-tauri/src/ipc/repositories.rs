@@ -329,6 +329,13 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 ))
             }
         };
+        // Quality-gate fix (ported from `repositories.ts`'s own handler, security-auditor Low,
+        // 2026-10-08): rejected before `trim()` -- Tauri's own IPC payload has no size cap this
+        // build enforces elsewhere, so this is defence in depth, not the real guard (that is
+        // `validate_repository_name`'s own length check below, after trimming).
+        if name.chars().count() > 4 * MAX_REPOSITORY_NAME_LENGTH {
+            return Err(invalid_argument("repositories.rename name too long"));
+        }
         let repository = {
             let registry = state.registry.lock().await;
             registry

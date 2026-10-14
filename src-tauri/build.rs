@@ -26,9 +26,14 @@ fn main() {
 
     // `CARGO_MANIFEST_DIR` is this crate's own directory (where this file and the manifest XML
     // both live), so `/MANIFESTINPUT` gets a real absolute path regardless of the invocation's
-    // working directory.
-    let manifest_path = concat!(env!("CARGO_MANIFEST_DIR"), "/windows-app-manifest.xml");
-    println!("cargo:rerun-if-changed={manifest_path}");
-    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
-    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{manifest_path}");
+    // working directory. `/MANIFEST:EMBED`/`/MANIFESTINPUT` are MSVC `link.exe`-specific flags
+    // (gate round 2): guarded so a GNU-toolchain build (`*-pc-windows-gnu`, never produced by
+    // this crate's own CI today but not impossible) never passes them to `ld`/`gcc`, which
+    // would reject them outright rather than silently ignore them.
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        let manifest_path = concat!(env!("CARGO_MANIFEST_DIR"), "/windows-app-manifest.xml");
+        println!("cargo:rerun-if-changed={manifest_path}");
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{manifest_path}");
+    }
 }

@@ -99,17 +99,72 @@ async fn remove_session_worktree_refuses_a_symlink_at_the_worktree_path() {
         ])
         .status()
         .await;
-    let Ok(status) = status else {
-        eprintln!("skipping symlink test: could not spawn mklink");
-        return;
-    };
-    if !status.success() {
-        eprintln!("skipping symlink test: mklink refused (sandbox restriction?)");
+    let succeeded = matches!(status, Ok(s) if s.success());
+    if !succeeded {
+        if std::env::var("CI").is_ok() {
+            panic!("junction creation failed in CI: mklink /J {link:?} {real_target:?}");
+        }
+        eprintln!("skipping symlink test: mklink refused (sandbox restriction, not CI)");
         return;
     }
     let result = remove_session_worktree(&repo, &link, "irrelevant", false).await;
     assert!(result.is_err());
     assert!(tokio::fs::metadata(&real_target).await.is_ok());
+}
+
+/// A junction living INSIDE the worktrees root (its path lexically "inside" the root, so
+/// `assert_within_worktrees_root` reports `Inside` -- it is purely lexical, never resolving the
+/// junction) can still redirect a trailing path component to somewhere OUTSIDE the root
+/// entirely. `remove_session_worktree` must never let that redirect destroy content living at
+/// the junction's real target: with a marker file planted there, the existing "not empty"
+/// orphan-folder refusal (the folder's one real entry is `marker.txt`, never `.git` alone)
+/// already closes this -- this test locks that behaviour in rather than trusting it by
+/// inspection. Skips gracefully outside CI, fails outright in CI (same convention as every
+/// other junction test in this crate).
+#[tokio::test]
+async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_inside_the_root() {
+    let repo = init_repo().await;
+    let root = worktrees_root(&repo);
+    tokio::fs::create_dir_all(&root).await.unwrap();
+    let outside_target =
+        std::env::temp_dir().join(format!("refract-junction-outside-{}", uuid::Uuid::new_v4()));
+    let outside_session = outside_target.join("session");
+    tokio::fs::create_dir_all(&outside_session).await.unwrap();
+    let marker = outside_session.join("marker.txt");
+    tokio::fs::write(&marker, b"do not touch").await.unwrap();
+
+    let junction = root.join("junc");
+    let status = tokio::process::Command::new("cmd")
+        .args([
+            "/C",
+            "mklink",
+            "/J",
+            &junction.to_string_lossy(),
+            &outside_target.to_string_lossy(),
+        ])
+        .status()
+        .await;
+    let succeeded = matches!(status, Ok(s) if s.success());
+    if !succeeded {
+        if std::env::var("CI").is_ok() {
+            panic!("junction creation failed in CI: mklink /J {junction:?} {outside_target:?}");
+        }
+        eprintln!(
+            "skipping junction-inside-root test: mklink refused (sandbox restriction, not CI)"
+        );
+        return;
+    }
+
+    let worktree_path = junction.join("session");
+    let result = remove_session_worktree(&repo, &worktree_path, "irrelevant", false).await;
+    assert!(
+        result.is_err(),
+        "a junction-redirected path holding real content must be refused, never silently removed"
+    );
+    assert!(
+        tokio::fs::metadata(&marker).await.is_ok(),
+        "the marker file at the junction's real target must survive untouched"
+    );
 }
 
 #[tokio::test]

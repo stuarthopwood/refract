@@ -396,9 +396,10 @@ async fn sessions_archive_refuses_a_session_that_is_mid_start_or_mid_resume() {
 }
 
 /// Gate round 2 (#657/#658): the reclaim hook fires exactly on the success path of both
-/// `sessions.archive` and `sessions.delete`, never on a refused/failed call -- a global atomic
-/// counter (parallel-test-safe: only a monotonic increase is asserted, never an exact value)
-/// is the simplest observable proxy for "the hook ran" without building fake reclaim policy.
+/// `sessions.archive` and `sessions.delete`, never on a refused/failed call -- a thread-local
+/// counter (see `on_worktree_released`'s own doc comment for why thread-local, not a global
+/// atomic, is the correct parallel-test-safe choice here) lets each test assert an EXACT call
+/// count (`before + 1` on success, `before` unchanged on refusal) with no cross-test flakiness.
 #[tokio::test]
 async fn sessions_archive_fires_the_worktree_released_hook_on_success() {
     let dir = temp_registry_dir("archive-fires-hook");
