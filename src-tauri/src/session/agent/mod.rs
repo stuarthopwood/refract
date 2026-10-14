@@ -60,6 +60,7 @@ mod commands;
 mod conversations;
 mod frame;
 mod launch;
+mod launch_support;
 mod requests;
 mod types;
 
@@ -68,6 +69,7 @@ pub use commands::{
     NATIVE_RESERVED_COMMANDS,
 };
 pub use requests::is_chat_answer;
+use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, PendingRequest, SessionStatus};
 
 /// Mirrors `OmpProcess.ts`'s own `DEFAULT_REQUEST_TIMEOUT_MS`; not exported by `omp::process`
@@ -101,6 +103,7 @@ struct AgentState {
     process: Option<Arc<OmpProcess>>,
     turn_settle_handled: bool,
     stop_requested: bool,
+    shutdown_generation: u64,
     // Issue #784: each lane owns its own `State` (defined in its own file), reachable only via
     // its `with_<lane>_state` accessor below; still empty/unread until a lane lands.
     #[allow(dead_code)]
@@ -130,6 +133,18 @@ pub struct SessionAgent {
     status_tx: watch::Sender<SessionStatus>,
     start_lock: AsyncMutex<()>,
     coalescer: PatchCoalescer,
+}
+
+/// Generates one `pub(super) async fn with_<lane>_state<R>(&self, f: impl FnOnce(&mut $state) ->
+/// R) -> R` per invocation inside `impl SessionAgent` below (issue #806, 600-line cap, round 4
+/// code-review finding: six of these were identical but for the field name/`State` type).
+macro_rules! with_lane_state {
+    ($name:ident, $field:ident, $state:path) => {
+        #[allow(dead_code)]
+        pub(super) async fn $name<R>(&self, f: impl FnOnce(&mut $state) -> R) -> R {
+            f(&mut self.state.lock().await.$field)
+        }
+    };
 }
 
 impl SessionAgent {
@@ -182,6 +197,7 @@ impl SessionAgent {
                 process: None,
                 turn_settle_handled: false,
                 stop_requested: false,
+                shutdown_generation: 0,
                 model: Default::default(),
                 readout: Default::default(),
                 subagents: Default::default(),
@@ -195,7 +211,9 @@ impl SessionAgent {
         })
     }
 
-    fn arc(&self) -> Arc<Self> {
+    /// Lane R3 (issue #786): `pub(super)` (not private) so `session::start_queue`'s own cancel
+    /// watcher task can hold a strong reference across its own `tokio::spawn`.
+    pub(super) fn arc(&self) -> Arc<Self> {
         self.self_ref
             .upgrade()
             .expect("SessionAgent dropped while a background task still referenced it")
@@ -225,6 +243,28 @@ impl SessionAgent {
             })
     }
 
+    /// Lane R3 (issue #786): `session::termination`'s own marker record/clear and
+    /// `resolve_termination` both need the Session's registry row (`currentConversation`,
+    /// `stoppedOnRequestConversation`/`AtSize`), which `SessionAgent`'s own fields are
+    /// otherwise private to this module for.
+    pub(super) fn registry(&self) -> &SharedRegistry {
+        &self.registry
+    }
+
+    /// Lane R3 (issue #786): `session::start_queue`'s own `acquire_slot` needs to honour a
+    /// `shutdown()` racing a brand-new `start()`, not only an explicit `cancelStart()`.
+    pub(super) async fn stop_requested(&self) -> bool {
+        self.state.lock().await.stop_requested
+    }
+
+    /// Lane R3 (issue #786, gate-fix FR-038): a deliberate stop racing a start in flight ends
+    /// as `stopped`/`not-started` with no failure notice, not `record_start_failure`'s own
+    /// `start-failed` (reserved for a plain `cancelStart()` alone).
+    pub(super) async fn mark_stopped_not_started(&self) {
+        self.set_status(SessionStatus::Stopped, Some("not-started"), None)
+            .await;
+    }
+
     // -----------------------------------------------------------------------------------------
     // Status / events
     // -----------------------------------------------------------------------------------------
@@ -242,19 +282,44 @@ impl SessionAgent {
             .expect("status_event_locked payload is always a JSON object");
         // `stopReason`/`stopDetail` are TS `?:` optional fields (the renderer checks
         // `=== undefined`, ChatPane.tsx:205): omitted entirely when absent, not sent as JSON
-        // `null` (code-review finding, 2026-10-13). `terminatedUnexpectedly`/`startProgress`
-        // have no port in this build (see this file's own header comment) and so are never
-        // emitted at all either.
+        // `null` (code-review finding, 2026-10-13).
         if let Some(reason) = state.stop_reason {
             obj.insert("stopReason".to_string(), Value::String(reason.to_string()));
         }
         if let Some(detail) = &state.stop_detail {
             obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
         }
+        // Lane R3 (issue #786): `terminatedUnexpectedly`/`pendingToolNames` (`session::
+        // termination`'s own `on_exit` hook) and `startProgress` (`session::start_queue`'s own
+        // `on_start_progress` hook), each omitted entirely while absent -- same gate rule as
+        // `stopReason`/`stopDetail` above.
+        Self::insert_termination_and_progress_fields(obj, state);
         payload
     }
 
-    async fn emit_status(&self) {
+    /// Lane R3 (issue #786): shared by `status_event_locked` (the live `session:status` event)
+    /// and `runtime_view` (`SessionSnapshot.runtime`) so both wire shapes stay in lock-step --
+    /// `summary_fields` (registry-only `sessions.list` rows) deliberately does not call this: no
+    /// live agent computes a crash's tail detection for a Session nobody has opened this run.
+    fn insert_termination_and_progress_fields(
+        obj: &mut serde_json::Map<String, Value>,
+        state: &AgentState,
+    ) {
+        if state.termination.terminated_unexpectedly {
+            obj.insert("terminatedUnexpectedly".to_string(), Value::Bool(true));
+            if !state.termination.pending_tool_names.is_empty() {
+                obj.insert(
+                    "pendingToolNames".to_string(),
+                    json!(state.termination.pending_tool_names),
+                );
+            }
+        }
+        if let Some(progress) = state.start_queue.to_wire() {
+            obj.insert("startProgress".to_string(), progress);
+        }
+    }
+
+    pub(super) async fn emit_status(&self) {
         let state = self.state.lock().await;
         let payload = self.status_event_locked(&state);
         drop(state);
@@ -308,7 +373,7 @@ impl SessionAgent {
     ) {
         {
             let mut state = self.state.lock().await;
-            if state.status == SessionStatus::Stopped {
+            if !should_apply_crash_exit_verdict(state.status) {
                 return;
             }
             if state.status == SessionStatus::Working && !self.is_visible() {
@@ -389,6 +454,7 @@ impl SessionAgent {
         if let Some(detail) = &state.stop_detail {
             obj.insert("stopDetail".to_string(), Value::String(detail.clone()));
         }
+        Self::insert_termination_and_progress_fields(obj, &state);
         payload
     }
 
@@ -503,51 +569,32 @@ impl SessionAgent {
         self.events.emit_request_pending(&self.session_id, &payload);
     }
 
-    #[allow(dead_code)]
-    pub(super) async fn with_model_state<R>(
-        &self,
-        f: impl FnOnce(&mut crate::session::model::State) -> R,
-    ) -> R {
-        f(&mut self.state.lock().await.model)
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn with_readout_state<R>(
-        &self,
-        f: impl FnOnce(&mut crate::session::readout::State) -> R,
-    ) -> R {
-        f(&mut self.state.lock().await.readout)
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn with_subagents_state<R>(
-        &self,
-        f: impl FnOnce(&mut crate::session::subagents::State) -> R,
-    ) -> R {
-        f(&mut self.state.lock().await.subagents)
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn with_side_chat_state<R>(
-        &self,
-        f: impl FnOnce(&mut crate::session::side_chat::State) -> R,
-    ) -> R {
-        f(&mut self.state.lock().await.side_chat)
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn with_start_queue_state<R>(
-        &self,
-        f: impl FnOnce(&mut crate::session::start_queue::State) -> R,
-    ) -> R {
-        f(&mut self.state.lock().await.start_queue)
-    }
-
-    #[allow(dead_code)]
-    pub(super) async fn with_termination_state<R>(
-        &self,
-        f: impl FnOnce(&mut crate::session::termination::State) -> R,
-    ) -> R {
-        f(&mut self.state.lock().await.termination)
-    }
+    // Issue #806 (600-line cap, round 4 code-review finding): these six accessors are
+    // identical but for the field name and its `State` type, so they are generated by one
+    // macro instead of hand-repeated -- behaviour is unchanged (each still compiles to its own
+    // named `async fn`, callable exactly as before; `with_termination_state` is already in real
+    // use by `session::termination`, the rest stay `#[allow(dead_code)]` until their own lane
+    // lands, same as before this macro existed).
+    with_lane_state!(with_model_state, model, crate::session::model::State);
+    with_lane_state!(with_readout_state, readout, crate::session::readout::State);
+    with_lane_state!(
+        with_subagents_state,
+        subagents,
+        crate::session::subagents::State
+    );
+    with_lane_state!(
+        with_side_chat_state,
+        side_chat,
+        crate::session::side_chat::State
+    );
+    with_lane_state!(
+        with_start_queue_state,
+        start_queue,
+        crate::session::start_queue::State
+    );
+    with_lane_state!(
+        with_termination_state,
+        termination,
+        crate::session::termination::State
+    );
 }

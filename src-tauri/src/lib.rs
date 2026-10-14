@@ -242,6 +242,10 @@ pub fn run() {
             store::import::import_once(&data_dir, &electron_source_dir()).await;
         store::import::log_outcome(&import_outcome);
 
+        // Lane R3 (issue #786, FR-005's fallback): reaps any orphaned `omp` root process before
+        // this run spawns a new one -- must run before any Session's `SessionAgent` attaches
+        // (no ordering dependency on the import above: it never touches `processes.json`).
+        process::pid_records::init_and_reap(&data_dir).await;
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
             .unwrap_or_else(|err| panic!("refract-tauri: failed to open registry.json: {err}"));

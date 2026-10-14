@@ -199,6 +199,8 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .get_or_create_agent(&id)
             .shutdown()
             .await;
+        // Gate-fix (security MEDIUM, round 6): clears any stale pid record (own doc comment).
+        crate::process::pid_records::remove_process_records_for_session(&id).await;
         state
             .registry
             .lock()
@@ -348,6 +350,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .get_or_create_agent(&id)
             .shutdown()
             .await;
+        crate::process::pid_records::remove_process_records_for_session(&id).await;
 
         remove_session_worktree(
             Path::new(&repository.path),
