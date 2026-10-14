@@ -1,5 +1,6 @@
 import type { Repository } from '../../shared/model'
-import type { GitHubAccount, Result, SessionSummary } from '../../shared/ipc'
+import type { Result, SessionSummary } from '../../shared/ipc'
+import type { GitHubAccount } from '../../shared/accounts'
 import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'

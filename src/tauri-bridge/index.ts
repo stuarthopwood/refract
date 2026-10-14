@@ -14,16 +14,12 @@ import type {
   AttachmentImageFile,
   BranchEntry,
   ChatAnswer,
-  DependencyInstallProgress,
   DiffStat,
   FilePreview,
   FileTreeNode,
-  GitHubAccount,
-  GitHubAddFlowProgress,
   GitStatusMap,
   LowMemoryWarning,
   MergeInput,
-  OmpProviderState,
   PullRequestListResult,
   RefractApi,
   Readiness,
@@ -34,9 +30,10 @@ import type {
   SlashCommand,
   SubmitReviewInput,
   TranscriptOp,
-  UpdateState,
   Unsubscribe
 } from '../shared/ipc'
+import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
+import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../shared/accounts'
 import type { ImageContent, SideChatRecord } from '../shared/frames'
 import type {
   CatalogKind,

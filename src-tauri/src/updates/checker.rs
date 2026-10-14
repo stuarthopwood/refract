@@ -19,17 +19,15 @@
 // meantime, rather than trusting that the busy-check done at the very start is still valid.
 
 use std::path::Path;
-use std::time::Duration;
 
 use serde::Deserialize;
 
 use super::gh_client::{self, GithubCliStatus};
 use super::state::{SharedUpdateState, UnavailableReason, UpdatePhase, UpdateState};
+use crate::github::gh::gh_json;
 
 /// research.md decision 8: the private repository every release is published to.
 pub const REPO: &str = "stuarthopwood/refract";
-
-const GH_METADATA_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Deserialize)]
 struct GhReleaseListEntry {
@@ -175,10 +173,12 @@ pub async fn check_for_updates(
                 // installed and reachable, so a failure here (rate limiting, a 404/no-access
                 // response, invalid JSON) is a `gh`-reported failure, not necessarily the
                 // network -- `NotInstalled` is reserved for the rare case `gh` itself became
-                // unresolvable between the two calls (checked directly via `resolve_gh`, since
-                // this module's simplified `gh_client::gh_json` does not carry a typed error
-                // code the way `gh.ts`'s `GhError` does); every other `gh` failure maps to
-                // `Offline`, the closest remaining fit in `UnavailableReason`'s fixed
+                // unresolvable between the two calls (checked directly via `resolve_gh`; the
+                // shared `github::gh::gh_json` this now calls DOES carry a typed `GhErrorCode`
+                // via its `GhError`, but `scan_releases`'s own `Result<_, ()>` intentionally
+                // discards it here rather than threading it through `Outcome`/
+                // `UnavailableReason` -- out of scope for this change); every other `gh` failure
+                // maps to `Offline`, the closest remaining fit in `UnavailableReason`'s fixed
                 // three-value enum.
                 let reason = match crate::github::gh::resolve_gh() {
                     Ok(_) => UnavailableReason::Offline,
@@ -255,7 +255,7 @@ pub async fn check_for_updates(
 /// entire scan: any failure here, including one on a later candidate, discards the whole scan
 /// rather than silently skipping just that candidate.
 async fn scan_releases(cwd: &Path, current_version: &str) -> Result<Option<(String, String)>, ()> {
-    let releases: Vec<GhReleaseListEntry> = gh_client::gh_json(
+    let releases: Vec<GhReleaseListEntry> = gh_json(
         cwd,
         &[
             "release",
@@ -267,7 +267,6 @@ async fn scan_releases(cwd: &Path, current_version: &str) -> Result<Option<(Stri
             "--limit",
             "20",
         ],
-        GH_METADATA_TIMEOUT,
     )
     .await
     .map_err(|_| ())?;
@@ -287,7 +286,7 @@ async fn scan_releases(cwd: &Path, current_version: &str) -> Result<Option<(Stri
                 continue;
             }
         }
-        let detail: GhReleaseAssets = gh_client::gh_json(
+        let detail: GhReleaseAssets = gh_json(
             cwd,
             &[
                 "release",
@@ -298,7 +297,6 @@ async fn scan_releases(cwd: &Path, current_version: &str) -> Result<Option<(Stri
                 "--json",
                 "assets",
             ],
-            GH_METADATA_TIMEOUT,
         )
         .await
         .map_err(|_| ())?;

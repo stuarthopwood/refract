@@ -1,13 +1,8 @@
-// Minimal `gh` CLI wrapper for `updates::checker`/`updates::installer` (lane R11b, issue #794).
-// Deliberately NOT a port of `src/main/github/gh.ts` in full -- that file's PR-management
-// surface (ghGraphql/ownerRepoFor/search/the GhErrorCode-typed GhError, ...) belongs to spec
-// 003/004, not this spec's update-availability check, and its own `gh_raw` has a single fixed
-// 15s timeout with no way to opt into the several minutes `updates::installer::download_update`
-// needs for a ~146MB release-asset download. Shares exactly one thing with it rather than a
-// second copy (gate finding, PR #829 round 1): `resolve_gh` -- both modules' own callers need
-// the SAME fixed-portable-install-path-then-PATH resolution, and two independent resolvers that
-// both only checked PATH meant a fresh portable install (`updates::dependency_install::
-// install_github_cli`) was never found by either.
+// Minimal `gh` CLI status wrapper for `updates::checker` (lane R11b, issue #794). Used to share
+// its own, longer timeout with `updates::installer::download_update`'s ~146MB release-asset
+// download rather than forking a second spawn-with-timeout implementation (gate finding, PR #829
+// round 2, Medium). Keeps only what doesn't belong in the PR-management module: the update-
+// specific `GithubCliStatus` mapping and offline-text matching.
 //
 // `git::git`'s shell-free `tokio::process::Command` wrapper pattern (no shell, `CREATE_NO_WINDOW`
 // on Windows, `kill_on_drop(true)`, a bounded `tokio::time::timeout`) is reused here rather than
@@ -15,22 +10,6 @@
 
 use std::path::Path;
 use std::time::Duration;
-
-use serde::de::DeserializeOwned;
-use tokio::process::Command;
-
-/// Windows-only: no console window flashes for a `gh` child process (same flag as `git::git`'s
-/// own `CREATE_NO_WINDOW`; Node's `execFile({ windowsHide: true })` sets this under the hood).
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-/// A `gh <args>` invocation's raw result. Never constructed for a "gh not found" failure --
-/// that case is a `Result::Err(String)` from `gh_raw`/`gh_json` instead.
-pub struct GhRawResult {
-    pub stdout: String,
-    pub stderr: String,
-    /// Process exit code; `0` on success. A spawn error or a timed-out process is `1`.
-    pub code: i32,
-}
 
 /// Port of `gh.ts`'s `GithubCliStatus` union.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,95 +21,6 @@ pub enum GithubCliStatus {
 }
 
 const AUTH_STATUS_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Longest actionable error message surfaced from a `gh` failure; `gh`'s own error text can
-/// include a full HTTP response body, which is neither actionable nor safe to persist/log in
-/// full.
-const MAX_ERROR_LEN: usize = 500;
-
-/// Runs `gh <args>` with no shell in `cwd`, bounded by `timeout`. Never fails for an ordinary
-/// non-zero exit (a rate limit, an unauthenticated call, ...); callers branch on `.code`. Only
-/// fails, returning `Err`, when `gh` itself cannot be resolved at all (`github::gh::resolve_gh`'s
-/// own failure) -- a timeout or a spawn error both still produce an `Ok(GhRawResult)` with a
-/// synthesised non-zero `code` instead, so every caller has exactly one place (`.code`) to branch
-/// on for "did the command itself succeed".
-pub async fn gh_raw(cwd: &Path, args: &[&str], timeout: Duration) -> Result<GhRawResult, String> {
-    let gh_path = crate::github::gh::resolve_gh().map_err(|_| {
-        "Could not resolve \"gh\" on PATH or at its known portable-install location. Install it and make sure it is on PATH, then relaunch Refract.".to_string()
-    })?;
-
-    let mut command = Command::new(&gh_path);
-    command
-        .args(args)
-        .current_dir(cwd)
-        .creation_flags(CREATE_NO_WINDOW)
-        .kill_on_drop(true);
-
-    let output = match tokio::time::timeout(timeout, command.output()).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(err)) => {
-            return Ok(GhRawResult {
-                stdout: String::new(),
-                stderr: err.to_string(),
-                code: 1,
-            })
-        }
-        Err(_) => {
-            return Ok(GhRawResult {
-                stdout: String::new(),
-                stderr: "gh command timed out".to_string(),
-                code: 1,
-            })
-        }
-    };
-
-    Ok(GhRawResult {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        code: output.status.code().unwrap_or(1),
-    })
-}
-
-/// Trims, picks the non-empty one of stderr/stdout (stderr preferred, matching `gh.ts`'s own
-/// `mapGhFailure`), and caps the result so a `gh`-reported failure never persists or logs an
-/// unbounded blob.
-pub(super) fn capped_failure_text(stderr: &str, stdout: &str, args_joined: &str) -> String {
-    let stderr = stderr.trim();
-    let stdout = stdout.trim();
-    let text = if !stderr.is_empty() {
-        stderr.to_string()
-    } else if !stdout.is_empty() {
-        stdout.to_string()
-    } else {
-        format!("gh command failed: gh {args_joined}")
-    };
-    if text.chars().count() > MAX_ERROR_LEN {
-        let truncated: String = text.chars().take(MAX_ERROR_LEN).collect();
-        format!("{truncated}…")
-    } else {
-        text
-    }
-}
-
-/// `gh_raw` plus a `serde_json` parse of stdout on a zero exit. A non-zero exit or invalid JSON
-/// is an `Err` with an actionable, trimmed, capped message (never a raw, unbounded stderr dump).
-pub async fn gh_json<T: DeserializeOwned>(
-    cwd: &Path,
-    args: &[&str],
-    timeout: Duration,
-) -> Result<T, String> {
-    let args_joined = args.join(" ");
-    let result = gh_raw(cwd, args, timeout).await?;
-    if result.code != 0 {
-        return Err(capped_failure_text(
-            &result.stderr,
-            &result.stdout,
-            &args_joined,
-        ));
-    }
-    serde_json::from_str(&result.stdout)
-        .map_err(|_| format!("gh returned invalid JSON for: gh {args_joined}"))
-}
 
 /// `could not resolve host|enotfound|getaddrinfo|network is unreachable|timed? ?out|
 /// econnrefused|econnreset`, case-insensitive (`gh.ts`'s `OFFLINE_RE`), hand-matched since this
@@ -154,11 +44,13 @@ fn looks_offline(text: &str) -> bool {
 }
 
 /// Spec 006 shared "is gh signed in" check (port of `gh.ts`'s `githubCliStatus`, used by
-/// `updates::checker::check_for_updates`). Never panics. An `Err` from `gh_raw` -- meaning `gh`
-/// itself could not be resolved -- maps to `NotInstalled`; `gh_raw` never fails for a
+/// `updates::checker::check_for_updates`). Never panics. An `Err` from the shared `gh_raw` --
+/// meaning `gh` itself could not be resolved -- maps to `NotInstalled`; `gh_raw` never fails for a
 /// network/auth failure, only for a missing `gh` (those surface as a non-zero `.code` instead).
 pub async fn github_cli_status(cwd: &Path) -> GithubCliStatus {
-    let auth = match gh_raw(cwd, &["auth", "status"], AUTH_STATUS_TIMEOUT).await {
+    let auth = match crate::github::gh::gh_raw(cwd, &["auth", "status"], None, AUTH_STATUS_TIMEOUT)
+        .await
+    {
         Ok(result) => result,
         Err(_) => return GithubCliStatus::NotInstalled,
     };

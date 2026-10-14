@@ -2,7 +2,7 @@
 // gate remediation, code-reviewer Low: this used to claim a throwaway test script that never
 // existed) so they can be covered by a future unit test without rendering any component, the
 // same convention src/renderer/lib/initials.ts already follows.
-import type { GitHubAccount, OmpProviderState } from '../../shared/ipc'
+import type { GitHubAccount, OmpProviderState } from '../../shared/accounts'
 
 const CLEAN_DEVICE_CODE = /^[A-Za-z0-9]{8}$/
 

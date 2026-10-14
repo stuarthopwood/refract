@@ -73,7 +73,7 @@ impl std::fmt::Display for GhError {
 
 impl std::error::Error for GhError {}
 
-const TIMEOUT_MS: u64 = 15_000;
+pub(super) const TIMEOUT_MS: u64 = 15_000;
 
 pub struct GhRawResult {
     pub stdout: String,
@@ -111,11 +111,14 @@ pub(crate) fn resolve_gh() -> Result<std::path::PathBuf, ()> {
 /// `.code`/`.timed_out`. Fails only when `gh` itself cannot be found on PATH --
 /// `not_found_code` lets `cli.rs`'s account commands keep their own `gh-not-found` vocabulary
 /// while sharing this one timed/resolved runner; every pull-request call site below passes
-/// `None` and keeps today's `gh-unavailable` behaviour.
+/// `None` and keeps today's `gh-unavailable` behaviour. `timeout` lets lane R11b's
+/// `updates::gh_client` share this one runner with its own, longer download timeout rather than
+/// forking a second spawn-with-timeout implementation (gate finding, PR #829 round 2).
 pub async fn gh_raw(
     cwd: &Path,
     args: &[&str],
     not_found_code: Option<GhErrorCode>,
+    timeout: Duration,
 ) -> Result<GhRawResult, GhError> {
     let gh_path = resolve_gh().map_err(|_| {
         GhError::new(
@@ -132,7 +135,7 @@ pub async fn gh_raw(
     command.kill_on_drop(true);
 
     let output_future = command.output();
-    match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), output_future).await {
+    match tokio::time::timeout(timeout, output_future).await {
         Ok(Ok(output)) => Ok(GhRawResult {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -196,7 +199,7 @@ pub(super) fn map_gh_failure(stderr: &str, stdout: &str) -> GhError {
 /// user pasted into a comment or branch name. Redacted before it ever leaves this function
 /// (`crate::omp::redact::redact_secrets`, ported from `src/main/omp/redact.ts`); the fixed
 /// `fallback` string never needs it.
-pub(super) fn non_empty_or(stderr: &str, stdout: &str, fallback: &str) -> String {
+pub(crate) fn non_empty_or(stderr: &str, stdout: &str, fallback: &str) -> String {
     let stderr = stderr.trim();
     if !stderr.is_empty() {
         return crate::omp::redact::redact_secrets(stderr);
@@ -212,7 +215,7 @@ pub async fn gh_json<T: serde::de::DeserializeOwned>(
     cwd: &Path,
     args: &[&str],
 ) -> Result<T, GhError> {
-    let result = gh_raw(cwd, args, None).await?;
+    let result = gh_raw(cwd, args, None, Duration::from_millis(TIMEOUT_MS)).await?;
     if result.code != 0 {
         return Err(map_gh_failure(&result.stderr, &result.stdout));
     }
@@ -262,7 +265,7 @@ pub async fn gh_graphql<T: serde::de::DeserializeOwned>(
         }
     }
     let args: Vec<&str> = owned_args.iter().map(String::as_str).collect();
-    let result = gh_raw(cwd, &args, None).await?;
+    let result = gh_raw(cwd, &args, None, Duration::from_millis(TIMEOUT_MS)).await?;
     if result.code != 0 {
         return Err(map_gh_failure(&result.stderr, &result.stdout));
     }

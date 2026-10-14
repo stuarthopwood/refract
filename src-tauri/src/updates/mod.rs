@@ -6,9 +6,9 @@
 //
 // Module split, each file self-contained apart from the dependency edges noted below:
 // - `state`: `UpdateState`/`UpdateStateStore`/`SharedUpdateState`, persisted `updateState.json`.
-// - `gh_client`: a minimal `gh` CLI wrapper, sharing `github::gh::resolve_gh` (the actual process
-//   spawn/timeout/JSON-parse shape differs enough -- a configurable timeout for the installer's
-//   multi-minute download -- to stay its own small file rather than fold into `github::gh`).
+// - `gh_client`: the update-specific `GithubCliStatus`/`github_cli_status`/offline-text-matching
+//   only -- shares `github::gh::gh_raw`/`gh_json` directly (gate finding, PR #829 round 2)
+//   rather than duplicating them.
 // - `checker`: `check_for_updates` (depends on `state`, `gh_client`).
 // - `installer`: `download_update` (depends on `state`, `gh_client`, `checksum`).
 // - `checksum`: shared streamed SHA-256 verify (depends on nothing in this module).
@@ -77,17 +77,16 @@ const VERIFY_AND_SCHEDULE_TIMEOUT: std::time::Duration = std::time::Duration::fr
 
 pub async fn run_install_on_quit_hook(store: &SharedUpdateState, updates_dir: &Path) {
     let installer_path = {
-        let guard = match tokio::time::timeout(std::time::Duration::from_secs(5), store.lock())
-            .await
-        {
-            Ok(guard) => guard,
-            Err(_) => {
-                log::error!(
-                    "install-on-quit: timed out waiting for the update-state lock; skipping"
-                );
-                return;
-            }
-        };
+        let guard =
+            match tokio::time::timeout(std::time::Duration::from_secs(5), store.lock()).await {
+                Ok(guard) => guard,
+                Err(_) => {
+                    log::error!(
+                        "install-on-quit: timed out waiting for the update-state lock; skipping"
+                    );
+                    return;
+                }
+            };
         let current = guard.get();
         if current.phase != state::UpdatePhase::Downloaded {
             return;

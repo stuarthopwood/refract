@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../../shared/ipc'
+import type { GitHubAccount, GitHubAddFlowProgress, OmpProviderState } from '../../shared/accounts'
 import { notify } from './notify'
 
 /** Derived GitHub CLI reachability/sign-in state (User Story 2): distinct from the raw

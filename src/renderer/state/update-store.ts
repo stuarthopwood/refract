@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { UpdateState } from '../../shared/ipc'
+import type { UpdateState } from '../../shared/updates'
 
 interface UpdateStoreState {
   /** `null` only until the very first `updates.getState()` load resolves (or fails) --

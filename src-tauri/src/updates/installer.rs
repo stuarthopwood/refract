@@ -14,23 +14,24 @@
 //   `.exe` asset would silently keep "whichever is listed last". Now looks up the release's own
 //   asset list first, downloads the exact installer asset name and its exact `<name>.sha256`
 //   sibling (matching `install_on_quit.rs`'s own `sha256_sibling` naming), never a glob.
-// - (security LOW) Raw, uncapped `gh` stderr used to be saved to `last_error` as-is; now capped
-//   through `gh_client::capped_failure_text`, same as every other `gh` failure path.
+// - (security LOW) Raw, uncapped `gh` stderr used to be saved to `last_error` as-is; now routed
+//   through the shared, redacting `github::gh::non_empty_or` plus this file's own local length
+//   cap, same as every other `gh` failure path.
 
 use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
 
+use crate::github::gh::{gh_json, gh_raw, non_empty_or};
+
 use super::checksum::{checksum_matches, hex_digest_file};
 use super::dependency_install_http::safe_file_name;
-use super::gh_client::{capped_failure_text, gh_json, gh_raw};
 use super::state::{SharedUpdateState, UpdatePhase, UpdateState};
 
 /// research.md decision 8: the same private repository `UpdateChecker`/`gh_client` reads from.
 const REPO: &str = "stuarthopwood/refract";
 
-const METADATA_TIMEOUT: Duration = Duration::from_secs(15);
 /// Quality-gate remediation (HIGH, ported verbatim): the default metadata timeout exists for
 /// ordinary small calls -- the installer this downloads is ~146MB, which needs far longer than
 /// that on anything but a very fast connection; this is the one caller that opts into several
@@ -165,9 +166,9 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         &[
             "release", "view", tag_name, "--repo", REPO, "--json", "assets",
         ],
-        METADATA_TIMEOUT,
     )
-    .await?;
+    .await
+    .map_err(|err| err.to_string())?;
     // Gate finding (round 2, Medium): this header comment already claimed a release with more
     // than one `.exe` asset is rejected, but the code only ever `.find()`-picked the first match
     // silently -- fixed for real here: `.filter()` collects every `.exe` asset, and anything
@@ -216,14 +217,31 @@ async fn try_download(data_dir: &Path, tag_name: &str) -> Result<String, String>
         "--clobber",
     ];
     let args_joined = download_args.join(" ");
-    let result = gh_raw(data_dir, &download_args, DOWNLOAD_TIMEOUT).await?;
+    let result = gh_raw(data_dir, &download_args, None, DOWNLOAD_TIMEOUT)
+        .await
+        .map_err(|err| err.to_string())?;
 
     if result.code != 0 {
-        return Err(capped_failure_text(
+        // Security fix (gate round 2, Medium): routed through the shared, redacting
+        // `github::gh::non_empty_or` (never echoes a credential-shaped substring verbatim)
+        // rather than the deleted `gh_client::capped_failure_text`'s own unredacted
+        // stderr/stdout pick; `non_empty_or` does not cap length, so the result is also
+        // truncated here to `MAX_ERROR_LEN` chars, matching the deleted function's own cap --
+        // redaction alone is not sufficient, an unbounded `gh` response must never
+        // persist/display in full.
+        const MAX_ERROR_LEN: usize = 500;
+        let detail = non_empty_or(
             &result.stderr,
             &result.stdout,
-            &args_joined,
-        ));
+            &format!("gh command failed: gh {args_joined}"),
+        );
+        let capped = if detail.chars().count() > MAX_ERROR_LEN {
+            let truncated: String = detail.chars().take(MAX_ERROR_LEN).collect();
+            format!("{truncated}...")
+        } else {
+            detail
+        };
+        return Err(capped);
     }
 
     // Gate finding (round 2, Medium): `installer_name`/`checksum_name` are release-asset names

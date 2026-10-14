@@ -132,7 +132,6 @@ export interface Readiness {
   omp: Check;
   ompSignedIn: Check;
 }
-export type { InstallableDependency, DependencyInstallProgress, UpdateState } from './updates'; // lane R11b (#794)
 /** `sessions.list()` row: a Session plus its live-runtime view. `lastModel`/`lastThinkingLevel`
  * (T062) come straight through from `Session`: the last known provider/model/thinking level,
  * absent until the first `get_state`. */
@@ -250,9 +249,6 @@ export interface SessionStatusEvent {
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
 }
-
-// Account types (spec 008) live in `./accounts` (issue #806 "No god files").
-export type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
 
 // Pull request management (specs/003-pull-request-management/contracts/ipc.md). Entity types
 // (PullRequestSummary, PullRequestDetail, ChangedFile, FilterTab, ReviewVerdict, MergeMethod) live

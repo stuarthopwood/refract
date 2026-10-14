@@ -342,7 +342,10 @@ async fn fetch_omp_install_script(script_url: &str) -> Result<Vec<u8>, String> {
     // server's own `Content-Length` up front (cheap, fails fast on an obviously-wrong response)
     // AND against the actual buffered length below (a dishonest/missing header must not bypass
     // the cap).
-    if response.content_length().is_some_and(|len| len > OMP_INSTALL_SCRIPT_MAX_BYTES as u64) {
+    if response
+        .content_length()
+        .is_some_and(|len| len > OMP_INSTALL_SCRIPT_MAX_BYTES as u64)
+    {
         return Err(format!(
             "omp install script response is larger than the {OMP_INSTALL_SCRIPT_MAX_BYTES}-byte cap"
         ));

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { notify, useHealthStore, useMemoryStore, useSessionsStore, useUpdateStore } from '@/state'
-import type { UpdateState } from '../../../shared/ipc'
+import type { UpdateState } from '../../../shared/updates'
 
 function pluralAgents(count: number): string {
   return `${count} agent${count === 1 ? '' : 's'} running`

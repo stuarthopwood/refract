@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import { formatDeviceCode } from '@/lib/account-format'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { notify } from '@/state'
-import type { GitHubAddFlowProgress } from '../../../shared/ipc'
+import type { GitHubAddFlowProgress } from '../../../shared/accounts'
 
 export interface AddAccountPanelProps {
   /** The running flow's progress, or `null` before the first progress event arrives. */
