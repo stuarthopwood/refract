@@ -273,14 +273,20 @@ async function main() {
     const setModelRes = await cdp.evaluate(`window.refract.model.setModel(${JSON.stringify(sessionId)}, 'probe-fake', 'probe-fake-model')`);
     record('model.setModel(probe-fake/probe-fake-model) on a live agent', setModelRes.ok === true, setModelRes.ok ? undefined : setModelRes);
 
-    // --- #766/Decision 1: choosing a role again un-pins a previously-pinned Session ---
+    // --- #766/Decision 1: choosing a role again un-pins a previously-pinned Session --
+    // confirmed pinned BEFORE, not only un-pinned after. ---
+    const beforeUnpinList = await cdp.evaluate(`window.refract.sessions.list()`);
+    const beforeUnpinPinned = beforeUnpinList.ok ? beforeUnpinList.value.find((s) => s.id === sessionId)?.pinned : undefined;
     const unpinRes = await cdp.evaluate(`window.refract.model.applyRole(${JSON.stringify(sessionId)}, 'smol')`);
     const afterUnpinList = await cdp.evaluate(`window.refract.sessions.list()`);
     const afterUnpinSummary = afterUnpinList.ok ? afterUnpinList.value.find((s) => s.id === sessionId) : undefined;
     record(
       'choosing a role again un-pins a previously pinned Session',
-      unpinRes.ok === true && afterUnpinSummary?.pinned === false && afterUnpinSummary?.currentRole === 'smol',
-      { unpinRes, afterUnpinSummary },
+      beforeUnpinPinned === true
+        && unpinRes.ok === true
+        && afterUnpinSummary?.pinned === false
+        && afterUnpinSummary?.currentRole === 'smol',
+      { beforeUnpinPinned, unpinRes, afterUnpinSummary },
     );
 
     // --- model.cycleModel on a LIVE agent: the seeded catalog has TWO models, so this must
@@ -452,17 +458,43 @@ async function main() {
     );
 
     // --- #762: /switch <unknown model> leaves the model unchanged (text-command path, distinct
-    // from the dedicated model.setModel RPC checked above) ---
+    // from the dedicated model.setModel RPC checked above) -- compares `lastModel.id` before
+    // and after, not only the error message text. ---
+    const beforeSwitchUnknownList = await cdp.evaluate(`window.refract.sessions.list()`);
+    const beforeSwitchUnknownModelId = beforeSwitchUnknownList.ok
+      ? beforeSwitchUnknownList.value.find((s) => s.id === sessionId)?.lastModel?.id
+      : undefined;
     const switchUnknownRes = await cdp.evaluate(
       `window.refract.chat.send(${JSON.stringify(sessionId)}, '/switch no-such-provider/no-such-model-xyz')`,
     );
+    const afterSwitchUnknownList = await cdp.evaluate(`window.refract.sessions.list()`);
+    const afterSwitchUnknownModelId = afterSwitchUnknownList.ok
+      ? afterSwitchUnknownList.value.find((s) => s.id === sessionId)?.lastModel?.id
+      : undefined;
     record(
       '/switch <unknown model> refused, model left unchanged',
       switchUnknownRes.ok === false
         && switchUnknownRes.error?.code === 'prompt-failed'
-        && switchUnknownRes.error?.message?.includes('Model unchanged'),
-      switchUnknownRes,
+        && switchUnknownRes.error?.message?.includes('Model unchanged')
+        && !!beforeSwitchUnknownModelId
+        && afterSwitchUnknownModelId === beforeSwitchUnknownModelId,
+      { switchUnknownRes, beforeSwitchUnknownModelId, afterSwitchUnknownModelId },
     );
+
+    // --- #766 round 4: /role <role> validates the WIDER chat-role set, not just cycleOrder --
+    // prove `smol` still validates with `smol` removed from `cycleOrder` (still configured in
+    // `modelRoles`, so `known_chat_role_list` still accepts it). ---
+    run('omp', ['--profile', profile, 'config', 'set', 'cycleOrder', '["default","slow"]', '--json']);
+    const roleSmolId = await createSweepSession('role-smol-validation candidate');
+    if (roleSmolId) {
+      await openAndWaitIdle(roleSmolId, 'role-smol-validation candidate');
+      const roleSmolRes = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(roleSmolId)}, '/role smol')`);
+      record(
+        '/role smol validates with smol removed from cycleOrder (known_chat_role_list)',
+        roleSmolRes.ok === true && roleSmolRes.value?.queued === false,
+        roleSmolRes,
+      );
+    }
   } catch (err) {
     console.error('verify-rm-live-check: aborted early:', err);
     process.exitCode = 1;

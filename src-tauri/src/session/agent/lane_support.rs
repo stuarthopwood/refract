@@ -176,4 +176,19 @@ impl SessionAgent {
         self.sync_from_state(&data).await;
         Ok(data)
     }
+
+    /// Issue #740/#741 (lane RM): `summary_fields`'s own `currentRole`/`pinned` fields for a
+    /// `sessions.list()` row, computed OUTSIDE `state.lock()` (gate-fix, file-size: moved out of
+    /// `mod.rs` itself to keep it under this build's 600-line cap) -- `current_selection` needs
+    /// its own `with_model_state` lock, so calling it while `mod.rs` already holds `state.lock()`
+    /// would deadlock (the same `tokio::sync::Mutex`, not reentrant).
+    pub(in crate::session) async fn role_summary_fields(&self) -> (Value, bool) {
+        let (pinned, current_role) = crate::session::model::current_selection(self).await;
+        let current_role_value = if pinned {
+            Value::Null
+        } else {
+            current_role.map(Value::String).unwrap_or(Value::Null)
+        };
+        (current_role_value, pinned)
+    }
 }
