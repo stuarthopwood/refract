@@ -57,7 +57,13 @@ pub fn data_dir() -> PathBuf {
 ///   Electron build's own `isOwnOrigin` does not have (it only allows the dev-server origin when
 ///   `isDev && ELECTRON_RENDERER_URL` is set).
 fn is_allowed_navigation_url(url: &Url) -> bool {
-    let allowed = if tauri::is_dev() {
+    is_allowed_navigation_origin(url, tauri::is_dev())
+}
+
+/// Pure core of the check above, `is_dev` taken as a parameter (rather than read from
+/// `tauri::is_dev()` directly) so both branches are unit-testable with no running Tauri app.
+fn is_allowed_navigation_origin(url: &Url, is_dev: bool) -> bool {
+    let allowed = if is_dev {
         "http://localhost:5174"
     } else {
         "http://tauri.localhost"
@@ -119,6 +125,14 @@ pub fn run() {
     // (`store::registry`/`store::settings`'s own doc comments: a failed open is an unexpected
     // I/O error, not a normal "missing file" case, which both modules already handle as a
     // corrected default in memory).
+    //
+    // Gate note (issue #793): this runs BEFORE `tauri_plugin_single_instance`'s own rejection
+    // check can run (that check only exists once the `Builder` below is assembled, which in
+    // turn needs `AppState`/`SessionManager` already built from `registry`/`settings`) -- a
+    // second, about-to-be-rejected launch still pays for this read. Accepted: `RegistryStore::
+    // open`/`SettingsStore::open` only ever READ (`atomic_json::read_json_file`); neither one
+    // writes anything to disk until an explicit mutation calls its own `persist()`, so two
+    // instances racing this same read is never a corruption risk, only a redundant one.
     let (registry, settings) = tauri::async_runtime::block_on(async {
         let registry = store::registry::RegistryStore::open(&data_dir)
             .await
@@ -148,9 +162,9 @@ pub fn run() {
     let session_manager = session::SessionManager::new(registry.clone(), settings.clone(), events);
     let session_manager_for_exit = session_manager.clone();
     // Issue #623: cloned before `data_dir` moves into `AppState` below -- the setup closure
-    // applies the saved window state, and the final `ExitRequested` handler writes it back.
+    // applies the saved window state (`shell::window_state::Tracker` keeps its own copy for
+    // the final write at quit, so only one clone is needed here).
     let data_dir_for_setup = data_dir.clone();
-    let data_dir_for_exit = data_dir.clone();
 
     let app_state = AppState {
         data_dir,
@@ -192,7 +206,15 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_opener::init())
+        // Gate fix (issue #793): the plugin's own `init()` defaults to `open_js_links_on_click
+        // (true)`, which injects ANOTHER `<a>`-click interceptor of its own -- disabled here so
+        // `src/tauri-bridge/externalLinks.ts`'s own capture-phase handler is the single path a
+        // link click ever takes (and the only one this lane's security baseline documents).
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         // Issue #793: OS notification on needs-you/finished, click-to-focus
         // (`shell::notifications`).
         .plugin(tauri_plugin_notification::init())
@@ -287,23 +309,127 @@ pub fn run() {
             api.prevent_exit();
             let session_manager = session_manager_for_exit.clone();
             let app_handle = app_handle.clone();
-            let data_dir = data_dir_for_exit.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(15),
                     session_manager.stop_all(),
                 )
                 .await;
-                // Issue #623: the final, awaited window-state write -- a fire-and-forget write
-                // racing the `std::process::exit` below could lose the last resize or move.
-                if let (Some(tracker), Some(window)) = (
-                    app_handle.try_state::<std::sync::Arc<shell::window_state::Tracker>>(),
-                    app_handle.get_webview_window("main"),
-                ) {
-                    tracker.save(&data_dir, &window).await;
+                // Issue #623: the final, awaited window-state write. The maximised flag was
+                // already captured fresh at `WindowEvent::CloseRequested` time (gate fix: the
+                // window itself may already be destroyed by now for a user-initiated close/
+                // Alt+F4, so `save()` needs no window handle at all); this call is what covers
+                // a quit that never goes through `CloseRequested` (a direct `app.exit()`/signal).
+                if let Some(tracker) =
+                    app_handle.try_state::<std::sync::Arc<shell::window_state::Tracker>>()
+                {
+                    tracker.save().await;
                 }
                 std::process::exit(0);
             });
         }
     });
+}
+
+#[cfg(test)]
+mod is_allowed_navigation_origin_tests {
+    use super::*;
+
+    fn url(s: &str) -> Url {
+        Url::parse(s).expect("test URL must parse")
+    }
+
+    #[test]
+    fn dev_allows_the_exact_dev_server_origin() {
+        assert!(is_allowed_navigation_origin(
+            &url("http://localhost:5174/some/path"),
+            true
+        ));
+    }
+
+    #[test]
+    fn dev_refuses_a_different_port() {
+        assert!(!is_allowed_navigation_origin(
+            &url("http://localhost:5175"),
+            true
+        ));
+    }
+
+    #[test]
+    fn dev_refuses_a_different_scheme_on_the_same_host_and_port() {
+        assert!(!is_allowed_navigation_origin(
+            &url("https://localhost:5174"),
+            true
+        ));
+    }
+
+    #[test]
+    fn dev_refuses_a_remote_host() {
+        assert!(!is_allowed_navigation_origin(
+            &url("http://evil.example.com:5174"),
+            true
+        ));
+    }
+
+    #[test]
+    fn production_allows_the_exact_tauri_localhost_origin() {
+        assert!(is_allowed_navigation_origin(
+            &url("http://tauri.localhost/tauri/index.html"),
+            false
+        ));
+    }
+
+    #[test]
+    fn production_refuses_the_dev_server_origin() {
+        // The "allow-both-unconditionally" bug this doc comment names: a release build has no
+        // reason to ever trust `localhost:5174` as a same-window origin.
+        assert!(!is_allowed_navigation_origin(
+            &url("http://localhost:5174"),
+            false
+        ));
+    }
+
+    #[test]
+    fn production_refuses_a_different_host() {
+        assert!(!is_allowed_navigation_origin(
+            &url("http://evil.example.com"),
+            false
+        ));
+    }
+
+    #[test]
+    fn file_scheme_is_refused_in_both_modes() {
+        assert!(!is_allowed_navigation_origin(
+            &url("file:///C:/secrets.txt"),
+            true
+        ));
+        assert!(!is_allowed_navigation_origin(
+            &url("file:///C:/secrets.txt"),
+            false
+        ));
+    }
+
+    #[test]
+    fn javascript_scheme_is_refused_in_both_modes() {
+        assert!(!is_allowed_navigation_origin(
+            &url("javascript:alert(1)"),
+            true
+        ));
+        assert!(!is_allowed_navigation_origin(
+            &url("javascript:alert(1)"),
+            false
+        ));
+    }
+
+    #[test]
+    fn data_scheme_is_refused_in_both_modes() {
+        assert!(!is_allowed_navigation_origin(
+            &url("data:text/html,hi"),
+            true
+        ));
+        assert!(!is_allowed_navigation_origin(
+            &url("data:text/html,hi"),
+            false
+        ));
+    }
 }

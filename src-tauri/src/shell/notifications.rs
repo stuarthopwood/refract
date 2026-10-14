@@ -41,6 +41,37 @@ use crate::store::registry::RegistryStore;
 static LAST_STATUS: LazyLock<StdMutex<HashMap<String, String>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
+/// Pure core (gate fix): without this, `LAST_STATUS` grows one entry per Session that ever
+/// existed, archived/deleted ones included, for the app's whole run. Unit-testable with a plain
+/// map and id set, no registry/async involved.
+fn retain_only(
+    last_status: &mut HashMap<String, String>,
+    valid_ids: &std::collections::HashSet<String>,
+) {
+    last_status.retain(|id, _| valid_ids.contains(id));
+}
+
+/// `events::EventSink::emit_session_list_changed`'s own one-line hook: prunes `LAST_STATUS` down
+/// to whatever Sessions the registry still has every time the list changes (archive, restore,
+/// delete, recreate all fire this event already). The registry lock is async, so this spawns
+/// its own short-lived task rather than block the emit path.
+pub fn prune_deleted_sessions(registry: Arc<AsyncMutex<RegistryStore>>) {
+    tauri::async_runtime::spawn(async move {
+        let valid_ids: std::collections::HashSet<String> = registry
+            .lock()
+            .await
+            .snapshot()
+            .sessions
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        retain_only(
+            &mut LAST_STATUS.lock().expect("LAST_STATUS mutex poisoned"),
+            &valid_ids,
+        );
+    });
+}
+
 /// Registers the one global click handler (issue #793): focuses the window and emits
 /// `ui:open-session` for the Session id carried in the clicked notification's own `extra`
 /// payload. Call once, from `lib.rs`'s `setup` closure, before any notification is ever shown --
@@ -238,5 +269,42 @@ mod notification_worthy_transition_tests {
             notification_worthy_transition(Some("working"), "working"),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod retain_only_tests {
+    use std::collections::{HashMap, HashSet};
+
+    use super::retain_only;
+
+    #[test]
+    fn drops_entries_not_in_the_valid_set() {
+        let mut last_status = HashMap::from([
+            ("kept".to_string(), "idle".to_string()),
+            ("deleted".to_string(), "needs-you".to_string()),
+        ]);
+        let valid_ids = HashSet::from(["kept".to_string()]);
+        retain_only(&mut last_status, &valid_ids);
+        assert_eq!(last_status.len(), 1);
+        assert!(last_status.contains_key("kept"));
+    }
+
+    #[test]
+    fn keeps_every_entry_still_valid() {
+        let mut last_status = HashMap::from([
+            ("a".to_string(), "idle".to_string()),
+            ("b".to_string(), "working".to_string()),
+        ]);
+        let valid_ids = HashSet::from(["a".to_string(), "b".to_string()]);
+        retain_only(&mut last_status, &valid_ids);
+        assert_eq!(last_status.len(), 2);
+    }
+
+    #[test]
+    fn empty_valid_set_drops_everything() {
+        let mut last_status = HashMap::from([("a".to_string(), "idle".to_string())]);
+        retain_only(&mut last_status, &HashSet::new());
+        assert!(last_status.is_empty());
     }
 }

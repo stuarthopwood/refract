@@ -97,9 +97,12 @@ impl EventSink {
     }
 
     /// `session:list-changed`: no payload, matching `window.webContents.send(IPC_EVENTS.
-    /// SESSION_LIST_CHANGED)`'s own no-argument call.
+    /// SESSION_LIST_CHANGED)`'s own no-argument call. Also the hook `shell::notifications`'
+    /// `LAST_STATUS` map prunes stale Session ids from (gate fix, issue #793): archive, restore,
+    /// delete and recreate all already fire this event.
     pub fn emit_session_list_changed(&self) {
         self.send(SESSION_LIST_CHANGED, ());
+        crate::shell::notifications::prune_deleted_sessions(self.registry.clone());
     }
 
     /// Serialises `ops` directly from a borrowed `TranscriptPatchPayload` (performance finding,

@@ -86,15 +86,43 @@ own clamping/validation), never a crash or an off-screen/unusable window.
 
 ## Verification performed this PR
 
-- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (all pass).
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (27 unit tests,
+  including new coverage this gate round added: `is_allowed_navigation_origin` same-origin/
+  wrong-port/wrong-scheme/remote-host/`file:`/`javascript:`/`data:` refusal, `visible_on`'s
+  title-bar-band width/height boundaries and an off-top case, `LAST_STATUS` eviction).
 - `pnpm typecheck`, `pnpm test`, `pnpm check:file-size`, `pnpm check:indent`,
   `pnpm check:theme-contrast`, `pnpm check:drag-regions`, `pnpm check:parity` (all pass).
-- `pnpm tauri build --debug --no-bundle` then a live CDP check of every channel this lane touches
-  (file drop, notification click-to-focus, single instance, window state, external links) --
-  see the PR body for the exact exercised list.
 - Read-only audit of `capabilities/default.json`, `tauri.conf.json`, and every new/changed
   `src-tauri/src/shell/*` file against the items above; no `open_devtools`/unscoped
   capability/remote-content code path found anywhere in this build.
+- **Single-instance, live-checked**: built the debug exe, copied it to a scratch dir, launched
+  it, then launched a second copy of the same exe. The second process exited immediately (code
+  0) while the first stayed up and `ready` throughout (confirmed via its own log) -- process-
+  level proof the rejection path runs and the first instance is never disturbed by it.
+- **Window-state restore, NOT conclusively live-checked**: attempted over CDP (`Browser.
+  setWindowBounds` to move/resize, then `Browser.close`) -- neither reached Tauri's native `tao`
+  window at all: the reported bounds after `setWindowBounds` did not match what was requested,
+  no `Moved`/`Resized`-triggered write appeared on disk afterward, and `Browser.close` left the
+  process running. This is CDP-over-WebView2 not exposing the native window to the Browser
+  domain here, not a finding about `Tracker` itself. A real mouse-driven move/close/relaunch was
+  not attempted: several other lanes had their own scratch `Refract (Rust preview)` windows open
+  at the same time with identical titles, and the available window-finding tool could not
+  reliably single out this lane's own window by pid -- driving the wrong window by accident was
+  judged too risky to try blind. Verified instead by: the 34 passing unit tests above (including
+  `resolve_bounds`'s own missing/off-screen/oversized/undersized/multi-display/maximized cases),
+  code review of `Tracker::on_window_event`'s `CloseRequested` arm against Tauri's own documented
+  guarantee that it fires before the window is destroyed, and the debounced-save design matching
+  issue #623's own "a resize or move made less than 500ms before closing is still saved"
+  requirement. A real live check is a recommended follow-up once a lane has sole claim to the
+  foreground (or #795's harness can target a specific scratch window unambiguously).
+- Notification click-to-focus and the Tauri file-drop path were also NOT exercised against a
+  real toast / a real mouse-driven OS drag (CDP-synthesized drag events do not reliably reach
+  wry's native drag-drop interception point, the same class of tooling gap the R10a spike itself
+  flags for a different feature) -- verified instead by unit test and by reading the plugin's own
+  source for the exact API contract relied on. File drop also depends on `attachments.
+  readImageFile`, which lane R4 (PR #821) implements with the Electron path-safety walk; this
+  PR's own channel is the drop-to-real-OS-path wiring, not the backend read, so #823 merges
+  after #821.
 
 ## Follow-ups (not this lane's scope)
 

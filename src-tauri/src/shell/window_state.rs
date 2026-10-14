@@ -17,7 +17,8 @@
 // return, and what `set_position()`/`set_size()` accept via `Position::Physical`/`Size::Physical`
 // -- no logical/DPI conversion needed anywhere in this file.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde::{Deserialize, Serialize};
@@ -63,16 +64,24 @@ struct WorkArea {
     height: u32,
 }
 
-/// Whether at least a `MIN_VISIBLE_WIDTH`-by-`MIN_VISIBLE_HEIGHT` strip of a `width`-by-`height`
-/// window at `(x, y)` falls inside `area`.
+/// Whether the window's TITLE-BAR BAND (its top `MIN_VISIBLE_HEIGHT` rows, capped at the
+/// window's own height) overlaps `area` by at least `MIN_VISIBLE_WIDTH`-by-`MIN_VISIBLE_HEIGHT`
+/// -- not just any part of the window (gate fix: a window whose BODY is on-screen but whose
+/// title bar is off the top of every display cannot be dragged back into view, issue #623's own
+/// "including the title bar"). Saturating arithmetic throughout: an extreme saved `x`/`y`/
+/// `width`/`height` (a hand-edited or corrupted file) must never panic on overflow.
 fn visible_on(x: i32, y: i32, width: u32, height: u32, area: &WorkArea) -> bool {
+    let to_i32 = |v: u32| v.min(i32::MAX as u32) as i32;
+    let band_height = MIN_VISIBLE_HEIGHT.min(to_i32(height)).max(0);
     let left = area.x;
     let top = area.y;
-    let right = left + area.width as i32;
-    let bottom = top + area.height as i32;
-    let overlap_w = (x + width as i32).min(right) - x.max(left);
-    let overlap_h = (y + height as i32).min(bottom) - y.max(top);
-    overlap_w >= MIN_VISIBLE_WIDTH && overlap_h >= MIN_VISIBLE_HEIGHT
+    let right = area.x.saturating_add(to_i32(area.width));
+    let bottom = area.y.saturating_add(to_i32(area.height));
+    let win_right = x.saturating_add(to_i32(width));
+    let band_bottom = y.saturating_add(band_height);
+    let overlap_w = win_right.min(right).saturating_sub(x.max(left));
+    let overlap_h = band_bottom.min(bottom).saturating_sub(y.max(top));
+    overlap_w >= MIN_VISIBLE_WIDTH && overlap_h >= band_height
 }
 
 /// The display a saved position/size would actually land on (the first connected one it is at
@@ -181,57 +190,101 @@ pub async fn apply_on_startup(data_dir: &Path, window: &WebviewWindow) -> Arc<Tr
     }
 
     let (x, y) = resolved.position.unwrap_or((0, 0));
-    Arc::new(Tracker(StdMutex::new(WindowState {
-        x,
-        y,
-        width: resolved.width,
-        height: resolved.height,
-        maximized: resolved.maximized,
-    })))
+    Arc::new(Tracker {
+        state: StdMutex::new(WindowState {
+            x,
+            y,
+            width: resolved.width,
+            height: resolved.height,
+            maximized: resolved.maximized,
+        }),
+        data_dir: data_dir.to_path_buf(),
+        generation: AtomicU64::new(0),
+    })
 }
 
 /// Keeps the last known normal (non-minimised, non-maximised) position/size current across the
 /// run, and the last known maximised flag at quit -- mirrors `tauri-plugin-window-state`'s own
 /// `update_state` logic (read, not depended on; see this file's own top comment for why).
-pub struct Tracker(StdMutex<WindowState>);
+pub struct Tracker {
+    state: StdMutex<WindowState>,
+    data_dir: PathBuf,
+    /// Debounce generation (gate fix): bumped on every `Moved`/`Resized`, so a save scheduled
+    /// 500ms out that finds a NEWER generation already in flight skips itself -- only the last
+    /// one in a burst actually writes.
+    generation: AtomicU64,
+}
 
 impl Tracker {
     /// `lib.rs`'s own `WebviewWindow::on_window_event` listener calls this for every event
-    /// unfiltered; only `Moved`/`Resized` are ever acted on.
-    pub fn on_window_event(&self, window: &WebviewWindow, event: &WindowEvent) {
+    /// unfiltered; only `Moved`/`Resized`/`CloseRequested` are ever acted on.
+    pub fn on_window_event(self: &Arc<Self>, window: &WebviewWindow, event: &WindowEvent) {
         match event {
             // Never store a position read while minimised (issue #623: Windows reports
-            // `-32000`).
-            WindowEvent::Moved(position) if !window.is_minimized().unwrap_or(false) => {
-                let mut state = self.0.lock().expect("window-state mutex poisoned");
-                state.x = position.x;
-                state.y = position.y;
+            // `-32000`) or maximised (Windows moves the window to the monitor's origin while
+            // maximised; that is not a position to restore into).
+            WindowEvent::Moved(position)
+                if !window.is_minimized().unwrap_or(false)
+                    && !window.is_maximized().unwrap_or(false) =>
+            {
+                {
+                    let mut state = self.state.lock().expect("window-state mutex poisoned");
+                    state.x = position.x;
+                    state.y = position.y;
+                }
+                self.schedule_debounced_save();
             }
             // Never store the transient maximised size as the "normal" size to restore into --
-            // `state.maximized` itself is only read fresh from the window at `save()` time below.
+            // `state.maximized` is captured fresh below, not read from a `Resized` event.
             WindowEvent::Resized(size)
                 if !window.is_minimized().unwrap_or(false)
                     && !window.is_maximized().unwrap_or(false) =>
             {
-                let mut state = self.0.lock().expect("window-state mutex poisoned");
-                state.width = size.width;
-                state.height = size.height;
+                {
+                    let mut state = self.state.lock().expect("window-state mutex poisoned");
+                    state.width = size.width;
+                    state.height = size.height;
+                }
+                self.schedule_debounced_save();
+            }
+            // CRITICAL gate fix: a user-initiated close (the X button, Alt+F4) destroys the
+            // window before `lib.rs`'s own `ExitRequested` handler ever runs -- `save()` calling
+            // `window.is_maximized()` there found no window at all, and the maximised flag (and
+            // whatever a 500ms debounce had not yet flushed) was silently lost. `CloseRequested`
+            // fires while the window is still alive, so the maximised flag is captured here,
+            // synchronously, and `save()` below never needs a window handle at all.
+            WindowEvent::CloseRequested { .. } => {
+                let mut state = self.state.lock().expect("window-state mutex poisoned");
+                state.maximized = window.is_maximized().unwrap_or(state.maximized);
             }
             _ => {}
         }
     }
 
+    /// Issue #623: "a resize or move made less than 500 ms before closing is still saved" --
+    /// without this, only the explicit `ExitRequested`-time `save()` call below ever reached
+    /// disk, which a hard crash (killed process, power loss) never triggers at all. Bumps the
+    /// generation first so an in-flight older debounce (scheduled by an earlier `Moved`/
+    /// `Resized` in the same burst) no-ops when it wakes.
+    fn schedule_debounced_save(self: &Arc<Self>) {
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let this = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if this.generation.load(Ordering::SeqCst) == generation {
+                this.save().await;
+            }
+        });
+    }
+
     /// The final write (issue #623: "the final write must be awaited or synchronous... hook it
     /// into the existing before-quit gate"). `lib.rs`'s own `ExitRequested` handler awaits this
-    /// before calling `std::process::exit(0)`, so a resize or move made just before quitting is
-    /// never lost to a fire-and-forget write racing process exit.
-    pub async fn save(&self, data_dir: &Path, window: &WebviewWindow) {
-        let state = {
-            let mut state = *self.0.lock().expect("window-state mutex poisoned");
-            state.maximized = window.is_maximized().unwrap_or(state.maximized);
-            state
-        };
-        if let Err(err) = write_json_file(&file_path(data_dir), &state).await {
+    /// before calling `std::process::exit(0)` -- the maximised flag it writes was already
+    /// captured fresh at `CloseRequested` time above (gate fix), not read from a window handle
+    /// that may no longer exist by the time this runs.
+    pub async fn save(&self) {
+        let state = *self.state.lock().expect("window-state mutex poisoned");
+        if let Err(err) = write_json_file(&file_path(&self.data_dir), &state).await {
             log::warn!("refract-tauri: failed to write window-state.json: {err}");
         }
     }
@@ -354,5 +407,72 @@ mod resolve_bounds_tests {
         };
         let resolved = resolve_bounds(Some(saved), &[PRIMARY], Some(&PRIMARY));
         assert!(resolved.maximized);
+    }
+}
+
+#[cfg(test)]
+mod visible_on_tests {
+    use super::*;
+
+    #[test]
+    fn width_boundary_100_is_visible_99_is_not() {
+        let area_100 = WorkArea {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 1040,
+        };
+        let area_99 = WorkArea {
+            x: 0,
+            y: 0,
+            width: 99,
+            height: 1040,
+        };
+        assert!(visible_on(0, 0, 1000, 700, &area_100));
+        assert!(!visible_on(0, 0, 1000, 700, &area_99));
+    }
+
+    #[test]
+    fn title_bar_band_height_boundary_40_is_visible_39_is_not() {
+        let area_40 = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 40,
+        };
+        let area_39 = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 39,
+        };
+        assert!(visible_on(0, 0, 1000, 700, &area_40));
+        assert!(!visible_on(0, 0, 1000, 700, &area_39));
+    }
+
+    #[test]
+    fn title_bar_off_top_is_not_visible_even_with_the_body_on_screen() {
+        // Body (y=-900..100) overlaps the display by 100 rows -- enough for the OLD (whole-
+        // window) check to call this visible -- but the title-bar band itself (y=-900..-860)
+        // never touches the display at all, so the user could never drag it back into view.
+        let area = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1040,
+        };
+        assert!(!visible_on(0, -900, 1000, 1000, &area));
+    }
+
+    #[test]
+    fn extreme_saved_values_never_panic() {
+        let area = WorkArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1040,
+        };
+        assert!(!visible_on(i32::MIN, i32::MIN, u32::MAX, u32::MAX, &area));
+        assert!(!visible_on(i32::MAX, i32::MAX, u32::MAX, u32::MAX, &area));
     }
 }
