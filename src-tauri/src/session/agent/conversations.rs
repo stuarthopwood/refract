@@ -16,7 +16,7 @@ impl SessionAgent {
     /// (a `stopped` Session instead goes through `start_with_conversation`).
     pub async fn start_new_conversation(&self) -> Result<(), AgentError> {
         let proc = {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.process.is_none() {
                 return Err(AgentError::new(
                     "not-idle",
@@ -26,6 +26,12 @@ impl SessionAgent {
                     ),
                 ));
             }
+            // Gate-fix (#856, round 2 MEDIUM): bumped here, BEFORE the `new_session` RPC/
+            // registry clear below (not after, inside the transcript-reset block that used to
+            // be this bump's only home) -- a settle-time reply still in flight from a turn that
+            // just ended must already be stale (`sync_from_state`'s own `>= 2` rule) well before
+            // this reset's own patch/registry write can land, not race it.
+            state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
         let res = proc
@@ -57,12 +63,6 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.transcript = TranscriptState::new();
-            // Gate-fix (#856): +2 keeps parity (odd stays odd, even stays even -- see
-            // `agent::frame`'s own doc comment for the encoding) while making any settle-time
-            // `get_state` reply still in flight from the PREVIOUS Conversation stale by
-            // `sync_from_state`'s own `>= 2` rule, so it can never write that Conversation's
-            // `currentConversation` over this brand-new one's.
-            state.turn_generation = state.turn_generation.wrapping_add(2);
         }
         self.emit_patch_reset().await;
         // Lane R5 (issue #577, #712): clears the PREVIOUS Conversation's readout/subagent state
@@ -91,7 +91,7 @@ impl SessionAgent {
     /// try-the-previous-Conversation-first recovery.
     pub async fn open_conversation(&self, file: String) -> Result<(), AgentError> {
         let proc = {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.process.is_none() {
                 return Err(AgentError::new(
                     "not-idle",
@@ -101,6 +101,9 @@ impl SessionAgent {
                     ),
                 ));
             }
+            // Gate-fix (#856, round 2 MEDIUM): see `start_new_conversation`'s own identical
+            // comment -- bumped here, before `switch_session` below, not after.
+            state.turn_generation = state.turn_generation.wrapping_add(2);
             state.process.clone().unwrap()
         };
         let switch_res = proc
@@ -179,9 +182,6 @@ impl SessionAgent {
             } else {
                 TranscriptState::new()
             };
-            // Gate-fix (#856): see `start_new_conversation`'s own identical comment -- this is
-            // also a Conversation reset.
-            state.turn_generation = state.turn_generation.wrapping_add(2);
         }
         // Lane R5 (issue #577, #712): this is a DIFFERENT Conversation's history, so the
         // previous one's readout/subagent state never carries over (see `start_new_conversation`

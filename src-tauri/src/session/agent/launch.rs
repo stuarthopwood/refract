@@ -406,15 +406,11 @@ impl SessionAgent {
     /// Runs after the initial `get_state` and after every `session_settled` (port of
     /// `SessionAgent.ts`'s own `syncFromState`): persists `sessionDir`/`currentConversation`/
     /// `lastMessageCount`/`lastModel`/`lastThinkingLevel` once `messageCount > 0`. `stale_if`
-    /// (settle-time callers), re-checked HERE: diff `>= 2` is a FULL later settle (`== 1` is just a newer turn starting, never stale).
+    /// (settle-time callers) is checked by `settle_is_stale` both here and again right before the
+    /// write below, so a later settle/reset landing in the gap can never write stale data over it.
     pub(super) async fn sync_from_state(&self, state: &Value, stale_if: Option<(u64, u64)>) {
-        if let Some((generation, shutdown_generation)) = stale_if {
-            let s = self.state.lock().await;
-            if s.turn_generation.wrapping_sub(generation) >= 2
-                || s.shutdown_generation != shutdown_generation
-            {
-                return;
-            }
+        if self.settle_is_stale(stale_if).await {
+            return;
         }
         let session_file = state
             .get("sessionFile")
@@ -464,6 +460,10 @@ impl SessionAgent {
                         Some(thinking_level.map(|t| truncate(t, MAX_MODEL_FIELD_LENGTH)));
                 }
             }
+        }
+        // Gate-fix (#856, round 2): re-checked again, right before the write -- the entry check's only remaining gap.
+        if self.settle_is_stale(stale_if).await {
+            return;
         }
         if self
             .registry

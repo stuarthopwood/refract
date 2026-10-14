@@ -24,15 +24,18 @@ impl SessionAgent {
                     let mut state = self.state.lock().await;
                     // Gate-fix (#856): `turn_generation` replaces the old `turn_settle_handled`
                     // bool via parity -- odd means "mid-turn, not yet settled", even means
-                    // "settled" (see `handle_turn_settled`'s own doc comment). `| 1` forces the
-                    // result odd regardless of the value coming in (robust even against a
-                    // defensive double `agent_start` with no intervening settle), so this both
-                    // starts a fresh turn; `on_session_settled`'s own `get_state` round trip now
-                    // runs on a spawned task (see `handle_turn_settled`), so its reply can land
-                    // after this point -- `sync_from_state`'s own staleness check (its doc
-                    // comment) only drops it once a FULL LATER settle has also happened, not
-                    // merely because this new turn started.
-                    state.turn_generation = state.turn_generation.wrapping_add(1) | 1;
+                    // "settled" (see `handle_turn_settled`'s own doc comment). Only bumped when
+                    // currently even (round 2 LOW: `wrapping_add(1) | 1` added 2, not 1, from an
+                    // already-odd value -- a defensive double `agent_start` with no intervening
+                    // settle -- wrongly making a still-in-flight reply from the turn BEFORE this
+                    // one look like a full later settle had already happened). This starts a
+                    // fresh turn: `on_session_settled`'s own `get_state` round trip runs on a
+                    // spawned task (see `handle_turn_settled`), so its reply can land after this
+                    // point -- `sync_from_state`'s own staleness check only drops it once a FULL
+                    // LATER settle has also happened, not merely because a newer turn started.
+                    if state.turn_generation % 2 == 0 {
+                        state.turn_generation = state.turn_generation.wrapping_add(1);
+                    }
                 }
                 self.set_status(SessionStatus::Working, None, None).await;
             }
@@ -217,6 +220,21 @@ impl SessionAgent {
                 }
             }
         }
+    }
+
+    /// `launch.rs`'s own `sync_from_state` staleness guard, factored out so it can be re-checked
+    /// BOTH at entry and again immediately before that function's own registry write (round 2
+    /// MEDIUM/security finding: a settle-time reply or a Conversation reset could otherwise land
+    /// in the gap between the entry check and the write, which is awaited behind its own
+    /// `registry`/`readout` locks) without duplicating this 6-line check at both call sites.
+    /// `None` (every OTHER `sync_from_state` caller) is never stale.
+    pub(super) async fn settle_is_stale(&self, stale_if: Option<(u64, u64)>) -> bool {
+        let Some((generation, shutdown_generation)) = stale_if else {
+            return false;
+        };
+        let s = self.state.lock().await;
+        s.turn_generation.wrapping_sub(generation) >= 2
+            || s.shutdown_generation != shutdown_generation
     }
 
     /// Port of `SessionAgent.ts`'s own `onExit`. The epoch guard (`proc` must still be

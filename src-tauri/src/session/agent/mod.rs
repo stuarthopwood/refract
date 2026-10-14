@@ -99,7 +99,7 @@ struct AgentState {
     pending: Vec<PendingRequest>,
     commands: Vec<Value>,
     process: Option<Arc<OmpProcess>>,
-    // Gate-fix (#856): only `agent_start`/`handle_turn_settled` change this; parity = settled (even).
+    // Gate-fix (#856): changed by `agent_start`/`handle_turn_settled` (parity = settled, even) and by a Conversation reset's own `+2` bump (`conversations.rs`).
     turn_generation: u64,
     stop_requested: bool,
     shutdown_generation: u64,
