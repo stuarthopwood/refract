@@ -40,12 +40,12 @@ use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
 use serde_json::Value;
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
+use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::Mutex as AsyncMutex;
 #[cfg(windows)]
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
@@ -205,48 +205,97 @@ async fn run_omp(
         command.env_remove(var);
     }
     let mut child = command.spawn().map_err(|err| map_spawn_error(&err))?;
-    let mut stdout_pipe = child.stdout.take().expect("configured as piped above");
-    let mut stderr_pipe = child.stderr.take().expect("configured as piped above");
+    let stdout_pipe = child.stdout.take().expect("configured as piped above");
+    let stderr_pipe = child.stderr.take().expect("configured as piped above");
 
-    let run = async {
-        let mut stdout_buf = Vec::new();
-        let mut stderr_buf = Vec::new();
-        // Bounded at the source (never buffers more than the cap, unlike reading everything
-        // first and checking afterwards): `take` stops yielding bytes past the limit, so a
-        // runaway `omp` can write gigabytes into its own stdout pipe without this process ever
-        // holding more than `MAX_STDOUT_BYTES + 1` bytes in memory for it.
-        let mut limited_stdout = (&mut stdout_pipe).take(MAX_STDOUT_BYTES as u64 + 1);
-        let stdout_read = limited_stdout.read_to_end(&mut stdout_buf);
-        let stderr_read = stderr_pipe.read_to_end(&mut stderr_buf);
-        let (stdout_result, stderr_result) = tokio::join!(stdout_read, stderr_read);
-        stdout_result.map_err(|err| {
-            OmpConfigError::new(
-                OmpConfigErrorCode::OmpFailed,
-                format!("Could not read omp output: {err}"),
-            )
-        })?;
-        stderr_result.map_err(|err| {
-            OmpConfigError::new(
-                OmpConfigErrorCode::OmpFailed,
-                format!("Could not read omp output: {err}"),
-            )
-        })?;
-        let status = child.wait().await.map_err(|err| {
-            OmpConfigError::new(
-                OmpConfigErrorCode::OmpFailed,
-                format!("omp exited abnormally: {err}"),
-            )
-        })?;
-        Ok::<_, OmpConfigError>((status, stdout_buf, stderr_buf))
+    let (status, stdout_buf, stderr_buf) = match tokio::time::timeout(
+        Duration::from_millis(TIMEOUT_MS),
+        read_capped_output(&mut child, stdout_pipe, stderr_pipe, MAX_STDOUT_BYTES),
+    )
+    .await
+    {
+        Ok(Ok(result)) => result,
+        Ok(Err(err)) => return Err(err),
+        Err(_) => return Err(timeout_error()),
     };
-
-    let (status, stdout_buf, stderr_buf) =
-        match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), run).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(err)) => return Err(err),
-            Err(_) => return Err(timeout_error()),
-        };
     map_run_result(status.success(), &stdout_buf, &stderr_buf, failure_message)
+}
+
+/// Reads `child`'s stdout (capped at `max_stdout_bytes`) and stderr concurrently. Gate-fix (code
+/// review): the previous version read stdout through a `Take` adapter but never drained the
+/// underlying pipe past the cap, so a runaway `omp` that kept writing past the limit would block
+/// on the now-full OS pipe buffer and never reach EOF/exit on its own -- the 15 s outer timeout
+/// then fired and reported `Timeout` (holding `MODEL_ROLES_WRITE_LOCK` for the full 15 s) instead
+/// of the real "output too large" failure. Fixed: the instant the capped stdout read completes
+/// and has exceeded `max_stdout_bytes`, this returns immediately -- the (now out-of-scope) `Take`
+/// wrapper drops the owned `ChildStdout` with it, closing that end of the pipe, `child` is killed
+/// via `start_kill` (no need to await it; `run_omp`'s own `kill_on_drop(true)` is the
+/// belt-and-braces second guard), and stderr/`child.wait()` are never waited on -- matching
+/// Electron's own `maxBuffer` behaviour (killed, not drained to completion). `max_stdout_bytes` is
+/// a parameter (not `MAX_STDOUT_BYTES` directly) so a test can exercise this with a tiny cap and
+/// a cheap child process, no real `omp` needed.
+async fn read_capped_output(
+    child: &mut Child,
+    stdout_pipe: ChildStdout,
+    mut stderr_pipe: ChildStderr,
+    max_stdout_bytes: usize,
+) -> Result<(ExitStatus, Vec<u8>, Vec<u8>), OmpConfigError> {
+    let mut stdout_buf = Vec::new();
+    let mut stderr_buf = Vec::new();
+    // Bounded at the source (never buffers more than the cap, unlike reading everything first
+    // and checking afterwards): `take` stops yielding bytes past the limit, so a runaway `omp`
+    // can write gigabytes into its own stdout pipe without this process ever holding more than
+    // `max_stdout_bytes + 1` bytes in memory for it. Takes `stdout_pipe` BY VALUE (never a
+    // `&mut` borrow of a separate variable) so an early return below can drop it -- and with it
+    // the OS pipe handle -- without fighting the borrow checker over a still-live reference.
+    let mut limited_stdout = stdout_pipe.take(max_stdout_bytes as u64 + 1);
+    let stdout_read = limited_stdout.read_to_end(&mut stdout_buf);
+    let stderr_read = stderr_pipe.read_to_end(&mut stderr_buf);
+    tokio::pin!(stdout_read);
+    tokio::pin!(stderr_read);
+    let mut stdout_done = false;
+    let mut stderr_done = false;
+    while !stdout_done || !stderr_done {
+        tokio::select! {
+            res = &mut stdout_read, if !stdout_done => {
+                // Checked on the byte count `read_to_end` itself returns, never on
+                // `stdout_buf.len()`: the pinned `stdout_read` future borrows `stdout_buf` for
+                // its own whole lifetime (it is polled again on later loop iterations whenever
+                // `stderr_read` resolves first), so reading `stdout_buf` here while that borrow
+                // is still in scope does not borrow-check.
+                let bytes_read = res.map_err(|err| {
+                    OmpConfigError::new(
+                        OmpConfigErrorCode::OmpFailed,
+                        format!("Could not read omp output: {err}"),
+                    )
+                })?;
+                stdout_done = true;
+                if bytes_read as u64 > max_stdout_bytes as u64 {
+                    let _ = child.start_kill();
+                    return Err(OmpConfigError::new(
+                        OmpConfigErrorCode::ParseFailed,
+                        "omp returned output exceeding the output size limit.",
+                    ));
+                }
+            }
+            res = &mut stderr_read, if !stderr_done => {
+                res.map_err(|err| {
+                    OmpConfigError::new(
+                        OmpConfigErrorCode::OmpFailed,
+                        format!("Could not read omp output: {err}"),
+                    )
+                })?;
+                stderr_done = true;
+            }
+        }
+    }
+    let status = child.wait().await.map_err(|err| {
+        OmpConfigError::new(
+            OmpConfigErrorCode::OmpFailed,
+            format!("omp exited abnormally: {err}"),
+        )
+    })?;
+    Ok((status, stdout_buf, stderr_buf))
 }
 
 /// Pure post-spawn decision, split out of `run_omp` for direct unit testing (no real process
@@ -519,5 +568,45 @@ mod tests {
         let err = get_config_with(&executor, "--json", &[]).await.unwrap_err();
         assert_eq!(err.code, OmpConfigErrorCode::InvalidValue);
         assert!(executor.calls.lock().await.is_empty());
+    }
+
+    /// Regression test for the pipe-drain hang (code review, round 4): a real child process that
+    /// writes far past a tiny cap must be killed and reported as `ParseFailed` promptly, never
+    /// left running until some outer timeout gives up. Uses a plain `cmd /C` loop rather than a
+    /// real `omp` (no real `omp` is needed to exercise this -- the bug is in the generic
+    /// pipe-draining code, not anything `omp`-specific), with a 16-byte cap and a 5 s
+    /// test-local timeout so a regression fails fast instead of hanging the whole suite for the
+    /// production 1 MiB/15 s limits.
+    #[tokio::test]
+    async fn read_capped_output_kills_the_child_and_returns_immediately_once_stdout_exceeds_the_cap(
+    ) {
+        let mut command = Command::new("cmd");
+        command
+            .args(["/C", "for /L %i in (1,1,100000) do @echo 0123456789abcdef"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW.0);
+        let mut child = command.spawn().expect("spawn cmd");
+        let stdout_pipe = child.stdout.take().expect("configured as piped above");
+        let stderr_pipe = child.stderr.take().expect("configured as piped above");
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            read_capped_output(&mut child, stdout_pipe, stderr_pipe, 16),
+        )
+        .await
+        .expect("read_capped_output must return well within 5s, not hang");
+        let err = result.unwrap_err();
+        assert_eq!(err.code, OmpConfigErrorCode::ParseFailed);
+
+        // The child must actually have been killed, not left running past this call.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            child.try_wait().expect("try_wait").is_some(),
+            "child should have been killed by read_capped_output, not left running"
+        );
     }
 }
