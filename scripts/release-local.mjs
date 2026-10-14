@@ -541,8 +541,17 @@ function main() {
 
     const nsisChecksum = writeChecksum(nsisSetup);
 
+    // Resolved BEFORE the dry-run return (gate fix, round 2): `pnpm release:local -- --dry-run
+    // --notes-from-changelog` must still exercise the CHANGELOG.md extraction/notes-file write,
+    // not skip it until the one real, unrepeatable release run. Only `publishRelease` itself
+    // (the actual `gh release create`) is gated on `DRY_RUN` below.
+    const notesArgs = resolveReleaseNotesArgs(conf.version, releaseDir);
+
     if (DRY_RUN) {
       console.log('release-local: --dry-run, built and signed but not publishing.');
+      if (NOTES_FROM_CHANGELOG) {
+        console.log(`release-local: --dry-run with --notes-from-changelog -- would publish with: ${notesArgs.join(' ')}`);
+      }
       return;
     }
 
@@ -552,7 +561,6 @@ function main() {
     // downloads (`src-tauri/src/updates/installer.rs`) or verifies
     // (`src-tauri/src/updates/signature.rs`) -- `refract-tauri.exe` is signed so the copy NSIS
     // installs onto disk carries a valid signature too, but it is never its own release asset.
-    const notesArgs = resolveReleaseNotesArgs(conf.version, releaseDir);
     publishRelease(tag, [nsisSetup, nsisChecksum], notesArgs);
   } finally {
     safeRemoveReleaseDir(releaseDir, conf.version);

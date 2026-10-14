@@ -45,6 +45,8 @@ import {
 } from './release-changelog.mjs';
 import {
   CARGO_PACKAGE_NAME,
+  MANIFEST_LABELS,
+  assertCargoLockOnlyVersionChanged,
   bumpVersion,
   checkVersionsEqual,
   readAllVersions,
@@ -55,6 +57,46 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const REPO_SLUG = 'stuarthopwood/refract';
 const CHANGELOG_PATH = path.join(repoRoot, 'CHANGELOG.md');
+
+// Exactly the files `release.mjs` ever stages or commits -- also what gets unstaged on a
+// failed `git add`/`git commit` (see the restore `try` in `main`).
+const TRACKED_RELEASE_FILES = [
+  'package.json',
+  'src-tauri/tauri.conf.json',
+  'src-tauri/Cargo.toml',
+  'src-tauri/Cargo.lock',
+  'CHANGELOG.md',
+];
+
+// Set by the SIGINT/SIGTERM handler installed right before the first write. Registering a
+// handler at all overrides Node's own default disposition (immediate termination) -- without
+// one, Ctrl+C during a long child process (`cargo update`, `pnpm ci:local`) would kill this
+// script outright, as everyone pressing Ctrl+C in a console sends the break to the whole
+// process group (parent AND child), leaving the manifests and CHANGELOG.md mid-edit with no
+// restore ever running. With a handler installed, the child still dies from the same signal,
+// `spawnSync` returns a non-zero/killed status, and the existing catch block below restores the
+// files exactly as it would for any other failure -- this flag only changes the final exit code
+// to the conventional 130 and the message printed.
+let interrupted = false;
+
+function installInterruptHandlers() {
+  const onSignal = (signal) => {
+    interrupted = true;
+    console.error(`\nrelease: received ${signal}, stopping...`);
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+}
+
+// Unstages the five tracked release files -- best-effort and never throws, since this only ever
+// runs from inside an already-failing path (a reset failure here must never mask or replace the
+// real error being reported). A no-op if `git add` never ran yet.
+function unstageTrackedFiles() {
+  spawnSync('git', ['reset', '--quiet', 'HEAD', '--', ...TRACKED_RELEASE_FILES], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  });
+}
 
 const LEVELS = ['patch', 'minor', 'major'];
 const argv = process.argv.slice(2);
@@ -109,11 +151,15 @@ function lastTag() {
   return parsed[0];
 }
 
-// `{ subject, body }` for every commit in `tag..HEAD`, oldest first.
+// `{ subject, body }` for every commit in `tag..HEAD`, oldest first. `--first-parent` follows
+// only `main`'s own mainline: this repo squash-merges every PR into one commit on `main`, so a
+// feature branch's own in-progress commits (`feat: wip`, etc.) must never be walked individually
+// and a PR merged with a merge commit must still contribute exactly the one mainline commit's
+// subject/body, matching what the CHANGELOG (built from PR titles, not raw commits) also sees.
 function commitsSince(tag) {
   const SEP = '\x1f';
   const REC = '\x1e';
-  const raw = execFileSync('git', ['log', `${tag}..HEAD`, `--format=%s${SEP}%b${REC}`], {
+  const raw = execFileSync('git', ['log', '--first-parent', `${tag}..HEAD`, `--format=%s${SEP}%b${REC}`], {
     cwd: repoRoot,
     encoding: 'utf8',
   });
@@ -129,18 +175,22 @@ function commitsSince(tag) {
 
 const LEVEL_RANK = { patch: 1, minor: 2, major: 3 };
 
-// `type!:` or a `BREAKING CHANGE` footer => major; `feat` => minor; `fix`/`perf` => patch; every
-// other conventional type and every non-conventional (legacy) subject doesn't bump. Returns the
+// `type!:` or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer => major; `feat` => minor;
+// `fix`/`perf` => patch; every other conventional type and every non-conventional (legacy)
+// subject doesn't bump. The type is matched case-insensitively (`Feat:`, `FEAT:`, `feat:` all
+// count) -- Conventional Commits itself is case-insensitive on the type, only the literal
+// `BREAKING CHANGE`/`BREAKING-CHANGE` footer keyword stays uppercase per spec. Returns the
 // highest level any commit in the range triggers, or null if none did.
 function inferLevel(commits) {
   let level = null;
   for (const c of commits) {
     const parsed = parseConventionalSubject(c.subject);
-    const breakingFooter = /(^|\n)BREAKING CHANGE:/.test(c.body);
+    const type = parsed?.type?.toLowerCase();
+    const breakingFooter = /(^|\n)BREAKING[ -]CHANGE:/.test(c.body);
     let thisLevel = null;
     if (parsed?.breaking || breakingFooter) thisLevel = 'major';
-    else if (parsed?.type === 'feat') thisLevel = 'minor';
-    else if (parsed?.type === 'fix' || parsed?.type === 'perf') thisLevel = 'patch';
+    else if (type === 'feat') thisLevel = 'minor';
+    else if (type === 'fix' || type === 'perf') thisLevel = 'patch';
     if (thisLevel && (!level || LEVEL_RANK[thisLevel] > LEVEL_RANK[level])) level = thisLevel;
   }
   return level;
@@ -173,9 +223,12 @@ function runCiLocal() {
 }
 
 // Writes the three text-editable manifests, then lets cargo itself sync Cargo.lock's own-crate
-// version entry -- `cargo update -p refract-tauri --offline` touches ONLY that one package's
-// version line (verified: unlike `cargo update -w`/`cargo generate-lockfile`, it never
-// re-resolves or bumps any other dependency in the graph).
+// version entry -- `cargo update -p refract-tauri --offline` is EXPECTED to touch only that one
+// package's version line (verified by hand against `cargo update -w`/`cargo generate-lockfile`,
+// both of which also bumped unrelated transitive dependencies), but `assertCargoLockOnlyVersionChanged`
+// re-checks that expectation on every real run, not just by memory of a one-off manual test --
+// any other Cargo.lock change, however small, fails the release rather than riding along into
+// the release commit silently.
 function writeManifestsAndLock(paths, raw, nextVersion) {
   const updated = writeManifestVersions(raw, nextVersion);
   writeFileSync(paths.packageJson, updated.packageJson);
@@ -188,6 +241,9 @@ function writeManifestsAndLock(paths, raw, nextVersion) {
     { cwd: repoRoot, stdio: 'inherit' },
   );
   if (result.status !== 0) fail(`cargo update -p ${CARGO_PACKAGE_NAME} --offline failed to sync Cargo.lock`);
+
+  const cargoLockAfter = readFileSync(paths.cargoLock, 'utf8');
+  assertCargoLockOnlyVersionChanged(raw.cargoLock, cargoLockAfter, MANIFEST_LABELS.cargoLock);
 }
 
 function restoreOriginals(originals) {
@@ -246,7 +302,11 @@ function main() {
     console.log(`release --dry-run: next version v${nextVersion}\n`);
     console.log(section);
     runCiLocal();
-    console.log(`\nrelease --dry-run: v${nextVersion} -- ci:local passed on the current tree; nothing written, committed, or published.`);
+    console.log(
+      `\nrelease --dry-run: v${nextVersion} -- ci:local passed on the current tree. Only "git fetch origin" ` +
+        '(step a) and ci:local\'s own installs/builds touched anything; none of the tracked release files, ' +
+        'the git index, or any ref were written, committed, tagged, pushed, or published.',
+    );
     return;
   }
 
@@ -260,6 +320,8 @@ function main() {
     [CHANGELOG_PATH, changelogOriginal],
   ];
 
+  installInterruptHandlers();
+
   try {
     writeManifestsAndLock(paths, raw, nextVersion);
 
@@ -272,22 +334,50 @@ function main() {
     writeFileSync(CHANGELOG_PATH, prependChangelogSection(changelogOriginal, section));
 
     runCiLocal();
+
+    // `git add`/`git commit` stay inside this same restore `try`: a hook, missing identity, or a
+    // lock file failing either of them is still a failure BEFORE the commit exists, so it must
+    // unstage and restore exactly like every earlier failure in this block, never leave the five
+    // files edited-and-staged with nothing to show for it.
+    gitInherit(['add', ...TRACKED_RELEASE_FILES]);
+    gitInherit(['commit', '-m', `chore: release v${nextVersion}`]);
   } catch (err) {
+    unstageTrackedFiles();
     restoreOriginals(originals);
     console.error(
-      'release: failed before committing -- restored package.json, src-tauri/tauri.conf.json, ' +
-        'src-tauri/Cargo.toml and src-tauri/Cargo.lock' +
+      'release: failed before committing -- unstaged and restored package.json, ' +
+        'src-tauri/tauri.conf.json, src-tauri/Cargo.toml and src-tauri/Cargo.lock' +
         (changelogExistedBefore ? ', and CHANGELOG.md,' : ', and removed the CHANGELOG.md this run created,') +
-        ' to their original state.',
+        ' to their original state. Nothing was committed.',
     );
+    if (interrupted) {
+      console.error('release: stopped by SIGINT/SIGTERM, exiting 130.');
+      process.exit(130);
+    }
     fail(err.message);
   }
 
-  gitInherit(['add', 'package.json', 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'CHANGELOG.md']);
-  gitInherit(['commit', '-m', `chore: release v${nextVersion}`]);
-  gitInherit(['tag', '-a', `v${nextVersion}`, '-m', `v${nextVersion}`]);
-  gitInherit(['push', 'origin', 'main']);
-  gitInherit(['push', 'origin', `v${nextVersion}`]);
+  // The commit above now exists: restoring file bytes from here on would contradict real
+  // history, so a tag or push failure is handled differently -- never restore, never `git
+  // reset`/`git tag -d` automatically, only print the exact commands for Stuart to run himself.
+  // `--atomic` pushes the branch and the tag in one all-or-nothing request: with two separate
+  // pushes, a slow `ci:local` could let `origin/main` move in between, landing `main` but
+  // rejecting the tag (or vice versa), and a re-run would then fail the HEAD==origin/main check
+  // or see the new local tag and report nothing to release.
+  try {
+    gitInherit(['tag', '-a', `v${nextVersion}`, '-m', `v${nextVersion}`]);
+    gitInherit(['push', '--atomic', 'origin', 'main', `v${nextVersion}`]);
+  } catch (err) {
+    console.error(
+      `release: "chore: release v${nextVersion}" was committed locally, but tagging/pushing failed: ${err.message}`,
+    );
+    console.error(
+      'release: this script will NOT retry or reset automatically. ' +
+        `To retry: git push --atomic origin main v${nextVersion}. ` +
+        `To abandon this release entirely instead, run yourself: git tag -d v${nextVersion}  (then)  git reset --keep HEAD~1`,
+    );
+    process.exit(1);
+  }
 
   console.log(`release: committed, tagged, and pushed v${nextVersion}.`);
 

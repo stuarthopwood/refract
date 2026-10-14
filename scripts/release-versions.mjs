@@ -17,6 +17,17 @@ import path from 'node:path';
 export const CARGO_PACKAGE_NAME = 'refract-tauri';
 export const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
+// Validates a version string is plain `x.y.z` (no pre-release/build metadata, matching what
+// every one of the four manifests is expected to hold) -- called on every version this module
+// or its callers read before it is used to build a regex, a tag name, or a bump, so a malformed
+// manifest value fails loudly here rather than producing a confusing downstream regex or git
+// error.
+export function assertValidSemver(version, label) {
+  if (!SEMVER_RE.test(version)) {
+    versionFail(`${label}: "${version}" is not a valid x.y.z semver version`);
+  }
+}
+
 export function manifestPaths(repoRoot) {
   return {
     packageJson: path.join(repoRoot, 'package.json'),
@@ -115,6 +126,9 @@ export function readAllVersions(repoRoot) {
     cargoToml: extractCargoTomlVersion(raw.cargoToml, MANIFEST_LABELS.cargoToml),
     cargoLock: extractCargoLockVersion(raw.cargoLock, MANIFEST_LABELS.cargoLock),
   };
+  for (const [key, version] of Object.entries(versions)) {
+    assertValidSemver(version, MANIFEST_LABELS[key]);
+  }
   return { paths, raw, versions };
 }
 
@@ -152,4 +166,39 @@ export function bumpVersion(version, level) {
     throw new Error(`unknown bump level: ${level}`);
   }
   return `${major}.${minor}.${patch}`;
+}
+
+// Asserts `cargo update -p refract-tauri --offline` touched ONLY the one `version = "..."` line
+// inside `refract-tauri`'s own package entry -- never any other dependency's version, checksum,
+// or dependency list. Compared line-by-line (not a semantic TOML/lockfile diff) so any
+// unexpected extra change, however small, is caught: a line-count change, more than one changed
+// line, or the one changed line not being a bare `version = "..."` line, all fail loudly rather
+// than letting an unrelated lock change ride along silently into the release commit.
+export function assertCargoLockOnlyVersionChanged(before, after, label) {
+  const beforeLines = before.split('\n');
+  const afterLines = after.split('\n');
+  if (beforeLines.length !== afterLines.length) {
+    versionFail(
+      `${label}: cargo update changed the line count (${beforeLines.length} -> ${afterLines.length}); ` +
+        'expected only the refract-tauri version line to change',
+    );
+  }
+  const diffLines = [];
+  for (let i = 0; i < beforeLines.length; i++) {
+    if (beforeLines[i] !== afterLines[i]) diffLines.push(i);
+  }
+  if (diffLines.length === 0) {
+    versionFail(`${label}: cargo update did not change anything (expected the version line to change)`);
+  }
+  if (diffLines.length > 1) {
+    versionFail(
+      `${label}: cargo update changed ${diffLines.length} lines, not just the version line ` +
+        `(1-based line numbers: ${diffLines.map((i) => i + 1).join(', ')})`,
+    );
+  }
+  const VERSION_LINE_RE = /^version = "[^"]*"$/;
+  const lineNo = diffLines[0];
+  if (!VERSION_LINE_RE.test(beforeLines[lineNo]) || !VERSION_LINE_RE.test(afterLines[lineNo])) {
+    versionFail(`${label}: the one changed line (${lineNo + 1}) is not a plain "version = ..." line`);
+  }
 }

@@ -35,6 +35,15 @@ function fail(message) {
 // Strict parse: fails loudly (rather than silently skipping) on any step shape this script does
 // not already know how to run locally, so a future `ci.yml` change can never quietly stop being
 // covered.
+// Keys this script understands on a job and on a step; anything else changes execution
+// semantics `ci-local.mjs` does not implement (`env`, `defaults`, `strategy`, `needs`, `if` on a
+// job; `if`, `env`, `working-directory`, `shell`, `continue-on-error` on a step) -- silently
+// ignoring one of those would run a step locally in a way that diverges from what GitHub
+// Actions actually does, with no error. A strict, single source of truth means an unknown key
+// fails loudly instead.
+const ALLOWED_JOB_KEYS = new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'steps']);
+const ALLOWED_STEP_KEYS = new Set(['name', 'run', 'uses', 'with', 'id']);
+
 function loadSteps() {
   const raw = readFileSync(WORKFLOW_PATH, 'utf8');
   let doc;
@@ -52,10 +61,26 @@ function loadSteps() {
     if (job == null || !Array.isArray(job.steps)) {
       fail(`${WORKFLOW_REL}: job "${jobName}" has no "steps" array`);
     }
+    for (const key of Object.keys(job)) {
+      if (!ALLOWED_JOB_KEYS.has(key)) {
+        fail(
+          `${WORKFLOW_REL}: job "${jobName}" has a "${key}:" key ci-local.mjs does not understand ` +
+            '-- it may change execution semantics locally without error',
+        );
+      }
+    }
     job.steps.forEach((step, i) => {
       const where = `job "${jobName}" step ${i + 1}`;
       if (step == null || typeof step !== 'object') {
         fail(`${WORKFLOW_REL}: ${where} is not a mapping`);
+      }
+      for (const key of Object.keys(step)) {
+        if (!ALLOWED_STEP_KEYS.has(key)) {
+          fail(
+            `${WORKFLOW_REL}: ${where} ("${step.name ?? '(unnamed)'}") has a "${key}:" key ` +
+              'ci-local.mjs does not understand -- it may change execution semantics locally without error',
+          );
+        }
       }
       if (step.run == null) {
         return; // a `uses:` step (checkout/toolchain setup) -- nothing to run locally.
@@ -70,6 +95,16 @@ function loadSteps() {
         fail(
           `${WORKFLOW_REL}: ${where} ("${step.name ?? '(unnamed)'}") has a multi-line "run:", ` +
             'which ci-local.mjs does not support',
+        );
+      }
+      // `${{ ... }}` is GitHub Actions' own expression syntax, substituted by the runner before
+      // the shell ever sees it (secrets, `github.*`, `matrix.*`, step outputs, ...). Run here
+      // unexpanded, it would either be passed to the shell literally (wrong command) or break
+      // quoting -- either way silently diverging from what CI actually runs.
+      if (step.run.includes('${{')) {
+        fail(
+          `${WORKFLOW_REL}: ${where} ("${step.name ?? '(unnamed)'}") has a "\${{ ... }}" GitHub ` +
+            'Actions expression in its "run:", which ci-local.mjs cannot evaluate locally',
         );
       }
       steps.push({ job: jobName, name: step.name ?? step.run, run: step.run });

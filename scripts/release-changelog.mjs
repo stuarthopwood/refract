@@ -11,6 +11,7 @@
 // used here; the rest is GitHub's own UI sugar, not this project's changelog shape.
 
 import { execFileSync } from 'node:child_process';
+import { assertValidSemver } from './release-versions.mjs';
 
 const CONVENTIONAL_RE = /^(\w+)(\([^)]*\))?(!)?:\s*(.+)$/;
 const BULLET_RE = /^\* (.+) by (@\S+) in (https:\/\/\S+)\s*$/;
@@ -65,13 +66,16 @@ export function parseConventionalSubject(subject) {
 
 // `!` after the type (with or without a scope) means breaking regardless of which type it's
 // attached to; `feat` bumps/categorises as a feature; `fix`/`perf` as a fix; every other
-// conventional type, and every non-conventional (legacy) title, is "other".
+// conventional type, and every non-conventional (legacy) title, is "other". The type is matched
+// case-insensitively, matching `release.mjs`'s own `inferLevel` (Conventional Commits' type is
+// case-insensitive; only the `BREAKING CHANGE` footer keyword itself stays uppercase).
 export function classifyTitle(title) {
   const parsed = parseConventionalSubject(title);
   if (!parsed) return 'other';
   if (parsed.breaking) return 'breaking';
-  if (parsed.type === 'feat') return 'feature';
-  if (parsed.type === 'fix' || parsed.type === 'perf') return 'fix';
+  const type = parsed.type.toLowerCase();
+  if (type === 'feat') return 'feature';
+  if (type === 'fix' || type === 'perf') return 'fix';
   return 'other';
 }
 
@@ -107,9 +111,13 @@ export function prependChangelogSection(existingText, section) {
   if (existingText == null || existingText.trim().length === 0) {
     return `${HEADER}\n${section}`;
   }
-  const body = existingText.startsWith(HEADER)
-    ? existingText.slice(HEADER.length).replace(/^\n+/, '')
-    : existingText;
+  // Normalised to LF first: a fresh git checkout on Windows (`core.autocrlf=true`, the default
+  // here -- confirmed by git's own "LF will be replaced by CRLF" warnings on this repo) rewrites
+  // a committed LF `CHANGELOG.md` to CRLF in the working tree, which would otherwise fail the
+  // `startsWith(HEADER)` check below and silently prepend a SECOND `# Changelog` header on every
+  // release after the first fresh checkout.
+  const normalised = existingText.replace(/\r\n/g, '\n');
+  const body = normalised.startsWith(HEADER) ? normalised.slice(HEADER.length).replace(/^\n+/, '') : normalised;
   return `${HEADER}\n${section}\n${body}`;
 }
 
@@ -119,12 +127,16 @@ export function prependChangelogSection(existingText, section) {
 // `release.mjs` already committed, never a second copy of the generation logic. Returns null if
 // no section for that version exists.
 export function extractChangelogSection(changelogText, version) {
+  assertValidSemver(version, 'extractChangelogSection version');
+  // Normalised to LF first, same reasoning as `prependChangelogSection`: a CRLF working-tree
+  // copy must not change where the heading/next-heading boundaries land.
+  const normalised = changelogText.replace(/\r\n/g, '\n');
   const headingRe = new RegExp(`^## v${version.replace(/\./g, '\\.')} \\(`, 'm');
-  const match = headingRe.exec(changelogText);
+  const match = headingRe.exec(normalised);
   if (!match) return null;
   const start = match.index;
-  const rest = changelogText.slice(start + 1);
+  const rest = normalised.slice(start + 1);
   const nextHeadingMatch = /\n## v\d+\.\d+\.\d+ \(/.exec(rest);
-  const end = nextHeadingMatch ? start + 1 + nextHeadingMatch.index : changelogText.length;
-  return changelogText.slice(start, end).replace(/\n+$/, '\n');
+  const end = nextHeadingMatch ? start + 1 + nextHeadingMatch.index : normalised.length;
+  return normalised.slice(start, end).replace(/\n+$/, '\n');
 }

@@ -91,38 +91,57 @@ minor`, or `pnpm release major` forces that bump level instead. It refuses to ru
 working tree is on branch `main`, is fully clean (no tracked changes, no untracked files), and
 `HEAD` equals `origin/main` after a `git fetch origin`. On success it updates the version in
 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`
-together; prepends a `## vX.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md`, built from GitHub's own
+together (and asserts `Cargo.lock` changed only its own `refract-tauri` version line, nothing
+else); prepends a `## vX.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md`, built from GitHub's own
 generated release notes for that version and grouped into "Breaking changes", "Features",
 "Fixes", and "Other" by each merged PR title's conventional-commit type (a legacy,
 non-conventional title lands verbatim in Other); runs `pnpm ci:local` (see below) on the edited
-tree; and, only if that passes, commits exactly those four version files plus `CHANGELOG.md` as
-`chore: release vX.Y.Z`, creates an annotated tag `vX.Y.Z`, and pushes both the commit and the tag
-to `origin main`. If any step before the commit fails, it restores every one of those files to its
-original, pre-release bytes (never via `git`) and reports that it did so, leaving the tree exactly
-as it was. After pushing, it runs `node scripts/release-local.mjs --notes-from-changelog` to
-build, sign, verify, and publish the installer, using the `CHANGELOG.md` section it just wrote as
-the GitHub release's notes instead of GitHub's own auto-generated notes. If that publish step
-fails, the commit, tag, and push have already happened -- it prints the exact resume command
-`pnpm release:local -- --notes-from-changelog`, which finishes the release without re-doing the
-version bump, changelog, or push.
+tree; and, only if that passes, stages and commits exactly those four version files plus
+`CHANGELOG.md` as `chore: release vX.Y.Z`. If any step up to and including that commit fails --
+including Ctrl+C/SIGTERM, which the script catches specifically so the restore below always
+runs -- it unstages anything already added and restores the tracked release files (never
+`CHANGELOG.md` is removed if it didn't exist before) to their original, pre-release bytes (never
+via `git`), reports that it did so, and exits (130 for an interrupt, 1 otherwise); nothing is
+committed. `git fetch origin` and `ci:local`'s own installs/builds still happened either way --
+only the tracked release files and the git index are guaranteed back to their starting state.
 
-`pnpm release --dry-run` runs only the precondition checks, the version-inference step, and a
-preview of the changelog section (printed to the console, never written to `CHANGELOG.md`), then
-runs `pnpm ci:local` on the current, unmodified tree. It writes nothing, commits nothing, tags
-nothing, pushes nothing, and publishes nothing -- it only prints the version it would release and
-the changelog section preview.
+Once that commit exists, a failure is handled differently: tagging and pushing use one atomic
+`git push --atomic origin main vX.Y.Z` (so `main` and the tag either both land or neither does --
+two separate pushes could let `origin/main` move during the minutes `ci:local` takes, landing one
+but rejecting the other). The script never restores file bytes or runs `git reset`/`git tag -d`
+once the commit is real; a tag or push failure instead prints the exact commands to retry
+(`git push --atomic origin main vX.Y.Z`) or abandon the release (`git tag -d vX.Y.Z` then
+`git reset --keep HEAD~1`), for Stuart to run himself. After a successful push, it runs
+`node scripts/release-local.mjs --notes-from-changelog` to build, sign, verify, and publish the
+installer, using the `CHANGELOG.md` section it just wrote as the GitHub release's notes instead
+of GitHub's own auto-generated notes. If that publish step fails, the commit, tag, and push have
+already happened -- it prints the exact resume command `pnpm release:local -- --notes-from-changelog`,
+which finishes the release without re-doing the version bump, changelog, commit, or push.
+
+`pnpm release --dry-run` runs only the precondition checks (including the `git fetch origin`),
+the version-inference step, a preview of the changelog section (printed to the console, never
+written to `CHANGELOG.md`), and `pnpm ci:local` (see below) on the current, unmodified tree --
+`ci:local`'s own installs/builds still run, but none of the tracked release files, the git index,
+or any ref are written, committed, tagged, pushed, or published. It only prints the version it
+would release and the changelog section preview.
 
 Version inference, when no explicit bump is given: the last tag is the highest semver `v*` tag
 reachable from `HEAD`. If there is no tag yet, the command releases the current manifest version
 as-is (so the very first release is whatever version is already in the manifests, with no bump).
-If there is a previous tag, it inspects every commit subject (and `BREAKING CHANGE` footer) since
-that tag: a `type!:` subject or a `BREAKING CHANGE` footer bumps major; a `feat` subject bumps
-minor; a `fix` or `perf` subject bumps patch; every other conventional type, and every legacy,
-non-conventional subject, does not bump anything. If nothing since the last tag would bump the
-version, the command stops with an error naming the last tag and listing every un-bumping commit
-subject, telling the user to pass `patch`, `minor`, or `major` explicitly instead. Passing an
-explicit bump level bumps from the current manifest version, which must equal the last tag's
-version (or there must be no tag yet).
+If there is a previous tag, it inspects every commit subject (and body, for a `BREAKING CHANGE:`
+or `BREAKING-CHANGE:` footer) on `main`'s own mainline (`git log --first-parent`, so an
+in-progress feature-branch commit folded into one squash merge is never walked individually)
+since that tag: a `type!:` subject or a breaking footer bumps major; a `feat` subject bumps minor;
+a `fix` or `perf` subject bumps patch (the type is matched case-insensitively -- `Feat:`, `FEAT:`
+and `feat:` all count); every other conventional type, and every legacy, non-conventional
+subject, does not bump anything. **A `BREAKING CHANGE` footer still only bumps the version --
+the `CHANGELOG.md` "Breaking changes" section is built from PR TITLES only (GitHub's own
+generate-notes has no PR-body/footer data to group by), so a major release can ship with an empty
+or missing Breaking changes section if the breaking PR's own title didn't also use `!`.** If
+nothing since the last tag would bump the version, the command stops with an error naming the
+last tag and listing every un-bumping commit subject, telling the user to pass `patch`, `minor`,
+or `major` explicitly instead. Passing an explicit bump level bumps from the current manifest
+version, which must equal the last tag's version (or there must be no tag yet).
 
 There is a packaged NSIS installer (lane R11d, follow-up to #794), signed locally with a
 self-signed code-signing certificate Stuart created in his own `Cert:\CurrentUser\My` store:
@@ -163,8 +182,9 @@ self-signed code-signing certificate Stuart created in his own `Cert:\CurrentUse
 
 `pnpm release` performs the whole cut-a-release sequence automatically: it bumps
 `src-tauri/tauri.conf.json`'s `version` (together with `package.json`, `src-tauri/Cargo.toml`, and
-`src-tauri/Cargo.lock`), commits, tags the commit `v<version>`, and pushes both the commit and the
-tag, then invokes `scripts/release-local.mjs` to build, sign, verify, and publish the installer.
+`src-tauri/Cargo.lock`), commits, tags the commit `v<version>`, and pushes the commit and the tag
+together in one atomic push, then invokes `scripts/release-local.mjs` to build, sign, verify, and
+publish the installer.
 `scripts/release-local.mjs` itself is otherwise unchanged from a manual release -- same signing
 and verification machinery, same `--dry-run` on the local build/sign/publish portion -- except for
 the new `--notes-from-changelog` flag `pnpm release` passes it, which extracts `CHANGELOG.md`'s
