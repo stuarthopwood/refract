@@ -114,6 +114,7 @@ pub async fn default_branch(repo: &Path) -> Result<String, GitError> {
     ))
 }
 
+#[derive(Debug)]
 pub struct AddWorktreeResult {
     pub worktree_path: PathBuf,
     pub branch: String,
@@ -151,17 +152,9 @@ pub async fn add_worktree_with_generated_name(
     let max_attempts = ADJECTIVES.len() * NOUNS.len();
     for attempt in 0..max_attempts.max(64) {
         let candidate = if attempt < max_attempts {
-            // First pass: prefer a name neither local branches nor the worktrees-root folder
-            // already show, purely as a faster first hit -- the reservation below is what
-            // actually makes the choice safe, not this pre-filter.
-            loop {
-                let adjective = ADJECTIVES[random_index(ADJECTIVES.len())];
-                let noun = NOUNS[random_index(NOUNS.len())];
-                let generated = format!("{adjective}-{noun}");
-                if !existing_branches.contains(&generated) && !existing_folders.contains(&generated) {
-                    break generated;
-                }
-            }
+            let adjective = ADJECTIVES[random_index(ADJECTIVES.len())];
+            let noun = NOUNS[random_index(NOUNS.len())];
+            format!("{adjective}-{noun}")
         } else {
             // All 1,600 combinations are contended (practically unreachable): disambiguate with
             // a short random suffix, same as the former `generateName`'s own fallback.
@@ -170,6 +163,17 @@ pub async fn add_worktree_with_generated_name(
             let suffix = uuid::Uuid::new_v4().simple().to_string();
             format!("{adjective}-{noun}-{}", &suffix[0..4])
         };
+
+        // Cheap pre-filter (bounded, never loops): a candidate already visible in local
+        // branches or the worktrees-root folder is skipped WITHOUT a `git branch` call, purely
+        // as a faster first hit for the common case -- the reservation below, not this
+        // pre-filter, is what actually makes the final choice safe against a concurrent racer
+        // this snapshot cannot see.
+        if attempt < max_attempts
+            && (existing_branches.contains(&candidate) || existing_folders.contains(&candidate))
+        {
+            continue;
+        }
 
         let reservation = git_raw(repo, &["branch", "--", &candidate, base_branch], None).await;
         if reservation.code != 0 {
@@ -239,7 +243,7 @@ fn map_add_worktree_error(stderr: &str, worktree_path: &Path) -> GitError {
     let text = stderr.to_lowercase();
     if text.contains("invalid reference")
         || text.contains("unknown revision")
-        || text.contains("is not a valid object name")
+        || text.contains("not a valid object name")
         || text.contains("not a valid branch")
     {
         return GitError::new(
@@ -353,4 +357,104 @@ pub async fn recreate_worktree(
         return Err(GitError::new(GitErrorCode::WorktreeFailed, message));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::init_repo;
+
+    #[tokio::test]
+    async fn creates_a_worktree_with_a_freshly_generated_unique_name() {
+        let repo = init_repo().await;
+        let added = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create worktree");
+        assert!(tokio::fs::metadata(&added.worktree_path)
+            .await
+            .expect("worktree dir exists")
+            .is_dir());
+        assert!(!added.branch.is_empty());
+        assert!(branch_exists(&repo, &added.branch).await);
+    }
+
+    /// Issue #656 regression lock: two sequential creates against the same repository never
+    /// pick the same name, and neither call's own failure-cleanup (had it raced the other's
+    /// name) ever removes artefacts the OTHER call owns.
+    #[tokio::test]
+    async fn two_sequential_creates_never_collide_and_both_keep_their_own_worktree() {
+        let repo = init_repo().await;
+        let first = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("first create");
+        let second = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("second create");
+        assert_ne!(first.branch, second.branch);
+        assert_ne!(first.worktree_path, second.worktree_path);
+        assert!(tokio::fs::metadata(&first.worktree_path).await.is_ok());
+        assert!(tokio::fs::metadata(&second.worktree_path).await.is_ok());
+        assert!(branch_exists(&repo, &first.branch).await);
+        assert!(branch_exists(&repo, &second.branch).await);
+    }
+
+    #[tokio::test]
+    async fn rejects_a_missing_base_branch_without_creating_anything() {
+        let repo = init_repo().await;
+        let err = add_worktree_with_generated_name(&repo, "does-not-exist")
+            .await
+            .expect_err("missing base branch must fail");
+        assert_eq!(err.code, GitErrorCode::BaseMissing);
+        let still_empty = tokio::fs::read_dir(worktrees_root(&repo)).await;
+        if let Ok(mut entries) = still_empty {
+            assert!(entries.next_entry().await.unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn is_branch_exists_error_recognises_gits_own_wording() {
+        assert!(is_branch_exists_error(
+            "fatal: a branch named 'foo' already exists"
+        ));
+        assert!(!is_branch_exists_error(
+            "fatal: not a valid object name: 'bogus'"
+        ));
+    }
+
+    #[test]
+    fn map_add_worktree_error_recognises_base_missing_wording() {
+        let err = map_add_worktree_error(
+            "fatal: invalid reference: bogus",
+            Path::new("C:/scratch/worktree"),
+        );
+        assert_eq!(err.code, GitErrorCode::BaseMissing);
+    }
+
+    #[test]
+    fn map_add_worktree_error_recognises_path_too_long_wording() {
+        let err = map_add_worktree_error(
+            "fatal: unable to create file (file name too long)",
+            Path::new("C:/scratch/worktree"),
+        );
+        assert_eq!(err.code, GitErrorCode::PathTooLong);
+    }
+
+    #[tokio::test]
+    async fn recreate_worktree_reattaches_an_existing_branch_after_the_folder_is_removed() {
+        let repo = init_repo().await;
+        let added = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create worktree");
+        remove_worktree(&repo, &added.worktree_path, &added.branch, false)
+            .await
+            .expect("remove worktree, keep branch");
+        assert!(tokio::fs::metadata(&added.worktree_path).await.is_err());
+        recreate_worktree(&repo, &added.worktree_path, &added.branch)
+            .await
+            .expect("recreate");
+        assert!(tokio::fs::metadata(&added.worktree_path)
+            .await
+            .expect("recreated worktree exists")
+            .is_dir());
+    }
 }

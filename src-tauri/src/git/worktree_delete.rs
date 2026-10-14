@@ -1,9 +1,10 @@
 // Port of `src/main/git/worktrees.ts`'s issue #599 safe-delete path (folded into lane R2, #785):
-// `removeSessionWorktree`, `deleteCheck`, `deleteCheckForMissingWorktree`,
-// `deleteCheckForSession`. Decides purely from live git/filesystem state (never trusts a stale
+// `removeSessionWorktree`. Decides purely from live git/filesystem state (never trusts a stale
 // caller-supplied flag), is idempotent (a retry re-reads state from scratch rather than trusting
 // anything cached), and never deletes anything outside `worktrees_root(repo)` nor anything `git
-// worktree list` does not itself account for.
+// worktree list` does not itself account for. `deleteCheck`/`deleteCheckForMissingWorktree`/
+// `deleteCheckForSession` live in the sibling `worktree_delete_check.rs` (same 600-line-per-file
+// split reason).
 //
 // Simplification from the TS source: path comparisons use `worktree_validity::comparable_path`
 // (a lexical `.`/`..`-collapse + lowercase, no filesystem touch) instead of TS's
@@ -15,27 +16,9 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
-
 use super::git::{git, git_raw, normalize_git_path, GitError, GitErrorCode};
 use super::worktree_validity::{comparable_path, is_worktree_registered};
 use super::worktrees::{branch_exists, worktrees_root};
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteCheck {
-    pub uncommitted_files: i64,
-    pub unpushed_commits: i64,
-    pub has_upstream: bool,
-}
-
-fn zero_risk() -> DeleteCheck {
-    DeleteCheck {
-        uncommitted_files: 0,
-        unpushed_commits: 0,
-        has_upstream: true,
-    }
-}
 
 enum OrphanRefusalReason {
     NotEmpty,
@@ -155,7 +138,7 @@ async fn dot_git_points_to(dir: &Path, expected: &str) -> bool {
 /// Verifies `repo` is its own git toplevel (never an ancestor repository) and that git's own
 /// `--absolute-git-dir`/`--git-common-dir` answers tie back to `repo`'s own `.git` entry, not
 /// merely to each other. Read-only throughout.
-async fn is_repo_readable(repo: &Path) -> bool {
+pub(crate) async fn is_repo_readable(repo: &Path) -> bool {
     let toplevel_result = git_raw(repo, &["rev-parse", "--show-toplevel"], None).await;
     if toplevel_result.code != 0 {
         return false;
@@ -400,7 +383,8 @@ async fn remove_orphaned_worktree_folder(
         let admin_root = git_common_dir(repo).await?.join("worktrees");
         let admin_root_key = comparable_path(&admin_root.to_string_lossy());
         let prefix = format!("{admin_root_key}{}", std::path::MAIN_SEPARATOR);
-        let points_into_this_repo = comparable_path(&gitdir_abs.to_string_lossy()).starts_with(&prefix);
+        let points_into_this_repo =
+            comparable_path(&gitdir_abs.to_string_lossy()).starts_with(&prefix);
         if !points_into_this_repo {
             return Err(GitError::new(
                 GitErrorCode::WorktreeFailed,
@@ -607,114 +591,6 @@ pub async fn remove_session_worktree(
     delete_branch_if_requested(repo, branch, delete_branch, removed_folder).await
 }
 
-/// Feeds the delete confirmation text (contracts/ipc.md `sessions.deleteCheck`).
-pub async fn delete_check(worktree_path: &Path) -> Result<DeleteCheck, GitError> {
-    let status = git(worktree_path, &["status", "--porcelain"]).await?;
-    let uncommitted_files = status.lines().filter(|l| !l.trim().is_empty()).count() as i64;
-
-    let upstream = git_raw(
-        worktree_path,
-        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-        None,
-    )
-    .await;
-    let has_upstream = upstream.code == 0;
-
-    let count_output = git(worktree_path, &["rev-list", "--count", "HEAD", "--not", "--remotes"]).await?;
-    let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);
-
-    Ok(DeleteCheck {
-        uncommitted_files,
-        unpushed_commits,
-        has_upstream,
-    })
-}
-
-/// Feeds `sessions.deleteCheck` when the worktree folder itself is gone: reads `branch`'s own
-/// commit graph from `repo` directly instead of a checked-out working tree.
-pub async fn delete_check_for_missing_worktree(
-    repo: &Path,
-    branch: &str,
-) -> Result<DeleteCheck, GitError> {
-    if !is_repo_readable(repo).await {
-        return Ok(zero_risk());
-    }
-    if !branch_exists(repo, branch).await {
-        return Ok(zero_risk());
-    }
-    let reference = format!("refs/heads/{branch}");
-    let upstream_result = git_raw(
-        repo,
-        &["for-each-ref", "--format=%(upstream)", "--", &reference],
-        None,
-    )
-    .await;
-    let has_upstream = upstream_result.code == 0 && !upstream_result.stdout.trim().is_empty();
-    let count_output = git(repo, &["rev-list", "--count", &reference, "--not", "--remotes"])
-        .await
-        .map_err(|_| {
-            GitError::new(
-                GitErrorCode::GitFailed,
-                format!("Refract could not check branch {branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your repository at {} before choosing Delete.", repo.display()),
-            )
-        })?;
-    let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);
-    Ok(DeleteCheck {
-        uncommitted_files: 0,
-        unpushed_commits,
-        has_upstream,
-    })
-}
-
-/// `sessions.deleteCheck` must decide the same way `remove_session_worktree` decides which
-/// removal path to take -- by asking git, never by `fs.stat`-ing the folder.
-pub async fn delete_check_for_session(
-    repo: &Path,
-    worktree_path: &Path,
-    branch: &str,
-) -> Result<DeleteCheck, GitError> {
-    if !is_repo_readable(repo).await {
-        return Ok(zero_risk());
-    }
-    let has_git_entry = tokio::fs::symlink_metadata(worktree_path.join(".git"))
-        .await
-        .is_ok();
-    if !has_git_entry || !is_worktree_registered(repo, worktree_path).await {
-        return delete_check_for_missing_worktree(repo, branch).await;
-    }
-    let base = delete_check(worktree_path).await?;
-    let on_branch = git_raw(worktree_path, &["symbolic-ref", "-q", "HEAD"], None).await;
-    if on_branch.code == 0 {
-        let scoped = delete_check_for_missing_worktree(repo, branch).await?;
-        return Ok(DeleteCheck {
-            uncommitted_files: base.uncommitted_files,
-            unpushed_commits: scoped.unpushed_commits,
-            has_upstream: scoped.has_upstream,
-        });
-    }
-    let branch_still_exists = branch_exists(repo, branch).await;
-    let branch_ref = format!("refs/heads/{branch}");
-    let mut args: Vec<&str> = vec!["rev-list", "--count", "HEAD"];
-    if branch_still_exists {
-        args.push(&branch_ref);
-    }
-    args.push("--not");
-    args.push("--remotes");
-    let count_output = git(worktree_path, &args).await.map_err(|_| {
-        GitError::new(
-            GitErrorCode::GitFailed,
-            format!("Refract could not check the worktree's detached HEAD for unpushed commits, so it cannot say what Delete would lose. Check {} before choosing Delete.", worktree_path.display()),
-        )
-    })?;
-    let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);
-    let has_upstream = if branch_still_exists {
-        delete_check_for_missing_worktree(repo, branch).await?.has_upstream
-    } else {
-        true
-    };
-    Ok(DeleteCheck {
-        uncommitted_files: base.uncommitted_files,
-        unpushed_commits,
-        has_upstream,
-    })
-}
+#[cfg(test)]
+#[path = "worktree_delete_tests.rs"]
+mod tests;

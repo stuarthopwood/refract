@@ -29,9 +29,7 @@ pub(crate) fn comparable_path(p: &str) -> String {
     let resolved = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(path)
+        std::env::current_dir().unwrap_or_default().join(path)
     };
     let mut out: Vec<std::ffi::OsString> = Vec::new();
     for component in resolved.components() {
@@ -85,4 +83,93 @@ pub async fn worktree_is_valid(repo: &Path, worktree_path: &Path) -> bool {
         return false;
     }
     is_worktree_registered(repo, worktree_path).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::test_support::init_repo;
+    use crate::git::worktrees::{add_worktree_with_generated_name, worktrees_root};
+
+    #[tokio::test]
+    async fn valid_for_a_registered_worktree_with_its_git_pointer() {
+        let repo = init_repo().await;
+        let added = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create worktree");
+        assert!(worktree_is_valid(&repo, &added.worktree_path).await);
+    }
+
+    #[tokio::test]
+    async fn invalid_for_a_folder_git_has_never_registered() {
+        let repo = init_repo().await;
+        let orphan = worktrees_root(&repo).join("never-registered");
+        tokio::fs::create_dir_all(&orphan).await.unwrap();
+        // Has a `.git` FILE, but no `git worktree add` ever created it -- registered is false.
+        tokio::fs::write(orphan.join(".git"), b"gitdir: /nowhere\n")
+            .await
+            .unwrap();
+        assert!(!worktree_is_valid(&repo, &orphan).await);
+    }
+
+    #[tokio::test]
+    async fn invalid_for_an_empty_folder_with_no_git_entry_at_all() {
+        let repo = init_repo().await;
+        let empty = worktrees_root(&repo).join("just-empty");
+        tokio::fs::create_dir_all(&empty).await.unwrap();
+        assert!(!worktree_is_valid(&repo, &empty).await);
+    }
+
+    #[tokio::test]
+    async fn invalid_for_a_missing_folder() {
+        let repo = init_repo().await;
+        let missing = worktrees_root(&repo).join("does-not-exist");
+        assert!(!worktree_is_valid(&repo, &missing).await);
+    }
+
+    #[tokio::test]
+    async fn invalid_for_a_registered_worktree_whose_git_pointer_was_hand_deleted() {
+        let repo = init_repo().await;
+        let added = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create worktree");
+        tokio::fs::remove_file(added.worktree_path.join(".git"))
+            .await
+            .unwrap();
+        // Still registered with git (nothing told git), but no `.git` entry remains -- exactly
+        // the state issue #729 describes a plain `exists()` check wrongly reports as healthy.
+        assert!(!worktree_is_valid(&repo, &added.worktree_path).await);
+    }
+
+    /// Documents this file's own stated simplification (see header): path comparisons are
+    /// lexical only, so a worktree reached only through a separately aliased junction is not
+    /// recognised as the SAME registered worktree `git worktree list` reports under its real
+    /// path. Skips (rather than fails) if this sandbox refuses junction creation.
+    #[tokio::test]
+    async fn invalid_through_a_junction_alias_to_an_otherwise_valid_worktree() {
+        let repo = init_repo().await;
+        let added = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create worktree");
+        let junction = added.worktree_path.with_file_name("junction-alias");
+        let status = tokio::process::Command::new("cmd")
+            .args([
+                "/C",
+                "mklink",
+                "/J",
+                &junction.to_string_lossy(),
+                &added.worktree_path.to_string_lossy(),
+            ])
+            .status()
+            .await;
+        let Ok(status) = status else {
+            eprintln!("skipping junction test: could not spawn mklink");
+            return;
+        };
+        if !status.success() {
+            eprintln!("skipping junction test: mklink refused (sandbox restriction?)");
+            return;
+        }
+        assert!(!worktree_is_valid(&repo, &junction).await);
+    }
 }
