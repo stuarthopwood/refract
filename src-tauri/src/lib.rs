@@ -387,7 +387,7 @@ pub fn run() {
             // same relative path).
             let window =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("tauri/index.html".into()))
-                    .title("Refract (Rust preview)")
+                    .title("Refract")
                     .inner_size(1280.0, 800.0)
                     .decorations(true)
                     .visible(false)
