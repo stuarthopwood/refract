@@ -15,7 +15,11 @@ on:
     tags:
       - "v*"
 
-permissions: {}
+# `contents: read` (not `{}`): this repo is PRIVATE, so `actions/checkout` needs at least read
+# access to clone it at all -- gate finding, PR #837 round 1, High (`{}` made every `v*` tag
+# push fail before any build step ran). `ci.yml` uses the same grant for the same reason.
+permissions:
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -26,7 +30,8 @@ jobs:
     name: Build and verify installer (never published -- see workflow header)
     runs-on: windows-latest
     timeout-minutes: 45
-    permissions: {}
+    permissions:
+      contents: read
     env:
       # Workflow-local, NOT the shared dev machine's `C:/Users/shopwood/code-target/refract`
       # convention (scripts/verify-tauri.mjs, CONTEXT.md) -- a CI runner has no other lane
