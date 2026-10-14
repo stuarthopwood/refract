@@ -252,6 +252,17 @@ pub(super) async fn download_to_file(
             .await
             .map_err(|err| format!("{label} failed to write destination file: {err}"))?;
     }
+    // Gate finding: a successful `write_all` only means the bytes reached the OS buffer cache,
+    // not that they are durable on disk or even fully visible to whatever this file's caller
+    // runs next (e.g. `bsdtar`/the installer `.exe` itself) -- `flush` then `sync_all` (the
+    // stronger, data-durable guarantee `flush` alone does not promise under tokio) before this
+    // function ever reports success.
+    file.flush()
+        .await
+        .map_err(|err| format!("{label} failed to flush destination file: {err}"))?;
+    file.sync_all()
+        .await
+        .map_err(|err| format!("{label} failed to sync destination file: {err}"))?;
     Ok(())
 }
 
